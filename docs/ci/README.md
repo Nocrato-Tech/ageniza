@@ -36,8 +36,9 @@ The organization is on GitHub Free and this repository is private, so GitHub rej
 | Guard | Enforced where | What it does |
 | --- | --- | --- |
 | `.githooks/pre-push` | Each clone (installed by `pnpm install`) | Refuses `git push` to `main` or `develop`. Bypassable with `--no-verify`; it prevents accidents. |
-| `Production release / Release origin guard` | GitHub Actions | A push to `main` publishes, migrates, or deploys only if it is the merge commit of a pull request from `develop` or `hotfix/*`. |
-| `Branch guard` | GitHub Actions | Any commit on `main` or `develop` that is not a merged pull request fails the run and opens an issue assigned to @PedroV1dal. |
+| `Production release / Release origin guard` | GitHub Actions | A push to `main` publishes, migrates, or deploys only if it is not a force push and is the merge commit of a pull request from this repository's `develop` or `hotfix/*`. |
+| `ageniza-deploy` release verification | Production VPS | The host deploys only the manifest of a push-to-`main` run of `production.yml` for a commit on `main`; production secrets never live in GitHub. See the [production deploy runbook](../infra/production-deploy.md). |
+| `Branch guard` | GitHub Actions | Any force push, or any commit on `main` or `develop` that is not a merged pull request, fails the run and opens an issue assigned to @PedroV1dal. |
 | `Pull request reviewer` | GitHub Actions | Requests review from @PedroV1dal on pull requests to `develop` and `main`. |
 
 Team agreement, not technically enforced: merge only pull requests with an approval and green CI. GitHub itself never merges a pull request with conflicts. A direct push can edit these workflows too, so treat every `Branch guard` issue as an incident.

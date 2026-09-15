@@ -251,6 +251,42 @@ accepts the operational responsibility to maintain the VPS baseline, Cloudflare
 origin allowlist, Caddy/origin certificates, GHCR access, and backup/restore
 evidence.
 
+## Amendment (2026-09-15): GitHub Free constraints
+
+The organization is on GitHub Free and the repository is private, so Environment
+required reviewers, deployment branch restrictions, rulesets, and branch
+protection are unavailable. Any collaborator with write access can run a
+workflow on any branch, so any secret stored in GitHub is readable by every
+collaborator. The trust boundaries above are changed as follows:
+
+- **Production secrets never enter GitHub.** `runtime.env`, the migration
+  database URL, the GHCR read credential, and a read-only GitHub token live
+  only in root-owned files on the VPS. GitHub holds only the deploy SSH key and
+  the pinned host key.
+- **The deploy key can do nothing but deploy.** It belongs to a dedicated
+  `ageniza-ci` account whose `authorized_keys` entry forces
+  `ageniza-deploy-ssh`, which accepts only `apply <sha> <run-id>`, `rollback`,
+  and `status`.
+- **The VPS verifies the release itself.** For `apply`, the entrypoint uses its
+  own token to confirm the run is a `push` to `main` of
+  `.github/workflows/production.yml` for that SHA, that the SHA is on `main`,
+  and it downloads the run's `release-manifest` artifact to learn the image
+  digests. Digests are never taken from the SSH command and must belong to the
+  repository's GHCR namespace.
+- **Migrations run on the VPS** from an immutable `ageniza-migrations` image in
+  the same manifest, before any container changes.
+- **Each release keeps its `runtime.env` snapshot**, so restore and rollback do
+  not inherit a later configuration edit.
+- **Origin restriction uses Cloudflare Authenticated Origin Pulls** in Caddy
+  instead of source-IP firewall rules, which Docker-published ports bypass.
+
+Residual risk accepted until the plan changes: anyone with write access can
+still merge a pull request into `main` (which deploys it), dispatch the
+rollback workflow, or push directly and edit workflows. These actions are
+recorded and the Branch guard workflow alerts on non-PR commits, but they are
+not prevented. After upgrading to GitHub Team, add rulesets and an Environment
+with required reviewers on the deploy job; the host-held secrets model can stay.
+
 ## References
 
 - [GitHub: publishing Docker images, including GHCR and digest attestations](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images)

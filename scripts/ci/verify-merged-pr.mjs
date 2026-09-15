@@ -3,7 +3,7 @@
 const headMatches = (ref, patterns) =>
   patterns.some((pattern) => (pattern.endsWith('*') ? ref.startsWith(pattern.slice(0, -1)) : ref === pattern));
 
-export const isMergedPullRequestCommit = (pulls, { sha, base, heads = ['*'] }) =>
+export const isMergedPullRequestCommit = (pulls, { sha, base, heads = ['*'], repository }) =>
   Array.isArray(pulls) &&
   pulls.some(
     (pull) =>
@@ -11,7 +11,9 @@ export const isMergedPullRequestCommit = (pulls, { sha, base, heads = ['*'] }) =
       pull.merge_commit_sha === sha &&
       pull.base?.ref === base &&
       typeof pull.head?.ref === 'string' &&
-      headMatches(pull.head.ref, heads)
+      headMatches(pull.head.ref, heads) &&
+      // A fork branch named `develop` must not count as this repository's develop.
+      (repository === undefined || pull.head.repo?.full_name?.toLowerCase() === repository.toLowerCase())
   );
 
 const argument = (name) => {
@@ -39,7 +41,7 @@ if (process.argv[1] && new URL(`file:${process.argv[1].replace(/\\/g, '/')}`).hr
     // The pull request association of a merge commit can lag the push by a few seconds.
     for (let attempt = 1; attempt <= 4 && !accepted; attempt += 1) {
       if (attempt > 1) await new Promise((resolve) => setTimeout(resolve, 10_000));
-      accepted = isMergedPullRequestCommit(await fetchAssociatedPulls({ apiUrl, repository, sha, token }), { sha, base, heads });
+      accepted = isMergedPullRequestCommit(await fetchAssociatedPulls({ apiUrl, repository, sha, token }), { sha, base, heads, repository });
     }
     if (!accepted) throw new Error(`${sha} on ${base} is not the merge commit of a pull request from ${heads.join(' or ')}.`);
     console.log(`${sha} on ${base} came from a merged pull request.`);

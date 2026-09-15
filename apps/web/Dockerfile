@@ -15,7 +15,8 @@ COPY packages/ui/package.json packages/ui/package.json
 RUN pnpm install --frozen-lockfile
 COPY apps apps
 COPY packages packages
-RUN pnpm --filter @ageniza/web... build
+# version.txt lets the production smoke test prove which release the public site serves.
+RUN pnpm --filter @ageniza/web... build && printf '%s\n' "$VITE_APP_VERSION" > apps/web/dist/version.txt
 FROM nginxinc/nginx-unprivileged:1.27-alpine
 ARG APP_VERSION=unknown
 LABEL org.opencontainers.image.revision=$APP_VERSION

@@ -11,36 +11,41 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: production-main
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   rollback:
     name: Roll back to previous immutable release
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: production
-    concurrency:
-      group: production-main
-      cancel-in-progress: false
     env:
-      PRODUCTION_SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
-      PRODUCTION_SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
-      PRODUCTION_SSH_HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
-      PRODUCTION_SSH_PORT: ${{ secrets.PRODUCTION_SSH_PORT }}
-      PRODUCTION_SSH_USER: ${{ secrets.PRODUCTION_SSH_USER }}
       PRODUCTION_PUBLIC_URL: ${{ vars.PRODUCTION_PUBLIC_URL }}
     steps:
-      - name: Configure pinned SSH trust
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: ./.github/actions/production-ssh
+        with:
+          private-key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          known-hosts: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+          host: ${{ vars.PRODUCTION_SSH_HOST }}
+          port: ${{ vars.PRODUCTION_SSH_PORT }}
+          user: ${{ vars.PRODUCTION_SSH_USER }}
+      - name: Record the rollback reason
+        env:
+          REASON: ${{ inputs.reason }}
         run: |
-          install -d -m 0700 ~/.ssh
-          printf '%s\n' "$PRODUCTION_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 0600 ~/.ssh/known_hosts
-          ssh-keygen -lf ~/.ssh/known_hosts >/dev/null
-          # Steps are separate shells: keep the agent on a known socket and export it.
-          ssh-agent -a "$RUNNER_TEMP/ssh-agent.sock" >/dev/null
-          echo "SSH_AUTH_SOCK=$RUNNER_TEMP/ssh-agent.sock" >> "$GITHUB_ENV"
-          SSH_AUTH_SOCK="$RUNNER_TEMP/ssh-agent.sock" ssh-add - <<<"$PRODUCTION_SSH_PRIVATE_KEY"
-      - name: Activate the prior digest manifest without schema rollback
-        run: ssh -p "$PRODUCTION_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$PRODUCTION_SSH_USER@$PRODUCTION_SSH_HOST" "sudo -n /usr/local/sbin/ageniza-deploy rollback"
-      - name: Smoke test the restored public release through Cloudflare
+          printf '## Production rollback\n- Requested by: @%s\n- Reason: %s\n' "$GITHUB_ACTOR" "$REASON" >> "$GITHUB_STEP_SUMMARY"
+      - name: Activate the prior release without schema rollback
+        run: ssh production rollback
+      - name: Smoke test the restored release through Cloudflare
         run: |
-          curl --fail --silent --show-error --proto '=https' --retry 3 --retry-all-errors --max-time 20 "$PRODUCTION_PUBLIC_URL/health" >/dev/null
+          active="$(ssh production status | sed -n 's/^RELEASE=//p')"
+          served="$(curl --fail --silent --show-error --proto '=https' --retry 3 --retry-all-errors --max-time 20 "$PRODUCTION_PUBLIC_URL/version.txt?run=$GITHUB_RUN_ID" | tr -d '[:space:]')"
+          [[ -n "$active" && "$served" == "$active" ]] || { echo "::error::The public site serves '$served', expected active release '$active'."; exit 1; }
           curl --fail --silent --show-error --proto '=https' --retry 3 --retry-all-errors --max-time 20 "$PRODUCTION_PUBLIC_URL/api/health" >/dev/null
+          echo "- Active release: \`$active\`" >> "$GITHUB_STEP_SUMMARY"

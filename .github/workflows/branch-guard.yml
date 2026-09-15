@@ -25,6 +25,11 @@ jobs:
       - uses: actions/setup-node@1e60f620b9541d5c323b6a6e1d1c6e7bdc34a76f
         with:
           node-version-file: .nvmrc
+      - name: Refuse force pushes
+        if: github.event.forced
+        run: |
+          echo "::error::$GITHUB_REF_NAME was force-pushed."
+          exit 1
       - name: Verify the pushed commit came from a merged pull request
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -44,4 +49,4 @@ jobs:
           - Changes: $COMPARE_URL
           - Guard run: $RUN_URL
 
-          Review the change and, if needed, revert it through a pull request. A direct push to main does not deploy: the production release-origin guard refuses it."
+          Review the change, including anything under .github/, and revert it through a pull request if needed. The production release-origin guard refuses direct and force pushes to main, but a push can also edit workflows."

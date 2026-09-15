@@ -22,6 +22,13 @@ describe('merged pull request commit check', () => {
     expect(isMergedPullRequestCommit([pull({ base: { ref: 'develop' }, head: { ref: 'feature/x' } })], { sha, base: 'develop' })).toBe(true);
   });
 
+  it('requires the head branch to belong to the repository when one is given', () => {
+    const own = pull({ head: { ref: 'develop', repo: { full_name: 'Nocrato-Tech/ageniza' } } });
+    const fork = pull({ head: { ref: 'develop', repo: { full_name: 'someone/ageniza' } } });
+    expect(isMergedPullRequestCommit([own], { ...release, repository: 'nocrato-tech/ageniza' })).toBe(true);
+    expect(isMergedPullRequestCommit([fork], { ...release, repository: 'nocrato-tech/ageniza' })).toBe(false);
+  });
+
   it.each([
     ['a direct push with no pull request', []],
     ['an unmerged pull request', [pull({ merged_at: null })]],

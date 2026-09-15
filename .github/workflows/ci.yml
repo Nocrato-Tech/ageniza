@@ -68,9 +68,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # The default pull_request checkout is the merge result, which is what actually lands.
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -108,21 +107,31 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
       - name: Validate the local Compose model
         run: docker compose config --quiet
       - name: Build all application runtime images
         run: docker compose build
+      - name: Build the production migration runner
+        run: docker build -t ageniza-migrations:ci -f infra/migrations/Dockerfile .
+      - name: Check the migration runner CLI
+        run: docker run --rm --entrypoint supabase ageniza-migrations:ci --version
+      - name: Validate the production Caddyfile syntax
+        run: |
+          edge="$RUNNER_TEMP/caddy"
+          mkdir -p "$edge"
+          cp infra/vps/caddy/Caddyfile "$edge/Caddyfile"
+          cp infra/vps/caddy/active-upstream.caddy.example "$edge/active-upstream.caddy"
+          echo 'trusted_proxies static 173.245.48.0/20 2400:cb00::/32' > "$edge/cloudflare-trusted-proxies.caddy"
+          docker run --rm -e AGENIZA_DOMAIN=app.example.test -v "$edge:/etc/caddy:ro" caddy:2 \
+            caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
 
   supabase-local:
     name: Supabase local database
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # The default pull_request checkout is the merge result, which is what actually lands.
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc

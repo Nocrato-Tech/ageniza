@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# One production release at a time; a newer push replaces a release that is still pending.
+concurrency:
+  group: ${{ github.event_name == 'push' && 'production-main' || format('production-pr-{0}', github.event.pull_request.number) }}
+  cancel-in-progress: false
+
 defaults:
   run:
     shell: bash
@@ -55,28 +60,60 @@ jobs:
       - uses: actions/setup-node@1e60f620b9541d5c323b6a6e1d1c6e7bdc34a76f
         with:
           node-version-file: .nvmrc
-      # Without paid branch protection, a direct push to main must never publish or migrate.
+      # Without paid branch protection, a direct or force push to main must never publish or deploy.
+      - name: Refuse force pushes
+        if: github.event.forced
+        run: |
+          echo "::error::main was force-pushed; refusing to release."
+          exit 1
       - name: Refuse commits that did not arrive through a merged develop or hotfix pull request
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/ci/verify-merged-pr.mjs --sha "$GITHUB_SHA" --base main --heads 'develop,hotfix/*'
 
-  publish:
-    name: Build and publish immutable images
-    if: github.event_name == 'push'
+  verify:
+    name: Verify release commit
     needs: release-origin
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # The merge commit on main is what ships; test it directly. This job holds no secrets.
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@1e60f620b9541d5c323b6a6e1d1c6e7bdc34a76f
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm test:scripts
+      - name: Build
+        env:
+          VITE_API_BASE_URL: http://127.0.0.1:3001
+          VITE_SUPABASE_URL: http://127.0.0.1:54321
+          VITE_SUPABASE_ANON_KEY: ci-local-public-placeholder
+        run: pnpm build
+
+  publish:
+    name: Build and publish immutable images
+    needs: verify
+    runs-on: ubuntu-latest
     timeout-minutes: 40
-    environment: production
     permissions:
       contents: read
       packages: write
-    outputs:
-      api_digest: ${{ steps.api.outputs.digest }}
-      web_digest: ${{ steps.web.outputs.digest }}
-      worker_digest: ${{ steps.worker.outputs.digest }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Require public web build variables
+        env:
+          VITE_API_BASE_URL: ${{ vars.PRODUCTION_VITE_API_BASE_URL }}
+          VITE_SUPABASE_URL: ${{ vars.PRODUCTION_VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.PRODUCTION_VITE_SUPABASE_ANON_KEY }}
+        run: |
+          for name in VITE_API_BASE_URL VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY; do
+            [[ -n "${!name}" ]] || { echo "::error::Repository variable PRODUCTION_$name is not set."; exit 1; }
+          done
       - name: Resolve lowercase GHCR namespace
         id: registry
         # Docker repository names must be lowercase; the GitHub owner may not be.
@@ -120,93 +157,97 @@ jobs:
             VITE_APP_VERSION=${{ github.sha }}
             APP_VERSION=${{ github.sha }}
           labels: org.opencontainers.image.revision=${{ github.sha }}
-      - name: Record immutable release metadata
+      - id: migrations
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          file: infra/migrations/Dockerfile
+          push: true
+          tags: ${{ steps.registry.outputs.namespace }}/ageniza-migrations:${{ github.sha }}
+          build-args: APP_VERSION=${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+      - name: Record the immutable release manifest
         env:
+          NAMESPACE: ${{ steps.registry.outputs.namespace }}
           API_DIGEST: ${{ steps.api.outputs.digest }}
           WEB_DIGEST: ${{ steps.web.outputs.digest }}
           WORKER_DIGEST: ${{ steps.worker.outputs.digest }}
+          MIGRATIONS_DIGEST: ${{ steps.migrations.outputs.digest }}
         run: |
-          node scripts/deploy/validate-image-ref.mjs api "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-api@${API_DIGEST}"
-          node scripts/deploy/validate-image-ref.mjs web "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-web@${WEB_DIGEST}"
-          node scripts/deploy/validate-image-ref.mjs worker "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-worker@${WORKER_DIGEST}"
+          mkdir -p "$RUNNER_TEMP/release"
+          manifest="$RUNNER_TEMP/release/release.env"
           {
-            echo "## Production release candidate"
-            echo "- Commit: \`${GITHUB_SHA}\`"
-            echo "- API: \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-api@${API_DIGEST}\`"
-            echo "- Web: \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-web@${WEB_DIGEST}\`"
-            echo "- Worker: \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-worker@${WORKER_DIGEST}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo "RELEASE=$GITHUB_SHA"
+            echo "RUN_ID=$GITHUB_RUN_ID"
+            echo "API_IMAGE=$NAMESPACE/ageniza-api@$API_DIGEST"
+            echo "WEB_IMAGE=$NAMESPACE/ageniza-web@$WEB_DIGEST"
+            echo "WORKER_IMAGE=$NAMESPACE/ageniza-worker@$WORKER_DIGEST"
+            echo "MIGRATIONS_IMAGE=$NAMESPACE/ageniza-migrations@$MIGRATIONS_DIGEST"
+          } > "$manifest"
+          while IFS='=' read -r key value; do
+            case "$key" in *_IMAGE) node scripts/deploy/validate-image-ref.mjs "$key" "$value" ;; esac
+          done < "$manifest"
+          { echo "## Production release manifest"; echo '```'; cat "$manifest"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      # The VPS downloads this artifact itself; digests are never taken from the SSH command.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-manifest
+          path: ${{ runner.temp }}/release/release.env
+          if-no-files-found: error
+          retention-days: 90
 
   deploy:
     name: Migrate and deploy production
     needs: publish
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: production
-    concurrency:
-      group: production-main
-      cancel-in-progress: false
     permissions:
       contents: read
     env:
-      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
-      SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
-      API_CORS_ORIGINS: ${{ secrets.PRODUCTION_API_CORS_ORIGINS }}
-      API_TRUSTED_PROXY_CIDRS: ${{ secrets.PRODUCTION_API_TRUSTED_PROXY_CIDRS }}
-      SENTRY_DSN: ${{ secrets.PRODUCTION_SENTRY_DSN }}
-      GHCR_PULL_TOKEN: ${{ secrets.PRODUCTION_GHCR_PULL_TOKEN }}
-      PRODUCTION_SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
-      PRODUCTION_SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
-      PRODUCTION_SSH_HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
-      PRODUCTION_SSH_PORT: ${{ secrets.PRODUCTION_SSH_PORT }}
-      PRODUCTION_SSH_USER: ${{ secrets.PRODUCTION_SSH_USER }}
       PRODUCTION_PUBLIC_URL: ${{ vars.PRODUCTION_PUBLIC_URL }}
+    # No application secret exists in GitHub: migrations, runtime configuration, and registry
+    # credentials live on the VPS. This job holds only the forced-command SSH key.
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: actions/setup-node@1e60f620b9541d5c323b6a6e1d1c6e7bdc34a76f
+      - name: Skip if main has moved past this commit
+        id: tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tip="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+          if [[ "$tip" == "$GITHUB_SHA" ]]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::main is now at $tip; the newer run deploys it, not $GITHUB_SHA."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Require the public URL
+        if: steps.tip.outputs.deploy == 'true'
+        run: |
+          [[ "$PRODUCTION_PUBLIC_URL" =~ ^https://[A-Za-z0-9.-]+$ ]] || { echo '::error::Variable PRODUCTION_PUBLIC_URL must be https://<domain> without a trailing slash.'; exit 1; }
+      - if: steps.tip.outputs.deploy == 'true'
+        uses: ./.github/actions/production-ssh
         with:
-          node-version-file: .nvmrc
-      - run: corepack enable
-      - run: pnpm install --frozen-lockfile
-      - name: Validate deployment inputs before migration
-        env:
-          API_DIGEST: ${{ needs.publish.outputs.api_digest }}
-          WEB_DIGEST: ${{ needs.publish.outputs.web_digest }}
-          WORKER_DIGEST: ${{ needs.publish.outputs.worker_digest }}
+          private-key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          known-hosts: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+          host: ${{ vars.PRODUCTION_SSH_HOST }}
+          port: ${{ vars.PRODUCTION_SSH_PORT }}
+          user: ${{ vars.PRODUCTION_SSH_USER }}
+      - name: Verify, migrate, and activate the release on the VPS
+        if: steps.tip.outputs.deploy == 'true'
+        run: ssh production "apply $GITHUB_SHA $GITHUB_RUN_ID"
+      - name: Smoke test the served version through Cloudflare
+        if: steps.tip.outputs.deploy == 'true'
         run: |
-          node scripts/deploy/validate-image-ref.mjs api "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-api@${API_DIGEST}"
-          node scripts/deploy/validate-image-ref.mjs web "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-web@${WEB_DIGEST}"
-          node scripts/deploy/validate-image-ref.mjs worker "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-worker@${WORKER_DIGEST}"
-          test -n "$PRODUCTION_SSH_HOST" && test -n "$PRODUCTION_SSH_PORT" && test -n "$PRODUCTION_SSH_USER"
-          test -n "$PRODUCTION_PUBLIC_URL"
-      - name: Apply forward-only production migrations from main
-        run: pnpm dlx supabase@2.117.0 db push --db-url "$DATABASE_URL" --include-all
-      - name: Configure pinned SSH trust
-        run: |
-          install -d -m 0700 ~/.ssh
-          printf '%s\n' "$PRODUCTION_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 0600 ~/.ssh/known_hosts
-          ssh-keygen -lf ~/.ssh/known_hosts >/dev/null
-          # Steps are separate shells: keep the agent on a known socket and export it.
-          ssh-agent -a "$RUNNER_TEMP/ssh-agent.sock" >/dev/null
-          echo "SSH_AUTH_SOCK=$RUNNER_TEMP/ssh-agent.sock" >> "$GITHUB_ENV"
-          SSH_AUTH_SOCK="$RUNNER_TEMP/ssh-agent.sock" ssh-add - <<<"$PRODUCTION_SSH_PRIVATE_KEY"
-      - name: Deploy exact image digests through the fixed VPS entrypoint
-        env:
-          API_DIGEST: ${{ needs.publish.outputs.api_digest }}
-          WEB_DIGEST: ${{ needs.publish.outputs.web_digest }}
-          WORKER_DIGEST: ${{ needs.publish.outputs.worker_digest }}
-        # A failed apply restores the live release on the VPS itself; only a
-        # successfully activated release is rolled back by the step below.
-        run: |
-          node scripts/deploy/emit-runtime-env.mjs | ssh -p "$PRODUCTION_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$PRODUCTION_SSH_USER@$PRODUCTION_SSH_HOST" \
-            "sudo -n /usr/local/sbin/ageniza-deploy apply --release '$GITHUB_SHA' --api-image 'ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-api@$API_DIGEST' --web-image 'ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-web@$WEB_DIGEST' --worker-image 'ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-worker@$WORKER_DIGEST'"
-          echo 'ROLLOUT_ACTIVATED=true' >> "$GITHUB_ENV"
-      - name: Smoke test through Cloudflare
-        run: |
-          curl --fail --silent --show-error --proto '=https' --retry 3 --retry-all-errors --max-time 20 "$PRODUCTION_PUBLIC_URL/health" >/dev/null
+          served="$(curl --fail --silent --show-error --proto '=https' --retry 3 --retry-all-errors --max-time 20 "$PRODUCTION_PUBLIC_URL/version.txt?run=$GITHUB_RUN_ID" | tr -d '[:space:]')"
+          [[ "$served" == "$GITHUB_SHA" ]] || { echo "::error::The public site serves '$served', expected $GITHUB_SHA."; exit 1; }
           curl --fail --silent --show-error --proto '=https' --retry 3 --retry-all-errors --max-time 20 "$PRODUCTION_PUBLIC_URL/api/health" >/dev/null
-      - name: Roll back application images if the activated release failed smoke
-        if: failure() && env.ROLLOUT_ACTIVATED == 'true'
-        run: ssh -p "$PRODUCTION_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$PRODUCTION_SSH_USER@$PRODUCTION_SSH_HOST" "sudo -n /usr/local/sbin/ageniza-deploy rollback"
+      - name: Roll back if this release went live but failed
+        if: failure() && steps.tip.outputs.deploy == 'true'
+        run: |
+          active="$(ssh production status 2>/dev/null | sed -n 's/^RELEASE=//p')" || true
+          if [[ "$active" == "$GITHUB_SHA" ]]; then
+            ssh production rollback
+          else
+            echo "::notice::Active release is '${active:-unknown}', not $GITHUB_SHA; no rollback needed."
+          fi
