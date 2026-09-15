@@ -1,58 +1,47 @@
 import { execFileSync } from 'node:child_process';
 
 const command = process.argv[2];
-const executionOptions = {
-  stdio: 'inherit',
-  shell: process.platform === 'win32'
-};
-const run = (file, args, options = {}) => execFileSync(file, args, { ...executionOptions, ...options });
+const run = (file, args, options = {}) =>
+  execFileSync(file, args, { stdio: 'inherit', shell: process.platform === 'win32', ...options });
 
-const readLocalSupabaseKeys = () => {
-  const output = execFileSync('pnpm', ['dlx', 'supabase@2.117.0', 'status', '-o', 'json'], {
-    encoding: 'utf8',
-    shell: process.platform === 'win32',
-    stdio: ['ignore', 'pipe', 'inherit']
-  });
-  const status = JSON.parse(output);
-  if (typeof status.ANON_KEY !== 'string' || typeof status.SERVICE_ROLE_KEY !== 'string') {
-    throw new Error('Supabase status did not return the required local API keys');
+const localOwnerUrl = 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
+
+/** Refuses to run local tooling against anything but the disposable Compose database. */
+const migrationEnvironment = () => {
+  const connectionString = process.env.MIGRATION_DATABASE_URL ?? localOwnerUrl;
+  const hostname = new URL(connectionString).hostname.toLowerCase();
+  if (!['127.0.0.1', 'localhost', '::1'].includes(hostname)) {
+    throw new Error('MIGRATION_DATABASE_URL must point at the loopback development database.');
   }
-  return {
-    LOCAL_SUPABASE_ANON_KEY: status.ANON_KEY,
-    LOCAL_SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY
-  };
+  return { ...process.env, MIGRATION_DATABASE_URL: connectionString };
 };
 
-const attempt = (file, args, failures) => {
-  try {
-    run(file, args);
-  } catch (error) {
-    failures.push(error);
-  }
-};
+const startDatabase = () => run('docker', ['compose', 'up', '-d', '--wait', 'postgres']);
+const migrate = () => run('pnpm', ['--filter', '@ageniza/database', 'migrate'], { env: migrationEnvironment() });
 
-const stopLocalStack = () => {
-  const failures = [];
-  attempt('docker', ['compose', 'down', '--remove-orphans'], failures);
-  attempt('pnpm', ['dlx', 'supabase@2.117.0', 'stop', '--no-backup'], failures);
-  if (failures.length > 0) throw new AggregateError(failures, 'Local stack cleanup failed');
-};
-
-if (command === 'up') {
-  try {
-    run('pnpm', ['dlx', 'supabase@2.117.0', 'start']);
-    const localKeys = readLocalSupabaseKeys();
-    run('docker', ['compose', 'up', '--build', '--wait'], { env: { ...process.env, ...localKeys } });
-  } catch (error) {
-    try {
-      stopLocalStack();
-    } catch (cleanupError) {
-      throw new AggregateError([error, cleanupError], 'Local stack startup and cleanup failed');
-    }
-    throw error;
-  }
-} else if (command === 'down') {
-  stopLocalStack();
-} else {
-  throw new Error('Usage: pnpm docker:up | pnpm docker:down');
+switch (command) {
+  case 'db:start':
+    startDatabase();
+    break;
+  case 'db:migrate':
+    migrate();
+    break;
+  case 'db:reset':
+    // Removes only this project's database container and volume, then rebuilds from migrations.
+    run('docker', ['compose', 'rm', '--stop', '--force', '--volumes', 'postgres']);
+    run('docker', ['volume', 'rm', '--force', 'ageniza-local_postgres-data']);
+    startDatabase();
+    migrate();
+    break;
+  case 'up':
+    startDatabase();
+    migrate();
+    run('docker', ['compose', 'up', '--build', '--wait']);
+    break;
+  case 'down':
+    // Keeps the database volume; use db:reset to discard local data.
+    run('docker', ['compose', 'down', '--remove-orphans']);
+    break;
+  default:
+    throw new Error('Usage: node scripts/docker/local-stack.mjs db:start | db:migrate | db:reset | up | down');
 }

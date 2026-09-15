@@ -41,7 +41,7 @@ If key login fails, keep the original session open. The SSH drop-in is `/etc/ssh
 - The deploy user is key-only. Keep the SSH port and public key in the protected bootstrap config; do not put passwords, private keys, Cloudflare tokens, or application secrets in any script, image, compose file, or Git checkout.
 - Only a future reverse proxy may publish 80/443. Every application, worker, cache, queue, and database service must be on an internal Docker network with no `ports:` mapping. Use `expose:` only when service-to-service documentation benefits from it.
 - Every non-job container needs a healthcheck and `restart: unless-stopped` (or a more intentional approved policy). Image tags must be immutable/digested for releases; logs need bounded rotation; deploys must wait for healthy services before traffic changes.
-- Do not run production PostgreSQL on this VPS. Do not treat a container layer, bind mount, or local volume as the only copy of critical data. Managed production data, encrypted backups, restore tests, and retention are required before a service becomes production-ready.
+- PostgreSQL runs on this VPS only as the internal `postgres` container ([ADR 0011](../adr/0011-self-hosted-postgres-and-better-auth.md)), never with a published port. Its volume must never be the only copy of critical data: encrypted off-host backups with retention and a tested restore (issue #18) are required before production holds real data.
 
 Example Compose policy fragment (not a deployment stack):
 

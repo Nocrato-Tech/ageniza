@@ -28,7 +28,7 @@ services:
         format: raw
     restart: unless-stopped
     logging: *production-logging
-    networks: [production-private]
+    networks: !override [production-private]
   web:
     image: ${AGENIZA_WEB_IMAGE:?immutable web image reference required}
     build: !reset null
@@ -39,6 +39,21 @@ services:
     # Caddy reaches this service as `web` on the shared proxy network.
     networks:
       production-proxy: {}
+  postgres:
+    image: ${AGENIZA_POSTGRES_IMAGE:?immutable PostgreSQL image reference required}
+    environment: !reset {}
+    env_file:
+      - path: ${AGENIZA_POSTGRES_ENV_FILE:?PostgreSQL env file required}
+        format: raw
+    # Never publish PostgreSQL: Docker-published ports bypass the host firewall.
+    ports: !reset []
+    volumes: !override
+      - postgres-data:/var/lib/postgresql/data
+      - /opt/ageniza/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    shm_size: 256mb
+    restart: unless-stopped
+    logging: *production-logging
+    networks: !override [production-private]
 
 networks:
   production-proxy:

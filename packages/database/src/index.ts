@@ -62,7 +62,7 @@ const assertOpen = (closed: boolean): void => {
   if (closed) throw new Error('Database client has already been closed.');
 };
 
-/** Creates an explicit PostgreSQL/Supabase Knex client. Call close during process shutdown. */
+/** Creates an explicit PostgreSQL Knex client. Call close during process shutdown. */
 export const createDatabaseClient = (options: DatabaseClientOptions): DatabaseClient => {
   if (!options.connectionString) throw new Error('A database connection string is required.');
 
@@ -127,7 +127,7 @@ export const assertLocalDatabaseUrl = (connectionString: string): void => {
   }
 };
 
-/** Creates a client for a Docker-backed local Supabase database only. */
+/** Creates a client for the Docker-backed local development database only. */
 export const createLocalTestDatabaseClient = (connectionString: string): DatabaseClient => {
   assertLocalDatabaseUrl(connectionString);
   return createDatabaseClient({ connectionString });
@@ -143,8 +143,10 @@ export const createVerifiedUserClaims = (input: { readonly userId: string }): Ve
 };
 
 /**
- * Runs under Supabase's fixed authenticated role and transaction-local verified user claims.
- * RLS remains active; this helper never accepts a tenant/agency id and never uses service_role.
+ * Publishes the verified user id as the transaction-local `app.user_id`, which RLS policies read
+ * through `app_private.current_user_id()`. The connection must use the application role, which
+ * cannot bypass RLS. This helper never accepts a tenant/agency id: policies derive tenant access
+ * from memberships, and without this context the application role sees no tenant rows.
  */
 export const withAuthenticatedUserTransaction = <TResult>(
   database: DatabaseClient,
@@ -156,13 +158,7 @@ export const withAuthenticatedUserTransaction = <TResult>(
   }
 
   return database.transaction(async (transaction) => {
-    await raw(
-      transaction,
-      "select set_config('request.jwt.claims', ?, true), set_config('request.jwt.claim.sub', ?, true), set_config('request.jwt.claim.role', 'authenticated', true)",
-      [JSON.stringify({ sub: claims.userId, role: 'authenticated' }), claims.userId]
-    );
-    // The role is a fixed literal, not a caller-controlled SQL identifier.
-    await transaction.raw('set local role authenticated');
+    await raw(transaction, "select set_config('app.user_id', ?, true)", [claims.userId]);
     return work(transaction);
   });
 };

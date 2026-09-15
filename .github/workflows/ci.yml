@@ -113,8 +113,8 @@ jobs:
         run: docker compose build
       - name: Build the production migration runner
         run: docker build -t ageniza-migrations:ci -f infra/migrations/Dockerfile .
-      - name: Check the migration runner CLI
-        run: docker run --rm --entrypoint supabase ageniza-migrations:ci --version
+      - name: Check the migration runner entrypoint
+        run: docker run --rm --entrypoint node ageniza-migrations:ci -e "import('knex').then(() => console.log('migration runner ok'))"
       - name: Validate the production Caddyfile syntax
         run: |
           edge="$RUNNER_TEMP/caddy"
@@ -124,8 +124,8 @@ jobs:
           docker run --rm -e AGENIZA_DOMAIN=app.example.test -e AGENIZA_ACME_EMAIL=ops@example.test -v "$edge:/etc/caddy:ro" caddy:2 \
             caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
 
-  supabase-local:
-    name: Supabase local database
+  database-local:
+    name: PostgreSQL local database
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -147,15 +147,12 @@ jobs:
             ${{ runner.os }}-pnpm-
       - name: Install from the committed lockfile
         run: pnpm install --frozen-lockfile
-      - uses: supabase/setup-cli@v3
-        with:
-          version: 2.117.0
-      - name: Start an isolated local Supabase stack
-        run: supabase start
-      - name: Apply migrations to the isolated local database
-        run: supabase db reset --local --yes
+      - name: Start the isolated local PostgreSQL
+        run: pnpm db:start
+      - name: Apply every migration to an empty database
+        run: pnpm db:migrate
       - name: Run database integration and RLS isolation suite
         run: pnpm db:test:local
-      - name: Stop the local Supabase stack
+      - name: Remove the local database
         if: always()
-        run: supabase stop --no-backup
+        run: docker compose down --volumes --remove-orphans

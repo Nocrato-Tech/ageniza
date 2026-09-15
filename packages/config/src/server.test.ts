@@ -4,10 +4,10 @@ import { ConfigValidationError, loadApiConfig, loadWorkerConfig } from './server
 
 const localEnvironment = {
   APP_ENV: 'local',
-  DATABASE_URL: 'postgresql://postgres:postgres@127.0.0.1:54322/postgres',
-  SUPABASE_URL: 'http://127.0.0.1:54321',
-  SUPABASE_SERVICE_ROLE_KEY: 'local-service-role-key'
+  DATABASE_URL: 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza'
 };
+
+const productionDatabaseUrl = 'postgresql://ageniza_app:password@postgres:5432/ageniza';
 
 describe('server configuration', () => {
   it('loads typed local API and worker configuration', () => {
@@ -18,8 +18,6 @@ describe('server configuration', () => {
       service: 'worker',
       environment: 'local',
       databaseUrl: localEnvironment.DATABASE_URL,
-      supabaseUrl: localEnvironment.SUPABASE_URL,
-      supabaseServiceRoleKey: localEnvironment.SUPABASE_SERVICE_ROLE_KEY,
       healthHost: '127.0.0.1',
       healthPort: 3002,
       smokeJob: false,
@@ -35,11 +33,9 @@ describe('server configuration', () => {
 
   it('fails for invalid configuration without exposing supplied secret values', () => {
     const secret = 'should-never-appear-in-errors';
-    expect(() => loadApiConfig({ ...localEnvironment, DATABASE_URL: 'not-a-url', SUPABASE_SERVICE_ROLE_KEY: secret })).toThrow(
-      'DATABASE_URL'
-    );
+    expect(() => loadApiConfig({ ...localEnvironment, DATABASE_URL: `not a url ${secret}` })).toThrow('DATABASE_URL');
     try {
-      loadApiConfig({ ...localEnvironment, DATABASE_URL: 'not-a-url', SUPABASE_SERVICE_ROLE_KEY: secret });
+      loadApiConfig({ ...localEnvironment, DATABASE_URL: `not a url ${secret}` });
     } catch (error) {
       expect(error).toBeInstanceOf(ConfigValidationError);
       expect((error as Error).message).not.toContain(secret);
@@ -54,13 +50,13 @@ describe('server configuration', () => {
 
   it('supports CI as an isolated local test runtime', () => {
     expect(loadApiConfig({ ...localEnvironment, APP_ENV: 'ci' }).environment).toBe('test');
-    expect(() => loadApiConfig({ ...localEnvironment, APP_ENV: 'ci', SUPABASE_URL: 'https://project.supabase.co' })).toThrow(
+    expect(() => loadApiConfig({ ...localEnvironment, APP_ENV: 'ci', DATABASE_URL: 'postgresql://app:password@db.example.com:5432/app' })).toThrow(
       'must point to a loopback resource'
     );
   });
 
   it('requires HTTPS Sentry DSNs in production', () => {
-    const production = { ...localEnvironment, APP_ENV: 'production', DATABASE_URL: 'postgresql://db.example.com:5432/app', SUPABASE_URL: 'https://project.supabase.co', API_CORS_ORIGINS: 'https://app.ageniza.example', SENTRY_DSN: 'https://public@sentry.example/1' };
+    const production = { ...localEnvironment, APP_ENV: 'production', DATABASE_URL: productionDatabaseUrl, API_CORS_ORIGINS: 'https://app.ageniza.example', SENTRY_DSN: 'https://public@sentry.example/1' };
     expect(loadApiConfig(production).sentryDsn).toBe('https://public@sentry.example/1');
     expect(() => loadApiConfig({ ...production, SENTRY_DSN: 'http://public@sentry.example/1' })).toThrow('must use HTTPS');
   });
@@ -70,41 +66,31 @@ describe('server configuration', () => {
     expect(loadWorkerConfig({ ...localEnvironment, SENTRY_DSN: '' }).sentryDsn).toBeUndefined();
   });
 
-  it('allows HTTPS production resources and rejects insecure production Supabase URLs', () => {
-    expect(
-      loadApiConfig({
-        ...localEnvironment,
-        APP_ENV: 'production',
-        DATABASE_URL: 'postgresql://app:password@database.example.com:5432/ageniza',
-        SUPABASE_URL: 'https://project.supabase.co',
-        API_CORS_ORIGINS: 'https://app.ageniza.example'
-      }).environment
-    ).toBe('production');
-    expect(() => loadApiConfig({ ...localEnvironment, APP_ENV: 'production', SUPABASE_URL: 'http://project.supabase.co' })).toThrow(
-      'must use HTTPS in production'
+  it('accepts the internal production database and rejects a loopback one', () => {
+    expect(loadApiConfig({
+      ...localEnvironment,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl,
+      API_CORS_ORIGINS: 'https://app.ageniza.example'
+    }).environment).toBe('production');
+    expect(() => loadApiConfig({ ...localEnvironment, APP_ENV: 'production', API_CORS_ORIGINS: 'https://app.ageniza.example' })).toThrow(
+      'must not point to a loopback resource in production'
     );
   });
 
-  it('prevents local processes from using remote Supabase or database resources', () => {
-    expect(() => loadApiConfig({ ...localEnvironment, SUPABASE_URL: 'https://project.supabase.co' })).toThrow(
-      'must point to a loopback resource'
-    );
+  it('prevents local processes from using a remote database', () => {
     expect(() => loadApiConfig({ ...localEnvironment, DATABASE_URL: 'postgresql://user:password@db.example.com:5432/app' })).toThrow(
       'must point to a loopback resource'
     );
   });
 
-  it('permits only the explicit Docker host gateway in container-local mode', () => {
-    const dockerEnvironment = { ...localEnvironment, APP_CONTAINER_LOCAL: 'true', DATABASE_URL: 'postgresql://postgres:postgres@host.docker.internal:54322/postgres', SUPABASE_URL: 'http://host.docker.internal:54321' };
-    expect(loadWorkerConfig(dockerEnvironment).databaseUrl).toContain('host.docker.internal');
-    expect(() => loadWorkerConfig({ ...dockerEnvironment, APP_CONTAINER_LOCAL: 'false' })).toThrow(ConfigValidationError);
-    expect(() => loadWorkerConfig({ ...dockerEnvironment, DATABASE_URL: 'postgresql://postgres:postgres@db.example.test:5432/postgres' })).toThrow(ConfigValidationError);
-    expect(() => loadWorkerConfig({
-      ...dockerEnvironment,
-      APP_ENV: 'production',
-      DATABASE_URL: 'postgresql://app:password@database.example.com:5432/ageniza',
-      SUPABASE_URL: 'https://project.supabase.co'
-    })).toThrow('APP_CONTAINER_LOCAL');
+  it('permits only the local Compose database hosts in container-local mode', () => {
+    const containerEnvironment = { ...localEnvironment, APP_CONTAINER_LOCAL: 'true', DATABASE_URL: 'postgresql://ageniza_app:ageniza_app@postgres:5432/ageniza' };
+    expect(loadWorkerConfig(containerEnvironment).databaseUrl).toContain('@postgres:5432');
+    expect(loadWorkerConfig({ ...containerEnvironment, DATABASE_URL: 'postgresql://ageniza_app:ageniza_app@host.docker.internal:54322/ageniza' }).databaseUrl).toContain('host.docker.internal');
+    expect(() => loadWorkerConfig({ ...containerEnvironment, APP_CONTAINER_LOCAL: 'false' })).toThrow(ConfigValidationError);
+    expect(() => loadWorkerConfig({ ...containerEnvironment, DATABASE_URL: 'postgresql://postgres:postgres@db.example.test:5432/postgres' })).toThrow(ConfigValidationError);
+    expect(() => loadWorkerConfig({ ...containerEnvironment, APP_ENV: 'production', DATABASE_URL: productionDatabaseUrl })).toThrow('APP_CONTAINER_LOCAL');
   });
 
   it('loads explicit API bootstrap settings without allowing a wildcard proxy trust', () => {
@@ -136,8 +122,7 @@ describe('server configuration', () => {
     expect(() => loadWorkerConfig({
       ...localEnvironment,
       APP_ENV: 'production',
-      DATABASE_URL: 'postgresql://app:password@database.example.com:5432/ageniza',
-      SUPABASE_URL: 'https://project.supabase.co',
+      DATABASE_URL: productionDatabaseUrl,
       WORKER_SMOKE_JOB: 'true'
     })).toThrow('must be false in production');
   });

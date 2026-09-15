@@ -8,9 +8,9 @@ This runbook operates [ADR 0010](../adr/0010-vps-edge-and-production-deployment.
 | --- | --- | --- |
 | GitHub repository | Secrets `PRODUCTION_SSH_PRIVATE_KEY`, `PRODUCTION_SSH_KNOWN_HOSTS`; public variables | Build and publish images; call the VPS forced command |
 | VPS `ageniza-ci` account | The deploy public key with a forced command | Only `apply <sha> <run-id>`, `rollback`, `status` |
-| VPS `/etc/ageniza` (root) | `runtime.env`, `migrations.env`, `github-token`, `registry/`, TLS keys | Everything production needs |
+| VPS `/etc/ageniza` (root) | `postgres.env`, `runtime.env`, `migrations.env`, `github-token`, `registry/` | Everything production needs |
 
-No database URL, `service_role` key, or registry credential exists in GitHub. On GitHub Free every collaborator with write access can read repository secrets from a branch workflow, so this is deliberate.
+No database password, auth secret, or registry credential exists in GitHub. On GitHub Free every collaborator with write access can read repository secrets from a branch workflow, so this is deliberate.
 
 `apply` refuses a release unless, checked with the VPS's own token:
 
@@ -29,7 +29,8 @@ No database URL, `service_role` key, or registry credential exists in GitHub. On
 | [`infra/vps/ageniza-deploy-ssh.sh`](../../infra/vps/ageniza-deploy-ssh.sh) | Forced command for the deploy key. |
 | [`infra/vps/install-production-deploy.sh`](../../infra/vps/install-production-deploy.sh) | Installs the bundle, `ageniza-ci` account, sudo rule, and Cloudflare ranges. |
 | [`infra/vps/refresh-cloudflare-ips.sh`](../../infra/vps/refresh-cloudflare-ips.sh) | Regenerates the Cloudflare ranges Caddy trusts for `CF-Connecting-IP`. |
-| [`infra/migrations/Dockerfile`](../../infra/migrations/Dockerfile) | Migration runner image (Supabase CLI plus `supabase/migrations`). |
+| [`infra/migrations/Dockerfile`](../../infra/migrations/Dockerfile) | Migration runner image (Knex plus `packages/database/migrations`). |
+| [`infra/postgres/initdb`](../../infra/postgres/initdb) | Creates the `ageniza_app` role when the database volume is first initialised. |
 | [`infra/vps/*.env.example`](../../infra/vps) | Shapes of the host-only configuration files. |
 
 ## Release flow
@@ -43,7 +44,7 @@ merge to main (a newer push replaces a pending release)
               upload release-manifest (commit, run ID, four digests)
   -> deploy: skip if main has moved on; ssh production "apply <sha> <run-id>"
        VPS: verify run, commit and manifest with GitHub -> pull digests -> snapshot runtime.env
-            -> run migrations image                       # failure stops here; nothing changed
+            -> ensure postgres is healthy -> run migrations image   # failure stops here; nothing changed
             -> replace api/web/worker in place -> private health -> write manifest
   -> smoke: https://<domain>/version.txt must equal the commit; /api/health must answer
   -> on failure, if the VPS reports this release as active: ssh production rollback
@@ -77,7 +78,7 @@ Repository **variables** (public values):
 | `PRODUCTION_SSH_USER` | `ageniza-ci` |
 | `PRODUCTION_PUBLIC_URL` | `https://<domain>` (no trailing slash) |
 | `PRODUCTION_VITE_API_BASE_URL` | `https://<domain>/api` |
-| `PRODUCTION_VITE_SUPABASE_URL`, `PRODUCTION_VITE_SUPABASE_ANON_KEY` | Supabase project URL and **anon** key (public by design) |
+| `PRODUCTION_VITE_SUPABASE_URL`, `PRODUCTION_VITE_SUPABASE_ANON_KEY` | Temporary: any non-empty placeholder until issue #20 removes the Supabase web client |
 | `PRODUCTION_VITE_SENTRY_DSN` | Optional |
 
 Create two tokens for the VPS. Neither is stored in GitHub.
@@ -85,9 +86,19 @@ Create two tokens for the VPS. Neither is stored in GitHub.
 - **GitHub read token:** a fine-grained personal access token for `Nocrato-Tech/ageniza` only, with **Actions: Read** and **Contents: Read**. Set an expiry and a calendar reminder to rotate it.
 - **GHCR pull token:** a classic token with only `read:packages`.
 
-### 2. Supabase
+### 2. PostgreSQL
 
-Use the **Session pooler** connection string (IPv4) for both database URLs. The direct `db.<ref>.supabase.co` host is IPv6-only, and Docker's default bridge network has no IPv6. Prefer a dedicated migration role for `MIGRATION_DATABASE_URL` and a less-privileged role for runtime `DATABASE_URL` once roles exist.
+PostgreSQL 17 runs on the VPS as the internal `postgres` container ([ADR 0011](../adr/0011-self-hosted-postgres-and-better-auth.md)); its port is never published. Generate two long alphanumeric passwords (for example `openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40`) so they need no URL escaping:
+
+| File | Contents |
+| --- | --- |
+| `/etc/ageniza/postgres.env` | `POSTGRES_USER=postgres`, `POSTGRES_DB=ageniza`, `POSTGRES_PASSWORD=<owner password>`, `AGENIZA_APP_DB_PASSWORD=<application password>` |
+| `/etc/ageniza/migrations.env` | `MIGRATION_DATABASE_URL=postgresql://postgres:<owner password>@postgres:5432/ageniza` |
+| `/etc/ageniza/runtime.env` | `DATABASE_URL=postgresql://ageniza_app:<application password>@postgres:5432/ageniza` |
+
+- The `ageniza_app` role is created only when the data volume is first initialised. Changing `AGENIZA_APP_DB_PASSWORD` later does nothing; rotate with `ALTER ROLE ageniza_app PASSWORD '...'` and update `runtime.env`.
+- Pin `AGENIZA_POSTGRES_IMAGE` by digest in `deploy.env`. A new digest of the same major version restarts the database briefly at the next release. A major-version change needs a dump and restore, never an in-place image swap.
+- **Backups are not optional:** complete issue #18 (encrypted off-host backups with a tested restore) before production holds real data.
 
 ### 3. VPS
 
@@ -101,7 +112,8 @@ sudo install -m 0644 -o root -g root infra/vps/deploy.env.example /etc/ageniza/d
 sudoedit /etc/ageniza/deploy.env
 
 # Secrets: create with 0600 and edit in place; never copy them through the repository.
-for file in runtime.env migrations.env github-token; do sudo install -m 0600 -o root -g root /dev/null /etc/ageniza/$file; done
+for file in postgres.env runtime.env migrations.env github-token; do sudo install -m 0600 -o root -g root /dev/null /etc/ageniza/$file; done
+sudoedit /etc/ageniza/postgres.env     # shape: infra/vps/postgres.env.example
 sudoedit /etc/ageniza/runtime.env      # shape: infra/vps/runtime.env.example, no comments or APP_VERSION
 sudoedit /etc/ageniza/migrations.env   # shape: infra/vps/migrations.env.example
 sudoedit /etc/ageniza/github-token     # the fine-grained token only
@@ -163,7 +175,8 @@ A change to `/etc/ageniza/runtime.env` takes effect at the next release. Rollbac
 ```bash
 sudo ageniza-deploy status
 sudo cat /var/lib/ageniza/releases/current.env
-sudo docker compose -p ageniza ps          # application; ageniza-edge for Caddy
+sudo docker compose -p ageniza ps          # application and postgres; ageniza-edge for Caddy
+sudo docker compose -p ageniza exec postgres psql -U postgres ageniza
 sudo docker compose -p ageniza logs --tail=200 worker
 ```
 
@@ -172,7 +185,7 @@ The host lock (`/run/lock/ageniza-deploy.lock`) serializes releases; do not run 
 Rotate independently and record each rotation:
 
 - **Deploy key:** replace the GitHub secret and the `authorized_keys` line.
-- **VPS files:** runtime secrets, the GitHub token, and the GHCR token.
+- **VPS files:** database passwords (with `ALTER ROLE`), the GitHub token, and the GHCR token.
 
 ## Upgrading to GitHub Team
 

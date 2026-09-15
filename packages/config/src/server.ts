@@ -11,8 +11,6 @@ export type { RuntimeEnvironment } from './runtime.js';
 export interface ServerConfig {
   environment: RuntimeEnvironment;
   databaseUrl: string;
-  supabaseUrl: string;
-  supabaseServiceRoleKey: string;
   sentryDsn?: string;
   deployVersion: string;
 }
@@ -41,8 +39,6 @@ const optionalUrl = (message: string) => z.preprocess(
 const sharedServerSchema = z.object({
   APP_ENV: z.string(),
   DATABASE_URL: z.string().url('must be a valid database URL'),
-  SUPABASE_URL: z.string().url('must be a valid Supabase URL'),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'is required'),
   SENTRY_DSN: optionalUrl('must be a valid Sentry DSN'),
   APP_VERSION: z.string().trim().min(1).max(128).optional().default('unknown'),
   APP_CONTAINER_LOCAL: z.enum(['true', 'false']).optional().default('false')
@@ -80,19 +76,18 @@ const loadServerConfig = (service: ApiConfig['service'] | WorkerConfig['service'
   if (!result.success) throw new ConfigValidationError(service === 'api' ? 'API' : 'Worker', formatZodIssues(result.error.issues));
 
   const config = result.data;
-  const allowDockerHostGateway = config.APP_CONTAINER_LOCAL === 'true';
-  if (allowDockerHostGateway && environment === 'production') {
+  const allowLocalContainerHosts = config.APP_CONTAINER_LOCAL === 'true';
+  if (allowLocalContainerHosts && environment === 'production') {
     throw new ConfigValidationError(service === 'api' ? 'API' : 'Worker', [{
       path: 'APP_CONTAINER_LOCAL',
       message: 'must be false in production'
     }]);
   }
-  assertRuntimeUrlSafety(environment, 'SUPABASE_URL', config.SUPABASE_URL, { requireHttpsInProduction: true, allowDockerHostGateway });
-  assertRuntimeUrlSafety(environment, 'DATABASE_URL', config.DATABASE_URL, { allowDockerHostGateway });
+  assertRuntimeUrlSafety(environment, 'DATABASE_URL', config.DATABASE_URL, { allowLocalContainerHosts });
   if (environment === 'production' && config.SENTRY_DSN !== undefined && new URL(config.SENTRY_DSN).protocol !== 'https:') {
     throw new ConfigValidationError(service === 'api' ? 'API' : 'Worker', [{ path: 'SENTRY_DSN', message: 'must use HTTPS in production; supplied values are redacted' }]);
   }
-  return { environment, databaseUrl: config.DATABASE_URL, supabaseUrl: config.SUPABASE_URL, supabaseServiceRoleKey: config.SUPABASE_SERVICE_ROLE_KEY, sentryDsn: config.SENTRY_DSN, deployVersion: config.APP_VERSION };
+  return { environment, databaseUrl: config.DATABASE_URL, sentryDsn: config.SENTRY_DSN, deployVersion: config.APP_VERSION };
 };
 
 /** Loads server-only API settings. Never import this module from browser code. */

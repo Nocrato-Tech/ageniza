@@ -35,10 +35,13 @@ export const isLoopbackUrl = (value: string): boolean => {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
 };
 
-export const assertRuntimeUrlSafety = (environment: RuntimeEnvironment, variableName: string, value: string, options: { requireHttpsInProduction?: boolean; allowDockerHostGateway?: boolean } = {}): void => {
+/** Hostnames that exist only inside the local Docker Compose stack. */
+const localContainerHosts = new Set(['host.docker.internal', 'postgres']);
+
+export const assertRuntimeUrlSafety = (environment: RuntimeEnvironment, variableName: string, value: string, options: { requireHttpsInProduction?: boolean; allowLocalContainerHosts?: boolean } = {}): void => {
   const url = new URL(value);
-  const dockerHostGateway = url.hostname.toLowerCase() === 'host.docker.internal';
-  const allowedLocalHost = isLoopbackUrl(value) || (options.allowDockerHostGateway === true && dockerHostGateway);
+  const localContainerHost = localContainerHosts.has(url.hostname.toLowerCase());
+  const allowedLocalHost = isLoopbackUrl(value) || (options.allowLocalContainerHosts === true && localContainerHost);
   if ((environment === 'local' || environment === 'test') && !allowedLocalHost) {
     throw new ConfigValidationError('Runtime', [{ path: variableName, message: `must point to a loopback resource when runtime is ${environment}; received [REDACTED]` }]);
   }

@@ -15,6 +15,7 @@ readonly CONFIG_DIR=/etc/ageniza
 readonly DEPLOY_CONFIG="$CONFIG_DIR/deploy.env"
 readonly RUNTIME_ENV="$CONFIG_DIR/runtime.env"
 readonly MIGRATIONS_ENV="$CONFIG_DIR/migrations.env"
+readonly POSTGRES_ENV="$CONFIG_DIR/postgres.env"
 readonly GITHUB_TOKEN_FILE="$CONFIG_DIR/github-token"
 readonly REGISTRY_CONFIG="$CONFIG_DIR/registry"
 readonly RELEASE_DIR=/var/lib/ageniza/releases
@@ -64,8 +65,12 @@ load_deploy_config() {
   require_root_file "$DEPLOY_CONFIG" '600|640|644'
   REPOSITORY="$(config_value AGENIZA_REPOSITORY)"
   IMAGE_NAMESPACE="$(config_value AGENIZA_IMAGE_NAMESPACE)"
+  AGENIZA_POSTGRES_IMAGE="$(config_value AGENIZA_POSTGRES_IMAGE)"
   [[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die 'AGENIZA_REPOSITORY must be <owner>/<name>'
   [[ "$IMAGE_NAMESPACE" =~ ^ghcr\.io/[a-z0-9][a-z0-9._-]*$ ]] || die 'AGENIZA_IMAGE_NAMESPACE must be ghcr.io/<lowercase-owner>'
+  [[ "$AGENIZA_POSTGRES_IMAGE" =~ ^[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}$ ]] || die 'AGENIZA_POSTGRES_IMAGE must be pinned by a sha256 digest'
+  export AGENIZA_POSTGRES_IMAGE
+  export AGENIZA_POSTGRES_ENV_FILE="$POSTGRES_ENV"
 }
 
 # Application images must come from this repository's own GHCR namespace, pinned by digest.
@@ -88,12 +93,12 @@ validate_runtime_env() {
     case "$key" in
       APP_ENV) [[ "$value" == production ]] || die 'APP_ENV must be production' ;;
       WORKER_SMOKE_JOB) [[ "$value" == false ]] || die 'WORKER_SMOKE_JOB must be false' ;;
-      DATABASE_URL|SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY|API_CORS_ORIGINS|API_TRUSTED_PROXY_CIDRS) [[ -n "$value" ]] || die "$key must not be blank" ;;
+      DATABASE_URL|API_CORS_ORIGINS|API_TRUSTED_PROXY_CIDRS) [[ -n "$value" ]] || die "$key must not be blank" ;;
       SENTRY_DSN) ;;
       *) die "$RUNTIME_ENV contains a key that is not allowed: $key" ;;
     esac
   done < "$RUNTIME_ENV"
-  for required in APP_ENV DATABASE_URL SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY API_CORS_ORIGINS API_TRUSTED_PROXY_CIDRS WORKER_SMOKE_JOB; do
+  for required in APP_ENV DATABASE_URL API_CORS_ORIGINS API_TRUSTED_PROXY_CIDRS WORKER_SMOKE_JOB; do
     [[ -n "${seen[$required]+x}" ]] || die "$RUNTIME_ENV is missing $required"
   done
 }
@@ -157,8 +162,9 @@ compose_app() {
 }
 
 # Replaces api, web, and worker with the loaded release and waits for private health.
+# --no-deps keeps application releases from recreating the database container.
 start_release() {
-  compose_app up -d --pull never --wait --wait-timeout 180 api web worker
+  compose_app up -d --pull never --no-deps --wait --wait-timeout 180 api web worker
   compose_app exec -T api node -e "fetch('http://127.0.0.1:3001/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
   compose_app exec -T web wget -q -O /dev/null http://127.0.0.1:8080/health
   compose_app exec -T worker node -e "fetch('http://127.0.0.1:3002/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
@@ -229,6 +235,7 @@ apply() {
   fi
   validate_runtime_env
   require_root_file "$MIGRATIONS_ENV" '600'
+  require_root_file "$POSTGRES_ENV" '600'
   [[ -n "$(read_value "$MIGRATIONS_ENV" MIGRATION_DATABASE_URL || true)" ]] || die "$MIGRATIONS_ENV must set MIGRATION_DATABASE_URL"
 
   prepare_github_access
@@ -238,8 +245,12 @@ apply() {
   RELEASE="$sha"; RUN_ID="$run_id"; RUNTIME_SNAPSHOT="$RELEASE_DIR/$sha.env"
   install -o root -g root -m 0600 "$RUNTIME_ENV" "$RUNTIME_SNAPSHOT"
 
+  # Starts the database on first use; a changed AGENIZA_POSTGRES_IMAGE digest restarts it briefly.
+  compose_app up -d --wait --wait-timeout 180 postgres || die 'PostgreSQL did not become healthy; the live release was not changed'
+
   note "applying forward-only migrations for $sha"
-  docker run --rm --pull never --env-file "$MIGRATIONS_ENV" "$MIGRATIONS_IMAGE" || die 'migrations failed; the live release was not changed'
+  docker run --rm --pull never --network "${APP_PROJECT}_production-private" --env-file "$MIGRATIONS_ENV" "$MIGRATIONS_IMAGE" \
+    || die 'migrations failed; the live release was not changed'
 
   RESTORE_ARMED=true
   note "replacing containers with release $sha"
