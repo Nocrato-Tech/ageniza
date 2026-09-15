@@ -1,8 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { loadWebConfig } from '@ageniza/config/browser';
+import { App } from './app.js';
+import { loadBrowserConfig } from './config.js';
+import './styles.css';
 
-const config = loadWebConfig(import.meta.env);
+const config = loadBrowserConfig();
 
 const rootElement = document.getElementById('root');
 
@@ -12,6 +14,6 @@ if (rootElement === null) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <main data-api-base-url={config.apiBaseUrl}>Ageniza</main>
+    <App config={config} />
   </StrictMode>
 );
