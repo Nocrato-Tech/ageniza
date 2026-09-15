@@ -120,9 +120,8 @@ jobs:
           edge="$RUNNER_TEMP/caddy"
           mkdir -p "$edge"
           cp infra/vps/caddy/Caddyfile "$edge/Caddyfile"
-          cp infra/vps/caddy/active-upstream.caddy.example "$edge/active-upstream.caddy"
           echo 'trusted_proxies static 173.245.48.0/20 2400:cb00::/32' > "$edge/cloudflare-trusted-proxies.caddy"
-          docker run --rm -e AGENIZA_DOMAIN=app.example.test -v "$edge:/etc/caddy:ro" caddy:2 \
+          docker run --rm -e AGENIZA_DOMAIN=app.example.test -e AGENIZA_ACME_EMAIL=ops@example.test -v "$edge:/etc/caddy:ro" caddy:2 \
             caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
 
   supabase-local:

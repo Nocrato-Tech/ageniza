@@ -14,9 +14,9 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    # Caddy reaches this service as `api` on the shared proxy network.
     networks:
-      production-proxy:
-        aliases: ["api-${AGENIZA_COLOR:?candidate color required}"]
+      production-proxy: {}
       production-private: {}
   worker:
     image: ${AGENIZA_WORKER_IMAGE:?immutable worker image reference required}
@@ -36,9 +36,9 @@ services:
     ports: !reset []
     restart: unless-stopped
     logging: *production-logging
+    # Caddy reaches this service as `web` on the shared proxy network.
     networks:
-      production-proxy:
-        aliases: ["web-${AGENIZA_COLOR:?candidate color required}"]
+      production-proxy: {}
 
 networks:
   production-proxy:

@@ -1,6 +1,6 @@
 # Production deploy and rollback
 
-This runbook operates [ADR 0010](../adr/0010-vps-edge-and-production-deployment.md) and its GitHub Free amendment. GitHub Actions builds immutable GHCR images and a release manifest. The Hostinger VPS verifies that release against GitHub itself, runs migrations, and switches web/API traffic in Caddy between `blue` and `green` Compose projects. There is no remote staging environment.
+This runbook operates [ADR 0010](../adr/0010-vps-edge-and-production-deployment.md) and its GitHub Free amendment. GitHub Actions builds immutable GHCR images and a release manifest. The Hostinger VPS verifies that release against GitHub itself, runs migrations, and replaces the `api`, `web`, and `worker` containers in place behind Caddy. A release causes a few seconds of downtime, which is accepted for the MVP. There is no remote staging environment.
 
 ## Trust model
 
@@ -44,18 +44,17 @@ merge to main (a newer push replaces a pending release)
   -> deploy: skip if main has moved on; ssh production "apply <sha> <run-id>"
        VPS: verify run, commit and manifest with GitHub -> pull digests -> snapshot runtime.env
             -> run migrations image                       # failure stops here; nothing changed
-            -> start next color api/web -> recreate worker -> private health
-            -> Caddy validate + reload -> write manifest
+            -> replace api/web/worker in place -> private health -> write manifest
   -> smoke: https://<domain>/version.txt must equal the commit; /api/health must answer
   -> on failure, if the VPS reports this release as active: ssh production rollback
 ```
 
-Traceability: images carry `APP_VERSION` and the revision label; the run summary and `release-manifest` artifact list the digests; `/var/lib/ageniza/releases/current.env` and `previous.env` record the commit, run ID, color, digests, runtime snapshot, and UTC time.
+Traceability: images carry `APP_VERSION` and the revision label; the run summary and `release-manifest` artifact list the digests; `/var/lib/ageniza/releases/current.env` and `previous.env` record the commit, run ID, digests, runtime snapshot, and UTC time.
 
 What happens when something fails:
 
 - **Migration fails:** nothing was switched. Fix it with a new migration; never edit an applied one.
-- **`apply` fails after migrations** (health, Caddy): the entrypoint restores the live release's worker and Caddy target from `current.env`, using that release's own runtime snapshot. The live color's web/API were never stopped.
+- **The new containers fail to become healthy:** the entrypoint restarts the live release from `current.env` with that release's own runtime snapshot. Expect downtime until it is healthy again.
 - **Smoke fails, or SSH drops after activation:** the workflow asks the VPS for `status` and rolls back only if this release is the active one.
 - **First release:** there is no previous release to restore or roll back to.
 
@@ -113,17 +112,11 @@ sudo docker network inspect ageniza-production-proxy --format '{{(index .IPAM.Co
 # GHCR pull credential, stored only in the root registry config:
 sudo docker --config /etc/ageniza/registry login ghcr.io -u <github-user> --password-stdin
 
-# Origin TLS and Cloudflare Authenticated Origin Pulls CA:
-sudo install -m 0600 -o root -g root origin.crt /etc/ageniza/caddy/tls/origin.crt
-sudo install -m 0600 -o root -g root origin.key /etc/ageniza/caddy/tls/origin.key
-curl -fsSLo cloudflare-origin-pull-ca.pem https://developers.cloudflare.com/ssl/static/authenticated_origin_pull_ca.pem
-sudo install -m 0644 -o root -g root cloudflare-origin-pull-ca.pem /etc/ageniza/caddy/tls/cloudflare-origin-pull-ca.pem
-
 # Deploy public key, restricted to the forced command:
 echo 'restrict,command="/usr/local/sbin/ageniza-deploy-ssh" ssh-ed25519 AAAA... github-actions-production' \
   | sudo tee /home/ageniza-ci/.ssh/authorized_keys >/dev/null
 
-# Start the edge:
+# Start the edge (Caddy obtains the Let's Encrypt certificate on first request to the domain):
 sudo bash -c 'set -a; . /etc/ageniza/deploy.env; set +a; docker compose -p ageniza-edge -f /opt/ageniza/compose.caddy.yml up -d'
 ```
 
@@ -135,17 +128,30 @@ Re-run the installer after changing any file in the bundle. The checkout is not 
 
 ### 4. Cloudflare
 
-1. Proxy the DNS record to the VPS (orange cloud).
-2. SSL/TLS mode **Full (strict)**; issue the Origin CA certificate used above.
-3. Enable **Authenticated Origin Pulls** (zone-level) *before* starting Caddy with `client_auth`. Otherwise Cloudflare's requests are rejected.
-4. A direct request to the origin IP must now fail the TLS handshake.
+1. Create the DNS record for the domain pointing to the VPS, **proxied** (orange cloud).
+2. Set SSL/TLS mode to **Full (strict)**. It accepts Caddy's Let's Encrypt certificate.
+3. Leave **Always Use HTTPS** off. Caddy redirects HTTP to HTTPS itself, and its Let's Encrypt HTTP challenge must reach the origin on port 80 for issuance and renewal.
+4. Confirm `https://<domain>/health` loads through Cloudflare with a valid certificate.
+
+Optional hardening: without it the origin still answers requests sent directly to its IP, because Docker-published ports bypass UFW. To restrict the origin to Cloudflare, enable **Authenticated Origin Pulls** and add this to the site block in the Caddyfile, with the [Cloudflare origin-pull CA](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/) mounted at that path:
+
+```caddyfile
+tls {
+	client_auth {
+		mode require_and_verify
+		trust_pool file /etc/caddy/cloudflare-origin-pull-ca.pem
+	}
+}
+```
+
+With it enabled, HTTP challenges still work on port 80, and direct HTTPS requests to the IP fail the handshake.
 
 ## Rollback
 
 Automatic rollback covers a release that became active and then failed. For a later incident:
 
 1. Run **Actions → Production rollback → Run workflow** with an incident reference.
-2. The VPS re-pulls the digests in `previous.env`, recreates that color's web/API and the worker using that release's runtime snapshot, checks private health, reloads Caddy, and makes it current. The workflow then checks `/version.txt` against the active release.
+2. The VPS re-pulls the digests in `previous.env`, replaces the containers using that release's runtime snapshot, checks private health, and makes it current. The workflow then checks `/version.txt` against the active release.
 3. Only one step back is kept, and a second consecutive rollback is refused. To go further back, revert on `main` and release normally.
 
 Schema is never rolled back. Migrations must stay expand/contract compatible with the previous release. If a migration is wrong, ship a reviewed corrective migration or follow the managed Supabase restore plan. Never edit applied migrations or disable RLS.
@@ -157,16 +163,16 @@ A change to `/etc/ageniza/runtime.env` takes effect at the next release. Rollbac
 ```bash
 sudo ageniza-deploy status
 sudo cat /var/lib/ageniza/releases/current.env
-sudo docker compose -p ageniza-blue ps     # or ageniza-green, ageniza-worker, ageniza-edge
-sudo docker compose -p ageniza-worker logs --tail=200 worker
+sudo docker compose -p ageniza ps          # application; ageniza-edge for Caddy
+sudo docker compose -p ageniza logs --tail=200 worker
 ```
 
-The host lock (`/run/lock/ageniza-deploy.lock`) serializes releases; do not run `docker compose up` against these projects by hand. The inactive color stays running as the rollback target. Never use `docker system prune --volumes` as recovery.
+The host lock (`/run/lock/ageniza-deploy.lock`) serializes releases; do not run `docker compose up` against these projects by hand. Never use `docker system prune --volumes` as recovery; the `caddy-data` volume holds the issued certificates.
 
 Rotate independently and record each rotation:
 
 - **Deploy key:** replace the GitHub secret and the `authorized_keys` line.
-- **VPS files:** runtime secrets, the GitHub token, the GHCR token, and TLS keys.
+- **VPS files:** runtime secrets, the GitHub token, and the GHCR token.
 
 ## Upgrading to GitHub Team
 

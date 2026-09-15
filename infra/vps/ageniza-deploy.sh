@@ -2,21 +2,21 @@
 # Fixed root-owned production deployment entrypoint. Install; never run from a Git checkout.
 # Production secrets live only on this host (ADR 0010 amendment). GitHub sends a commit SHA
 # and a workflow run ID; this script verifies both against GitHub before changing anything.
+# Releases replace containers in place (a few seconds of downtime); Caddy routes to fixed names.
 set -Eeuo pipefail
 IFS=$'\n\t'
 umask 077
 
+readonly APP_PROJECT=ageniza
 readonly APP_ROOT=/opt/ageniza
 readonly APP_COMPOSE="$APP_ROOT/compose.yml"
 readonly PRODUCTION_COMPOSE="$APP_ROOT/compose.production.yml"
-readonly CADDY_COMPOSE="$APP_ROOT/compose.caddy.yml"
 readonly CONFIG_DIR=/etc/ageniza
 readonly DEPLOY_CONFIG="$CONFIG_DIR/deploy.env"
 readonly RUNTIME_ENV="$CONFIG_DIR/runtime.env"
 readonly MIGRATIONS_ENV="$CONFIG_DIR/migrations.env"
 readonly GITHUB_TOKEN_FILE="$CONFIG_DIR/github-token"
 readonly REGISTRY_CONFIG="$CONFIG_DIR/registry"
-readonly CADDY_DIR="$CONFIG_DIR/caddy"
 readonly RELEASE_DIR=/var/lib/ageniza/releases
 readonly LOCK_FILE=/run/lock/ageniza-deploy.lock
 readonly GITHUB_API=https://api.github.com
@@ -25,7 +25,7 @@ readonly RELEASE_WORKFLOW=.github/workflows/production.yml
 WORK_DIR=''
 RESTORE_ARMED=false
 REPOSITORY='' IMAGE_NAMESPACE=''
-RELEASE='' RUN_ID='' MANIFEST_COLOR='' RUNTIME_SNAPSHOT=''
+RELEASE='' RUN_ID='' RUNTIME_SNAPSHOT=''
 API_IMAGE='' WEB_IMAGE='' WORKER_IMAGE='' MIGRATIONS_IMAGE=''
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -33,7 +33,6 @@ note() { printf 'ageniza-deploy: %s\n' "$*"; }
 require_root() { [[ $EUID -eq 0 ]] || die 'must run as root via the fixed sudo rule'; }
 valid_release() { [[ "$1" =~ ^[a-f0-9]{40}$ ]]; }
 valid_run_id() { [[ "$1" =~ ^[1-9][0-9]{0,19}$ ]]; }
-valid_color() { [[ "$1" == blue || "$1" == green ]]; }
 
 usage() {
   cat <<'USAGE'
@@ -65,13 +64,8 @@ load_deploy_config() {
   require_root_file "$DEPLOY_CONFIG" '600|640|644'
   REPOSITORY="$(config_value AGENIZA_REPOSITORY)"
   IMAGE_NAMESPACE="$(config_value AGENIZA_IMAGE_NAMESPACE)"
-  AGENIZA_DOMAIN="$(config_value AGENIZA_DOMAIN)"
-  AGENIZA_CADDY_IMAGE="$(config_value AGENIZA_CADDY_IMAGE)"
   [[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die 'AGENIZA_REPOSITORY must be <owner>/<name>'
   [[ "$IMAGE_NAMESPACE" =~ ^ghcr\.io/[a-z0-9][a-z0-9._-]*$ ]] || die 'AGENIZA_IMAGE_NAMESPACE must be ghcr.io/<lowercase-owner>'
-  [[ "$AGENIZA_DOMAIN" =~ ^[A-Za-z0-9.-]+$ ]] || die 'AGENIZA_DOMAIN is invalid'
-  [[ "$AGENIZA_CADDY_IMAGE" =~ ^[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}$ ]] || die 'AGENIZA_CADDY_IMAGE must be pinned by a sha256 digest'
-  export AGENIZA_DOMAIN AGENIZA_CADDY_IMAGE
 }
 
 # Application images must come from this repository's own GHCR namespace, pinned by digest.
@@ -157,62 +151,38 @@ pull_verified_image() {
 }
 
 compose_app() {
-  local project="$1" color="$2"; shift 2
-  AGENIZA_COLOR="$color" AGENIZA_RUNTIME_ENV_FILE="$RUNTIME_SNAPSHOT" \
+  AGENIZA_RUNTIME_ENV_FILE="$RUNTIME_SNAPSHOT" \
     AGENIZA_API_IMAGE="$API_IMAGE" AGENIZA_WEB_IMAGE="$WEB_IMAGE" AGENIZA_WORKER_IMAGE="$WORKER_IMAGE" \
-    docker compose -p "$project" -f "$APP_COMPOSE" -f "$PRODUCTION_COMPOSE" "$@"
-}
-compose_candidate() { local color="$1"; shift; compose_app "ageniza-$color" "$color" "$@"; }
-compose_worker() { compose_app ageniza-worker blue "$@"; }
-
-wait_private_health() {
-  local color="$1"
-  compose_candidate "$color" exec -T api node -e "fetch('http://127.0.0.1:3001/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-  compose_candidate "$color" exec -T web wget -q -O /dev/null http://127.0.0.1:8080/health
-  compose_worker exec -T worker node -e "fetch('http://127.0.0.1:3002/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+    docker compose -p "$APP_PROJECT" -f "$APP_COMPOSE" -f "$PRODUCTION_COMPOSE" "$@"
 }
 
-caddy_command() {
-  docker compose -p ageniza-edge -f "$CADDY_COMPOSE" exec -T caddy caddy "$1" --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
-}
-
-# Keeps the on-disk upstream in sync with live Caddy: a rejected config restores the previous file.
-switch_caddy() {
-  local color="$1" upstream="$CADDY_DIR/active-upstream.caddy" backup candidate
-  backup="$(mktemp "$CADDY_DIR/.active-upstream.backup.XXXXXX")"
-  candidate="$(mktemp "$CADDY_DIR/.active-upstream.next.XXXXXX")"
-  cp -- "$upstream" "$backup"
-  printf 'handle_path /api/* {\n\treverse_proxy api-%s:3001\n}\n\nhandle {\n\treverse_proxy web-%s:8080\n}\n' "$color" "$color" > "$candidate"
-  install -o root -g root -m 0644 "$candidate" "$upstream"
-  if caddy_command validate && caddy_command reload; then
-    rm -f -- "$backup" "$candidate"
-    return 0
-  fi
-  install -o root -g root -m 0644 "$backup" "$upstream"
-  rm -f -- "$backup" "$candidate"
-  return 1
+# Replaces api, web, and worker with the loaded release and waits for private health.
+start_release() {
+  compose_app up -d --pull never --wait --wait-timeout 180 api web worker
+  compose_app exec -T api node -e "fetch('http://127.0.0.1:3001/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  compose_app exec -T web wget -q -O /dev/null http://127.0.0.1:8080/health
+  compose_app exec -T worker node -e "fetch('http://127.0.0.1:3002/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 }
 
 load_manifest() {
   local file="$1"
   RELEASE="$(read_value "$file" RELEASE || true)"
   RUN_ID="$(read_value "$file" RUN_ID || true)"
-  MANIFEST_COLOR="$(read_value "$file" ACTIVE_COLOR || true)"
   API_IMAGE="$(read_value "$file" API_IMAGE || true)"
   WEB_IMAGE="$(read_value "$file" WEB_IMAGE || true)"
   WORKER_IMAGE="$(read_value "$file" WORKER_IMAGE || true)"
   MIGRATIONS_IMAGE="$(read_value "$file" MIGRATIONS_IMAGE || true)"
   RUNTIME_SNAPSHOT="$(read_value "$file" RUNTIME_ENV_FILE || true)"
-  valid_release "$RELEASE" && valid_color "$MANIFEST_COLOR" \
+  valid_release "$RELEASE" \
     && valid_app_image api "$API_IMAGE" && valid_app_image web "$WEB_IMAGE" && valid_app_image worker "$WORKER_IMAGE" \
     && [[ "$RUNTIME_SNAPSHOT" == "$RELEASE_DIR/$RELEASE.env" && -f "$RUNTIME_SNAPSHOT" ]]
 }
 
 write_current_manifest() {
-  local color="$1" temporary
+  local temporary
   temporary="$(mktemp "$RELEASE_DIR/.manifest.XXXXXX")"
-  printf 'RELEASE=%s\nRUN_ID=%s\nACTIVE_COLOR=%s\nAPI_IMAGE=%s\nWEB_IMAGE=%s\nWORKER_IMAGE=%s\nMIGRATIONS_IMAGE=%s\nRUNTIME_ENV_FILE=%s\nDEPLOYED_AT=%s\n' \
-    "$RELEASE" "$RUN_ID" "$color" "$API_IMAGE" "$WEB_IMAGE" "$WORKER_IMAGE" "$MIGRATIONS_IMAGE" "$RUNTIME_SNAPSHOT" "$(date -u +%FT%TZ)" > "$temporary"
+  printf 'RELEASE=%s\nRUN_ID=%s\nAPI_IMAGE=%s\nWEB_IMAGE=%s\nWORKER_IMAGE=%s\nMIGRATIONS_IMAGE=%s\nRUNTIME_ENV_FILE=%s\nDEPLOYED_AT=%s\n' \
+    "$RELEASE" "$RUN_ID" "$API_IMAGE" "$WEB_IMAGE" "$WORKER_IMAGE" "$MIGRATIONS_IMAGE" "$RUNTIME_SNAPSHOT" "$(date -u +%FT%TZ)" > "$temporary"
   if [[ -f "$RELEASE_DIR/current.env" ]]; then install -o root -g root -m 0600 "$RELEASE_DIR/current.env" "$RELEASE_DIR/previous.env"; fi
   install -o root -g root -m 0600 "$temporary" "$RELEASE_DIR/current.env"
   rm -f -- "$temporary"
@@ -236,10 +206,8 @@ restore_live_release() {
     note 'apply failed and there is no valid live release to restore'
     return 0
   fi
-  note "apply failed; restoring the worker and Caddy target of live release $RELEASE ($MANIFEST_COLOR)"
-  # The live color's web/API were never touched; only the worker and Caddy may have moved.
-  compose_worker up -d --pull never --wait --wait-timeout 120 --force-recreate worker || note 'worker restore failed; run the Production rollback workflow'
-  switch_caddy "$MANIFEST_COLOR" || note 'Caddy restore failed; run the Production rollback workflow'
+  note "apply failed; restarting live release $RELEASE"
+  start_release || note 'restore failed; run the Production rollback workflow or inspect the host'
 }
 
 on_exit() {
@@ -253,7 +221,7 @@ on_exit() {
 }
 
 apply() {
-  local sha="$1" run_id="$2" image current_color next_color
+  local sha="$1" run_id="$2" image
   load_deploy_config
   if [[ "$(read_value "$RELEASE_DIR/current.env" RELEASE || true)" == "$sha" ]]; then
     note "release $sha is already active"
@@ -273,19 +241,13 @@ apply() {
   note "applying forward-only migrations for $sha"
   docker run --rm --pull never --env-file "$MIGRATIONS_ENV" "$MIGRATIONS_IMAGE" || die 'migrations failed; the live release was not changed'
 
-  current_color="$(read_value "$RELEASE_DIR/current.env" ACTIVE_COLOR || true)"
-  if [[ "$current_color" == blue ]]; then next_color=green; else next_color=blue; fi
   RESTORE_ARMED=true
-  note "starting $next_color candidate for $sha"
-  compose_candidate "$next_color" up -d --pull never --wait --wait-timeout 120 --force-recreate api web
-  # The present worker has no durable dispatcher; replace one private process under this host lock.
-  compose_worker up -d --pull never --wait --wait-timeout 120 --force-recreate worker
-  wait_private_health "$next_color"
-  switch_caddy "$next_color" || die 'Caddy rejected the new upstream'
-  write_current_manifest "$next_color"
+  note "replacing containers with release $sha"
+  start_release
+  write_current_manifest
   RESTORE_ARMED=false
   prune_runtime_snapshots
-  note "release $sha is active on $next_color"
+  note "release $sha is active"
 }
 
 rollback() {
@@ -296,20 +258,16 @@ rollback() {
   [[ "$RELEASE" != "$live_release" ]] || die "release $RELEASE is already live; there is no older release to roll back to"
   require_root_file "$RUNTIME_SNAPSHOT" '600'
   for image in "$API_IMAGE" "$WEB_IMAGE" "$WORKER_IMAGE"; do pull_verified_image "$image"; done
-  note "rolling back to $RELEASE on $MANIFEST_COLOR"
-  compose_candidate "$MANIFEST_COLOR" up -d --pull never --wait --wait-timeout 120 --force-recreate api web
-  compose_worker up -d --pull never --wait --wait-timeout 120 --force-recreate worker
-  wait_private_health "$MANIFEST_COLOR"
-  switch_caddy "$MANIFEST_COLOR" || die 'Caddy rejected the rollback upstream'
+  note "rolling back to $RELEASE"
+  start_release
   install -o root -g root -m 0600 "$RELEASE_DIR/previous.env" "$RELEASE_DIR/current.env"
-  note "rollback activated release $RELEASE on $MANIFEST_COLOR; schema was not changed"
+  note "rollback activated release $RELEASE; schema was not changed"
 }
 
 print_status() {
-  local release color
+  local release
   release="$(read_value "$RELEASE_DIR/current.env" RELEASE || true)"
-  color="$(read_value "$RELEASE_DIR/current.env" ACTIVE_COLOR || true)"
-  printf 'RELEASE=%s\nACTIVE_COLOR=%s\n' "${release:-none}" "${color:-none}"
+  printf 'RELEASE=%s\n' "${release:-none}"
 }
 
 take_lock() {
@@ -328,7 +286,7 @@ main() {
       return
       ;;
     apply|rollback)
-      [[ -f "$APP_COMPOSE" && -f "$PRODUCTION_COMPOSE" && -f "$CADDY_COMPOSE" ]] || die 'deployment bundle is incomplete; re-run install-production-deploy.sh'
+      [[ -f "$APP_COMPOSE" && -f "$PRODUCTION_COMPOSE" ]] || die 'deployment bundle is incomplete; re-run install-production-deploy.sh'
       ;;
     -h|--help|'') usage; return ;;
     *) die 'unknown command' ;;

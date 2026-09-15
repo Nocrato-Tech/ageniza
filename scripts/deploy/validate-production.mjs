@@ -12,8 +12,8 @@ const environment = {
   AGENIZA_WORKER_IMAGE: image('worker', 'b'),
   AGENIZA_WEB_IMAGE: image('web', 'c'),
   AGENIZA_CADDY_IMAGE: `caddy@sha256:${'d'.repeat(64)}`,
-  AGENIZA_COLOR: 'blue',
-  AGENIZA_DOMAIN: 'app.example.test'
+  AGENIZA_DOMAIN: 'app.example.test',
+  AGENIZA_ACME_EMAIL: 'ops@example.test'
 };
 const directory = mkdtempSync(join(tmpdir(), 'ageniza-production-'));
 const runtimeEnv = join(directory, 'runtime.env');

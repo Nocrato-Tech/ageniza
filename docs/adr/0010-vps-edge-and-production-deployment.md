@@ -257,7 +257,9 @@ The organization is on GitHub Free and the repository is private, so Environment
 required reviewers, deployment branch restrictions, rulesets, and branch
 protection are unavailable. Any collaborator with write access can run a
 workflow on any branch, so any secret stored in GitHub is readable by every
-collaborator. The trust boundaries above are changed as follows:
+collaborator. The trust boundaries above are changed as follows, and where this
+amendment conflicts with the earlier sections (blue/green candidates, Origin CA
+certificates, secrets in the GitHub Environment), this amendment wins:
 
 - **Production secrets never enter GitHub.** `runtime.env`, the migration
   database URL, the GHCR read credential, and a read-only GitHub token live
@@ -277,8 +279,15 @@ collaborator. The trust boundaries above are changed as follows:
   the same manifest, before any container changes.
 - **Each release keeps its `runtime.env` snapshot**, so restore and rollback do
   not inherit a later configuration edit.
-- **Origin restriction uses Cloudflare Authenticated Origin Pulls** in Caddy
-  instead of source-IP firewall rules, which Docker-published ports bypass.
+- **No blue/green switch in the MVP.** A release replaces the `api`, `web`, and
+  `worker` containers in place and waits for health, accepting a few seconds of
+  downtime; a failed start restarts the live release. Caddy routes to the fixed
+  service names. Reintroduce a candidate switch when real users need zero-downtime
+  releases.
+- **Caddy obtains Let's Encrypt certificates** instead of a Cloudflare Origin CA
+  certificate; Cloudflare Full (strict) accepts them. Cloudflare Authenticated
+  Origin Pulls is optional hardening, because Docker-published ports bypass
+  source-IP firewall rules and the origin stays reachable by IP without it.
 
 Residual risk accepted until the plan changes: anyone with write access can
 still merge a pull request into `main` (which deploys it), dispatch the

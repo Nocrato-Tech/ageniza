@@ -3,6 +3,7 @@ services:
     image: ${AGENIZA_CADDY_IMAGE:?immutable Caddy image reference required}
     environment:
       AGENIZA_DOMAIN: ${AGENIZA_DOMAIN:?public domain required}
+      AGENIZA_ACME_EMAIL: ${AGENIZA_ACME_EMAIL:?ACME contact email required}
     restart: unless-stopped
     ports:
       - "80:80"
@@ -10,6 +11,7 @@ services:
     networks: [production-proxy]
     volumes:
       - /etc/ageniza/caddy:/etc/caddy:ro
+      # Persist issued certificates; losing them risks Let's Encrypt rate limits.
       - caddy-data:/data
       - caddy-config:/config
     healthcheck:
