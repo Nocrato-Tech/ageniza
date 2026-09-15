@@ -15,7 +15,7 @@ pnpm install
 pnpm dev
 ```
 
-When database-backed modules are added, start the local stack with `supabase start` before running the affected app. Local development must never point at production resources.
+Start the local stack with `pnpm db:start` and apply the canonical migration history with `pnpm db:reset` before running database-backed modules. `pnpm db:test:local` runs the local integration/RLS suite. Local development must never point at production resources.
 
 ## Workspace layout
 
@@ -42,6 +42,9 @@ pnpm build
 pnpm lint
 pnpm typecheck
 pnpm test
+pnpm db:start
+pnpm db:reset
+pnpm db:test:local
 ```
 
 Turbo runs the matching command in each workspace. Workspace packages are linked with explicit `workspace:*` dependencies as they are introduced.

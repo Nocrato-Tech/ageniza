@@ -21,13 +21,13 @@ To check a branch's migration policy locally, supply the commit range that the p
 node scripts/ci/validate-migrations.mjs --base origin/develop --head HEAD
 ```
 
-The policy guards `supabase/migrations` and `packages/database/migrations`. It accepts additions only when the filename is a versioned SQL name (`8+ digits`, then `_` or `-`, then a `.sql` name); it rejects edits, deletions, and renames of existing migrations. With no guarded migration directory in the repository yet, it succeeds after reporting that no guarded migration change exists, so it is a real diff check without pretending that a database foundation exists.
+The policy guards only `supabase/migrations`: this is the canonical append-only source for schema and RLS policies. It accepts additions only when the filename is a versioned SQL name (`8+ digits`, then `_` or `-`, then a `.sql` name); it rejects edits, deletions, and renames of existing migrations. Do not create a competing Knex migration history.
 
 ## Local Supabase job
 
-`CI / Supabase local eligibility` always reports whether both `supabase/config.toml` and `supabase/migrations` exist. Only then does `CI / Supabase local database` start the Supabase CLI's Docker-backed local stack and run `supabase db reset --local --yes`; it uses no environment, secret, URL, or production credential.
+`CI / Supabase local database` uses the pinned Supabase CLI `2.117.0` to start Docker-backed local services, runs `supabase db reset --local --yes`, then runs the cross-platform `pnpm db:test:local` command. The test hook defaults only to the loopback database URL and proves Knex transactions, parameter binding, lifecycle, and an RLS isolation harness where tenant A cannot read tenant B. It uses no environment secret, cloud URL, or production credential.
 
-There is deliberately no fictional integration or tenant test command. Once a database-backed suite is created, add an executable `scripts/ci/test-supabase-local.sh`; the local job will run that hook after the reset. Until then, the job emits an explicit notice that no integration or tenant suite ran. Do not make `CI / Supabase local database` a required check while it is conditional.
+The local equivalents are `pnpm db:start`, `pnpm db:reset`, and `pnpm db:test:local`. Those commands use Supabase CLI `2.117.0`; Docker must be running. Stop the stack after local work with `pnpm dlx supabase@2.117.0 stop --no-backup`.
 
 ## Branch protections and promotion
 
@@ -36,7 +36,7 @@ Configure protection/rulesets for both `develop` and `main` to require pull requ
 - `CI / Branch route`
 - `CI / Migration policy`
 - `CI / Quality gates`
-- `CI / Supabase local eligibility`
+- `CI / Supabase local database`
 
 Feature, fix, and refactor branches merge into `develop`. `develop` is the integration branch only: it has no remote deployment environment. A pull request to `main` is a production-promotion gate and must originate from `develop`; the workflow permits `hotfix/*` only as the documented production exception. Production deployment belongs to a separate main-only workflow using GitHub's `production` Environment, never this CI workflow or a `develop` environment.
 

@@ -100,31 +100,8 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ci-local-public-placeholder
         run: pnpm build
 
-  supabase-local-eligibility:
-    name: Supabase local eligibility
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      enabled: ${{ steps.detect.outputs.enabled }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-      - id: detect
-        name: Detect local Supabase foundation
-        run: |
-          if [[ -f supabase/config.toml && -d supabase/migrations ]]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "Local Supabase foundation detected."
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Supabase local job deferred::supabase/config.toml and supabase/migrations are not both present; no database stack or integration/tenant suite was run."
-          fi
-
   supabase-local:
     name: Supabase local database
-    needs: supabase-local-eligibility
-    if: needs.supabase-local-eligibility.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -154,13 +131,8 @@ jobs:
         run: supabase start
       - name: Apply migrations to the isolated local database
         run: supabase db reset --local --yes
-      - name: Run configured local database suites, when present
-        run: |
-          if [[ -x scripts/ci/test-supabase-local.sh ]]; then
-            scripts/ci/test-supabase-local.sh
-          else
-            echo "::notice title=No database test hook configured::The local migration reset passed, but no integration or tenant suite exists yet; no such suite was run."
-          fi
+      - name: Run database integration and RLS isolation suite
+        run: pnpm db:test:local
       - name: Stop the local Supabase stack
         if: always()
         run: supabase stop --no-backup

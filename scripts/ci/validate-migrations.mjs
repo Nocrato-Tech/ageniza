@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
-const migrationRoots = ["supabase/migrations", "packages/database/migrations"];
+// Supabase CLI owns the one canonical append-only migration and policy history.
+const migrationRoots = ["supabase/migrations"];
 const versionedSqlMigration = /^\d{8,}[_-][A-Za-z0-9][A-Za-z0-9_.-]*\.sql$/;
 
 function argument(name) {

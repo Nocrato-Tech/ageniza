@@ -13,6 +13,9 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "db:start": "pnpm dlx supabase@2.117.0 start",
+    "db:reset": "pnpm dlx supabase@2.117.0 db reset --local --yes",
+    "db:test:local": "pnpm --filter @ageniza/database test:integration",
     "clean": "turbo run clean && rimraf node_modules .turbo"
   },
   "devDependencies": {
