@@ -23,7 +23,12 @@ export interface ApiConfig extends ServerConfig {
   /** Explicit proxy networks only. An empty list means Fastify does not trust forwarding headers. */
   trustedProxyCidrs: readonly string[];
 }
-export interface WorkerConfig extends ServerConfig { service: 'worker'; }
+export interface WorkerConfig extends ServerConfig {
+  service: 'worker';
+  healthHost: '127.0.0.1' | '::1';
+  healthPort: number;
+  smokeJob: boolean;
+}
 type ServerEnvironment = Record<string, string | undefined>;
 
 const sharedServerSchema = z.object({
@@ -51,6 +56,12 @@ const apiSchema = sharedServerSchema.extend({
   API_CORS_ORIGINS: z.string().default('http://127.0.0.1:5173').transform(commaSeparatedValues),
   API_BODY_LIMIT_BYTES: z.coerce.number().int().min(1_024).max(50 * 1024 * 1024).default(1_048_576),
   API_TRUSTED_PROXY_CIDRS: z.string().default('').transform(commaSeparatedValues)
+});
+const workerSchema = sharedServerSchema.extend({
+  // The probe listener is deliberately loopback-only; deployment must not publish it.
+  WORKER_HEALTH_HOST: z.enum(['127.0.0.1', '::1']).default('127.0.0.1'),
+  WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(3002),
+  WORKER_SMOKE_JOB: z.enum(['true', 'false']).default('false').transform((value) => value === 'true')
 });
 
 const loadServerConfig = (service: ApiConfig['service'] | WorkerConfig['service'], env: ServerEnvironment): ServerConfig => {
@@ -98,7 +109,21 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
   };
 };
 /** Loads server-only worker settings. Never import this module from browser code. */
-export const loadWorkerConfig = (env: ServerEnvironment): WorkerConfig => ({ service: 'worker', ...loadServerConfig('worker', env) });
+export const loadWorkerConfig = (env: ServerEnvironment): WorkerConfig => {
+  const result = workerSchema.safeParse(env);
+  if (!result.success) throw new ConfigValidationError('Worker', formatZodIssues(result.error.issues));
+  const serverConfig = loadServerConfig('worker', env);
+  if (serverConfig.environment === 'production' && result.data.WORKER_SMOKE_JOB) {
+    throw new ConfigValidationError('Worker', [{ path: 'WORKER_SMOKE_JOB', message: 'must be false in production' }]);
+  }
+  return {
+    service: 'worker',
+    ...serverConfig,
+    healthHost: result.data.WORKER_HEALTH_HOST,
+    healthPort: result.data.WORKER_HEALTH_PORT,
+    smokeJob: result.data.WORKER_SMOKE_JOB
+  };
+};
 /** Allows entrypoints to skip test-runner startup without reading env ad hoc. */
 export const isTestProcess = (env: { APP_ENV?: string; NODE_ENV?: string }): boolean =>
   env.APP_ENV === 'test' || env.APP_ENV === 'ci' || env.NODE_ENV === 'test';

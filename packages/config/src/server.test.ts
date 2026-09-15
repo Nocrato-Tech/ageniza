@@ -19,7 +19,10 @@ describe('server configuration', () => {
       environment: 'local',
       databaseUrl: localEnvironment.DATABASE_URL,
       supabaseUrl: localEnvironment.SUPABASE_URL,
-      supabaseServiceRoleKey: localEnvironment.SUPABASE_SERVICE_ROLE_KEY
+      supabaseServiceRoleKey: localEnvironment.SUPABASE_SERVICE_ROLE_KEY,
+      healthHost: '127.0.0.1',
+      healthPort: 3002,
+      smokeJob: false
     });
   });
 
@@ -92,5 +95,24 @@ describe('server configuration', () => {
     expect(() => loadApiConfig({ ...localEnvironment, API_TRUSTED_PROXY_CIDRS: '*' })).toThrow('explicit proxy networks');
     expect(() => loadApiConfig({ ...localEnvironment, API_TRUSTED_PROXY_CIDRS: 'not-a-network' })).toThrow('valid IP addresses or CIDR networks');
     expect(() => loadApiConfig({ ...localEnvironment, API_TRUSTED_PROXY_CIDRS: '10.0.0.0/33' })).toThrow('valid IP addresses or CIDR networks');
+  });
+
+  it('keeps worker probes loopback-only and smoke mode out of production', () => {
+    expect(loadWorkerConfig({
+      ...localEnvironment,
+      WORKER_HEALTH_HOST: '::1',
+      WORKER_HEALTH_PORT: '4012',
+      WORKER_SMOKE_JOB: 'true'
+    })).toMatchObject({ healthHost: '::1', healthPort: 4012, smokeJob: true });
+    expect(() => loadWorkerConfig({ ...localEnvironment, WORKER_HEALTH_HOST: '0.0.0.0' })).toThrow('WORKER_HEALTH_HOST');
+    expect(() => loadWorkerConfig({ ...localEnvironment, WORKER_HEALTH_PORT: '0' })).toThrow('WORKER_HEALTH_PORT');
+    expect(() => loadWorkerConfig({ ...localEnvironment, WORKER_SMOKE_JOB: 'yes' })).toThrow('WORKER_SMOKE_JOB');
+    expect(() => loadWorkerConfig({
+      ...localEnvironment,
+      APP_ENV: 'production',
+      DATABASE_URL: 'postgresql://app:password@database.example.com:5432/ageniza',
+      SUPABASE_URL: 'https://project.supabase.co',
+      WORKER_SMOKE_JOB: 'true'
+    })).toThrow('must be false in production');
   });
 });

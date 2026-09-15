@@ -2,7 +2,7 @@
 
 Validated runtime configuration for Ageniza. It deliberately has two import paths:
 
-- `@ageniza/config/server` is for Node runtimes only (the API and worker). It validates `APP_ENV`, `PORT`, `DATABASE_URL`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY`. The API loader additionally provides `API_HOST`, `API_CORS_ORIGINS`, `API_BODY_LIMIT_BYTES`, and `API_TRUSTED_PROXY_CIDRS` for HTTP bootstrap.
+- `@ageniza/config/server` is for Node runtimes only (the API and worker). It validates `APP_ENV`, `PORT`, `DATABASE_URL`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY`. The API loader additionally provides `API_HOST`, `API_CORS_ORIGINS`, `API_BODY_LIMIT_BYTES`, and `API_TRUSTED_PROXY_CIDRS` for HTTP bootstrap. The worker loader owns its loopback probe host/port and explicitly local/CI-only smoke switch.
 - `@ageniza/config/browser` is for Vite browser code only. It accepts and returns only `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, and `VITE_SUPABASE_ANON_KEY`.
 
 Never import the server entrypoint from `apps/web`; the browser loader is intentionally narrow so server values cannot be copied into frontend configuration or bundled code. `SUPABASE_SERVICE_ROLE_KEY` and `DATABASE_URL` are server-only, including in local development.
@@ -14,6 +14,8 @@ The supported runtime model is `local` (with `development` accepted as an alias)
 API and worker loaders read `APP_ENV`; the Vite loader derives the equivalent runtime from Vite's `MODE`. Copy the root `.env.example` to `.env` for safe local placeholders. Replace the placeholder local Supabase keys only with values from a local Supabase stack.
 
 `API_CORS_ORIGINS` is a comma-separated allowlist of complete browser origins; wildcard origins are never used. `API_TRUSTED_PROXY_CIDRS` is empty by default, so `X-Forwarded-*` headers are ignored until the actual reverse-proxy network is named explicitly. Keep the body limit small globally and give upload routes their own deliberate, bounded override.
+
+`WORKER_HEALTH_HOST` accepts only `127.0.0.1` or `::1`; the probe port must remain private to the worker container. `WORKER_SMOKE_JOB=true` is a deterministic local/CI bootstrap mode and is rejected in production.
 
 ## Production secrets
 

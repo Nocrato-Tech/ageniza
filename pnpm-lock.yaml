@@ -124,6 +124,9 @@ importers:
       '@ageniza/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@ageniza/database':
+        specifier: workspace:*
+        version: link:../../packages/database
     devDependencies:
       tsx:
         specifier: ^4.19.3
