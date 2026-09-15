@@ -45,7 +45,16 @@ pnpm test
 pnpm db:start
 pnpm db:reset
 pnpm db:test:local
+pnpm docker:up
+pnpm docker:down
+pnpm docker:logs
 ```
+
+## Docker local stack
+
+`pnpm docker:up` starts pinned local Supabase, builds the application images, and waits for health. It exposes only web (`127.0.0.1:5173`) and API (`127.0.0.1:3001`); worker probes stay internal. `pnpm docker:down` removes only this Compose project and its scoped local Supabase stack.
+
+Containers use explicit `APP_CONTAINER_LOCAL=true` plus Docker's exact `host.docker.internal` gateway mapping to reach host-local Supabase. Production applies `compose.production.yml` with immutable images and a server runtime env file; it intentionally includes no source build, secrets, proxy, or deploy-tool choice. See the [Docker guide](docs/infra/docker.md) for build, production rendering, cleanup, and troubleshooting.
 
 Turbo runs the matching command in each workspace. Workspace packages are linked with explicit `workspace:*` dependencies as they are introduced.
 

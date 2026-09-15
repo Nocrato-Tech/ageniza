@@ -100,6 +100,19 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ci-local-public-placeholder
         run: pnpm build
 
+  docker-images:
+    name: Docker images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Validate the local Compose model
+        run: docker compose config --quiet
+      - name: Build all application runtime images
+        run: docker compose build
+
   supabase-local:
     name: Supabase local database
     runs-on: ubuntu-latest

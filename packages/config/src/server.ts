@@ -25,7 +25,7 @@ export interface ApiConfig extends ServerConfig {
 }
 export interface WorkerConfig extends ServerConfig {
   service: 'worker';
-  healthHost: '127.0.0.1' | '::1';
+  healthHost: '127.0.0.1' | '::1' | '0.0.0.0';
   healthPort: number;
   smokeJob: boolean;
 }
@@ -35,7 +35,8 @@ const sharedServerSchema = z.object({
   APP_ENV: z.string(),
   DATABASE_URL: z.string().url('must be a valid database URL'),
   SUPABASE_URL: z.string().url('must be a valid Supabase URL'),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'is required')
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'is required'),
+  APP_CONTAINER_LOCAL: z.enum(['true', 'false']).optional().default('false')
 });
 const commaSeparatedValues = (value: string): string[] => value.split(',').map((item) => item.trim()).filter(Boolean);
 
@@ -58,8 +59,8 @@ const apiSchema = sharedServerSchema.extend({
   API_TRUSTED_PROXY_CIDRS: z.string().default('').transform(commaSeparatedValues)
 });
 const workerSchema = sharedServerSchema.extend({
-  // The probe listener is deliberately loopback-only; deployment must not publish it.
-  WORKER_HEALTH_HOST: z.enum(['127.0.0.1', '::1']).default('127.0.0.1'),
+  // Binding all interfaces is reserved for the isolated local container network.
+  WORKER_HEALTH_HOST: z.enum(['127.0.0.1', '::1', '0.0.0.0']).default('127.0.0.1'),
   WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(3002),
   WORKER_SMOKE_JOB: z.enum(['true', 'false']).default('false').transform((value) => value === 'true')
 });
@@ -70,8 +71,15 @@ const loadServerConfig = (service: ApiConfig['service'] | WorkerConfig['service'
   if (!result.success) throw new ConfigValidationError(service === 'api' ? 'API' : 'Worker', formatZodIssues(result.error.issues));
 
   const config = result.data;
-  assertRuntimeUrlSafety(environment, 'SUPABASE_URL', config.SUPABASE_URL, { requireHttpsInProduction: true });
-  assertRuntimeUrlSafety(environment, 'DATABASE_URL', config.DATABASE_URL);
+  const allowDockerHostGateway = config.APP_CONTAINER_LOCAL === 'true';
+  if (allowDockerHostGateway && environment === 'production') {
+    throw new ConfigValidationError(service === 'api' ? 'API' : 'Worker', [{
+      path: 'APP_CONTAINER_LOCAL',
+      message: 'must be false in production'
+    }]);
+  }
+  assertRuntimeUrlSafety(environment, 'SUPABASE_URL', config.SUPABASE_URL, { requireHttpsInProduction: true, allowDockerHostGateway });
+  assertRuntimeUrlSafety(environment, 'DATABASE_URL', config.DATABASE_URL, { allowDockerHostGateway });
   return { environment, databaseUrl: config.DATABASE_URL, supabaseUrl: config.SUPABASE_URL, supabaseServiceRoleKey: config.SUPABASE_SERVICE_ROLE_KEY };
 };
 
@@ -113,6 +121,9 @@ export const loadWorkerConfig = (env: ServerEnvironment): WorkerConfig => {
   const result = workerSchema.safeParse(env);
   if (!result.success) throw new ConfigValidationError('Worker', formatZodIssues(result.error.issues));
   const serverConfig = loadServerConfig('worker', env);
+  if (result.data.WORKER_HEALTH_HOST === '0.0.0.0' && env.APP_CONTAINER_LOCAL !== 'true') {
+    throw new ConfigValidationError('Worker', [{ path: 'WORKER_HEALTH_HOST', message: '0.0.0.0 is allowed only with APP_CONTAINER_LOCAL=true' }]);
+  }
   if (serverConfig.environment === 'production' && result.data.WORKER_SMOKE_JOB) {
     throw new ConfigValidationError('Worker', [{ path: 'WORKER_SMOKE_JOB', message: 'must be false in production' }]);
   }

@@ -81,6 +81,19 @@ describe('server configuration', () => {
     );
   });
 
+  it('permits only the explicit Docker host gateway in container-local mode', () => {
+    const dockerEnvironment = { ...localEnvironment, APP_CONTAINER_LOCAL: 'true', DATABASE_URL: 'postgresql://postgres:postgres@host.docker.internal:54322/postgres', SUPABASE_URL: 'http://host.docker.internal:54321' };
+    expect(loadWorkerConfig(dockerEnvironment).databaseUrl).toContain('host.docker.internal');
+    expect(() => loadWorkerConfig({ ...dockerEnvironment, APP_CONTAINER_LOCAL: 'false' })).toThrow(ConfigValidationError);
+    expect(() => loadWorkerConfig({ ...dockerEnvironment, DATABASE_URL: 'postgresql://postgres:postgres@db.example.test:5432/postgres' })).toThrow(ConfigValidationError);
+    expect(() => loadWorkerConfig({
+      ...dockerEnvironment,
+      APP_ENV: 'production',
+      DATABASE_URL: 'postgresql://app:password@database.example.com:5432/ageniza',
+      SUPABASE_URL: 'https://project.supabase.co'
+    })).toThrow('APP_CONTAINER_LOCAL');
+  });
+
   it('loads explicit API bootstrap settings without allowing a wildcard proxy trust', () => {
     expect(loadApiConfig({
       ...localEnvironment,

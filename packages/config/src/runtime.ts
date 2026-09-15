@@ -35,9 +35,11 @@ export const isLoopbackUrl = (value: string): boolean => {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
 };
 
-export const assertRuntimeUrlSafety = (environment: RuntimeEnvironment, variableName: string, value: string, options: { requireHttpsInProduction?: boolean } = {}): void => {
+export const assertRuntimeUrlSafety = (environment: RuntimeEnvironment, variableName: string, value: string, options: { requireHttpsInProduction?: boolean; allowDockerHostGateway?: boolean } = {}): void => {
   const url = new URL(value);
-  if ((environment === 'local' || environment === 'test') && !isLoopbackUrl(value)) {
+  const dockerHostGateway = url.hostname.toLowerCase() === 'host.docker.internal';
+  const allowedLocalHost = isLoopbackUrl(value) || (options.allowDockerHostGateway === true && dockerHostGateway);
+  if ((environment === 'local' || environment === 'test') && !allowedLocalHost) {
     throw new ConfigValidationError('Runtime', [{ path: variableName, message: `must point to a loopback resource when runtime is ${environment}; received [REDACTED]` }]);
   }
   if (environment === 'production' && isLoopbackUrl(value)) {

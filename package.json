@@ -16,6 +16,9 @@
     "db:start": "pnpm dlx supabase@2.117.0 start",
     "db:reset": "pnpm dlx supabase@2.117.0 db reset --local --yes",
     "db:test:local": "pnpm --filter @ageniza/database test:integration",
+    "docker:up": "node scripts/docker/local-stack.mjs up",
+    "docker:down": "node scripts/docker/local-stack.mjs down",
+    "docker:logs": "docker compose logs --tail=200 -f",
     "clean": "turbo run clean && rimraf node_modules .turbo"
   },
   "devDependencies": {
