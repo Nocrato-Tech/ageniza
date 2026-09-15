@@ -5,6 +5,7 @@ import {
   OperationalError,
   checkHealth,
   createLogger,
+  redactSensitiveData,
   createReadiness,
   createRequestId,
   createShutdownManager,
@@ -15,6 +16,7 @@ import {
   retry,
   retryDelay,
   serializeError,
+  shouldEnableSentry,
   withLogContext
 } from '../src/index.js';
 
@@ -26,18 +28,39 @@ describe('logging and request IDs', () => {
     expect(child.bindings()).toMatchObject({ requestId: 'request-1', userId: 'user-1', agencyId: 'agency-1', module: 'api', action: 'read' });
   });
 
+  it('retains deployment context in structured logger bindings', () => {
+    const logger = withLogContext(createLogger({ enabled: false }), {
+      environment: 'production', service: 'api', deployVersion: 'commit-123'
+    });
+    expect(logger.bindings()).toMatchObject({ environment: 'production', service: 'api', deployVersion: 'commit-123' });
+  });
+
   it('redacts common credentials from structured logs', async () => {
     const destination = new PassThrough();
     const output: string[] = [];
     destination.on('data', (chunk: Buffer) => output.push(chunk.toString()));
     const logger = createLogger({}, destination);
 
-    logger.info({ password: 'secret', req: { headers: { authorization: 'Bearer token' } } }, 'safe');
+    logger.info({ password: 'secret', accessToken: 'token', dsn: 'https://key@example/1', req: { headers: { authorization: 'Bearer token' } } }, 'safe');
     await new Promise<void>((resolve) => setImmediate(resolve));
 
     expect(output.join('')).not.toContain('secret');
     expect(output.join('')).not.toContain('Bearer token');
+    expect(output.join('')).not.toContain('https://key@example/1');
     expect(output.join('')).toContain('[REDACTED]');
+  });
+
+  it('gates server Sentry to production with a DSN and never tests', () => {
+    expect(shouldEnableSentry({ environment: 'production', dsn: 'https://public@example/1', release: 'abc' })).toBe(true);
+    expect(shouldEnableSentry({ environment: 'local', dsn: 'https://public@example/1', release: 'abc' })).toBe(false);
+    expect(shouldEnableSentry({ environment: 'production', release: 'abc', isTest: true })).toBe(false);
+  });
+
+  it('recursively redacts nested, case-variant credentials and Authorization bearer values', () => {
+    expect(redactSensitiveData({ nested: { Authorization: 'Bearer should-not-leak', sentryDsn: 'https://secret@example/1' }, note: 'Authorization: Bearer should-not-leak' })).toEqual({
+      nested: { Authorization: '[REDACTED]', sentryDsn: '[REDACTED]' },
+      note: 'Authorization: Bearer [REDACTED]'
+    });
   });
 
   it('generates IDs and preserves meaningful inbound IDs', () => {

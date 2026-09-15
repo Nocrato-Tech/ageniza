@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { ApiErrorResponseSchema } from '@ageniza/contracts';
-import { HttpError } from '@ageniza/core';
+import { captureUnexpectedError, CORRELATION_ID_HEADER, HttpError } from '@ageniza/core';
 
 const payloadTooLargeCode = 'FST_ERR_CTP_BODY_TOO_LARGE';
 
@@ -42,8 +42,9 @@ export const registerErrorHandling = (app: FastifyInstance): void => {
     const response = publicError(error);
     const logContext = { requestId: request.id, statusCode: response.statusCode, code: response.code };
     if (response.code === 'INTERNAL_ERROR') {
-      // Unknown errors can contain secrets; keep response and routine logs intentionally opaque.
-      request.log.error(logContext, 'Request failed unexpectedly');
+      // Do not attach raw errors to logs: exception messages and payload-derived errors can contain secrets.
+      request.log.error({ ...logContext, error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'INTERNAL_ERROR' } }, 'Request failed unexpectedly');
+      captureUnexpectedError(error, { ...logContext, correlationId: String(reply.getHeader(CORRELATION_ID_HEADER) ?? request.id), route: request.routeOptions.url ?? request.url.split('?')[0] });
     } else {
       request.log.info(logContext, 'Request failed');
     }

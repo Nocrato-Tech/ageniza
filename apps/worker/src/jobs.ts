@@ -1,8 +1,10 @@
-import { retry, type CoreLogger, type RetryOptions } from '@ageniza/core';
+import { captureUnexpectedError, resolveRequestId, retry, type CoreLogger, type RetryOptions } from '@ageniza/core';
 
 export interface WorkerJob<TPayload> {
   readonly name: string;
   readonly payload: TPayload;
+  /** Optional caller-provided flow identifier; payloads themselves are never logged. */
+  readonly correlationId?: string;
 }
 
 export interface JobContext {
@@ -54,11 +56,14 @@ export const createJobProcessor = (options: { logger: CoreLogger; signal?: Abort
       throw new Error(`Job '${job.name}' does not match handler '${definition.name}'.`);
     }
 
+    const startedAt = performance.now();
+    const correlationId = resolveRequestId(job.correlationId);
     const work = retry(
       async (attempt) => {
-        options.logger.debug({ job: job.name, attempt }, 'Processing worker job');
+        const context = { operation: job.name, correlationId, attempt };
+        options.logger.debug(context, 'Processing worker job');
         await definition.handler(job, {
-          logger: options.logger.child({ job: job.name, attempt }),
+          logger: options.logger.child({ job: job.name, ...context }),
           signal: controller.signal
         });
       },
@@ -66,7 +71,7 @@ export const createJobProcessor = (options: { logger: CoreLogger; signal?: Abort
         ...definition.retry,
         onRetry: async (context) => {
           options.logger.warn(
-            { job: job.name, attempt: context.attempt, delayMs: context.delayMs, err: context.error },
+            { operation: job.name, attempt: context.attempt, delayMs: context.delayMs, error: { name: context.error instanceof Error ? context.error.name : 'UnknownError', code: 'JOB_RETRY' } },
             'Retrying worker job'
           );
           await definition.retry?.onRetry?.(context);
@@ -77,6 +82,12 @@ export const createJobProcessor = (options: { logger: CoreLogger; signal?: Abort
     inFlight.add(work);
     try {
       await work;
+      options.logger.info({ operation: job.name, correlationId, status: 'ok', durationMs: Math.round((performance.now() - startedAt) * 100) / 100 }, 'Worker job completed');
+    } catch (error) {
+      const telemetry = { operation: job.name, correlationId, status: 'failed', durationMs: Math.round((performance.now() - startedAt) * 100) / 100 };
+      options.logger.error({ ...telemetry, error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'JOB_FAILED' } }, 'Worker job failed unexpectedly');
+      captureUnexpectedError(error, telemetry);
+      throw error;
     } finally {
       inFlight.delete(work);
     }

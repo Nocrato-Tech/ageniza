@@ -22,7 +22,9 @@ describe('server configuration', () => {
       supabaseServiceRoleKey: localEnvironment.SUPABASE_SERVICE_ROLE_KEY,
       healthHost: '127.0.0.1',
       healthPort: 3002,
-      smokeJob: false
+      smokeJob: false,
+      sentryDsn: undefined,
+      deployVersion: 'unknown'
     });
   });
 
@@ -55,6 +57,17 @@ describe('server configuration', () => {
     expect(() => loadApiConfig({ ...localEnvironment, APP_ENV: 'ci', SUPABASE_URL: 'https://project.supabase.co' })).toThrow(
       'must point to a loopback resource'
     );
+  });
+
+  it('requires HTTPS Sentry DSNs in production', () => {
+    const production = { ...localEnvironment, APP_ENV: 'production', DATABASE_URL: 'postgresql://db.example.com:5432/app', SUPABASE_URL: 'https://project.supabase.co', API_CORS_ORIGINS: 'https://app.ageniza.example', SENTRY_DSN: 'https://public@sentry.example/1' };
+    expect(loadApiConfig(production).sentryDsn).toBe('https://public@sentry.example/1');
+    expect(() => loadApiConfig({ ...production, SENTRY_DSN: 'http://public@sentry.example/1' })).toThrow('must use HTTPS');
+  });
+
+  it('treats a blank optional Sentry DSN as disabled', () => {
+    expect(loadApiConfig({ ...localEnvironment, SENTRY_DSN: '  ' }).sentryDsn).toBeUndefined();
+    expect(loadWorkerConfig({ ...localEnvironment, SENTRY_DSN: '' }).sentryDsn).toBeUndefined();
   });
 
   it('allows HTTPS production resources and rejects insecure production Supabase URLs', () => {

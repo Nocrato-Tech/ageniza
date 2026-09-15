@@ -5,4 +5,5 @@ export * from './logger.js';
 export * from './request-id.js';
 export * from './retry.js';
 export * from './shutdown.js';
+export * from './sentry.js';
 export * from './types.js';

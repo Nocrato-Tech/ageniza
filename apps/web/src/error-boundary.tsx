@@ -1,5 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
+import { captureBrowserException } from './sentry.js';
+
 interface ErrorBoundaryState { error: Error | null; }
 
 /** Last-resort UI boundary; operational details stay out of the browser response. */
@@ -7,9 +9,7 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, ErrorBo
   public state: ErrorBoundaryState = { error: null };
   public static getDerivedStateFromError(error: Error): ErrorBoundaryState { return { error }; }
   public componentDidCatch(error: Error, info: ErrorInfo): void {
-    void error;
-    void info;
-    /* Reporting is intentionally configured outside this UI primitive. */
+    captureBrowserException(error, { componentStack: info.componentStack ?? 'unknown' });
   }
   public render(): ReactNode {
     if (this.state.error !== null) return <main className="page-status"><h1>Something went wrong</h1><p>Please refresh the page and try again.</p></main>;

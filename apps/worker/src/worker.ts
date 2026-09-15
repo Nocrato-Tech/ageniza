@@ -3,8 +3,10 @@ import { createServer, type RequestListener, type Server } from 'node:http';
 import type { WorkerConfig } from '@ageniza/config/server';
 import {
   checkHealth,
+  captureUnexpectedError,
   createReadiness,
   createShutdownManager,
+  flushServerSentry,
   withLogContext,
   type CoreLogger,
   type HealthReport,
@@ -68,11 +70,12 @@ const writeJson = (
 
 /** Composes shared config, logger, Knex, internal probes, jobs, and shutdown exactly once. */
 export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): WorkerRuntime => {
-  const logger = withLogContext(options.logger, { module: 'worker' });
+  const logger = withLogContext(options.logger, { module: 'worker', environment: options.config.environment, service: options.config.service, deployVersion: options.config.deployVersion });
   const database = options.database ?? createDatabaseClient({ connectionString: options.config.databaseUrl });
   const readiness = createReadiness(false, { service: 'worker' });
   const jobs = createJobProcessor({ logger });
   const shutdownManager = createShutdownManager();
+  shutdownManager.add('sentry', async () => { await flushServerSentry(); });
   const processRef = options.process ?? process;
   const checkDatabase = options.readinessCheck ?? (async () => {
     await database.knex.raw('select 1');
@@ -89,26 +92,33 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
   };
 
   const handleProbe: RequestListener = (request, response) => {
+    const startedAt = performance.now();
+    const sendProbe = (statusCode: number, body: Readonly<Record<string, unknown>>): void => {
+      writeJson(response, statusCode, body);
+      const context = { route: request.url, operation: `${request.method} ${request.url}`, statusCode, durationMs: Math.round((performance.now() - startedAt) * 100) / 100 };
+      if (statusCode >= 400) logger.warn(context, 'Health probe failed');
+      else logger.debug(context, 'Health probe completed');
+    };
     if (request.method !== 'GET') {
-      writeJson(response, 405, { status: 'method_not_allowed' });
+      sendProbe(405, { status: 'method_not_allowed' });
       return;
     }
     if (request.url === '/health') {
-      writeJson(response, 200, { status: 'ok' });
+      sendProbe(200, { status: 'ok' });
       return;
     }
     if (request.url !== '/ready') {
-      writeJson(response, 404, { status: 'not_found' });
+      sendProbe(404, { status: 'not_found' });
       return;
     }
 
     void health()
       .then((report) => {
         const ready = report.status === 'ok';
-        writeJson(response, ready ? 200 : 503, { status: ready ? 'ready' : 'not_ready' });
+        sendProbe(ready ? 200 : 503, { status: ready ? 'ready' : 'not_ready' });
       })
       .catch(() => {
-        writeJson(response, 503, { status: 'not_ready' });
+        sendProbe(503, { status: 'not_ready' });
       });
   };
 
@@ -148,7 +158,7 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
     }
     const result = await shutdownManager.run(signal);
     if (result.failures.length > 0) {
-      logger.error({ failures: result.failures }, 'Worker shutdown completed with failures');
+      logger.error({ failedHandlers: result.failures.map((failure) => failure.name) }, 'Worker shutdown completed with failures');
     } else {
       logger.info({ signal }, 'Worker shutdown completed');
     }
@@ -180,6 +190,7 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
             'Worker ready'
           );
         } catch (error) {
+          captureUnexpectedError(error, { environment: options.config.environment, service: options.config.service, deployVersion: options.config.deployVersion, operation: 'worker.startup', status: 'failed' });
           await runShutdown();
           throw error;
         }

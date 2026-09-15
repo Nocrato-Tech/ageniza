@@ -5,6 +5,7 @@ declare const requestIdBrand: unique symbol;
 export type RequestId = string & { readonly [requestIdBrand]: 'RequestId' };
 
 export const REQUEST_ID_HEADER = 'x-request-id';
+export const CORRELATION_ID_HEADER = 'x-correlation-id';
 export const MAX_REQUEST_ID_LENGTH = 128;
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]+$/;
 

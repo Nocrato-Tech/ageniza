@@ -31,6 +31,16 @@ describe('browser configuration', () => {
     );
   });
 
+  it('requires HTTPS public Sentry DSNs in production', () => {
+    const productionEnvironment = { ...localEnvironment, MODE: 'production', VITE_API_BASE_URL: 'https://api.ageniza.example', VITE_SUPABASE_URL: 'https://project.supabase.co', VITE_SENTRY_DSN: 'https://public@sentry.example/1' };
+    expect(loadWebConfig(productionEnvironment).sentryDsn).toBe('https://public@sentry.example/1');
+    expect(() => loadWebConfig({ ...productionEnvironment, VITE_SENTRY_DSN: 'http://public@sentry.example/1' })).toThrow('must use HTTPS');
+  });
+
+  it('treats a blank optional public Sentry DSN as disabled', () => {
+    expect(loadWebConfig({ ...localEnvironment, VITE_SENTRY_DSN: '  ' }).sentryDsn).toBeUndefined();
+  });
+
   it('fails fast for missing or invalid public configuration', () => {
     expect(() => loadWebConfig({ MODE: 'development' })).toThrow(ConfigValidationError);
     expect(() => loadWebConfig({ ...localEnvironment, VITE_API_BASE_URL: 'relative-url' })).toThrow('VITE_API_BASE_URL');
@@ -53,7 +63,7 @@ describe('browser configuration', () => {
       SUPABASE_SERVICE_ROLE_KEY: 'server-only-secret'
     });
 
-    expect(Object.keys(config)).toEqual(['environment', 'apiBaseUrl', 'supabaseUrl', 'supabaseAnonKey']);
+    expect(Object.keys(config)).toEqual(['environment', 'apiBaseUrl', 'supabaseUrl', 'supabaseAnonKey', 'sentryDsn', 'deployVersion']);
     expect(JSON.stringify(config)).not.toContain('server-only-secret');
     expect(JSON.stringify(config)).not.toContain('postgresql://secret');
   });

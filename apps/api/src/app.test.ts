@@ -39,6 +39,10 @@ describe('API application bootstrap', () => {
     const app = await buildApp({ config });
     const inbound = await app.inject({ url: '/health', headers: { 'x-request-id': 'trace-42' } });
     expect(inbound.headers['x-request-id']).toBe('trace-42');
+    expect(inbound.headers['x-correlation-id']).toBe('trace-42');
+
+    const correlated = await app.inject({ url: '/health', headers: { 'x-correlation-id': 'flow-42' } });
+    expect(correlated.headers['x-correlation-id']).toBe('flow-42');
 
     const generated = await app.inject({ url: '/missing', headers: { 'x-request-id': 'invalid id!' } });
     expect(generated.statusCode).toBe(404);

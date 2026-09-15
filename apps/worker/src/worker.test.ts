@@ -1,4 +1,5 @@
 import { createServer, type RequestListener, type Server } from 'node:http';
+import { PassThrough } from 'node:stream';
 
 import type { WorkerConfig } from '@ageniza/config/server';
 import { createLogger, type SignalProcess } from '@ageniza/core';
@@ -15,6 +16,7 @@ const config: WorkerConfig = {
   databaseUrl: 'postgresql://127.0.0.1:54322/postgres',
   supabaseUrl: 'http://127.0.0.1:54321',
   supabaseServiceRoleKey: 'test',
+  deployVersion: 'test-commit',
   healthHost: '127.0.0.1',
   healthPort: 0,
   smokeJob: false
@@ -110,6 +112,37 @@ describe('worker runtime', () => {
     expect(processed).toHaveBeenCalledOnce();
     expect(attempts).toBe(2);
     await runtime.shutdown();
+  });
+
+  it('preserves valid job correlation IDs and generates one when callers omit them', async () => {
+    const jobs = createJobProcessor({ logger: createLogger({ enabled: false }) });
+    const observed: string[] = [];
+    const definition = {
+      name: 'correlated',
+      handler: async (_job: { name: string; payload: unknown }, context: { logger: ReturnType<typeof createLogger> }) => {
+        observed.push(String(context.logger.bindings().correlationId));
+      }
+    };
+    await jobs.submit({ name: 'correlated', payload: {}, correlationId: 'flow-42' }, definition);
+    await jobs.submit({ name: 'correlated', payload: {} }, definition);
+    expect(observed[0]).toBe('flow-42');
+    expect(observed[1]).toMatch(/^[0-9a-f-]{36}$/i);
+  });
+
+  it('records one final failure after retries without logging payloads', async () => {
+    const destination = new PassThrough();
+    const output: string[] = [];
+    destination.on('data', (chunk: Buffer) => output.push(chunk.toString()));
+    const jobs = createJobProcessor({ logger: createLogger({}, destination) });
+    await expect(jobs.submit(
+      { name: 'fails', payload: { password: 'not-logged' }, correlationId: 'flow-42' },
+      { name: 'fails', retry: { maxAttempts: 2, baseDelayMs: 0, sleep: async () => undefined }, handler: async () => { throw new Error('Authorization: Bearer not-logged'); } }
+    )).rejects.toThrow('Authorization');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const records = output.join('').trim().split('\n').map((line) => JSON.parse(line) as { msg: string; operation?: string; status?: string });
+    expect(records.filter((record) => record.msg === 'Retrying worker job')).toHaveLength(1);
+    expect(records.filter((record) => record.msg === 'Worker job failed unexpectedly')).toEqual([expect.objectContaining({ operation: 'fails', status: 'failed' })]);
+    expect(output.join('')).not.toContain('not-logged');
   });
 
   it('rejects new jobs, aborts handlers, drains work, and closes the database once', async () => {

@@ -1,5 +1,5 @@
 import { isTestProcess, loadWorkerConfig } from '@ageniza/config/server';
-import { createLogger } from '@ageniza/core';
+import { configureServerSentry, createLogger, withLogContext } from '@ageniza/core';
 
 import { smokeJob } from './smoke-job.js';
 import { createWorkerRuntime, type WorkerRuntime } from './worker.js';
@@ -12,9 +12,10 @@ export const workerName = 'ageniza-worker';
 
 export const start = async (): Promise<WorkerRuntime> => {
   const config = loadWorkerConfig(process.env);
+  configureServerSentry({ environment: config.environment, dsn: config.sentryDsn, release: config.deployVersion, isTest: isTestProcess(process.env) });
   const runtime = createWorkerRuntime({
     config,
-    logger: createLogger(),
+    logger: withLogContext(createLogger(), { environment: config.environment, service: config.service, deployVersion: config.deployVersion }),
     ...(config.smokeJob ? { readinessCheck: async () => undefined } : {})
   });
 
@@ -36,7 +37,7 @@ export const start = async (): Promise<WorkerRuntime> => {
 
 if (!isTestProcess(process.env)) {
   void start().catch((error: unknown) => {
-    createLogger().error({ err: error }, 'Worker startup failed');
+    createLogger().error({ error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'STARTUP_FAILED' } }, 'Worker startup failed');
     process.exitCode = 1;
   });
 }
