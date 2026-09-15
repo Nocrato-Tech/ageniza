@@ -1,0 +1,8 @@
+# Installed by ageniza-deploy. Keep this root-owned and do not edit during a release.
+handle_path /api/* {
+	reverse_proxy api-blue:3001
+}
+
+handle {
+	reverse_proxy web-blue:8080
+}

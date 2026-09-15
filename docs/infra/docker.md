@@ -37,7 +37,7 @@ AGENIZA_RUNTIME_ENV_FILE=/srv/ageniza/runtime.env \
 docker compose -f compose.yml -f compose.production.yml config
 ```
 
-Do not use mutable tags for deployment. The env file must stay outside Git and must provide production runtime values; browser configuration is compiled into the web image using public build arguments only. The reverse proxy and deployment mechanism are intentionally decided by ADR #10.
+Do not use mutable tags for deployment. The env file must stay outside Git and must provide production runtime values; browser configuration is compiled into the web image using public build arguments only. `pnpm deploy:validate` renders this composition and the Caddy edge with placeholder digests. The reverse proxy and deployment mechanism are decided by [ADR 0010](../adr/0010-vps-edge-and-production-deployment.md) and operated through the [production deploy runbook](production-deploy.md).
 
 ## Troubleshooting
 

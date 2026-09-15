@@ -4,16 +4,45 @@ services:
     build: !reset null
     environment: !reset {}
     extra_hosts: !reset []
-    env_file: ${AGENIZA_RUNTIME_ENV_FILE:?server runtime env file required}
+    env_file:
+      - path: ${AGENIZA_RUNTIME_ENV_FILE:?server runtime env file required}
+        format: raw
     ports: !reset []
+    restart: unless-stopped
+    logging: &production-logging
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      production-proxy:
+        aliases: ["api-${AGENIZA_COLOR:?candidate color required}"]
+      production-private: {}
   worker:
     image: ${AGENIZA_WORKER_IMAGE:?immutable worker image reference required}
     build: !reset null
     environment: !reset {}
     extra_hosts: !reset []
-    env_file: ${AGENIZA_RUNTIME_ENV_FILE:?server runtime env file required}
+    env_file:
+      - path: ${AGENIZA_RUNTIME_ENV_FILE:?server runtime env file required}
+        format: raw
+    restart: unless-stopped
+    logging: *production-logging
+    networks: [production-private]
   web:
     image: ${AGENIZA_WEB_IMAGE:?immutable web image reference required}
     build: !reset null
     environment: !reset {}
     ports: !reset []
+    restart: unless-stopped
+    logging: *production-logging
+    networks:
+      production-proxy:
+        aliases: ["web-${AGENIZA_COLOR:?candidate color required}"]
+
+networks:
+  production-proxy:
+    name: ageniza-production-proxy
+    external: true
+  production-private:
+    internal: true

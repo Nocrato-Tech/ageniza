@@ -1,6 +1,6 @@
 # Ubuntu VPS baseline
 
-This is the reproducible host baseline for a clean Ubuntu LTS Hostinger VPS. It is intentionally host-only: it does not access Hostinger, Cloudflare, DNS, GitHub, a live SSH host, or any production resource. It also deliberately does not select or install a reverse proxy or deployment tool; those are integration points pending ADR #10.
+This is the reproducible host baseline for a clean Ubuntu LTS Hostinger VPS. It is intentionally host-only: it does not access Hostinger, Cloudflare, DNS, GitHub, a live SSH host, or any production resource. It does not install the reverse proxy or deployment entrypoint; after this baseline, follow the [production deploy runbook](production-deploy.md) (ADR 0010: Caddy plus GitHub Actions over SSH). References below to "ADR #10" and "the future proxy" mean that runbook.
 
 ## Preconditions
 

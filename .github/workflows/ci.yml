@@ -93,6 +93,8 @@ jobs:
         run: pnpm typecheck
       - name: Run root test gate
         run: pnpm test
+      - name: Run repository script tests
+        run: pnpm test:scripts
       - name: Run root build gate
         env:
           VITE_API_BASE_URL: http://127.0.0.1:3001

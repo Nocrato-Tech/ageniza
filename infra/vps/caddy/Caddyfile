@@ -1,0 +1,14 @@
+{
+	# Loopback-only inside the container; ageniza-deploy needs it for `caddy reload`.
+	admin localhost:2019
+	auto_https disable_redirects
+}
+
+http://{$AGENIZA_DOMAIN} {
+	redir https://{host}{uri} permanent
+}
+
+https://{$AGENIZA_DOMAIN} {
+	tls /etc/caddy/tls/origin.crt /etc/caddy/tls/origin.key
+	import /etc/caddy/active-upstream.caddy
+}

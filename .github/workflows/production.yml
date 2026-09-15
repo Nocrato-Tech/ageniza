@@ -1,0 +1,192 @@
+name: Production release
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release-path:
+    name: Release path validation
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@1e60f620b9541d5c323b6a6e1d1c6e7bdc34a76f
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run deploy:validate
+      - run: pnpm test:scripts
+      - name: Build release-equivalent API image without pushing
+        run: docker build --build-arg APP_VERSION="${{ github.event.pull_request.head.sha }}" -f apps/api/Dockerfile .
+      - name: Build release-equivalent worker image without pushing
+        run: docker build --build-arg APP_VERSION="${{ github.event.pull_request.head.sha }}" -f apps/worker/Dockerfile .
+      - name: Build release-equivalent web image without pushing
+        run: >-
+          docker build
+          --build-arg VITE_API_BASE_URL=https://app.example.test/api
+          --build-arg VITE_SUPABASE_URL=https://project.supabase.co
+          --build-arg VITE_SUPABASE_ANON_KEY=public-ci-placeholder
+          --build-arg VITE_APP_VERSION="${{ github.event.pull_request.head.sha }}"
+          --build-arg APP_VERSION="${{ github.event.pull_request.head.sha }}"
+          -f apps/web/Dockerfile .
+
+  publish:
+    name: Build and publish immutable images
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: production
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      api_digest: ${{ steps.api.outputs.digest }}
+      web_digest: ${{ steps.web.outputs.digest }}
+      worker_digest: ${{ steps.worker.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Resolve lowercase GHCR namespace
+        id: registry
+        # Docker repository names must be lowercase; the GitHub owner may not be.
+        run: echo "namespace=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
+      - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: api
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ${{ steps.registry.outputs.namespace }}/ageniza-api:${{ github.sha }}
+          build-args: APP_VERSION=${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+      - id: worker
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          file: apps/worker/Dockerfile
+          push: true
+          tags: ${{ steps.registry.outputs.namespace }}/ageniza-worker:${{ github.sha }}
+          build-args: APP_VERSION=${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+      - id: web
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: ${{ steps.registry.outputs.namespace }}/ageniza-web:${{ github.sha }}
+          build-args: |
+            VITE_API_BASE_URL=${{ vars.PRODUCTION_VITE_API_BASE_URL }}
+            VITE_SUPABASE_URL=${{ vars.PRODUCTION_VITE_SUPABASE_URL }}
+            VITE_SUPABASE_ANON_KEY=${{ vars.PRODUCTION_VITE_SUPABASE_ANON_KEY }}
+            VITE_SENTRY_DSN=${{ vars.PRODUCTION_VITE_SENTRY_DSN }}
+            VITE_APP_VERSION=${{ github.sha }}
+            APP_VERSION=${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+      - name: Record immutable release metadata
+        env:
+          API_DIGEST: ${{ steps.api.outputs.digest }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+          WORKER_DIGEST: ${{ steps.worker.outputs.digest }}
+        run: |
+          node scripts/deploy/validate-image-ref.mjs api "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-api@${API_DIGEST}"
+          node scripts/deploy/validate-image-ref.mjs web "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-web@${WEB_DIGEST}"
+          node scripts/deploy/validate-image-ref.mjs worker "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-worker@${WORKER_DIGEST}"
+          {
+            echo "## Production release candidate"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- API: \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-api@${API_DIGEST}\`"
+            echo "- Web: \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-web@${WEB_DIGEST}\`"
+            echo "- Worker: \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-worker@${WORKER_DIGEST}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Migrate and deploy production
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    concurrency:
+      group: production-main
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+      SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
+      API_CORS_ORIGINS: ${{ secrets.PRODUCTION_API_CORS_ORIGINS }}
+      API_TRUSTED_PROXY_CIDRS: ${{ secrets.PRODUCTION_API_TRUSTED_PROXY_CIDRS }}
+      SENTRY_DSN: ${{ secrets.PRODUCTION_SENTRY_DSN }}
+      GHCR_PULL_TOKEN: ${{ secrets.PRODUCTION_GHCR_PULL_TOKEN }}
+      PRODUCTION_SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+      PRODUCTION_SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+      PRODUCTION_SSH_HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+      PRODUCTION_SSH_PORT: ${{ secrets.PRODUCTION_SSH_PORT }}
+      PRODUCTION_SSH_USER: ${{ secrets.PRODUCTION_SSH_USER }}
+      PRODUCTION_PUBLIC_URL: ${{ vars.PRODUCTION_PUBLIC_URL }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@1e60f620b9541d5c323b6a6e1d1c6e7bdc34a76f
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Validate deployment inputs before migration
+        env:
+          API_DIGEST: ${{ needs.publish.outputs.api_digest }}
+          WEB_DIGEST: ${{ needs.publish.outputs.web_digest }}
+          WORKER_DIGEST: ${{ needs.publish.outputs.worker_digest }}
+        run: |
+          node scripts/deploy/validate-image-ref.mjs api "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-api@${API_DIGEST}"
+          node scripts/deploy/validate-image-ref.mjs web "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-web@${WEB_DIGEST}"
+          node scripts/deploy/validate-image-ref.mjs worker "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-worker@${WORKER_DIGEST}"
+          test -n "$PRODUCTION_SSH_HOST" && test -n "$PRODUCTION_SSH_PORT" && test -n "$PRODUCTION_SSH_USER"
+          test -n "$PRODUCTION_PUBLIC_URL"
+      - name: Apply forward-only production migrations from main
+        run: pnpm dlx supabase@2.117.0 db push --db-url "$DATABASE_URL" --include-all
+      - name: Configure pinned SSH trust
+        run: |
+          install -d -m 0700 ~/.ssh
+          printf '%s\n' "$PRODUCTION_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 0600 ~/.ssh/known_hosts
+          ssh-keygen -lf ~/.ssh/known_hosts >/dev/null
+          # Steps are separate shells: keep the agent on a known socket and export it.
+          ssh-agent -a "$RUNNER_TEMP/ssh-agent.sock" >/dev/null
+          echo "SSH_AUTH_SOCK=$RUNNER_TEMP/ssh-agent.sock" >> "$GITHUB_ENV"
+          SSH_AUTH_SOCK="$RUNNER_TEMP/ssh-agent.sock" ssh-add - <<<"$PRODUCTION_SSH_PRIVATE_KEY"
+      - name: Deploy exact image digests through the fixed VPS entrypoint
+        env:
+          API_DIGEST: ${{ needs.publish.outputs.api_digest }}
+          WEB_DIGEST: ${{ needs.publish.outputs.web_digest }}
+          WORKER_DIGEST: ${{ needs.publish.outputs.worker_digest }}
+        # A failed apply restores the live release on the VPS itself; only a
+        # successfully activated release is rolled back by the step below.
+        run: |
+          node scripts/deploy/emit-runtime-env.mjs | ssh -p "$PRODUCTION_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$PRODUCTION_SSH_USER@$PRODUCTION_SSH_HOST" \
+            "sudo -n /usr/local/sbin/ageniza-deploy apply --release '$GITHUB_SHA' --api-image 'ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-api@$API_DIGEST' --web-image 'ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-web@$WEB_DIGEST' --worker-image 'ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ageniza-worker@$WORKER_DIGEST'"
+          echo 'ROLLOUT_ACTIVATED=true' >> "$GITHUB_ENV"
+      - name: Smoke test through Cloudflare
+        run: |
+          curl --fail --silent --show-error --proto '=https' --retry 3 --retry-all-errors --max-time 20 "$PRODUCTION_PUBLIC_URL/health" >/dev/null
+          curl --fail --silent --show-error --proto '=https' --retry 3 --retry-all-errors --max-time 20 "$PRODUCTION_PUBLIC_URL/api/health" >/dev/null
+      - name: Roll back application images if the activated release failed smoke
+        if: failure() && env.ROLLOUT_ACTIVATED == 'true'
+        run: ssh -p "$PRODUCTION_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$PRODUCTION_SSH_USER@$PRODUCTION_SSH_HOST" "sudo -n /usr/local/sbin/ageniza-deploy rollback"

@@ -1,0 +1,5 @@
+# Install as root with mode 0440 at /etc/sudoers.d/ageniza-deploy after visudo -cf.
+# The entrypoint is root-owned and validates every accepted argument itself.
+# No NOEXEC: the entrypoint must execute docker, flock, and install.
+# Replace `ageniza` if DEPLOY_USER differs in bootstrap.env.
+ageniza ALL=(root) NOPASSWD: /usr/local/sbin/ageniza-deploy apply *, /usr/local/sbin/ageniza-deploy rollback
