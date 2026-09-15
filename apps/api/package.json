@@ -12,6 +12,7 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
+    "@ageniza/contracts": "workspace:*",
     "@ageniza/config": "workspace:*",
     "@ageniza/core": "workspace:*",
     "fastify": "^5.2.1"

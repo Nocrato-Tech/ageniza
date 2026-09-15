@@ -13,9 +13,12 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "lint": "eslint src --max-warnings=0",
+    "lint": "eslint src test --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "zod": "^3.24.2"
   }
 }

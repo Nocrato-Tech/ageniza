@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { HealthResponseSchema } from '@ageniza/contracts';
 import { isTestProcess, loadApiConfig } from '@ageniza/config/server';
 import { createLogger, resolveRequestId, withLogContext } from '@ageniza/core';
 
@@ -8,7 +9,7 @@ const app = Fastify({ logger });
 app.get('/health', async (request) => {
   const requestId = resolveRequestId(request.headers['x-request-id']);
   withLogContext(logger, { requestId, module: 'http', action: 'health' }).debug('Health check requested');
-  return { status: 'ok' };
+  return HealthResponseSchema.parse({ status: 'ok' });
 });
 
 const start = async (): Promise<void> => {
