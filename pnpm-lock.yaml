@@ -38,6 +38,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@ageniza/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       fastify:
         specifier: ^5.2.1
         version: 5.12.4
@@ -69,6 +72,10 @@ importers:
         version: 19.3.0(@types/react@19.3.0)
 
   apps/worker:
+    dependencies:
+      '@ageniza/core':
+        specifier: workspace:*
+        version: link:../../packages/core
     devDependencies:
       tsx:
         specifier: ^4.19.3
@@ -78,7 +85,11 @@ importers:
 
   packages/contracts: {}
 
-  packages/core: {}
+  packages/core:
+    dependencies:
+      pino:
+        specifier: ^10.3.1
+        version: 10.3.1
 
   packages/database: {}
 

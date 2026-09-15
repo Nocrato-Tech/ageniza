@@ -11,6 +11,9 @@
     "test": "vitest run --passWithNoTests",
     "clean": "rimraf dist"
   },
+  "dependencies": {
+    "@ageniza/core": "workspace:*"
+  },
   "devDependencies": {
     "tsx": "^4.19.3"
   }
