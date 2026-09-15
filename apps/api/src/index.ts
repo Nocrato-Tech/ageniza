@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { isTestProcess, loadApiConfig } from '@ageniza/config/server';
 import { createLogger, resolveRequestId, withLogContext } from '@ageniza/core';
 
 const logger = createLogger();
@@ -11,9 +12,10 @@ app.get('/health', async (request) => {
 });
 
 const start = async (): Promise<void> => {
-  await app.listen({ host: '0.0.0.0', port: 3001 });
+  const config = loadApiConfig(process.env);
+  await app.listen({ host: '0.0.0.0', port: config.port });
 };
 
-if (process.env.NODE_ENV !== 'test') {
+if (!isTestProcess(process.env)) {
   void start();
 }
