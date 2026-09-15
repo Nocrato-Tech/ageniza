@@ -8,3 +8,4 @@
 - `service_role` must never reach the frontend.
 - Do not invent business rules; GitHub Issues and approved Notion specs are authoritative.
 - Before handoff, run relevant lint, typecheck, tests, and build checks.
+- Never push to `main` or `develop` (not even with `--no-verify`); work on a branch and open a pull request.

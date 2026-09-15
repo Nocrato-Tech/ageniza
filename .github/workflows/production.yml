@@ -42,9 +42,29 @@ jobs:
           --build-arg APP_VERSION="${{ github.event.pull_request.head.sha }}"
           -f apps/web/Dockerfile .
 
+  release-origin:
+    name: Release origin guard
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@1e60f620b9541d5c323b6a6e1d1c6e7bdc34a76f
+        with:
+          node-version-file: .nvmrc
+      # Without paid branch protection, a direct push to main must never publish or migrate.
+      - name: Refuse commits that did not arrive through a merged develop or hotfix pull request
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/ci/verify-merged-pr.mjs --sha "$GITHUB_SHA" --base main --heads 'develop,hotfix/*'
+
   publish:
     name: Build and publish immutable images
     if: github.event_name == 'push'
+    needs: release-origin
     runs-on: ubuntu-latest
     timeout-minutes: 40
     environment: production

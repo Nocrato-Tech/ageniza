@@ -1,0 +1,47 @@
+name: Branch guard
+
+# GitHub Free cannot protect branches of this private repository. This workflow detects
+# commits that reached main or develop without a merged pull request and alerts the owner.
+on:
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  merged-pull-request-only:
+    name: Merged pull request only
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@1e60f620b9541d5c323b6a6e1d1c6e7bdc34a76f
+        with:
+          node-version-file: .nvmrc
+      - name: Verify the pushed commit came from a merged pull request
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/ci/verify-merged-pr.mjs --sha "$GITHUB_SHA" --base "$GITHUB_REF_NAME"
+      - name: Open an alert issue for the direct push
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMPARE_URL: ${{ github.event.compare }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create --repo "$GITHUB_REPOSITORY" --assignee PedroV1dal \
+            --title "Direct push to $GITHUB_REF_NAME by $GITHUB_ACTOR" \
+            --body "Commit \`$GITHUB_SHA\` reached \`$GITHUB_REF_NAME\` without a merged pull request.
+
+          - Actor: @$GITHUB_ACTOR
+          - Changes: $COMPARE_URL
+          - Guard run: $RUN_URL
+
+          Review the change and, if needed, revert it through a pull request. A direct push to main does not deploy: the production release-origin guard refuses it."

@@ -31,11 +31,23 @@ The local equivalents are `pnpm db:start`, `pnpm db:reset`, and `pnpm db:test:lo
 
 ## Branch protections and promotion
 
-Configure protection/rulesets for both `develop` and `main` to require pull requests, require current approvals as appropriate for the repository, dismiss stale approvals, and require these checks:
+The organization is on GitHub Free and this repository is private, so GitHub rejects rulesets, branch protection, Environment reviewers, and CODEOWNERS enforcement. Until the plan changes, `main` and `develop` are guarded by:
+
+| Guard | Enforced where | What it does |
+| --- | --- | --- |
+| `.githooks/pre-push` | Each clone (installed by `pnpm install`) | Refuses `git push` to `main` or `develop`. Bypassable with `--no-verify`; it prevents accidents. |
+| `Production release / Release origin guard` | GitHub Actions | A push to `main` publishes, migrates, or deploys only if it is the merge commit of a pull request from `develop` or `hotfix/*`. |
+| `Branch guard` | GitHub Actions | Any commit on `main` or `develop` that is not a merged pull request fails the run and opens an issue assigned to @PedroV1dal. |
+| `Pull request reviewer` | GitHub Actions | Requests review from @PedroV1dal on pull requests to `develop` and `main`. |
+
+Team agreement, not technically enforced: merge only pull requests with an approval and green CI. GitHub itself never merges a pull request with conflicts. A direct push can edit these workflows too, so treat every `Branch guard` issue as an incident.
+
+When the organization moves to GitHub Team, replace this with rulesets on `develop` and `main`: require pull requests with one approval (code owner on `main`), dismiss stale approvals, require conversation resolution and up-to-date branches, block force pushes and deletion, allow only repository admins to bypass for pull requests, and require these checks (plus `Release path validation` on `main`):
 
 - `CI / Branch route`
 - `CI / Migration policy`
 - `CI / Quality gates`
+- `CI / Docker images`
 - `CI / Supabase local database`
 
 Feature, fix, and refactor branches merge into `develop`. `develop` is the integration branch only: it has no remote deployment environment. A pull request to `main` is a production-promotion gate and must originate from `develop`; the workflow permits `hotfix/*` only as the documented production exception. Production deployment belongs to a separate main-only workflow using GitHub's `production` Environment, never this CI workflow or a `develop` environment; see the [production deploy runbook](../infra/production-deploy.md).

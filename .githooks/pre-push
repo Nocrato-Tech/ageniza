@@ -1,0 +1,13 @@
+#!/bin/sh
+# Blocks accidental direct pushes to protected branches. GitHub Free cannot enforce this
+# server-side for this private repository; the Branch guard workflow detects bypasses.
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/develop)
+      echo "pre-push: direct push to ${remote_ref#refs/heads/} is not allowed." >&2
+      echo "Push a feature/*, fix/*, refactor/* or hotfix/* branch and open a pull request." >&2
+      exit 1
+      ;;
+  esac
+done
+exit 0

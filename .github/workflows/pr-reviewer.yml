@@ -1,0 +1,24 @@
+name: Pull request reviewer
+
+# Stand-in for CODEOWNERS review requests, which need a paid plan on this private repository.
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+    branches: [develop, main]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  request-default-reviewer:
+    name: Request default reviewer
+    # GitHub rejects requesting a review from the pull request author.
+    if: github.event.pull_request.user.login != 'PedroV1dal' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Request review from PedroV1dal
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/requested_reviewers" -f 'reviewers[]=PedroV1dal' >/dev/null
