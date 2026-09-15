@@ -1,22 +1,7 @@
-import Fastify from 'fastify';
-import { HealthResponseSchema } from '@ageniza/contracts';
-import { isTestProcess, loadApiConfig } from '@ageniza/config/server';
-import { createLogger, resolveRequestId, withLogContext } from '@ageniza/core';
+import { isTestProcess } from '@ageniza/config/server';
 
-const logger = createLogger();
-const app = Fastify({ logger });
-
-app.get('/health', async (request) => {
-  const requestId = resolveRequestId(request.headers['x-request-id']);
-  withLogContext(logger, { requestId, module: 'http', action: 'health' }).debug('Health check requested');
-  return HealthResponseSchema.parse({ status: 'ok' });
-});
-
-const start = async (): Promise<void> => {
-  const config = loadApiConfig(process.env);
-  await app.listen({ host: '0.0.0.0', port: config.port });
-};
+import { startApi } from './server.js';
 
 if (!isTestProcess(process.env)) {
-  void start();
+  void startApi().catch(() => { process.exitCode = 1; });
 }

@@ -1,3 +1,5 @@
+import { isIP } from 'node:net';
+
 import { z } from 'zod';
 
 import { ConfigValidationError, formatZodIssues } from './errors.js';
@@ -12,7 +14,15 @@ export interface ServerConfig {
   supabaseUrl: string;
   supabaseServiceRoleKey: string;
 }
-export interface ApiConfig extends ServerConfig { service: 'api'; port: number; }
+export interface ApiConfig extends ServerConfig {
+  service: 'api';
+  host: string;
+  port: number;
+  corsOrigins: readonly string[];
+  bodyLimitBytes: number;
+  /** Explicit proxy networks only. An empty list means Fastify does not trust forwarding headers. */
+  trustedProxyCidrs: readonly string[];
+}
 export interface WorkerConfig extends ServerConfig { service: 'worker'; }
 type ServerEnvironment = Record<string, string | undefined>;
 
@@ -22,8 +32,25 @@ const sharedServerSchema = z.object({
   SUPABASE_URL: z.string().url('must be a valid Supabase URL'),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'is required')
 });
+const commaSeparatedValues = (value: string): string[] => value.split(',').map((item) => item.trim()).filter(Boolean);
+
+const isIpOrCidr = (value: string): boolean => {
+  const [address, prefix, ...extra] = value.split('/');
+  if (extra.length > 0 || address === undefined) return false;
+  const version = isIP(address);
+  if (version === 0) return false;
+  if (prefix === undefined) return true;
+  if (!/^\d+$/.test(prefix)) return false;
+  const bits = Number(prefix);
+  return bits >= 0 && bits <= (version === 4 ? 32 : 128);
+};
+
 const apiSchema = sharedServerSchema.extend({
-  PORT: z.coerce.number().int().min(1).max(65535).default(3001)
+  API_HOST: z.string().trim().min(1).default('0.0.0.0'),
+  PORT: z.coerce.number().int().min(1).max(65535).default(3001),
+  API_CORS_ORIGINS: z.string().default('http://127.0.0.1:5173').transform(commaSeparatedValues),
+  API_BODY_LIMIT_BYTES: z.coerce.number().int().min(1_024).max(50 * 1024 * 1024).default(1_048_576),
+  API_TRUSTED_PROXY_CIDRS: z.string().default('').transform(commaSeparatedValues)
 });
 
 const loadServerConfig = (service: ApiConfig['service'] | WorkerConfig['service'], env: ServerEnvironment): ServerConfig => {
@@ -41,7 +68,34 @@ const loadServerConfig = (service: ApiConfig['service'] | WorkerConfig['service'
 export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
   const result = apiSchema.safeParse(env);
   if (!result.success) throw new ConfigValidationError('API', formatZodIssues(result.error.issues));
-  return { service: 'api', ...loadServerConfig('api', env), port: result.data.PORT };
+  const serverConfig = loadServerConfig('api', env);
+  for (const origin of result.data.API_CORS_ORIGINS) {
+    let parsed: URL;
+    try {
+      parsed = new URL(origin);
+    } catch {
+      throw new ConfigValidationError('API', [{ path: 'API_CORS_ORIGINS', message: 'must contain valid origins; supplied values are redacted' }]);
+    }
+    if (parsed.origin !== origin || parsed.pathname !== '/' || parsed.search || parsed.hash) {
+      throw new ConfigValidationError('API', [{ path: 'API_CORS_ORIGINS', message: 'must contain origins without paths; supplied values are redacted' }]);
+    }
+    assertRuntimeUrlSafety(serverConfig.environment, 'API_CORS_ORIGINS', origin, { requireHttpsInProduction: true });
+  }
+  if (result.data.API_TRUSTED_PROXY_CIDRS.some((value) => value === '*' || value.toLowerCase() === 'true')) {
+    throw new ConfigValidationError('API', [{ path: 'API_TRUSTED_PROXY_CIDRS', message: 'must name explicit proxy networks; supplied values are redacted' }]);
+  }
+  if (result.data.API_TRUSTED_PROXY_CIDRS.some((value) => !isIpOrCidr(value))) {
+    throw new ConfigValidationError('API', [{ path: 'API_TRUSTED_PROXY_CIDRS', message: 'must contain only valid IP addresses or CIDR networks; supplied values are redacted' }]);
+  }
+  return {
+    service: 'api',
+    ...serverConfig,
+    host: result.data.API_HOST,
+    port: result.data.PORT,
+    corsOrigins: result.data.API_CORS_ORIGINS,
+    bodyLimitBytes: result.data.API_BODY_LIMIT_BYTES,
+    trustedProxyCidrs: result.data.API_TRUSTED_PROXY_CIDRS
+  };
 };
 /** Loads server-only worker settings. Never import this module from browser code. */
 export const loadWorkerConfig = (env: ServerEnvironment): WorkerConfig => ({ service: 'worker', ...loadServerConfig('worker', env) });

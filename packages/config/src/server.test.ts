@@ -11,7 +11,9 @@ const localEnvironment = {
 
 describe('server configuration', () => {
   it('loads typed local API and worker configuration', () => {
-    expect(loadApiConfig(localEnvironment)).toMatchObject({ service: 'api', environment: 'local', port: 3001 });
+    expect(loadApiConfig(localEnvironment)).toMatchObject({
+      service: 'api', environment: 'local', host: '0.0.0.0', port: 3001, corsOrigins: ['http://127.0.0.1:5173'], bodyLimitBytes: 1_048_576, trustedProxyCidrs: []
+    });
     expect(loadWorkerConfig(localEnvironment)).toEqual({
       service: 'worker',
       environment: 'local',
@@ -58,7 +60,8 @@ describe('server configuration', () => {
         ...localEnvironment,
         APP_ENV: 'production',
         DATABASE_URL: 'postgresql://app:password@database.example.com:5432/ageniza',
-        SUPABASE_URL: 'https://project.supabase.co'
+        SUPABASE_URL: 'https://project.supabase.co',
+        API_CORS_ORIGINS: 'https://app.ageniza.example'
       }).environment
     ).toBe('production');
     expect(() => loadApiConfig({ ...localEnvironment, APP_ENV: 'production', SUPABASE_URL: 'http://project.supabase.co' })).toThrow(
@@ -73,5 +76,21 @@ describe('server configuration', () => {
     expect(() => loadApiConfig({ ...localEnvironment, DATABASE_URL: 'postgresql://user:password@db.example.com:5432/app' })).toThrow(
       'must point to a loopback resource'
     );
+  });
+
+  it('loads explicit API bootstrap settings without allowing a wildcard proxy trust', () => {
+    expect(loadApiConfig({
+      ...localEnvironment,
+      API_HOST: '127.0.0.1',
+      API_CORS_ORIGINS: 'http://127.0.0.1:5173,http://localhost:4173',
+      API_BODY_LIMIT_BYTES: '4096',
+      API_TRUSTED_PROXY_CIDRS: '127.0.0.1,10.0.0.0/8'
+    })).toMatchObject({
+      host: '127.0.0.1', corsOrigins: ['http://127.0.0.1:5173', 'http://localhost:4173'], bodyLimitBytes: 4096,
+      trustedProxyCidrs: ['127.0.0.1', '10.0.0.0/8']
+    });
+    expect(() => loadApiConfig({ ...localEnvironment, API_TRUSTED_PROXY_CIDRS: '*' })).toThrow('explicit proxy networks');
+    expect(() => loadApiConfig({ ...localEnvironment, API_TRUSTED_PROXY_CIDRS: 'not-a-network' })).toThrow('valid IP addresses or CIDR networks');
+    expect(() => loadApiConfig({ ...localEnvironment, API_TRUSTED_PROXY_CIDRS: '10.0.0.0/33' })).toThrow('valid IP addresses or CIDR networks');
   });
 });
