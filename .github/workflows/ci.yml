@@ -1,0 +1,166 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  branch-route:
+    name: Branch route
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate the pull-request route
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          case "$BASE_REF" in
+            develop)
+              echo "Integration pull request: $HEAD_REF -> develop"
+              ;;
+            main)
+              if [[ "$HEAD_REF" != "develop" && "$HEAD_REF" != hotfix/* ]]; then
+                echo "Pull requests to main must come from develop or hotfix/*; got $HEAD_REF." >&2
+                exit 1
+              fi
+              echo "Production-promotion pull request: $HEAD_REF -> main"
+              ;;
+            *)
+              echo "Unexpected protected target branch: $BASE_REF" >&2
+              exit 1
+              ;;
+          esac
+
+  migration-policy:
+    name: Migration policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Validate migration changes
+        run: >-
+          node scripts/ci/validate-migrations.mjs
+          --base "${{ github.event.pull_request.base.sha }}"
+          --head "${{ github.event.pull_request.head.sha }}"
+
+  quality:
+    name: Quality gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Enable the repository-pinned pnpm with Corepack
+        run: corepack enable
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+      - name: Install from the committed lockfile
+        run: pnpm install --frozen-lockfile
+      - name: Run root lint gate
+        run: pnpm lint
+      - name: Run root typecheck gate
+        run: pnpm typecheck
+      - name: Run root test gate
+        run: pnpm test
+      - name: Run root build gate
+        env:
+          VITE_API_BASE_URL: http://127.0.0.1:3001
+          VITE_SUPABASE_URL: http://127.0.0.1:54321
+          VITE_SUPABASE_ANON_KEY: ci-local-public-placeholder
+        run: pnpm build
+
+  supabase-local-eligibility:
+    name: Supabase local eligibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      enabled: ${{ steps.detect.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - id: detect
+        name: Detect local Supabase foundation
+        run: |
+          if [[ -f supabase/config.toml && -d supabase/migrations ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Local Supabase foundation detected."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Supabase local job deferred::supabase/config.toml and supabase/migrations are not both present; no database stack or integration/tenant suite was run."
+          fi
+
+  supabase-local:
+    name: Supabase local database
+    needs: supabase-local-eligibility
+    if: needs.supabase-local-eligibility.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Enable the repository-pinned pnpm with Corepack
+        run: corepack enable
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+      - name: Install from the committed lockfile
+        run: pnpm install --frozen-lockfile
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.117.0
+      - name: Start an isolated local Supabase stack
+        run: supabase start
+      - name: Apply migrations to the isolated local database
+        run: supabase db reset --local --yes
+      - name: Run configured local database suites, when present
+        run: |
+          if [[ -x scripts/ci/test-supabase-local.sh ]]; then
+            scripts/ci/test-supabase-local.sh
+          else
+            echo "::notice title=No database test hook configured::The local migration reset passed, but no integration or tenant suite exists yet; no such suite was run."
+          fi
+      - name: Stop the local Supabase stack
+        if: always()
+        run: supabase stop --no-backup

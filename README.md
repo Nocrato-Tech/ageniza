@@ -49,3 +49,5 @@ Turbo runs the matching command in each workspace. Workspace packages are linked
 ## Branches and environments
 
 Feature, fix, and refactor branches target `develop`. `main` is production only; there is no remote staging environment in the MVP. Production configuration belongs in GitHub's `production` Environment, never in Git or a Docker image.
+
+See [the CI guide](docs/ci/README.md) for the pull-request gates, local-equivalent commands, migration policy, branch protections, and hotfix reconciliation procedure.
