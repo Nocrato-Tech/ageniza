@@ -115,6 +115,10 @@ jobs:
         run: docker build -t ageniza-migrations:ci -f infra/migrations/Dockerfile .
       - name: Check the migration runner entrypoint
         run: docker run --rm --entrypoint node ageniza-migrations:ci -e "import('knex').then(() => console.log('migration runner ok'))"
+      - name: Lint the VPS shell scripts
+        run: >-
+          docker run --rm -v "$PWD:/repo" -w /repo koalaman/shellcheck:stable
+          --severity=warning infra/vps/*.sh infra/postgres/initdb/*.sh
       - name: Validate the production Caddyfile syntax
         run: |
           edge="$RUNNER_TEMP/caddy"

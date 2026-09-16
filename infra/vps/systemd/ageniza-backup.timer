@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily Ageniza database backup
+Documentation=https://github.com/Nocrato-Tech/ageniza/blob/main/docs/infra/backup-restore.md
+
+[Timer]
+OnCalendar=*-*-* 04:10:00
+RandomizedDelaySec=15m
+# Runs as soon as possible when the host was off at the scheduled time.
+Persistent=true
+Unit=ageniza-backup.service
+
+[Install]
+WantedBy=timers.target

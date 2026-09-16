@@ -31,6 +31,7 @@ No database password, auth secret, or registry credential exists in GitHub. On G
 | [`infra/vps/refresh-cloudflare-ips.sh`](../../infra/vps/refresh-cloudflare-ips.sh) | Regenerates the Cloudflare ranges Caddy trusts for `CF-Connecting-IP`. |
 | [`infra/migrations/Dockerfile`](../../infra/migrations/Dockerfile) | Migration runner image (Knex plus `packages/database/migrations`). |
 | [`infra/postgres/initdb`](../../infra/postgres/initdb) | Creates the `ageniza_app` role when the database volume is first initialised. |
+| [`infra/vps/ageniza-backup.sh`](../../infra/vps/ageniza-backup.sh) | Daily encrypted dump to R2 and the restore rehearsal ([runbook](backup-restore.md)). |
 | [`infra/vps/*.env.example`](../../infra/vps) | Shapes of the host-only configuration files. |
 
 ## Release flow
@@ -98,7 +99,7 @@ PostgreSQL 17 runs on the VPS as the internal `postgres` container ([ADR 0011](.
 
 - The `ageniza_app` role is created only when the data volume is first initialised. Changing `AGENIZA_APP_DB_PASSWORD` later does nothing; rotate with `ALTER ROLE ageniza_app PASSWORD '...'` and update `runtime.env`.
 - Pin `AGENIZA_POSTGRES_IMAGE` by digest in `deploy.env`. A new digest of the same major version restarts the database briefly at the next release. A major-version change needs a dump and restore, never an in-place image swap.
-- **Backups are not optional:** complete issue #18 (encrypted off-host backups with a tested restore) before production holds real data.
+- **Backups are not optional:** set up the [backup and restore runbook](backup-restore.md) (encrypted daily dumps to R2, with a rehearsed restore) before production holds real data.
 
 ### 3. VPS
 
