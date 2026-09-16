@@ -53,7 +53,7 @@ pnpm docker:logs
 
 ## Docker local stack
 
-`pnpm docker:up` starts local PostgreSQL, applies migrations, builds the application images, and waits for health. It exposes only web (`127.0.0.1:5173`), API (`127.0.0.1:3001`), and PostgreSQL on loopback (`127.0.0.1:54322`); worker probes stay internal. `pnpm docker:down` removes this Compose project's containers and keeps the local database volume.
+`pnpm docker:up` starts local PostgreSQL, applies migrations, builds the application images, and waits for health. It exposes only web (`127.0.0.1:5173`), API (`127.0.0.1:3001`), PostgreSQL (`127.0.0.1:54322`), and the Mailpit inbox (`127.0.0.1:8025`), all on loopback; worker probes stay internal. `pnpm docker:down` removes this Compose project's containers and keeps the local database volume.
 
 Containers use explicit `APP_CONTAINER_LOCAL=true` to reach the `postgres` Compose service. Production applies `compose.production.yml` with immutable images and a server runtime env file; it includes no source build or secrets. See the [Docker guide](docs/infra/docker.md) for build, production rendering, cleanup, and troubleshooting, and the [production deploy runbook](docs/infra/production-deploy.md) for the GitHub Actions release, host-side verification, and rollback.
 

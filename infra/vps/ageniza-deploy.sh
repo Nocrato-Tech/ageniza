@@ -94,7 +94,7 @@ validate_runtime_env() {
       APP_ENV) [[ "$value" == production ]] || die 'APP_ENV must be production' ;;
       WORKER_SMOKE_JOB) [[ "$value" == false ]] || die 'WORKER_SMOKE_JOB must be false' ;;
       DATABASE_URL|API_CORS_ORIGINS|API_TRUSTED_PROXY_CIDRS) [[ -n "$value" ]] || die "$key must not be blank" ;;
-      SENTRY_DSN) ;;
+      SMTP_URL|EMAIL_FROM|SENTRY_DSN) ;;
       *) die "$RUNTIME_ENV contains a key that is not allowed: $key" ;;
     esac
   done < "$RUNTIME_ENV"

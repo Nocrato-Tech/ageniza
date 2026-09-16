@@ -22,8 +22,27 @@ describe('server configuration', () => {
       healthPort: 3002,
       smokeJob: false,
       sentryDsn: undefined,
-      deployVersion: 'unknown'
+      deployVersion: 'unknown',
+      smtpUrl: undefined,
+      emailFrom: undefined
     });
+  });
+
+  it('accepts transactional email settings only as a complete, local-safe pair', () => {
+    const withEmail = { ...localEnvironment, SMTP_URL: 'smtp://mailpit:1025', EMAIL_FROM: 'Ageniza <no-reply@ageniza.example>', APP_CONTAINER_LOCAL: 'true' };
+    expect(loadApiConfig(withEmail)).toMatchObject({ smtpUrl: 'smtp://mailpit:1025', emailFrom: 'Ageniza <no-reply@ageniza.example>' });
+    expect(() => loadApiConfig({ ...withEmail, EMAIL_FROM: undefined })).toThrow('EMAIL_FROM');
+    expect(() => loadApiConfig({ ...localEnvironment, EMAIL_FROM: 'no-reply@ageniza.example' })).toThrow('SMTP_URL');
+    expect(() => loadApiConfig({ ...withEmail, SMTP_URL: 'https://mail.example.com' })).toThrow('smtp');
+    expect(() => loadApiConfig({ ...withEmail, SMTP_URL: 'smtp://smtp.example.com:587' })).toThrow('must point to a loopback resource');
+    expect(loadApiConfig({
+      ...localEnvironment,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl,
+      API_CORS_ORIGINS: 'https://app.ageniza.example',
+      SMTP_URL: 'smtps://user:key@smtp.example.com:465',
+      EMAIL_FROM: 'no-reply@ageniza.example'
+    }).smtpUrl).toBe('smtps://user:key@smtp.example.com:465');
   });
 
   it('fails when required server configuration is missing', () => {

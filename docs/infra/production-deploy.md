@@ -101,7 +101,22 @@ PostgreSQL 17 runs on the VPS as the internal `postgres` container ([ADR 0011](.
 - Pin `AGENIZA_POSTGRES_IMAGE` by digest in `deploy.env`. A new digest of the same major version restarts the database briefly at the next release. A major-version change needs a dump and restore, never an in-place image swap.
 - **Backups are not optional:** set up the [backup and restore runbook](backup-restore.md) (encrypted daily dumps to R2, with a rehearsed restore) before production holds real data.
 
-### 3. VPS
+### 3. Transactional email
+
+Invitations, email verification, and password resets need SMTP before the authentication work (issue #20) ships. Any provider with SMTP works; the application has no provider SDK.
+
+1. Create the account and a sending domain (for example a subdomain such as `mail.<domain>`), then add its **SPF, DKIM, and DMARC** records. Without them, invitations land in spam or are rejected.
+2. Create a sending credential scoped to that domain.
+3. Add both keys to `/etc/ageniza/runtime.env` — the application refuses to start with only one of them:
+
+   ```
+   SMTP_URL=smtps://<user>:<key>@<smtp host>:465
+   EMAIL_FROM=Ageniza <no-reply@mail.example.com>
+   ```
+
+4. Send one real message to yourself before the first invitation goes out, and confirm it arrives with a passing DKIM signature.
+
+### 4. VPS
 
 After the [VPS baseline](vps-baseline.md), as root with a reviewed checkout:
 
@@ -139,7 +154,7 @@ Optionally refresh Cloudflare ranges weekly: `echo '0 4 * * 1 root /usr/local/sb
 
 Re-run the installer after changing any file in the bundle. The checkout is not needed at runtime.
 
-### 4. Cloudflare
+### 5. Cloudflare
 
 1. Create the DNS record for the domain pointing to the VPS, **proxied** (orange cloud).
 2. Set SSL/TLS mode to **Full (strict)**. It accepts Caddy's Let's Encrypt certificate.

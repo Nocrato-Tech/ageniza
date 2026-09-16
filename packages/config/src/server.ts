@@ -13,6 +13,9 @@ export interface ServerConfig {
   databaseUrl: string;
   sentryDsn?: string;
   deployVersion: string;
+  /** Transactional email; both are required together and only once a flow sends mail (issue #20). */
+  smtpUrl?: string;
+  emailFrom?: string;
 }
 export interface ApiConfig extends ServerConfig {
   service: 'api';
@@ -39,6 +42,11 @@ const optionalUrl = (message: string) => z.preprocess(
 const sharedServerSchema = z.object({
   APP_ENV: z.string(),
   DATABASE_URL: z.string().url('must be a valid database URL'),
+  SMTP_URL: optionalUrl('must be a valid smtp or smtps URL'),
+  EMAIL_FROM: z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.string().trim().min(1).max(320).optional()
+  ),
   SENTRY_DSN: optionalUrl('must be a valid Sentry DSN'),
   APP_VERSION: z.string().trim().min(1).max(128).optional().default('unknown'),
   APP_CONTAINER_LOCAL: z.enum(['true', 'false']).optional().default('false')
@@ -84,10 +92,23 @@ const loadServerConfig = (service: ApiConfig['service'] | WorkerConfig['service'
     }]);
   }
   assertRuntimeUrlSafety(environment, 'DATABASE_URL', config.DATABASE_URL, { allowLocalContainerHosts });
+  if ((config.SMTP_URL === undefined) !== (config.EMAIL_FROM === undefined)) {
+    throw new ConfigValidationError(service === 'api' ? 'API' : 'Worker', [{
+      path: 'SMTP_URL',
+      message: 'must be set together with EMAIL_FROM'
+    }]);
+  }
+  if (config.SMTP_URL !== undefined) {
+    const protocol = new URL(config.SMTP_URL).protocol;
+    if (protocol !== 'smtp:' && protocol !== 'smtps:') {
+      throw new ConfigValidationError(service === 'api' ? 'API' : 'Worker', [{ path: 'SMTP_URL', message: 'must use smtp or smtps; supplied values are redacted' }]);
+    }
+    assertRuntimeUrlSafety(environment, 'SMTP_URL', config.SMTP_URL, { allowLocalContainerHosts });
+  }
   if (environment === 'production' && config.SENTRY_DSN !== undefined && new URL(config.SENTRY_DSN).protocol !== 'https:') {
     throw new ConfigValidationError(service === 'api' ? 'API' : 'Worker', [{ path: 'SENTRY_DSN', message: 'must use HTTPS in production; supplied values are redacted' }]);
   }
-  return { environment, databaseUrl: config.DATABASE_URL, sentryDsn: config.SENTRY_DSN, deployVersion: config.APP_VERSION };
+  return { environment, databaseUrl: config.DATABASE_URL, sentryDsn: config.SENTRY_DSN, deployVersion: config.APP_VERSION, smtpUrl: config.SMTP_URL, emailFrom: config.EMAIL_FROM };
 };
 
 /** Loads server-only API settings. Never import this module from browser code. */

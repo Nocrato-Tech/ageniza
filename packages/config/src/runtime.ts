@@ -36,7 +36,7 @@ export const isLoopbackUrl = (value: string): boolean => {
 };
 
 /** Hostnames that exist only inside the local Docker Compose stack. */
-const localContainerHosts = new Set(['host.docker.internal', 'postgres']);
+const localContainerHosts = new Set(['host.docker.internal', 'postgres', 'mailpit']);
 
 export const assertRuntimeUrlSafety = (environment: RuntimeEnvironment, variableName: string, value: string, options: { requireHttpsInProduction?: boolean; allowLocalContainerHosts?: boolean } = {}): void => {
   const url = new URL(value);

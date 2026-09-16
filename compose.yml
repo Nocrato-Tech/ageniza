@@ -16,6 +16,15 @@ services:
     networks: [internal, database-host]
     # TCP check: the temporary server used during first initialisation listens only on a socket.
     healthcheck: { test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d ageniza"], interval: 5s, timeout: 3s, retries: 12 }
+  mailpit:
+    # Local mail sink: messages are captured, never delivered. Web interface on 127.0.0.1:8025.
+    image: axllent/mailpit:v1.21
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: '1'
+      MP_SMTP_AUTH_ALLOW_INSECURE: '1'
+    ports: ["127.0.0.1:8025:8025"]
+    networks: [internal, database-host]
+    healthcheck: { test: ["CMD", "/mailpit", "readyz"], interval: 5s, timeout: 3s, retries: 12 }
   api:
     build: { context: ., dockerfile: apps/api/Dockerfile }
     environment:
@@ -25,7 +34,9 @@ services:
       PORT: 3001
       API_CORS_ORIGINS: http://127.0.0.1:5173
       DATABASE_URL: postgresql://ageniza_app:ageniza_app@postgres:5432/ageniza
-    depends_on: { postgres: { condition: service_healthy } }
+      SMTP_URL: smtp://mailpit:1025
+      EMAIL_FROM: Ageniza <no-reply@ageniza.local>
+    depends_on: { postgres: { condition: service_healthy }, mailpit: { condition: service_healthy } }
     ports: ["127.0.0.1:3001:3001"]
     networks: [edge, internal]
     healthcheck: { test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"], interval: 5s, timeout: 3s, retries: 12 }
@@ -35,9 +46,11 @@ services:
       APP_ENV: local
       APP_CONTAINER_LOCAL: 'true'
       DATABASE_URL: postgresql://ageniza_app:ageniza_app@postgres:5432/ageniza
+      SMTP_URL: smtp://mailpit:1025
+      EMAIL_FROM: Ageniza <no-reply@ageniza.local>
       WORKER_HEALTH_HOST: 0.0.0.0
       WORKER_HEALTH_PORT: 3002
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: { postgres: { condition: service_healthy }, mailpit: { condition: service_healthy } }
     networks: [internal, egress]
     healthcheck: { test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"], interval: 5s, timeout: 3s, retries: 12 }
   web:

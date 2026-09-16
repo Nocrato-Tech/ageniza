@@ -8,7 +8,7 @@ Docker Desktop (or Docker Engine with Compose v2), Node.js 22, and pnpm 9 are re
 pnpm docker:up
 ```
 
-This starts local PostgreSQL 17, applies the migrations, builds `web`, `api`, and `worker`, and waits until every healthcheck passes. Only `127.0.0.1:5173` (web), `127.0.0.1:3001` (API), and `127.0.0.1:54322` (PostgreSQL, for host tools and tests) are published. The API and worker reach the database as `postgres` on the internal Compose network with the `ageniza_app` role; the worker probe stays internal, and a separate unpublished egress network gives the worker outbound access.
+This starts local PostgreSQL 17 and Mailpit, applies the migrations, builds `web`, `api`, and `worker`, and waits until every healthcheck passes. Only `127.0.0.1:5173` (web), `127.0.0.1:3001` (API), `127.0.0.1:54322` (PostgreSQL, for host tools and tests), and `127.0.0.1:8025` (the Mailpit inbox) are published. Transactional email goes to Mailpit through `smtp://mailpit:1025` and never leaves the machine. The API and worker reach the database as `postgres` on the internal Compose network with the `ageniza_app` role; the worker probe stays internal, and a separate unpublished egress network gives the worker outbound access.
 
 Inspect logs and stop the stack with:
 
