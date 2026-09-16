@@ -134,8 +134,9 @@ sudoedit /etc/ageniza/runtime.env      # shape: infra/vps/runtime.env.example, n
 sudoedit /etc/ageniza/migrations.env   # shape: infra/vps/migrations.env.example
 sudoedit /etc/ageniza/github-token     # the fine-grained token only
 
-# API_TRUSTED_PROXY_CIDRS in runtime.env is this subnet:
-sudo docker network inspect ageniza-production-proxy --format '{{(index .IPAM.Config 0).Subnet}}'
+# API_TRUSTED_PROXY_CIDRS in runtime.env is the private network the web container reaches the
+# API from. Getting this wrong collapses per-IP rate limiting into a single global bucket.
+sudo docker network inspect ageniza_production-private --format '{{(index .IPAM.Config 0).Subnet}}'
 
 # GHCR pull credential, stored only in the root registry config:
 sudo docker --config /etc/ageniza/registry login ghcr.io -u <github-user> --password-stdin

@@ -29,7 +29,20 @@ try {
   writeFileSync(postgresEnv, 'POSTGRES_USER=postgres\nPOSTGRES_DB=ageniza\nPOSTGRES_PASSWORD=test-only\nAGENIZA_APP_DB_PASSWORD=test-only\n');
   environment.AGENIZA_RUNTIME_ENV_FILE = runtimeEnv;
   environment.AGENIZA_POSTGRES_ENV_FILE = postgresEnv;
-  execFileSync('docker', ['compose', '-f', 'compose.yml', '-f', 'compose.production.yml', 'config', '--quiet'], { env: environment, stdio: 'inherit' });
+  // Render the production model and assert its shape: local-only services must not leak into it,
+  // and nothing may publish a port, because the tunnel is the only public entry point (ADR 0012).
+  const rendered = execFileSync('docker', ['compose', '-f', 'compose.yml', '-f', 'compose.production.yml', 'config', '--format', 'json'], { env: environment, encoding: 'utf8' });
+  const model = JSON.parse(rendered);
+  const services = Object.keys(model.services ?? {}).sort();
+  const expected = ['api', 'postgres', 'web', 'worker'];
+  if (services.join(',') !== expected.join(',')) {
+    throw new Error(`Production model has services [${services.join(', ')}]; expected [${expected.join(', ')}].`);
+  }
+  for (const [name, service] of Object.entries(model.services)) {
+    if (Array.isArray(service.ports) && service.ports.length > 0) {
+      throw new Error(`Service ${name} publishes a port in production; the Cloudflare Tunnel is the only entry point.`);
+    }
+  }
   execFileSync('docker', ['compose', '-f', 'infra/vps/compose.tunnel.yml', 'config', '--quiet'], { env: environment, stdio: 'inherit' });
   console.log('Production Compose and immutable image-reference validation passed.');
 } finally {

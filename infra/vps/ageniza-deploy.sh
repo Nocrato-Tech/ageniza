@@ -270,7 +270,9 @@ rollback() {
   require_root_file "$RUNTIME_SNAPSHOT" '600'
   for image in "$API_IMAGE" "$WEB_IMAGE" "$WORKER_IMAGE"; do pull_verified_image "$image"; done
   note "rolling back to $RELEASE"
-  start_release
+  # Deliberately no automatic restore here: the release being left behind is the one that just
+  # failed, so bringing it back could loop. A failed rollback needs a human.
+  start_release || die 'rollback could not start the previous release; the host may be running a mix of releases. Inspect /var/lib/ageniza/releases and `docker compose -p ageniza ps`'
   install -o root -g root -m 0600 "$RELEASE_DIR/previous.env" "$RELEASE_DIR/current.env"
   note "rollback activated release $RELEASE; schema was not changed"
 }

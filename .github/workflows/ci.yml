@@ -119,6 +119,9 @@ jobs:
         run: >-
           docker run --rm -v "$PWD:/repo" -w /repo koalaman/shellcheck:stable
           --severity=warning infra/vps/*.sh infra/postgres/initdb/*.sh
+      # Renders the production model on every pull request; without this only PRs to main check it.
+      - name: Render and check the production Compose model
+        run: node scripts/deploy/validate-production.mjs
       - name: Validate the tunnel ingress rules
         run: |
           edge="$RUNNER_TEMP/cloudflared"
