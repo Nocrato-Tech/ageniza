@@ -1,0 +1,38 @@
+{
+  "name": "ageniza",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=22.14.0 <23",
+    "pnpm": ">=9.15.4 <10"
+  },
+  "scripts": {
+    "prepare": "node -e \"try{require('node:child_process').execFileSync('git',['config','core.hooksPath','.githooks'],{stdio:'ignore'})}catch{}\"",
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:start": "pnpm dlx supabase@2.117.0 start",
+    "db:reset": "pnpm dlx supabase@2.117.0 db reset --local --yes",
+    "db:test:local": "pnpm --filter @ageniza/database test:integration",
+    "docker:up": "node scripts/docker/local-stack.mjs up",
+    "docker:down": "node scripts/docker/local-stack.mjs down",
+    "docker:logs": "docker compose logs --tail=200 -f",
+    "deploy:validate": "node scripts/deploy/validate-production.mjs",
+    "test:scripts": "vitest run --dir scripts",
+    "clean": "turbo run clean && rimraf node_modules .turbo"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.21.0",
+    "@types/node": "^22.13.5",
+    "eslint": "^9.21.0",
+    "globals": "^15.15.0",
+    "rimraf": "^6.0.1",
+    "turbo": "^2.4.4",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.24.0",
+    "vitest": "^3.0.7"
+  }
+}

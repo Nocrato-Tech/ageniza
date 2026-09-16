@@ -1,0 +1,4 @@
+# Installed at /etc/sudoers.d/ageniza-deploy (0440) by install-production-deploy.sh, which validates it first.
+# Only the GitHub Actions forced-command user may run the fixed entrypoint; the entrypoint validates its arguments.
+# No NOEXEC: the entrypoint must execute docker, curl, and install.
+ageniza-ci ALL=(root) NOPASSWD: /usr/local/sbin/ageniza-deploy apply *, /usr/local/sbin/ageniza-deploy rollback, /usr/local/sbin/ageniza-deploy status

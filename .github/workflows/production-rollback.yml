@@ -1,0 +1,51 @@
+name: Production rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Incident/change reference; no secrets.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-main
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  rollback:
+    name: Roll back to previous immutable release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PRODUCTION_PUBLIC_URL: ${{ vars.PRODUCTION_PUBLIC_URL }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: ./.github/actions/production-ssh
+        with:
+          private-key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          known-hosts: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+          host: ${{ vars.PRODUCTION_SSH_HOST }}
+          port: ${{ vars.PRODUCTION_SSH_PORT }}
+          user: ${{ vars.PRODUCTION_SSH_USER }}
+      - name: Record the rollback reason
+        env:
+          REASON: ${{ inputs.reason }}
+        run: |
+          printf '## Production rollback\n- Requested by: @%s\n- Reason: %s\n' "$GITHUB_ACTOR" "$REASON" >> "$GITHUB_STEP_SUMMARY"
+      - name: Activate the prior release without schema rollback
+        run: ssh production rollback
+      - name: Smoke test the restored release through Cloudflare
+        run: |
+          active="$(ssh production status | sed -n 's/^RELEASE=//p')"
+          served="$(curl --fail --silent --show-error --proto '=https' --retry 3 --retry-all-errors --max-time 20 "$PRODUCTION_PUBLIC_URL/version.txt?run=$GITHUB_RUN_ID" | tr -d '[:space:]')"
+          [[ -n "$active" && "$served" == "$active" ]] || { echo "::error::The public site serves '$served', expected active release '$active'."; exit 1; }
+          curl --fail --silent --show-error --proto '=https' --retry 3 --retry-all-errors --max-time 20 "$PRODUCTION_PUBLIC_URL/api/health" >/dev/null
+          echo "- Active release: \`$active\`" >> "$GITHUB_STEP_SUMMARY"

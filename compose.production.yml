@@ -1,0 +1,48 @@
+services:
+  api:
+    image: ${AGENIZA_API_IMAGE:?immutable API image reference required}
+    build: !reset null
+    environment: !reset {}
+    extra_hosts: !reset []
+    env_file:
+      - path: ${AGENIZA_RUNTIME_ENV_FILE:?server runtime env file required}
+        format: raw
+    ports: !reset []
+    restart: unless-stopped
+    logging: &production-logging
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Caddy reaches this service as `api` on the shared proxy network.
+    networks:
+      production-proxy: {}
+      production-private: {}
+  worker:
+    image: ${AGENIZA_WORKER_IMAGE:?immutable worker image reference required}
+    build: !reset null
+    environment: !reset {}
+    extra_hosts: !reset []
+    env_file:
+      - path: ${AGENIZA_RUNTIME_ENV_FILE:?server runtime env file required}
+        format: raw
+    restart: unless-stopped
+    logging: *production-logging
+    networks: [production-private]
+  web:
+    image: ${AGENIZA_WEB_IMAGE:?immutable web image reference required}
+    build: !reset null
+    environment: !reset {}
+    ports: !reset []
+    restart: unless-stopped
+    logging: *production-logging
+    # Caddy reaches this service as `web` on the shared proxy network.
+    networks:
+      production-proxy: {}
+
+networks:
+  production-proxy:
+    name: ageniza-production-proxy
+    external: true
+  production-private:
+    internal: true
