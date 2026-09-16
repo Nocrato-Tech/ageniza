@@ -21,13 +21,13 @@ To check a branch's migration policy locally, supply the commit range that the p
 node scripts/ci/validate-migrations.mjs --base origin/develop --head HEAD
 ```
 
-The policy guards only `supabase/migrations`: this is the canonical append-only source for schema and RLS policies. It accepts additions only when the filename is a versioned SQL name (`8+ digits`, then `_` or `-`, then a `.sql` name); it rejects edits, deletions, and renames of existing migrations. Do not create a competing Knex migration history.
+The policy guards only `packages/database/migrations`: this is the canonical append-only Knex history for schema and RLS policies. It accepts additions only when the filename is versioned (`8+ digits`, then `_` or `-`, then a `.mjs` name); it rejects edits, deletions, and renames of existing migrations.
 
-## Local Supabase job
+## Local PostgreSQL job
 
-`CI / Supabase local database` uses the pinned Supabase CLI `2.117.0` to start Docker-backed local services, runs `supabase db reset --local --yes`, then runs the cross-platform `pnpm db:test:local` command. The test hook defaults only to the loopback database URL and proves Knex transactions, parameter binding, lifecycle, and an RLS isolation harness where tenant A cannot read tenant B. It uses no environment secret, cloud URL, or production credential.
+`CI / PostgreSQL local database` starts the `postgres` service from `compose.yml` (which creates the `ageniza_app` role), applies every migration to the empty database with `pnpm db:migrate`, then runs `pnpm db:test:local`. The suite proves Knex transactions and parameter binding, that the application role is neither superuser nor `BYPASSRLS`, and that a user of agency A cannot SELECT, INSERT, UPDATE, or DELETE agency B's rows. It uses no secret, remote URL, or production credential.
 
-The local equivalents are `pnpm db:start`, `pnpm db:reset`, and `pnpm db:test:local`. Those commands use Supabase CLI `2.117.0`; Docker must be running. Stop the stack after local work with `pnpm dlx supabase@2.117.0 stop --no-backup`.
+The local equivalents are `pnpm db:start`, `pnpm db:migrate`, and `pnpm db:test:local`; Docker must be running. `pnpm db:reset` rebuilds the local database from migrations.
 
 ## Branch protections and promotion
 
@@ -49,7 +49,7 @@ When the organization moves to GitHub Team, replace this with rulesets on `devel
 - `CI / Migration policy`
 - `CI / Quality gates`
 - `CI / Docker images`
-- `CI / Supabase local database`
+- `CI / PostgreSQL local database`
 
 Feature, fix, and refactor branches merge into `develop`. `develop` is the integration branch only: it has no remote deployment environment. A pull request to `main` is a production-promotion gate and must originate from `develop`; the workflow permits `hotfix/*` only as the documented production exception. Production deployment belongs to a separate main-only workflow using GitHub's `production` Environment, never this CI workflow or a `develop` environment; see the [production deploy runbook](../infra/production-deploy.md).
 

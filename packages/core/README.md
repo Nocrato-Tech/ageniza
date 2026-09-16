@@ -29,7 +29,7 @@ throw new HttpError({ statusCode: 404, code: 'RESOURCE_NOT_FOUND', message: 'Res
 // An HTTP adapter can turn a caught error into: errorResponse(error)
 ```
 
-`createLogger` returns a Pino logger with mandatory baseline redaction for passwords, authorization headers, cookies, tokens, and Supabase service-role keys. Custom redaction paths are additive. Use `withLogContext` at boundaries to attach `requestId`, `userId`, `agencyId`, `module`, and `action`. `resolveRequestId` preserves a supplied safe request/correlation ID, while generating one when absent or malformed.
+`createLogger` returns a Pino logger with mandatory baseline redaction for passwords, authorization headers, cookies, tokens, and database connection strings. Custom redaction paths are additive. Use `withLogContext` at boundaries to attach `requestId`, `userId`, `agencyId`, `module`, and `action`. `resolveRequestId` preserves a supplied safe request/correlation ID, while generating one when absent or malformed.
 
 `HttpError` and `OperationalError` expose stable codes, and `serializeError` intentionally omits stacks and unexpected error messages. `httpResponse`, `ok`, `created`, `noContent`, and `errorResponse` return plain values so Fastify or another adapter remains responsible for writing the response.
 

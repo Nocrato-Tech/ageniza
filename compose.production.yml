@@ -14,10 +14,12 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    # Caddy reaches this service as `api` on the shared proxy network.
-    networks:
-      production-proxy: {}
-      production-private: {}
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+    # Reached only by the web container's /api proxy, never from the tunnel network (ADR 0012).
+    # `egress` is not internal: the API needs outbound access for SMTP and error reporting.
+    networks: !override [production-private, egress]
   worker:
     image: ${AGENIZA_WORKER_IMAGE:?immutable worker image reference required}
     build: !reset null
@@ -26,9 +28,13 @@ services:
     env_file:
       - path: ${AGENIZA_RUNTIME_ENV_FILE:?server runtime env file required}
         format: raw
+    depends_on: !override
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     logging: *production-logging
-    networks: [production-private]
+    # Outbound access for SMTP and error reporting; never reachable from the tunnel network.
+    networks: !override [production-private, egress]
   web:
     image: ${AGENIZA_WEB_IMAGE:?immutable web image reference required}
     build: !reset null
@@ -36,9 +42,28 @@ services:
     ports: !reset []
     restart: unless-stopped
     logging: *production-logging
-    # Caddy reaches this service as `web` on the shared proxy network.
-    networks:
-      production-proxy: {}
+    # The tunnel reaches this service as `web`; it proxies /api to the API on the private network.
+    networks: !override [production-proxy, production-private]
+  # Local-only mail sink. The profile keeps it out of the production model entirely, so a
+  # hand-run `docker compose up` on the VPS cannot start a mail catcher.
+  mailpit:
+    profiles: ["local-only"]
+    ports: !reset []
+  postgres:
+    image: ${AGENIZA_POSTGRES_IMAGE:?immutable PostgreSQL image reference required}
+    environment: !reset {}
+    env_file:
+      - path: ${AGENIZA_POSTGRES_ENV_FILE:?PostgreSQL env file required}
+        format: raw
+    # Never publish PostgreSQL: Docker-published ports bypass the host firewall.
+    ports: !reset []
+    volumes: !override
+      - postgres-data:/var/lib/postgresql/data
+      - /opt/ageniza/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    shm_size: 256mb
+    restart: unless-stopped
+    logging: *production-logging
+    networks: !override [production-private]
 
 networks:
   production-proxy:

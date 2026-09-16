@@ -1,0 +1,15 @@
+# Tunnel routing, versioned on purpose (ADR 0012). Installed at /etc/ageniza/cloudflared/config.yml
+# and mounted read-only into the container. The tunnel id is passed on the command line from
+# deploy.env, so this file stays the same for every environment.
+credentials-file: /etc/cloudflared/credentials.json
+no-autoupdate: true
+
+originRequest:
+  connectTimeout: 10s
+  # Origin traffic stays on the private Docker network; TLS ends at Cloudflare.
+  noTLSVerify: false
+
+ingress:
+  # Single public entry point: the web container serves the SPA and proxies /api to the API,
+  # which keeps the browser and the API on one origin.
+  - service: http://web:8080

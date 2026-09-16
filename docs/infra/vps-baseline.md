@@ -1,6 +1,6 @@
 # Ubuntu VPS baseline
 
-This is the reproducible host baseline for a clean Ubuntu LTS Hostinger VPS. It is intentionally host-only: it does not access Hostinger, Cloudflare, DNS, GitHub, a live SSH host, or any production resource. It does not install the reverse proxy or deployment entrypoint; after this baseline, follow the [production deploy runbook](production-deploy.md) (ADR 0010: Caddy plus GitHub Actions over SSH). References below to "ADR #10" and "the future proxy" mean that runbook.
+This is the reproducible host baseline for a clean Ubuntu LTS Hostinger VPS. It is intentionally host-only: it does not access Hostinger, Cloudflare, DNS, GitHub, a live SSH host, or any production resource. It does not install the edge or the deployment entrypoint; after this baseline, follow the [production deploy runbook](production-deploy.md) (ADR 0010 for the deploy mechanism, ADR 0012 for the Cloudflare Tunnel edge). References below to "ADR #10" and "the future proxy" mean that runbook.
 
 ## Preconditions
 
@@ -22,7 +22,7 @@ The bootstrap is safe to re-run for the same desired state. It validates `sshd` 
 
 ## Safe SSH and firewall staging
 
-The script enables UFW and permits TCP SSH, 80, and 443. On a fresh VPS, set `LOCKDOWN_UFW=true` to reset UFW to precisely those ingress rules. On any host that may have prior rules, leave it false, complete the second-login check, inspect `sudo ufw status numbered`, then remove each unapproved inbound rule deliberately.
+The script enables UFW and permits **only** TCP SSH: the Cloudflare Tunnel connects outbound, so nothing inbound is needed ([ADR 0012](../adr/0012-cloudflare-tunnel-edge.md)). On a fresh VPS, set `LOCKDOWN_UFW=true` to reset UFW to precisely that one ingress rule. A host bootstrapped before this decision still allows 80 and 443: remove them with `sudo ufw delete allow 80/tcp` and `sudo ufw delete allow 443/tcp`. On any host that may have prior rules, leave it false, complete the second-login check, inspect `sudo ufw status numbered`, then remove each unapproved inbound rule deliberately.
 
 Immediately after bootstrap, from a second terminal—not the original root session—run:
 
@@ -39,9 +39,9 @@ If key login fails, keep the original session open. The SSH drop-in is `/etc/ssh
 - Docker Engine and the Compose plugin come from Docker's official signed Ubuntu APT repository. The deploy user is not added to the Docker group by default because that group is root-equivalent; use narrowly approved sudo access until ADR #10 defines deployment automation.
 - The host uses UTC, `systemd-timesyncd`, and unattended security updates. Automatic reboot is off: reboots remain a scheduled, verified operation.
 - The deploy user is key-only. Keep the SSH port and public key in the protected bootstrap config; do not put passwords, private keys, Cloudflare tokens, or application secrets in any script, image, compose file, or Git checkout.
-- Only a future reverse proxy may publish 80/443. Every application, worker, cache, queue, and database service must be on an internal Docker network with no `ports:` mapping. Use `expose:` only when service-to-service documentation benefits from it.
+- **No service publishes a port.** The Cloudflare Tunnel connects outbound ([ADR 0012](../adr/0012-cloudflare-tunnel-edge.md)), so every application, worker, cache, queue, and database service stays on an internal Docker network with no `ports:` mapping. Use `expose:` only when service-to-service documentation benefits from it. Remember that Docker-published ports bypass UFW, which is exactly why none exist.
 - Every non-job container needs a healthcheck and `restart: unless-stopped` (or a more intentional approved policy). Image tags must be immutable/digested for releases; logs need bounded rotation; deploys must wait for healthy services before traffic changes.
-- Do not run production PostgreSQL on this VPS. Do not treat a container layer, bind mount, or local volume as the only copy of critical data. Managed production data, encrypted backups, restore tests, and retention are required before a service becomes production-ready.
+- PostgreSQL runs on this VPS only as the internal `postgres` container ([ADR 0011](../adr/0011-self-hosted-postgres-and-better-auth.md)), never with a published port. Its volume must never be the only copy of critical data: encrypted off-host backups with retention and a tested restore ([backup and restore runbook](backup-restore.md)) are required before production holds real data.
 
 Example Compose policy fragment (not a deployment stack):
 
@@ -50,7 +50,7 @@ services:
   api:
     restart: unless-stopped
     networks: [private]
-    # No ports: mapping: the future ADR #10 proxy is the only public entry point.
+    # No ports: mapping: the Cloudflare Tunnel is the only public entry point (ADR 0012).
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
       interval: 30s
@@ -81,10 +81,9 @@ For an application rebuild, use the future ADR #10 deployment mechanism. Build/r
 
 Complete this manually in the approved Cloudflare account after ADR #10 defines the proxy/origin topology; this runbook makes no API calls.
 
-- Add the required DNS record pointing to the VPS public IP and proxy it through Cloudflare (orange cloud) when the application is ready.
-- Configure SSL/TLS encryption mode as **Full (strict)**. Install a valid origin certificate through the approved proxy design; never use Flexible mode.
-- Ensure the origin only permits inbound 80/443 from current Cloudflare IP ranges, plus the approved administrator SSH path. Maintain those IP ranges through an approved, reviewed process; do not hard-code stale ranges in this repository.
-- Confirm direct-origin requests are blocked or do not serve the application, while proxied HTTPS works with valid certificate validation, redirect behavior, and health checks.
+- The public hostname is a DNS record created by `cloudflared tunnel route dns`; it points at the tunnel, not at the VPS IP. There is no A record for the application.
+- TLS ends at Cloudflare. There is no origin certificate to install or renew, and no origin IP allowlist to maintain.
+- Confirm the origin serves nothing directly: the application answers only through the tunnel hostname, and the VPS has no inbound port open except SSH.
 - Keep Cloudflare API tokens least-privileged, environment-scoped, and in approved secret storage only. Record DNS, TLS, proxy, cache, WAF, and origin-rule changes in the operational change record.
 
 ## Verification limits

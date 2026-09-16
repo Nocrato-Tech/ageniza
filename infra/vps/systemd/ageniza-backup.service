@@ -1,0 +1,12 @@
+[Unit]
+Description=Ageniza encrypted PostgreSQL backup to Cloudflare R2
+Documentation=https://github.com/Nocrato-Tech/ageniza/blob/main/docs/infra/backup-restore.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ageniza-backup backup
+# A failed run exits non-zero; the missed heartbeat is what raises the alert.
+Nice=10
+IOSchedulingClass=idle

@@ -113,19 +113,31 @@ jobs:
         run: docker compose build
       - name: Build the production migration runner
         run: docker build -t ageniza-migrations:ci -f infra/migrations/Dockerfile .
-      - name: Check the migration runner CLI
-        run: docker run --rm --entrypoint supabase ageniza-migrations:ci --version
-      - name: Validate the production Caddyfile syntax
+      - name: Check the migration runner entrypoint
+        run: docker run --rm --entrypoint node ageniza-migrations:ci -e "import('knex').then(() => console.log('migration runner ok'))"
+      - name: Lint the VPS shell scripts
+        run: >-
+          docker run --rm -v "$PWD:/repo" -w /repo koalaman/shellcheck:stable
+          --severity=warning infra/vps/*.sh infra/postgres/initdb/*.sh
+      # Renders the production model on every pull request; without this only PRs to main check it.
+      - name: Render and check the production Compose model
+        run: node scripts/deploy/validate-production.mjs
+      - name: Validate the tunnel ingress rules
         run: |
-          edge="$RUNNER_TEMP/caddy"
+          edge="$RUNNER_TEMP/cloudflared"
           mkdir -p "$edge"
-          cp infra/vps/caddy/Caddyfile "$edge/Caddyfile"
-          echo 'trusted_proxies static 173.245.48.0/20 2400:cb00::/32' > "$edge/cloudflare-trusted-proxies.caddy"
-          docker run --rm -e AGENIZA_DOMAIN=app.example.test -e AGENIZA_ACME_EMAIL=ops@example.test -v "$edge:/etc/caddy:ro" caddy:2 \
-            caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+          cp infra/vps/cloudflared/config.yml "$edge/config.yml"
+          # Credentials are a host secret; ingress validation does not need them.
+          echo '{}' > "$edge/credentials.json"
+          docker run --rm -v "$edge:/etc/cloudflared:ro" cloudflare/cloudflared:latest \
+            tunnel --config /etc/cloudflared/config.yml ingress validate
+      - name: Validate the web server configuration
+        run: |
+          docker run --rm -v "$PWD/apps/web/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+            nginxinc/nginx-unprivileged:1.27-alpine nginx -t
 
-  supabase-local:
-    name: Supabase local database
+  database-local:
+    name: PostgreSQL local database
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -147,15 +159,12 @@ jobs:
             ${{ runner.os }}-pnpm-
       - name: Install from the committed lockfile
         run: pnpm install --frozen-lockfile
-      - uses: supabase/setup-cli@v3
-        with:
-          version: 2.117.0
-      - name: Start an isolated local Supabase stack
-        run: supabase start
-      - name: Apply migrations to the isolated local database
-        run: supabase db reset --local --yes
+      - name: Start the isolated local PostgreSQL
+        run: pnpm db:start
+      - name: Apply every migration to an empty database
+        run: pnpm db:migrate
       - name: Run database integration and RLS isolation suite
         run: pnpm db:test:local
-      - name: Stop the local Supabase stack
+      - name: Remove the local database
         if: always()
-        run: supabase stop --no-backup
+        run: docker compose down --volumes --remove-orphans

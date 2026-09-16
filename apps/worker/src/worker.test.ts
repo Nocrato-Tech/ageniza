@@ -13,9 +13,7 @@ import { createWorkerRuntime, type CreateWorkerRuntimeOptions } from './worker.j
 const config: WorkerConfig = {
   service: 'worker',
   environment: 'test',
-  databaseUrl: 'postgresql://127.0.0.1:54322/postgres',
-  supabaseUrl: 'http://127.0.0.1:54321',
-  supabaseServiceRoleKey: 'test',
+  databaseUrl: 'postgresql://127.0.0.1:54322/ageniza',
   deployVersion: 'test-commit',
   healthHost: '127.0.0.1',
   healthPort: 0,

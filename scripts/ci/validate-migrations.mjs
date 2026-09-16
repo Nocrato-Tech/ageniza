@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
-// Supabase CLI owns the one canonical append-only migration and policy history.
-const migrationRoots = ["supabase/migrations"];
-const versionedSqlMigration = /^\d{8,}[_-][A-Za-z0-9][A-Za-z0-9_.-]*\.sql$/;
+// Knex owns the one canonical append-only migration and policy history (ADR 0011).
+const migrationRoots = ["packages/database/migrations"];
+const versionedMigration = /^\d{8,}[_-][A-Za-z0-9][A-Za-z0-9_.-]*\.mjs$/;
 
 function argument(name) {
   const index = process.argv.indexOf(name);
@@ -49,20 +49,20 @@ if (!base || !head) {
     }
 
     if (changes.length === 0) {
-      console.log("No SQL migration changes found in guarded migration roots.");
+      console.log("No migration changes found in guarded migration roots.");
     } else {
       for (const { status, file } of changes) {
         const filename = path.posix.basename(file);
         if (status !== "A") {
           fail(
-            `${status} ${file}. Existing migrations are immutable; create a new versioned SQL migration instead.`,
+            `${status} ${file}. Existing migrations are immutable; create a new versioned migration instead.`,
           );
-        } else if (!versionedSqlMigration.test(filename)) {
+        } else if (!versionedMigration.test(filename)) {
           fail(
-            `A ${file}. New SQL migrations must start with an 8+ digit version followed by _ or -.`,
+            `A ${file}. New migrations must be .mjs files starting with an 8+ digit version followed by _ or -.`,
           );
         } else {
-          console.log(`Accepted new versioned SQL migration: ${file}`);
+          console.log(`Accepted new versioned migration: ${file}`);
         }
       }
     }

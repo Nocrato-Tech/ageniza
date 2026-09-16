@@ -1,6 +1,6 @@
 # ADR 0010: Caddy edge and controlled production deployment
 
-- Status: Accepted
+- Status: Accepted; the **edge** decision is superseded by [ADR 0012](0012-cloudflare-tunnel-edge.md) (Cloudflare Tunnel instead of Caddy). The deployment mechanism below still applies.
 - Date: 2026-09-15
 - Deciders: Ageniza maintainers
 - Issue: [#10](https://github.com/Nocrato-Tech/ageniza/issues/10)
