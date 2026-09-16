@@ -2,7 +2,7 @@
 # Fixed root-owned production deployment entrypoint. Install; never run from a Git checkout.
 # Production secrets live only on this host (ADR 0010 amendment). GitHub sends a commit SHA
 # and a workflow run ID; this script verifies both against GitHub before changing anything.
-# Releases replace containers in place (a few seconds of downtime); Caddy routes to fixed names.
+# Releases replace containers in place (a few seconds of downtime); the tunnel routes to fixed names.
 set -Eeuo pipefail
 IFS=$'\n\t'
 umask 077

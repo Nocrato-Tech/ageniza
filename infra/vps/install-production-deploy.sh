@@ -12,7 +12,7 @@ readonly CI_USER=ageniza-ci
 
 for file in \
   "$SOURCE_DIR/ageniza-deploy.sh" "$SOURCE_DIR/ageniza-deploy-ssh.sh" "$SOURCE_DIR/ageniza-deploy.sudoers" \
-  "$SOURCE_DIR/refresh-cloudflare-ips.sh" "$SOURCE_DIR/compose.caddy.yml" "$SOURCE_DIR/caddy/Caddyfile" \
+  "$SOURCE_DIR/compose.tunnel.yml" "$SOURCE_DIR/cloudflared/config.yml" \
   "$REPOSITORY_ROOT/compose.yml" "$REPOSITORY_ROOT/compose.production.yml" \
   "$REPOSITORY_ROOT/infra/postgres/initdb/10-application-role.sh" \
   "$SOURCE_DIR/ageniza-backup.sh" "$SOURCE_DIR/systemd/ageniza-backup.service" "$SOURCE_DIR/systemd/ageniza-backup.timer"; do
@@ -31,13 +31,12 @@ fi
 install -d -o "$CI_USER" -g "$CI_USER" -m 0700 "/home/$CI_USER/.ssh"
 [[ -f "/home/$CI_USER/.ssh/authorized_keys" ]] || install -o "$CI_USER" -g "$CI_USER" -m 0600 /dev/null "/home/$CI_USER/.ssh/authorized_keys"
 
-install -d -o root -g root -m 0750 "$APP_ROOT" /etc/ageniza /etc/ageniza/caddy
+install -d -o root -g root -m 0750 "$APP_ROOT" /etc/ageniza /etc/ageniza/cloudflared
 install -d -o root -g root -m 0755 "$APP_ROOT/postgres" "$APP_ROOT/postgres/initdb"
 install -o root -g root -m 0755 "$REPOSITORY_ROOT/infra/postgres/initdb/10-application-role.sh" "$APP_ROOT/postgres/initdb/10-application-role.sh"
 install -d -o root -g root -m 0700 /etc/ageniza/registry /var/lib/ageniza/releases
 install -o root -g root -m 0755 "$SOURCE_DIR/ageniza-deploy.sh" /usr/local/sbin/ageniza-deploy
 install -o root -g root -m 0755 "$SOURCE_DIR/ageniza-deploy-ssh.sh" /usr/local/sbin/ageniza-deploy-ssh
-install -o root -g root -m 0755 "$SOURCE_DIR/refresh-cloudflare-ips.sh" /usr/local/sbin/ageniza-refresh-cloudflare-ips
 install -o root -g root -m 0755 "$SOURCE_DIR/ageniza-backup.sh" /usr/local/sbin/ageniza-backup
 install -d -o root -g root -m 0700 /var/lib/ageniza/backups
 install -o root -g root -m 0644 "$SOURCE_DIR/systemd/ageniza-backup.service" /etc/systemd/system/ageniza-backup.service
@@ -45,19 +44,17 @@ install -o root -g root -m 0644 "$SOURCE_DIR/systemd/ageniza-backup.timer" /etc/
 systemctl daemon-reload
 install -o root -g root -m 0644 "$REPOSITORY_ROOT/compose.yml" "$APP_ROOT/compose.yml"
 install -o root -g root -m 0644 "$REPOSITORY_ROOT/compose.production.yml" "$APP_ROOT/compose.production.yml"
-install -o root -g root -m 0644 "$SOURCE_DIR/compose.caddy.yml" "$APP_ROOT/compose.caddy.yml"
-install -o root -g root -m 0644 "$SOURCE_DIR/caddy/Caddyfile" /etc/ageniza/caddy/Caddyfile
-rm -f /etc/ageniza/caddy/active-upstream.caddy
+install -o root -g root -m 0644 "$SOURCE_DIR/compose.tunnel.yml" "$APP_ROOT/compose.tunnel.yml"
+install -o root -g root -m 0644 "$SOURCE_DIR/cloudflared/config.yml" /etc/ageniza/cloudflared/config.yml
 install -o root -g root -m 0440 "$SOURCE_DIR/ageniza-deploy.sudoers" /etc/sudoers.d/ageniza-deploy
 docker network inspect ageniza-production-proxy >/dev/null 2>&1 || docker network create ageniza-production-proxy >/dev/null
-/usr/local/sbin/ageniza-refresh-cloudflare-ips || printf 'WARNING: could not refresh Cloudflare ranges; run ageniza-refresh-cloudflare-ips before starting Caddy.\n' >&2
 
 cat <<EOF
 Installed the deployment bundle. Finish the host setup from docs/infra/production-deploy.md:
   - /etc/ageniza/deploy.env, postgres.env, runtime.env, migrations.env, and github-token
   - GHCR login into /etc/ageniza/registry
   - the GitHub Actions public key in /home/$CI_USER/.ssh/authorized_keys with the forced command
-  - start Caddy
+  - /etc/ageniza/cloudflared/credentials.json (0600) and the tunnel id in deploy.env, then start the tunnel
   - backups: /etc/ageniza/backup.env, /etc/ageniza/backup-passphrase, then enable ageniza-backup.timer
     (docs/infra/backup-restore.md) before production holds real data
 EOF

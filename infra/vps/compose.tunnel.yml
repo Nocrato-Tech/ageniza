@@ -1,0 +1,22 @@
+services:
+  cloudflared:
+    image: ${AGENIZA_TUNNEL_IMAGE:?immutable cloudflared image reference required}
+    # Outbound only: the VPS publishes no application port. Routing comes from the versioned
+    # config file, not the Cloudflare dashboard (ADR 0012).
+    command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run", "${AGENIZA_TUNNEL_ID:?tunnel id required}"]
+    restart: unless-stopped
+    networks: [production-proxy]
+    volumes:
+      - /etc/ageniza/cloudflared:/etc/cloudflared:ro
+    # The cloudflared image ships no shell, so there is no container healthcheck; tunnel health
+    # is visible in Cloudflare and the restart policy covers crashes (ADR 0012).
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  production-proxy:
+    name: ageniza-production-proxy
+    external: true

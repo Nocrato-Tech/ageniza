@@ -114,20 +114,17 @@ Unattended-Upgrade::Automatic-Reboot "false";
 EOF
 systemctl enable --now unattended-upgrades.service
 
-note "Opening required firewall ports before applying SSH configuration"
+note "Opening the SSH port before applying SSH configuration"
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow "${SSH_PORT}/tcp" comment 'Ageniza SSH'
-ufw allow 80/tcp comment 'Ageniza HTTP'
-ufw allow 443/tcp comment 'Ageniza HTTPS'
+# No inbound 80/443: the Cloudflare Tunnel connects outbound (ADR 0012).
 if [[ "$LOCKDOWN_UFW" == "true" ]]; then
-  note "LOCKDOWN_UFW=true: resetting UFW to SSH, HTTP, and HTTPS only"
+  note "LOCKDOWN_UFW=true: resetting UFW to SSH only"
   ufw --force reset
   ufw default deny incoming
   ufw default allow outgoing
   ufw allow "${SSH_PORT}/tcp" comment 'Ageniza SSH'
-  ufw allow 80/tcp comment 'Ageniza HTTP'
-  ufw allow 443/tcp comment 'Ageniza HTTPS'
 else
   note "Preserving existing UFW rules. Review them and rerun with LOCKDOWN_UFW=true only after a second SSH session succeeds."
 fi

@@ -11,17 +11,17 @@ const environment = {
   AGENIZA_API_IMAGE: image('api', 'a'),
   AGENIZA_WORKER_IMAGE: image('worker', 'b'),
   AGENIZA_WEB_IMAGE: image('web', 'c'),
-  AGENIZA_CADDY_IMAGE: `caddy@sha256:${'d'.repeat(64)}`,
   AGENIZA_POSTGRES_IMAGE: `postgres@sha256:${'e'.repeat(64)}`,
-  AGENIZA_DOMAIN: 'app.example.test',
-  AGENIZA_ACME_EMAIL: 'ops@example.test'
+  AGENIZA_TUNNEL_IMAGE: `cloudflare/cloudflared@sha256:${'f'.repeat(64)}`,
+  AGENIZA_TUNNEL_ID: '00000000-0000-4000-8000-000000000000',
+  AGENIZA_DOMAIN: 'app.example.test'
 };
 const directory = mkdtempSync(join(tmpdir(), 'ageniza-production-'));
 const runtimeEnv = join(directory, 'runtime.env');
 const postgresEnv = join(directory, 'postgres.env');
 
 try {
-  // Application images come from GHCR; Caddy and PostgreSQL images are host-configured and checked by the VPS entrypoint.
+  // Application images come from GHCR; PostgreSQL and cloudflared are host-configured and checked by the VPS entrypoint.
   for (const name of ['AGENIZA_API_IMAGE', 'AGENIZA_WORKER_IMAGE', 'AGENIZA_WEB_IMAGE']) {
     assertImmutableGhcrImage(name, environment[name]);
   }
@@ -30,7 +30,7 @@ try {
   environment.AGENIZA_RUNTIME_ENV_FILE = runtimeEnv;
   environment.AGENIZA_POSTGRES_ENV_FILE = postgresEnv;
   execFileSync('docker', ['compose', '-f', 'compose.yml', '-f', 'compose.production.yml', 'config', '--quiet'], { env: environment, stdio: 'inherit' });
-  execFileSync('docker', ['compose', '-f', 'infra/vps/compose.caddy.yml', 'config', '--quiet'], { env: environment, stdio: 'inherit' });
+  execFileSync('docker', ['compose', '-f', 'infra/vps/compose.tunnel.yml', 'config', '--quiet'], { env: environment, stdio: 'inherit' });
   console.log('Production Compose and immutable image-reference validation passed.');
 } finally {
   rmSync(directory, { recursive: true, force: true });

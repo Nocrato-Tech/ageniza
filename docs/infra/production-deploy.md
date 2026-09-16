@@ -1,6 +1,6 @@
 # Production deploy and rollback
 
-This runbook operates [ADR 0010](../adr/0010-vps-edge-and-production-deployment.md) and its GitHub Free amendment. GitHub Actions builds immutable GHCR images and a release manifest. The Hostinger VPS verifies that release against GitHub itself, runs migrations, and replaces the `api`, `web`, and `worker` containers in place behind Caddy. A release causes a few seconds of downtime, which is accepted for the MVP. There is no remote staging environment.
+This runbook operates [ADR 0010](../adr/0010-vps-edge-and-production-deployment.md) and its GitHub Free amendment. GitHub Actions builds immutable GHCR images and a release manifest. The Hostinger VPS verifies that release against GitHub itself, runs migrations, and replaces the `api`, `web`, and `worker` containers in place behind a Cloudflare Tunnel ([ADR 0012](../adr/0012-cloudflare-tunnel-edge.md)). A release causes a few seconds of downtime, which is accepted for the MVP. There is no remote staging environment.
 
 ## Trust model
 
@@ -28,7 +28,7 @@ No database password, auth secret, or registry credential exists in GitHub. On G
 | [`infra/vps/ageniza-deploy.sh`](../../infra/vps/ageniza-deploy.sh) | Installed as `/usr/local/sbin/ageniza-deploy`. |
 | [`infra/vps/ageniza-deploy-ssh.sh`](../../infra/vps/ageniza-deploy-ssh.sh) | Forced command for the deploy key. |
 | [`infra/vps/install-production-deploy.sh`](../../infra/vps/install-production-deploy.sh) | Installs the bundle, `ageniza-ci` account, sudo rule, and Cloudflare ranges. |
-| [`infra/vps/refresh-cloudflare-ips.sh`](../../infra/vps/refresh-cloudflare-ips.sh) | Regenerates the Cloudflare ranges Caddy trusts for `CF-Connecting-IP`. |
+| [`infra/vps/compose.tunnel.yml`](../../infra/vps/compose.tunnel.yml), [`infra/vps/cloudflared/config.yml`](../../infra/vps/cloudflared/config.yml) | The outbound tunnel and its versioned ingress rules; no port is published. |
 | [`infra/migrations/Dockerfile`](../../infra/migrations/Dockerfile) | Migration runner image (Knex plus `packages/database/migrations`). |
 | [`infra/postgres/initdb`](../../infra/postgres/initdb) | Creates the `ageniza_app` role when the database volume is first initialised. |
 | [`infra/vps/ageniza-backup.sh`](../../infra/vps/ageniza-backup.sh) | Daily encrypted dump to R2 and the restore rehearsal ([runbook](backup-restore.md)). |
@@ -123,7 +123,7 @@ After the [VPS baseline](vps-baseline.md), as root with a reviewed checkout:
 ```bash
 sudo bash infra/vps/install-production-deploy.sh
 
-# Non-secret settings (see infra/vps/deploy.env.example); pin Caddy by digest.
+# Non-secret settings (see infra/vps/deploy.env.example); pin PostgreSQL and cloudflared by digest.
 sudo install -m 0644 -o root -g root infra/vps/deploy.env.example /etc/ageniza/deploy.env
 sudoedit /etc/ageniza/deploy.env
 
@@ -144,35 +144,32 @@ sudo docker --config /etc/ageniza/registry login ghcr.io -u <github-user> --pass
 echo 'restrict,command="/usr/local/sbin/ageniza-deploy-ssh" ssh-ed25519 AAAA... github-actions-production' \
   | sudo tee /home/ageniza-ci/.ssh/authorized_keys >/dev/null
 
-# Start the edge (Caddy obtains the Let's Encrypt certificate on first request to the domain):
-sudo bash -c 'set -a; . /etc/ageniza/deploy.env; set +a; docker compose -p ageniza-edge -f /opt/ageniza/compose.caddy.yml up -d'
+# Start the edge (outbound only; nothing listens on the public interface):
+sudo bash -c 'set -a; . /etc/ageniza/deploy.env; set +a; docker compose -p ageniza-edge -f /opt/ageniza/compose.tunnel.yml up -d'
 ```
 
 Check the key restriction from your workstation: `ssh -i production_deploy ageniza-ci@<host> status` prints `RELEASE=none`, and `ssh -i production_deploy ageniza-ci@<host> id` is refused.
-
-Optionally refresh Cloudflare ranges weekly: `echo '0 4 * * 1 root /usr/local/sbin/ageniza-refresh-cloudflare-ips' | sudo tee /etc/cron.d/ageniza-cloudflare-ips`.
 
 Re-run the installer after changing any file in the bundle. The checkout is not needed at runtime.
 
 ### 5. Cloudflare
 
-1. Create the DNS record for the domain pointing to the VPS, **proxied** (orange cloud).
-2. Set SSL/TLS mode to **Full (strict)**. It accepts Caddy's Let's Encrypt certificate.
-3. Leave **Always Use HTTPS** off. Caddy redirects HTTP to HTTPS itself, and its Let's Encrypt HTTP challenge must reach the origin on port 80 for issuance and renewal.
-4. Confirm `https://<domain>/health` loads through Cloudflare with a valid certificate.
+The tunnel is created once, from a workstation with `cloudflared` installed. Routing itself is versioned in [`infra/vps/cloudflared/config.yml`](../../infra/vps/cloudflared/config.yml), so nothing about request routing is configured in the dashboard ([ADR 0012](../adr/0012-cloudflare-tunnel-edge.md)).
 
-Optional hardening: without it the origin still answers requests sent directly to its IP, because Docker-published ports bypass UFW. To restrict the origin to Cloudflare, enable **Authenticated Origin Pulls** and add this to the site block in the Caddyfile, with the [Cloudflare origin-pull CA](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/) mounted at that path:
-
-```caddyfile
-tls {
-	client_auth {
-		mode require_and_verify
-		trust_pool file /etc/caddy/cloudflare-origin-pull-ca.pem
-	}
-}
+```bash
+cloudflared tunnel login                       # authorises the zone in a browser
+cloudflared tunnel create ageniza-production   # prints the tunnel UUID and a credentials JSON path
+cloudflared tunnel route dns ageniza-production app.example.com
 ```
 
-With it enabled, HTTP challenges still work on port 80, and direct HTTPS requests to the IP fail the handshake.
+1. Put the UUID in `/etc/ageniza/deploy.env` as `AGENIZA_TUNNEL_ID`, and pin `AGENIZA_TUNNEL_IMAGE` to a reviewed `cloudflare/cloudflared` digest.
+2. Copy the credentials JSON to the VPS as `/etc/ageniza/cloudflared/credentials.json`, owned by root with mode 0600. It is a secret: it authorises running this tunnel.
+3. Start the tunnel with the command in the VPS section above, then confirm `https://<domain>/health` and `https://<domain>/api/health` answer.
+4. Check the origin is not reachable directly: the VPS has no inbound port open except SSH, and no DNS record points to its IP.
+
+**TLS ends at Cloudflare**, so there is no origin certificate to install or renew. Leave SSL/TLS in the default **Full** or **Full (strict)** mode; Flexible is never used.
+
+Optional: put **Cloudflare Access** in front of any internal hostname you add later (an admin tool, for example) by adding an ingress rule with a `hostname` match and an Access policy. It costs nothing on the free plan and keeps those tools off the public internet.
 
 ## Rollback
 
@@ -191,12 +188,12 @@ A change to `/etc/ageniza/runtime.env` takes effect at the next release. Rollbac
 ```bash
 sudo ageniza-deploy status
 sudo cat /var/lib/ageniza/releases/current.env
-sudo docker compose -p ageniza ps          # application and postgres; ageniza-edge for Caddy
+sudo docker compose -p ageniza ps          # application and postgres; ageniza-edge for the tunnel
 sudo docker compose -p ageniza exec postgres psql -U postgres ageniza
 sudo docker compose -p ageniza logs --tail=200 worker
 ```
 
-The host lock (`/run/lock/ageniza-deploy.lock`) serializes releases; do not run `docker compose up` against these projects by hand. Never use `docker system prune --volumes` as recovery; the `caddy-data` volume holds the issued certificates.
+The host lock (`/run/lock/ageniza-deploy.lock`) serializes releases; do not run `docker compose up` against these projects by hand. Never use `docker system prune --volumes` as recovery; the `postgres-data` volume holds the database.
 
 Rotate independently and record each rotation:
 
@@ -210,6 +207,6 @@ Add rulesets (see the [CI guide](../ci/README.md#branch-protections-and-promotio
 ## Local validation
 
 ```bash
-pnpm deploy:validate   # renders production Compose + Caddy Compose with placeholder digests (needs Docker)
+pnpm deploy:validate   # renders production Compose + tunnel Compose with placeholder digests (needs Docker)
 pnpm test:scripts      # digest-reference and merged-pull-request checks
 ```

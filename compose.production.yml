@@ -14,10 +14,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    # Caddy reaches this service as `api` on the shared proxy network.
-    networks:
-      production-proxy: {}
-      production-private: {}
+    # Reached only by the web container's /api proxy; never from the tunnel network (ADR 0012).
+    networks: !override [production-private]
   worker:
     image: ${AGENIZA_WORKER_IMAGE:?immutable worker image reference required}
     build: !reset null
@@ -36,9 +34,8 @@ services:
     ports: !reset []
     restart: unless-stopped
     logging: *production-logging
-    # Caddy reaches this service as `web` on the shared proxy network.
-    networks:
-      production-proxy: {}
+    # The tunnel reaches this service as `web`; it proxies /api to the API on the private network.
+    networks: !override [production-proxy, production-private]
   postgres:
     image: ${AGENIZA_POSTGRES_IMAGE:?immutable PostgreSQL image reference required}
     environment: !reset {}

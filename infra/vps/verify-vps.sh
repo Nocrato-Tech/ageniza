@@ -43,18 +43,25 @@ sshd -T 2>/dev/null | grep -qx 'permitrootlogin no' && pass 'root SSH login disa
 sshd -T 2>/dev/null | grep -qx 'passwordauthentication no' && pass 'SSH password login disabled' || fail 'SSH password login is not disabled'
 
 ufw status | grep -q 'Status: active' && pass 'UFW active' || fail 'UFW inactive'
-for port in "$SSH_PORT" 80 443; do
-  ufw status | grep -Eq "^${port}/tcp[[:space:]]+ALLOW" && pass "UFW allows TCP $port" || fail "UFW does not allow TCP $port"
+if ufw status | grep -Eq "^${SSH_PORT}/tcp[[:space:]]+ALLOW"; then
+  pass "UFW allows TCP $SSH_PORT"
+else
+  fail "UFW does not allow TCP $SSH_PORT"
+fi
+# The Cloudflare Tunnel connects outbound, so inbound web ports must stay closed (ADR 0012).
+for port in 80 443; do
+  if ufw status | grep -Eq "^${port}/tcp[[:space:]]+ALLOW"; then
+    fail "UFW still allows TCP $port; remove it with 'ufw delete allow ${port}/tcp'"
+  else
+    pass "UFW does not allow TCP $port"
+  fi
 done
 
 PUBLISHED_HOST_PORTS="$(docker ps --format '{{.Ports}}' | grep -Eo '(0\.0\.0\.0|\[::\]):[0-9]+' || true)"
-UNAPPROVED_HOST_PORTS="$(printf '%s\n' "$PUBLISHED_HOST_PORTS" | grep -Ev ':(80|443)$' || true)"
-if [[ -n "$UNAPPROVED_HOST_PORTS" ]]; then
-  fail "Docker publishes unapproved all-interface host ports: $(printf '%s' "$UNAPPROVED_HOST_PORTS" | tr '\n' ' ')"
-elif [[ -n "$PUBLISHED_HOST_PORTS" ]]; then
-  pass 'only approved proxy ports 80/443 are published on all interfaces'
+if [[ -n "$PUBLISHED_HOST_PORTS" ]]; then
+  fail "Docker publishes all-interface host ports: $(printf '%s' "$PUBLISHED_HOST_PORTS" | tr '\n' ' ')"
 else
-  pass 'no Docker container currently publishes all-interface ports'
+  pass 'no Docker container publishes all-interface ports'
 fi
 
 if ((FAILURES)); then
