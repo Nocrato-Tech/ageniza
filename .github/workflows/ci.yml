@@ -23,6 +23,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@v4
+      # A bad pin in a rarely-run workflow only shows up on release day; resolve them all here.
+      - name: Validate pinned action references
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/ci/validate-action-pins.mjs
       - name: Validate the pull-request route
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
