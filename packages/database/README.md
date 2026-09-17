@@ -11,6 +11,14 @@ For the local Docker database, use `createLocalTestDatabaseClient`. It refuses a
 - `withAuthenticatedUserTransaction` is for a request whose user was already verified by the authentication boundary. It sets the transaction-local `app.user_id`, which policies read through `app_private.current_user_id()`. It deliberately accepts no `agency_id`: policies derive tenant access from memberships. Without it, the application role sees no tenant rows.
 - Multi-tenant tables use `ENABLE` and `FORCE ROW LEVEL SECURITY`.
 
+### Every table in `public` needs RLS
+
+The foundation migration grants default privileges on `public` to `ageniza_app`, so a table created by a later migration is readable and writable by the application role as soon as it exists. RLS is not automatic in the same way, and a migration that forgets it hands out unrestricted cross-tenant access silently.
+
+`pnpm db:test:local` therefore asserts, against the migrated schema, that every ordinary and partitioned table in `public` has both `relrowsecurity` and `relforcerowsecurity`. `FORCE` is required as well as `ENABLE`: without it the owner bypasses its own policies. The check runs in the `PostgreSQL local database` CI job, so a migration that creates a table without RLS fails the pull request.
+
+A table that genuinely holds no tenant data is allowed through only by adding it, with its reason, to `PUBLIC_TABLES_EXEMPT_FROM_RLS` in [`test/support/rls-coverage.ts`](test/support/rls-coverage.ts). Today that list holds only Knex's own `knex_migrations` and `knex_migrations_lock`. An exemption that stops matching a table also fails, so the list cannot rot. Components that own their schema — the job queue, for example — are outside `public` and are covered by their own policies instead.
+
 ## Migrations
 
 Migrations live in [`migrations`](migrations) as forward-only Knex `.mjs` files named `<8+ digit version>_<name>.mjs`, with explicit SQL in `knex.raw`. Never edit an applied migration; CI rejects edits, deletions, and renames. `down` throws on purpose.
