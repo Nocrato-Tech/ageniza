@@ -1,5 +1,13 @@
 import { captureUnexpectedError, type CoreLogger } from '@ageniza/core';
-import { maskEmailAddress, passwordResetEmail, type EmailSender } from '@ageniza/email';
+import {
+  clientInvitationEmail,
+  collaboratorInvitationEmail,
+  maskEmailAddress,
+  passwordResetEmail,
+  type EmailSender
+} from '@ageniza/email';
+
+import { invitationLink } from '../invitations/tokens.js';
 
 /** Configuration needed to build links in authentication emails. */
 export interface AuthEmailConfig {
@@ -14,9 +22,27 @@ export interface SendPasswordResetInput {
   readonly inviteToken?: string;
 }
 
+export interface SendInvitationEmailInput {
+  readonly to: string;
+  /** A complete invitation URL; route callers can pass the URL built by the token primitive. */
+  readonly actionUrl?: string;
+  /** Convenience input for callers that only hold the raw token. Never persisted or logged. */
+  readonly token?: string;
+  readonly expiresInMinutes: number;
+  readonly agencyName: string;
+}
+
+export interface SendClientInvitationEmailInput extends SendInvitationEmailInput {
+  readonly clientName: string;
+}
+
 export interface EmailService {
   /** Schedules delivery and returns without waiting for the email transport. */
   sendPasswordReset(input: SendPasswordResetInput): void;
+  /** Sends an administrative collaborator invitation and waits for SMTP delivery. */
+  sendCollaboratorInvitation(input: SendInvitationEmailInput): Promise<void>;
+  /** Sends an administrative client invitation and waits for SMTP delivery. */
+  sendClientInvitation(input: SendClientInvitationEmailInput): Promise<void>;
   /** Waits for in-flight delivery for at most ten seconds. */
   drain(): Promise<void>;
   /** Alias for drain for shutdown manager integrations. */
@@ -34,6 +60,18 @@ const PASSWORD_RESET_OPERATION = 'auth.password_reset_email';
 
 const actionUrlFor = (appPublicUrl: string, token: string): string =>
   `${appPublicUrl.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
+
+const resetActionUrlFor = (appPublicUrl: string, token: string, inviteToken?: string): string => {
+  const actionUrl = actionUrlFor(appPublicUrl, token);
+  if (inviteToken === undefined) return actionUrl;
+  return `${actionUrl}&invite=${encodeURIComponent(inviteToken)}`;
+};
+
+const invitationActionUrlFor = (appPublicUrl: string, input: SendInvitationEmailInput): string => {
+  if (input.actionUrl !== undefined) return input.actionUrl;
+  if (input.token !== undefined) return invitationLink(appPublicUrl, input.token);
+  throw new Error('A URL do convite é obrigatória.');
+};
 
 /**
  * Composes the authentication email boundary. Delivery is deliberately fire-and-forget so a
@@ -63,6 +101,19 @@ export const createEmailService = (options: CreateEmailServiceOptions): EmailSer
     }
   };
 
+  const sendInvitation = async (
+    input: SendInvitationEmailInput | SendClientInvitationEmailInput,
+    message: ReturnType<typeof collaboratorInvitationEmail> | ReturnType<typeof clientInvitationEmail>,
+    template: string
+  ): Promise<void> => {
+    try {
+      await options.sender.send({ ...message, to: input.to, template });
+    } catch (error) {
+      reportDeliveryFailure(input.to);
+      throw error;
+    }
+  };
+
   const drain = async (): Promise<void> => {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<void>((resolve) => {
@@ -81,7 +132,7 @@ export const createEmailService = (options: CreateEmailServiceOptions): EmailSer
   return {
     sendPasswordReset(input): void {
       const message = passwordResetEmail({
-        actionUrl: actionUrlFor(options.config.appPublicUrl, input.token),
+        actionUrl: resetActionUrlFor(options.config.appPublicUrl, input.token, input.inviteToken),
         expiresInMinutes: 30
       });
 
@@ -105,6 +156,21 @@ export const createEmailService = (options: CreateEmailServiceOptions): EmailSer
       }).catch(() => {
         // The rejection is already handled above; keep cleanup detached and safe.
       });
+    },
+    sendCollaboratorInvitation(input): Promise<void> {
+      return sendInvitation(input, collaboratorInvitationEmail({
+        actionUrl: invitationActionUrlFor(options.config.appPublicUrl, input),
+        expiresInMinutes: input.expiresInMinutes,
+        agencyName: input.agencyName
+      }), 'collaborator-invitation');
+    },
+    sendClientInvitation(input): Promise<void> {
+      return sendInvitation(input, clientInvitationEmail({
+        actionUrl: invitationActionUrlFor(options.config.appPublicUrl, input),
+        expiresInMinutes: input.expiresInMinutes,
+        agencyName: input.agencyName,
+        clientName: input.clientName
+      }), 'client-invitation');
     },
     drain,
     shutdown: drain

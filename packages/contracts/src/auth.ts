@@ -33,12 +33,19 @@ export const AuthSessionResponseSchema = z.object({
   session: z.object({ expiresAt: z.string().datetime({ offset: true }) }).strict()
 }).strict();
 
-export const AuthPasswordForgotRequestSchema = z.object({ email: AuthEmailSchema }).strict();
+/** Optional invitation continuation; the token is opaque and is never echoed in a response. */
+export const AuthInvitationTokenSchema = z.string().min(1).max(2_048);
+
+export const AuthPasswordForgotRequestSchema = z.object({
+  email: AuthEmailSchema,
+  inviteToken: AuthInvitationTokenSchema.optional()
+}).strict();
 export const AuthPasswordForgotResponseSchema = z.object({}).strict();
 
 export const AuthPasswordResetRequestSchema = z.object({
   token: z.string().min(1).max(2_048),
-  newPassword: AuthPasswordSchema
+  newPassword: AuthPasswordSchema,
+  inviteToken: AuthInvitationTokenSchema.optional()
 }).strict();
 export const AuthPasswordResetResponseSchema = AuthNoContentResponseSchema;
 

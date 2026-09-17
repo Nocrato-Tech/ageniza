@@ -13,6 +13,8 @@ import { createAuthAuditRecorder, type AuthAuditRecorder } from '../audit.js';
 import { createAuthLimiter, type AuthLimiterOptions, type InMemoryAuthLimiter } from '../auth-limiter.js';
 import { createAuth, type AuthInstance } from '../better-auth.js';
 import { createEmailService, type EmailService } from '../email-service.js';
+import { createRequireAgencyAccess, requirePermission } from '../../tenancy/guards.js';
+import { createInvitationTokenLookup, type InvitationModuleDependencies } from '../../invitations/routes.js';
 
 /** Runs only against the migrated local database (`pnpm db:migrate`), as the application role. */
 export const APPLICATION_DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
@@ -71,6 +73,8 @@ export const buildTestConfig = (overrides: Partial<ApiConfig> = {}): ApiConfig =
   corsOrigins: [TEST_APP_PUBLIC_URL],
   bodyLimitBytes: 1_048_576,
   trustedProxyCidrs: [],
+  authTermsVersion: '2026-01-01',
+  authPrivacyVersion: '2026-01-01',
   ...overrides
 });
 
@@ -94,6 +98,7 @@ export interface TestApp {
   readonly auth: AuthInstance;
   readonly limiter: InMemoryAuthLimiter;
   readonly auditRecorder: AuthAuditRecorder;
+  readonly database: DatabaseClient;
   readonly emailService: EmailService;
   readonly config: ApiConfig;
   close(): Promise<void>;
@@ -104,13 +109,29 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   assertLocalDatabaseUrl(APPLICATION_DATABASE_URL);
   const config = buildTestConfig(options.config);
   const pool = new Pool({ connectionString: APPLICATION_DATABASE_URL, max: 4 });
+  const database = createLocalTestDatabaseClient(APPLICATION_DATABASE_URL);
   const logger = options.logger ?? createLogger({ enabled: false });
   const sender = options.sender ?? createFakeEmailSender();
   const emailService = createEmailService({ sender, config: { appPublicUrl: config.appPublicUrl }, logger });
   const auditRecorder = createAuthAuditRecorder(pool);
   const auth = createAuth({ pool, config, sender: emailService, logger, auditRecorder });
   const limiter = createAuthLimiter(options.limiterOptions);
-  const app = await buildApp({ config, logger, auth: { auth, limiter, auditRecorder } });
+  const invitationTokenLookup = createInvitationTokenLookup(database);
+  const invitations: InvitationModuleDependencies = {
+    database,
+    auth,
+    emailService,
+    auditRecorder,
+    config: {
+      appPublicUrl: config.appPublicUrl,
+      authTermsVersion: config.authTermsVersion,
+      authPrivacyVersion: config.authPrivacyVersion
+    },
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    requirePermission,
+    invitationTokenLookup
+  };
+  const app = await buildApp({ config, logger, auth: { auth, limiter, auditRecorder, invitationTokenLookup }, invitations });
   if (options.registerExtraRoutes !== undefined) await options.registerExtraRoutes(app);
   await app.ready();
 
@@ -121,10 +142,12 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     limiter,
     auditRecorder,
     emailService,
+    database,
     config,
     async close(): Promise<void> {
       await emailService.drain();
       await app.close();
+      await database.close();
       await pool.end();
     }
   };

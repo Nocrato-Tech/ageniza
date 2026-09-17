@@ -5,7 +5,7 @@ import type { Pool } from 'pg';
 import type { ApiConfig } from '@ageniza/config/server';
 import type { CoreLogger } from '@ageniza/core';
 
-import { currentAuditRequestId } from './audit-context.js';
+import { currentAuditRequestId, currentPasswordResetInviteToken } from './audit-context.js';
 import { recordAuthAuditEventSafely, type AuthAuditRecorder } from './audit.js';
 import type { EmailService } from './email-service.js';
 import { AUTH_SESSION_MAX_AGE_MS } from './policy.js';
@@ -88,7 +88,7 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
       resetPasswordTokenExpiresIn: 60 * 30,
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, token }): Promise<void> => {
-        dependencies.sender.sendPasswordReset({ to: user.email, token });
+        dependencies.sender.sendPasswordReset({ to: user.email, token, inviteToken: currentPasswordResetInviteToken() });
       },
       onPasswordReset: async ({ user }): Promise<void> => {
         // B9: recorded regardless of whether a request id is available (null rather than

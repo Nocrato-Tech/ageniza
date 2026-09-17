@@ -38,6 +38,17 @@ describe('authentication contracts', () => {
     expect(() => AuthPasswordResetRequestSchema.parse({ token: 'reset-token', newPassword: 'short' })).toThrow();
   });
 
+  it('accepts an opaque invitation continuation token on forgot/reset', () => {
+    const inviteToken = 'invite-token';
+    expect(AuthPasswordForgotRequestSchema.parse({ email: 'person@example.test', inviteToken })).toEqual({
+      email: 'person@example.test', inviteToken
+    });
+    expect(AuthPasswordResetRequestSchema.parse({ token: 'reset-token', newPassword: 'new-password', inviteToken })).toEqual({
+      token: 'reset-token', newPassword: 'new-password', inviteToken
+    });
+    expect(() => AuthPasswordForgotRequestSchema.parse({ email: 'person@example.test', inviteToken: '' })).toThrow();
+  });
+
   it('models logout requests and 204 responses as bodyless', () => {
     expect(AuthLogoutAllRequestSchema.parse(undefined)).toBeUndefined();
     expect(AuthLogoutResponseSchema.parse(undefined)).toBeUndefined();
