@@ -24,9 +24,11 @@
     "better-auth": "1.7.5",
     "fastify": "^5.2.1",
     "kysely": "0.29.6",
+    "pg": "8.16.3",
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@types/pg": "8.15.5",
     "tsx": "^4.19.3"
   }
 }
