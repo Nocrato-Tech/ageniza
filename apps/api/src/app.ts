@@ -3,8 +3,10 @@ import Fastify, { LogController, type FastifyBaseLogger, type FastifyInstance, t
 import type { ApiConfig } from '@ageniza/config/server';
 import { CORRELATION_ID_HEADER, createLogger, createReadiness, REQUEST_ID_HEADER, resolveRequestId, withLogContext, type CoreLogger, type HealthCheck, type Readiness } from '@ageniza/core';
 
+import { registerAuthModule, type AuthModuleDependencies } from './modules/auth/routes.js';
 import { registerCors } from './plugins/infra/cors.js';
 import { registerErrorHandling } from './plugins/infra/errors.js';
+import { registerOriginProtection } from './plugins/infra/origin.js';
 import { registerRouteRateLimit } from './plugins/infra/rate-limit.js';
 import { registerSecurityHeaders } from './plugins/infra/security.js';
 import { registerSystemModule } from './modules/system/routes.js';
@@ -16,6 +18,8 @@ export interface ApiAppOptions {
   dependencyChecks?: readonly HealthCheck[];
   /** Test-only override; production always derives proxy trust from explicit configured networks. */
   trustProxy?: FastifyServerOptions['trustProxy'];
+  /** Omitted in tests that never touch an auth route; `server.ts` always supplies it. */
+  auth?: AuthModuleDependencies;
 }
 
 /** Builds the HTTP application without binding a port, enabling deterministic Fastify inject tests. */
@@ -57,9 +61,15 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   await registerSecurityHeaders(app);
   await registerRouteRateLimit(app);
   registerErrorHandling(app);
+  // Global CSRF/origin check, registered before any domain module so every current and future
+  // route is covered; no route implements this check on its own (issue #31 section 5.1).
+  registerOriginProtection(app, { appPublicUrl: options.config.appPublicUrl });
   registerSystemModule(app, {
     readiness: options.readiness ?? createReadiness(true),
     dependencyChecks: options.dependencyChecks ?? []
   });
+  if (options.auth !== undefined) {
+    registerAuthModule(app, options.auth);
+  }
   return app;
 };
