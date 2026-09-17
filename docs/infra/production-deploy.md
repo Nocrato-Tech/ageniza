@@ -106,9 +106,11 @@ PostgreSQL 17 runs on the VPS as the internal `postgres` container ([ADR 0011](.
 
 Invitations, email verification, and password resets need SMTP before the authentication work (issue #20) ships. Any provider with SMTP works; the application has no provider SDK.
 
+`SMTP_URL` and `EMAIL_FROM` are **mandatory in production**: the API refuses to start without both (the auth module's password-reset flow always sends mail), and `pnpm deploy:validate` / the VPS deploy script's `validate_runtime_env` reject a `runtime.env` that omits either. Both remain optional together in local/test environments only.
+
 1. Create the account and a sending domain (for example a subdomain such as `mail.<domain>`), then add its **SPF, DKIM, and DMARC** records. Without them, invitations land in spam or are rejected.
 2. Create a sending credential scoped to that domain.
-3. Add both keys to `/etc/ageniza/runtime.env` — the application refuses to start with only one of them:
+3. Add both keys to `/etc/ageniza/runtime.env` — the application refuses to start with only one of them, or with neither, in production:
 
    ```
    SMTP_URL=smtps://<user>:<key>@<smtp host>:465

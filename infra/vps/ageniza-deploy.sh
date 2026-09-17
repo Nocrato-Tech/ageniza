@@ -94,12 +94,12 @@ validate_runtime_env() {
       APP_ENV) [[ "$value" == production ]] || die 'APP_ENV must be production' ;;
       WORKER_SMOKE_JOB) [[ "$value" == false ]] || die 'WORKER_SMOKE_JOB must be false' ;;
       WORKER_CONCURRENCY) [[ "$value" =~ ^[1-4]$ ]] || die 'WORKER_CONCURRENCY must be an integer from 1 to 4' ;;
-      BETTER_AUTH_SECRET|APP_PUBLIC_URL|DATABASE_URL|API_CORS_ORIGINS|API_TRUSTED_PROXY_CIDRS) [[ -n "$value" ]] || die "$key must not be blank" ;;
-      SMTP_URL|EMAIL_FROM|SENTRY_DSN) ;;
+      BETTER_AUTH_SECRET|APP_PUBLIC_URL|DATABASE_URL|API_CORS_ORIGINS|API_TRUSTED_PROXY_CIDRS|SMTP_URL|EMAIL_FROM) [[ -n "$value" ]] || die "$key must not be blank" ;;
+      SENTRY_DSN) ;;
       *) die "$RUNTIME_ENV contains a key that is not allowed: $key" ;;
     esac
   done < "$RUNTIME_ENV"
-  for required in APP_ENV BETTER_AUTH_SECRET APP_PUBLIC_URL DATABASE_URL API_CORS_ORIGINS API_TRUSTED_PROXY_CIDRS WORKER_SMOKE_JOB; do
+  for required in APP_ENV BETTER_AUTH_SECRET APP_PUBLIC_URL DATABASE_URL API_CORS_ORIGINS API_TRUSTED_PROXY_CIDRS WORKER_SMOKE_JOB SMTP_URL EMAIL_FROM; do
     [[ -n "${seen[$required]+x}" ]] || die "$RUNTIME_ENV is missing $required"
   done
 }
