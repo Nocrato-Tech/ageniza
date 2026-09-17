@@ -5,7 +5,6 @@ import { HttpError } from '@ageniza/core';
 import { AUTH_RATE_LIMITS, type AuthRateLimitWindow } from './policy.js';
 
 export type AuthLimiterRoute = 'login' | 'forgot';
-export type AuthLimiterDimension = 'ip' | 'email';
 
 export interface AuthWindowCounter {
   count: number;
@@ -23,11 +22,21 @@ export interface AuthLimiterOptions {
   limits?: Pick<typeof AUTH_RATE_LIMITS, AuthLimiterRoute>;
 }
 
-export const hashAuthEmail = (email: string): string => createHash('sha256').update(email, 'utf8').digest('hex');
+const hash = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex');
 
-/** Builds the only keys allowed in the auth limiter; email is never retained in plaintext. */
-export const authLimiterKey = (route: AuthLimiterRoute, dimension: AuthLimiterDimension, email: string): string =>
-  `${route}:${dimension}:${hashAuthEmail(email.trim().toLowerCase())}`;
+const normalizeEmail = (email: string): string => email.trim().toLowerCase();
+
+export const hashAuthEmail = (email: string): string => hash(normalizeEmail(email));
+export const hashAuthIp = (ip: string): string => hash(ip);
+
+/** The IP + e-mail dimension: the key must include the IP, otherwise it degrades into a
+ * global-by-email limit that lets one attacker lock another account out by cycling IPs. */
+export const authLimiterIpEmailKey = (route: AuthLimiterRoute, ip: string, email: string): string =>
+  `${route}:ip-email:${hashAuthIp(ip)}:${hashAuthEmail(email)}`;
+
+/** The e-mail-global dimension: deliberately IP-independent so it stays loose. */
+export const authLimiterEmailKey = (route: AuthLimiterRoute, email: string): string =>
+  `${route}:email:${hashAuthEmail(email)}`;
 
 const rateLimitedError = (): HttpError => new HttpError({
   statusCode: 429,
@@ -35,9 +44,13 @@ const rateLimitedError = (): HttpError => new HttpError({
   message: 'Too many requests'
 });
 
+const isRateLimitedError = (error: unknown): error is HttpError =>
+  error instanceof HttpError && error.statusCode === 429 && error.code === 'RATE_LIMITED';
+
 /**
- * Process-local fixed-window limiter for the auth dimensions that Fastify's
- * per-IP limiter cannot express. The map intentionally has no persistence.
+ * Process-local fixed-window limiter for the auth dimensions that Fastify's per-IP limiter
+ * cannot express: IP + e-mail (tight) and e-mail-global (loose). The map intentionally has no
+ * persistence; counters reset on every deploy or restart (accepted for the MVP single instance).
  */
 export class InMemoryAuthLimiter {
   private readonly now: () => number;
@@ -53,25 +66,21 @@ export class InMemoryAuthLimiter {
     };
   }
 
-  /** Consume both IP+email and email-global windows atomically. */
-  public consume(route: AuthLimiterRoute, email: string): void {
+  /** Consumes both the IP+email and email-global windows atomically for one request. */
+  public consume(route: AuthLimiterRoute, ip: string, email: string): void {
     const now = this.now();
     const policy = this.limits[route];
-    const dimensions: readonly [AuthLimiterDimension, AuthRateLimitWindow][] = [
-      ['ip', policy.ipEmail],
-      ['email', policy.emailGlobal]
+    const entries: readonly { key: string; limit: AuthRateLimitWindow }[] = [
+      { key: authLimiterIpEmailKey(route, ip, email), limit: policy.ipEmail },
+      { key: authLimiterEmailKey(route, email), limit: policy.emailGlobal }
     ];
-    const entries = dimensions.map(([dimension, limit]) => ({
-      key: authLimiterKey(route, dimension, email),
-      limit,
-      counter: this.store.get(authLimiterKey(route, dimension, email))
-    }));
+    const resolved = entries.map(({ key, limit }) => ({ key, limit, counter: this.store.get(key) }));
 
-    if (entries.some(({ counter, limit }) => counter !== undefined && counter.resetAt > now && counter.count >= limit.max)) {
+    if (resolved.some(({ counter, limit }) => counter !== undefined && counter.resetAt > now && counter.count >= limit.max)) {
       throw rateLimitedError();
     }
 
-    for (const { key, limit, counter } of entries) {
+    for (const { key, limit, counter } of resolved) {
       if (counter === undefined || counter.resetAt <= now) {
         this.store.set(key, { count: 1, resetAt: now + limit.windowMs });
       } else {
@@ -81,24 +90,24 @@ export class InMemoryAuthLimiter {
   }
 
   /** Alias useful to route handlers that express the operation as an assertion. */
-  public assertAllowed(route: AuthLimiterRoute, email: string): void {
-    this.consume(route, email);
+  public assertAllowed(route: AuthLimiterRoute, ip: string, email: string): void {
+    this.consume(route, ip, email);
   }
 
   /** Attempts a consume and returns false for the same public rate-limit error. */
-  public tryConsume(route: AuthLimiterRoute, email: string): boolean {
+  public tryConsume(route: AuthLimiterRoute, ip: string, email: string): boolean {
     try {
-      this.consume(route, email);
+      this.consume(route, ip, email);
       return true;
     } catch (error) {
-      if (error instanceof Error && 'statusCode' in error && error.statusCode === 429 && 'code' in error && error.code === 'RATE_LIMITED') return false;
+      if (isRateLimitedError(error)) return false;
       throw error;
     }
   }
 
   /** Backwards-friendly name for callers that treat a check as a consuming operation. */
-  public check(route: AuthLimiterRoute, email: string): boolean {
-    return this.tryConsume(route, email);
+  public check(route: AuthLimiterRoute, ip: string, email: string): boolean {
+    return this.tryConsume(route, ip, email);
   }
 
   public clear(): void {
