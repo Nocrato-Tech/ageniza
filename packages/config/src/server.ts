@@ -19,6 +19,10 @@ export interface ServerConfig {
 }
 export interface ApiConfig extends ServerConfig {
   service: 'api';
+  /** Better Auth signing/encryption secret; never expose this to browser code. */
+  authSecret: string;
+  /** Trusted browser application origin used for auth redirects and cookies. */
+  appPublicUrl: string;
   host: string;
   port: number;
   corsOrigins: readonly string[];
@@ -67,6 +71,8 @@ const isIpOrCidr = (value: string): boolean => {
 };
 
 const apiSchema = sharedServerSchema.extend({
+  BETTER_AUTH_SECRET: z.string().min(32, 'must be at least 32 characters; supplied values are redacted'),
+  APP_PUBLIC_URL: z.string().trim().url('must be a valid URL origin; supplied values are redacted'),
   API_HOST: z.string().trim().min(1).default('0.0.0.0'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   API_CORS_ORIGINS: z.string().default('http://127.0.0.1:5173').transform(commaSeparatedValues),
@@ -120,6 +126,11 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
   const result = apiSchema.safeParse(env);
   if (!result.success) throw new ConfigValidationError('API', formatZodIssues(result.error.issues));
   const serverConfig = loadServerConfig('api', env);
+  const parsedAppPublicUrl = new URL(result.data.APP_PUBLIC_URL);
+  if (parsedAppPublicUrl.origin !== result.data.APP_PUBLIC_URL || parsedAppPublicUrl.pathname !== '/' || parsedAppPublicUrl.search || parsedAppPublicUrl.hash) {
+    throw new ConfigValidationError('API', [{ path: 'APP_PUBLIC_URL', message: 'must be an origin without paths; supplied values are redacted' }]);
+  }
+  assertRuntimeUrlSafety(serverConfig.environment, 'APP_PUBLIC_URL', result.data.APP_PUBLIC_URL, { requireHttpsInProduction: true });
   for (const origin of result.data.API_CORS_ORIGINS) {
     let parsed: URL;
     try {
@@ -141,6 +152,8 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
   return {
     service: 'api',
     ...serverConfig,
+    authSecret: result.data.BETTER_AUTH_SECRET,
+    appPublicUrl: result.data.APP_PUBLIC_URL,
     host: result.data.API_HOST,
     port: result.data.PORT,
     corsOrigins: result.data.API_CORS_ORIGINS,

@@ -4,7 +4,9 @@ import { ConfigValidationError, loadApiConfig, loadWorkerConfig } from './server
 
 const localEnvironment = {
   APP_ENV: 'local',
-  DATABASE_URL: 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza'
+  DATABASE_URL: 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza',
+  BETTER_AUTH_SECRET: 'local-development-placeholder-secret-change-me',
+  APP_PUBLIC_URL: 'http://127.0.0.1:5173'
 };
 
 const productionDatabaseUrl = 'postgresql://ageniza_app:password@postgres:5432/ageniza';
@@ -12,7 +14,8 @@ const productionDatabaseUrl = 'postgresql://ageniza_app:password@postgres:5432/a
 describe('server configuration', () => {
   it('loads typed local API and worker configuration', () => {
     expect(loadApiConfig(localEnvironment)).toMatchObject({
-      service: 'api', environment: 'local', host: '0.0.0.0', port: 3001, corsOrigins: ['http://127.0.0.1:5173'], bodyLimitBytes: 1_048_576, trustedProxyCidrs: []
+      service: 'api', environment: 'local', authSecret: localEnvironment.BETTER_AUTH_SECRET, appPublicUrl: localEnvironment.APP_PUBLIC_URL,
+      host: '0.0.0.0', port: 3001, corsOrigins: ['http://127.0.0.1:5173'], bodyLimitBytes: 1_048_576, trustedProxyCidrs: []
     });
     expect(loadWorkerConfig(localEnvironment)).toEqual({
       service: 'worker',
@@ -40,6 +43,7 @@ describe('server configuration', () => {
       ...localEnvironment,
       APP_ENV: 'production',
       DATABASE_URL: productionDatabaseUrl,
+      APP_PUBLIC_URL: 'https://app.ageniza.example',
       API_CORS_ORIGINS: 'https://app.ageniza.example',
       SMTP_URL: 'smtps://user:key@smtp.example.com:465',
       EMAIL_FROM: 'no-reply@ageniza.example'
@@ -49,6 +53,34 @@ describe('server configuration', () => {
   it('fails when required server configuration is missing', () => {
     expect(() => loadApiConfig({ APP_ENV: 'local' })).toThrow(ConfigValidationError);
     expect(() => loadApiConfig({ APP_ENV: 'local' })).toThrow('DATABASE_URL');
+  });
+
+  it('requires a sufficiently long Better Auth secret without exposing supplied values', () => {
+    const supplied = 'short-secret-value';
+    expect(() => loadApiConfig({ ...localEnvironment, BETTER_AUTH_SECRET: undefined })).toThrow('BETTER_AUTH_SECRET');
+    expect(() => loadApiConfig({ ...localEnvironment, BETTER_AUTH_SECRET: supplied })).toThrow('32 characters');
+    try {
+      loadApiConfig({ ...localEnvironment, BETTER_AUTH_SECRET: supplied });
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect((error as Error).message).toContain('BETTER_AUTH_SECRET');
+      expect((error as Error).message).not.toContain(supplied);
+      expect((error as Error).message).toContain('redacted');
+    }
+  });
+
+  it('requires APP_PUBLIC_URL to be a loopback origin locally and HTTPS in production', () => {
+    expect(() => loadApiConfig({ ...localEnvironment, APP_PUBLIC_URL: 'http://127.0.0.1:5173/login' })).toThrow('origin without paths');
+    expect(() => loadApiConfig({ ...localEnvironment, APP_PUBLIC_URL: 'https://app.ageniza.example' })).toThrow('must point to a loopback resource');
+
+    const production = {
+      ...localEnvironment,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl,
+      API_CORS_ORIGINS: 'https://app.ageniza.example'
+    };
+    expect(() => loadApiConfig({ ...production, APP_PUBLIC_URL: 'http://app.ageniza.example' })).toThrow('must use HTTPS');
+    expect(loadApiConfig({ ...production, APP_PUBLIC_URL: 'https://app.ageniza.example' }).appPublicUrl).toBe('https://app.ageniza.example');
   });
 
   it('fails for invalid configuration without exposing supplied secret values', () => {
@@ -76,7 +108,7 @@ describe('server configuration', () => {
   });
 
   it('requires HTTPS Sentry DSNs in production', () => {
-    const production = { ...localEnvironment, APP_ENV: 'production', DATABASE_URL: productionDatabaseUrl, API_CORS_ORIGINS: 'https://app.ageniza.example', SENTRY_DSN: 'https://public@sentry.example/1' };
+    const production = { ...localEnvironment, APP_ENV: 'production', DATABASE_URL: productionDatabaseUrl, APP_PUBLIC_URL: 'https://app.ageniza.example', API_CORS_ORIGINS: 'https://app.ageniza.example', SENTRY_DSN: 'https://public@sentry.example/1' };
     expect(loadApiConfig(production).sentryDsn).toBe('https://public@sentry.example/1');
     expect(() => loadApiConfig({ ...production, SENTRY_DSN: 'http://public@sentry.example/1' })).toThrow('must use HTTPS');
   });
@@ -91,9 +123,10 @@ describe('server configuration', () => {
       ...localEnvironment,
       APP_ENV: 'production',
       DATABASE_URL: productionDatabaseUrl,
+      APP_PUBLIC_URL: 'https://app.ageniza.example',
       API_CORS_ORIGINS: 'https://app.ageniza.example'
     }).environment).toBe('production');
-    expect(() => loadApiConfig({ ...localEnvironment, APP_ENV: 'production', API_CORS_ORIGINS: 'https://app.ageniza.example' })).toThrow(
+    expect(() => loadApiConfig({ ...localEnvironment, APP_ENV: 'production', APP_PUBLIC_URL: 'https://app.ageniza.example', API_CORS_ORIGINS: 'https://app.ageniza.example' })).toThrow(
       'must not point to a loopback resource in production'
     );
   });

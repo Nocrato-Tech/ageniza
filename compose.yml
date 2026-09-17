@@ -31,6 +31,8 @@ services:
     environment:
       APP_ENV: local
       APP_CONTAINER_LOCAL: 'true'
+      BETTER_AUTH_SECRET: local-development-placeholder-secret-change-me
+      APP_PUBLIC_URL: http://127.0.0.1:5173
       API_HOST: 0.0.0.0
       PORT: 3001
       API_CORS_ORIGINS: http://127.0.0.1:5173
