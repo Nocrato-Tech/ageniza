@@ -10,6 +10,7 @@ For the local Docker database, use `createLocalTestDatabaseClient`. It refuses a
 - The owner role (`postgres`) runs migrations only, through `MIGRATION_DATABASE_URL`.
 - `withAuthenticatedUserTransaction` is for a request whose user was already verified by the authentication boundary. It sets the transaction-local `app.user_id`, which policies read through `app_private.current_user_id()`. It deliberately accepts no `agency_id`: policies derive tenant access from memberships. Without it, the application role sees no tenant rows.
 - Multi-tenant tables use `ENABLE` and `FORCE ROW LEVEL SECURITY`.
+- The `pgboss` schema holds the worker's durable job queue. Its migration freezes pg-boss's own SQL and grants `ageniza_app` data access only, with no `CREATE`; the worker never runs DDL there ([worker README](../../apps/worker/README.md#durable-jobs)). Never edit that migration: upgrade pg-boss with a new one.
 
 ## Migrations
 

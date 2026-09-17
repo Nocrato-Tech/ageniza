@@ -8,13 +8,15 @@
     "build": "tsc -p tsconfig.json",
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run --passWithNoTests --exclude '**/*.integration.test.ts'",
+    "test:integration": "vitest run integration.test.ts",
     "clean": "rimraf dist"
   },
   "dependencies": {
     "@ageniza/config": "workspace:*",
     "@ageniza/core": "workspace:*",
-    "@ageniza/database": "workspace:*"
+    "@ageniza/database": "workspace:*",
+    "pg-boss": "12.30.0"
   },
   "devDependencies": {
     "tsx": "^4.19.3"

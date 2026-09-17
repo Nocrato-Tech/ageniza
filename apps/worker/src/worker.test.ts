@@ -7,6 +7,7 @@ import type { DatabaseClient } from '@ageniza/database';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createJobProcessor } from './jobs.js';
+import type { DurableQueue } from './queue.js';
 import { smokeJob } from './smoke-job.js';
 import { createWorkerRuntime, type CreateWorkerRuntimeOptions } from './worker.js';
 
@@ -17,8 +18,16 @@ const config: WorkerConfig = {
   deployVersion: 'test-commit',
   healthHost: '127.0.0.1',
   healthPort: 0,
-  smokeJob: false
+  smokeJob: false,
+  concurrency: 1
 };
+
+const createTestQueue = (): DurableQueue => ({
+  register: vi.fn(),
+  start: vi.fn(async () => undefined),
+  send: vi.fn(async () => 'job-id'),
+  stop: vi.fn(async () => undefined)
+});
 
 const createTestDatabase = (): DatabaseClient => ({
   knex: { raw: vi.fn(async () => undefined) } as unknown as DatabaseClient['knex'],
@@ -36,6 +45,7 @@ const createTestRuntime = (
     config,
     logger: createLogger({ enabled: false }),
     database,
+    queue: createTestQueue(),
     registerSignals: false,
     createHealthServer: (listener: RequestListener) => {
       server = createServer(listener);
@@ -200,6 +210,60 @@ describe('worker runtime', () => {
     await expect(runtime.start()).rejects.toThrow('database unavailable');
     expect(server.listening).toBe(false);
     expect(client.close).toHaveBeenCalledOnce();
+  });
+
+  it('starts the durable queue before reporting ready and stops it before closing the database', async () => {
+    const order: string[] = [];
+    const client = createTestDatabase();
+    vi.mocked(client.close).mockImplementation(async () => {
+      order.push('database.close');
+    });
+    const queue: DurableQueue = {
+      ...createTestQueue(),
+      start: vi.fn(async () => {
+        order.push('queue.start');
+      }),
+      stop: vi.fn(async () => {
+        order.push('queue.stop');
+      })
+    };
+    const { runtime } = createTestRuntime({
+      database: client,
+      queue,
+      readinessCheck: async () => {
+        order.push('database.check');
+      }
+    });
+    await runtime.start();
+    expect(runtime.readiness.isReady()).toBe(true);
+    await runtime.shutdown('SIGTERM');
+    expect(order).toEqual(['database.check', 'queue.start', 'queue.stop', 'database.close']);
+  });
+
+  it('does not become ready when the durable queue cannot start', async () => {
+    const client = createTestDatabase();
+    const queue: DurableQueue = {
+      ...createTestQueue(),
+      start: vi.fn(async () => {
+        throw new Error('pg-boss database requires migrations');
+      })
+    };
+    const { runtime, server } = createTestRuntime({ database: client, queue, readinessCheck: async () => undefined });
+    await expect(runtime.start()).rejects.toThrow('requires migrations');
+    expect(runtime.readiness.isReady()).toBe(false);
+    expect(server.listening).toBe(false);
+    expect(queue.stop).toHaveBeenCalledOnce();
+    expect(client.close).toHaveBeenCalledOnce();
+  });
+
+  it('runs smoke mode without a durable queue, since it has no database', () => {
+    const runtime = createWorkerRuntime({
+      config: { ...config, smokeJob: true },
+      logger: createLogger({ enabled: false }),
+      database: createTestDatabase(),
+      registerSignals: false
+    });
+    expect(runtime.queue).toBeUndefined();
   });
 
   it('routes process signals through the same idempotent shutdown path', async () => {

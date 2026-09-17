@@ -31,6 +31,8 @@ export interface WorkerConfig extends ServerConfig {
   healthHost: '127.0.0.1' | '::1' | '0.0.0.0';
   healthPort: number;
   smokeJob: boolean;
+  /** Durable queue handlers run at once; low because the VPS shares CPU with PostgreSQL and the API. */
+  concurrency: number;
 }
 type ServerEnvironment = Record<string, string | undefined>;
 
@@ -75,7 +77,9 @@ const workerSchema = sharedServerSchema.extend({
   // Binding all interfaces is reserved for the isolated local container network.
   WORKER_HEALTH_HOST: z.enum(['127.0.0.1', '::1', '0.0.0.0']).default('127.0.0.1'),
   WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(3002),
-  WORKER_SMOKE_JOB: z.enum(['true', 'false']).default('false').transform((value) => value === 'true')
+  WORKER_SMOKE_JOB: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  // Bounded on purpose: raising it trades API and database headroom on a shared VPS for throughput.
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(4).default(1)
 });
 
 const loadServerConfig = (service: ApiConfig['service'] | WorkerConfig['service'], env: ServerEnvironment): ServerConfig => {
@@ -160,7 +164,8 @@ export const loadWorkerConfig = (env: ServerEnvironment): WorkerConfig => {
     ...serverConfig,
     healthHost: result.data.WORKER_HEALTH_HOST,
     healthPort: result.data.WORKER_HEALTH_PORT,
-    smokeJob: result.data.WORKER_SMOKE_JOB
+    smokeJob: result.data.WORKER_SMOKE_JOB,
+    concurrency: result.data.WORKER_CONCURRENCY
   };
 };
 /** Allows entrypoints to skip test-runner startup without reading env ad hoc. */

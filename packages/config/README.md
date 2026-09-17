@@ -15,7 +15,7 @@ API and worker loaders read `APP_ENV`; the Vite loader derives the equivalent ru
 
 `API_CORS_ORIGINS` is a comma-separated allowlist of complete browser origins; wildcard origins are never used. `API_TRUSTED_PROXY_CIDRS` is empty by default, so `X-Forwarded-*` headers are ignored until the actual reverse-proxy network is named explicitly. Keep the body limit small globally and give upload routes their own deliberate, bounded override.
 
-`WORKER_HEALTH_HOST` accepts only `127.0.0.1` or `::1`; the probe port must remain private to the worker container. `WORKER_SMOKE_JOB=true` is a deterministic local/CI bootstrap mode and is rejected in production.
+`WORKER_HEALTH_HOST` accepts only `127.0.0.1` or `::1`; the probe port must remain private to the worker container. `WORKER_SMOKE_JOB=true` is a deterministic local/CI bootstrap mode and is rejected in production. `WORKER_CONCURRENCY` (default `1`, at most `4`) is how many durable queue jobs the worker runs at once; it stays low because the worker shares the VPS with PostgreSQL and the API.
 
 ## Production secrets
 

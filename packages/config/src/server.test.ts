@@ -21,6 +21,7 @@ describe('server configuration', () => {
       healthHost: '127.0.0.1',
       healthPort: 3002,
       smokeJob: false,
+      concurrency: 1,
       sentryDsn: undefined,
       deployVersion: 'unknown',
       smtpUrl: undefined,
@@ -138,6 +139,9 @@ describe('server configuration', () => {
     expect(() => loadWorkerConfig({ ...localEnvironment, WORKER_HEALTH_HOST: '0.0.0.0' })).toThrow('WORKER_HEALTH_HOST');
     expect(() => loadWorkerConfig({ ...localEnvironment, WORKER_HEALTH_PORT: '0' })).toThrow('WORKER_HEALTH_PORT');
     expect(() => loadWorkerConfig({ ...localEnvironment, WORKER_SMOKE_JOB: 'yes' })).toThrow('WORKER_SMOKE_JOB');
+    expect(loadWorkerConfig({ ...localEnvironment, WORKER_CONCURRENCY: '2' }).concurrency).toBe(2);
+    expect(() => loadWorkerConfig({ ...localEnvironment, WORKER_CONCURRENCY: '0' })).toThrow('WORKER_CONCURRENCY');
+    expect(() => loadWorkerConfig({ ...localEnvironment, WORKER_CONCURRENCY: '5' })).toThrow('WORKER_CONCURRENCY');
     expect(() => loadWorkerConfig({
       ...localEnvironment,
       APP_ENV: 'production',
