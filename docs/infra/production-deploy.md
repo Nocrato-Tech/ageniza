@@ -197,6 +197,31 @@ sudo docker compose -p ageniza exec postgres psql -U postgres ageniza
 sudo docker compose -p ageniza logs --tail=200 worker
 ```
 
+### Agency operator CLI
+
+Agency creation and lifecycle commands are operator-only actions. Run them on the VPS with the
+production API image, the application runtime settings, and the owner-only migration connection;
+the `api` service inherits `production-private`, the internal network shared with PostgreSQL.
+`MIGRATION_DATABASE_URL` must remain in `/etc/ageniza/migrations.env` and must never be added to
+`runtime.env` or passed to the public API container. The command prints only the agency id and,
+when applicable, the activation expiration; it never prints the activation token or link.
+
+```bash
+docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js create --name "<agency name>" --owner-email "<owner@example.com>"
+docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js suspend --agency-id <agency UUID>
+docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js reactivate --agency-id <agency UUID>
+docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js resend-activation --agency-id <agency UUID>
+```
+
+The runtime file must also carry the independent legal-document versions used when the owner
+accepts the activation invitation. Both values are required and use `YYYY-MM-DD` format; changing
+one does not imply changing the other:
+
+```dotenv
+AUTH_TERMS_VERSION=YYYY-MM-DD
+AUTH_PRIVACY_VERSION=YYYY-MM-DD
+```
+
 The host lock (`/run/lock/ageniza-deploy.lock`) serializes releases; do not run `docker compose up` against these projects by hand. Never use `docker system prune --volumes` as recovery; the `postgres-data` volume holds the database.
 
 Rotate independently and record each rotation:
