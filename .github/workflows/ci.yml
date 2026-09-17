@@ -171,6 +171,10 @@ jobs:
         run: pnpm db:migrate
       - name: Run database integration and RLS isolation suite
         run: pnpm db:test:local
+      - name: Build the worker's workspace dependencies
+        run: pnpm exec turbo run build --filter=@ageniza/worker^...
+      - name: Run the durable job queue suite as the application role
+        run: pnpm --filter @ageniza/worker test:integration
       - name: Remove the local database
         if: always()
         run: docker compose down --volumes --remove-orphans

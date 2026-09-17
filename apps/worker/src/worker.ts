@@ -17,6 +17,7 @@ import {
 import { createDatabaseClient, type DatabaseClient } from '@ageniza/database';
 
 import { createJobProcessor, type JobProcessor } from './jobs.js';
+import { createDurableQueue, type DurableQueue } from './queue.js';
 
 type WorkerSignal = 'SIGINT' | 'SIGTERM';
 type ReadinessCheck = () => Promise<void>;
@@ -25,6 +26,8 @@ export interface WorkerRuntime {
   readonly logger: CoreLogger;
   readonly database: DatabaseClient;
   readonly jobs: JobProcessor;
+  /** Durable PostgreSQL-backed queue; absent in smoke mode, which runs without a database. */
+  readonly queue: DurableQueue | undefined;
   readonly readiness: Readiness;
   health(): Promise<HealthReport>;
   start(): Promise<void>;
@@ -35,6 +38,7 @@ export interface CreateWorkerRuntimeOptions {
   readonly config: WorkerConfig;
   readonly logger: CoreLogger;
   readonly database?: DatabaseClient;
+  readonly queue?: DurableQueue;
   readonly registerSignals?: boolean;
   readonly process?: SignalProcess;
   readonly readinessCheck?: ReadinessCheck;
@@ -74,6 +78,9 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
   const database = options.database ?? createDatabaseClient({ connectionString: options.config.databaseUrl });
   const readiness = createReadiness(false, { service: 'worker' });
   const jobs = createJobProcessor({ logger });
+  const queue = options.queue ?? (options.config.smokeJob
+    ? undefined
+    : createDurableQueue({ connectionString: options.config.databaseUrl, logger, concurrency: options.config.concurrency }));
   const shutdownManager = createShutdownManager();
   shutdownManager.add('sentry', async () => { await flushServerSentry(); });
   const processRef = options.process ?? process;
@@ -135,6 +142,10 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
     jobs.stopAccepting();
     await jobs.drain();
   });
+  // Registered after jobs so it runs before them and before the database closes (LIFO).
+  shutdownManager.add('queue', async () => {
+    await queue?.stop();
+  });
   shutdownManager.add('health-server', async () => {
     if (server.listening) await close(server);
   });
@@ -169,6 +180,7 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
     logger,
     database,
     jobs,
+    queue,
     readiness,
     health,
     start() {
@@ -179,6 +191,9 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
           await listenPromise;
           if (stopping) throw new Error('Worker stopped during startup.');
           await checkDatabase();
+          if (stopping) throw new Error('Worker stopped during startup.');
+          // Fails when the queue schema is missing or at a different version than the installed pg-boss.
+          await queue?.start();
           if (stopping) throw new Error('Worker stopped during startup.');
           readiness.setReady(true);
           logger.info(

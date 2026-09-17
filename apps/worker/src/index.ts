@@ -5,6 +5,7 @@ import { smokeJob } from './smoke-job.js';
 import { createWorkerRuntime, type WorkerRuntime } from './worker.js';
 
 export * from './jobs.js';
+export * from './queue.js';
 export * from './smoke-job.js';
 export * from './worker.js';
 

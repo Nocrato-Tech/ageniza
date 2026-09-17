@@ -296,6 +296,36 @@ recorded and the Branch guard workflow alerts on non-PR commits, but they are
 not prevented. After upgrading to GitHub Team, add rulesets and an Environment
 with required reviewers on the deploy job; the host-held secrets model can stay.
 
+## Amendment (2026-09-16): durable job queue
+
+Issue #23 gives the worker a durable queue: pg-boss on the project's own
+PostgreSQL ([ADR 0011](0011-self-hosted-postgres-and-better-auth.md)), with no
+separate broker. This answers the condition in *Production flow* that a durable
+transport must define how it prevents duplicate job consumption during the
+worker handoff. With blue/green removed, that handoff is an in-place container
+replacement:
+
+- **No concurrent consumption.** A job is fetched with `FOR UPDATE SKIP LOCKED`
+  and marked active in the same statement, so the outgoing and incoming
+  workers, or any two fetch loops, never hold the same job at once.
+- **The outgoing worker drains.** On `SIGTERM` it stops fetching and waits up
+  to 45 seconds for running jobs. The worker's Compose `stop_grace_period` is
+  60 seconds, so Docker does not `SIGKILL` it first. Jobs still running after
+  the drain are failed back into retry.
+- **A killed worker loses nothing.** If the process dies anyway, its active
+  jobs expire after the queue's `expireInSeconds` and supervision returns them
+  to retry.
+- **Delivery is therefore at least once, not exactly once.** An interrupted
+  job runs again, so every handler must be idempotent and every queue keeps at
+  least one retry. The queue is not an authorization boundary: handlers
+  revalidate tenant and capability, and payloads carry no secrets.
+
+The pg-boss schema is created by a forward-only Knex migration from frozen SQL
+and is owned by the migration role. The worker connects as `ageniza_app` with
+data access only, runs pg-boss with migration disabled, and refuses to start on
+a schema version mismatch, so no DDL runs at runtime. Details and the handler
+contract are in the [worker README](../../apps/worker/README.md#durable-jobs).
+
 ## References
 
 - [GitHub: publishing Docker images, including GHCR and digest attestations](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images)
