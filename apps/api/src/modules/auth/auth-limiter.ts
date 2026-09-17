@@ -20,6 +20,12 @@ export interface AuthLimiterOptions {
   store?: AuthLimiterStore;
   /** Optional policy injection for tests or a deliberately different deployment policy. */
   limits?: Pick<typeof AUTH_RATE_LIMITS, AuthLimiterRoute>;
+  /**
+   * Hard cap on the number of tracked entries (M3), enforced after each purge sweep by evicting
+   * the oldest entries by insertion order (the `Map` iteration order) until the store is back
+   * under the cap. Injectable for tests; defaults to 100,000 in production.
+   */
+  maxEntries?: number;
 }
 
 const hash = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex');
@@ -52,10 +58,17 @@ const isRateLimitedError = (error: unknown): error is HttpError =>
  * cannot express: IP + e-mail (tight) and e-mail-global (loose). The map intentionally has no
  * persistence; counters reset on every deploy or restart (accepted for the MVP single instance).
  */
+/** Sweep the store for expired entries every this many `consume` calls (M3): an O(n) pass, but
+ * amortized to O(1) per call, and the only way this process-local map ever shrinks. */
+const PURGE_EVERY_N_CALLS = 1_000;
+const DEFAULT_MAX_ENTRIES = 100_000;
+
 export class InMemoryAuthLimiter {
   private readonly now: () => number;
   private readonly store: AuthLimiterStore;
   private readonly limits: Pick<typeof AUTH_RATE_LIMITS, AuthLimiterRoute>;
+  private readonly maxEntries: number;
+  private callsSincePurge = 0;
 
   public constructor(options: AuthLimiterOptions = {}) {
     this.now = options.now ?? (() => Date.now());
@@ -64,10 +77,13 @@ export class InMemoryAuthLimiter {
       login: AUTH_RATE_LIMITS.login,
       forgot: AUTH_RATE_LIMITS.forgot
     };
+    this.maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
   }
 
   /** Consumes both the IP+email and email-global windows atomically for one request. */
   public consume(route: AuthLimiterRoute, ip: string, email: string): void {
+    this.maybePurge();
+
     const now = this.now();
     const policy = this.limits[route];
     const entries: readonly { key: string; limit: AuthRateLimitWindow }[] = [
@@ -86,6 +102,40 @@ export class InMemoryAuthLimiter {
       } else {
         counter.count += 1;
       }
+    }
+
+    this.enforceMaxEntries();
+  }
+
+  /**
+   * Every `PURGE_EVERY_N_CALLS` calls, drops every entry whose window has already lapsed
+   * (`resetAt <= now`). An active key's window is never lapsed by definition (its own `consume`
+   * call keeps `resetAt` in the future), so this never loses a live counter (M3).
+   */
+  private maybePurge(): void {
+    this.callsSincePurge += 1;
+    if (this.callsSincePurge < PURGE_EVERY_N_CALLS) return;
+    this.callsSincePurge = 0;
+
+    const now = this.now();
+    for (const [key, counter] of this.store) {
+      if (counter.resetAt <= now) this.store.delete(key);
+    }
+  }
+
+  /**
+   * Caps the number of tracked entries after a purge/consume by evicting the oldest entries in
+   * insertion order (the `Map`'s own iteration order) until the store is back under the cap.
+   */
+  private enforceMaxEntries(): void {
+    const overflow = this.store.size - this.maxEntries;
+    if (overflow <= 0) return;
+
+    const iterator = this.store.keys();
+    for (let removed = 0; removed < overflow; removed += 1) {
+      const next = iterator.next();
+      if (next.done === true) break;
+      this.store.delete(next.value);
     }
   }
 
