@@ -1,0 +1,126 @@
+import type { FastifyRequest } from 'fastify';
+
+import { HttpError } from '@ageniza/core';
+import { raw, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+
+export interface TenantContext {
+  readonly agencyId: string;
+  /** Ownership is an agency property and is intentionally independent of role membership. */
+  readonly isOwner: boolean;
+  /** Null is possible only for a legacy/partially provisioned owner without a membership. */
+  readonly roleKey: string | null;
+  readonly permissions: ReadonlySet<string>;
+}
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    /** Set by the agency guard for downstream domain handlers. */
+    tenant?: TenantContext;
+  }
+}
+
+export interface TenancyGuardDependencies {
+  readonly database: DatabaseClient;
+}
+
+interface AgencyAccessRow {
+  readonly agency_id: string;
+  readonly is_owner: boolean;
+  readonly role_key: string | null;
+  readonly permissions: readonly string[] | null;
+}
+
+interface RawRows<TResult> {
+  readonly rows: readonly TResult[];
+}
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const notFound = (): HttpError => new HttpError({
+  statusCode: 404,
+  code: 'NOT_FOUND',
+  message: 'Agency not found.'
+});
+
+const unauthenticated = (): HttpError => new HttpError({
+  statusCode: 401,
+  code: 'UNAUTHENTICATED',
+  message: 'Authentication is required.'
+});
+
+const forbidden = (): HttpError => new HttpError({
+  statusCode: 403,
+  code: 'FORBIDDEN',
+  message: 'You do not have permission to perform this action.'
+});
+
+const invalidAgencyId = (): HttpError => new HttpError({
+  statusCode: 400,
+  code: 'VALIDATION_ERROR',
+  message: 'Request validation failed',
+  details: { issues: [{ path: 'agencyId', code: 'invalid_string', message: 'Agency ID must be a UUID.' }] }
+});
+
+const routeAgencyId = (params: unknown): string | undefined => {
+  if (typeof params !== 'object' || params === null || !('agencyId' in params)) return undefined;
+  const value = (params as Record<string, unknown>).agencyId;
+  return typeof value === 'string' ? value : undefined;
+};
+
+/**
+ * Builds the reusable tenant preHandler. The active membership/owner check deliberately runs
+ * under `withAuthenticatedUserTransaction`, so the same connection-local user context is present
+ * for this check and for every domain query that follows it.
+ */
+export const createRequireAgencyAccess = (dependencies: TenancyGuardDependencies) =>
+  async (request: FastifyRequest): Promise<void> => {
+    const auth = request.auth;
+    if (auth === undefined) throw unauthenticated();
+
+    const agencyId = routeAgencyId(request.params);
+    if (agencyId === undefined || !uuidPattern.test(agencyId)) throw invalidAgencyId();
+
+    const row = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      const result = await raw<RawRows<AgencyAccessRow>>(transaction, `
+        select
+          agency.id as agency_id,
+          (agency.owner_user_id = app_private.current_user_id()) as is_owner,
+          role.key as role_key,
+          coalesce(
+            array_agg(distinct role_permission.permission_key) filter (where role_permission.permission_key is not null),
+            array[]::text[]
+          ) as permissions
+        from public.agencies as agency
+        left join public.agency_memberships as membership
+          on membership.agency_id = agency.id
+         and membership.user_id = app_private.current_user_id()
+         and membership.status = 'active'
+        left join public.roles as role on role.id = membership.role_id
+        left join public.role_permissions as role_permission on role_permission.role_id = role.id
+        where agency.id = ?::uuid
+          and agency.status = 'active'
+          and (membership.id is not null or agency.owner_user_id = app_private.current_user_id())
+        group by agency.id, agency.owner_user_id, role.key
+      `, [agencyId]);
+      return result.rows[0];
+    });
+
+    // A missing row intentionally covers nonexistent, suspended, and inaccessible agencies.
+    if (row === undefined) throw notFound();
+    request.tenant = {
+      agencyId,
+      isOwner: row.is_owner === true,
+      roleKey: row.role_key ?? null,
+      permissions: new Set(row.permissions ?? [])
+    };
+  };
+
+/** Alias matching the guard name used by route modules. */
+export const requireAgencyAccess = createRequireAgencyAccess;
+
+/** Builds a preHandler for one permission after `requireAgencyAccess` populated the context. */
+export const requirePermission = (key: string) =>
+  async (request: FastifyRequest): Promise<void> => {
+    const tenant = request.tenant;
+    if (tenant === undefined || (!tenant.isOwner && !tenant.permissions.has(key))) throw forbidden();
+  };
