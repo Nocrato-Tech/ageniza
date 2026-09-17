@@ -18,6 +18,14 @@ export interface ActionEmailInput {
   readonly agencyName?: string;
 }
 
+export type NamedActionEmailInput = Omit<ActionEmailInput, 'agencyName'> & {
+  readonly agencyName: string;
+};
+
+export type ClientInvitationEmailInput = NamedActionEmailInput & {
+  readonly clientName: string;
+};
+
 const escapeHtml = (value: string): string =>
   value.replace(/[&<>"']/g, (character) => {
     switch (character) {
@@ -49,10 +57,21 @@ const assertPositiveExpiry = (expiresInMinutes: number): void => {
   }
 };
 
+const assertDisplayName = (field: string, value: string): void => {
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > 256) {
+    throw new Error(`${field} deve ser um nome não vazio de até 256 caracteres.`);
+  }
+};
+
+const formatExpiry = (expiresInMinutes: number): string =>
+  expiresInMinutes >= 1_440
+    ? `Este link expira em ${Math.ceil(expiresInMinutes / 1_440)} ${Math.ceil(expiresInMinutes / 1_440) === 1 ? 'dia' : 'dias'}.`
+    : `Este link expira em ${expiresInMinutes} minutos.`;
+
 const compose = (subject: string, lines: readonly string[], input: ActionEmailInput): EmailMessage => {
   assertHttpsUrl(input.actionUrl);
   assertPositiveExpiry(input.expiresInMinutes);
-  const closing = `Este link expira em ${input.expiresInMinutes} minutos. Se você não esperava este e-mail, ignore-o.`;
+  const closing = `${formatExpiry(input.expiresInMinutes)} Se você não esperava este e-mail, ignore-o.`;
   const body = [...lines, input.actionUrl, closing];
   return {
     subject,
@@ -70,6 +89,31 @@ const invitedBy = (agencyName?: string): string =>
 
 export const invitationEmail = (input: ActionEmailInput): EmailMessage =>
   compose('Convite para o Ageniza', [invitedBy(input.agencyName), 'Abra o link abaixo para ativar sua conta.'], input);
+
+export const agencyActivationEmail = (input: NamedActionEmailInput): EmailMessage => {
+  assertDisplayName('O nome da agência', input.agencyName);
+  return compose('Ative sua agência no Ageniza', [
+    `Sua agência ${input.agencyName} está quase pronta.`,
+    'Abra o link abaixo para ativá-la.'
+  ], input);
+};
+
+export const collaboratorInvitationEmail = (input: NamedActionEmailInput): EmailMessage => {
+  assertDisplayName('O nome da agência', input.agencyName);
+  return compose('Convite para participar da agência', [
+    `Você foi convidado para participar da ${input.agencyName}.`,
+    'Abra o link abaixo para aceitar o convite.'
+  ], input);
+};
+
+export const clientInvitationEmail = (input: ClientInvitationEmailInput): EmailMessage => {
+  assertDisplayName('O nome da agência', input.agencyName);
+  assertDisplayName('O nome do cliente', input.clientName);
+  return compose('Convite para acessar seu cliente', [
+    `Você foi convidado para acessar ${input.clientName}, gerenciado pela ${input.agencyName}.`,
+    'Abra o link abaixo para aceitar o convite.'
+  ], input);
+};
 
 export const emailVerificationEmail = (input: ActionEmailInput): EmailMessage =>
   compose('Confirme seu e-mail no Ageniza', ['Confirme este e-mail para concluir a configuração da sua conta.'], input);

@@ -6,7 +6,9 @@ const localEnvironment = {
   APP_ENV: 'local',
   DATABASE_URL: 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza',
   BETTER_AUTH_SECRET: 'local-development-placeholder-secret-change-me',
-  APP_PUBLIC_URL: 'http://127.0.0.1:5173'
+  APP_PUBLIC_URL: 'http://127.0.0.1:5173',
+  AUTH_TERMS_VERSION: '2026-01-01',
+  AUTH_PRIVACY_VERSION: '2026-02-01'
 };
 
 const productionDatabaseUrl = 'postgresql://ageniza_app:password@postgres:5432/ageniza';
@@ -22,6 +24,7 @@ describe('server configuration', () => {
   it('loads typed local API and worker configuration', () => {
     expect(loadApiConfig(localEnvironment)).toMatchObject({
       service: 'api', environment: 'local', authSecret: localEnvironment.BETTER_AUTH_SECRET, appPublicUrl: localEnvironment.APP_PUBLIC_URL,
+      authTermsVersion: '2026-01-01', authPrivacyVersion: '2026-02-01',
       host: '0.0.0.0', port: 3001, corsOrigins: ['http://127.0.0.1:5173'], bodyLimitBytes: 1_048_576, trustedProxyCidrs: []
     });
     expect(loadWorkerConfig(localEnvironment)).toEqual({
@@ -61,6 +64,16 @@ describe('server configuration', () => {
   it('fails when required server configuration is missing', () => {
     expect(() => loadApiConfig({ APP_ENV: 'local' })).toThrow(ConfigValidationError);
     expect(() => loadApiConfig({ APP_ENV: 'local' })).toThrow('DATABASE_URL');
+  });
+
+  it('requires independent terms and privacy document versions in YYYY-MM-DD format', () => {
+    expect(() => loadApiConfig({ ...localEnvironment, AUTH_TERMS_VERSION: undefined })).toThrow('AUTH_TERMS_VERSION');
+    expect(() => loadApiConfig({ ...localEnvironment, AUTH_PRIVACY_VERSION: undefined })).toThrow('AUTH_PRIVACY_VERSION');
+    expect(() => loadApiConfig({ ...localEnvironment, AUTH_TERMS_VERSION: '2026-1-01' })).toThrow('YYYY-MM-DD');
+    expect(() => loadApiConfig({ ...localEnvironment, AUTH_PRIVACY_VERSION: 'not-a-date' })).toThrow('YYYY-MM-DD');
+    expect(loadApiConfig({ ...localEnvironment, AUTH_TERMS_VERSION: '2027-12-31', AUTH_PRIVACY_VERSION: '2028-01-01' })).toMatchObject({
+      authTermsVersion: '2027-12-31', authPrivacyVersion: '2028-01-01'
+    });
   });
 
   it('requires a sufficiently long Better Auth secret without exposing supplied values', () => {

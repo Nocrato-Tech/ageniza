@@ -4,6 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   assertEmailAddress,
+  agencyActivationEmail,
+  clientInvitationEmail,
+  collaboratorInvitationEmail,
   createEmailSender,
   emailVerificationEmail,
   invitationEmail,
@@ -41,6 +44,32 @@ describe('transactional email templates', () => {
     expect(invitation.text).toContain('60 minutos');
     expect(emailVerificationEmail({ actionUrl, expiresInMinutes: 30 }).subject).toContain('Confirme');
     expect(passwordResetEmail({ actionUrl, expiresInMinutes: 15 }).subject).toContain('Redefina');
+  });
+
+  it('renders the agency activation template in Portuguese with day-based expiry', () => {
+    const message = agencyActivationEmail({ actionUrl, expiresInMinutes: 7 * 1_440, agencyName: 'Ageniza & Co.' });
+    expect(message.text).toContain('Sua agência Ageniza & Co. está quase pronta.');
+    expect(message.text).toContain('Este link expira em 7 dias.');
+    expect(message.html).toContain('Ageniza &amp; Co.');
+  });
+
+  it('renders the collaborator invitation template and escapes the agency name', () => {
+    const message = collaboratorInvitationEmail({ actionUrl, expiresInMinutes: 60, agencyName: '<Ageniza>' });
+    expect(message.text).toContain('Você foi convidado para participar da <Ageniza>.');
+    expect(message.text).toContain('Este link expira em 60 minutos.');
+    expect(message.html).toContain('&lt;Ageniza&gt;');
+    expect(message.html).not.toContain('<Ageniza>');
+  });
+
+  it('renders the client invitation template with both display names', () => {
+    const message = clientInvitationEmail({ actionUrl, expiresInMinutes: 1_440, agencyName: 'Ageniza', clientName: 'Cliente A' });
+    expect(message.text).toContain('Você foi convidado para acessar Cliente A, gerenciado pela Ageniza.');
+    expect(message.text).toContain('Este link expira em 1 dia.');
+  });
+
+  it('rejects missing display names in the dedicated invitation templates', () => {
+    expect(() => agencyActivationEmail({ actionUrl, expiresInMinutes: 60, agencyName: ' ' })).toThrow('nome da agência');
+    expect(() => clientInvitationEmail({ actionUrl, expiresInMinutes: 60, agencyName: 'Ageniza', clientName: '' })).toThrow('nome do cliente');
   });
 
   it('escapes HTML so a crafted name or link cannot inject markup', () => {
