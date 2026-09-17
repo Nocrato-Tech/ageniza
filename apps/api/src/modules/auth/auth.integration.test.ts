@@ -1,6 +1,7 @@
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 
 import {
+  captureLogs,
   cleanupTestUser,
   createFakeEmailSender,
   insertTestUser,
@@ -168,6 +169,80 @@ describe('GET /auth/session (#5, #6)', () => {
     const remaining = await app.pool.query('select 1 from auth.session where id = $1', [sessionId]);
     expect(remaining.rowCount).toBe(0);
   });
+
+  it('M1 renews the session cookie and extends the DB expiry once updateAge has elapsed', async () => {
+    const app = await openApp();
+    const user = await makeUser(app, 'session-renewal');
+
+    const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
+    const cookie = sessionCookieHeader(login.cookies);
+
+    const sessionRow = await app.pool.query<{ id: string }>(
+      'select id from auth.session where "userId" = $1 order by "createdAt" desc limit 1',
+      [user.id]
+    );
+    const sessionId = sessionRow.rows[0]?.id;
+    expect(sessionId).toBeDefined();
+    // updateAge is 1 day (better-auth.ts); moving updatedAt 2 days back guarantees Better Auth's
+    // own `shouldBeUpdated` check (based on `expiresAt - expiresIn + updateAge`) decides this
+    // session needs a refresh. expiresAt is set 5 days out so the session is still valid.
+    await app.pool.query(
+      'update auth.session set "updatedAt" = now() - interval \'2 days\', "expiresAt" = now() + interval \'5 days\' where id = $1',
+      [sessionId]
+    );
+
+    const response = await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie } });
+    expect(response.statusCode).toBe(200);
+
+    const setCookieHeader = response.headers['set-cookie'];
+    expect(setCookieHeader).toBeDefined();
+    const renewedCookie = response.cookies.find((candidate) => candidate.name.includes('session'));
+    expect(renewedCookie).toBeDefined();
+    expect(renewedCookie?.maxAge).toBeGreaterThan(604_800 - 60);
+    expect(renewedCookie?.maxAge).toBeLessThan(604_800 + 60);
+
+    const updatedRow = await app.pool.query<{ expiresAt: Date }>(
+      'select "expiresAt" from auth.session where id = $1',
+      [sessionId]
+    );
+    const newExpiresAtMs = new Date(updatedRow.rows[0]!.expiresAt).getTime();
+    const expectedMs = Date.now() + 7 * 24 * 60 * 60 * 1_000;
+    expect(Math.abs(newExpiresAtMs - expectedMs)).toBeLessThan(60_000);
+  });
+
+  it('B8 never lets a refresh push expiresAt past createdAt + 30 days, even at the database-hook level', async () => {
+    const app = await openApp();
+    const user = await makeUser(app, 'session-absolute-clamp');
+
+    const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
+    const cookie = sessionCookieHeader(login.cookies);
+
+    const sessionRow = await app.pool.query<{ id: string; createdAt: Date }>(
+      'select id, "createdAt" from auth.session where "userId" = $1 order by "createdAt" desc limit 1',
+      [user.id]
+    );
+    const sessionId = sessionRow.rows[0]?.id;
+    expect(sessionId).toBeDefined();
+    // 29 days old: still under the 30-day absolute limit (so `session-guard.ts` will not reject
+    // it outright), but a due `updateAge` refresh would normally push `expiresAt` to
+    // now + 7 days, i.e. well past `createdAt + 30 days`. The `databaseHooks.session.update.before`
+    // clamp (B8) must cap it regardless.
+    await app.pool.query(
+      'update auth.session set "createdAt" = now() - interval \'29 days\', "updatedAt" = now() - interval \'2 days\', "expiresAt" = now() + interval \'5 days\' where id = $1',
+      [sessionId]
+    );
+
+    const response = await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie } });
+    expect(response.statusCode).toBe(200);
+
+    const updatedRow = await app.pool.query<{ expiresAt: Date; createdAt: Date }>(
+      'select "expiresAt", "createdAt" from auth.session where id = $1',
+      [sessionId]
+    );
+    const row = updatedRow.rows[0]!;
+    const maxAllowedMs = new Date(row.createdAt).getTime() + 30 * 24 * 60 * 60 * 1_000;
+    expect(new Date(row.expiresAt).getTime()).toBeLessThanOrEqual(maxAllowedMs + 1_000);
+  });
 });
 
 describe('POST /auth/logout and /auth/logout-all (#7)', () => {
@@ -256,7 +331,8 @@ describe('POST /auth/password/forgot (#8, #8b)', () => {
     const failingSender = createFakeEmailSender(async () => {
       throw new Error('simulated SMTP failure');
     });
-    const failingApp = await openApp({ sender: failingSender });
+    const capturedLogs = captureLogs();
+    const failingApp = await openApp({ sender: failingSender, logger: capturedLogs.logger });
     const failingUser = await makeUser(failingApp, 'forgot-failing');
 
     const failingResponse = await failingApp.app.inject({
@@ -264,6 +340,10 @@ describe('POST /auth/password/forgot (#8, #8b)', () => {
     });
     expect(failingResponse.statusCode).toBe(202);
     await failingApp.emailService.drain();
+
+    const logText = capturedLogs.text();
+    expect(logText).toMatch(/EMAIL_DELIVERY_FAILED|Password reset email delivery failed/);
+    expect(logText).not.toContain(failingUser.email);
   });
 });
 
@@ -314,6 +394,19 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
 
     const reusedUser = await makeUser(app, 'reset-reused');
     const reusedToken = await requestResetToken(app, sender, reusedUser.email);
+
+    // M4: the reset token's TTL must actually be the ~30 minutes issue #31 prescribes
+    // (`resetPasswordTokenExpiresIn: 60 * 30` in better-auth.ts), not merely "some expiry".
+    const verificationTtlRow = await app.pool.query<{ createdAt: Date; expiresAt: Date }>(
+      'select "createdAt", "expiresAt" from auth.verification where value = $1 order by "createdAt" desc limit 1',
+      [reusedUser.id]
+    );
+    const ttlRow = verificationTtlRow.rows[0];
+    expect(ttlRow).toBeDefined();
+    const ttlMinutes = (new Date(ttlRow!.expiresAt).getTime() - new Date(ttlRow!.createdAt).getTime()) / 60_000;
+    expect(ttlMinutes).toBeGreaterThan(29);
+    expect(ttlMinutes).toBeLessThan(31);
+
     const firstUse = await app.app.inject({
       method: 'POST', url: '/auth/password/reset', headers: origin,
       payload: { token: reusedToken, newPassword: 'first use new password value' }
@@ -384,6 +477,22 @@ describe('global origin/CSRF check (#13)', () => {
 
     const health = await app.app.inject({ method: 'GET', url: '/health' });
     expect(health.statusCode).toBe(200);
+  });
+
+  it('#13 (B12) rejects a POST without Origin and accepts one with the correct Origin on a real, non-auth route', async () => {
+    const app = await openApp({
+      registerExtraRoutes: (fastifyApp) => {
+        fastifyApp.post('/__test/echo', async () => ({ ok: true }));
+      }
+    });
+
+    const withoutOrigin = await app.app.inject({ method: 'POST', url: '/__test/echo', payload: {} });
+    expect(withoutOrigin.statusCode).toBe(403);
+    expect(withoutOrigin.json()).toMatchObject({ error: { code: 'CSRF_REJECTED' } });
+
+    const withOrigin = await app.app.inject({ method: 'POST', url: '/__test/echo', headers: origin, payload: {} });
+    expect(withOrigin.statusCode).toBe(200);
+    expect(withOrigin.json()).toEqual({ ok: true });
   });
 });
 
