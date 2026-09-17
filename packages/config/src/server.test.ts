@@ -10,6 +10,13 @@ const localEnvironment = {
 };
 
 const productionDatabaseUrl = 'postgresql://ageniza_app:password@postgres:5432/ageniza';
+// A production-shaped Better Auth secret that deliberately avoids every B11 example marker
+// (placeholder/change-me/changeme/replace/example/test), unlike `localEnvironment`'s own secret.
+const productionAuthSecret = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4a1b2c3d4e5f6';
+const productionEmailSettings = {
+  SMTP_URL: 'smtps://user:key@smtp.ageniza.example:465',
+  EMAIL_FROM: 'no-reply@ageniza.example'
+};
 
 describe('server configuration', () => {
   it('loads typed local API and worker configuration', () => {
@@ -41,6 +48,7 @@ describe('server configuration', () => {
     expect(() => loadApiConfig({ ...withEmail, SMTP_URL: 'smtp://smtp.example.com:587' })).toThrow('must point to a loopback resource');
     expect(loadApiConfig({
       ...localEnvironment,
+      BETTER_AUTH_SECRET: productionAuthSecret,
       APP_ENV: 'production',
       DATABASE_URL: productionDatabaseUrl,
       APP_PUBLIC_URL: 'https://app.ageniza.example',
@@ -75,9 +83,11 @@ describe('server configuration', () => {
 
     const production = {
       ...localEnvironment,
+      BETTER_AUTH_SECRET: productionAuthSecret,
       APP_ENV: 'production',
       DATABASE_URL: productionDatabaseUrl,
-      API_CORS_ORIGINS: 'https://app.ageniza.example'
+      API_CORS_ORIGINS: 'https://app.ageniza.example',
+      ...productionEmailSettings
     };
     expect(() => loadApiConfig({ ...production, APP_PUBLIC_URL: 'http://app.ageniza.example' })).toThrow('must use HTTPS');
     expect(loadApiConfig({ ...production, APP_PUBLIC_URL: 'https://app.ageniza.example' }).appPublicUrl).toBe('https://app.ageniza.example');
@@ -108,7 +118,16 @@ describe('server configuration', () => {
   });
 
   it('requires HTTPS Sentry DSNs in production', () => {
-    const production = { ...localEnvironment, APP_ENV: 'production', DATABASE_URL: productionDatabaseUrl, APP_PUBLIC_URL: 'https://app.ageniza.example', API_CORS_ORIGINS: 'https://app.ageniza.example', SENTRY_DSN: 'https://public@sentry.example/1' };
+    const production = {
+      ...localEnvironment,
+      BETTER_AUTH_SECRET: productionAuthSecret,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl,
+      APP_PUBLIC_URL: 'https://app.ageniza.example',
+      API_CORS_ORIGINS: 'https://app.ageniza.example',
+      SENTRY_DSN: 'https://public@sentry.example/1',
+      ...productionEmailSettings
+    };
     expect(loadApiConfig(production).sentryDsn).toBe('https://public@sentry.example/1');
     expect(() => loadApiConfig({ ...production, SENTRY_DSN: 'http://public@sentry.example/1' })).toThrow('must use HTTPS');
   });
@@ -121,12 +140,21 @@ describe('server configuration', () => {
   it('accepts the internal production database and rejects a loopback one', () => {
     expect(loadApiConfig({
       ...localEnvironment,
+      BETTER_AUTH_SECRET: productionAuthSecret,
       APP_ENV: 'production',
       DATABASE_URL: productionDatabaseUrl,
       APP_PUBLIC_URL: 'https://app.ageniza.example',
-      API_CORS_ORIGINS: 'https://app.ageniza.example'
+      API_CORS_ORIGINS: 'https://app.ageniza.example',
+      ...productionEmailSettings
     }).environment).toBe('production');
-    expect(() => loadApiConfig({ ...localEnvironment, APP_ENV: 'production', APP_PUBLIC_URL: 'https://app.ageniza.example', API_CORS_ORIGINS: 'https://app.ageniza.example' })).toThrow(
+    expect(() => loadApiConfig({
+      ...localEnvironment,
+      BETTER_AUTH_SECRET: productionAuthSecret,
+      APP_ENV: 'production',
+      APP_PUBLIC_URL: 'https://app.ageniza.example',
+      API_CORS_ORIGINS: 'https://app.ageniza.example',
+      ...productionEmailSettings
+    })).toThrow(
       'must not point to a loopback resource in production'
     );
   });
@@ -160,6 +188,52 @@ describe('server configuration', () => {
     expect(() => loadApiConfig({ ...localEnvironment, API_TRUSTED_PROXY_CIDRS: '*' })).toThrow('explicit proxy networks');
     expect(() => loadApiConfig({ ...localEnvironment, API_TRUSTED_PROXY_CIDRS: 'not-a-network' })).toThrow('valid IP addresses or CIDR networks');
     expect(() => loadApiConfig({ ...localEnvironment, API_TRUSTED_PROXY_CIDRS: '10.0.0.0/33' })).toThrow('valid IP addresses or CIDR networks');
+  });
+
+  it('requires SMTP_URL and EMAIL_FROM in production but keeps them optional locally (M2)', () => {
+    const productionWithoutEmail = {
+      ...localEnvironment,
+      BETTER_AUTH_SECRET: productionAuthSecret,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl,
+      APP_PUBLIC_URL: 'https://app.ageniza.example',
+      API_CORS_ORIGINS: 'https://app.ageniza.example'
+    };
+    expect(() => loadApiConfig(productionWithoutEmail)).toThrow('SMTP_URL and EMAIL_FROM are required');
+    expect(() => loadApiConfig({ ...productionWithoutEmail, SMTP_URL: productionEmailSettings.SMTP_URL })).toThrow(
+      'must be set together with EMAIL_FROM'
+    );
+    expect(loadApiConfig({ ...productionWithoutEmail, ...productionEmailSettings }).smtpUrl).toBe(productionEmailSettings.SMTP_URL);
+    // Local/test stay unaffected: SMTP remains fully optional there.
+    expect(loadApiConfig(localEnvironment).smtpUrl).toBeUndefined();
+  });
+
+  it('rejects an example/placeholder-looking BETTER_AUTH_SECRET in production without exposing it (B11)', () => {
+    const production = {
+      ...localEnvironment,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl,
+      APP_PUBLIC_URL: 'https://app.ageniza.example',
+      API_CORS_ORIGINS: 'https://app.ageniza.example',
+      ...productionEmailSettings
+    };
+    // localEnvironment's own secret contains both "placeholder" and "change-me".
+    expect(() => loadApiConfig(production)).toThrow('BETTER_AUTH_SECRET');
+    for (const marker of ['placeholder', 'change-me', 'changeme', 'replace', 'example', 'test', 'PLACEHOLDER', 'Example']) {
+      const secret = `a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4-${marker}`;
+      expect(() => loadApiConfig({ ...production, BETTER_AUTH_SECRET: secret })).toThrow(ConfigValidationError);
+    }
+    try {
+      loadApiConfig(production);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect((error as Error).message).not.toContain(localEnvironment.BETTER_AUTH_SECRET);
+      expect((error as Error).message).toContain('redacted');
+    }
+    // A secret with no example marker is accepted.
+    expect(loadApiConfig({ ...production, BETTER_AUTH_SECRET: productionAuthSecret }).authSecret).toBe(productionAuthSecret);
+    // The same placeholder secret is still fine outside production.
+    expect(loadApiConfig(localEnvironment).authSecret).toBe(localEnvironment.BETTER_AUTH_SECRET);
   });
 
   it('keeps worker probes loopback-only and smoke mode out of production', () => {

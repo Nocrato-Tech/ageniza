@@ -70,6 +70,15 @@ const isIpOrCidr = (value: string): boolean => {
   return bits >= 0 && bits <= (version === 4 ? 32 : 128);
 };
 
+/** B11: substrings that mark a Better Auth secret as an unrotated example/placeholder value, one
+ * that keeps showing up verbatim in local `.env.example` files and dev docs. Case-insensitive. */
+const EXAMPLE_SECRET_MARKERS = ['placeholder', 'change-me', 'changeme', 'replace', 'example', 'test'] as const;
+
+const containsExampleSecretMarker = (value: string): boolean => {
+  const lower = value.toLowerCase();
+  return EXAMPLE_SECRET_MARKERS.some((marker) => lower.includes(marker));
+};
+
 const apiSchema = sharedServerSchema.extend({
   BETTER_AUTH_SECRET: z.string().min(32, 'must be at least 32 characters; supplied values are redacted'),
   APP_PUBLIC_URL: z.string().trim().url('must be a valid URL origin; supplied values are redacted'),
@@ -131,6 +140,18 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
     throw new ConfigValidationError('API', [{ path: 'APP_PUBLIC_URL', message: 'must be an origin without paths; supplied values are redacted' }]);
   }
   assertRuntimeUrlSafety(serverConfig.environment, 'APP_PUBLIC_URL', result.data.APP_PUBLIC_URL, { requireHttpsInProduction: true });
+  if (serverConfig.environment === 'production' && containsExampleSecretMarker(result.data.BETTER_AUTH_SECRET)) {
+    throw new ConfigValidationError('API', [{
+      path: 'BETTER_AUTH_SECRET',
+      message: 'must not be an example/placeholder value in production; supplied values are redacted'
+    }]);
+  }
+  if (serverConfig.environment === 'production' && (serverConfig.smtpUrl === undefined || serverConfig.emailFrom === undefined)) {
+    throw new ConfigValidationError('API', [{
+      path: 'SMTP_URL',
+      message: 'SMTP_URL and EMAIL_FROM are required in production'
+    }]);
+  }
   for (const origin of result.data.API_CORS_ORIGINS) {
     let parsed: URL;
     try {
