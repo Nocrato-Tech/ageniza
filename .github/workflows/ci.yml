@@ -175,6 +175,10 @@ jobs:
         run: pnpm exec turbo run build --filter=@ageniza/worker^...
       - name: Run the durable job queue suite as the application role
         run: pnpm --filter @ageniza/worker test:integration
+      - name: Build the API's workspace dependencies
+        run: pnpm exec turbo run build --filter=@ageniza/api^...
+      - name: Run the authentication suite as the application role
+        run: pnpm --filter @ageniza/api test:integration
       - name: Remove the local database
         if: always()
         run: docker compose down --volumes --remove-orphans
