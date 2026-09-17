@@ -9,6 +9,7 @@ The database runs on the VPS ([ADR 0011](../adr/0011-self-hosted-postgres-and-be
 | `/etc/ageniza/backup.env` (0600) | R2 account, bucket, credentials, optional heartbeat URL |
 | `/etc/ageniza/backup-passphrase` (0600) | GPG symmetric passphrase |
 | `/var/lib/ageniza/backups` (0700) | Newest encrypted dump only; R2 holds history |
+| `/var/lib/ageniza/backups/tmp` (0700) | Scratch space for the plaintext dump and, during a rehearsal, the decrypted copy. Real disk, never `/run` (tmpfs): the VPS's `/run` is a fraction of RAM and a growing dump would either fill memory or fail the backup outright |
 
 **Recovery point: 24 hours.** Everything written since the last successful backup is lost in a host-loss event. Hostinger snapshots are a complement, never the plan.
 
@@ -44,7 +45,7 @@ The database runs on the VPS ([ADR 0011](../adr/0011-self-hosted-postgres-and-be
 
 `backup` dumps with `pg_dump --format=custom` through the container socket (no password is handled), encrypts with GPG AES-256, uploads to `ageniza/<year>/<month>/ageniza-<timestamp>.dump.gpg` using SigV4, keeps only the newest local copy, and pings the heartbeat. Credentials pass through a 0600 curl config file, never the process list. A host lock prevents overlapping runs.
 
-`verify-restore` decrypts the newest local dump, starts a disposable PostgreSQL container on an internal network with the same pinned image, runs `pg_restore`, checks that `app_private.current_user_id()` exists, prints the restored table count, and removes the container, volume, and network. It never touches the production database.
+`verify-restore` decrypts the newest local dump, starts a disposable PostgreSQL container on an internal network with the same pinned image, runs `pg_restore`, requires the restored table count to be greater than zero (an empty or schema-only dump fails the rehearsal instead of silently passing), checks that `app_private.current_user_id()` exists, prints the restored table count, and removes the container, volume, and network. It never touches the production database. It only needs the passphrase file, not `backup.env`: it still runs when the R2 configuration is missing or incomplete, which is exactly the situation during an incident (rotated token, freshly rebuilt host).
 
 ## Restoring for real
 
