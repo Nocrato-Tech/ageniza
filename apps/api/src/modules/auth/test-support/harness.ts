@@ -79,6 +79,13 @@ export interface TestAppOptions {
   readonly sender?: EmailSender;
   readonly logger?: CoreLogger;
   readonly limiterOptions?: AuthLimiterOptions;
+  /**
+   * Test/harness-only hook (B12 #13): registers additional routes on the built app, outside the
+   * auth module, before `app.ready()`. Never used by production code; exists so a test can prove
+   * the global origin/CSRF check covers a real route it does not otherwise know about, rather
+   * than only a nonexistent URL.
+   */
+  readonly registerExtraRoutes?: (app: FastifyInstance) => void | Promise<void>;
 }
 
 export interface TestApp {
@@ -104,6 +111,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   const auth = createAuth({ pool, config, sender: emailService, logger, auditRecorder });
   const limiter = createAuthLimiter(options.limiterOptions);
   const app = await buildApp({ config, logger, auth: { auth, limiter, auditRecorder } });
+  if (options.registerExtraRoutes !== undefined) await options.registerExtraRoutes(app);
   await app.ready();
 
   return {

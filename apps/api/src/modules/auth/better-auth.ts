@@ -6,8 +6,9 @@ import type { ApiConfig } from '@ageniza/config/server';
 import type { CoreLogger } from '@ageniza/core';
 
 import { currentAuditRequestId } from './audit-context.js';
-import type { AuthAuditRecorder } from './audit.js';
+import { recordAuthAuditEventSafely, type AuthAuditRecorder } from './audit.js';
 import type { EmailService } from './email-service.js';
+import { AUTH_SESSION_MAX_AGE_MS } from './policy.js';
 
 export interface CreateAuthDependencies {
   readonly pool: Pool;
@@ -58,6 +59,26 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
       updateAge: 60 * 60 * 24,
       cookieCache: { enabled: false }
     },
+    databaseHooks: {
+      session: {
+        update: {
+          // B8: the absolute session lifetime must not depend solely on `session-guard.ts`
+          // rejecting an over-age session at request time. This clamps every renewal (including
+          // one `getSession`'s own `updateAge` refresh issues) so `expiresAt` can never be pushed
+          // past `createdAt + AUTH_SESSION_MAX_AGE_MS`, no matter which code path updates it.
+          before: async (data, context) => {
+            if (data.expiresAt === undefined) return;
+            const createdAt = data.createdAt ?? context?.context.session?.session.createdAt;
+            if (createdAt === undefined) return;
+
+            const maxExpiresAt = new Date(new Date(createdAt).getTime() + AUTH_SESSION_MAX_AGE_MS);
+            if (new Date(data.expiresAt).getTime() <= maxExpiresAt.getTime()) return;
+
+            return { data: { ...data, expiresAt: maxExpiresAt } };
+          }
+        }
+      }
+    },
     verification: { storeIdentifier: 'hashed' },
     emailAndPassword: {
       enabled: true,
@@ -70,17 +91,15 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
         dependencies.sender.sendPasswordReset({ to: user.email, token });
       },
       onPasswordReset: async ({ user }): Promise<void> => {
-        const requestId = currentAuditRequestId();
-        if (requestId === undefined) return;
-        try {
-          await dependencies.auditRecorder.record({ action: 'auth.password_reset', actorUserId: user.id, requestId });
-        } catch (error) {
-          dependencies.logger.error({
-            operation: 'auth.password_reset_audit',
-            status: 'failed',
-            error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'AUDIT_WRITE_FAILED' }
-          }, 'Failed to record the auth.password_reset audit event');
-        }
+        // B9: recorded regardless of whether a request id is available (null rather than
+        // silently skipped), and a write failure never undoes or blocks the already-completed
+        // password reset.
+        const requestId = currentAuditRequestId() ?? null;
+        await recordAuthAuditEventSafely(
+          dependencies.auditRecorder,
+          { action: 'auth.password_reset', actorUserId: user.id, requestId },
+          dependencies.logger
+        );
       }
     },
     logger: authLogger
