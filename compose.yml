@@ -22,7 +22,8 @@ services:
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: '1'
       MP_SMTP_AUTH_ALLOW_INSECURE: '1'
-    ports: ["127.0.0.1:8025:8025"]
+    # 8025 is the inbox; 1025 lets host tooling send a test message. Production excludes this service.
+    ports: ["127.0.0.1:8025:8025", "127.0.0.1:1025:1025"]
     networks: [internal, database-host]
     healthcheck: { test: ["CMD", "/mailpit", "readyz"], interval: 5s, timeout: 3s, retries: 12 }
   api:
