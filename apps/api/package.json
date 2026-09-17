@@ -8,8 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests",
-    "test:integration": "vitest run src/**/*.integration.test.ts",
+    "test": "vitest run --passWithNoTests --exclude '**/*.integration.test.ts'",
+    "test:integration": "vitest run integration.test.ts",
     "clean": "rimraf dist"
   },
   "dependencies": {
