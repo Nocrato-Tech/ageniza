@@ -241,6 +241,11 @@ describe('AUTH-20B database RLS and invitation functions', () => {
     );
     await expect(asUser(userA, (transaction) => transaction('invitations').where({ id: invitationB }).select('id'))).resolves.toEqual([]);
     await expect(asUser(userA, (transaction) => transaction('legal_acceptances').select('user_id'))).resolves.toEqual([{ user_id: userA }, { user_id: userA }]);
+    // Permissions and system roles are global authorization metadata. They are intentionally
+    // readable by every authenticated user, while all tenant-bearing rows remain RLS-scoped.
+    await expect(asUser(userA, (transaction) => transaction('permissions').select('key'))).resolves.toHaveLength(4);
+    await expect(asUser(userA, (transaction) => transaction('roles').whereNull('agency_id').select('key'))).resolves.toHaveLength(5);
+    await expect(asUser(userA, (transaction) => transaction('role_permissions').select('permission_key'))).resolves.toHaveLength(4);
 
     await expect(asUser(userA, (transaction) => transaction('agencies').insert({ id: randomUUID(), name: 'Denied' }))).rejects.toThrow(/row-level security/);
     await expect(asUser(userA, (transaction) => transaction('clients').insert({ id: randomUUID(), agency_id: agencyB, name: 'Denied' }))).rejects.toThrow(/row-level security/);
@@ -251,6 +256,9 @@ describe('AUTH-20B database RLS and invitation functions', () => {
       token_hash: `denied-${randomUUID()}`, expires_at: new Date(Date.now() + 86_400_000)
     }))).rejects.toThrow(/row-level security/);
     await expect(asUser(userA, (transaction) => transaction('legal_acceptances').insert({ id: randomUUID(), user_id: userA, document: 'terms', version: `denied-${randomUUID()}` }))).rejects.toThrow(/row-level security/);
+    await expect(asUser(userA, (transaction) => transaction('permissions').insert({ key: `denied.${randomUUID()}`, description: 'Denied' }))).rejects.toThrow(/row-level security/);
+    await expect(asUser(userA, (transaction) => transaction('roles').insert({ id: randomUUID(), agency_id: agencyB, key: `denied-${randomUUID()}`, name: 'Denied', is_system: false }))).rejects.toThrow(/row-level security/);
+    await expect(asUser(userA, (transaction) => transaction('role_permissions').insert({ role_id: randomUUID(), permission_key: 'colaborador.convidar' }))).rejects.toThrow(/row-level security/);
 
     await expect(asUser(userA, (transaction) => transaction('agencies').where({ id: agencyB }).update({ name: 'Should not change' }))).resolves.toBe(0);
     await expect(asUser(userA, (transaction) => transaction('clients').where({ id: clientB }).delete())).resolves.toBe(0);
@@ -258,6 +266,9 @@ describe('AUTH-20B database RLS and invitation functions', () => {
     await expect(asUser(userA, (transaction) => transaction('client_memberships').where({ client_id: clientB }).delete())).resolves.toBe(0);
     await expect(asUser(userA, (transaction) => transaction('invitations').where({ id: invitationB }).delete())).resolves.toBe(0);
     await expect(asUser(userA, (transaction) => transaction('legal_acceptances').where({ user_id: userB }).delete())).resolves.toBe(0);
+    await expect(asUser(userA, (transaction) => transaction('permissions').where({ key: 'colaborador.convidar' }).update({ description: 'Should not change' }))).resolves.toBe(0);
+    await expect(asUser(userA, (transaction) => transaction('roles').where({ key: 'admin' }).whereNull('agency_id').update({ name: 'Should not change' }))).resolves.toBe(0);
+    await expect(asUser(userA, (transaction) => transaction('role_permissions').where({ role_id: adminRoleId }).delete())).resolves.toBe(0);
   });
 
   it('returns only the public invitation projection and marks inactive links invalid', async () => {
@@ -346,6 +357,36 @@ describe('AUTH-20B database RLS and invitation functions', () => {
 
     const mismatchError = await acceptInvitation(`hash-${invitationA}`, userB).catch((error: unknown) => error);
     expect(mismatchError).toMatchObject({ code: 'A0002' });
+  });
+
+  it('allows one global user to hold legitimate memberships in two agencies', async () => {
+    const secondAgency = randomUUID();
+    const secondInvitation = randomUUID();
+    const secondHash = `hash-${secondInvitation}`;
+    const collaboratorEmail = `collaborator-${collaboratorUser}@example.test`;
+    await getOwner().knex('agencies').insert({ id: secondAgency, name: 'Agency B Coexistence', owner_user_id: userB });
+    await getOwner().knex('invitations').insert({
+      id: secondInvitation,
+      agency_id: secondAgency,
+      purpose: 'collaborator_invite',
+      email: collaboratorEmail,
+      role_id: productionRoleId,
+      token_hash: secondHash,
+      expires_at: new Date(Date.now() + 86_400_000)
+    });
+
+    await expect(acceptInvitation(secondHash, collaboratorUser)).resolves.toEqual({
+      status: 'accepted',
+      agency_id: secondAgency,
+      client_id: null
+    });
+    await expect(getOwner().knex('agency_memberships').where({ user_id: collaboratorUser }).whereIn('agency_id', [agencyA, secondAgency]).select('agency_id')).resolves.toEqual(
+      expect.arrayContaining([{ agency_id: agencyA }, { agency_id: secondAgency }])
+    );
+
+    await getOwner().knex('invitations').where({ id: secondInvitation }).delete();
+    await getOwner().knex('agency_memberships').where({ agency_id: secondAgency }).delete();
+    await getOwner().knex('agencies').where({ id: secondAgency }).delete();
   });
 
   it('rolls back a user inserted before an acceptance failure', async () => {

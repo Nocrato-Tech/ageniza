@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 import { createLogger } from '@ageniza/core';
 import { createDatabaseClient, raw, type SqlBinding } from '@ageniza/database';
-import { assertEmailAddress, createEmailSender, invitationEmail, type EmailSender } from '@ageniza/email';
+import { agencyActivationEmail, assertEmailAddress, createEmailSender, type EmailSender } from '@ageniza/email';
 
 const INVITATION_EXPIRY_MINUTES = 7 * 24 * 60;
 type KnexRawExecutor = Parameters<typeof raw>[0];
@@ -61,7 +61,7 @@ export const createAgencyCliDatabase = (connectionString: string): AgencyCliData
   };
 };
 
-const normalizedEmailSchema = z.string().trim().email();
+const normalizedEmailSchema = z.string().trim().email().max(320);
 
 export const normalizeEmail = (value: string): string => {
   const email = value.trim().toLowerCase();
@@ -374,7 +374,7 @@ export const createAgencyActivationMailer = (input: {
   });
   return {
     async sendActivationEmail(email): Promise<void> {
-      const message = invitationEmail({
+      const message = agencyActivationEmail({
         actionUrl: email.actionUrl,
         expiresInMinutes: INVITATION_EXPIRY_MINUTES,
         agencyName: email.agencyName

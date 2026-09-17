@@ -10,7 +10,7 @@
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests --exclude '**/*.integration.test.ts'",
-    "test:integration": "vitest run integration.test.ts",
+    "test:integration": "vitest run src/modules/auth/auth.integration.test.ts src/modules/auth/auth-rate-limit.integration.test.ts src/modules/auth/auth-schema.integration.test.ts src/modules/auth/auth-logs.integration.test.ts src/modules/invitations/invitations.integration.test.ts",
     "clean": "rimraf dist"
   },
   "dependencies": {
