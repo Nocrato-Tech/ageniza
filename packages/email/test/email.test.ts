@@ -35,12 +35,12 @@ const fakeTransport = (): EmailTransport & { sent: Array<Record<string, string>>
 describe('transactional email templates', () => {
   it('renders invitation, verification, and reset messages with the action link and expiry', () => {
     const invitation = invitationEmail({ actionUrl, expiresInMinutes: 60, agencyName: 'Nocrato' });
-    expect(invitation.subject).toContain('invitation');
+    expect(invitation.subject).toContain('Convite');
     expect(invitation.text).toContain('Nocrato');
     expect(invitation.text).toContain(actionUrl);
-    expect(invitation.text).toContain('60 minutes');
-    expect(emailVerificationEmail({ actionUrl, expiresInMinutes: 30 }).subject).toContain('Confirm');
-    expect(passwordResetEmail({ actionUrl, expiresInMinutes: 15 }).subject).toContain('Reset');
+    expect(invitation.text).toContain('60 minutos');
+    expect(emailVerificationEmail({ actionUrl, expiresInMinutes: 30 }).subject).toContain('Confirme');
+    expect(passwordResetEmail({ actionUrl, expiresInMinutes: 15 }).subject).toContain('Redefina');
   });
 
   it('escapes HTML so a crafted name or link cannot inject markup', () => {
@@ -56,9 +56,9 @@ describe('transactional email templates', () => {
 
   it('refuses insecure links and nonsense expiries', () => {
     expect(() => invitationEmail({ actionUrl: 'http://app.ageniza.example/a', expiresInMinutes: 10 })).toThrow('HTTPS');
-    expect(() => invitationEmail({ actionUrl: 'not-a-url', expiresInMinutes: 10 })).toThrow('valid URL');
+    expect(() => invitationEmail({ actionUrl: 'not-a-url', expiresInMinutes: 10 })).toThrow('válida');
     expect(() => invitationEmail({ actionUrl: 'http://127.0.0.1:5173/a', expiresInMinutes: 10 })).not.toThrow();
-    expect(() => invitationEmail({ actionUrl, expiresInMinutes: 0 })).toThrow('positive');
+    expect(() => invitationEmail({ actionUrl, expiresInMinutes: 0 })).toThrow('positivo');
   });
 });
 

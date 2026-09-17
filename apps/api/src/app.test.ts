@@ -9,7 +9,9 @@ const config = loadApiConfig({
   APP_ENV: 'test',
   DATABASE_URL: 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza',
   API_CORS_ORIGINS: 'http://127.0.0.1:5173',
-  API_BODY_LIMIT_BYTES: '1024'
+  API_BODY_LIMIT_BYTES: '1024',
+  BETTER_AUTH_SECRET: 'test-only-secret-value-not-real-32chars+',
+  APP_PUBLIC_URL: 'http://127.0.0.1:5173'
 });
 
 describe('API application bootstrap', () => {
@@ -78,7 +80,7 @@ describe('API application bootstrap', () => {
     const denied = await app.inject({ url: '/health', headers: { origin: 'https://not-allowed.example' } });
     expect(denied.headers['access-control-allow-origin']).toBeUndefined();
 
-    const tooLarge = await app.inject({ method: 'POST', url: '/echo', payload: 'a'.repeat(1_025), headers: { 'content-type': 'text/plain' } });
+    const tooLarge = await app.inject({ method: 'POST', url: '/echo', payload: 'a'.repeat(1_025), headers: { 'content-type': 'text/plain', origin: 'http://127.0.0.1:5173' } });
     expect(tooLarge.statusCode).toBe(413);
     expect(tooLarge.json()).toMatchObject({ error: { code: 'PAYLOAD_TOO_LARGE' } });
     await app.close();
@@ -109,5 +111,24 @@ describe('API application bootstrap', () => {
     const trustedForwarded = await trusted.inject({ url: '/ip', remoteAddress: '127.0.0.1', headers: { 'x-forwarded-for': '203.0.113.10' } });
     expect(trustedForwarded.json()).toEqual({ ip: '203.0.113.10' });
     await trusted.close();
+  });
+
+  it('rejects any state-changing route without the configured Origin, while GET /health stays open', async () => {
+    const app = await buildApp({ config });
+    app.post('/anything', async () => ({ ok: true }));
+
+    const missingOrigin = await app.inject({ method: 'POST', url: '/anything' });
+    expect(missingOrigin.statusCode).toBe(403);
+    expect(missingOrigin.json()).toMatchObject({ error: { code: 'CSRF_REJECTED' }, meta: { requestId: expect.any(String) } });
+
+    const wrongOrigin = await app.inject({ method: 'POST', url: '/anything', headers: { origin: 'https://not-allowed.example' } });
+    expect(wrongOrigin.statusCode).toBe(403);
+
+    const allowedOrigin = await app.inject({ method: 'POST', url: '/anything', headers: { origin: 'http://127.0.0.1:5173' } });
+    expect(allowedOrigin.statusCode).toBe(200);
+
+    const health = await app.inject('/health');
+    expect(health.statusCode).toBe(200);
+    await app.close();
   });
 });

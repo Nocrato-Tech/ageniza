@@ -19,6 +19,10 @@ export interface ServerConfig {
 }
 export interface ApiConfig extends ServerConfig {
   service: 'api';
+  /** Better Auth signing/encryption secret; never expose this to browser code. */
+  authSecret: string;
+  /** Trusted browser application origin used for auth redirects and cookies. */
+  appPublicUrl: string;
   host: string;
   port: number;
   corsOrigins: readonly string[];
@@ -66,7 +70,18 @@ const isIpOrCidr = (value: string): boolean => {
   return bits >= 0 && bits <= (version === 4 ? 32 : 128);
 };
 
+/** B11: substrings that mark a Better Auth secret as an unrotated example/placeholder value, one
+ * that keeps showing up verbatim in local `.env.example` files and dev docs. Case-insensitive. */
+const EXAMPLE_SECRET_MARKERS = ['placeholder', 'change-me', 'changeme', 'replace', 'example', 'test'] as const;
+
+const containsExampleSecretMarker = (value: string): boolean => {
+  const lower = value.toLowerCase();
+  return EXAMPLE_SECRET_MARKERS.some((marker) => lower.includes(marker));
+};
+
 const apiSchema = sharedServerSchema.extend({
+  BETTER_AUTH_SECRET: z.string().min(32, 'must be at least 32 characters; supplied values are redacted'),
+  APP_PUBLIC_URL: z.string().trim().url('must be a valid URL origin; supplied values are redacted'),
   API_HOST: z.string().trim().min(1).default('0.0.0.0'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   API_CORS_ORIGINS: z.string().default('http://127.0.0.1:5173').transform(commaSeparatedValues),
@@ -120,6 +135,23 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
   const result = apiSchema.safeParse(env);
   if (!result.success) throw new ConfigValidationError('API', formatZodIssues(result.error.issues));
   const serverConfig = loadServerConfig('api', env);
+  const parsedAppPublicUrl = new URL(result.data.APP_PUBLIC_URL);
+  if (parsedAppPublicUrl.origin !== result.data.APP_PUBLIC_URL || parsedAppPublicUrl.pathname !== '/' || parsedAppPublicUrl.search || parsedAppPublicUrl.hash) {
+    throw new ConfigValidationError('API', [{ path: 'APP_PUBLIC_URL', message: 'must be an origin without paths; supplied values are redacted' }]);
+  }
+  assertRuntimeUrlSafety(serverConfig.environment, 'APP_PUBLIC_URL', result.data.APP_PUBLIC_URL, { requireHttpsInProduction: true });
+  if (serverConfig.environment === 'production' && containsExampleSecretMarker(result.data.BETTER_AUTH_SECRET)) {
+    throw new ConfigValidationError('API', [{
+      path: 'BETTER_AUTH_SECRET',
+      message: 'must not be an example/placeholder value in production; supplied values are redacted'
+    }]);
+  }
+  if (serverConfig.environment === 'production' && (serverConfig.smtpUrl === undefined || serverConfig.emailFrom === undefined)) {
+    throw new ConfigValidationError('API', [{
+      path: 'SMTP_URL',
+      message: 'SMTP_URL and EMAIL_FROM are required in production'
+    }]);
+  }
   for (const origin of result.data.API_CORS_ORIGINS) {
     let parsed: URL;
     try {
@@ -141,6 +173,8 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
   return {
     service: 'api',
     ...serverConfig,
+    authSecret: result.data.BETTER_AUTH_SECRET,
+    appPublicUrl: result.data.APP_PUBLIC_URL,
     host: result.data.API_HOST,
     port: result.data.PORT,
     corsOrigins: result.data.API_CORS_ORIGINS,

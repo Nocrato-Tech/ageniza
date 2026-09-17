@@ -34,25 +34,25 @@ const assertHttpsUrl = (actionUrl: string): void => {
   try {
     parsed = new URL(actionUrl);
   } catch {
-    throw new Error('Email action URL must be a valid URL.');
+    throw new Error('A URL da ação do e-mail deve ser válida.');
   }
   // Loopback keeps local development usable; everything else must be HTTPS.
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
   if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && loopback)) {
-    throw new Error('Email action URL must use HTTPS.');
+    throw new Error('A URL da ação do e-mail deve usar HTTPS.');
   }
 };
 
 const assertPositiveExpiry = (expiresInMinutes: number): void => {
   if (!Number.isInteger(expiresInMinutes) || expiresInMinutes <= 0) {
-    throw new Error('Email expiry must be a positive whole number of minutes.');
+    throw new Error('A validade do e-mail deve ser um número inteiro positivo de minutos.');
   }
 };
 
 const compose = (subject: string, lines: readonly string[], input: ActionEmailInput): EmailMessage => {
   assertHttpsUrl(input.actionUrl);
   assertPositiveExpiry(input.expiresInMinutes);
-  const closing = `This link expires in ${input.expiresInMinutes} minutes. If you did not expect this email, ignore it.`;
+  const closing = `Este link expira em ${input.expiresInMinutes} minutos. Se você não esperava este e-mail, ignore-o.`;
   const body = [...lines, input.actionUrl, closing];
   return {
     subject,
@@ -66,13 +66,13 @@ const compose = (subject: string, lines: readonly string[], input: ActionEmailIn
 };
 
 const invitedBy = (agencyName?: string): string =>
-  agencyName === undefined ? 'You were invited to Ageniza.' : `You were invited to ${agencyName} on Ageniza.`;
+  agencyName === undefined ? 'Você foi convidado para o Ageniza.' : `Você foi convidado para ${agencyName} no Ageniza.`;
 
 export const invitationEmail = (input: ActionEmailInput): EmailMessage =>
-  compose('Your Ageniza invitation', [invitedBy(input.agencyName), 'Open the link below to activate your account.'], input);
+  compose('Convite para o Ageniza', [invitedBy(input.agencyName), 'Abra o link abaixo para ativar sua conta.'], input);
 
 export const emailVerificationEmail = (input: ActionEmailInput): EmailMessage =>
-  compose('Confirm your Ageniza email address', ['Confirm this address to finish setting up your account.'], input);
+  compose('Confirme seu e-mail no Ageniza', ['Confirme este e-mail para concluir a configuração da sua conta.'], input);
 
 export const passwordResetEmail = (input: ActionEmailInput): EmailMessage =>
-  compose('Reset your Ageniza password', ['Open the link below to choose a new password.'], input);
+  compose('Redefina sua senha do Ageniza', ['Abra o link abaixo para escolher uma nova senha.'], input);

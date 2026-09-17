@@ -95,19 +95,22 @@ PostgreSQL 17 runs on the VPS as the internal `postgres` container ([ADR 0011](.
 | --- | --- |
 | `/etc/ageniza/postgres.env` | `POSTGRES_USER=postgres`, `POSTGRES_DB=ageniza`, `POSTGRES_PASSWORD=<owner password>`, `AGENIZA_APP_DB_PASSWORD=<application password>` |
 | `/etc/ageniza/migrations.env` | `MIGRATION_DATABASE_URL=postgresql://postgres:<owner password>@postgres:5432/ageniza` |
-| `/etc/ageniza/runtime.env` | `DATABASE_URL=postgresql://ageniza_app:<application password>@postgres:5432/ageniza` |
+| `/etc/ageniza/runtime.env` | `DATABASE_URL=postgresql://ageniza_app:<application password>@postgres:5432/ageniza`, `BETTER_AUTH_SECRET=<generated secret>`, `APP_PUBLIC_URL=https://<domain>` |
 
 - The `ageniza_app` role is created only when the data volume is first initialised. Changing `AGENIZA_APP_DB_PASSWORD` later does nothing; rotate with `ALTER ROLE ageniza_app PASSWORD '...'` and update `runtime.env`.
 - Pin `AGENIZA_POSTGRES_IMAGE` by digest in `deploy.env`. A new digest of the same major version restarts the database briefly at the next release. A major-version change needs a dump and restore, never an in-place image swap.
 - **Backups are not optional:** set up the [backup and restore runbook](backup-restore.md) (encrypted daily dumps to R2, with a rehearsed restore) before production holds real data.
+- `BETTER_AUTH_SECRET` signs and encrypts Better Auth sessions and tokens (issue #31); it must be at least 32 characters and is never logged. Generate one with `openssl rand -base64 48` and store only in `/etc/ageniza/runtime.env`. `APP_PUBLIC_URL` is the trusted browser origin (`https://<domain>`, no path) used for cookies, CSRF/origin checks, and reset-password links; it must be HTTPS in production. Both are required for the API to start.
 
 ### 3. Transactional email
 
 Invitations, email verification, and password resets need SMTP before the authentication work (issue #20) ships. Any provider with SMTP works; the application has no provider SDK.
 
+`SMTP_URL` and `EMAIL_FROM` are **mandatory in production**: the API refuses to start without both (the auth module's password-reset flow always sends mail), and `pnpm deploy:validate` / the VPS deploy script's `validate_runtime_env` reject a `runtime.env` that omits either. Both remain optional together in local/test environments only.
+
 1. Create the account and a sending domain (for example a subdomain such as `mail.<domain>`), then add its **SPF, DKIM, and DMARC** records. Without them, invitations land in spam or are rejected.
 2. Create a sending credential scoped to that domain.
-3. Add both keys to `/etc/ageniza/runtime.env` — the application refuses to start with only one of them:
+3. Add both keys to `/etc/ageniza/runtime.env` — the application refuses to start with only one of them, or with neither, in production:
 
    ```
    SMTP_URL=smtps://<user>:<key>@<smtp host>:465
