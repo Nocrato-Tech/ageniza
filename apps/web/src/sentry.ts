@@ -4,14 +4,33 @@ import type { BrowserConfig } from '@ageniza/config/browser';
 
 let enabled = false;
 
-/** Removes browser request payload and sensitive headers before any event leaves the page. */
-export const sanitizeBrowserSentryEvent = <T extends { request?: { data?: unknown; cookies?: unknown; headers?: Record<string, unknown> } }>(event: T): T => {
+interface SanitizableBrowserEvent {
+  request?: { data?: unknown; cookies?: unknown; url?: string; query_string?: unknown; headers?: Record<string, unknown> };
+  breadcrumbs?: Array<{ data?: Record<string, unknown> }>;
+}
+
+/**
+ * Removes browser request payload, URLs and sensitive headers before any event leaves the page.
+ * The invitation link is `/invite/<token>`, so the page URL itself is a live credential (issue
+ * #37): the SDK copies it into `request.url`, the `Referer` header and every navigation
+ * breadcrumb, and `sendDefaultPii: false` does not suppress any of those.
+ */
+export const sanitizeBrowserSentryEvent = <T extends SanitizableBrowserEvent>(event: T): T => {
+  for (const breadcrumb of event.breadcrumbs ?? []) {
+    if (breadcrumb.data === undefined) continue;
+    delete breadcrumb.data.from;
+    delete breadcrumb.data.to;
+    delete breadcrumb.data.url;
+  }
   if (event.request === undefined) return event;
   delete event.request.data;
   delete event.request.cookies;
+  delete event.request.url;
+  delete event.request.query_string;
   if (event.request.headers !== undefined) {
     for (const header of Object.keys(event.request.headers)) {
-      if (header.toLowerCase() === 'authorization' || header.toLowerCase() === 'cookie') delete event.request.headers[header];
+      const name = header.toLowerCase();
+      if (name === 'authorization' || name === 'cookie' || name === 'referer') delete event.request.headers[header];
     }
   }
   return event;

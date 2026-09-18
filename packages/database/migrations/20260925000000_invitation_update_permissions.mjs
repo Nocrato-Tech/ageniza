@@ -44,7 +44,11 @@ export async function up(knex) {
 
     -- Resending revokes and then INSERTS a replacement, so the insert policy has to recognise
     -- convite.reenviar too; otherwise that role passes the API check and the insert trips RLS,
-    -- turning an authorization decision into a 500.
+    -- turning an authorization decision into a 500. The trade-off is real: RLS no longer enforces
+    -- on its own that only an inviter creates an invitation, since a resend is indistinguishable
+    -- from a fresh insert at this level. The API keeps that boundary (the resend copies e-mail and
+    -- role from the locked row), and narrowing it further would need a security-definer function
+    -- for the resend itself.
     drop policy invitations_insert on public.invitations;
 
     create policy invitations_insert on public.invitations
@@ -71,12 +75,17 @@ export async function up(knex) {
         or app_private.has_agency_permission(agency_id, 'convite.cancelar')
       );
 
-    -- Issue #38. The e-mail templates reject a display name over 256 characters, so a longer one
-    -- leaves every invitation for that tenant permanently undeliverable. The CLI now refuses it,
-    -- but agencies and clients are also written by operators over direct SQL, so the bound belongs
-    -- here as well.
-    alter table public.agencies add constraint agencies_name_length check (length(name) <= 256);
-    alter table public.clients add constraint clients_name_length check (length(name) <= 256);
+    -- Issue #38. The e-mail templates reject a blank display name or one over 256 UTF-16 units,
+    -- and a name that violates either leaves every invitation for that tenant permanently
+    -- undeliverable. Operators write both tables over direct SQL, so the bound belongs here too.
+    -- octet_length is the check that actually holds: UTF-8 bytes are never fewer than UTF-16 units,
+    -- so <= 256 bytes guarantees the template's limit, which length() in characters would not.
+    -- NOT VALID applies to new and updated rows without validating existing ones, so a deployment
+    -- carrying a too-long name migrates instead of aborting; validate it once the data is clean.
+    alter table public.agencies
+      add constraint agencies_name_length check (octet_length(name) <= 256) not valid;
+    alter table public.clients
+      add constraint clients_name_length check (btrim(name) <> '' and octet_length(name) <= 256) not valid;
   `);
 }
 

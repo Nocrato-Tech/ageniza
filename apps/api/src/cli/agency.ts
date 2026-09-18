@@ -74,9 +74,9 @@ export const normalizeEmail = (value: string): string => {
 export const normalizeAgencyName = (value: string): string => {
   const name = value.trim();
   if (name.length === 0) throw new AgencyCliError('name must not be blank.');
-  // The e-mail templates reject a longer display name, which would otherwise create the agency and
-  // only then fail delivery, leaving every invitation for it undeliverable (issue #38).
-  if (name.length > 256) throw new AgencyCliError('name must be at most 256 characters.');
+  // Matches the database constraint, which bounds bytes so the templates' UTF-16 limit always
+  // holds; a longer name would create the agency and only then fail every invitation (issue #38).
+  if (Buffer.byteLength(name, 'utf8') > 256) throw new AgencyCliError('name must be at most 256 bytes.');
   return name;
 };
 

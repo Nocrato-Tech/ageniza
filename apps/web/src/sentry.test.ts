@@ -13,4 +13,22 @@ describe('browser Sentry gate', () => {
     const event = sanitizeBrowserSentryEvent({ request: { data: { password: 'secret' }, cookies: 'session=secret', headers: { Authorization: 'Bearer token', COOKIE: 'session', accept: 'application/json' } } });
     expect(event.request).toEqual({ headers: { accept: 'application/json' } });
   });
+
+  it('removes every copy of the page URL, which on the invitation page is a live token', () => {
+    const token = 'invitation-token-in-the-address-bar';
+    const event = sanitizeBrowserSentryEvent({
+      request: {
+        url: `https://app.test/invite/${token}`,
+        query_string: `invite=${token}`,
+        headers: { Referer: `https://app.test/invite/${token}`, accept: 'text/html' }
+      },
+      breadcrumbs: [
+        { data: { from: `/invite/${token}`, to: '/login' } },
+        { data: { url: `https://app.test/invite/${token}` } },
+        {}
+      ]
+    });
+    expect(JSON.stringify(event)).not.toContain(token);
+    expect(event.request).toEqual({ headers: { accept: 'text/html' } });
+  });
 });
