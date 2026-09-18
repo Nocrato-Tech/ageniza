@@ -1,9 +1,12 @@
+import { PassThrough } from 'node:stream';
+
 import { describe, expect, it } from 'vitest';
 
 import { loadApiConfig } from '@ageniza/config/server';
-import { createReadiness, type HealthCheck } from '@ageniza/core';
+import { createLogger, createReadiness, type HealthCheck } from '@ageniza/core';
 
 import { buildApp } from './app.js';
+import { UNMATCHED_ROUTE } from './plugins/infra/route.js';
 
 const config = loadApiConfig({
   APP_ENV: 'test',
@@ -16,7 +19,34 @@ const config = loadApiConfig({
   APP_PUBLIC_URL: 'http://127.0.0.1:5173'
 });
 
+const capturedLogger = () => {
+  const destination = new PassThrough();
+  const chunks: string[] = [];
+  destination.on('data', (chunk: Buffer) => chunks.push(chunk.toString()));
+  return {
+    logger: createLogger({}, destination),
+    async text(): Promise<string> {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      return chunks.join('');
+    }
+  };
+};
+
 describe('API application bootstrap', () => {
+  it('never logs the raw path of an unmatched request, which can carry an invitation token', async () => {
+    const captured = capturedLogger();
+    const app = await buildApp({ config, logger: captured.logger });
+    const token = 'tOkEn-that-must-never-be-logged';
+
+    const response = await app.inject({ url: `/invitations/${token}/nonexistent-subpath` });
+    expect(response.statusCode).toBe(404);
+
+    const logs = await captured.text();
+    expect(logs).not.toContain(token);
+    expect(logs).toContain(UNMATCHED_ROUTE);
+    await app.close();
+  });
+
   it('serves liveness independently of readiness and reports dependency failures as 503', async () => {
     const readiness = createReadiness(false);
     const failingCheck: HealthCheck = { name: 'database', check: () => { throw new Error('database password must not leak'); } };

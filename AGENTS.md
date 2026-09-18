@@ -9,6 +9,7 @@
 - Database credentials, auth secrets, and storage keys must never reach the frontend or the repository.
 - Never publish the PostgreSQL port; Docker-published ports bypass the firewall.
 - Do not invent business rules; GitHub Issues and approved Notion specs are authoritative.
+- Keep comments to a minimum: comment only what the code cannot say by itself, such as a non-obvious constraint or the reason behind a surprising decision. Never restate what the next line does, and never leave a paragraph where one line serves. Unnecessary comments are noise in the codebase.
 - Before handoff, run relevant lint, typecheck, tests, and build checks.
 - Never push to `main` or `develop` (not even with `--no-verify`); work on a branch and open a pull request.
 

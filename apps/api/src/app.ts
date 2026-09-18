@@ -11,6 +11,7 @@ import { registerCors } from './plugins/infra/cors.js';
 import { registerErrorHandling } from './plugins/infra/errors.js';
 import { registerOriginProtection } from './plugins/infra/origin.js';
 import { registerRouteRateLimit } from './plugins/infra/rate-limit.js';
+import { loggableRoute } from './plugins/infra/route.js';
 import { registerSecurityHeaders } from './plugins/infra/security.js';
 import { registerSystemModule } from './modules/system/routes.js';
 
@@ -54,7 +55,7 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
     done();
   });
   app.addHook('onResponse', (request, reply, done) => {
-    const route = request.routeOptions.url ?? request.url.split('?')[0];
+    const route = loggableRoute(request);
     request.log.info({
       requestId: request.id,
       correlationId: reply.getHeader(CORRELATION_ID_HEADER),

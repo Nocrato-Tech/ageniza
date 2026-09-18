@@ -10,6 +10,7 @@ import {
   formatAgencyCliOutput,
   hashInvitationToken,
   loadAgencyCliEnvironment,
+  normalizeAgencyName,
   normalizeEmail,
   parseAgencyCliArguments,
   runAgencyCli
@@ -63,6 +64,13 @@ describe('agency operator CLI', () => {
     expect(parseAgencyCliArguments(['suspend', '--agency-id', agencyId])).toEqual({ command: 'suspend', agencyId });
     expect(parseAgencyCliArguments(['reactivate', `--agency-id=${agencyId}`])).toEqual({ command: 'reactivate', agencyId });
     expect(parseAgencyCliArguments(['resend-activation', '--agency-id', agencyId])).toEqual({ command: 'resend-activation', agencyId });
+  });
+
+  it('refuses an agency name the invitation e-mail templates would reject', () => {
+    expect(normalizeAgencyName('  Acme  ')).toBe('Acme');
+    expect(() => normalizeAgencyName('   ')).toThrow(/blank/);
+    expect(normalizeAgencyName('a'.repeat(256))).toHaveLength(256);
+    expect(() => normalizeAgencyName('a'.repeat(257))).toThrow(/256 characters/);
   });
 
   it('validates required settings without echoing a migration or SMTP secret', () => {
