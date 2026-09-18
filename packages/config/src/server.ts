@@ -17,8 +17,43 @@ export interface ServerConfig {
   smtpUrl?: string;
   emailFrom?: string;
 }
+
+/** S3-compatible object storage for direct-to-bucket media upload (issue #21). Cloudflare R2 in
+ * production; MinIO locally. All five are required together, and required in production. */
+export interface StorageConfig {
+  /** Endpoint the API itself calls (HeadObject, multipart control operations). */
+  readonly endpoint: string;
+  /**
+   * Endpoint embedded in presigned URLs, which the *browser* calls directly. Equal to `endpoint`
+   * for R2 (one globally reachable endpoint) and for a host-run API talking to local MinIO.
+   * Differs only when the API runs inside the local Compose network (`minio:9000`) while the
+   * browser reaches the same MinIO through its published port (`127.0.0.1:9000`).
+   */
+  readonly publicEndpoint: string;
+  readonly region: string;
+  readonly accessKeyId: string;
+  readonly secretAccessKey: string;
+  readonly bucket: string;
+  /** MinIO and R2 both accept path-style addressing; this avoids per-bucket DNS/virtual-host setup. */
+  readonly forcePathStyle: boolean;
+  /** Presigned PUT/part URL lifetime. Short-lived by design; the client re-requests on expiry. */
+  readonly uploadUrlExpirySeconds: number;
+  /** Presigned GET lifetime, issued only at social-publish time (issue #21 scope). */
+  readonly downloadUrlExpirySeconds: number;
+  /** Files at or above this size use multipart upload instead of a single presigned PUT. */
+  readonly multipartThresholdBytes: number;
+  /** Size of every multipart part except the last. Must be >= 5 MiB (S3/R2 multipart minimum). */
+  readonly multipartPartBytes: number;
+  readonly maxImageBytes: number;
+  readonly maxVideoBytes: number;
+  /** Default per-tenant quota; `agency_storage_quotas` may override it per agency. */
+  readonly quotaDefaultBytes: number;
+  readonly quotaDefaultObjectCount: number;
+}
 export interface ApiConfig extends ServerConfig {
   service: 'api';
+  /** Undefined only where storage is genuinely unused (e.g. lightweight app tests); required in production. */
+  storage?: StorageConfig;
   /** Better Auth signing/encryption secret; never expose this to browser code. */
   authSecret: string;
   /** Version of the terms document recorded when an invitation is accepted. */
@@ -94,7 +129,32 @@ const apiSchema = sharedServerSchema.extend({
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   API_CORS_ORIGINS: z.string().default('http://127.0.0.1:5173').transform(commaSeparatedValues),
   API_BODY_LIMIT_BYTES: z.coerce.number().int().min(1_024).max(50 * 1024 * 1024).default(1_048_576),
-  API_TRUSTED_PROXY_CIDRS: z.string().default('').transform(commaSeparatedValues)
+  API_TRUSTED_PROXY_CIDRS: z.string().default('').transform(commaSeparatedValues),
+  // Object storage (issue #21): R2 in production, MinIO locally. All required together.
+  R2_ENDPOINT: optionalUrl('must be a valid storage endpoint URL'),
+  R2_PUBLIC_ENDPOINT: optionalUrl('must be a valid storage endpoint URL'),
+  R2_REGION: z.string().trim().min(1).max(64).default('auto'),
+  R2_ACCESS_KEY_ID: z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.string().trim().min(1).optional()
+  ),
+  R2_SECRET_ACCESS_KEY: z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.string().min(1).optional()
+  ),
+  R2_BUCKET: z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.string().trim().min(1).max(63).optional()
+  ),
+  R2_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
+  MEDIA_UPLOAD_URL_EXPIRY_SECONDS: z.coerce.number().int().min(60).max(3_600).default(900),
+  MEDIA_DOWNLOAD_URL_EXPIRY_SECONDS: z.coerce.number().int().min(30).max(3_600).default(300),
+  MEDIA_MULTIPART_THRESHOLD_BYTES: z.coerce.number().int().min(5 * 1024 * 1024).default(8 * 1024 * 1024),
+  MEDIA_MULTIPART_PART_BYTES: z.coerce.number().int().min(5 * 1024 * 1024).default(8 * 1024 * 1024),
+  MEDIA_MAX_BYTES_IMAGE: z.coerce.number().int().min(1).default(25 * 1024 * 1024),
+  MEDIA_MAX_BYTES_VIDEO: z.coerce.number().int().min(1).default(5 * 1024 * 1024 * 1024),
+  STORAGE_QUOTA_DEFAULT_BYTES: z.coerce.number().int().min(1).default(10 * 1024 * 1024 * 1024),
+  STORAGE_QUOTA_DEFAULT_OBJECT_COUNT: z.coerce.number().int().min(1).default(2_000)
 });
 const workerSchema = sharedServerSchema.extend({
   // Binding all interfaces is reserved for the isolated local container network.
@@ -178,6 +238,47 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
   if (result.data.API_TRUSTED_PROXY_CIDRS.some((value) => !isIpOrCidr(value))) {
     throw new ConfigValidationError('API', [{ path: 'API_TRUSTED_PROXY_CIDRS', message: 'must contain only valid IP addresses or CIDR networks; supplied values are redacted' }]);
   }
+
+  // Object storage (issue #21): the four secrets/identifiers are required together, exactly like
+  // SMTP_URL/EMAIL_FROM above, and required in production because direct-to-bucket upload is core
+  // to the product. They stay optional outside production for tests/tooling that never touch storage.
+  const storageFields = [result.data.R2_ENDPOINT, result.data.R2_ACCESS_KEY_ID, result.data.R2_SECRET_ACCESS_KEY, result.data.R2_BUCKET] as const;
+  const storageFieldsPresent = storageFields.map((value) => value !== undefined);
+  const anyStoragePresent = storageFieldsPresent.some(Boolean);
+  const allStoragePresent = storageFieldsPresent.every(Boolean);
+  if (anyStoragePresent && !allStoragePresent) {
+    throw new ConfigValidationError('API', [{
+      path: 'R2_ENDPOINT',
+      message: 'R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET must be set together'
+    }]);
+  }
+  if (serverConfig.environment === 'production' && !allStoragePresent) {
+    throw new ConfigValidationError('API', [{
+      path: 'R2_ENDPOINT',
+      message: 'R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET are required in production'
+    }]);
+  }
+  if (result.data.R2_ENDPOINT !== undefined) {
+    assertRuntimeUrlSafety(serverConfig.environment, 'R2_ENDPOINT', result.data.R2_ENDPOINT, {
+      allowLocalContainerHosts: result.data.APP_CONTAINER_LOCAL === 'true',
+      requireHttpsInProduction: true
+    });
+  }
+  if (result.data.R2_PUBLIC_ENDPOINT !== undefined) {
+    // The browser calls this endpoint directly, so a container-only hostname is never acceptable
+    // here even in APP_CONTAINER_LOCAL mode.
+    assertRuntimeUrlSafety(serverConfig.environment, 'R2_PUBLIC_ENDPOINT', result.data.R2_PUBLIC_ENDPOINT, { requireHttpsInProduction: true });
+  }
+  if (serverConfig.environment === 'production' && result.data.R2_SECRET_ACCESS_KEY !== undefined && containsExampleSecretMarker(result.data.R2_SECRET_ACCESS_KEY)) {
+    throw new ConfigValidationError('API', [{
+      path: 'R2_SECRET_ACCESS_KEY',
+      message: 'must not be an example/placeholder value in production; supplied values are redacted'
+    }]);
+  }
+  if (result.data.MEDIA_MULTIPART_PART_BYTES > result.data.MEDIA_MULTIPART_THRESHOLD_BYTES) {
+    throw new ConfigValidationError('API', [{ path: 'MEDIA_MULTIPART_PART_BYTES', message: 'must not exceed MEDIA_MULTIPART_THRESHOLD_BYTES' }]);
+  }
+
   return {
     service: 'api',
     ...serverConfig,
@@ -189,7 +290,24 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
     port: result.data.PORT,
     corsOrigins: result.data.API_CORS_ORIGINS,
     bodyLimitBytes: result.data.API_BODY_LIMIT_BYTES,
-    trustedProxyCidrs: result.data.API_TRUSTED_PROXY_CIDRS
+    trustedProxyCidrs: result.data.API_TRUSTED_PROXY_CIDRS,
+    storage: allStoragePresent ? {
+      endpoint: result.data.R2_ENDPOINT!,
+      publicEndpoint: result.data.R2_PUBLIC_ENDPOINT ?? result.data.R2_ENDPOINT!,
+      region: result.data.R2_REGION,
+      accessKeyId: result.data.R2_ACCESS_KEY_ID!,
+      secretAccessKey: result.data.R2_SECRET_ACCESS_KEY!,
+      bucket: result.data.R2_BUCKET!,
+      forcePathStyle: result.data.R2_FORCE_PATH_STYLE,
+      uploadUrlExpirySeconds: result.data.MEDIA_UPLOAD_URL_EXPIRY_SECONDS,
+      downloadUrlExpirySeconds: result.data.MEDIA_DOWNLOAD_URL_EXPIRY_SECONDS,
+      multipartThresholdBytes: result.data.MEDIA_MULTIPART_THRESHOLD_BYTES,
+      multipartPartBytes: result.data.MEDIA_MULTIPART_PART_BYTES,
+      maxImageBytes: result.data.MEDIA_MAX_BYTES_IMAGE,
+      maxVideoBytes: result.data.MEDIA_MAX_BYTES_VIDEO,
+      quotaDefaultBytes: result.data.STORAGE_QUOTA_DEFAULT_BYTES,
+      quotaDefaultObjectCount: result.data.STORAGE_QUOTA_DEFAULT_OBJECT_COUNT
+    } : undefined
   };
 };
 /** Loads server-only worker settings. Never import this module from browser code. */
