@@ -1,8 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { MediaProcessingConfig, WorkerStorageConfig } from '@ageniza/config/server';
@@ -22,11 +23,30 @@ import type { DurableJobContext } from './queue.js';
 const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
 const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
 
+const localStorageCredentials = (): { accessKeyId: string; secretAccessKey: string } => {
+  if (process.env.R2_ACCESS_KEY_ID !== undefined && process.env.R2_SECRET_ACCESS_KEY !== undefined) {
+    return { accessKeyId: process.env.R2_ACCESS_KEY_ID, secretAccessKey: process.env.R2_SECRET_ACCESS_KEY };
+  }
+  const values = Object.fromEntries(readFileSync(resolve(process.cwd(), '../../.local/storage.env'), 'utf8')
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const separator = line.indexOf('=');
+      return [line.slice(0, separator), line.slice(separator + 1)];
+    }));
+  if (values.R2_ACCESS_KEY_ID === undefined || values.R2_SECRET_ACCESS_KEY === undefined) {
+    throw new Error('Run pnpm storage:start before worker integration tests.');
+  }
+  return { accessKeyId: values.R2_ACCESS_KEY_ID, secretAccessKey: values.R2_SECRET_ACCESS_KEY };
+};
+
+const testStorageCredentials = localStorageCredentials();
+
 const storageConfig: WorkerStorageConfig = {
   endpoint: process.env.R2_ENDPOINT ?? 'http://127.0.0.1:9000',
   region: 'auto',
-  accessKeyId: process.env.R2_ACCESS_KEY_ID ?? 'ageniza-local',
-  secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? 'ageniza-local-secret',
+  accessKeyId: testStorageCredentials.accessKeyId,
+  secretAccessKey: testStorageCredentials.secretAccessKey,
   bucket: process.env.R2_BUCKET ?? 'ageniza-media-local',
   forcePathStyle: true
 };
@@ -81,9 +101,9 @@ const insertConfirmedVideoAsset = async (input: {
   }
   await raw(owner.knex, `
     insert into public.media_assets
-      (id, agency_id, category, declared_content_type, extension, object_key, status, declared_size_bytes, confirmed_size_bytes, confirmed_content_type, created_by_user_id, confirmed_at)
-    values (?, ?, 'video', 'video/mp4', 'mp4', ?, 'confirmed', 1024, 1024, 'video/mp4', ?, now())
-  `, [assetId, input.agencyId, objectKey, input.userId]);
+      (id, agency_id, category, declared_content_type, extension, object_key, upload_object_key, status, declared_size_bytes, confirmed_size_bytes, confirmed_content_type, created_by_user_id, confirmed_at)
+    values (?, ?, 'video', 'video/mp4', 'mp4', ?, ?, 'confirmed', 1024, 1024, 'video/mp4', ?, now())
+  `, [assetId, input.agencyId, objectKey, objectKey, input.userId]);
   return { assetId, objectKey };
 };
 
@@ -230,6 +250,24 @@ describe('media video processing job (real PostgreSQL + MinIO, real ffmpeg)', ()
     const row = await videoProcessingRow(assetId);
     expect(row.video_processing_status).toBe('failed');
   }, 30_000);
+
+  it('honours an already-aborted signal before storage I/O starts', async () => {
+    const { userId, agencyId } = await insertOwnerAndAgency('aborted-storage');
+    const { assetId } = await insertConfirmedVideoAsset({ agencyId, userId, body: sampleVideoBytes });
+    const job = mediaVideoProcessingJob({
+      database: application,
+      storage: createMediaProcessingStorageClient(storageConfig),
+      config: mediaProcessingConfig
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(job.handler(
+      { id: randomUUID(), name: MEDIA_VIDEO_PROCESSING_JOB_NAME, payload: { assetId, agencyId, actorUserId: userId }, attempt: 1 },
+      { logger: createLogger({ enabled: false }), signal: controller.signal }
+    )).rejects.toThrow();
+    await expect(videoProcessingRow(assetId)).resolves.toMatchObject({ video_processing_status: 'failed' });
+  });
 
   it('rejects a video longer than the configured duration limit without invoking ffmpeg\'s encoder', async () => {
     const { userId, agencyId } = await insertOwnerAndAgency('too-long');

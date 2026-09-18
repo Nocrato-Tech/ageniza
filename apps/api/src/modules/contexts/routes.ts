@@ -42,7 +42,7 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
     const { contexts } = await withAuthenticatedUserTransaction(
       dependencies.database,
       auth.claims,
-      (transaction) => listValidContexts(transaction, auth.userId)
+      (transaction) => listValidContexts(transaction)
     );
     return reply.send(parseResponse(MeContextsResponseSchema, { contexts }));
   });
@@ -53,7 +53,7 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
     const { contexts, lastUsedContext } = await withAuthenticatedUserTransaction(
       dependencies.database,
       auth.claims,
-      (transaction) => listValidContexts(transaction, auth.userId)
+      (transaction) => listValidContexts(transaction)
     );
 
     // Step 2: no valid context.

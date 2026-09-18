@@ -30,11 +30,13 @@ import {
   auditMediaEvent,
   findConfirmedAssetWithVariants,
   insertPendingAsset,
+  lockAgencyStorageQuota,
   lockAssetForCompletion,
   markAssetConfirmed,
   markAssetRejected,
   readQuotaSnapshot,
-  setMultipartUploadId
+  setMultipartUploadId,
+  touchPendingAsset
 } from './service.js';
 import type { MediaStorageClient } from './storage-client.js';
 
@@ -76,6 +78,16 @@ const quotaExceeded = (): HttpError => new HttpError({ statusCode: 409, code: 'Q
 const notPending = (): HttpError => new HttpError({ statusCode: 409, code: 'UPLOAD_NOT_PENDING', message: 'This upload is not pending confirmation.' });
 const uploadRejected = (reason: string): HttpError => new HttpError({ statusCode: 422, code: 'UPLOAD_REJECTED', message: `The uploaded object was rejected: ${reason}.`, details: { reason } });
 const variantNotReady = (): HttpError => new HttpError({ statusCode: 409, code: 'VARIANT_NOT_READY', message: 'This variant has not been generated yet.' });
+const variantProcessingFailed = (reason: string | null): HttpError => new HttpError({
+  statusCode: 409,
+  code: 'VARIANT_PROCESSING_FAILED',
+  message: reason === 'duration_exceeds_limit'
+    ? 'The video exceeds the supported duration limit.'
+    : reason === 'processing_timed_out'
+      ? 'Video processing exceeded its time limit.'
+      : 'Video processing failed.',
+  details: { reason: reason ?? 'processing_failed' }
+});
 
 const routeParams = <T>(schema: z.ZodType<T>, request: FastifyRequest): T => parseRequest(schema, request.params);
 
@@ -86,6 +98,10 @@ const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth'
 };
 
 const objectKeyFor = (agencyId: string, assetId: string, extension: string): string => `${agencyId}/${assetId}/original.${extension}`;
+// All temporary objects share a leading prefix so R2 lifecycle can expire them without matching
+// canonical originals or generated variants. R2 lifecycle filters support prefixes, not suffixes.
+const uploadObjectKeyFor = (agencyId: string, assetId: string, extension: string): string =>
+  `staging/${agencyId}/${assetId}/upload.${extension}`;
 
 /** Registers the direct-to-R2 upload routes (issue #21). Every route requires `requireAgencyAccess`
  * then `requirePermission('midia.enviar')`, so a signed URL is emitted only after tenant and
@@ -116,13 +132,15 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
 
     const assetId = randomUUID();
     const objectKey = objectKeyFor(params.agencyId, assetId, descriptor.extension);
+    const uploadObjectKey = uploadObjectKeyFor(params.agencyId, assetId, descriptor.extension);
     const expiresAt = new Date(Date.now() + config.uploadUrlExpirySeconds * 1_000).toISOString();
 
     const upload = await withAuthenticatedUserTransaction(database, auth.claims, async (transaction) => {
+      await lockAgencyStorageQuota(transaction, params.agencyId);
       const quota = await readQuotaSnapshot(transaction, params.agencyId, {
         quotaBytes: config.quotaDefaultBytes,
         quotaObjectCount: config.quotaDefaultObjectCount
-      });
+      }, { pendingReservationSeconds: config.uploadUrlExpirySeconds });
       if (quota.usedBytes + body.declaredSizeBytes > quota.quotaBytes) throw quotaExceeded();
       if (quota.usedObjectCount + 1 > quota.quotaObjectCount) throw quotaExceeded();
 
@@ -133,19 +151,20 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
         declaredContentType: body.contentType,
         extension: descriptor.extension,
         objectKey,
+        uploadObjectKey,
         declaredSizeBytes: body.declaredSizeBytes,
         createdByUserId: auth.userId
       });
 
       if (usesMultipartUpload(config, body.declaredSizeBytes)) {
-        const { uploadId } = await storage.createMultipartUpload({ key: objectKey, contentType: body.contentType });
+        const { uploadId } = await storage.createMultipartUpload({ key: uploadObjectKey, contentType: body.contentType });
         await setMultipartUploadId(transaction, assetId, uploadId);
         const plan = multipartPlan(body.declaredSizeBytes, config.multipartPartBytes);
         await auditMediaEvent(transaction, { action: 'media.upload_initiated', actorUserId: auth.userId, agencyId: params.agencyId, targetId: assetId });
         return { type: 'multipart' as const, uploadId, partSizeBytes: plan.partSizeBytes, partCount: plan.partCount };
       }
 
-      const url = await storage.presignPutObject({ key: objectKey, contentType: body.contentType, expiresInSeconds: config.uploadUrlExpirySeconds });
+      const url = await storage.presignPutObject({ key: uploadObjectKey, contentType: body.contentType, expiresInSeconds: config.uploadUrlExpirySeconds });
       await auditMediaEvent(transaction, { action: 'media.upload_initiated', actorUserId: auth.userId, agencyId: params.agencyId, targetId: assetId });
       return { type: 'single' as const, url };
     });
@@ -171,10 +190,12 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       if (asset === undefined) throw assetNotFound();
       if (asset.status !== 'pending' || asset.multipart_upload_id === null) throw notPending();
 
+      await touchPendingAsset(transaction, asset.id);
+
       return Promise.all(body.partNumbers.map(async (partNumber) => ({
         partNumber,
         url: await storage.presignUploadPart({
-          key: asset.object_key,
+          key: asset.upload_object_key,
           uploadId: asset.multipart_upload_id!,
           partNumber,
           expiresInSeconds: config.uploadUrlExpirySeconds
@@ -204,13 +225,13 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       }
 
       if (isMultipart) {
-        await storage.completeMultipartUpload({ key: asset.object_key, uploadId: asset.multipart_upload_id!, parts: body.parts! });
+        await storage.completeMultipartUpload({ key: asset.upload_object_key, uploadId: asset.multipart_upload_id!, parts: body.parts! });
       }
 
       // The R2/S3 protocol offers no upload-time size policy for a presigned POST/PUT, so this
       // HeadObject is the only point where the real, server-observed size and content type exist
       // (issue #21). Everything declared before this point was untrusted client input.
-      const head = await storage.headObject({ key: asset.object_key });
+      const head = await storage.headObject({ key: asset.upload_object_key });
       const maxBytes = maxBytesForCategory(config, asset.category);
 
       let rejectionReason: string | undefined;
@@ -221,10 +242,11 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       } else if (head.sizeBytes > maxBytes) {
         rejectionReason = 'too_large';
       } else {
+        await lockAgencyStorageQuota(transaction, params.agencyId);
         const quota = await readQuotaSnapshot(transaction, params.agencyId, {
           quotaBytes: config.quotaDefaultBytes,
           quotaObjectCount: config.quotaDefaultObjectCount
-        });
+        }, { excludeAssetId: asset.id, pendingReservationSeconds: config.uploadUrlExpirySeconds });
         // The pre-check at creation time used the declared size; this re-check uses the real,
         // server-observed size, and only this one determines whether the object survives.
         if (quota.usedBytes + head.sizeBytes > quota.quotaBytes || quota.usedObjectCount + 1 > quota.quotaObjectCount) {
@@ -237,29 +259,42 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
         // request itself ends in an error response, so this returns instead of throwing: throwing
         // inside `withAuthenticatedUserTransaction` would roll back the very row update that
         // records the rejection.
-        if (head !== undefined) await storage.deleteObject({ key: asset.object_key });
+        if (head !== undefined) await storage.deleteObject({ key: asset.upload_object_key });
         await markAssetRejected(transaction, asset.id, rejectionReason);
         await auditMediaEvent(transaction, { action: 'media.upload_rejected', actorUserId: auth.userId, agencyId: params.agencyId, targetId: asset.id });
         return { ok: false as const, reason: rejectionReason };
       }
 
+      // The browser never receives credentials for the canonical key. Even if its presigned PUT
+      // remains valid, it can only overwrite this staging object after the validated copy.
+      await storage.copyObject({ sourceKey: asset.upload_object_key, destinationKey: asset.object_key });
       await markAssetConfirmed(transaction, asset.id, head!.sizeBytes, head!.contentType!, asset.category);
       await auditMediaEvent(transaction, { action: 'media.upload_confirmed', actorUserId: auth.userId, agencyId: params.agencyId, targetId: asset.id });
-      return { ok: true as const, sizeBytes: head!.sizeBytes, contentType: head!.contentType!, category: asset.category };
+      if (asset.category === 'video') {
+        if (dependencies.jobs === undefined) throw new Error('Video processing queue is not configured.');
+        await dependencies.jobs.enqueueVideoProcessing(transaction, {
+          assetId: params.assetId,
+          agencyId: params.agencyId,
+          actorUserId: auth.userId
+        });
+      }
+      return {
+        ok: true as const,
+        sizeBytes: head!.sizeBytes,
+        contentType: head!.contentType!,
+        uploadObjectKey: asset.upload_object_key
+      };
     });
 
     if (!result.ok) throw uploadRejected(result.reason);
 
-    // Queues the worker's thumbnail/preview job (issue #24) right after the object is confirmed
-    // to exist -- the same point the API already treats as "this upload is real". A dispatch
-    // failure here must not fail an otherwise-successful confirmation; it is logged and the asset
-    // simply stays without a thumbnail/preview until reconciled.
-    if (result.category === 'video' && dependencies.jobs !== undefined) {
-      try {
-        await dependencies.jobs.enqueueVideoProcessing({ assetId: params.assetId, agencyId: params.agencyId, actorUserId: auth.userId });
-      } catch (error) {
-        request.log.error({ error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'MEDIA_JOB_DISPATCH_FAILED' } }, 'Failed to queue video processing job');
-      }
+    // Best-effort staging cleanup happens only after both the confirmed row and durable job have
+    // committed. A failure is harmless: the browser can mutate only the staging key, and bucket
+    // lifecycle removes it later; the canonical object is already immutable to that URL.
+    try {
+      await storage.deleteObject({ key: result.uploadObjectKey });
+    } catch (error) {
+      request.log.warn({ error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'MEDIA_STAGING_CLEANUP_FAILED' } }, 'Failed to remove validated upload staging object');
     }
 
     return reply.send(parseResponse(CompleteMediaUploadResponseSchema, {
@@ -283,7 +318,10 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       const key = query.variant === 'original' ? asset.objectKey
         : query.variant === 'thumbnail' ? asset.thumbnailObjectKey
         : asset.previewObjectKey;
-      if (key === null) throw variantNotReady();
+      if (key === null) {
+        if (asset.videoProcessingStatus === 'failed') throw variantProcessingFailed(asset.videoProcessingError);
+        throw variantNotReady();
+      }
       await auditMediaEvent(transaction, { action: 'media.download_url_issued', actorUserId: auth.userId, agencyId: params.agencyId, targetId: params.assetId });
       return key;
     });

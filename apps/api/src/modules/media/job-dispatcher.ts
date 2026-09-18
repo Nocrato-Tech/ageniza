@@ -1,6 +1,10 @@
 import { MEDIA_VIDEO_PROCESSING_JOB_NAME, type MediaVideoProcessingJobPayload } from '@ageniza/contracts';
 import type { CoreLogger } from '@ageniza/core';
+import type { DatabaseClient } from '@ageniza/database';
 import { PgBoss } from 'pg-boss';
+import { fromKnex } from 'pg-boss/dist/adapters/knex.js';
+
+type Transaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
 
 /**
  * Send-only pg-boss producer the API uses to hand a confirmed video upload to the worker (issue
@@ -15,7 +19,7 @@ import { PgBoss } from 'pg-boss';
  */
 export interface MediaJobDispatcher {
   start(): Promise<void>;
-  enqueueVideoProcessing(payload: MediaVideoProcessingJobPayload): Promise<void>;
+  enqueueVideoProcessing(transaction: Transaction, payload: MediaVideoProcessingJobPayload): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -50,9 +54,15 @@ export const createMediaJobDispatcher = (options: { readonly connectionString: s
       await boss.createQueue(MEDIA_VIDEO_PROCESSING_JOB_NAME);
       started = true;
     },
-    async enqueueVideoProcessing(payload) {
+    async enqueueVideoProcessing(transaction, payload) {
       if (!started) throw new Error('Media job dispatcher must be started before enqueuing a job.');
-      const id = await boss.send(MEDIA_VIDEO_PROCESSING_JOB_NAME, payload);
+      // pg-boss's Knex adapter inserts through the caller's transaction. The asset cannot commit
+      // as `pending` unless its durable job commits with it, and the worker cannot see the job
+      // before the media row becomes visible.
+      const id = await boss.send(MEDIA_VIDEO_PROCESSING_JOB_NAME, payload, {
+        db: fromKnex(transaction),
+        id: payload.assetId
+      });
       if (id === null) throw new Error('Media job dispatcher refused to enqueue a video processing job.');
     },
     async stop() {

@@ -63,6 +63,7 @@ beforeAll(async () => {
         declared_content_type: 'image/png',
         extension: 'png',
         object_key: `${agencyA}/${assetA}/original.png`,
+        upload_object_key: `${agencyA}/${assetA}/upload.png`,
         declared_size_bytes: 1_024,
         created_by_user_id: userA
       },
@@ -73,6 +74,7 @@ beforeAll(async () => {
         declared_content_type: 'image/png',
         extension: 'png',
         object_key: `${agencyB}/${assetB}/original.png`,
+        upload_object_key: `${agencyB}/${assetB}/upload.png`,
         declared_size_bytes: 2_048,
         created_by_user_id: userB
       }
@@ -106,6 +108,7 @@ describe('media storage RLS isolation (issue #21)', () => {
       declared_content_type: 'image/png',
       extension: 'png',
       object_key: `${agencyB}/${foreignAssetId}/original.png`,
+      upload_object_key: `${agencyB}/${foreignAssetId}/upload.png`,
       declared_size_bytes: 1_024,
       created_by_user_id: userA
     }))).rejects.toThrow(/row-level security/);
@@ -120,6 +123,7 @@ describe('media storage RLS isolation (issue #21)', () => {
       declared_content_type: 'image/png',
       extension: 'png',
       object_key: `${agencyB}/${mismatchedId}/original.png`,
+      upload_object_key: `${agencyB}/${mismatchedId}/upload.png`,
       declared_size_bytes: 1_024,
       created_by_user_id: userA
     })).rejects.toThrow(/media_assets_object_key_shape/);

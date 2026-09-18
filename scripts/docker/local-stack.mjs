@@ -1,8 +1,37 @@
 import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
 const command = process.argv[2];
+const localStorageEnvFile = resolve('.local/storage.env');
+
+const ensureLocalStorageEnvironment = () => {
+  if (!existsSync(localStorageEnvFile)) {
+    mkdirSync(dirname(localStorageEnvFile), { recursive: true });
+    const accessKeyId = `local-${randomBytes(12).toString('hex')}`;
+    const secretAccessKey = randomBytes(32).toString('base64url');
+    writeFileSync(localStorageEnvFile, [
+      `R2_ACCESS_KEY_ID=${accessKeyId}`,
+      `R2_SECRET_ACCESS_KEY=${secretAccessKey}`,
+      ''
+    ].join('\n'), { mode: 0o600 });
+  }
+  const values = Object.fromEntries(readFileSync(localStorageEnvFile, 'utf8')
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const separator = line.indexOf('=');
+      return [line.slice(0, separator), line.slice(separator + 1)];
+    }));
+  return { ...process.env, ...values };
+};
+
+const localEnvironment = ensureLocalStorageEnvironment();
+const composeArgs = ['compose', '--env-file', localStorageEnvFile];
 const run = (file, args, options = {}) =>
-  execFileSync(file, args, { stdio: 'inherit', shell: process.platform === 'win32', ...options });
+  execFileSync(file, args, { stdio: 'inherit', shell: process.platform === 'win32', env: localEnvironment, ...options });
+const runCompose = (args) => run('docker', [...composeArgs, ...args]);
 
 const localOwnerUrl = 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
 
@@ -16,13 +45,13 @@ const migrationEnvironment = () => {
   return { ...process.env, MIGRATION_DATABASE_URL: connectionString };
 };
 
-const startDatabase = () => run('docker', ['compose', 'up', '-d', '--wait', 'postgres']);
+const startDatabase = () => runCompose(['up', '-d', '--wait', 'postgres']);
 /** MinIO stands in for R2 locally and in CI; minio-init is one-shot, so it is run, not waited on. */
 const startStorage = () => {
-  run('docker', ['compose', 'up', '-d', '--wait', 'minio']);
-  run('docker', ['compose', 'run', '--rm', 'minio-init']);
+  runCompose(['up', '-d', '--wait', '--force-recreate', 'minio']);
+  runCompose(['run', '--rm', 'minio-init']);
 };
-const migrate = () => run('pnpm', ['--filter', '@ageniza/database', 'migrate'], { env: migrationEnvironment() });
+const migrate = () => run('pnpm', ['--filter', '@ageniza/database', 'migrate'], { env: { ...localEnvironment, ...migrationEnvironment() } });
 
 switch (command) {
   case 'db:start':
@@ -36,7 +65,7 @@ switch (command) {
     break;
   case 'db:reset':
     // Removes only this project's database container and volume, then rebuilds from migrations.
-    run('docker', ['compose', 'rm', '--stop', '--force', '--volumes', 'postgres']);
+    runCompose(['rm', '--stop', '--force', '--volumes', 'postgres']);
     run('docker', ['volume', 'rm', '--force', 'ageniza-local_postgres-data']);
     startDatabase();
     migrate();
@@ -44,11 +73,11 @@ switch (command) {
   case 'up':
     startDatabase();
     migrate();
-    run('docker', ['compose', 'up', '--build', '--wait']);
+    runCompose(['up', '--build', '--wait']);
     break;
   case 'down':
     // Keeps the database volume; use db:reset to discard local data.
-    run('docker', ['compose', 'down', '--remove-orphans']);
+    runCompose(['down', '--remove-orphans']);
     break;
   default:
     throw new Error('Usage: node scripts/docker/local-stack.mjs db:start | db:migrate | db:reset | storage:start | up | down');

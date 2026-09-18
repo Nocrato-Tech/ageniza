@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { PassThrough } from 'node:stream';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import type { ApiConfig, StorageConfig } from '@ageniza/config/server';
 import { createLogger, type CoreLogger } from '@ageniza/core';
@@ -28,6 +30,25 @@ export const OWNER_DATABASE_URL = process.env.MIGRATION_DATABASE_URL ?? 'postgre
 /** Test-only values; never a real secret and never committed anywhere else. */
 export const TEST_APP_PUBLIC_URL = 'http://127.0.0.1:5173';
 export const TEST_AUTH_SECRET = 'integration-test-secret-value-that-is-not-real';
+
+const localStorageCredentials = (): { accessKeyId: string; secretAccessKey: string } => {
+  if (process.env.R2_ACCESS_KEY_ID !== undefined && process.env.R2_SECRET_ACCESS_KEY !== undefined) {
+    return { accessKeyId: process.env.R2_ACCESS_KEY_ID, secretAccessKey: process.env.R2_SECRET_ACCESS_KEY };
+  }
+  const values = Object.fromEntries(readFileSync(resolve(process.cwd(), '../../.local/storage.env'), 'utf8')
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const separator = line.indexOf('=');
+      return [line.slice(0, separator), line.slice(separator + 1)];
+    }));
+  if (values.R2_ACCESS_KEY_ID === undefined || values.R2_SECRET_ACCESS_KEY === undefined) {
+    throw new Error('Run pnpm storage:start before API integration tests.');
+  }
+  return { accessKeyId: values.R2_ACCESS_KEY_ID, secretAccessKey: values.R2_SECRET_ACCESS_KEY };
+};
+
+const testStorageCredentials = localStorageCredentials();
 
 export const runPrefix = (): string => `authtest-${randomUUID().slice(0, 8)}`;
 
@@ -73,8 +94,8 @@ export const TEST_STORAGE_CONFIG: StorageConfig = {
   endpoint: process.env.R2_ENDPOINT ?? 'http://127.0.0.1:9000',
   publicEndpoint: process.env.R2_PUBLIC_ENDPOINT ?? process.env.R2_ENDPOINT ?? 'http://127.0.0.1:9000',
   region: 'auto',
-  accessKeyId: process.env.R2_ACCESS_KEY_ID ?? 'ageniza-local',
-  secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? 'ageniza-local-secret',
+  accessKeyId: testStorageCredentials.accessKeyId,
+  secretAccessKey: testStorageCredentials.secretAccessKey,
   bucket: process.env.R2_BUCKET ?? 'ageniza-media-local',
   forcePathStyle: true,
   uploadUrlExpirySeconds: 900,
@@ -110,6 +131,8 @@ export interface TestAppOptions {
   readonly sender?: EmailSender;
   readonly logger?: CoreLogger;
   readonly limiterOptions?: AuthLimiterOptions;
+  /** Test-only wrapper for simulating queue failures while retaining the real dispatcher. */
+  readonly wrapMediaJobs?: (jobs: MediaJobDispatcher) => MediaJobDispatcher;
   /**
    * Test/harness-only hook (B12 #13, AUTH-20C #14): registers additional routes on the built app,
    * outside the auth module, before `app.ready()`. Never used by production code. Exists so a
@@ -169,10 +192,13 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   };
   const requireClientAccess = createRequireClientAccess({ database });
   const contexts: ContextModuleDependencies = { database, auth, requireClientAccess };
-  const mediaJobDispatcher: MediaJobDispatcher | undefined = config.storage === undefined
+  const ownedMediaJobDispatcher: MediaJobDispatcher | undefined = config.storage === undefined
     ? undefined
     : createMediaJobDispatcher({ connectionString: config.databaseUrl, logger: createLogger({ enabled: false }) });
-  if (mediaJobDispatcher !== undefined) await mediaJobDispatcher.start();
+  if (ownedMediaJobDispatcher !== undefined) await ownedMediaJobDispatcher.start();
+  const mediaJobs = ownedMediaJobDispatcher === undefined
+    ? undefined
+    : options.wrapMediaJobs?.(ownedMediaJobDispatcher) ?? ownedMediaJobDispatcher;
   const media: MediaModuleDependencies | undefined = config.storage === undefined ? undefined : {
     database,
     auth,
@@ -180,7 +206,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     config: config.storage,
     requireAgencyAccess: createRequireAgencyAccess({ database }),
     requirePermission,
-    jobs: mediaJobDispatcher
+    jobs: mediaJobs
   };
   const app = await buildApp({ config, logger, auth: { auth, limiter, auditRecorder, invitationTokenLookup }, invitations, contexts, media });
   if (options.registerExtraRoutes !== undefined) {
@@ -205,7 +231,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     media,
     async close(): Promise<void> {
       await emailService.drain();
-      await mediaJobDispatcher?.stop();
+      await ownedMediaJobDispatcher?.stop();
       await app.close();
       await database.close();
       await pool.end();

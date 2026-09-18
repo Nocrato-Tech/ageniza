@@ -239,6 +239,10 @@ describe('contexts module (AUTH-20C)', () => {
     const inaccessiblePreferred = await resolve(cookie, `agency:${randomUUID()}`);
     expect(inaccessiblePreferred.body).toMatchObject({ decision: 'enter', context: { type: 'agency', agencyId: agencyTwo } });
 
+    const malformedPreferred = await resolve(cookie, 'not-a-context');
+    expect(malformedPreferred.status).toBe(200);
+    expect(malformedPreferred.body).toMatchObject({ decision: 'enter', context: { type: 'agency', agencyId: agencyTwo } });
+
     // #6 (case B): suspend the last-used agency permanently; 2 other valid contexts remain ->
     // select with highlighted null (no single winner, no valid preferred).
     await setAgencyStatus(agencyTwo, 'suspended');

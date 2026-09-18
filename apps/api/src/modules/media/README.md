@@ -6,22 +6,27 @@ neither the file nor a proxy passes through the VPS.
 ## Flow
 
 1. `POST /agencies/:agencyId/media/uploads` -- validates tenant, capability (`midia.enviar`) and
-   quota, inserts a `pending` `media_assets` row, and returns either one presigned `PUT` URL
+   quota (including live pending reservations), inserts a `pending` `media_assets` row, and returns either one presigned `PUT` URL
    (small files) or a multipart `uploadId` (files at/above `MEDIA_MULTIPART_THRESHOLD_BYTES`).
 2. For multipart, `POST .../uploads/:assetId/parts` returns presigned part URLs. It can be called
    again for a subset of part numbers to resume after a dropped connection -- a fresh URL replaces
    an expired or failed one; nothing about the upload has to restart from part 1.
-3. The browser `PUT`s directly to R2/MinIO.
+3. The browser `PUT`s directly to a server-minted `staging/.../upload.<ext>` key in R2/MinIO. That
+   leading prefix lets production lifecycle rules target temporary objects only, and the key is
+   distinct from the canonical `.../original.<ext>` key stored in `media_assets.object_key`.
 4. `POST .../uploads/:assetId/complete` completes the multipart upload (if any), then calls
    `HeadObject` -- the only point where the real size and content type exist, because R2 does not
    support a presigned-POST size policy. If the object doesn't match the declared category's
    limits or the tenant's quota, the object is deleted from the bucket and the asset is marked
-   `rejected`; otherwise it is marked `confirmed`.
+   `rejected`; otherwise the API copies the validated staging object to the canonical key and
+   marks it `confirmed`. Reusing an unexpired upload URL can only mutate staging, never the
+   confirmed original. Quota decisions lock the agency row, so concurrent confirmations cannot
+   consume the same remaining bytes/object slot.
 5. `GET /agencies/:agencyId/media/:assetId/download-url?variant=original|thumbnail|preview` issues
    a short-lived signed `GET`, meant to be requested only at the moment it is actually needed
    (a social network's API fetching the original, or the app displaying a preview). `variant`
-   defaults to `original`; `thumbnail`/`preview` return 409 `VARIANT_NOT_READY` until the worker's
-   video processing job (issue #24, below) has generated them.
+   defaults to `original`; `thumbnail`/`preview` return 409 `VARIANT_NOT_READY` while processing
+   and `VARIANT_PROCESSING_FAILED` with a stable failure reason after a terminal failure.
 
 Every route requires `requireAgencyAccess` then `requirePermission('midia.enviar')` before any
 signed URL is produced, so a caller from agency A can never obtain a URL for agency B's asset --
@@ -31,21 +36,25 @@ enforced at three independent layers: the route guard, the SQL scoping every ass
 ## Video processing (issue #24)
 
 When step 4 above confirms a **video** asset, the same transaction flips its
-`video_processing_status` from `not_applicable` to `pending`, and the route then queues a
+`video_processing_status` from `not_applicable` to `pending` and inserts the
 `media.process-video` durable job (`job-dispatcher.ts`, a send-only pg-boss producer) carrying
-only `assetId`/`agencyId`/`actorUserId` -- never a signed URL or file path. The worker
+only `assetId`/`agencyId`/`actorUserId` -- never a signed URL or file path. The job insertion uses
+pg-boss's Knex adapter and the same transaction: confirmation and dispatch either both commit or
+both roll back. Multipart completion is retry-safe if R2 completed it before a database rollback.
+The worker
 (`apps/worker/src/media-video-job.ts`) picks it up, re-derives the object key from the database
 scoped to that tenant, downloads the original to a local temp directory, runs `ffmpeg`/`ffprobe`
 (timeout-bounded, no network, output-size-capped) to produce a thumbnail and a 720p preview,
 uploads both back under the asset's own key prefix, and records the outcome
 (`thumbnail_object_key`, `preview_object_key`, `video_duration_seconds`, sizes, or a short
-`video_processing_error`). The original is never transcoded. A dispatch failure at confirm time is
-logged and does not fail the confirmation -- the asset just stays without a thumbnail/preview.
+`video_processing_error`). The original is never transcoded.
 See `apps/worker/src/media-video-job.ts` and its README/tests for the worker side in full.
 
 ## Environment variables
 
-See `.env.example` (local/MinIO defaults) and `infra/vps/runtime.env.example` (production). All
+See `.env.example` (local/MinIO defaults) and `infra/vps/runtime.env.example` (production). Local
+MinIO access keys are generated into ignored `.local/storage.env` by `pnpm storage:start`; no
+storage credential is versioned. All
 four of `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` are required
 together and required in production; every other `R2_*`/`MEDIA_*`/`STORAGE_QUOTA_*` variable has a
 sensible default. `R2_PUBLIC_ENDPOINT` only matters when the API itself runs inside the local
@@ -61,8 +70,8 @@ the host) -- see the `StorageConfig` doc comment in `packages/config/src/server.
   way to set this for R2; MinIO has no equivalent bucket-level CORS API at all -- locally, CORS is
   a MinIO *server* setting instead (`MINIO_API_CORS_ALLOW_ORIGIN` in `compose.yml`), which is why
   there is no code path that could set this for R2 either.
-- **Bucket lifecycle rules**: abort incomplete multipart uploads after a short window (for
-  example 1-2 days) and, if desired, expire objects still in this app's own `pending` state past
+- **Bucket lifecycle rules**: abort incomplete multipart uploads and expire objects under the
+  `staging/` prefix after a short window (for example 1-2 days), and, if desired, expire objects still in this app's own `pending` state past
   that same window (their DB row stays as a rejected/expired record; nothing here auto-deletes a
   `pending` row, only a `complete` call's own validation does). Configure this in the R2 dashboard.
 - **Never make the bucket or any object public.** Every object is fetched only through a signed
@@ -72,7 +81,7 @@ the host) -- see the `StorageConfig` doc comment in `packages/config/src/server.
 
 Everything in this module's automated tests (`media.integration.test.ts`,
 `media-storage.integration.test.ts`) runs against the real local MinIO started by
-`docker compose up -d minio minio-init`, including full single-part and multipart round trips,
+`pnpm storage:start`, including full single-part and multipart round trips,
 quota/size/type rejection with real object deletion, and cross-tenant isolation. Two things are
 genuinely specific to R2 and were not (and could not be) exercised locally:
 

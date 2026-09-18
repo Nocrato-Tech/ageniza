@@ -37,7 +37,8 @@ const toNumber = (value: string | number | null, fallback: number): number => {
 export const readQuotaSnapshot = async (
   transaction: Transaction,
   agencyId: string,
-  defaults: { readonly quotaBytes: number; readonly quotaObjectCount: number }
+  defaults: { readonly quotaBytes: number; readonly quotaObjectCount: number },
+  options: { readonly excludeAssetId?: string; readonly pendingReservationSeconds: number }
 ): Promise<QuotaSnapshot> => {
   const overrideResult = await raw<RawRows<QuotaOverrideRow>>(transaction, `
     select quota_bytes, quota_object_count from public.agency_storage_quotas where agency_id = ?::uuid
@@ -46,11 +47,19 @@ export const readQuotaSnapshot = async (
 
   const usageResult = await raw<RawRows<UsageRow>>(transaction, `
     select
-      coalesce(sum(confirmed_size_bytes), 0) as used_bytes,
+      coalesce(sum(case
+        when status = 'confirmed' then confirmed_size_bytes
+        when status = 'pending' then declared_size_bytes
+      end), 0) as used_bytes,
       count(*) as used_object_count
     from public.media_assets
-    where agency_id = ?::uuid and status = 'confirmed'
-  `, [agencyId]);
+    where agency_id = ?::uuid
+      and id <> coalesce(?::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
+      and (
+        status = 'confirmed'
+        or (status = 'pending' and updated_at >= now() - (?::integer * interval '1 second'))
+      )
+  `, [agencyId, options.excludeAssetId ?? null, options.pendingReservationSeconds]);
   const usage = usageResult.rows[0];
 
   return {
@@ -61,6 +70,12 @@ export const readQuotaSnapshot = async (
   };
 };
 
+/** Serializes every quota decision for one agency. Without this lock, two different assets can
+ * both observe the same usage and commit beyond the tenant's byte/object ceilings. */
+export const lockAgencyStorageQuota = async (transaction: Transaction, agencyId: string): Promise<void> => {
+  await raw(transaction, 'select id from public.agencies where id = ?::uuid for update', [agencyId]);
+};
+
 export interface PendingAssetInput {
   readonly id: string;
   readonly agencyId: string;
@@ -68,6 +83,7 @@ export interface PendingAssetInput {
   readonly declaredContentType: string;
   readonly extension: string;
   readonly objectKey: string;
+  readonly uploadObjectKey: string;
   readonly declaredSizeBytes: number;
   readonly createdByUserId: string;
 }
@@ -75,11 +91,11 @@ export interface PendingAssetInput {
 export const insertPendingAsset = async (transaction: Transaction, input: PendingAssetInput): Promise<void> => {
   await raw(transaction, `
     insert into public.media_assets
-      (id, agency_id, category, declared_content_type, extension, object_key, declared_size_bytes, created_by_user_id)
-    values (?, ?, ?, ?, ?, ?, ?, ?)
+      (id, agency_id, category, declared_content_type, extension, object_key, upload_object_key, declared_size_bytes, created_by_user_id)
+    values (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     input.id, input.agencyId, input.category, input.declaredContentType, input.extension,
-    input.objectKey, input.declaredSizeBytes, input.createdByUserId
+    input.objectKey, input.uploadObjectKey, input.declaredSizeBytes, input.createdByUserId
   ]);
 };
 
@@ -89,11 +105,19 @@ export const setMultipartUploadId = async (transaction: Transaction, assetId: st
   `, [uploadId, assetId]);
 };
 
+/** Extends the quota reservation whenever the client resumes a multipart upload. */
+export const touchPendingAsset = async (transaction: Transaction, assetId: string): Promise<void> => {
+  await raw(transaction, `
+    update public.media_assets set updated_at = now() where id = ?::uuid and status = 'pending'
+  `, [assetId]);
+};
+
 export interface MediaAssetRow {
   readonly id: string;
   readonly agency_id: string;
   readonly category: MediaCategory;
   readonly object_key: string;
+  readonly upload_object_key: string;
   readonly status: 'pending' | 'confirmed' | 'rejected';
   readonly declared_size_bytes: string | number;
   readonly multipart_upload_id: string | null;
@@ -102,7 +126,7 @@ export interface MediaAssetRow {
 /** Locks the row so two concurrent confirm/complete calls for the same asset cannot race. */
 export const lockAssetForCompletion = async (transaction: Transaction, assetId: string, agencyId: string): Promise<MediaAssetRow | undefined> => {
   const result = await raw<RawRows<MediaAssetRow>>(transaction, `
-    select id, agency_id, category, object_key, status, declared_size_bytes, multipart_upload_id
+    select id, agency_id, category, object_key, upload_object_key, status, declared_size_bytes, multipart_upload_id
     from public.media_assets
     where id = ?::uuid and agency_id = ?::uuid
     for update
@@ -145,6 +169,7 @@ export interface ConfirmedAssetVariants {
   readonly thumbnailObjectKey: string | null;
   readonly previewObjectKey: string | null;
   readonly videoProcessingStatus: 'not_applicable' | 'pending' | 'processing' | 'ready' | 'failed';
+  readonly videoProcessingError: string | null;
 }
 
 /** Finds a confirmed asset and its thumbnail/preview keys, generated by the worker's video
@@ -160,8 +185,10 @@ export const findConfirmedAssetWithVariants = async (
     thumbnail_object_key: string | null;
     preview_object_key: string | null;
     video_processing_status: ConfirmedAssetVariants['videoProcessingStatus'];
+    video_processing_error: string | null;
   }>>(transaction, `
-    select category, object_key, thumbnail_object_key, preview_object_key, video_processing_status
+    select category, object_key, thumbnail_object_key, preview_object_key,
+      video_processing_status, video_processing_error
     from public.media_assets where id = ?::uuid and agency_id = ?::uuid and status = 'confirmed'
   `, [assetId, agencyId]);
   const row = result.rows[0];
@@ -171,7 +198,8 @@ export const findConfirmedAssetWithVariants = async (
     objectKey: row.object_key,
     thumbnailObjectKey: row.thumbnail_object_key,
     previewObjectKey: row.preview_object_key,
-    videoProcessingStatus: row.video_processing_status
+    videoProcessingStatus: row.video_processing_status,
+    videoProcessingError: row.video_processing_error
   };
 };
 

@@ -29,7 +29,8 @@ class VideoTooLongError extends Error {
 
 /** A short, non-sensitive classification recorded on the row -- never raw ffmpeg stderr, which
  * could otherwise leak input file paths, and never a signed URL. */
-const explicitFailureReason = (error: unknown): string => {
+const explicitFailureReason = (error: unknown, wholeJobTimedOut: boolean): string => {
+  if (wholeJobTimedOut) return 'processing_timed_out';
   if (error instanceof MediaBinaryError) {
     switch (error.code) {
       case 'TIMEOUT': return 'processing_timed_out';
@@ -43,6 +44,12 @@ const explicitFailureReason = (error: unknown): string => {
 
 const objectKeyFor = (agencyId: string, assetId: string, name: 'thumbnail.jpg' | 'preview.mp4'): string =>
   `${agencyId}/${assetId}/${name}`;
+
+export const mediaVideoHandlerTimeoutSeconds = (ffmpegTimeoutSeconds: number): number =>
+  ffmpegTimeoutSeconds * 3 + 120;
+
+export const mediaVideoExpireInSeconds = (ffmpegTimeoutSeconds: number): number =>
+  mediaVideoHandlerTimeoutSeconds(ffmpegTimeoutSeconds) + 60;
 
 /**
  * Video processing job (issue #24): downloads a confirmed video original, generates a thumbnail
@@ -60,9 +67,9 @@ export const mediaVideoProcessingJob = (
   name: MEDIA_VIDEO_PROCESSING_JOB_NAME,
   // Issue #24: one ffmpeg run at a time, whatever headroom the worker has for lighter jobs.
   concurrency: 1,
-  // ffmpeg runs at most twice (thumbnail, then preview); the extra time covers probing plus the
-  // original's download and the outputs' upload.
-  expireInSeconds: dependencies.config.ffmpegTimeoutSeconds * 2 + 120,
+  // ffprobe plus two ffmpeg calls may each consume their own timeout. The handler aborts all
+  // storage/process I/O first; pg-boss expiry remains a later crash-recovery backstop.
+  expireInSeconds: mediaVideoExpireInSeconds(dependencies.config.ffmpegTimeoutSeconds),
   // Bounded: repeatedly retrying an expensive ffmpeg run against a genuinely broken upload is not
   // worth the CPU a shared VPS would spend on it.
   retryLimit: 2,
@@ -71,6 +78,8 @@ export const mediaVideoProcessingJob = (
     const payload = MediaVideoProcessingJobPayloadSchema.parse(job.payload);
     const { database, storage, config } = dependencies;
     const claims = createVerifiedUserClaims({ userId: payload.actorUserId });
+    const wholeJobTimeout = AbortSignal.timeout(mediaVideoHandlerTimeoutSeconds(config.ffmpegTimeoutSeconds) * 1_000);
+    const jobSignal = AbortSignal.any([context.signal, wholeJobTimeout]);
 
     const asset = await withAuthenticatedUserTransaction(database, claims, async (transaction) => {
       const row = await lockConfirmedVideoAsset(transaction, { assetId: payload.assetId, agencyId: payload.agencyId });
@@ -95,9 +104,9 @@ export const mediaVideoProcessingJob = (
     try {
       let result: { durationSeconds: number; thumbnailSizeBytes: number; previewSizeBytes: number };
       try {
-        await storage.downloadToFile({ key: asset.object_key, destinationPath: originalPath });
+        await storage.downloadToFile({ key: asset.object_key, destinationPath: originalPath, signal: jobSignal });
 
-        const binaryOptions = { timeoutMs: config.ffmpegTimeoutSeconds * 1_000, signal: context.signal };
+        const binaryOptions = { timeoutMs: config.ffmpegTimeoutSeconds * 1_000, signal: jobSignal };
         const probe = await probeVideo(originalPath, binaryOptions);
         if (probe.durationSeconds > config.maxDurationSeconds) {
           throw new VideoTooLongError(probe.durationSeconds, config.maxDurationSeconds);
@@ -124,8 +133,8 @@ export const mediaVideoProcessingJob = (
 
         const thumbnailKey = objectKeyFor(asset.agency_id, asset.id, 'thumbnail.jpg');
         const previewKey = objectKeyFor(asset.agency_id, asset.id, 'preview.mp4');
-        await storage.uploadFile({ key: thumbnailKey, sourcePath: thumbnailPath, contentType: 'image/jpeg' });
-        await storage.uploadFile({ key: previewKey, sourcePath: previewPath, contentType: 'video/mp4' });
+        await storage.uploadFile({ key: thumbnailKey, sourcePath: thumbnailPath, contentType: 'image/jpeg', signal: jobSignal });
+        await storage.uploadFile({ key: previewKey, sourcePath: previewPath, contentType: 'video/mp4', signal: jobSignal });
 
         await withAuthenticatedUserTransaction(database, claims, (transaction) => markVideoProcessingReady(transaction, asset.id, {
           thumbnailObjectKey: thumbnailKey,
@@ -135,7 +144,7 @@ export const mediaVideoProcessingJob = (
           previewSizeBytes: result.previewSizeBytes
         }));
       } catch (error) {
-        const reason = explicitFailureReason(error);
+        const reason = explicitFailureReason(error, wholeJobTimeout.aborted && !context.signal.aborted);
         await withAuthenticatedUserTransaction(database, claims, (transaction) => markVideoProcessingFailed(transaction, asset.id, reason));
         throw error;
       }

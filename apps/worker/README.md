@@ -79,8 +79,9 @@ database and RLS on every run -- see `src/media-repository.ts`), the handler:
 
 Every `ffmpeg`/`ffprobe` invocation is timeout-bounded (`MEDIA_PROCESSING_TIMEOUT_SECONDS`, killed
 with `SIGKILL` past it), restricted to the `file`/`pipe` protocols (a crafted input cannot make it
-reach the network), and the job's own `expireInSeconds` (`ffmpegTimeoutSeconds * 2 + 120`) bounds
-the whole run so pg-boss retries a stuck job within `WORKER_CONCURRENCY`'s limit. The temporary
+reach the network), and the handler has a whole-job abort budget covering ffprobe, both ffmpeg
+calls and object-storage I/O. The AWS SDK streams receive the same abort signal. pg-boss expiry is
+60 seconds later (`3 * ffmpegTimeoutSeconds + 180`) as a crash-recovery backstop. The temporary
 directory is always removed in a `finally`, including on failure -- no file is left on disk.
 
 ## In-process jobs
@@ -93,7 +94,7 @@ directory is always removed in a `finally`, including on failure -- no file is l
 
 ```sh
 pnpm --filter @ageniza/worker test               # unit tests, no database
-pnpm db:start && pnpm db:migrate && pnpm docker:up
+pnpm db:start && pnpm db:migrate && pnpm storage:start
 pnpm --filter @ageniza/worker test:integration   # queue + video processing against local PostgreSQL/MinIO
 ```
 

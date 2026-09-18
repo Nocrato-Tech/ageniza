@@ -31,8 +31,8 @@ services:
   minio:
     image: quay.io/minio/minio:RELEASE.2025-01-20T14-49-07Z
     environment:
-      MINIO_ROOT_USER: ageniza-local
-      MINIO_ROOT_PASSWORD: ageniza-local-secret
+      MINIO_ROOT_USER: ${R2_ACCESS_KEY_ID:-}
+      MINIO_ROOT_PASSWORD: ${R2_SECRET_ACCESS_KEY:-}
       # MinIO has no per-bucket CORS API (unlike R2/S3: `mc cors set` returns NotImplemented); CORS
       # is server-wide instead. MinIO always exposes ETag once CORS is enabled, which multipart needs.
       MINIO_API_CORS_ALLOW_ORIGIN: http://127.0.0.1:5173
@@ -49,10 +49,13 @@ services:
     image: quay.io/minio/mc:RELEASE.2025-01-17T23-25-50Z
     depends_on: { minio: { condition: service_healthy } }
     networks: [internal]
+    environment:
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        mc alias set local http://minio:9000 ageniza-local ageniza-local-secret &&
+        mc alias set local http://minio:9000 "$${R2_ACCESS_KEY_ID}" "$${R2_SECRET_ACCESS_KEY}" &&
         mc mb --ignore-existing local/ageniza-media-local &&
         mc anonymous set none local/ageniza-media-local
   api:
@@ -73,8 +76,8 @@ services:
       R2_ENDPOINT: http://minio:9000
       # The browser resolves this endpoint directly; "minio" only exists inside the Compose network.
       R2_PUBLIC_ENDPOINT: http://127.0.0.1:9000
-      R2_ACCESS_KEY_ID: ageniza-local
-      R2_SECRET_ACCESS_KEY: ageniza-local-secret
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
       R2_BUCKET: ageniza-media-local
       R2_REGION: auto
       R2_FORCE_PATH_STYLE: 'true'
@@ -95,8 +98,8 @@ services:
       # Video processing (issue #24): same bucket/credentials as the API (issue #21). The worker
       # downloads the confirmed original and uploads thumbnail/preview outputs directly.
       R2_ENDPOINT: http://minio:9000
-      R2_ACCESS_KEY_ID: ageniza-local
-      R2_SECRET_ACCESS_KEY: ageniza-local-secret
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
       R2_BUCKET: ageniza-media-local
       R2_REGION: auto
       R2_FORCE_PATH_STYLE: 'true'

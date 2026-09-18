@@ -160,6 +160,8 @@ describe('media upload HTTP module (issue #21)', () => {
     const body = created.json();
     expect(body.upload.type).toBe('single');
     expect(body.objectKey).toBe(`${agencyId}/${body.assetId}/original.png`);
+    await expect(owner.knex('media_assets').where({ id: body.assetId }).first('upload_object_key'))
+      .resolves.toEqual({ upload_object_key: `staging/${agencyId}/${body.assetId}/upload.png` });
 
     await putToPresignedUrl(body.upload.url, smallPng, 'image/png');
 
@@ -171,6 +173,10 @@ describe('media upload HTTP module (issue #21)', () => {
     });
     expect(completed.statusCode).toBe(200);
     expect(completed.json()).toMatchObject({ assetId: body.assetId, status: 'confirmed', sizeBytes: smallPng.length, contentType: 'image/png' });
+
+    // The original presigned URL may remain cryptographically valid until expiry, but it points
+    // only at a staging key. Reusing it after confirmation cannot mutate the canonical object.
+    await putToPresignedUrl(body.upload.url, new Uint8Array([99, 98, 97]), 'image/png');
 
     const downloadUrl = await app.app.inject({
       method: 'GET',
@@ -184,7 +190,21 @@ describe('media upload HTTP module (issue #21)', () => {
   });
 
   it('completes a multipart upload across two parts and resumes a dropped part URL', async () => {
-    const app = await buildTestApp({ config: { storage: { ...TEST_STORAGE_CONFIG, multipartThresholdBytes: 10, multipartPartBytes: 5 * 1024 * 1024 } } });
+    let failFirstDispatch = true;
+    const app = await buildTestApp({
+      config: { storage: { ...TEST_STORAGE_CONFIG, multipartThresholdBytes: 10, multipartPartBytes: 5 * 1024 * 1024 } },
+      wrapMediaJobs: (jobs) => ({
+        start: () => jobs.start(),
+        stop: () => jobs.stop(),
+        async enqueueVideoProcessing(transaction, payload) {
+          if (failFirstDispatch) {
+            failFirstDispatch = false;
+            throw new Error('simulated queue outage');
+          }
+          await jobs.enqueueVideoProcessing(transaction, payload);
+        }
+      })
+    });
     openApps.push(app);
     const admin = await makeUser(app, 'media-multipart');
     const agencyId = await createAgency('Media Multipart Agency', admin.id);
@@ -227,6 +247,20 @@ describe('media upload HTTP module (issue #21)', () => {
     const eTagOne = await putToPresignedUrl(parts.find((part) => part.partNumber === 1)!.url, partOne);
     const eTagTwo = await putToPresignedUrl(resumedPartTwoUrl, partTwo);
 
+    const firstCompletion = await app.app.inject({
+      method: 'POST',
+      url: `/agencies/${agencyId}/media/uploads/${body.assetId}/complete`,
+      headers: { ...origin, cookie },
+      payload: { parts: [{ partNumber: 1, eTag: eTagOne }, { partNumber: 2, eTag: eTagTwo }] }
+    });
+    expect(firstCompletion.statusCode).toBe(500);
+    // The job insert and media confirmation share a transaction. A dispatch failure leaves the
+    // row pending, while the retry tolerates that R2 already finalized the multipart upload.
+    await expect(owner.knex('media_assets').where({ id: body.assetId }).first('status', 'video_processing_status')).resolves.toMatchObject({
+      status: 'pending',
+      video_processing_status: 'not_applicable'
+    });
+
     const completed = await app.app.inject({
       method: 'POST',
       url: `/agencies/${agencyId}/media/uploads/${body.assetId}/complete`,
@@ -256,6 +290,20 @@ describe('media upload HTTP module (issue #21)', () => {
     );
     expect(jobRows.rows).toHaveLength(1);
     expect(jobRows.rows[0].data).toMatchObject({ assetId: body.assetId, agencyId });
+
+    await owner.knex('media_assets').where({ id: body.assetId }).update({
+      video_processing_status: 'failed',
+      video_processing_error: 'duration_exceeds_limit'
+    });
+    const failedVariant = await app.app.inject({
+      method: 'GET',
+      url: `/agencies/${agencyId}/media/${body.assetId}/download-url?variant=preview`,
+      headers: { ...origin, cookie }
+    });
+    expect(failedVariant.statusCode).toBe(409);
+    expect(failedVariant.json()).toMatchObject({
+      error: { code: 'VARIANT_PROCESSING_FAILED', details: { reason: 'duration_exceeds_limit' } }
+    });
   });
 
   it('rejects and deletes the object when the confirmed content type does not match the declared category', async () => {
@@ -317,6 +365,43 @@ describe('media upload HTTP module (issue #21)', () => {
     expect(await app.media!.storage.headObject({ key: body.objectKey })).toBeUndefined();
   });
 
+  it('serializes concurrent confirmations so only one asset can consume the final quota slot', async () => {
+    const app = await buildTestApp({ config: { storage: { ...TEST_STORAGE_CONFIG, quotaDefaultObjectCount: 2 } } });
+    openApps.push(app);
+    const admin = await makeUser(app, 'media-quota-race');
+    const agencyId = await createAgency('Media Quota Race Agency', admin.id);
+    const cookie = await loginCookie(app, admin);
+
+    const createUpload = async () => {
+      const response = await app.app.inject({
+        method: 'POST', url: `/agencies/${agencyId}/media/uploads`, headers: { ...origin, cookie },
+        payload: { fileName: 'photo.png', contentType: 'image/png', declaredSizeBytes: smallPng.length }
+      });
+      expect(response.statusCode).toBe(201);
+      const body = response.json();
+      await putToPresignedUrl(body.upload.url, smallPng, 'image/png');
+      return body;
+    };
+    const first = await createUpload();
+    const second = await createUpload();
+    await owner.knex('agency_storage_quotas').insert({
+      agency_id: agencyId,
+      quota_bytes: smallPng.length * 2,
+      quota_object_count: 1
+    });
+    await owner.knex('media_assets').whereIn('id', [first.assetId, second.assetId]).update({
+      updated_at: new Date(Date.now() - (TEST_STORAGE_CONFIG.uploadUrlExpirySeconds + 60) * 1_000)
+    });
+
+    const complete = (assetId: string) => app.app.inject({
+      method: 'POST', url: `/agencies/${agencyId}/media/uploads/${assetId}/complete`, headers: { ...origin, cookie }, payload: {}
+    });
+    const responses = await Promise.all([complete(first.assetId as string), complete(second.assetId as string)]);
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([200, 422]);
+    await expect(owner.knex('media_assets').where({ agency_id: agencyId, status: 'confirmed' }).count<{ count: string }[]>('* as count'))
+      .resolves.toEqual([{ count: '1' }]);
+  });
+
   it('rejects at creation once the declared size would exceed the tenant quota, and re-checks the real size at confirmation', async () => {
     const app = await buildTestApp({ config: { storage: { ...TEST_STORAGE_CONFIG, quotaDefaultBytes: smallPng.length, quotaDefaultObjectCount: 5 } } });
     openApps.push(app);
@@ -345,6 +430,13 @@ describe('media upload HTTP module (issue #21)', () => {
     });
     expect(created.statusCode).toBe(201);
     const body = created.json();
+    const reservedQuota = await app.app.inject({
+      method: 'POST',
+      url: `/agencies/${agencyId}/media/uploads`,
+      headers: { ...origin, cookie },
+      payload: { fileName: 'second.png', contentType: 'image/png', declaredSizeBytes: 1 }
+    });
+    expect(reservedQuota.statusCode).toBe(409);
     await putToPresignedUrl(body.upload.url, smallPng, 'image/png');
     await owner.knex('agency_storage_quotas').insert({ agency_id: agencyId, quota_bytes: 1, quota_object_count: 5 });
 

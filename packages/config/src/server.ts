@@ -150,19 +150,8 @@ const containsExampleSecretMarker = (value: string): boolean => {
 
 const authDocumentVersion = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'must use YYYY-MM-DD');
 
-const apiSchema = sharedServerSchema.extend({
-  BETTER_AUTH_SECRET: z.string().min(32, 'must be at least 32 characters; supplied values are redacted'),
-  AUTH_TERMS_VERSION: authDocumentVersion,
-  AUTH_PRIVACY_VERSION: authDocumentVersion,
-  APP_PUBLIC_URL: z.string().trim().url('must be a valid URL origin; supplied values are redacted'),
-  API_HOST: z.string().trim().min(1).default('0.0.0.0'),
-  PORT: z.coerce.number().int().min(1).max(65535).default(3001),
-  API_CORS_ORIGINS: z.string().default('http://127.0.0.1:5173').transform(commaSeparatedValues),
-  API_BODY_LIMIT_BYTES: z.coerce.number().int().min(1_024).max(50 * 1024 * 1024).default(1_048_576),
-  API_TRUSTED_PROXY_CIDRS: z.string().default('').transform(commaSeparatedValues),
-  // Object storage (issue #21): R2 in production, MinIO locally. All required together.
+const storageEnvironmentShape = {
   R2_ENDPOINT: optionalUrl('must be a valid storage endpoint URL'),
-  R2_PUBLIC_ENDPOINT: optionalUrl('must be a valid storage endpoint URL'),
   R2_REGION: z.string().trim().min(1).max(64).default('auto'),
   R2_ACCESS_KEY_ID: z.preprocess(
     (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
@@ -176,7 +165,22 @@ const apiSchema = sharedServerSchema.extend({
     (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
     z.string().trim().min(1).max(63).optional()
   ),
-  R2_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
+  R2_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('true').transform((value) => value === 'true')
+} as const;
+
+const apiSchema = sharedServerSchema.extend({
+  BETTER_AUTH_SECRET: z.string().min(32, 'must be at least 32 characters; supplied values are redacted'),
+  AUTH_TERMS_VERSION: authDocumentVersion,
+  AUTH_PRIVACY_VERSION: authDocumentVersion,
+  APP_PUBLIC_URL: z.string().trim().url('must be a valid URL origin; supplied values are redacted'),
+  API_HOST: z.string().trim().min(1).default('0.0.0.0'),
+  PORT: z.coerce.number().int().min(1).max(65535).default(3001),
+  API_CORS_ORIGINS: z.string().default('http://127.0.0.1:5173').transform(commaSeparatedValues),
+  API_BODY_LIMIT_BYTES: z.coerce.number().int().min(1_024).max(50 * 1024 * 1024).default(1_048_576),
+  API_TRUSTED_PROXY_CIDRS: z.string().default('').transform(commaSeparatedValues),
+  // Object storage (issue #21): R2 in production, MinIO locally. All required together.
+  ...storageEnvironmentShape,
+  R2_PUBLIC_ENDPOINT: optionalUrl('must be a valid storage endpoint URL'),
   MEDIA_UPLOAD_URL_EXPIRY_SECONDS: z.coerce.number().int().min(60).max(3_600).default(900),
   MEDIA_DOWNLOAD_URL_EXPIRY_SECONDS: z.coerce.number().int().min(30).max(3_600).default(300),
   MEDIA_MULTIPART_THRESHOLD_BYTES: z.coerce.number().int().min(5 * 1024 * 1024).default(8 * 1024 * 1024),
@@ -198,22 +202,8 @@ const workerSchema = sharedServerSchema.extend({
   // Object storage (issue #24): same Cloudflare R2 bucket/credentials as the API (issue #21); the
   // worker downloads the confirmed original and uploads thumbnail/preview outputs directly, with
   // no presigning. All four are required together, exactly like the API's copy of these settings.
-  R2_ENDPOINT: optionalUrl('must be a valid storage endpoint URL'),
-  R2_REGION: z.string().trim().min(1).max(64).default('auto'),
-  R2_ACCESS_KEY_ID: z.preprocess(
-    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
-    z.string().trim().min(1).optional()
-  ),
-  R2_SECRET_ACCESS_KEY: z.preprocess(
-    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
-    z.string().min(1).optional()
-  ),
-  R2_BUCKET: z.preprocess(
-    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
-    z.string().trim().min(1).max(63).optional()
-  ),
-  R2_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
-  // ffmpeg/ffprobe invocation timeout per call. Two calls run per job (thumbnail, preview).
+  ...storageEnvironmentShape,
+  // ffmpeg/ffprobe invocation timeout per call. Three calls run per job (probe, thumbnail, preview).
   MEDIA_PROCESSING_TIMEOUT_SECONDS: z.coerce.number().int().min(10).max(1_800).default(240),
   // A video probed longer than this is rejected explicitly instead of processed.
   MEDIA_PROCESSING_MAX_DURATION_SECONDS: z.coerce.number().int().min(1).max(24 * 3_600).default(1_800),
@@ -253,6 +243,50 @@ const loadServerConfig = (service: ApiConfig['service'] | WorkerConfig['service'
     throw new ConfigValidationError(service === 'api' ? 'API' : 'Worker', [{ path: 'SENTRY_DSN', message: 'must use HTTPS in production; supplied values are redacted' }]);
   }
   return { environment, databaseUrl: config.DATABASE_URL, sentryDsn: config.SENTRY_DSN, deployVersion: config.APP_VERSION, smtpUrl: config.SMTP_URL, emailFrom: config.EMAIL_FROM };
+};
+
+interface StorageEnvironmentValues {
+  readonly R2_ENDPOINT?: string;
+  readonly R2_ACCESS_KEY_ID?: string;
+  readonly R2_SECRET_ACCESS_KEY?: string;
+  readonly R2_BUCKET?: string;
+}
+
+const validateStorageEnvironment = (
+  service: 'API' | 'Worker',
+  environment: RuntimeEnvironment,
+  values: StorageEnvironmentValues,
+  allowLocalContainerHosts: boolean
+): boolean => {
+  const present = [values.R2_ENDPOINT, values.R2_ACCESS_KEY_ID, values.R2_SECRET_ACCESS_KEY, values.R2_BUCKET]
+    .map((value) => value !== undefined);
+  const anyPresent = present.some(Boolean);
+  const allPresent = present.every(Boolean);
+  if (anyPresent && !allPresent) {
+    throw new ConfigValidationError(service, [{
+      path: 'R2_ENDPOINT',
+      message: 'R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET must be set together'
+    }]);
+  }
+  if (environment === 'production' && !allPresent) {
+    throw new ConfigValidationError(service, [{
+      path: 'R2_ENDPOINT',
+      message: 'R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET are required in production'
+    }]);
+  }
+  if (values.R2_ENDPOINT !== undefined) {
+    assertRuntimeUrlSafety(environment, 'R2_ENDPOINT', values.R2_ENDPOINT, {
+      allowLocalContainerHosts,
+      requireHttpsInProduction: true
+    });
+  }
+  if (environment === 'production' && values.R2_SECRET_ACCESS_KEY !== undefined && containsExampleSecretMarker(values.R2_SECRET_ACCESS_KEY)) {
+    throw new ConfigValidationError(service, [{
+      path: 'R2_SECRET_ACCESS_KEY',
+      message: 'must not be an example/placeholder value in production; supplied values are redacted'
+    }]);
+  }
+  return allPresent;
 };
 
 /** Loads server-only API settings. Never import this module from browser code. */
@@ -299,38 +333,11 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
   // Object storage (issue #21): the four secrets/identifiers are required together, exactly like
   // SMTP_URL/EMAIL_FROM above, and required in production because direct-to-bucket upload is core
   // to the product. They stay optional outside production for tests/tooling that never touch storage.
-  const storageFields = [result.data.R2_ENDPOINT, result.data.R2_ACCESS_KEY_ID, result.data.R2_SECRET_ACCESS_KEY, result.data.R2_BUCKET] as const;
-  const storageFieldsPresent = storageFields.map((value) => value !== undefined);
-  const anyStoragePresent = storageFieldsPresent.some(Boolean);
-  const allStoragePresent = storageFieldsPresent.every(Boolean);
-  if (anyStoragePresent && !allStoragePresent) {
-    throw new ConfigValidationError('API', [{
-      path: 'R2_ENDPOINT',
-      message: 'R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET must be set together'
-    }]);
-  }
-  if (serverConfig.environment === 'production' && !allStoragePresent) {
-    throw new ConfigValidationError('API', [{
-      path: 'R2_ENDPOINT',
-      message: 'R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET are required in production'
-    }]);
-  }
-  if (result.data.R2_ENDPOINT !== undefined) {
-    assertRuntimeUrlSafety(serverConfig.environment, 'R2_ENDPOINT', result.data.R2_ENDPOINT, {
-      allowLocalContainerHosts: result.data.APP_CONTAINER_LOCAL === 'true',
-      requireHttpsInProduction: true
-    });
-  }
+  const allStoragePresent = validateStorageEnvironment('API', serverConfig.environment, result.data, result.data.APP_CONTAINER_LOCAL === 'true');
   if (result.data.R2_PUBLIC_ENDPOINT !== undefined) {
     // The browser calls this endpoint directly, so a container-only hostname is never acceptable
     // here even in APP_CONTAINER_LOCAL mode.
     assertRuntimeUrlSafety(serverConfig.environment, 'R2_PUBLIC_ENDPOINT', result.data.R2_PUBLIC_ENDPOINT, { requireHttpsInProduction: true });
-  }
-  if (serverConfig.environment === 'production' && result.data.R2_SECRET_ACCESS_KEY !== undefined && containsExampleSecretMarker(result.data.R2_SECRET_ACCESS_KEY)) {
-    throw new ConfigValidationError('API', [{
-      path: 'R2_SECRET_ACCESS_KEY',
-      message: 'must not be an example/placeholder value in production; supplied values are redacted'
-    }]);
   }
   if (result.data.MEDIA_MULTIPART_PART_BYTES > result.data.MEDIA_MULTIPART_THRESHOLD_BYTES) {
     throw new ConfigValidationError('API', [{ path: 'MEDIA_MULTIPART_PART_BYTES', message: 'must not exceed MEDIA_MULTIPART_THRESHOLD_BYTES' }]);
@@ -380,33 +387,7 @@ export const loadWorkerConfig = (env: ServerEnvironment): WorkerConfig => {
   }
 
   // Object storage (issue #24): required together, mirroring the API's R2 settings (issue #21).
-  const storageFieldsPresent = [result.data.R2_ENDPOINT, result.data.R2_ACCESS_KEY_ID, result.data.R2_SECRET_ACCESS_KEY, result.data.R2_BUCKET].map((value) => value !== undefined);
-  const anyStoragePresent = storageFieldsPresent.some(Boolean);
-  const allStoragePresent = storageFieldsPresent.every(Boolean);
-  if (anyStoragePresent && !allStoragePresent) {
-    throw new ConfigValidationError('Worker', [{
-      path: 'R2_ENDPOINT',
-      message: 'R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET must be set together'
-    }]);
-  }
-  if (serverConfig.environment === 'production' && !allStoragePresent) {
-    throw new ConfigValidationError('Worker', [{
-      path: 'R2_ENDPOINT',
-      message: 'R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET are required in production'
-    }]);
-  }
-  if (result.data.R2_ENDPOINT !== undefined) {
-    assertRuntimeUrlSafety(serverConfig.environment, 'R2_ENDPOINT', result.data.R2_ENDPOINT, {
-      allowLocalContainerHosts: env.APP_CONTAINER_LOCAL === 'true',
-      requireHttpsInProduction: true
-    });
-  }
-  if (serverConfig.environment === 'production' && result.data.R2_SECRET_ACCESS_KEY !== undefined && containsExampleSecretMarker(result.data.R2_SECRET_ACCESS_KEY)) {
-    throw new ConfigValidationError('Worker', [{
-      path: 'R2_SECRET_ACCESS_KEY',
-      message: 'must not be an example/placeholder value in production; supplied values are redacted'
-    }]);
-  }
+  const allStoragePresent = validateStorageEnvironment('Worker', serverConfig.environment, result.data, env.APP_CONTAINER_LOCAL === 'true');
 
   return {
     service: 'worker',

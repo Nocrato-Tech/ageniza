@@ -13,9 +13,9 @@ import type { WorkerStorageConfig } from '@ageniza/config/server';
  */
 export interface MediaProcessingStorageClient {
   /** Streams the object at `key` to `destinationPath`, overwriting it. */
-  downloadToFile(input: { readonly key: string; readonly destinationPath: string }): Promise<void>;
+  downloadToFile(input: { readonly key: string; readonly destinationPath: string; readonly signal: AbortSignal }): Promise<void>;
   /** Uploads the local file at `sourcePath` to `key`. `sizeBytes` must match the file's actual size. */
-  uploadFile(input: { readonly key: string; readonly sourcePath: string; readonly contentType: string }): Promise<void>;
+  uploadFile(input: { readonly key: string; readonly sourcePath: string; readonly contentType: string; readonly signal: AbortSignal }): Promise<void>;
 }
 
 export const createMediaProcessingStorageClient = (config: WorkerStorageConfig): MediaProcessingStorageClient => {
@@ -27,16 +27,16 @@ export const createMediaProcessingStorageClient = (config: WorkerStorageConfig):
   });
 
   return {
-    async downloadToFile({ key, destinationPath }) {
-      const result = await client.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }));
+    async downloadToFile({ key, destinationPath, signal }) {
+      const result = await client.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }), { abortSignal: signal });
       const body = result.Body;
       if (body === undefined) throw new Error('GetObject did not return a body.');
       // The SDK's Node runtime always resolves Body to a Readable; the union also covers browser
       // stream types that this server-only client never sees.
-      await pipeline(body as NodeJS.ReadableStream, createWriteStream(destinationPath));
+      await pipeline(body as NodeJS.ReadableStream, createWriteStream(destinationPath), { signal });
     },
 
-    async uploadFile({ key, sourcePath, contentType }) {
+    async uploadFile({ key, sourcePath, contentType, signal }) {
       const contentLength = statSync(sourcePath).size;
       await client.send(new PutObjectCommand({
         Bucket: config.bucket,
@@ -44,7 +44,7 @@ export const createMediaProcessingStorageClient = (config: WorkerStorageConfig):
         Body: createReadStream(sourcePath),
         ContentType: contentType,
         ContentLength: contentLength
-      }));
+      }), { abortSignal: signal });
     }
   };
 };

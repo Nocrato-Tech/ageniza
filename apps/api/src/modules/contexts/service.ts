@@ -130,13 +130,12 @@ const fetchLastUsedKey = async (transaction: ContextTransaction): Promise<string
 };
 
 /**
- * Lists every context (agency or client) the given user currently has valid access to, ordered
- * per issue #33 section 6.1. Must run inside `withAuthenticatedUserTransaction`; the `userId`
- * parameter exists only to make the call site's intent explicit -- the query itself relies on the
- * transaction-local `app_private.current_user_id()`, matching the RLS boundary exactly.
+ * Lists every context (agency or client) the authenticated user currently has valid access to,
+ * ordered per issue #33 section 6.1. Must run inside `withAuthenticatedUserTransaction`; the
+ * queries rely on transaction-local `app_private.current_user_id()`, matching the RLS boundary
+ * exactly.
  */
-export const listValidContexts = async (transaction: ContextTransaction, userId: string): Promise<ListValidContextsResult> => {
-  void userId;
+export const listValidContexts = async (transaction: ContextTransaction): Promise<ListValidContextsResult> => {
   const [agencyContexts, clientContexts, lastUsedKey] = await Promise.all([
     fetchAgencyContexts(transaction),
     fetchClientContexts(transaction),

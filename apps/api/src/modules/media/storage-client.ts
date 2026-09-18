@@ -1,6 +1,7 @@
 import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
+  CopyObjectCommand,
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
   GetObjectCommand,
@@ -40,6 +41,7 @@ export interface MediaStorageClient {
   /** Returns `undefined` when the object does not exist, instead of throwing. */
   headObject(input: { readonly key: string }): Promise<HeadObjectResult | undefined>;
   deleteObject(input: { readonly key: string }): Promise<void>;
+  copyObject(input: { readonly sourceKey: string; readonly destinationKey: string }): Promise<void>;
   presignGetObject(input: { readonly key: string; readonly expiresInSeconds: number }): Promise<string>;
 }
 
@@ -76,16 +78,29 @@ export const createMediaStorageClient = (config: StorageConfig): MediaStorageCli
     },
 
     async completeMultipartUpload({ key, uploadId, parts }) {
-      await internalClient.send(new CompleteMultipartUploadCommand({
-        Bucket: config.bucket,
-        Key: key,
-        UploadId: uploadId,
-        MultipartUpload: {
-          Parts: [...parts]
-            .sort((a, b) => a.partNumber - b.partNumber)
-            .map((part) => ({ PartNumber: part.partNumber, ETag: part.eTag }))
-        }
-      }));
+      try {
+        await internalClient.send(new CompleteMultipartUploadCommand({
+          Bucket: config.bucket,
+          Key: key,
+          UploadId: uploadId,
+          MultipartUpload: {
+            Parts: [...parts]
+              .sort((a, b) => a.partNumber - b.partNumber)
+              .map((part) => ({ PartNumber: part.partNumber, ETag: part.eTag }))
+          }
+        }));
+      } catch (error) {
+        // CompleteMultipartUpload is an external side effect. If it succeeded but the API lost
+        // the response or its database transaction rolled back, retrying yields NoSuchUpload.
+        // The server-minted key is unique, so an existing object proves this upload was finalized.
+        const name = typeof error === 'object' && error !== null && 'name' in error
+          ? (error as { readonly name?: unknown }).name
+          : undefined;
+        if (name !== 'NoSuchUpload') throw error;
+        const completed = await internalClient.send(new HeadObjectCommand({ Bucket: config.bucket, Key: key }))
+          .then(() => true, () => false);
+        if (!completed) throw error;
+      }
     },
 
     async abortMultipartUpload({ key, uploadId }) {
@@ -108,6 +123,16 @@ export const createMediaStorageClient = (config: StorageConfig): MediaStorageCli
 
     async deleteObject({ key }) {
       await internalClient.send(new DeleteObjectCommand({ Bucket: config.bucket, Key: key }));
+    },
+
+    async copyObject({ sourceKey, destinationKey }) {
+      const encodedSource = `${encodeURIComponent(config.bucket)}/${sourceKey.split('/').map(encodeURIComponent).join('/')}`;
+      await internalClient.send(new CopyObjectCommand({
+        Bucket: config.bucket,
+        CopySource: encodedSource,
+        Key: destinationKey,
+        MetadataDirective: 'COPY'
+      }));
     },
 
     async presignGetObject({ key, expiresInSeconds }) {

@@ -28,10 +28,9 @@ export const MeContextsResponseSchema = z.object({
 }).strict();
 
 /** `preferred=agency:<uuid>` or `preferred=client:<uuid>`, parsed from the raw query string. */
-export const ContextResolvePreferredSchema = z.string().trim().min(1).max(256).regex(
-  /^(agency|client):[0-9a-fA-F-]{36}$/,
-  'must be "agency:<uuid>" or "client:<uuid>"'
-);
+// Syntax and access are deliberately handled by the resolver. A malformed or inaccessible value
+// must be indistinguishable from an absent preference (issue #33), never a validation error.
+export const ContextResolvePreferredSchema = z.string().trim().max(256);
 
 export const ContextResolveQuerySchema = z.object({
   preferred: ContextResolvePreferredSchema.optional()
