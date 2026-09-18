@@ -19,7 +19,14 @@ const config: WorkerConfig = {
   healthHost: '127.0.0.1',
   healthPort: 0,
   smokeJob: false,
-  concurrency: 1
+  concurrency: 1,
+  mediaProcessing: {
+    ffmpegTimeoutSeconds: 240,
+    maxDurationSeconds: 1_800,
+    thumbnailWidthPixels: 640,
+    previewMaxHeightPixels: 720,
+    previewMaxOutputBytes: 300 * 1024 * 1024
+  }
 };
 
 const createTestQueue = (): DurableQueue => ({

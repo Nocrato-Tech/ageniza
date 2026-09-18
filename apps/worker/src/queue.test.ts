@@ -6,7 +6,7 @@ import { createLogger } from '@ageniza/core';
 import { getConstructionPlans, type JobWithMetadata } from 'pg-boss';
 import { describe, expect, it } from 'vitest';
 
-import { createDurableQueue, deadLetterQueueName, QUEUE_SCHEMA, runDurableJob } from './queue.js';
+import { createDurableQueue, deadLetterQueueName, jobConcurrency, QUEUE_SCHEMA, runDurableJob } from './queue.js';
 
 interface QueueMigration {
   readonly pgBossSchemaVersion?: number;
@@ -136,5 +136,13 @@ describe('durable queue registration', () => {
 
   it('names the dead letter queue after its source queue', () => {
     expect(deadLetterQueueName('media.thumbnail')).toBe('media.thumbnail.dead');
+  });
+
+  it('lets a job lower its own concurrency but never raise the worker ceiling', () => {
+    // A CPU-bound job (ffmpeg, issue #24) caps itself here instead of forcing WORKER_CONCURRENCY
+    // down, which would throttle every unrelated job on the same worker.
+    expect(jobConcurrency(1, 4)).toBe(1);
+    expect(jobConcurrency(undefined, 4)).toBe(4);
+    expect(jobConcurrency(8, 2)).toBe(2);
   });
 });

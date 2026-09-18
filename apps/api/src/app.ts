@@ -4,7 +4,9 @@ import type { ApiConfig } from '@ageniza/config/server';
 import { CORRELATION_ID_HEADER, createLogger, createReadiness, REQUEST_ID_HEADER, resolveRequestId, withLogContext, type CoreLogger, type HealthCheck, type Readiness } from '@ageniza/core';
 
 import { registerAuthModule, type AuthModuleDependencies } from './modules/auth/routes.js';
+import { registerContextModule, type ContextModuleDependencies } from './modules/contexts/routes.js';
 import { createInvitationTokenLookup, registerInvitationModule, type InvitationModuleDependencies } from './modules/invitations/routes.js';
+import { registerMediaModule, type MediaModuleDependencies } from './modules/media/routes.js';
 import { registerCors } from './plugins/infra/cors.js';
 import { registerErrorHandling } from './plugins/infra/errors.js';
 import { registerOriginProtection } from './plugins/infra/origin.js';
@@ -23,6 +25,10 @@ export interface ApiAppOptions {
   auth?: AuthModuleDependencies;
   /** Invitation dependencies are optional for lightweight health/app tests. */
   invitations?: InvitationModuleDependencies;
+  /** Context dependencies are optional for lightweight health/app tests. */
+  contexts?: ContextModuleDependencies;
+  /** Media dependencies are optional; undefined for tests that never touch object storage. */
+  media?: MediaModuleDependencies;
 }
 
 /** Builds the HTTP application without binding a port, enabling deterministic Fastify inject tests. */
@@ -82,6 +88,12 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   }
   if (options.invitations !== undefined) {
     registerInvitationModule(app, options.invitations);
+  }
+  if (options.contexts !== undefined) {
+    registerContextModule(app, options.contexts);
+  }
+  if (options.media !== undefined) {
+    registerMediaModule(app, options.media);
   }
   return app;
 };

@@ -243,9 +243,9 @@ describe('AUTH-20B database RLS and invitation functions', () => {
     await expect(asUser(userA, (transaction) => transaction('legal_acceptances').select('user_id'))).resolves.toEqual([{ user_id: userA }, { user_id: userA }]);
     // Permissions and system roles are global authorization metadata. They are intentionally
     // readable by every authenticated user, while all tenant-bearing rows remain RLS-scoped.
-    await expect(asUser(userA, (transaction) => transaction('permissions').select('key'))).resolves.toHaveLength(4);
+    await expect(asUser(userA, (transaction) => transaction('permissions').select('key'))).resolves.toHaveLength(5);
     await expect(asUser(userA, (transaction) => transaction('roles').whereNull('agency_id').select('key'))).resolves.toHaveLength(5);
-    await expect(asUser(userA, (transaction) => transaction('role_permissions').select('permission_key'))).resolves.toHaveLength(4);
+    await expect(asUser(userA, (transaction) => transaction('role_permissions').select('permission_key'))).resolves.toHaveLength(5);
 
     await expect(asUser(userA, (transaction) => transaction('agencies').insert({ id: randomUUID(), name: 'Denied' }))).rejects.toThrow(/row-level security/);
     await expect(asUser(userA, (transaction) => transaction('clients').insert({ id: randomUUID(), agency_id: agencyB, name: 'Denied' }))).rejects.toThrow(/row-level security/);
@@ -269,6 +269,26 @@ describe('AUTH-20B database RLS and invitation functions', () => {
     await expect(asUser(userA, (transaction) => transaction('permissions').where({ key: 'colaborador.convidar' }).update({ description: 'Should not change' }))).resolves.toBe(0);
     await expect(asUser(userA, (transaction) => transaction('roles').where({ key: 'admin' }).whereNull('agency_id').update({ name: 'Should not change' }))).resolves.toBe(0);
     await expect(asUser(userA, (transaction) => transaction('role_permissions').where({ role_id: adminRoleId }).delete())).resolves.toBe(0);
+  });
+
+  it('lets a client member touch only their onboarding column, never their status or tenant', async () => {
+    // The onboarding write (AUTH-20C) is the one update a member may perform on their own row.
+    await expect(asUser(userA, (transaction) => transaction('client_memberships')
+      .where({ client_id: clientA, user_id: userA }).update({ onboarding_seen_at: new Date() }))).resolves.toBe(1);
+
+    // Everything else on that same row is denied by the column grant: without it, a removed member
+    // could reactivate themselves, or move the membership to another tenant's client.
+    await expect(asUser(userA, (transaction) => transaction('client_memberships')
+      .where({ client_id: clientA, user_id: userA }).update({ status: 'removed' }))).rejects.toThrow(/permission denied/);
+    await expect(asUser(userA, (transaction) => transaction('client_memberships')
+      .where({ client_id: clientA, user_id: userA }).update({ client_id: clientB }))).rejects.toThrow(/permission denied/);
+    await expect(asUser(userA, (transaction) => transaction('client_memberships')
+      .where({ client_id: clientA, user_id: userA }).update({ user_id: userB }))).rejects.toThrow(/permission denied/);
+    // Another member's row stays untouchable even on the allowed column.
+    await expect(asUser(userA, (transaction) => transaction('client_memberships')
+      .where({ client_id: clientB }).update({ onboarding_seen_at: new Date() }))).resolves.toBe(0);
+
+    await getOwner().knex('client_memberships').where({ client_id: clientA, user_id: userA }).update({ onboarding_seen_at: null });
   });
 
   it('returns only the public invitation projection and marks inactive links invalid', async () => {

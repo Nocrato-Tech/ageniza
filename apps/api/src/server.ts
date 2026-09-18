@@ -10,8 +10,12 @@ import { createAuthAuditRecorder } from './modules/auth/audit.js';
 import { createAuthLimiter } from './modules/auth/auth-limiter.js';
 import { createAuth } from './modules/auth/better-auth.js';
 import { createEmailService } from './modules/auth/email-service.js';
-import { createRequireAgencyAccess, requirePermission } from './modules/tenancy/guards.js';
+import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from './modules/tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from './modules/invitations/routes.js';
+import type { ContextModuleDependencies } from './modules/contexts/routes.js';
+import { createMediaJobDispatcher } from './modules/media/job-dispatcher.js';
+import type { MediaModuleDependencies } from './modules/media/routes.js';
+import { createMediaStorageClient } from './modules/media/storage-client.js';
 
 /** Dedicated to Better Auth (and, since it shares the same `ageniza_app` role and connection
  * settings, to append-only audit writes); small on purpose on a shared VPS. */
@@ -49,6 +53,24 @@ export const startApi = async (): Promise<void> => {
     requirePermission,
     invitationTokenLookup
   };
+  const contextDependencies: ContextModuleDependencies = {
+    database,
+    auth,
+    requireClientAccess: createRequireClientAccess({ database })
+  };
+  // Storage is optional at config-load time (tests/tooling that never touch media may omit it),
+  // but the API only starts the media module when it is actually configured.
+  const mediaJobDispatcher = config.storage === undefined ? undefined : createMediaJobDispatcher({ connectionString: config.databaseUrl, logger });
+  if (mediaJobDispatcher !== undefined) await mediaJobDispatcher.start();
+  const mediaDependencies: MediaModuleDependencies | undefined = config.storage === undefined ? undefined : {
+    database,
+    auth,
+    storage: createMediaStorageClient(config.storage),
+    config: config.storage,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    requirePermission,
+    jobs: mediaJobDispatcher
+  };
 
   const readiness = createReadiness(false);
   const dependencyChecks: readonly HealthCheck[] = [
@@ -60,12 +82,15 @@ export const startApi = async (): Promise<void> => {
     readiness,
     dependencyChecks,
     auth: { auth, limiter, auditRecorder, invitationTokenLookup },
-    invitations: invitationDependencies
+    invitations: invitationDependencies,
+    contexts: contextDependencies,
+    media: mediaDependencies
   });
 
   const shutdown = createShutdownManager();
   shutdown.add('sentry', async () => { await flushServerSentry(); });
   shutdown.add('auth-pool', async () => { await authPool.end(); });
+  shutdown.add('media-job-dispatcher', async () => { await mediaJobDispatcher?.stop(); });
   shutdown.add('database', async () => { await database.close(); });
   // Waits for in-flight password reset email deliveries (max 10s), never blocking the response
   // that already went out.

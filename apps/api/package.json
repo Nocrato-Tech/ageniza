@@ -4,13 +4,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx --env-file=../../.env watch src/index.ts",
+    "dev": "tsx --env-file=../../.env --env-file=../../.local/storage.env watch src/index.ts",
     "cli:agency": "node dist/cli/agency.js",
     "build": "tsc -p tsconfig.json",
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests --exclude '**/*.integration.test.ts'",
-    "test:integration": "vitest run src/modules/auth/auth.integration.test.ts src/modules/auth/auth-rate-limit.integration.test.ts src/modules/auth/auth-schema.integration.test.ts src/modules/auth/auth-logs.integration.test.ts src/modules/invitations/invitations.integration.test.ts",
+    "test:integration": "vitest run src/modules/auth/auth.integration.test.ts src/modules/auth/auth-rate-limit.integration.test.ts src/modules/auth/auth-schema.integration.test.ts src/modules/auth/auth-logs.integration.test.ts src/modules/invitations/invitations.integration.test.ts src/modules/contexts/contexts.integration.test.ts src/modules/media/media.integration.test.ts",
     "clean": "rimraf dist"
   },
   "dependencies": {
@@ -19,6 +19,8 @@
     "@ageniza/core": "workspace:*",
     "@ageniza/database": "workspace:*",
     "@ageniza/email": "workspace:*",
+    "@aws-sdk/client-s3": "3.700.0",
+    "@aws-sdk/s3-request-presigner": "3.700.0",
     "@fastify/cors": "^11.0.0",
     "@fastify/helmet": "^13.0.0",
     "@fastify/rate-limit": "^10.3.0",
@@ -26,6 +28,7 @@
     "fastify": "^5.2.1",
     "kysely": "0.29.6",
     "pg": "8.16.3",
+    "pg-boss": "12.30.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {

@@ -1,9 +1,15 @@
-import { ZodError, type ZodType } from 'zod';
+import { ZodError, type ZodType, type ZodTypeDef } from 'zod';
 
 import { HttpError } from '@ageniza/core';
 
-/** Parses untrusted transport values and exposes only safe issue metadata to clients. */
-export const parseRequest = <T>(schema: ZodType<T>, value: unknown): T => {
+/**
+ * Parses untrusted transport values and exposes only safe issue metadata to clients.
+ *
+ * `TIn` is separate from `TOut` so a schema that normalizes rather than merely validates still
+ * infers its parsed type. Query schemas need this: a value that must be treated as absent instead
+ * of rejected (issue #33's `preferred`) transforms `unknown` into `string | undefined`.
+ */
+export const parseRequest = <TOut, TIn = TOut>(schema: ZodType<TOut, ZodTypeDef, TIn>, value: unknown): TOut => {
   try {
     return schema.parse(value);
   } catch (error) {

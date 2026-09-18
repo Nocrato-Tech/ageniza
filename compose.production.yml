@@ -49,6 +49,14 @@ services:
   mailpit:
     profiles: ["local-only"]
     ports: !reset []
+  # Local-only object storage stand-in (issue #21). Production uses Cloudflare R2, configured
+  # entirely by the R2_* variables in runtime.env; the profile keeps MinIO out of the production
+  # model, exactly like mailpit above.
+  minio:
+    profiles: ["local-only"]
+    ports: !reset []
+  minio-init:
+    profiles: ["local-only"]
   postgres:
     image: ${AGENIZA_POSTGRES_IMAGE:?immutable PostgreSQL image reference required}
     environment: !reset {}

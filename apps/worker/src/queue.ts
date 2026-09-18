@@ -38,6 +38,12 @@ export interface DurableJobDefinition<TPayload extends object> {
   readonly retryDelayMaxSeconds?: number;
   /** An active job still running after this long is treated as crashed and retried. */
   readonly expireInSeconds?: number;
+  /**
+   * Caps how many of THIS job run at once, independently of the worker-wide concurrency. A
+   * CPU-bound job (ffmpeg) needs a tighter bound than the worker as a whole, and lowering the
+   * global setting to suit it would throttle every unrelated job too.
+   */
+  readonly concurrency?: number;
 }
 
 export interface DurableQueue {
@@ -68,6 +74,13 @@ const defaults = {
 
 /** Where a job goes after its last retry fails, kept visible until pg-boss retention removes it. */
 export const deadLetterQueueName = (name: string): string => `${name}.dead`;
+
+/**
+ * A job's own cap never raises the worker-wide ceiling: WORKER_CONCURRENCY stays the budget for
+ * the whole process, and a job may only ask for less of it.
+ */
+export const jobConcurrency = (jobLimit: number | undefined, workerLimit: number): number =>
+  jobLimit === undefined ? workerLimit : Math.min(jobLimit, workerLimit);
 
 const elapsedMs = (startedAt: number): number => Math.round((performance.now() - startedAt) * 100) / 100;
 
@@ -159,7 +172,7 @@ export const createDurableQueue = (options: CreateDurableQueueOptions): DurableQ
         // includeMetadata stays a literal so the handler is typed with retryCount, which gives the attempt.
         const workOptions = {
           batchSize: 1,
-          localConcurrency: options.concurrency,
+          localConcurrency: jobConcurrency(definition.concurrency, options.concurrency),
           includeMetadata: true as const,
           ...(options.pollingIntervalSeconds === undefined ? {} : { pollingIntervalSeconds: options.pollingIntervalSeconds })
         };

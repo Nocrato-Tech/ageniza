@@ -19,6 +19,12 @@ const productionEmailSettings = {
   SMTP_URL: 'smtps://user:key@smtp.ageniza.example:465',
   EMAIL_FROM: 'no-reply@ageniza.example'
 };
+const productionStorageSettings = {
+  R2_ENDPOINT: 'https://accountid.r2.cloudflarestorage.com',
+  R2_ACCESS_KEY_ID: 'production-access-key-id',
+  R2_SECRET_ACCESS_KEY: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4a1b2c3d4e5f6',
+  R2_BUCKET: 'ageniza-media'
+};
 
 describe('server configuration', () => {
   it('loads typed local API and worker configuration', () => {
@@ -38,7 +44,15 @@ describe('server configuration', () => {
       sentryDsn: undefined,
       deployVersion: 'unknown',
       smtpUrl: undefined,
-      emailFrom: undefined
+      emailFrom: undefined,
+      storage: undefined,
+      mediaProcessing: {
+        ffmpegTimeoutSeconds: 240,
+        maxDurationSeconds: 1_800,
+        thumbnailWidthPixels: 640,
+        previewMaxHeightPixels: 720,
+        previewMaxOutputBytes: 300 * 1024 * 1024
+      }
     });
   });
 
@@ -57,7 +71,8 @@ describe('server configuration', () => {
       APP_PUBLIC_URL: 'https://app.ageniza.example',
       API_CORS_ORIGINS: 'https://app.ageniza.example',
       SMTP_URL: 'smtps://user:key@smtp.example.com:465',
-      EMAIL_FROM: 'no-reply@ageniza.example'
+      EMAIL_FROM: 'no-reply@ageniza.example',
+      ...productionStorageSettings
     }).smtpUrl).toBe('smtps://user:key@smtp.example.com:465');
   });
 
@@ -100,7 +115,8 @@ describe('server configuration', () => {
       APP_ENV: 'production',
       DATABASE_URL: productionDatabaseUrl,
       API_CORS_ORIGINS: 'https://app.ageniza.example',
-      ...productionEmailSettings
+      ...productionEmailSettings,
+      ...productionStorageSettings
     };
     expect(() => loadApiConfig({ ...production, APP_PUBLIC_URL: 'http://app.ageniza.example' })).toThrow('must use HTTPS');
     expect(loadApiConfig({ ...production, APP_PUBLIC_URL: 'https://app.ageniza.example' }).appPublicUrl).toBe('https://app.ageniza.example');
@@ -139,7 +155,8 @@ describe('server configuration', () => {
       APP_PUBLIC_URL: 'https://app.ageniza.example',
       API_CORS_ORIGINS: 'https://app.ageniza.example',
       SENTRY_DSN: 'https://public@sentry.example/1',
-      ...productionEmailSettings
+      ...productionEmailSettings,
+      ...productionStorageSettings
     };
     expect(loadApiConfig(production).sentryDsn).toBe('https://public@sentry.example/1');
     expect(() => loadApiConfig({ ...production, SENTRY_DSN: 'http://public@sentry.example/1' })).toThrow('must use HTTPS');
@@ -158,7 +175,8 @@ describe('server configuration', () => {
       DATABASE_URL: productionDatabaseUrl,
       APP_PUBLIC_URL: 'https://app.ageniza.example',
       API_CORS_ORIGINS: 'https://app.ageniza.example',
-      ...productionEmailSettings
+      ...productionEmailSettings,
+      ...productionStorageSettings
     }).environment).toBe('production');
     expect(() => loadApiConfig({
       ...localEnvironment,
@@ -216,7 +234,7 @@ describe('server configuration', () => {
     expect(() => loadApiConfig({ ...productionWithoutEmail, SMTP_URL: productionEmailSettings.SMTP_URL })).toThrow(
       'must be set together with EMAIL_FROM'
     );
-    expect(loadApiConfig({ ...productionWithoutEmail, ...productionEmailSettings }).smtpUrl).toBe(productionEmailSettings.SMTP_URL);
+    expect(loadApiConfig({ ...productionWithoutEmail, ...productionEmailSettings, ...productionStorageSettings }).smtpUrl).toBe(productionEmailSettings.SMTP_URL);
     // Local/test stay unaffected: SMTP remains fully optional there.
     expect(loadApiConfig(localEnvironment).smtpUrl).toBeUndefined();
   });
@@ -228,7 +246,8 @@ describe('server configuration', () => {
       DATABASE_URL: productionDatabaseUrl,
       APP_PUBLIC_URL: 'https://app.ageniza.example',
       API_CORS_ORIGINS: 'https://app.ageniza.example',
-      ...productionEmailSettings
+      ...productionEmailSettings,
+      ...productionStorageSettings
     };
     // localEnvironment's own secret contains both "placeholder" and "change-me".
     expect(() => loadApiConfig(production)).toThrow('BETTER_AUTH_SECRET');
@@ -260,6 +279,7 @@ describe('server configuration', () => {
     expect(() => loadWorkerConfig({ ...localEnvironment, WORKER_HEALTH_PORT: '0' })).toThrow('WORKER_HEALTH_PORT');
     expect(() => loadWorkerConfig({ ...localEnvironment, WORKER_SMOKE_JOB: 'yes' })).toThrow('WORKER_SMOKE_JOB');
     expect(loadWorkerConfig({ ...localEnvironment, WORKER_CONCURRENCY: '2' }).concurrency).toBe(2);
+    expect(loadWorkerConfig({ ...localEnvironment, WORKER_CONCURRENCY: '4' }).concurrency).toBe(4);
     expect(() => loadWorkerConfig({ ...localEnvironment, WORKER_CONCURRENCY: '0' })).toThrow('WORKER_CONCURRENCY');
     expect(() => loadWorkerConfig({ ...localEnvironment, WORKER_CONCURRENCY: '5' })).toThrow('WORKER_CONCURRENCY');
     expect(() => loadWorkerConfig({
@@ -268,5 +288,121 @@ describe('server configuration', () => {
       DATABASE_URL: productionDatabaseUrl,
       WORKER_SMOKE_JOB: 'true'
     })).toThrow('must be false in production');
+  });
+
+  it('leaves storage undefined locally and loads it with defaults when the four R2 settings are present (issue #21)', () => {
+    expect(loadApiConfig(localEnvironment).storage).toBeUndefined();
+    const withStorage = {
+      ...localEnvironment,
+      APP_CONTAINER_LOCAL: 'true',
+      R2_ENDPOINT: 'http://minio:9000',
+      R2_ACCESS_KEY_ID: 'local-access-key',
+      R2_SECRET_ACCESS_KEY: 'local-secret-key'
+    };
+    expect(() => loadApiConfig(withStorage)).toThrow('must be set together');
+    expect(loadApiConfig({ ...withStorage, R2_BUCKET: 'ageniza-media-local' }).storage).toMatchObject({
+      endpoint: 'http://minio:9000',
+      region: 'auto',
+      accessKeyId: 'local-access-key',
+      secretAccessKey: 'local-secret-key',
+      bucket: 'ageniza-media-local',
+      forcePathStyle: true,
+      uploadUrlExpirySeconds: 900,
+      downloadUrlExpirySeconds: 300,
+      multipartThresholdBytes: 8 * 1024 * 1024,
+      multipartPartBytes: 8 * 1024 * 1024,
+      maxImageBytes: 25 * 1024 * 1024,
+      maxVideoBytes: 5 * 1024 * 1024 * 1024,
+      quotaDefaultBytes: 10 * 1024 * 1024 * 1024,
+      quotaDefaultObjectCount: 2_000
+    });
+  });
+
+  it('requires the four R2 settings together in production and rejects a placeholder secret (issue #21)', () => {
+    const productionWithoutStorage = {
+      ...localEnvironment,
+      BETTER_AUTH_SECRET: productionAuthSecret,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl,
+      APP_PUBLIC_URL: 'https://app.ageniza.example',
+      API_CORS_ORIGINS: 'https://app.ageniza.example',
+      ...productionEmailSettings
+    };
+    expect(() => loadApiConfig(productionWithoutStorage)).toThrow('required in production');
+    expect(() => loadApiConfig({ ...productionWithoutStorage, R2_ENDPOINT: productionStorageSettings.R2_ENDPOINT })).toThrow('must be set together');
+    expect(loadApiConfig({ ...productionWithoutStorage, ...productionStorageSettings }).storage?.bucket).toBe('ageniza-media');
+    expect(() => loadApiConfig({ ...productionWithoutStorage, ...productionStorageSettings, R2_ENDPOINT: 'http://accountid.r2.cloudflarestorage.com' })).toThrow('HTTPS');
+    for (const marker of ['placeholder', 'change-me', 'example']) {
+      expect(() => loadApiConfig({
+        ...productionWithoutStorage,
+        ...productionStorageSettings,
+        R2_SECRET_ACCESS_KEY: `a1b2c3d4e5f6a1b2c3d4e5f6-${marker}`
+      })).toThrow(ConfigValidationError);
+    }
+  });
+
+  it('leaves worker storage undefined locally, loads it with the four R2 settings, and requires them together in production (issue #24)', () => {
+    expect(loadWorkerConfig(localEnvironment).storage).toBeUndefined();
+    const withStorage = {
+      ...localEnvironment,
+      APP_CONTAINER_LOCAL: 'true',
+      R2_ENDPOINT: 'http://minio:9000',
+      R2_ACCESS_KEY_ID: 'local-access-key',
+      R2_SECRET_ACCESS_KEY: 'local-secret-key'
+    };
+    expect(() => loadWorkerConfig(withStorage)).toThrow('must be set together');
+    expect(loadWorkerConfig({ ...withStorage, R2_BUCKET: 'ageniza-media-local' }).storage).toEqual({
+      endpoint: 'http://minio:9000',
+      region: 'auto',
+      accessKeyId: 'local-access-key',
+      secretAccessKey: 'local-secret-key',
+      bucket: 'ageniza-media-local',
+      forcePathStyle: true
+    });
+
+    const productionWithoutStorage = {
+      ...localEnvironment,
+      BETTER_AUTH_SECRET: productionAuthSecret,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl
+    };
+    expect(() => loadWorkerConfig(productionWithoutStorage)).toThrow('required in production');
+    expect(loadWorkerConfig({ ...productionWithoutStorage, ...productionStorageSettings }).storage?.bucket).toBe('ageniza-media');
+    expect(() => loadWorkerConfig({ ...productionWithoutStorage, ...productionStorageSettings, R2_ENDPOINT: 'http://accountid.r2.cloudflarestorage.com' })).toThrow('HTTPS');
+    expect(() => loadWorkerConfig({
+      ...productionWithoutStorage,
+      ...productionStorageSettings,
+      R2_SECRET_ACCESS_KEY: 'a1b2c3d4e5f6a1b2c3d4e5f6-placeholder'
+    })).toThrow(ConfigValidationError);
+  });
+
+  it('loads media processing defaults and honors overrides (issue #24)', () => {
+    expect(loadWorkerConfig({
+      ...localEnvironment,
+      MEDIA_PROCESSING_TIMEOUT_SECONDS: '120',
+      MEDIA_PROCESSING_MAX_DURATION_SECONDS: '600',
+      MEDIA_THUMBNAIL_WIDTH_PIXELS: '320',
+      MEDIA_PREVIEW_MAX_HEIGHT_PIXELS: '480',
+      MEDIA_PREVIEW_MAX_OUTPUT_BYTES: String(50 * 1024 * 1024)
+    }).mediaProcessing).toEqual({
+      ffmpegTimeoutSeconds: 120,
+      maxDurationSeconds: 600,
+      thumbnailWidthPixels: 320,
+      previewMaxHeightPixels: 480,
+      previewMaxOutputBytes: 50 * 1024 * 1024
+    });
+  });
+
+  it('rejects a multipart part size larger than the multipart threshold (issue #21)', () => {
+    expect(() => loadApiConfig({
+      ...localEnvironment,
+      APP_CONTAINER_LOCAL: 'true',
+      R2_ENDPOINT: 'http://minio:9000',
+      R2_ACCESS_KEY_ID: 'local-access-key',
+      R2_SECRET_ACCESS_KEY: 'local-secret-key',
+      R2_BUCKET: 'ageniza-media-local',
+      MEDIA_MULTIPART_THRESHOLD_BYTES: String(8 * 1024 * 1024),
+      MEDIA_MULTIPART_PART_BYTES: String(16 * 1024 * 1024)
+    })).toThrow('MEDIA_MULTIPART_PART_BYTES');
   });
 });

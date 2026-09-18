@@ -2,6 +2,10 @@
 
 This runbook operates [ADR 0010](../adr/0010-vps-edge-and-production-deployment.md) and its GitHub Free amendment. GitHub Actions builds immutable GHCR images and a release manifest. The Hostinger VPS verifies that release against GitHub itself, runs migrations, and replaces the `api`, `web`, and `worker` containers in place behind a Cloudflare Tunnel ([ADR 0012](../adr/0012-cloudflare-tunnel-edge.md)). A release causes a few seconds of downtime, which is accepted for the MVP. There is no remote staging environment.
 
+When a production launch is scheduled, use the
+[production readiness checklist](production-readiness.md) as the single list of pending human
+actions and this runbook for their detailed procedures.
+
 ## Trust model
 
 | Where | Holds | Can do |

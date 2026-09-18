@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { PassThrough } from 'node:stream';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-import type { ApiConfig } from '@ageniza/config/server';
+import type { ApiConfig, StorageConfig } from '@ageniza/config/server';
 import { createLogger, type CoreLogger } from '@ageniza/core';
 import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, type DatabaseClient } from '@ageniza/database';
 import type { EmailSender, OutgoingEmail } from '@ageniza/email';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Pool } from 'pg';
 
 import { buildApp } from '../../../app.js';
@@ -13,8 +15,13 @@ import { createAuthAuditRecorder, type AuthAuditRecorder } from '../audit.js';
 import { createAuthLimiter, type AuthLimiterOptions, type InMemoryAuthLimiter } from '../auth-limiter.js';
 import { createAuth, type AuthInstance } from '../better-auth.js';
 import { createEmailService, type EmailService } from '../email-service.js';
-import { createRequireAgencyAccess, requirePermission } from '../../tenancy/guards.js';
+import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../../tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from '../../invitations/routes.js';
+import type { ContextModuleDependencies } from '../../contexts/routes.js';
+import { createRequireSession } from '../session-guard.js';
+import { createMediaJobDispatcher, type MediaJobDispatcher } from '../../media/job-dispatcher.js';
+import type { MediaModuleDependencies } from '../../media/routes.js';
+import { createMediaStorageClient } from '../../media/storage-client.js';
 
 /** Runs only against the migrated local database (`pnpm db:migrate`), as the application role. */
 export const APPLICATION_DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
@@ -23,6 +30,25 @@ export const OWNER_DATABASE_URL = process.env.MIGRATION_DATABASE_URL ?? 'postgre
 /** Test-only values; never a real secret and never committed anywhere else. */
 export const TEST_APP_PUBLIC_URL = 'http://127.0.0.1:5173';
 export const TEST_AUTH_SECRET = 'integration-test-secret-value-that-is-not-real';
+
+const localStorageCredentials = (): { accessKeyId: string; secretAccessKey: string } => {
+  if (process.env.R2_ACCESS_KEY_ID !== undefined && process.env.R2_SECRET_ACCESS_KEY !== undefined) {
+    return { accessKeyId: process.env.R2_ACCESS_KEY_ID, secretAccessKey: process.env.R2_SECRET_ACCESS_KEY };
+  }
+  const values = Object.fromEntries(readFileSync(resolve(process.cwd(), '../../.local/storage.env'), 'utf8')
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const separator = line.indexOf('=');
+      return [line.slice(0, separator), line.slice(separator + 1)];
+    }));
+  if (values.R2_ACCESS_KEY_ID === undefined || values.R2_SECRET_ACCESS_KEY === undefined) {
+    throw new Error('Run pnpm storage:start before API integration tests.');
+  }
+  return { accessKeyId: values.R2_ACCESS_KEY_ID, secretAccessKey: values.R2_SECRET_ACCESS_KEY };
+};
+
+const testStorageCredentials = localStorageCredentials();
 
 export const runPrefix = (): string => `authtest-${randomUUID().slice(0, 8)}`;
 
@@ -61,10 +87,32 @@ export const captureLogs = (): CapturedLogs => {
   };
 };
 
+/** Points at the Compose MinIO started by `docker compose up -d minio minio-init` (issue #21).
+ * Integration tests that never reach the media module still pay nothing extra for this: the
+ * client is only constructed, never connected to, until a route actually calls it. */
+export const TEST_STORAGE_CONFIG: StorageConfig = {
+  endpoint: process.env.R2_ENDPOINT ?? 'http://127.0.0.1:9000',
+  publicEndpoint: process.env.R2_PUBLIC_ENDPOINT ?? process.env.R2_ENDPOINT ?? 'http://127.0.0.1:9000',
+  region: 'auto',
+  accessKeyId: testStorageCredentials.accessKeyId,
+  secretAccessKey: testStorageCredentials.secretAccessKey,
+  bucket: process.env.R2_BUCKET ?? 'ageniza-media-local',
+  forcePathStyle: true,
+  uploadUrlExpirySeconds: 900,
+  downloadUrlExpirySeconds: 300,
+  multipartThresholdBytes: 8 * 1024 * 1024,
+  multipartPartBytes: 8 * 1024 * 1024,
+  maxImageBytes: 25 * 1024 * 1024,
+  maxVideoBytes: 5 * 1024 * 1024 * 1024,
+  quotaDefaultBytes: 10 * 1024 * 1024 * 1024,
+  quotaDefaultObjectCount: 2_000
+};
+
 export const buildTestConfig = (overrides: Partial<ApiConfig> = {}): ApiConfig => ({
   service: 'api',
   environment: 'test',
   databaseUrl: APPLICATION_DATABASE_URL,
+  storage: TEST_STORAGE_CONFIG,
   deployVersion: 'test',
   authSecret: TEST_AUTH_SECRET,
   appPublicUrl: TEST_APP_PUBLIC_URL,
@@ -83,13 +131,23 @@ export interface TestAppOptions {
   readonly sender?: EmailSender;
   readonly logger?: CoreLogger;
   readonly limiterOptions?: AuthLimiterOptions;
+  /** Test-only wrapper for simulating queue failures while retaining the real dispatcher. */
+  readonly wrapMediaJobs?: (jobs: MediaJobDispatcher) => MediaJobDispatcher;
   /**
-   * Test/harness-only hook (B12 #13): registers additional routes on the built app, outside the
-   * auth module, before `app.ready()`. Never used by production code; exists so a test can prove
-   * the global origin/CSRF check covers a real route it does not otherwise know about, rather
-   * than only a nonexistent URL.
+   * Test/harness-only hook (B12 #13, AUTH-20C #14): registers additional routes on the built app,
+   * outside the auth module, before `app.ready()`. Never used by production code. Exists so a
+   * test can prove the global origin/CSRF check covers a real route it does not otherwise know
+   * about, and so AUTH-20C's "two tabs" test can mount a route guarded by the real
+   * `requireAgencyAccess`/`requireClientAccess` prehandlers without a bespoke fixture.
    */
-  readonly registerExtraRoutes?: (app: FastifyInstance) => void | Promise<void>;
+  readonly registerExtraRoutes?: (app: FastifyInstance, guards: TestGuardBuilders) => void | Promise<void>;
+}
+
+/** Real prehandler builders, wired to this test app's own `auth`/`database`, for `registerExtraRoutes`. */
+export interface TestGuardBuilders {
+  readonly requireSession: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+  readonly requireAgencyAccess: (request: FastifyRequest) => Promise<void>;
+  readonly requireClientAccess: (request: FastifyRequest) => Promise<void>;
 }
 
 export interface TestApp {
@@ -101,6 +159,7 @@ export interface TestApp {
   readonly database: DatabaseClient;
   readonly emailService: EmailService;
   readonly config: ApiConfig;
+  readonly media?: MediaModuleDependencies;
   close(): Promise<void>;
 }
 
@@ -131,8 +190,33 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     requirePermission,
     invitationTokenLookup
   };
-  const app = await buildApp({ config, logger, auth: { auth, limiter, auditRecorder, invitationTokenLookup }, invitations });
-  if (options.registerExtraRoutes !== undefined) await options.registerExtraRoutes(app);
+  const requireClientAccess = createRequireClientAccess({ database });
+  const contexts: ContextModuleDependencies = { database, auth, requireClientAccess };
+  const ownedMediaJobDispatcher: MediaJobDispatcher | undefined = config.storage === undefined
+    ? undefined
+    : createMediaJobDispatcher({ connectionString: config.databaseUrl, logger: createLogger({ enabled: false }) });
+  if (ownedMediaJobDispatcher !== undefined) await ownedMediaJobDispatcher.start();
+  const mediaJobs = ownedMediaJobDispatcher === undefined
+    ? undefined
+    : options.wrapMediaJobs?.(ownedMediaJobDispatcher) ?? ownedMediaJobDispatcher;
+  const media: MediaModuleDependencies | undefined = config.storage === undefined ? undefined : {
+    database,
+    auth,
+    storage: createMediaStorageClient(config.storage),
+    config: config.storage,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    requirePermission,
+    jobs: mediaJobs
+  };
+  const app = await buildApp({ config, logger, auth: { auth, limiter, auditRecorder, invitationTokenLookup }, invitations, contexts, media });
+  if (options.registerExtraRoutes !== undefined) {
+    const guards: TestGuardBuilders = {
+      requireSession: createRequireSession({ auth }),
+      requireAgencyAccess: createRequireAgencyAccess({ database }),
+      requireClientAccess
+    };
+    await options.registerExtraRoutes(app, guards);
+  }
   await app.ready();
 
   return {
@@ -144,8 +228,10 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     emailService,
     database,
     config,
+    media,
     async close(): Promise<void> {
       await emailService.drain();
+      await ownedMediaJobDispatcher?.stop();
       await app.close();
       await database.close();
       await pool.end();

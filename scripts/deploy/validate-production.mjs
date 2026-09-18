@@ -25,7 +25,7 @@ try {
   for (const name of ['AGENIZA_API_IMAGE', 'AGENIZA_WORKER_IMAGE', 'AGENIZA_WEB_IMAGE']) {
     assertImmutableGhcrImage(name, environment[name]);
   }
-  writeFileSync(runtimeEnv, 'APP_ENV=production\nBETTER_AUTH_SECRET=fixture-only-placeholder-secret-at-least-32-chars\nAPP_PUBLIC_URL=https://app.example.test\nAUTH_TERMS_VERSION=2026-01-01\nAUTH_PRIVACY_VERSION=2026-02-01\nDATABASE_URL=postgresql://ageniza_app:test-only@postgres:5432/ageniza\nAPI_CORS_ORIGINS=https://app.example.test\nAPI_TRUSTED_PROXY_CIDRS=172.20.0.0/16\nSMTP_URL=smtps://fixture:fixture@smtp.example.test:465\nEMAIL_FROM=Ageniza <no-reply@example.test>\n');
+  writeFileSync(runtimeEnv, 'APP_ENV=production\nBETTER_AUTH_SECRET=fixture-only-placeholder-secret-at-least-32-chars\nAPP_PUBLIC_URL=https://app.example.test\nAUTH_TERMS_VERSION=2026-01-01\nAUTH_PRIVACY_VERSION=2026-02-01\nDATABASE_URL=postgresql://ageniza_app:test-only@postgres:5432/ageniza\nAPI_CORS_ORIGINS=https://app.example.test\nAPI_TRUSTED_PROXY_CIDRS=172.20.0.0/16\nSMTP_URL=smtps://fixture:fixture@smtp.example.test:465\nEMAIL_FROM=Ageniza <no-reply@example.test>\nR2_ENDPOINT=https://accountid.r2.cloudflarestorage.com\nR2_ACCESS_KEY_ID=fixture-access-key-id\nR2_SECRET_ACCESS_KEY=fixture-only-secret-access-key\nR2_BUCKET=ageniza-media\n');
   writeFileSync(postgresEnv, 'POSTGRES_USER=postgres\nPOSTGRES_DB=ageniza\nPOSTGRES_PASSWORD=test-only\nAGENIZA_APP_DB_PASSWORD=test-only\n');
   environment.AGENIZA_RUNTIME_ENV_FILE = runtimeEnv;
   environment.AGENIZA_POSTGRES_ENV_FILE = postgresEnv;
