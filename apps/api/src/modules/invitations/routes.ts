@@ -159,6 +159,27 @@ const emailDeliveryFailed = (): HttpError => new HttpError({
 const isDuplicateUserError = (error: unknown): boolean =>
   typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === '23505';
 
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * Serializes the revoke-then-insert pair against the partial unique index on pending invitations.
+ * Read Committed alone is not enough: the revoking UPDATE never sees a row a concurrent
+ * transaction inserted after its snapshot, so both sides would reach the insert and one would
+ * lose on `invitations_pending_equivalent_unique`. The lock key matches that index exactly and is
+ * released at commit.
+ */
+const lockPendingInvitationSlot = async (
+  transaction: Parameters<typeof raw>[0],
+  agencyId: string,
+  purpose: string,
+  email: string,
+  clientId: string | null
+): Promise<void> => {
+  await raw(transaction, 'select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(?, 0))', [
+    `${agencyId}:${purpose}:${email}:${clientId ?? NIL_UUID}`
+  ]);
+};
+
 const routeParams = <T>(schema: z.ZodType<T>, request: FastifyRequest): T => parseRequest(schema, request.params);
 
 const invitationFromLookupRow = (row: InvitationLookupRow): InvitationLookup => ({
@@ -244,6 +265,7 @@ const createCollaboratorInvitation = async (
       `, [agencyId, email]);
       if (memberResult.rows[0] !== undefined) throw membershipExists();
 
+      await lockPendingInvitationSlot(transaction, agencyId, 'collaborator_invite', email, null);
       const revoked = await raw<RawRows<{ id: string }>>(transaction, `
         update public.invitations
            set revoked_at = now()
@@ -302,6 +324,7 @@ const createClientInvitation = async (
     `, [clientId, email]);
     if (memberResult.rows[0] !== undefined) throw membershipExists();
 
+    await lockPendingInvitationSlot(transaction, agencyId, 'client_invite', email, clientId);
     const revoked = await raw<RawRows<{ id: string }>>(transaction, `
       update public.invitations
          set revoked_at = now()
@@ -356,7 +379,12 @@ const resendInvitation = async (
     if (current === undefined || current.purpose === 'agency_activation') throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Invitation not found.' });
     if (current.used_at !== null || current.revoked_at !== null || new Date(current.expires_at).getTime() <= Date.now()) throw invitationNotPending();
 
-    await raw(transaction, `update public.invitations set revoked_at = now() where id = ?::uuid`, [invitationId]);
+    await lockPendingInvitationSlot(transaction, agencyId, current.purpose, current.email, current.client_id);
+    const revoked = await raw<RawRows<{ id: string }>>(transaction, `
+      update public.invitations set revoked_at = now() where id = ?::uuid returning id
+    `, [invitationId]);
+    // A silently filtered UPDATE would otherwise report success while the invitation stays live.
+    if (revoked.rows[0] === undefined) throw invitationNotPending();
     await auditInTransaction(transaction, { action: 'invitation.revoked', actorUserId: auth.userId, agencyId, targetId: invitationId });
     const inserted = await raw<RawRows<{ id: string; expires_at: Date }>>(transaction, `
       insert into public.invitations
@@ -397,7 +425,11 @@ const cancelInvitation = async (
     const current = currentResult.rows[0];
     if (current === undefined || current.purpose === 'agency_activation') throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Invitation not found.' });
     if (current.used_at !== null || current.revoked_at !== null || new Date(current.expires_at).getTime() <= Date.now()) throw invitationNotPending();
-    await raw(transaction, 'update public.invitations set revoked_at = now() where id = ?::uuid', [invitationId]);
+    const revoked = await raw<RawRows<{ id: string }>>(transaction, `
+      update public.invitations set revoked_at = now() where id = ?::uuid returning id
+    `, [invitationId]);
+    // A silently filtered UPDATE would otherwise report 204 while the invitation stays live.
+    if (revoked.rows[0] === undefined) throw invitationNotPending();
     await auditInTransaction(transaction, { action: 'invitation.revoked', actorUserId: auth.userId, agencyId, targetId: invitationId });
   });
 };

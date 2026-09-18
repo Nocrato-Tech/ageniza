@@ -95,7 +95,11 @@ export const createRequireAgencyAccess = (dependencies: TenancyGuardDependencies
           on membership.agency_id = agency.id
          and membership.user_id = app_private.current_user_id()
          and membership.status = 'active'
-        left join public.roles as role on role.id = membership.role_id
+        -- The role scope mirrors app_private.has_agency_permission: a membership pointing at
+        -- another agency's role grants nothing, so the guard never allows what RLS would deny.
+        left join public.roles as role
+          on role.id = membership.role_id
+         and (role.agency_id is null or role.agency_id = agency.id)
         left join public.role_permissions as role_permission on role_permission.role_id = role.id
         where agency.id = ?::uuid
           and agency.status = 'active'

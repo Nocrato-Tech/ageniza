@@ -245,12 +245,17 @@ export const createAgencyCommandService = (options: CreateAgencyCommandServiceOp
     const agencyId = assertUuid(agencyIdInput);
     const persisted = await options.database.transaction(async (transaction): Promise<PersistedInvitation> => {
       const agencyResult = await transaction.query<AgencyRow>(
-        'select id, name, owner_user_id from public.agencies where id = ? for update',
+        'select id, name, status, owner_user_id from public.agencies where id = ? for update',
         [agencyId]
       );
       const agency = oneRow(agencyResult.rows, 'Agency not found.');
       if (agency.owner_user_id !== null && agency.owner_user_id !== undefined) {
         throw new AgencyCliError('The agency already has an owner; activation is no longer pending.');
+      }
+      // A suspended agency cannot have its invitations accepted, so resending would destroy the
+      // pending invitation and mail a link that is invalid from the moment it is sent.
+      if (agency.status !== 'active') {
+        throw new AgencyCliError('The agency is suspended; reactivate it before resending the activation.');
       }
 
       const invitationResult = await transaction.query<InvitationRow>(
@@ -271,6 +276,7 @@ export const createAgencyCommandService = (options: CreateAgencyCommandServiceOp
         [oldInvitation.id]
       );
       const { invitation, token } = await createInvitation(transaction, agencyId, normalizeEmail(oldInvitation.email));
+      await recordAudit(transaction, 'invitation.revoked', agencyId, 'invitation', oldInvitation.id);
       await recordAudit(transaction, 'invitation.resent', agencyId, 'invitation', oldInvitation.id);
       await recordAudit(transaction, 'invitation.sent', agencyId, 'invitation', invitation.id);
       return {

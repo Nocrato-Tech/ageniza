@@ -128,7 +128,7 @@ describe('agency operator CLI', () => {
 
   it('revokes the pending activation before creating a replacement and never stores the new token', async () => {
     const query: AgencyCliTransaction['query'] = async <TRow extends object>(statement: string) => {
-      if (statement.startsWith('select id, name, owner_user_id')) return { rows: [{ id: agencyId, name: 'Acme', owner_user_id: null } as TRow] };
+      if (statement.startsWith('select id, name, status, owner_user_id')) return { rows: [{ id: agencyId, name: 'Acme', status: 'active', owner_user_id: null } as TRow] };
       if (statement.startsWith('select id, email, expires_at')) return { rows: [{ id: invitationId, email: 'owner@example.com', expires_at: '2030-01-01T12:00:00.000Z' } as TRow] };
       if (statement.includes('insert into public.invitations')) return { rows: [{ id: nextInvitationId, email: 'owner@example.com', expires_at: '2030-01-08T12:00:00.000Z' } as TRow] };
       return { rows: [] as TRow[] };
@@ -142,7 +142,22 @@ describe('agency operator CLI', () => {
       .toBeLessThan(calls.findIndex((call) => call.statement.includes('insert into public.invitations')));
     const token = decodeURIComponent(sent[0]!.actionUrl.split('/invite/')[1]!);
     expect(calls.flatMap((call) => call.bindings.map(String))).not.toContain(token);
-    expect(calls.filter((call) => call.statement.includes('insert into audit.events'))).toHaveLength(2);
+    expect(calls.filter((call) => call.statement.includes('insert into audit.events'))).toHaveLength(3);
+  });
+
+  it('refuses to resend the activation of a suspended agency and keeps the pending invitation', async () => {
+    const query: AgencyCliTransaction['query'] = async <TRow extends object>(statement: string) => {
+      if (statement.startsWith('select id, name, status, owner_user_id')) return { rows: [{ id: agencyId, name: 'Acme', status: 'suspended', owner_user_id: null } as TRow] };
+      return { rows: [] as TRow[] };
+    };
+    const { database, calls } = fakeDatabase(query);
+    const { mailer, sent } = fakeMailer();
+
+    await expect(createAgencyCommandService({ database, mailer, appPublicUrl: 'https://app.example.com' }).resendActivation(agencyId))
+      .rejects.toThrow(/suspended/);
+    expect(calls.some((call) => call.statement.startsWith('update public.invitations'))).toBe(false);
+    expect(calls.some((call) => call.statement.includes('insert into public.invitations'))).toBe(false);
+    expect(sent).toHaveLength(0);
   });
 
   it('writes only the restricted result fields when run through the CLI entry point', async () => {

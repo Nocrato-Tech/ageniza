@@ -449,6 +449,28 @@ describe('invitation HTTP module', () => {
     await expect(owner.knex('invitations').where({ id: firstId }).first('revoked_at')).resolves.toMatchObject({ revoked_at: expect.any(Date) });
   });
 
+  it('serializes two concurrent equivalent invitations instead of losing one to the unique index', async () => {
+    const targetEmail = `concurrent-${randomUUID()}@example.test`;
+    const cookie = await loginCookie(admin);
+    const send = (): Promise<{ statusCode: number; invitationId?: string }> => app.app
+      .inject({
+        method: 'POST',
+        url: `/agencies/${agencyId}/invitations/collaborators`,
+        headers: { ...origin, cookie },
+        payload: { email: targetEmail, roleId: productionRoleId }
+      })
+      .then((response) => ({ statusCode: response.statusCode, invitationId: response.json<{ invitationId?: string }>().invitationId }));
+
+    // Without the advisory lock the revoking UPDATE cannot see the row the other transaction
+    // inserted after its snapshot, so one side used to lose on the partial unique index and 500.
+    const results = await Promise.all([send(), send()]);
+    expect(results.map((result) => result.statusCode)).toEqual([201, 201]);
+    // Exactly one pending invitation survives, and the other was revoked rather than rejected.
+    const rows = await owner.knex('invitations').where({ agency_id: agencyId, email: targetEmail }).select('id', 'revoked_at');
+    expect(rows).toHaveLength(2);
+    expect(rows.filter((row) => row.revoked_at === null)).toHaveLength(1);
+  });
+
   it('validates collaborator roles and client tenant ownership', async () => {
     const otherAgency = await createAgency('Other role agency', admin.id);
     const otherRoleId = randomUUID();
