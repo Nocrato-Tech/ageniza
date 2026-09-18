@@ -2,6 +2,8 @@
 
 Agency Operations Platform by Nocrato Tech.
 
+New here? Start with [onboarding](docs/onboarding.md), or read the [product overview](docs/business/product-overview.md) for the domain alone. Business rules and the decisions behind them live in [docs/business](docs/business/README.md).
+
 ## Prerequisites
 
 - Node.js 22.14+ (see `.nvmrc`)
