@@ -383,6 +383,49 @@ describe('invitation HTTP module', () => {
     expect(ownerInvite.statusCode).toBe(201);
   });
 
+  it('denies the whole tenant while the agency is suspended and restores it untouched on reactivation', async () => {
+    const suspendedOwner = await makeUser('invitation-suspend-owner');
+    const suspendedMember = await makeUser('invitation-suspend-member');
+    const suspendableAgency = await createAgency('Suspendable agency', suspendedOwner.id);
+    await owner.knex('agency_memberships').insert({ agency_id: suspendableAgency, user_id: suspendedMember.id, role_id: productionRoleId });
+    const ownerCookie = await loginCookie(suspendedOwner);
+    const memberCookie = await loginCookie(suspendedMember);
+    const invite = async (cookie: string): Promise<number> => (await app.app.inject({
+      method: 'POST',
+      url: `/agencies/${suspendableAgency}/invitations/collaborators`,
+      headers: { ...origin, cookie },
+      payload: { email: `suspend-${randomUUID()}@example.test`, roleId: productionRoleId }
+    })).statusCode;
+
+    // While active the guard lets both through: the owner has every permission, and the
+    // production member is stopped by the permission check, not by the tenant guard.
+    expect(await invite(ownerCookie)).toBe(201);
+    expect(await invite(memberCookie)).toBe(403);
+
+    await owner.knex('agencies').where({ id: suspendableAgency }).update({ status: 'suspended' });
+    // Suspension turns 201 and 403 alike into a non-enumerating 404: the tenant guard now denies
+    // everyone, on the very next request, without touching sessions.
+    expect(await invite(ownerCookie)).toBe(404);
+    expect(await invite(memberCookie)).toBe(404);
+    await expect(app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie: memberCookie } })).resolves.toMatchObject({ statusCode: 200 });
+    // Other tenants are unaffected.
+    const unaffected = await app.app.inject({
+      method: 'POST',
+      url: `/agencies/${agencyId}/invitations/collaborators`,
+      headers: { ...origin, cookie: await loginCookie(admin) },
+      payload: { email: `unaffected-${randomUUID()}@example.test`, roleId: productionRoleId }
+    });
+    expect(unaffected.statusCode).toBe(201);
+
+    await owner.knex('agencies').where({ id: suspendableAgency }).update({ status: 'active' });
+    expect(await invite(ownerCookie)).toBe(201);
+    expect(await invite(memberCookie)).toBe(403);
+    await expect(owner.knex('agency_memberships').where({ agency_id: suspendableAgency, user_id: suspendedMember.id }).first('role_id', 'status')).resolves.toEqual({
+      role_id: productionRoleId,
+      status: 'active'
+    });
+  });
+
   it('revokes an equivalent pending invitation when a second one is created', async () => {
     const targetEmail = `equivalent-${randomUUID()}@example.test`;
     const cookie = await loginCookie(admin);
