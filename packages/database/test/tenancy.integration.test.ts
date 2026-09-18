@@ -271,6 +271,26 @@ describe('AUTH-20B database RLS and invitation functions', () => {
     await expect(asUser(userA, (transaction) => transaction('role_permissions').where({ role_id: adminRoleId }).delete())).resolves.toBe(0);
   });
 
+  it('lets a client member touch only their onboarding column, never their status or tenant', async () => {
+    // The onboarding write (AUTH-20C) is the one update a member may perform on their own row.
+    await expect(asUser(userA, (transaction) => transaction('client_memberships')
+      .where({ client_id: clientA, user_id: userA }).update({ onboarding_seen_at: new Date() }))).resolves.toBe(1);
+
+    // Everything else on that same row is denied by the column grant: without it, a removed member
+    // could reactivate themselves, or move the membership to another tenant's client.
+    await expect(asUser(userA, (transaction) => transaction('client_memberships')
+      .where({ client_id: clientA, user_id: userA }).update({ status: 'removed' }))).rejects.toThrow(/permission denied/);
+    await expect(asUser(userA, (transaction) => transaction('client_memberships')
+      .where({ client_id: clientA, user_id: userA }).update({ client_id: clientB }))).rejects.toThrow(/permission denied/);
+    await expect(asUser(userA, (transaction) => transaction('client_memberships')
+      .where({ client_id: clientA, user_id: userA }).update({ user_id: userB }))).rejects.toThrow(/permission denied/);
+    // Another member's row stays untouchable even on the allowed column.
+    await expect(asUser(userA, (transaction) => transaction('client_memberships')
+      .where({ client_id: clientB }).update({ onboarding_seen_at: new Date() }))).resolves.toBe(0);
+
+    await getOwner().knex('client_memberships').where({ client_id: clientA, user_id: userA }).update({ onboarding_seen_at: null });
+  });
+
   it('returns only the public invitation projection and marks inactive links invalid', async () => {
     await expect(lookupInvitation(`hash-${invitationA}`)).resolves.toEqual([
       expect.objectContaining({

@@ -41,6 +41,15 @@ export async function up(knex) {
     -- AUTH-20B (#32) shipped only a select policy for client_memberships; AUTH-20C needs a client
     -- member to record their own onboarding-seen timestamp (POST /clients/:clientId/onboarding/seen),
     -- so this adds the missing update policy, scoped to the member's own row.
+    --
+    -- Row scope alone would be far too broad: the table grant covers every column, so a member
+    -- could flip their own status from 'removed' back to 'active' and undo a revocation, or point
+    -- client_id at another tenant's client. The column grant is what confines this to onboarding,
+    -- and it is narrowed before the policy exists. Membership rows are still written exclusively
+    -- by app_private.accept_invitation, which runs as the schema owner and ignores these grants.
+    revoke update on public.client_memberships from ageniza_app;
+    grant update (onboarding_seen_at, updated_at) on public.client_memberships to ageniza_app;
+
     create policy client_memberships_update on public.client_memberships
       for update to ageniza_app
       using (user_id = app_private.current_user_id())
