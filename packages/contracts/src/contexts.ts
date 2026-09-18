@@ -27,13 +27,17 @@ export const MeContextsResponseSchema = z.object({
   contexts: z.array(ContextSchema)
 }).strict();
 
-/** `preferred=agency:<uuid>` or `preferred=client:<uuid>`, parsed from the raw query string. */
-// Syntax and access are deliberately handled by the resolver. A malformed or inaccessible value
-// must be indistinguishable from an absent preference (issue #33), never a validation error.
-export const ContextResolvePreferredSchema = z.string().trim().max(256);
+/** `preferred=agency:<uuid>` or `preferred=client:<uuid>`, parsed from the raw query string.
+ * Syntax and access are deliberately handled by the resolver. Any malformed shape, including a
+ * repeated query parameter (array) or an oversized string, becomes absent instead of a 400. */
+export const ContextResolvePreferredSchema = z.unknown().transform((value) => {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim();
+  return normalized.length <= 256 ? normalized : undefined;
+});
 
 export const ContextResolveQuerySchema = z.object({
-  preferred: ContextResolvePreferredSchema.optional()
+  preferred: ContextResolvePreferredSchema
 }).strict();
 
 export const ContextResolveNoneSchema = z.object({

@@ -243,6 +243,18 @@ describe('contexts module (AUTH-20C)', () => {
     expect(malformedPreferred.status).toBe(200);
     expect(malformedPreferred.body).toMatchObject({ decision: 'enter', context: { type: 'agency', agencyId: agencyTwo } });
 
+    const oversizedPreferred = await resolve(cookie, 'x'.repeat(257));
+    expect(oversizedPreferred.status).toBe(200);
+    expect(oversizedPreferred.body).toMatchObject({ decision: 'enter', context: { type: 'agency', agencyId: agencyTwo } });
+
+    const repeatedPreferred = await app.app.inject({
+      method: 'GET',
+      url: '/me/contexts/resolve?preferred=invalid-one&preferred=invalid-two',
+      headers: { ...origin, cookie }
+    });
+    expect(repeatedPreferred.statusCode).toBe(200);
+    expect(repeatedPreferred.json()).toMatchObject({ decision: 'enter', context: { type: 'agency', agencyId: agencyTwo } });
+
     // #6 (case B): suspend the last-used agency permanently; 2 other valid contexts remain ->
     // select with highlighted null (no single winner, no valid preferred).
     await setAgencyStatus(agencyTwo, 'suspended');

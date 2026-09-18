@@ -148,9 +148,7 @@ export const listValidContexts = async (transaction: ContextTransaction): Promis
 
 /** Finds the context matching a raw `preferred=agency:<uuid>` / `client:<uuid>` query value. */
 export const findPreferredContext = (contexts: readonly Context[], preferred: string): Context | undefined => {
-  const [type, id] = preferred.split(':', 2);
-  if (type !== 'agency' && type !== 'client') return undefined;
-  return contexts.find((context) => context.type === type && (context.type === 'agency' ? context.agencyId === id : context.clientId === id));
+  return contexts.find((context) => contextKey(context) === preferred);
 };
 
 /** Revalidates an agency context using the same security-definer check RLS relies on. */

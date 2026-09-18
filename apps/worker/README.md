@@ -25,7 +25,9 @@ runtime.queue?.register<{ assetId: string }>({
 await runtime.start();
 ```
 
-The values above are the defaults. `WORKER_CONCURRENCY` (default `1`, at most `2`) sets how many jobs run at once; kept deliberately narrow because video processing (below) runs `ffmpeg`, which saturates CPU on a VPS shared with PostgreSQL and the API.
+The values above are the defaults. `WORKER_CONCURRENCY` (default `1`, at most `4`) is the global
+worker budget. Video processing below has its own concurrency of `1`, so raising the global ceiling
+can increase throughput for lighter queues without running multiple ffmpeg jobs at once.
 
 ### Contract every handler must follow
 

@@ -35,7 +35,9 @@ export const CreateMediaUploadResponseSchema = z.object({
 /** `POST /agencies/:agencyId/media/uploads/:assetId/parts` request body. Re-requestable so a
  * dropped connection can resume: a client re-asks only for the part numbers it still needs. */
 export const RequestMediaUploadPartsRequestSchema = z.object({
-  partNumbers: z.array(z.number().int().min(1).max(10_000)).min(1).max(10_000)
+  partNumbers: z.array(z.number().int().min(1).max(10_000)).min(1).max(100).superRefine((parts, context) => {
+    if (new Set(parts).size !== parts.length) context.addIssue({ code: 'custom', message: 'partNumbers must be unique' });
+  })
 }).strict();
 
 export const RequestMediaUploadPartsResponseSchema = z.object({
@@ -54,7 +56,11 @@ const CompletedPartSchema = z.object({
 /** `POST /agencies/:agencyId/media/uploads/:assetId/complete` request body. `parts` is required
  * for a multipart upload and must be absent for a single-part one. */
 export const CompleteMediaUploadRequestSchema = z.object({
-  parts: z.array(CompletedPartSchema).min(1).max(10_000).optional()
+  parts: z.array(CompletedPartSchema).min(1).max(10_000).superRefine((parts, context) => {
+    if (new Set(parts.map((part) => part.partNumber)).size !== parts.length) {
+      context.addIssue({ code: 'custom', message: 'part numbers must be unique' });
+    }
+  }).optional()
 }).strict();
 
 export const CompleteMediaUploadResponseSchema = z.object({

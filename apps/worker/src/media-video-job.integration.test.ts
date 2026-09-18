@@ -13,7 +13,7 @@ import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, raw, type Databa
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createMediaProcessingStorageClient } from './media-storage.js';
-import { mediaVideoProcessingJob } from './media-video-job.js';
+import { MEDIA_VIDEO_RETRY_LIMIT, mediaVideoProcessingJob } from './media-video-job.js';
 import type { DurableJobContext } from './queue.js';
 
 // Issue #24 acceptance tests. Runs against the real local PostgreSQL and MinIO started by
@@ -128,19 +128,23 @@ const videoProcessingRow = async (assetId: string): Promise<VideoProcessingRow> 
   return row;
 };
 
+/** The attempt pg-boss would pass once no retry is left; only then is a failure terminal. */
+const FINAL_ATTEMPT = MEDIA_VIDEO_RETRY_LIMIT + 1;
+
 const runJob = (
   config: MediaProcessingConfig,
   payload: { assetId: string; agencyId: string; actorUserId: string },
-  overrides: { tempRootDir?: string } = {}
+  overrides: { tempRootDir?: string; attempt?: number } = {}
 ): Promise<void> => {
+  const { attempt = FINAL_ATTEMPT, ...dependencyOverrides } = overrides;
   const job = mediaVideoProcessingJob({
     database: application,
     storage: createMediaProcessingStorageClient(storageConfig),
     config,
-    ...overrides
+    ...dependencyOverrides
   });
   return job.handler(
-    { id: randomUUID(), name: MEDIA_VIDEO_PROCESSING_JOB_NAME, payload, attempt: 1 },
+    { id: randomUUID(), name: MEDIA_VIDEO_PROCESSING_JOB_NAME, payload, attempt },
     testContext()
   );
 };
@@ -228,6 +232,24 @@ describe('media video processing job (real PostgreSQL + MinIO, real ffmpeg)', ()
     }
   }, 60_000);
 
+  it('returns the asset to pending while a retry is still available, and only fails on the last attempt', async () => {
+    const { userId, agencyId } = await insertOwnerAndAgency('retrying');
+    const { assetId } = await insertConfirmedVideoAsset({ agencyId, userId, body: Buffer.from('not a real video file') });
+
+    // A non-final attempt must not leave a terminal 'failed' behind, or the row would contradict
+    // the queue while pg-boss is still going to retry the job.
+    await expect(runJob(mediaProcessingConfig, { assetId, agencyId, actorUserId: userId }, { attempt: 1 })).rejects.toThrow();
+    await expect(videoProcessingRow(assetId)).resolves.toMatchObject({
+      video_processing_status: 'pending',
+      video_processing_error: null
+    });
+
+    await expect(runJob(mediaProcessingConfig, { assetId, agencyId, actorUserId: userId }, { attempt: FINAL_ATTEMPT })).rejects.toThrow();
+    const row = await videoProcessingRow(assetId);
+    expect(row.video_processing_status).toBe('failed');
+    expect(row.video_processing_error).toBeTruthy();
+  }, 60_000);
+
   it('is a no-op the second time it processes an already-ready asset (at-least-once delivery)', async () => {
     const { userId, agencyId } = await insertOwnerAndAgency('idempotent');
     const { assetId } = await insertConfirmedVideoAsset({ agencyId, userId, body: sampleVideoBytes });
@@ -263,7 +285,7 @@ describe('media video processing job (real PostgreSQL + MinIO, real ffmpeg)', ()
     controller.abort();
 
     await expect(job.handler(
-      { id: randomUUID(), name: MEDIA_VIDEO_PROCESSING_JOB_NAME, payload: { assetId, agencyId, actorUserId: userId }, attempt: 1 },
+      { id: randomUUID(), name: MEDIA_VIDEO_PROCESSING_JOB_NAME, payload: { assetId, agencyId, actorUserId: userId }, attempt: FINAL_ATTEMPT },
       { logger: createLogger({ enabled: false }), signal: controller.signal }
     )).rejects.toThrow();
     await expect(videoProcessingRow(assetId)).resolves.toMatchObject({ video_processing_status: 'failed' });

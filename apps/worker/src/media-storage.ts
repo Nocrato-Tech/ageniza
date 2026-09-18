@@ -1,7 +1,7 @@
 import { createReadStream, createWriteStream, statSync } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 import type { WorkerStorageConfig } from '@ageniza/config/server';
 
@@ -16,6 +16,8 @@ export interface MediaProcessingStorageClient {
   downloadToFile(input: { readonly key: string; readonly destinationPath: string; readonly signal: AbortSignal }): Promise<void>;
   /** Uploads the local file at `sourcePath` to `key`. `sizeBytes` must match the file's actual size. */
   uploadFile(input: { readonly key: string; readonly sourcePath: string; readonly contentType: string; readonly signal: AbortSignal }): Promise<void>;
+  /** Removes a partial output after a failed attempt so no unreferenced variant survives. */
+  deleteObject(input: { readonly key: string; readonly signal: AbortSignal }): Promise<void>;
 }
 
 export const createMediaProcessingStorageClient = (config: WorkerStorageConfig): MediaProcessingStorageClient => {
@@ -45,6 +47,10 @@ export const createMediaProcessingStorageClient = (config: WorkerStorageConfig):
         ContentType: contentType,
         ContentLength: contentLength
       }), { abortSignal: signal });
+    },
+
+    async deleteObject({ key, signal }) {
+      await client.send(new DeleteObjectCommand({ Bucket: config.bucket, Key: key }), { abortSignal: signal });
     }
   };
 };

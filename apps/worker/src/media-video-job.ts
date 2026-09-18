@@ -9,7 +9,7 @@ import { createVerifiedUserClaims, withAuthenticatedUserTransaction, type Databa
 
 import type { DurableJobDefinition, DurableJobContext, DurableJob } from './queue.js';
 import { generatePreview, generateThumbnail, MediaBinaryError, probeVideo } from './media-ffmpeg.js';
-import { lockConfirmedVideoAsset, markVideoProcessingFailed, markVideoProcessingReady, markVideoProcessingStarted } from './media-repository.js';
+import { lockConfirmedVideoAsset, markVideoProcessingFailed, markVideoProcessingReady, markVideoProcessingRetrying, markVideoProcessingStarted } from './media-repository.js';
 import type { MediaProcessingStorageClient } from './media-storage.js';
 
 export interface MediaVideoJobDependencies {
@@ -51,6 +51,8 @@ export const mediaVideoHandlerTimeoutSeconds = (ffmpegTimeoutSeconds: number): n
 export const mediaVideoExpireInSeconds = (ffmpegTimeoutSeconds: number): number =>
   mediaVideoHandlerTimeoutSeconds(ffmpegTimeoutSeconds) + 60;
 
+export const MEDIA_VIDEO_RETRY_LIMIT = 2;
+
 /**
  * Video processing job (issue #24): downloads a confirmed video original, generates a thumbnail
  * and a 720p preview with ffmpeg, uploads both back under the object's own key prefix, and
@@ -72,7 +74,7 @@ export const mediaVideoProcessingJob = (
   expireInSeconds: mediaVideoExpireInSeconds(dependencies.config.ffmpegTimeoutSeconds),
   // Bounded: repeatedly retrying an expensive ffmpeg run against a genuinely broken upload is not
   // worth the CPU a shared VPS would spend on it.
-  retryLimit: 2,
+  retryLimit: MEDIA_VIDEO_RETRY_LIMIT,
   retryDelaySeconds: 30,
   async handler(job: DurableJob<MediaVideoProcessingJobPayload>, context: DurableJobContext): Promise<void> {
     const payload = MediaVideoProcessingJobPayloadSchema.parse(job.payload);
@@ -100,6 +102,8 @@ export const mediaVideoProcessingJob = (
     const originalPath = join(tempDir, 'original');
     const thumbnailPath = join(tempDir, 'thumbnail.jpg');
     const previewPath = join(tempDir, 'preview.mp4');
+    const thumbnailKey = objectKeyFor(asset.agency_id, asset.id, 'thumbnail.jpg');
+    const previewKey = objectKeyFor(asset.agency_id, asset.id, 'preview.mp4');
 
     try {
       let result: { durationSeconds: number; thumbnailSizeBytes: number; previewSizeBytes: number };
@@ -131,8 +135,6 @@ export const mediaVideoProcessingJob = (
           previewSizeBytes: previewStat.size
         };
 
-        const thumbnailKey = objectKeyFor(asset.agency_id, asset.id, 'thumbnail.jpg');
-        const previewKey = objectKeyFor(asset.agency_id, asset.id, 'preview.mp4');
         await storage.uploadFile({ key: thumbnailKey, sourcePath: thumbnailPath, contentType: 'image/jpeg', signal: jobSignal });
         await storage.uploadFile({ key: previewKey, sourcePath: previewPath, contentType: 'video/mp4', signal: jobSignal });
 
@@ -145,7 +147,18 @@ export const mediaVideoProcessingJob = (
         }));
       } catch (error) {
         const reason = explicitFailureReason(error, wholeJobTimeout.aborted && !context.signal.aborted);
-        await withAuthenticatedUserTransaction(database, claims, (transaction) => markVideoProcessingFailed(transaction, asset.id, reason));
+        // Cleanup gets its own short budget because the job signal may already be aborted. A
+        // thumbnail uploaded before a preview failure must never survive without a DB reference.
+        const cleanupSignal = AbortSignal.timeout(30_000);
+        await Promise.allSettled([
+          storage.deleteObject({ key: thumbnailKey, signal: cleanupSignal }),
+          storage.deleteObject({ key: previewKey, signal: cleanupSignal })
+        ]);
+        await withAuthenticatedUserTransaction(database, claims, (transaction) =>
+          job.attempt > MEDIA_VIDEO_RETRY_LIMIT
+            ? markVideoProcessingFailed(transaction, asset.id, reason)
+            : markVideoProcessingRetrying(transaction, asset.id)
+        );
         throw error;
       }
     } finally {

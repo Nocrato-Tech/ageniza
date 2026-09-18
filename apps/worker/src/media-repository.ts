@@ -39,6 +39,15 @@ export const markVideoProcessingStarted = async (transaction: Parameters<typeof 
   `, [assetId]);
 };
 
+/** Returns a failed attempt to a non-terminal state while pg-boss still has retries available. */
+export const markVideoProcessingRetrying = async (transaction: Parameters<typeof raw>[0], assetId: string): Promise<void> => {
+  await raw(transaction, `
+    update public.media_assets
+    set video_processing_status = 'pending', video_processing_error = null, video_processed_at = null, updated_at = now()
+    where id = ?::uuid
+  `, [assetId]);
+};
+
 export interface VideoProcessingResult {
   readonly thumbnailObjectKey: string;
   readonly previewObjectKey: string;

@@ -76,6 +76,7 @@ const unsupportedType = (): HttpError => new HttpError({
 const payloadTooLarge = (): HttpError => new HttpError({ statusCode: 413, code: 'PAYLOAD_TOO_LARGE', message: 'The declared file size exceeds the limit for its category.' });
 const quotaExceeded = (): HttpError => new HttpError({ statusCode: 409, code: 'QUOTA_EXCEEDED', message: 'This agency has reached its storage quota.' });
 const notPending = (): HttpError => new HttpError({ statusCode: 409, code: 'UPLOAD_NOT_PENDING', message: 'This upload is not pending confirmation.' });
+const invalidMultipartPart = (): HttpError => new HttpError({ statusCode: 400, code: 'VALIDATION_ERROR', message: 'A multipart part number is outside this upload plan.' });
 const uploadRejected = (reason: string): HttpError => new HttpError({ statusCode: 422, code: 'UPLOAD_REJECTED', message: `The uploaded object was rejected: ${reason}.`, details: { reason } });
 const variantNotReady = (): HttpError => new HttpError({ statusCode: 409, code: 'VARIANT_NOT_READY', message: 'This variant has not been generated yet.' });
 const variantProcessingFailed = (reason: string | null): HttpError => new HttpError({
@@ -88,6 +89,16 @@ const variantProcessingFailed = (reason: string | null): HttpError => new HttpEr
       : 'Video processing failed.',
   details: { reason: reason ?? 'processing_failed' }
 });
+
+type CompletionResult = {
+  readonly ok: true;
+  readonly sizeBytes: number;
+  readonly contentType: string;
+  readonly uploadObjectKey: string;
+} | {
+  readonly ok: false;
+  readonly reason: string;
+};
 
 const routeParams = <T>(schema: z.ZodType<T>, request: FastifyRequest): T => parseRequest(schema, request.params);
 
@@ -111,7 +122,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
   const { database, storage, config } = dependencies;
   const requireSession = createRequireSession({ auth: dependencies.auth });
   const guarded = (permission: string) => [requireSession, dependencies.requireAgencyAccess, dependencies.requirePermission(permission)];
-  const signedUrlRoute = {
+  const uploadUrlRoute = {
     config: {
       rateLimit: {
         max: MEDIA_RATE_LIMITS.signedUrlIssuance.max,
@@ -121,7 +132,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     }
   };
 
-  app.post('/agencies/:agencyId/media/uploads', { preHandler: guarded('midia.enviar'), ...signedUrlRoute }, async (request, reply) => {
+  app.post('/agencies/:agencyId/media/uploads', { preHandler: guarded('midia.enviar'), ...uploadUrlRoute }, async (request, reply) => {
     const auth = requireAuth(request);
     const params = routeParams(agencyParamsSchema, request);
     const body = parseRequest(CreateMediaUploadRequestSchema, request.body);
@@ -179,7 +190,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     }));
   });
 
-  app.post('/agencies/:agencyId/media/uploads/:assetId/parts', { preHandler: guarded('midia.enviar'), ...signedUrlRoute }, async (request, reply) => {
+  app.post('/agencies/:agencyId/media/uploads/:assetId/parts', { preHandler: guarded('midia.enviar'), ...uploadUrlRoute }, async (request, reply) => {
     const auth = requireAuth(request);
     const params = routeParams(assetParamsSchema, request);
     const body = parseRequest(RequestMediaUploadPartsRequestSchema, request.body);
@@ -189,6 +200,8 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       const asset = await lockAssetForCompletion(transaction, params.assetId, params.agencyId);
       if (asset === undefined) throw assetNotFound();
       if (asset.status !== 'pending' || asset.multipart_upload_id === null) throw notPending();
+      const plan = multipartPlan(Number(asset.declared_size_bytes), config.multipartPartBytes);
+      if (body.partNumbers.some((partNumber) => partNumber > plan.partCount)) throw invalidMultipartPart();
 
       await touchPendingAsset(transaction, asset.id);
 
@@ -211,7 +224,10 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     const params = routeParams(assetParamsSchema, request);
     const body = parseRequest(CompleteMediaUploadRequestSchema, request.body);
 
-    const result = await withAuthenticatedUserTransaction(database, auth.claims, async (transaction) => {
+    let copiedCanonicalKey: string | undefined;
+    let result: CompletionResult;
+    try {
+      result = await withAuthenticatedUserTransaction(database, auth.claims, async (transaction) => {
       const asset = await lockAssetForCompletion(transaction, params.assetId, params.agencyId);
       if (asset === undefined) throw assetNotFound();
       if (asset.status !== 'pending') throw notPending();
@@ -223,15 +239,27 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       if (!isMultipart && body.parts !== undefined) {
         throw new HttpError({ statusCode: 400, code: 'VALIDATION_ERROR', message: 'parts must be omitted for a single-part upload.' });
       }
+      if (isMultipart) {
+        const plan = multipartPlan(Number(asset.declared_size_bytes), config.multipartPartBytes);
+        if (body.parts!.some((part) => part.partNumber > plan.partCount)) throw invalidMultipartPart();
+      }
 
       if (isMultipart) {
         await storage.completeMultipartUpload({ key: asset.upload_object_key, uploadId: asset.multipart_upload_id!, parts: body.parts! });
       }
 
-      // The R2/S3 protocol offers no upload-time size policy for a presigned POST/PUT, so this
-      // HeadObject is the only point where the real, server-observed size and content type exist
-      // (issue #21). Everything declared before this point was untrusted client input.
-      const head = await storage.headObject({ key: asset.upload_object_key });
+      // A still-valid browser URL can mutate only staging. Copy first, then validate the immutable
+      // canonical key so an overwrite between HeadObject and CopyObject cannot smuggle different
+      // bytes past validation. The preliminary staging HEAD preserves the explicit missing-object
+      // rejection instead of surfacing an opaque CopyObject error.
+      const stagingHead = await storage.headObject({ key: asset.upload_object_key });
+      if (stagingHead !== undefined) {
+        await storage.copyObject({ sourceKey: asset.upload_object_key, destinationKey: asset.object_key });
+        copiedCanonicalKey = asset.object_key;
+      }
+      // The R2/S3 protocol offers no upload-time size policy for a presigned PUT. This canonical
+      // HeadObject observes exactly the object that will survive confirmation.
+      const head = stagingHead === undefined ? undefined : await storage.headObject({ key: asset.object_key });
       const maxBytes = maxBytesForCategory(config, asset.category);
 
       let rejectionReason: string | undefined;
@@ -259,15 +287,14 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
         // request itself ends in an error response, so this returns instead of throwing: throwing
         // inside `withAuthenticatedUserTransaction` would roll back the very row update that
         // records the rejection.
-        if (head !== undefined) await storage.deleteObject({ key: asset.upload_object_key });
+        if (copiedCanonicalKey !== undefined) await storage.deleteObject({ key: copiedCanonicalKey });
+        copiedCanonicalKey = undefined;
+        if (stagingHead !== undefined) await storage.deleteObject({ key: asset.upload_object_key });
         await markAssetRejected(transaction, asset.id, rejectionReason);
         await auditMediaEvent(transaction, { action: 'media.upload_rejected', actorUserId: auth.userId, agencyId: params.agencyId, targetId: asset.id });
         return { ok: false as const, reason: rejectionReason };
       }
 
-      // The browser never receives credentials for the canonical key. Even if its presigned PUT
-      // remains valid, it can only overwrite this staging object after the validated copy.
-      await storage.copyObject({ sourceKey: asset.upload_object_key, destinationKey: asset.object_key });
       await markAssetConfirmed(transaction, asset.id, head!.sizeBytes, head!.contentType!, asset.category);
       await auditMediaEvent(transaction, { action: 'media.upload_confirmed', actorUserId: auth.userId, agencyId: params.agencyId, targetId: asset.id });
       if (asset.category === 'video') {
@@ -284,7 +311,20 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
         contentType: head!.contentType!,
         uploadObjectKey: asset.upload_object_key
       };
-    });
+      });
+    } catch (error) {
+      // Object storage is outside PostgreSQL. If any database write, audit insert, queue insert, or
+      // commit fails after CopyObject, remove the unreferenced canonical object before retrying.
+      if (copiedCanonicalKey !== undefined) {
+        try {
+          await storage.deleteObject({ key: copiedCanonicalKey });
+        } catch (cleanupError) {
+          request.log.error({ error: { name: cleanupError instanceof Error ? cleanupError.name : 'UnknownError', code: 'MEDIA_CANONICAL_CLEANUP_FAILED' } }, 'Failed to remove canonical object after confirmation rollback');
+        }
+      }
+      throw error;
+    }
+    copiedCanonicalKey = undefined;
 
     if (!result.ok) throw uploadRejected(result.reason);
 
@@ -305,7 +345,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     }));
   });
 
-  app.get('/agencies/:agencyId/media/:assetId/download-url', { preHandler: guarded('midia.enviar'), ...signedUrlRoute }, async (request, reply) => {
+  app.get('/agencies/:agencyId/media/:assetId/download-url', { preHandler: guarded('midia.enviar') }, async (request, reply) => {
     const auth = requireAuth(request);
     const params = routeParams(assetParamsSchema, request);
     const query = parseRequest(downloadUrlQuerySchema, request.query);
