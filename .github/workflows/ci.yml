@@ -171,6 +171,12 @@ jobs:
         run: pnpm db:migrate
       - name: Run database integration and RLS isolation suite
         run: pnpm db:test:local
+      - name: Start the local object storage
+        run: pnpm storage:start
+      # The worker image ships ffmpeg, but this job runs the suite on the runner, not in that image.
+      # The media tests exercise real ffmpeg/ffprobe on purpose, so the runner needs it too.
+      - name: Install ffmpeg for the media processing suite
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Build the worker's workspace dependencies
         run: pnpm exec turbo run build --filter=@ageniza/worker^...
       - name: Run the durable job queue suite as the application role

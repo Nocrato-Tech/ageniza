@@ -17,6 +17,11 @@ const migrationEnvironment = () => {
 };
 
 const startDatabase = () => run('docker', ['compose', 'up', '-d', '--wait', 'postgres']);
+/** MinIO stands in for R2 locally and in CI; minio-init is one-shot, so it is run, not waited on. */
+const startStorage = () => {
+  run('docker', ['compose', 'up', '-d', '--wait', 'minio']);
+  run('docker', ['compose', 'run', '--rm', 'minio-init']);
+};
 const migrate = () => run('pnpm', ['--filter', '@ageniza/database', 'migrate'], { env: migrationEnvironment() });
 
 switch (command) {
@@ -25,6 +30,9 @@ switch (command) {
     break;
   case 'db:migrate':
     migrate();
+    break;
+  case 'storage:start':
+    startStorage();
     break;
   case 'db:reset':
     // Removes only this project's database container and volume, then rebuilds from migrations.
@@ -43,5 +51,5 @@ switch (command) {
     run('docker', ['compose', 'down', '--remove-orphans']);
     break;
   default:
-    throw new Error('Usage: node scripts/docker/local-stack.mjs db:start | db:migrate | db:reset | up | down');
+    throw new Error('Usage: node scripts/docker/local-stack.mjs db:start | db:migrate | db:reset | storage:start | up | down');
 }

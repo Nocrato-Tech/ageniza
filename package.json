@@ -15,6 +15,7 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "db:start": "node scripts/docker/local-stack.mjs db:start",
+    "storage:start": "node scripts/docker/local-stack.mjs storage:start",
     "db:migrate": "node scripts/docker/local-stack.mjs db:migrate",
     "db:reset": "node scripts/docker/local-stack.mjs db:reset",
     "db:test:local": "pnpm --filter @ageniza/database test:integration",
