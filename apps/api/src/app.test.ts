@@ -11,6 +11,8 @@ const config = loadApiConfig({
   API_CORS_ORIGINS: 'http://127.0.0.1:5173',
   API_BODY_LIMIT_BYTES: '1024',
   BETTER_AUTH_SECRET: 'test-only-secret-value-not-real-32chars+',
+  AUTH_TERMS_VERSION: '2026-01-01',
+  AUTH_PRIVACY_VERSION: '2026-01-01',
   APP_PUBLIC_URL: 'http://127.0.0.1:5173'
 });
 

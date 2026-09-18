@@ -8,13 +8,21 @@ export interface AuditFailureLogger {
   error(payload: Record<string, unknown>, message: string): void;
 }
 
-/** The only two audit actions this slice writes; the 20B slice adds its own. */
-export type AuthAuditAction = 'auth.password_reset' | 'auth.logout_all';
+/** Authentication and invitation actions written by the API. */
+export type AuthAuditAction =
+  | 'auth.password_reset'
+  | 'auth.logout_all'
+  | 'invitation.sent'
+  | 'invitation.resent'
+  | 'invitation.revoked';
 
 export interface AuthAuditEvent {
   readonly action: AuthAuditAction;
   /** The user who triggered the event, when known. */
   readonly actorUserId?: string;
+  readonly agencyId?: string;
+  readonly targetType?: string;
+  readonly targetId?: string;
   /**
    * Null when no request id is available for this event (e.g. no Fastify request is in scope).
    * The event is still recorded with a null `request_id` rather than silently skipped (B9).
@@ -36,8 +44,10 @@ export interface AuthAuditRecorder {
 export const createAuthAuditRecorder = (pool: Pool): AuthAuditRecorder => ({
   async record(event): Promise<void> {
     await pool.query(
-      'insert into audit.events (action, actor_user_id, request_id) values ($1, $2, $3)',
-      [event.action, event.actorUserId ?? null, event.requestId]
+      `insert into audit.events
+        (action, actor_user_id, agency_id, target_type, target_id, request_id)
+       values ($1, $2, $3, $4, $5, $6)`,
+      [event.action, event.actorUserId ?? null, event.agencyId ?? null, event.targetType ?? null, event.targetId ?? null, event.requestId]
     );
   }
 });

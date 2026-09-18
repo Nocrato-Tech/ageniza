@@ -4,6 +4,7 @@ import type { ApiConfig } from '@ageniza/config/server';
 import { CORRELATION_ID_HEADER, createLogger, createReadiness, REQUEST_ID_HEADER, resolveRequestId, withLogContext, type CoreLogger, type HealthCheck, type Readiness } from '@ageniza/core';
 
 import { registerAuthModule, type AuthModuleDependencies } from './modules/auth/routes.js';
+import { createInvitationTokenLookup, registerInvitationModule, type InvitationModuleDependencies } from './modules/invitations/routes.js';
 import { registerCors } from './plugins/infra/cors.js';
 import { registerErrorHandling } from './plugins/infra/errors.js';
 import { registerOriginProtection } from './plugins/infra/origin.js';
@@ -20,6 +21,8 @@ export interface ApiAppOptions {
   trustProxy?: FastifyServerOptions['trustProxy'];
   /** Omitted in tests that never touch an auth route; `server.ts` always supplies it. */
   auth?: AuthModuleDependencies;
+  /** Invitation dependencies are optional for lightweight health/app tests. */
+  invitations?: InvitationModuleDependencies;
 }
 
 /** Builds the HTTP application without binding a port, enabling deterministic Fastify inject tests. */
@@ -69,7 +72,16 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
     dependencyChecks: options.dependencyChecks ?? []
   });
   if (options.auth !== undefined) {
-    registerAuthModule(app, options.auth);
+    const invitationTokenLookup = options.invitations === undefined
+      ? options.auth.invitationTokenLookup
+      : options.invitations.invitationTokenLookup ?? createInvitationTokenLookup(options.invitations.database);
+    registerAuthModule(app, {
+      ...options.auth,
+      invitationTokenLookup
+    });
+  }
+  if (options.invitations !== undefined) {
+    registerInvitationModule(app, options.invitations);
   }
   return app;
 };

@@ -38,7 +38,7 @@ describe('auth email service', () => {
       subject: 'Redefina sua senha do Ageniza'
     });
     expect(sent[0]?.text).toContain('https://app.ageniza.example/reset-password?token=token%20with%20%2B%20and%20%2F');
-    expect(sent[0]?.text).not.toContain('unused-invite-token');
+    expect(sent[0]?.text).toContain('&invite=unused-invite-token');
   });
 
   it('returns before a slow sender settles and drains it during shutdown', async () => {
@@ -58,6 +58,47 @@ describe('auth email service', () => {
     release();
     await draining;
     expect(drained).toBe(true);
+  });
+
+  it('waits for administrative invitation delivery and builds the invitation templates', async () => {
+    const sent: OutgoingEmail[] = [];
+    const sender = senderFor(async (message) => { sent.push(message); });
+    const service = createEmailService({ sender, config, logger: createLogger({ enabled: false }) });
+
+    await service.sendCollaboratorInvitation({
+      to: 'person@example.com',
+      actionUrl: 'https://app.ageniza.example/invite/invite-token',
+      expiresInMinutes: 7 * 1_440,
+      agencyName: 'Ageniza'
+    });
+    await service.sendClientInvitation({
+      to: 'person@example.com',
+      actionUrl: 'https://app.ageniza.example/invite/client-token',
+      expiresInMinutes: 1_440,
+      agencyName: 'Ageniza',
+      clientName: 'Cliente A'
+    });
+
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toMatchObject({ template: 'collaborator-invitation', to: 'person@example.com' });
+    expect(sent[0]?.text).toContain('7 dias');
+    expect(sent[1]).toMatchObject({ template: 'client-invitation', to: 'person@example.com' });
+    expect(sent[1]?.text).toContain('Cliente A');
+  });
+
+  it('propagates administrative delivery failures so routes can return 502', async () => {
+    const service = createEmailService({
+      sender: senderFor(async () => { throw new Error('SMTP rejected invitation token'); }),
+      config,
+      logger: createLogger({ enabled: false })
+    });
+
+    await expect(service.sendCollaboratorInvitation({
+      to: 'person@example.com',
+      actionUrl: 'https://app.ageniza.example/invite/invite-token',
+      expiresInMinutes: 60,
+      agencyName: 'Ageniza'
+    })).rejects.toThrow('SMTP rejected invitation token');
   });
 
   it('handles failures without logging sensitive values', async () => {

@@ -21,6 +21,10 @@ export interface ApiConfig extends ServerConfig {
   service: 'api';
   /** Better Auth signing/encryption secret; never expose this to browser code. */
   authSecret: string;
+  /** Version of the terms document recorded when an invitation is accepted. */
+  authTermsVersion: string;
+  /** Version of the privacy document recorded when an invitation is accepted. */
+  authPrivacyVersion: string;
   /** Trusted browser application origin used for auth redirects and cookies. */
   appPublicUrl: string;
   host: string;
@@ -79,8 +83,12 @@ const containsExampleSecretMarker = (value: string): boolean => {
   return EXAMPLE_SECRET_MARKERS.some((marker) => lower.includes(marker));
 };
 
+const authDocumentVersion = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'must use YYYY-MM-DD');
+
 const apiSchema = sharedServerSchema.extend({
   BETTER_AUTH_SECRET: z.string().min(32, 'must be at least 32 characters; supplied values are redacted'),
+  AUTH_TERMS_VERSION: authDocumentVersion,
+  AUTH_PRIVACY_VERSION: authDocumentVersion,
   APP_PUBLIC_URL: z.string().trim().url('must be a valid URL origin; supplied values are redacted'),
   API_HOST: z.string().trim().min(1).default('0.0.0.0'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
@@ -174,6 +182,8 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
     service: 'api',
     ...serverConfig,
     authSecret: result.data.BETTER_AUTH_SECRET,
+    authTermsVersion: result.data.AUTH_TERMS_VERSION,
+    authPrivacyVersion: result.data.AUTH_PRIVACY_VERSION,
     appPublicUrl: result.data.APP_PUBLIC_URL,
     host: result.data.API_HOST,
     port: result.data.PORT,

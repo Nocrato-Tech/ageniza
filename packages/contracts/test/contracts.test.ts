@@ -5,6 +5,11 @@ import {
   ApiErrorResponseSchema,
   ApiResponseMetadataSchema,
   HealthResponseSchema,
+  InvitationAcceptNewAccountRequestSchema,
+  InvitationAcceptNewAccountResponseSchema,
+  InvitationAcceptRequestSchema,
+  InvitationAcceptResponseSchema,
+  InvitationPreviewResponseSchema,
   PaginationInputSchema,
   PaginationMetadataSchema,
   createPaginatedResponseSchema
@@ -58,5 +63,44 @@ describe('health response contract', () => {
     expect(HealthResponseSchema.parse({ status: 'ok' })).toEqual({ status: 'ok' });
     expect(() => HealthResponseSchema.parse({ status: 'degraded' })).toThrow();
     expect(() => HealthResponseSchema.parse({ status: 'ok', checks: [] })).toThrow();
+  });
+});
+
+describe('invitation contracts', () => {
+  const context = { agencyId: 'agency-1', clientId: null };
+
+  it('models a valid invitation preview without exposing token fields', () => {
+    expect(InvitationPreviewResponseSchema.parse({
+      purpose: 'client_invite',
+      email: ' Person@Example.TEST ',
+      agency: { name: 'Ageniza' },
+      client: { name: 'Cliente A' },
+      accountExists: false
+    })).toEqual({
+      purpose: 'client_invite',
+      email: 'person@example.test',
+      agency: { name: 'Ageniza' },
+      client: { name: 'Cliente A' },
+      accountExists: false
+    });
+    expect(() => InvitationPreviewResponseSchema.parse({
+      purpose: 'agency_activation',
+      email: 'person@example.test',
+      agency: { name: 'Ageniza' },
+      client: null,
+      accountExists: false,
+      token: 'must-not-be-public'
+    })).toThrow();
+  });
+
+  it('requires explicit terms acceptance and validates invitation acceptance responses', () => {
+    expect(InvitationAcceptNewAccountRequestSchema.parse({ name: 'Person', password: '1234567890', acceptTerms: true })).toEqual({
+      name: 'Person', password: '1234567890', acceptTerms: true
+    });
+    expect(() => InvitationAcceptNewAccountRequestSchema.parse({ name: 'Person', password: '1234567890', acceptTerms: false })).toThrow();
+    expect(InvitationAcceptNewAccountResponseSchema.parse({ status: 'accepted', context })).toEqual({ status: 'accepted', context });
+    expect(InvitationAcceptRequestSchema.parse(undefined)).toBeUndefined();
+    expect(InvitationAcceptResponseSchema.parse({ status: 'already_member', context })).toEqual({ status: 'already_member', context });
+    expect(() => InvitationAcceptResponseSchema.parse({ status: 'accepted', context: { agencyId: 'agency-1', clientId: undefined } })).toThrow();
   });
 });

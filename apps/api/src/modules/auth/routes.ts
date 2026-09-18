@@ -11,8 +11,9 @@ import {
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 import { APIError } from 'better-auth';
+import { z } from 'zod';
 
-import { runWithAuditRequestId } from './audit-context.js';
+import { runWithAuditRequestId, runWithPasswordResetInviteToken } from './audit-context.js';
 import { recordAuthAuditEventSafely, type AuthAuditRecorder } from './audit.js';
 import type { InMemoryAuthLimiter } from './auth-limiter.js';
 import type { AuthInstance } from './better-auth.js';
@@ -21,11 +22,14 @@ import { AUTH_RATE_LIMITS } from './policy.js';
 import { createRequireSession } from './session-guard.js';
 import { normalizeRateLimitIp } from '../../plugins/infra/rate-limit-ip.js';
 import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
+import type { InvitationTokenLookup } from '../invitations/routes.js';
 
 export interface AuthModuleDependencies {
   readonly auth: AuthInstance;
   readonly limiter: InMemoryAuthLimiter;
   readonly auditRecorder: AuthAuditRecorder;
+  /** Optional B4 adapter; keeping this as a port avoids auth/invitation repository coupling. */
+  readonly invitationTokenLookup?: InvitationTokenLookup;
 }
 
 /** No informative headers on any auth 429 (B6): a client must not be able to tell, from the
@@ -56,6 +60,14 @@ const requireAuthenticatedUserId = (request: FastifyRequest): string => {
 };
 
 const unauthenticatedFallback = { statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' } as const;
+
+const authPasswordForgotWithInvitationSchema = AuthPasswordForgotRequestSchema.extend({
+  inviteToken: z.string().min(1).max(2_048).optional()
+}).strict();
+const authPasswordResetWithInvitationSchema = AuthPasswordResetRequestSchema.extend({
+  inviteToken: z.string().min(1).max(2_048).optional()
+}).strict();
+const signedInResetResponseSchema = z.object({ signedIn: z.literal(true) }).strict();
 
 /**
  * Registers the six public auth routes (issue #31 section 6). CSRF/origin checking is handled
@@ -123,16 +135,21 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
   });
 
   app.post('/auth/password/forgot', perIpRateLimit(AUTH_RATE_LIMITS.forgot.ip), async (request, reply) => {
-    const body = parseRequest(AuthPasswordForgotRequestSchema, request.body);
+    const body = parseRequest(authPasswordForgotWithInvitationSchema, request.body);
     dependencies.limiter.consume('forgot', normalizeRateLimitIp(request.ip), body.email);
+
+    const invitation = body.inviteToken === undefined || dependencies.invitationTokenLookup === undefined
+      ? undefined
+      : await dependencies.invitationTokenLookup(body.inviteToken).catch(() => undefined);
+    const inviteContinuation = invitation?.valid === true && invitation.email === body.email ? body.inviteToken : undefined;
 
     // Never awaited past this call's own (fast) DB work: the email itself is fire-and-forget
     // inside EmailService, so the response below never depends on SMTP latency or the account
     // actually existing.
-    await dependencies.auth.api.requestPasswordReset({
+    await runWithPasswordResetInviteToken(inviteContinuation, () => dependencies.auth.api.requestPasswordReset({
       body: { email: body.email },
       headers: toAuthHeaders(request)
-    }).catch((error) => {
+    })).catch((error) => {
       request.log.error({
         operation: 'auth.password_forgot',
         status: 'failed',
@@ -144,11 +161,12 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
   });
 
   app.post('/auth/password/reset', perIpRateLimit(AUTH_RATE_LIMITS.reset.ip), async (request, reply) => {
-    const body = parseRequest(AuthPasswordResetRequestSchema, request.body);
+    const body = parseRequest(authPasswordResetWithInvitationSchema, request.body);
     // Looked up non-destructively (before `resetPassword` consumes the same verification row)
     // purely so a B10 recovery below has a user id to act on; a lookup failure never blocks the
     // reset itself.
     const userIdForRecovery = await identifyUserIdForResetToken(dependencies.auth, body.token);
+    const resetInviteContinuation = await resolveResetInviteContinuation(dependencies, body.inviteToken, userIdForRecovery);
 
     try {
       await runWithAuditRequestId(request.id, () => dependencies.auth.api.resetPassword({
@@ -174,8 +192,50 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
       throw toPublicAuthError(error, { statusCode: 400, code: 'INVALID_LINK', message: 'Este link não é mais válido.' });
     }
 
+    if (resetInviteContinuation !== undefined) {
+      try {
+        const context = await dependencies.auth.$context;
+        const user = await context.internalAdapter.findUserById(resetInviteContinuation.userId);
+        if (user !== null && user !== undefined) {
+          const { headers } = await dependencies.auth.api.signInEmail({
+            body: { email: user.email, password: body.newPassword },
+            headers: toAuthHeaders(request),
+            returnHeaders: true
+          });
+          applyAuthCookies(reply, headers);
+          return reply.status(200).send(parseResponse(signedInResetResponseSchema, { signedIn: true }));
+        }
+      } catch {
+        // The password reset itself already succeeded. A missing continuation session must not
+        // turn a successful reset into a public error; the normal 204 response remains safe.
+      }
+    }
+
     return reply.status(204).send(parseResponse(AuthPasswordResetResponseSchema, undefined));
   });
+};
+
+/**
+ * A reset continuation is enabled only when the invite is still valid and its e-mail belongs to
+ * the user identified by Better Auth's verification row. Invalid/mismatched optional tokens are
+ * intentionally ignored, preserving the ordinary 204 reset response and avoiding enumeration.
+ */
+const resolveResetInviteContinuation = async (
+  dependencies: AuthModuleDependencies,
+  inviteToken: string | undefined,
+  userId: string | undefined
+): Promise<{ userId: string } | undefined> => {
+  if (inviteToken === undefined || userId === undefined || dependencies.invitationTokenLookup === undefined) return undefined;
+  const invitation = await dependencies.invitationTokenLookup(inviteToken).catch(() => undefined);
+  if (invitation?.valid !== true || invitation.email === undefined) return undefined;
+
+  try {
+    const context = await dependencies.auth.$context;
+    const user = await context.internalAdapter.findUserById(userId);
+    return user?.email === invitation.email ? { userId } : undefined;
+  } catch {
+    return undefined;
+  }
 };
 
 /**

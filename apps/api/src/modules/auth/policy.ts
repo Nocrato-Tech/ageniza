@@ -20,6 +20,10 @@ export const AUTH_RATE_LIMITS = {
   },
   reset: {
     ip: { max: 30, windowMs: FIFTEEN_MINUTES_MS }
+  },
+  invitation: {
+    authenticatedIp: { max: 30, windowMs: FIFTEEN_MINUTES_MS },
+    publicIp: { max: 20, windowMs: FIFTEEN_MINUTES_MS }
   }
 } as const satisfies Readonly<Record<string, Readonly<Record<string, AuthRateLimitWindow>>>>;
 
