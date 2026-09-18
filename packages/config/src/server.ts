@@ -69,6 +69,32 @@ export interface ApiConfig extends ServerConfig {
   /** Explicit proxy networks only. An empty list means Fastify does not trust forwarding headers. */
   trustedProxyCidrs: readonly string[];
 }
+/** Object storage the worker talks to directly (issue #24): download the confirmed original,
+ * upload the generated thumbnail/preview. Unlike `StorageConfig`, the worker never presigns a
+ * browser-facing URL, so it needs no `publicEndpoint`/expiry/multipart/quota fields. */
+export interface WorkerStorageConfig {
+  readonly endpoint: string;
+  readonly region: string;
+  readonly accessKeyId: string;
+  readonly secretAccessKey: string;
+  readonly bucket: string;
+  readonly forcePathStyle: boolean;
+}
+
+/** Video processing limits and ffmpeg invocation settings (issue #24). */
+export interface MediaProcessingConfig {
+  /** Wall-clock timeout for one ffmpeg/ffprobe invocation; enforced by killing the process, not
+   * merely advisory. A stuck ffmpeg dies here well before the job's own pg-boss `expireInSeconds`. */
+  readonly ffmpegTimeoutSeconds: number;
+  /** A video probed longer than this fails explicitly instead of burning CPU on a huge encode. */
+  readonly maxDurationSeconds: number;
+  readonly thumbnailWidthPixels: number;
+  /** Output height cap; a shorter source is never upscaled. */
+  readonly previewMaxHeightPixels: number;
+  /** Hard cap passed to ffmpeg's own `-fs`, guarding local disk even if the bitrate estimate is wrong. */
+  readonly previewMaxOutputBytes: number;
+}
+
 export interface WorkerConfig extends ServerConfig {
   service: 'worker';
   healthHost: '127.0.0.1' | '::1' | '0.0.0.0';
@@ -76,6 +102,10 @@ export interface WorkerConfig extends ServerConfig {
   smokeJob: boolean;
   /** Durable queue handlers run at once; low because the VPS shares CPU with PostgreSQL and the API. */
   concurrency: number;
+  /** Undefined only where video processing is genuinely unused (e.g. lightweight worker tests);
+   * required in production because thumbnail/preview generation (issue #24) is core to the product. */
+  storage?: WorkerStorageConfig;
+  mediaProcessing: MediaProcessingConfig;
 }
 type ServerEnvironment = Record<string, string | undefined>;
 
@@ -161,8 +191,35 @@ const workerSchema = sharedServerSchema.extend({
   WORKER_HEALTH_HOST: z.enum(['127.0.0.1', '::1', '0.0.0.0']).default('127.0.0.1'),
   WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(3002),
   WORKER_SMOKE_JOB: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
-  // Bounded on purpose: raising it trades API and database headroom on a shared VPS for throughput.
-  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(4).default(1)
+  // Bounded on purpose: video processing (issue #24) is CPU-heavy (ffmpeg) and the VPS shares
+  // its cores with PostgreSQL and the API, so this is 1-2, not the wider range a generic worker
+  // might allow.
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(2).default(1),
+  // Object storage (issue #24): same Cloudflare R2 bucket/credentials as the API (issue #21); the
+  // worker downloads the confirmed original and uploads thumbnail/preview outputs directly, with
+  // no presigning. All four are required together, exactly like the API's copy of these settings.
+  R2_ENDPOINT: optionalUrl('must be a valid storage endpoint URL'),
+  R2_REGION: z.string().trim().min(1).max(64).default('auto'),
+  R2_ACCESS_KEY_ID: z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.string().trim().min(1).optional()
+  ),
+  R2_SECRET_ACCESS_KEY: z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.string().min(1).optional()
+  ),
+  R2_BUCKET: z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.string().trim().min(1).max(63).optional()
+  ),
+  R2_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
+  // ffmpeg/ffprobe invocation timeout per call. Two calls run per job (thumbnail, preview).
+  MEDIA_PROCESSING_TIMEOUT_SECONDS: z.coerce.number().int().min(10).max(1_800).default(240),
+  // A video probed longer than this is rejected explicitly instead of processed.
+  MEDIA_PROCESSING_MAX_DURATION_SECONDS: z.coerce.number().int().min(1).max(24 * 3_600).default(1_800),
+  MEDIA_THUMBNAIL_WIDTH_PIXELS: z.coerce.number().int().min(16).max(4_096).default(640),
+  MEDIA_PREVIEW_MAX_HEIGHT_PIXELS: z.coerce.number().int().min(16).max(2_160).default(720),
+  MEDIA_PREVIEW_MAX_OUTPUT_BYTES: z.coerce.number().int().min(1_048_576).default(300 * 1024 * 1024)
 });
 
 const loadServerConfig = (service: ApiConfig['service'] | WorkerConfig['service'], env: ServerEnvironment): ServerConfig => {
@@ -321,13 +378,58 @@ export const loadWorkerConfig = (env: ServerEnvironment): WorkerConfig => {
   if (serverConfig.environment === 'production' && result.data.WORKER_SMOKE_JOB) {
     throw new ConfigValidationError('Worker', [{ path: 'WORKER_SMOKE_JOB', message: 'must be false in production' }]);
   }
+
+  // Object storage (issue #24): required together, mirroring the API's R2 settings (issue #21).
+  const storageFieldsPresent = [result.data.R2_ENDPOINT, result.data.R2_ACCESS_KEY_ID, result.data.R2_SECRET_ACCESS_KEY, result.data.R2_BUCKET].map((value) => value !== undefined);
+  const anyStoragePresent = storageFieldsPresent.some(Boolean);
+  const allStoragePresent = storageFieldsPresent.every(Boolean);
+  if (anyStoragePresent && !allStoragePresent) {
+    throw new ConfigValidationError('Worker', [{
+      path: 'R2_ENDPOINT',
+      message: 'R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET must be set together'
+    }]);
+  }
+  if (serverConfig.environment === 'production' && !allStoragePresent) {
+    throw new ConfigValidationError('Worker', [{
+      path: 'R2_ENDPOINT',
+      message: 'R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET are required in production'
+    }]);
+  }
+  if (result.data.R2_ENDPOINT !== undefined) {
+    assertRuntimeUrlSafety(serverConfig.environment, 'R2_ENDPOINT', result.data.R2_ENDPOINT, {
+      allowLocalContainerHosts: env.APP_CONTAINER_LOCAL === 'true',
+      requireHttpsInProduction: true
+    });
+  }
+  if (serverConfig.environment === 'production' && result.data.R2_SECRET_ACCESS_KEY !== undefined && containsExampleSecretMarker(result.data.R2_SECRET_ACCESS_KEY)) {
+    throw new ConfigValidationError('Worker', [{
+      path: 'R2_SECRET_ACCESS_KEY',
+      message: 'must not be an example/placeholder value in production; supplied values are redacted'
+    }]);
+  }
+
   return {
     service: 'worker',
     ...serverConfig,
     healthHost: result.data.WORKER_HEALTH_HOST,
     healthPort: result.data.WORKER_HEALTH_PORT,
     smokeJob: result.data.WORKER_SMOKE_JOB,
-    concurrency: result.data.WORKER_CONCURRENCY
+    concurrency: result.data.WORKER_CONCURRENCY,
+    storage: allStoragePresent ? {
+      endpoint: result.data.R2_ENDPOINT!,
+      region: result.data.R2_REGION,
+      accessKeyId: result.data.R2_ACCESS_KEY_ID!,
+      secretAccessKey: result.data.R2_SECRET_ACCESS_KEY!,
+      bucket: result.data.R2_BUCKET!,
+      forcePathStyle: result.data.R2_FORCE_PATH_STYLE
+    } : undefined,
+    mediaProcessing: {
+      ffmpegTimeoutSeconds: result.data.MEDIA_PROCESSING_TIMEOUT_SECONDS,
+      maxDurationSeconds: result.data.MEDIA_PROCESSING_MAX_DURATION_SECONDS,
+      thumbnailWidthPixels: result.data.MEDIA_THUMBNAIL_WIDTH_PIXELS,
+      previewMaxHeightPixels: result.data.MEDIA_PREVIEW_MAX_HEIGHT_PIXELS,
+      previewMaxOutputBytes: result.data.MEDIA_PREVIEW_MAX_OUTPUT_BYTES
+    }
   };
 };
 /** Allows entrypoints to skip test-runner startup without reading env ad hoc. */

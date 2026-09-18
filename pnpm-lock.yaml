@@ -80,6 +80,9 @@ importers:
       pg:
         specifier: 8.16.3
         version: 8.16.3
+      pg-boss:
+        specifier: 12.30.0
+        version: 12.30.0
       zod:
         specifier: ^3.24.2
         version: 3.25.76
@@ -148,12 +151,18 @@ importers:
       '@ageniza/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@ageniza/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@ageniza/core':
         specifier: workspace:*
         version: link:../../packages/core
       '@ageniza/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@aws-sdk/client-s3':
+        specifier: 3.700.0
+        version: 3.700.0
       pg-boss:
         specifier: 12.30.0
         version: 12.30.0

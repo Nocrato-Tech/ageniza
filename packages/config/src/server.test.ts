@@ -44,7 +44,15 @@ describe('server configuration', () => {
       sentryDsn: undefined,
       deployVersion: 'unknown',
       smtpUrl: undefined,
-      emailFrom: undefined
+      emailFrom: undefined,
+      storage: undefined,
+      mediaProcessing: {
+        ffmpegTimeoutSeconds: 240,
+        maxDurationSeconds: 1_800,
+        thumbnailWidthPixels: 640,
+        previewMaxHeightPixels: 720,
+        previewMaxOutputBytes: 300 * 1024 * 1024
+      }
     });
   });
 
@@ -330,6 +338,58 @@ describe('server configuration', () => {
         R2_SECRET_ACCESS_KEY: `a1b2c3d4e5f6a1b2c3d4e5f6-${marker}`
       })).toThrow(ConfigValidationError);
     }
+  });
+
+  it('leaves worker storage undefined locally, loads it with the four R2 settings, and requires them together in production (issue #24)', () => {
+    expect(loadWorkerConfig(localEnvironment).storage).toBeUndefined();
+    const withStorage = {
+      ...localEnvironment,
+      APP_CONTAINER_LOCAL: 'true',
+      R2_ENDPOINT: 'http://minio:9000',
+      R2_ACCESS_KEY_ID: 'local-access-key',
+      R2_SECRET_ACCESS_KEY: 'local-secret-key'
+    };
+    expect(() => loadWorkerConfig(withStorage)).toThrow('must be set together');
+    expect(loadWorkerConfig({ ...withStorage, R2_BUCKET: 'ageniza-media-local' }).storage).toEqual({
+      endpoint: 'http://minio:9000',
+      region: 'auto',
+      accessKeyId: 'local-access-key',
+      secretAccessKey: 'local-secret-key',
+      bucket: 'ageniza-media-local',
+      forcePathStyle: true
+    });
+
+    const productionWithoutStorage = {
+      ...localEnvironment,
+      BETTER_AUTH_SECRET: productionAuthSecret,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl
+    };
+    expect(() => loadWorkerConfig(productionWithoutStorage)).toThrow('required in production');
+    expect(loadWorkerConfig({ ...productionWithoutStorage, ...productionStorageSettings }).storage?.bucket).toBe('ageniza-media');
+    expect(() => loadWorkerConfig({ ...productionWithoutStorage, ...productionStorageSettings, R2_ENDPOINT: 'http://accountid.r2.cloudflarestorage.com' })).toThrow('HTTPS');
+    expect(() => loadWorkerConfig({
+      ...productionWithoutStorage,
+      ...productionStorageSettings,
+      R2_SECRET_ACCESS_KEY: 'a1b2c3d4e5f6a1b2c3d4e5f6-placeholder'
+    })).toThrow(ConfigValidationError);
+  });
+
+  it('loads media processing defaults and honors overrides (issue #24)', () => {
+    expect(loadWorkerConfig({
+      ...localEnvironment,
+      MEDIA_PROCESSING_TIMEOUT_SECONDS: '120',
+      MEDIA_PROCESSING_MAX_DURATION_SECONDS: '600',
+      MEDIA_THUMBNAIL_WIDTH_PIXELS: '320',
+      MEDIA_PREVIEW_MAX_HEIGHT_PIXELS: '480',
+      MEDIA_PREVIEW_MAX_OUTPUT_BYTES: String(50 * 1024 * 1024)
+    }).mediaProcessing).toEqual({
+      ffmpegTimeoutSeconds: 120,
+      maxDurationSeconds: 600,
+      thumbnailWidthPixels: 320,
+      previewMaxHeightPixels: 480,
+      previewMaxOutputBytes: 50 * 1024 * 1024
+    });
   });
 
   it('rejects a multipart part size larger than the multipart threshold (issue #21)', () => {
