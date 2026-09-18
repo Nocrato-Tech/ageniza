@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { PassThrough } from 'node:stream';
 
-import type { ApiConfig } from '@ageniza/config/server';
+import type { ApiConfig, StorageConfig } from '@ageniza/config/server';
 import { createLogger, type CoreLogger } from '@ageniza/core';
 import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, type DatabaseClient } from '@ageniza/database';
 import type { EmailSender, OutgoingEmail } from '@ageniza/email';
@@ -17,6 +17,8 @@ import { createRequireAgencyAccess, createRequireClientAccess, requirePermission
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from '../../invitations/routes.js';
 import type { ContextModuleDependencies } from '../../contexts/routes.js';
 import { createRequireSession } from '../session-guard.js';
+import type { MediaModuleDependencies } from '../../media/routes.js';
+import { createMediaStorageClient } from '../../media/storage-client.js';
 
 /** Runs only against the migrated local database (`pnpm db:migrate`), as the application role. */
 export const APPLICATION_DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
@@ -63,10 +65,32 @@ export const captureLogs = (): CapturedLogs => {
   };
 };
 
+/** Points at the Compose MinIO started by `docker compose up -d minio minio-init` (issue #21).
+ * Integration tests that never reach the media module still pay nothing extra for this: the
+ * client is only constructed, never connected to, until a route actually calls it. */
+export const TEST_STORAGE_CONFIG: StorageConfig = {
+  endpoint: process.env.R2_ENDPOINT ?? 'http://127.0.0.1:9000',
+  publicEndpoint: process.env.R2_PUBLIC_ENDPOINT ?? process.env.R2_ENDPOINT ?? 'http://127.0.0.1:9000',
+  region: 'auto',
+  accessKeyId: process.env.R2_ACCESS_KEY_ID ?? 'ageniza-local',
+  secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? 'ageniza-local-secret',
+  bucket: process.env.R2_BUCKET ?? 'ageniza-media-local',
+  forcePathStyle: true,
+  uploadUrlExpirySeconds: 900,
+  downloadUrlExpirySeconds: 300,
+  multipartThresholdBytes: 8 * 1024 * 1024,
+  multipartPartBytes: 8 * 1024 * 1024,
+  maxImageBytes: 25 * 1024 * 1024,
+  maxVideoBytes: 5 * 1024 * 1024 * 1024,
+  quotaDefaultBytes: 10 * 1024 * 1024 * 1024,
+  quotaDefaultObjectCount: 2_000
+};
+
 export const buildTestConfig = (overrides: Partial<ApiConfig> = {}): ApiConfig => ({
   service: 'api',
   environment: 'test',
   databaseUrl: APPLICATION_DATABASE_URL,
+  storage: TEST_STORAGE_CONFIG,
   deployVersion: 'test',
   authSecret: TEST_AUTH_SECRET,
   appPublicUrl: TEST_APP_PUBLIC_URL,
@@ -111,6 +135,7 @@ export interface TestApp {
   readonly database: DatabaseClient;
   readonly emailService: EmailService;
   readonly config: ApiConfig;
+  readonly media?: MediaModuleDependencies;
   close(): Promise<void>;
 }
 
@@ -143,7 +168,15 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   };
   const requireClientAccess = createRequireClientAccess({ database });
   const contexts: ContextModuleDependencies = { database, auth, requireClientAccess };
-  const app = await buildApp({ config, logger, auth: { auth, limiter, auditRecorder, invitationTokenLookup }, invitations, contexts });
+  const media: MediaModuleDependencies | undefined = config.storage === undefined ? undefined : {
+    database,
+    auth,
+    storage: createMediaStorageClient(config.storage),
+    config: config.storage,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    requirePermission
+  };
+  const app = await buildApp({ config, logger, auth: { auth, limiter, auditRecorder, invitationTokenLookup }, invitations, contexts, media });
   if (options.registerExtraRoutes !== undefined) {
     const guards: TestGuardBuilders = {
       requireSession: createRequireSession({ auth }),
@@ -163,6 +196,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     emailService,
     database,
     config,
+    media,
     async close(): Promise<void> {
       await emailService.drain();
       await app.close();
