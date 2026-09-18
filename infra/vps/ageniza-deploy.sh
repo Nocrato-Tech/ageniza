@@ -93,7 +93,7 @@ validate_runtime_env() {
     case "$key" in
       APP_ENV) [[ "$value" == production ]] || die 'APP_ENV must be production' ;;
       WORKER_SMOKE_JOB) [[ "$value" == false ]] || die 'WORKER_SMOKE_JOB must be false' ;;
-      WORKER_CONCURRENCY) [[ "$value" =~ ^[1-4]$ ]] || die 'WORKER_CONCURRENCY must be an integer from 1 to 4' ;;
+      WORKER_CONCURRENCY) [[ "$value" =~ ^[1-2]$ ]] || die 'WORKER_CONCURRENCY must be an integer from 1 to 2' ;;
       AUTH_TERMS_VERSION|AUTH_PRIVACY_VERSION) [[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die "$key must use YYYY-MM-DD" ;;
       BETTER_AUTH_SECRET|APP_PUBLIC_URL|DATABASE_URL|API_CORS_ORIGINS|API_TRUSTED_PROXY_CIDRS|SMTP_URL|EMAIL_FROM) [[ -n "$value" ]] || die "$key must not be blank" ;;
       # Cloudflare R2 (issue #21): required together, like the email settings above.
@@ -101,6 +101,8 @@ validate_runtime_env() {
       R2_REGION) ;;
       R2_FORCE_PATH_STYLE) [[ "$value" == true || "$value" == false ]] || die 'R2_FORCE_PATH_STYLE must be true or false' ;;
       MEDIA_UPLOAD_URL_EXPIRY_SECONDS|MEDIA_DOWNLOAD_URL_EXPIRY_SECONDS|MEDIA_MULTIPART_THRESHOLD_BYTES|MEDIA_MULTIPART_PART_BYTES|MEDIA_MAX_BYTES_IMAGE|MEDIA_MAX_BYTES_VIDEO|STORAGE_QUOTA_DEFAULT_BYTES|STORAGE_QUOTA_DEFAULT_OBJECT_COUNT) [[ "$value" =~ ^[0-9]+$ ]] || die "$key must be a positive integer" ;;
+      # Video processing (issue #24): the worker's ffmpeg thumbnail/preview settings.
+      MEDIA_PROCESSING_TIMEOUT_SECONDS|MEDIA_PROCESSING_MAX_DURATION_SECONDS|MEDIA_THUMBNAIL_WIDTH_PIXELS|MEDIA_PREVIEW_MAX_HEIGHT_PIXELS|MEDIA_PREVIEW_MAX_OUTPUT_BYTES) [[ "$value" =~ ^[0-9]+$ ]] || die "$key must be a positive integer" ;;
       SENTRY_DSN) ;;
       *) die "$RUNTIME_ENV contains a key that is not allowed: $key" ;;
     esac

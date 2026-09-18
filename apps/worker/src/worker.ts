@@ -17,6 +17,8 @@ import {
 import { createDatabaseClient, type DatabaseClient } from '@ageniza/database';
 
 import { createJobProcessor, type JobProcessor } from './jobs.js';
+import { mediaVideoProcessingJob } from './media-video-job.js';
+import { createMediaProcessingStorageClient } from './media-storage.js';
 import { createDurableQueue, type DurableQueue } from './queue.js';
 
 type WorkerSignal = 'SIGINT' | 'SIGTERM';
@@ -81,6 +83,18 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
   const queue = options.queue ?? (options.config.smokeJob
     ? undefined
     : createDurableQueue({ connectionString: options.config.databaseUrl, logger, concurrency: options.config.concurrency }));
+  // Video processing (issue #24): registered whenever object storage is configured, exactly like
+  // the API only mounts its media routes when `config.storage` is present. Registration must
+  // happen before `queue.start()` (enforced by `queue.register` itself).
+  if (queue !== undefined && options.config.storage !== undefined) {
+    queue.register(mediaVideoProcessingJob({
+      database,
+      storage: createMediaProcessingStorageClient(options.config.storage),
+      config: options.config.mediaProcessing
+    }));
+  } else if (queue !== undefined) {
+    logger.warn({ status: 'skipped' }, 'Object storage is not configured; video processing jobs will not be registered.');
+  }
   const shutdownManager = createShutdownManager();
   shutdownManager.add('sentry', async () => { await flushServerSentry(); });
   const processRef = options.process ?? process;

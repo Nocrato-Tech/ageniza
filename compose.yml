@@ -92,7 +92,15 @@ services:
       EMAIL_FROM: Ageniza <no-reply@ageniza.local>
       WORKER_HEALTH_HOST: 0.0.0.0
       WORKER_HEALTH_PORT: 3002
-    depends_on: { postgres: { condition: service_healthy }, mailpit: { condition: service_healthy } }
+      # Video processing (issue #24): same bucket/credentials as the API (issue #21). The worker
+      # downloads the confirmed original and uploads thumbnail/preview outputs directly.
+      R2_ENDPOINT: http://minio:9000
+      R2_ACCESS_KEY_ID: ageniza-local
+      R2_SECRET_ACCESS_KEY: ageniza-local-secret
+      R2_BUCKET: ageniza-media-local
+      R2_REGION: auto
+      R2_FORCE_PATH_STYLE: 'true'
+    depends_on: { postgres: { condition: service_healthy }, mailpit: { condition: service_healthy }, minio: { condition: service_healthy } }
     networks: [internal, egress]
     # Docker's default 10s would SIGKILL a draining worker. The queue drains for up to 45s (apps/worker).
     stop_grace_period: 60s

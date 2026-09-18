@@ -25,7 +25,7 @@ runtime.queue?.register<{ assetId: string }>({
 await runtime.start();
 ```
 
-The values above are the defaults. `WORKER_CONCURRENCY` (default `1`, at most `4`) sets how many jobs run at once; keep it low, because the worker shares the VPS with PostgreSQL and the API.
+The values above are the defaults. `WORKER_CONCURRENCY` (default `1`, at most `2`) sets how many jobs run at once; kept deliberately narrow because video processing (below) runs `ffmpeg`, which saturates CPU on a VPS shared with PostgreSQL and the API.
 
 ### Contract every handler must follow
 
@@ -56,6 +56,33 @@ The `pgboss` schema is created by a Knex migration in [`packages/database/migrat
 
 If the installed pg-boss expects a different schema version, the worker refuses to start and never becomes ready. To upgrade pg-boss, pin the new exact version and add a new forward-only migration built from `getMigrationPlans('pgboss', <current version>)`. `src/queue.test.ts` fails until the migrations create the schema version the installed package expects.
 
+## Video processing (issue #24)
+
+`src/media-video-job.ts` registers the only durable job the worker currently ships,
+`media.process-video` (name shared with the API's producer through `@ageniza/contracts`'s
+`MEDIA_VIDEO_PROCESSING_JOB_NAME`), whenever `createWorkerRuntime` is given object storage
+(`R2_*`/`config.storage`; see `packages/config/src/server.ts`'s `WorkerStorageConfig` and
+`MediaProcessingConfig`). The API's media module (`apps/api/src/modules/media/README.md`) queues
+it right after a video upload's `HeadObject` confirms it.
+
+For a confirmed video referenced by the job's `assetId`/`agencyId` (re-validated against the
+database and RLS on every run -- see `src/media-repository.ts`), the handler:
+
+1. downloads the original from R2/MinIO to a fresh OS temp directory (`src/media-storage.ts`);
+2. probes it with `ffprobe` and fails explicitly if its duration exceeds
+   `MEDIA_PROCESSING_MAX_DURATION_SECONDS`;
+3. runs `ffmpeg` twice to produce a thumbnail (`MEDIA_THUMBNAIL_WIDTH_PIXELS` wide) and a preview
+   capped at `MEDIA_PREVIEW_MAX_HEIGHT_PIXELS` tall and `MEDIA_PREVIEW_MAX_OUTPUT_BYTES` (`src/media-ffmpeg.ts`)
+   -- the original itself is never transcoded;
+4. uploads both outputs back under the asset's own key prefix and records duration/sizes, or a
+   short, non-sensitive failure reason -- never raw ffmpeg output or a signed URL.
+
+Every `ffmpeg`/`ffprobe` invocation is timeout-bounded (`MEDIA_PROCESSING_TIMEOUT_SECONDS`, killed
+with `SIGKILL` past it), restricted to the `file`/`pipe` protocols (a crafted input cannot make it
+reach the network), and the job's own `expireInSeconds` (`ffmpegTimeoutSeconds * 2 + 120`) bounds
+the whole run so pg-boss retries a stuck job within `WORKER_CONCURRENCY`'s limit. The temporary
+directory is always removed in a `finally`, including on failure -- no file is left on disk.
+
 ## In-process jobs
 
 `runtime.jobs` (`src/jobs.ts`) runs explicitly submitted work in memory, with bounded retries. It is not durable: use it only for work that may be lost on restart. Shutdown rejects new work, drains handlers, then closes Knex.
@@ -66,8 +93,19 @@ If the installed pg-boss expects a different schema version, the worker refuses 
 
 ```sh
 pnpm --filter @ageniza/worker test               # unit tests, no database
-pnpm db:start && pnpm db:migrate
-pnpm --filter @ageniza/worker test:integration   # the queue against local PostgreSQL, as ageniza_app
+pnpm db:start && pnpm db:migrate && pnpm docker:up
+pnpm --filter @ageniza/worker test:integration   # queue + video processing against local PostgreSQL/MinIO
 ```
 
-The integration suite covers a job surviving a worker restart, backoff retries, a permanent failure reaching its dead letter queue, draining on shutdown, and a job that outlives the drain being completed by the next worker.
+The queue integration suite covers a job surviving a worker restart, backoff retries, a permanent failure reaching its dead letter queue, draining on shutdown, and a job that outlives the drain being completed by the next worker.
+
+The video processing suite requires a real `ffmpeg`/`ffprobe` on `PATH` (issue #24) -- there is no
+useful way to fake process spawning without losing coverage of real timeouts, exit codes, and the
+`-protocol_whitelist` network restriction. `media-ffmpeg.integration.test.ts` exercises the ffmpeg
+wrapper directly (probing, thumbnail/preview generation, size cap, timeout, abort, and the crafted
+network-reference input); `media-video-job.integration.test.ts` runs the full job against real
+PostgreSQL and MinIO (the confirmed-asset lookup and RLS, the ready/failed/no-op-on-retry outcomes,
+and the "no temp file survives a failure" acceptance criterion). If `ffmpeg` is unavailable on the
+host, run the same suite inside the worker's own image instead, which is where CI and production
+get it from: `docker compose build worker && docker compose run --rm worker ffmpeg -version` to
+verify, then run the test command inside a container built from `apps/worker/Dockerfile`.
