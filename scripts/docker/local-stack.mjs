@@ -10,7 +10,10 @@ const ensureLocalStorageEnvironment = () => {
   if (!existsSync(localStorageEnvFile)) {
     mkdirSync(dirname(localStorageEnvFile), { recursive: true });
     const accessKeyId = `local-${randomBytes(12).toString('hex')}`;
-    const secretAccessKey = randomBytes(32).toString('base64url');
+    // Hex, not base64url: its alphabet contains '-', and a secret starting with one is read as a
+    // flag by every CLI that receives it as an argument (mc aborts with "flag provided but not
+    // defined"), which made roughly one run in sixty fail.
+    const secretAccessKey = randomBytes(32).toString('hex');
     writeFileSync(localStorageEnvFile, [
       `R2_ACCESS_KEY_ID=${accessKeyId}`,
       `R2_SECRET_ACCESS_KEY=${secretAccessKey}`,

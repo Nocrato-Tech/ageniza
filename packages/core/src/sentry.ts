@@ -23,9 +23,28 @@ export const configureServerSentry = (options: ServerSentryOptions): boolean => 
     environment: options.environment,
     release: options.release,
     sendDefaultPii: false,
-    beforeSend: (event) => redactSensitiveData(event) as typeof event
+    beforeSend: (event) => redactSensitiveData(stripRequestUrl(event)) as typeof event,
+    // Transactions never reach beforeSend; they have their own hook. No sample rate is configured
+    // today, so none are emitted, but enabling tracing must not silently reopen this.
+    beforeSendTransaction: (event) => redactSensitiveData(stripRequestUrl(event)) as typeof event
   });
   return true;
+};
+
+/**
+ * The SDK attaches the request URL on its own, and `sendDefaultPii: false` does not turn that off.
+ * A path segment can be a secret — `/invitations/<token>` — and redaction matches key names, not a
+ * token embedded in a path, so these are dropped outright (issue #37). The `route` tag carries the
+ * route pattern, which is what correlation actually needs.
+ */
+export const stripRequestUrl = <T extends { request?: { url?: string; query_string?: unknown; headers?: Record<string, unknown> } }>(event: T): T => {
+  if (event.request === undefined) return event;
+  delete event.request.url;
+  delete event.request.query_string;
+  for (const header of Object.keys(event.request.headers ?? {})) {
+    if (header.toLowerCase() === 'referer') delete event.request.headers![header];
+  }
+  return event;
 };
 
 /** Sends unexpected failures with technical correlation only; request payloads are never attached. */

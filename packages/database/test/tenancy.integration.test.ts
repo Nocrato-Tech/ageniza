@@ -291,6 +291,35 @@ describe('AUTH-20B database RLS and invitation functions', () => {
     await getOwner().knex('client_memberships').where({ client_id: clientA, user_id: userA }).update({ onboarding_seen_at: null });
   });
 
+  it('lets a role holding only convite.cancelar see and revoke an invitation', async () => {
+    // Issue #39: the route requires convite.cancelar, so the policy must recognise it. Before this
+    // the UPDATE was keyed on colaborador.convidar alone and such a role saw no rows.
+    const cancelUser = randomUUID();
+    const cancelRole = randomUUID();
+    await getOwner().knex('auth.user').insert({ id: cancelUser, name: 'Cancel Only', email: `cancel-${cancelUser}@example.test`, emailVerified: true });
+    await getOwner().knex('roles').insert({ id: cancelRole, agency_id: agencyA, key: `cancel-only-${cancelRole}`, name: 'Cancel Only', is_system: false });
+    await getOwner().knex('role_permissions').insert({ role_id: cancelRole, permission_key: 'convite.cancelar' });
+    await getOwner().knex('agency_memberships').insert({ agency_id: agencyA, user_id: cancelUser, role_id: cancelRole });
+
+    try {
+      await expect(asUser(cancelUser, (transaction) => transaction('invitations').where({ id: invitationA }).select('id'))).resolves.toEqual([{ id: invitationA }]);
+      await expect(asUser(cancelUser, (transaction) => transaction('invitations').where({ id: invitationA }).update({ revoked_at: new Date() }))).resolves.toBe(1);
+      // Another agency stays invisible: the new permission widens which roles act, never which tenant.
+      await expect(asUser(cancelUser, (transaction) => transaction('invitations').where({ id: invitationB }).select('id'))).resolves.toEqual([]);
+      // The column grant confines that role to revocation; it cannot rewrite the invitation.
+      await expect(asUser(cancelUser, (transaction) => transaction('invitations').where({ id: invitationA }).update({ role_id: adminRoleId }))).rejects.toThrow(/permission denied/);
+      await expect(asUser(cancelUser, (transaction) => transaction('invitations').where({ id: invitationA }).update({ purpose: 'client_invite' }))).rejects.toThrow(/permission denied/);
+    } finally {
+      // Without this the shared invitationA stays revoked and the custom role blocks the teardown's
+      // delete on agencies, taking the whole fixture down with it.
+      await getOwner().knex('invitations').where({ id: invitationA }).update({ revoked_at: null });
+      await getOwner().knex('agency_memberships').where({ user_id: cancelUser }).delete();
+      await getOwner().knex('role_permissions').where({ role_id: cancelRole }).delete();
+      await getOwner().knex('roles').where({ id: cancelRole }).delete();
+      await getOwner().knex('auth.user').where({ id: cancelUser }).delete();
+    }
+  });
+
   it('returns only the public invitation projection and marks inactive links invalid', async () => {
     await expect(lookupInvitation(`hash-${invitationA}`)).resolves.toEqual([
       expect.objectContaining({

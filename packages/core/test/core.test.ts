@@ -16,6 +16,7 @@ import {
   retry,
   retryDelay,
   serializeError,
+  stripRequestUrl,
   shouldEnableSentry,
   withLogContext
 } from '../src/index.js';
@@ -54,6 +55,15 @@ describe('logging and request IDs', () => {
     expect(shouldEnableSentry({ environment: 'production', dsn: 'https://public@example/1', release: 'abc' })).toBe(true);
     expect(shouldEnableSentry({ environment: 'local', dsn: 'https://public@example/1', release: 'abc' })).toBe(false);
     expect(shouldEnableSentry({ environment: 'production', release: 'abc', isTest: true })).toBe(false);
+  });
+
+  it('drops the request URL the Sentry SDK attaches, which redaction alone would not catch', () => {
+    const token = 'invitation-token-in-a-path-segment';
+    expect(stripRequestUrl({ request: { url: `https://app.test/invitations/${token}`, method: 'GET' } }))
+      .toEqual({ request: { method: 'GET' } });
+    expect(redactSensitiveData({ url: `https://app.test/invitations/${token}` })).toEqual({ url: `https://app.test/invitations/${token}` });
+    expect(stripRequestUrl({ request: { method: 'GET' } })).toEqual({ request: { method: 'GET' } });
+    expect(stripRequestUrl({})).toEqual({});
   });
 
   it('recursively redacts nested, case-variant credentials and Authorization bearer values', () => {
