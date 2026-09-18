@@ -243,9 +243,9 @@ describe('AUTH-20B database RLS and invitation functions', () => {
     await expect(asUser(userA, (transaction) => transaction('legal_acceptances').select('user_id'))).resolves.toEqual([{ user_id: userA }, { user_id: userA }]);
     // Permissions and system roles are global authorization metadata. They are intentionally
     // readable by every authenticated user, while all tenant-bearing rows remain RLS-scoped.
-    await expect(asUser(userA, (transaction) => transaction('permissions').select('key'))).resolves.toHaveLength(4);
+    await expect(asUser(userA, (transaction) => transaction('permissions').select('key'))).resolves.toHaveLength(5);
     await expect(asUser(userA, (transaction) => transaction('roles').whereNull('agency_id').select('key'))).resolves.toHaveLength(5);
-    await expect(asUser(userA, (transaction) => transaction('role_permissions').select('permission_key'))).resolves.toHaveLength(4);
+    await expect(asUser(userA, (transaction) => transaction('role_permissions').select('permission_key'))).resolves.toHaveLength(5);
 
     await expect(asUser(userA, (transaction) => transaction('agencies').insert({ id: randomUUID(), name: 'Denied' }))).rejects.toThrow(/row-level security/);
     await expect(asUser(userA, (transaction) => transaction('clients').insert({ id: randomUUID(), agency_id: agencyB, name: 'Denied' }))).rejects.toThrow(/row-level security/);
