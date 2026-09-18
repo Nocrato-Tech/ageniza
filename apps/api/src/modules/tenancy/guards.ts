@@ -12,10 +12,18 @@ export interface TenantContext {
   readonly permissions: ReadonlySet<string>;
 }
 
+export interface ClientContext {
+  readonly clientId: string;
+  readonly agencyId: string;
+  readonly clientMembershipId: string;
+}
+
 declare module 'fastify' {
   interface FastifyRequest {
     /** Set by the agency guard for downstream domain handlers. */
     tenant?: TenantContext;
+    /** Set by `requireClientAccess` for downstream client-portal handlers. */
+    clientContext?: ClientContext;
   }
 }
 
@@ -30,6 +38,12 @@ interface AgencyAccessRow {
   readonly permissions: readonly string[] | null;
 }
 
+interface ClientAccessRow {
+  readonly client_id: string;
+  readonly agency_id: string;
+  readonly client_membership_id: string;
+}
+
 interface RawRows<TResult> {
   readonly rows: readonly TResult[];
 }
@@ -40,6 +54,12 @@ const notFound = (): HttpError => new HttpError({
   statusCode: 404,
   code: 'NOT_FOUND',
   message: 'Agency not found.'
+});
+
+const clientNotFound = (): HttpError => new HttpError({
+  statusCode: 404,
+  code: 'NOT_FOUND',
+  message: 'Client not found.'
 });
 
 const unauthenticated = (): HttpError => new HttpError({
@@ -64,6 +84,12 @@ const invalidAgencyId = (): HttpError => new HttpError({
 const routeAgencyId = (params: unknown): string | undefined => {
   if (typeof params !== 'object' || params === null || !('agencyId' in params)) return undefined;
   const value = (params as Record<string, unknown>).agencyId;
+  return typeof value === 'string' ? value : undefined;
+};
+
+const routeClientId = (params: unknown): string | undefined => {
+  if (typeof params !== 'object' || params === null || !('clientId' in params)) return undefined;
+  const value = (params as Record<string, unknown>).clientId;
   return typeof value === 'string' ? value : undefined;
 };
 
@@ -128,3 +154,49 @@ export const requirePermission = (key: string) =>
     const tenant = request.tenant;
     if (tenant === undefined || (!tenant.isOwner && !tenant.permissions.has(key))) throw forbidden();
   };
+
+/**
+ * Builds the client-portal preHandler (AUTH-20C). Requires `requireSession` to have already
+ * populated `request.auth`. A client context is valid only when the caller has an *active client
+ * membership* for `:clientId`, the client is `active`, and its agency is `active` -- an agency
+ * collaborator without an explicit client membership does not gain portal access through this
+ * guard, because the agency workspace and the client portal are different contexts (issue #33).
+ */
+export const createRequireClientAccess = (dependencies: TenancyGuardDependencies) =>
+  async (request: FastifyRequest): Promise<void> => {
+    const auth = request.auth;
+    if (auth === undefined) throw unauthenticated();
+
+    const clientId = routeClientId(request.params);
+    if (clientId === undefined || !uuidPattern.test(clientId)) throw clientNotFound();
+
+    const row = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      const result = await raw<RawRows<ClientAccessRow>>(transaction, `
+        select
+          client.id as client_id,
+          client.agency_id as agency_id,
+          membership.id as client_membership_id
+        from public.client_memberships as membership
+        join public.clients as client on client.id = membership.client_id
+        join public.agencies as agency on agency.id = client.agency_id
+        where client.id = ?::uuid
+          and membership.user_id = app_private.current_user_id()
+          and membership.status = 'active'
+          and client.status = 'active'
+          and agency.status = 'active'
+      `, [clientId]);
+      return result.rows[0];
+    });
+
+    // A missing row intentionally covers a nonexistent client, an archived client, a suspended
+    // agency, and a caller without an active client membership -- never revealing which.
+    if (row === undefined) throw clientNotFound();
+    request.clientContext = {
+      clientId: row.client_id,
+      agencyId: row.agency_id,
+      clientMembershipId: row.client_membership_id
+    };
+  };
+
+/** Alias matching the guard name used by route modules. */
+export const requireClientAccess = createRequireClientAccess;

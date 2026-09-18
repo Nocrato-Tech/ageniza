@@ -5,7 +5,7 @@ import type { ApiConfig } from '@ageniza/config/server';
 import { createLogger, type CoreLogger } from '@ageniza/core';
 import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, type DatabaseClient } from '@ageniza/database';
 import type { EmailSender, OutgoingEmail } from '@ageniza/email';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Pool } from 'pg';
 
 import { buildApp } from '../../../app.js';
@@ -13,8 +13,10 @@ import { createAuthAuditRecorder, type AuthAuditRecorder } from '../audit.js';
 import { createAuthLimiter, type AuthLimiterOptions, type InMemoryAuthLimiter } from '../auth-limiter.js';
 import { createAuth, type AuthInstance } from '../better-auth.js';
 import { createEmailService, type EmailService } from '../email-service.js';
-import { createRequireAgencyAccess, requirePermission } from '../../tenancy/guards.js';
+import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../../tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from '../../invitations/routes.js';
+import type { ContextModuleDependencies } from '../../contexts/routes.js';
+import { createRequireSession } from '../session-guard.js';
 
 /** Runs only against the migrated local database (`pnpm db:migrate`), as the application role. */
 export const APPLICATION_DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
@@ -84,12 +86,20 @@ export interface TestAppOptions {
   readonly logger?: CoreLogger;
   readonly limiterOptions?: AuthLimiterOptions;
   /**
-   * Test/harness-only hook (B12 #13): registers additional routes on the built app, outside the
-   * auth module, before `app.ready()`. Never used by production code; exists so a test can prove
-   * the global origin/CSRF check covers a real route it does not otherwise know about, rather
-   * than only a nonexistent URL.
+   * Test/harness-only hook (B12 #13, AUTH-20C #14): registers additional routes on the built app,
+   * outside the auth module, before `app.ready()`. Never used by production code. Exists so a
+   * test can prove the global origin/CSRF check covers a real route it does not otherwise know
+   * about, and so AUTH-20C's "two tabs" test can mount a route guarded by the real
+   * `requireAgencyAccess`/`requireClientAccess` prehandlers without a bespoke fixture.
    */
-  readonly registerExtraRoutes?: (app: FastifyInstance) => void | Promise<void>;
+  readonly registerExtraRoutes?: (app: FastifyInstance, guards: TestGuardBuilders) => void | Promise<void>;
+}
+
+/** Real prehandler builders, wired to this test app's own `auth`/`database`, for `registerExtraRoutes`. */
+export interface TestGuardBuilders {
+  readonly requireSession: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+  readonly requireAgencyAccess: (request: FastifyRequest) => Promise<void>;
+  readonly requireClientAccess: (request: FastifyRequest) => Promise<void>;
 }
 
 export interface TestApp {
@@ -131,8 +141,17 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     requirePermission,
     invitationTokenLookup
   };
-  const app = await buildApp({ config, logger, auth: { auth, limiter, auditRecorder, invitationTokenLookup }, invitations });
-  if (options.registerExtraRoutes !== undefined) await options.registerExtraRoutes(app);
+  const requireClientAccess = createRequireClientAccess({ database });
+  const contexts: ContextModuleDependencies = { database, auth, requireClientAccess };
+  const app = await buildApp({ config, logger, auth: { auth, limiter, auditRecorder, invitationTokenLookup }, invitations, contexts });
+  if (options.registerExtraRoutes !== undefined) {
+    const guards: TestGuardBuilders = {
+      requireSession: createRequireSession({ auth }),
+      requireAgencyAccess: createRequireAgencyAccess({ database }),
+      requireClientAccess
+    };
+    await options.registerExtraRoutes(app, guards);
+  }
   await app.ready();
 
   return {

@@ -10,8 +10,9 @@ import { createAuthAuditRecorder } from './modules/auth/audit.js';
 import { createAuthLimiter } from './modules/auth/auth-limiter.js';
 import { createAuth } from './modules/auth/better-auth.js';
 import { createEmailService } from './modules/auth/email-service.js';
-import { createRequireAgencyAccess, requirePermission } from './modules/tenancy/guards.js';
+import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from './modules/tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from './modules/invitations/routes.js';
+import type { ContextModuleDependencies } from './modules/contexts/routes.js';
 
 /** Dedicated to Better Auth (and, since it shares the same `ageniza_app` role and connection
  * settings, to append-only audit writes); small on purpose on a shared VPS. */
@@ -49,6 +50,11 @@ export const startApi = async (): Promise<void> => {
     requirePermission,
     invitationTokenLookup
   };
+  const contextDependencies: ContextModuleDependencies = {
+    database,
+    auth,
+    requireClientAccess: createRequireClientAccess({ database })
+  };
 
   const readiness = createReadiness(false);
   const dependencyChecks: readonly HealthCheck[] = [
@@ -60,7 +66,8 @@ export const startApi = async (): Promise<void> => {
     readiness,
     dependencyChecks,
     auth: { auth, limiter, auditRecorder, invitationTokenLookup },
-    invitations: invitationDependencies
+    invitations: invitationDependencies,
+    contexts: contextDependencies
   });
 
   const shutdown = createShutdownManager();
