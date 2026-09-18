@@ -23,9 +23,20 @@ export const configureServerSentry = (options: ServerSentryOptions): boolean => 
     environment: options.environment,
     release: options.release,
     sendDefaultPii: false,
-    beforeSend: (event) => redactSensitiveData(event) as typeof event
+    beforeSend: (event) => redactSensitiveData(stripRequestUrl(event)) as typeof event
   });
   return true;
+};
+
+/**
+ * The SDK attaches the request URL on its own, and `sendDefaultPii: false` does not turn that off.
+ * A path segment can be a secret — `/invitations/<token>` — and the redaction pass only matches
+ * `token=`-style values, so the URL is dropped here instead (issue #37). The `route` tag carries
+ * the route pattern, which is what correlation actually needs.
+ */
+export const stripRequestUrl = <T extends { request?: { url?: string } }>(event: T): T => {
+  if (event.request?.url !== undefined) delete event.request.url;
+  return event;
 };
 
 /** Sends unexpected failures with technical correlation only; request payloads are never attached. */
