@@ -17,13 +17,31 @@ neither the file nor a proxy passes through the VPS.
    support a presigned-POST size policy. If the object doesn't match the declared category's
    limits or the tenant's quota, the object is deleted from the bucket and the asset is marked
    `rejected`; otherwise it is marked `confirmed`.
-5. `GET /agencies/:agencyId/media/:assetId/download-url` issues a short-lived signed `GET`, meant
-   to be requested only at the moment a social network's API needs to fetch the file.
+5. `GET /agencies/:agencyId/media/:assetId/download-url?variant=original|thumbnail|preview` issues
+   a short-lived signed `GET`, meant to be requested only at the moment it is actually needed
+   (a social network's API fetching the original, or the app displaying a preview). `variant`
+   defaults to `original`; `thumbnail`/`preview` return 409 `VARIANT_NOT_READY` until the worker's
+   video processing job (issue #24, below) has generated them.
 
 Every route requires `requireAgencyAccess` then `requirePermission('midia.enviar')` before any
 signed URL is produced, so a caller from agency A can never obtain a URL for agency B's asset --
 enforced at three independent layers: the route guard, the SQL scoping every asset lookup by both
 `id` and `agency_id`, and `media_assets`' own row-level security policies.
+
+## Video processing (issue #24)
+
+When step 4 above confirms a **video** asset, the same transaction flips its
+`video_processing_status` from `not_applicable` to `pending`, and the route then queues a
+`media.process-video` durable job (`job-dispatcher.ts`, a send-only pg-boss producer) carrying
+only `assetId`/`agencyId`/`actorUserId` -- never a signed URL or file path. The worker
+(`apps/worker/src/media-video-job.ts`) picks it up, re-derives the object key from the database
+scoped to that tenant, downloads the original to a local temp directory, runs `ffmpeg`/`ffprobe`
+(timeout-bounded, no network, output-size-capped) to produce a thumbnail and a 720p preview,
+uploads both back under the asset's own key prefix, and records the outcome
+(`thumbnail_object_key`, `preview_object_key`, `video_duration_seconds`, sizes, or a short
+`video_processing_error`). The original is never transcoded. A dispatch failure at confirm time is
+logged and does not fail the confirmation -- the asset just stays without a thumbnail/preview.
+See `apps/worker/src/media-video-job.ts` and its README/tests for the worker side in full.
 
 ## Environment variables
 

@@ -13,6 +13,7 @@ import { createEmailService } from './modules/auth/email-service.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from './modules/tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from './modules/invitations/routes.js';
 import type { ContextModuleDependencies } from './modules/contexts/routes.js';
+import { createMediaJobDispatcher } from './modules/media/job-dispatcher.js';
 import type { MediaModuleDependencies } from './modules/media/routes.js';
 import { createMediaStorageClient } from './modules/media/storage-client.js';
 
@@ -59,13 +60,16 @@ export const startApi = async (): Promise<void> => {
   };
   // Storage is optional at config-load time (tests/tooling that never touch media may omit it),
   // but the API only starts the media module when it is actually configured.
+  const mediaJobDispatcher = config.storage === undefined ? undefined : createMediaJobDispatcher({ connectionString: config.databaseUrl, logger });
+  if (mediaJobDispatcher !== undefined) await mediaJobDispatcher.start();
   const mediaDependencies: MediaModuleDependencies | undefined = config.storage === undefined ? undefined : {
     database,
     auth,
     storage: createMediaStorageClient(config.storage),
     config: config.storage,
     requireAgencyAccess: createRequireAgencyAccess({ database }),
-    requirePermission
+    requirePermission,
+    jobs: mediaJobDispatcher
   };
 
   const readiness = createReadiness(false);
@@ -86,6 +90,7 @@ export const startApi = async (): Promise<void> => {
   const shutdown = createShutdownManager();
   shutdown.add('sentry', async () => { await flushServerSentry(); });
   shutdown.add('auth-pool', async () => { await authPool.end(); });
+  shutdown.add('media-job-dispatcher', async () => { await mediaJobDispatcher?.stop(); });
   shutdown.add('database', async () => { await database.close(); });
   // Waits for in-flight password reset email deliveries (max 10s), never blocking the response
   // that already went out.

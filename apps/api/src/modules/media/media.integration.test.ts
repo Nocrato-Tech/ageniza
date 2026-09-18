@@ -69,6 +69,15 @@ describe('media upload HTTP module (issue #21)', () => {
 
   afterAll(async () => {
     const agencyIds = [...new Set(createdAgencyIds)];
+    // Issue #24: the multipart video test leaves a real queued job behind for the worker; delete
+    // it by the asset ids that belonged to this test's own agencies.
+    const assetIds = await owner.knex('media_assets').whereIn('agency_id', agencyIds).pluck('id');
+    if (assetIds.length > 0) {
+      await owner.knex.raw(
+        "delete from pgboss.job where name = 'media.process-video' and data->>'assetId' = any(?::text[])",
+        [assetIds]
+      );
+    }
     await owner.knex('audit.events').whereIn('agency_id', agencyIds).delete();
     await owner.knex('media_assets').whereIn('agency_id', agencyIds).delete();
     await owner.knex('agency_storage_quotas').whereIn('agency_id', agencyIds).delete();
@@ -226,6 +235,27 @@ describe('media upload HTTP module (issue #21)', () => {
     });
     expect(completed.statusCode).toBe(200);
     expect(completed.json()).toMatchObject({ status: 'confirmed', sizeBytes: totalSize, contentType: 'video/mp4' });
+
+    // Issue #24: confirming a video queues the worker's thumbnail/preview job by moving
+    // `video_processing_status` from 'not_applicable' to 'pending' in the same transaction --
+    // before the worker has done anything, neither variant is servable yet.
+    const statusRow = await owner.knex('media_assets').where({ id: body.assetId }).first('video_processing_status');
+    expect(statusRow.video_processing_status).toBe('pending');
+    const thumbnailProbe = await app.app.inject({
+      method: 'GET',
+      url: `/agencies/${agencyId}/media/${body.assetId}/download-url?variant=thumbnail`,
+      headers: { ...origin, cookie }
+    });
+    expect(thumbnailProbe.statusCode).toBe(409);
+    expect(thumbnailProbe.json().error.code).toBe('VARIANT_NOT_READY');
+
+    // The worker's job was actually queued, not just the row's status flipped.
+    const jobRows = await owner.knex.raw(
+      "select data from pgboss.job where name = 'media.process-video' and data->>'assetId' = ?",
+      [body.assetId]
+    );
+    expect(jobRows.rows).toHaveLength(1);
+    expect(jobRows.rows[0].data).toMatchObject({ assetId: body.assetId, agencyId });
   });
 
   it('rejects and deletes the object when the confirmed content type does not match the declared category', async () => {

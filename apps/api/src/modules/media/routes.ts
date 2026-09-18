@@ -17,6 +17,7 @@ import { z } from 'zod';
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
+import type { MediaJobDispatcher } from './job-dispatcher.js';
 import {
   describeMediaContentType,
   maxBytesForCategory,
@@ -27,7 +28,7 @@ import {
 } from './policy.js';
 import {
   auditMediaEvent,
-  findConfirmedAsset,
+  findConfirmedAssetWithVariants,
   insertPendingAsset,
   lockAssetForCompletion,
   markAssetConfirmed,
@@ -54,10 +55,14 @@ export interface MediaModuleDependencies {
   readonly config: MediaModuleConfig;
   readonly requireAgencyAccess: MediaPreHandler;
   readonly requirePermission: (key: string) => MediaPreHandler;
+  /** Undefined only in tests that never confirm a video upload; queues the worker's thumbnail/
+   * preview job (issue #24) right after a video's `HeadObject` confirms it. */
+  readonly jobs?: MediaJobDispatcher;
 }
 
 const agencyParamsSchema = z.object({ agencyId: z.string().uuid() }).strict();
 const assetParamsSchema = z.object({ agencyId: z.string().uuid(), assetId: z.string().uuid() }).strict();
+const downloadUrlQuerySchema = z.object({ variant: z.enum(['original', 'thumbnail', 'preview']).optional().default('original') }).strict();
 
 const unauthenticated = (): HttpError => new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
 const assetNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Media asset not found.' });
@@ -70,6 +75,7 @@ const payloadTooLarge = (): HttpError => new HttpError({ statusCode: 413, code: 
 const quotaExceeded = (): HttpError => new HttpError({ statusCode: 409, code: 'QUOTA_EXCEEDED', message: 'This agency has reached its storage quota.' });
 const notPending = (): HttpError => new HttpError({ statusCode: 409, code: 'UPLOAD_NOT_PENDING', message: 'This upload is not pending confirmation.' });
 const uploadRejected = (reason: string): HttpError => new HttpError({ statusCode: 422, code: 'UPLOAD_REJECTED', message: `The uploaded object was rejected: ${reason}.`, details: { reason } });
+const variantNotReady = (): HttpError => new HttpError({ statusCode: 409, code: 'VARIANT_NOT_READY', message: 'This variant has not been generated yet.' });
 
 const routeParams = <T>(schema: z.ZodType<T>, request: FastifyRequest): T => parseRequest(schema, request.params);
 
@@ -237,12 +243,24 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
         return { ok: false as const, reason: rejectionReason };
       }
 
-      await markAssetConfirmed(transaction, asset.id, head!.sizeBytes, head!.contentType!);
+      await markAssetConfirmed(transaction, asset.id, head!.sizeBytes, head!.contentType!, asset.category);
       await auditMediaEvent(transaction, { action: 'media.upload_confirmed', actorUserId: auth.userId, agencyId: params.agencyId, targetId: asset.id });
-      return { ok: true as const, sizeBytes: head!.sizeBytes, contentType: head!.contentType! };
+      return { ok: true as const, sizeBytes: head!.sizeBytes, contentType: head!.contentType!, category: asset.category };
     });
 
     if (!result.ok) throw uploadRejected(result.reason);
+
+    // Queues the worker's thumbnail/preview job (issue #24) right after the object is confirmed
+    // to exist -- the same point the API already treats as "this upload is real". A dispatch
+    // failure here must not fail an otherwise-successful confirmation; it is logged and the asset
+    // simply stays without a thumbnail/preview until reconciled.
+    if (result.category === 'video' && dependencies.jobs !== undefined) {
+      try {
+        await dependencies.jobs.enqueueVideoProcessing({ assetId: params.assetId, agencyId: params.agencyId, actorUserId: auth.userId });
+      } catch (error) {
+        request.log.error({ error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'MEDIA_JOB_DISPATCH_FAILED' } }, 'Failed to queue video processing job');
+      }
+    }
 
     return reply.send(parseResponse(CompleteMediaUploadResponseSchema, {
       assetId: params.assetId,
@@ -255,12 +273,19 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
   app.get('/agencies/:agencyId/media/:assetId/download-url', { preHandler: guarded('midia.enviar'), ...signedUrlRoute }, async (request, reply) => {
     const auth = requireAuth(request);
     const params = routeParams(assetParamsSchema, request);
+    const query = parseRequest(downloadUrlQuerySchema, request.query);
 
     const objectKey = await withAuthenticatedUserTransaction(database, auth.claims, async (transaction) => {
-      const asset = await findConfirmedAsset(transaction, params.assetId, params.agencyId);
+      const asset = await findConfirmedAssetWithVariants(transaction, params.assetId, params.agencyId);
       if (asset === undefined) throw assetNotFound();
+      // The thumbnail/preview variants exist only for a video whose worker job has finished
+      // (issue #24); until then this is a 409, not a 404, since the asset itself is real.
+      const key = query.variant === 'original' ? asset.objectKey
+        : query.variant === 'thumbnail' ? asset.thumbnailObjectKey
+        : asset.previewObjectKey;
+      if (key === null) throw variantNotReady();
       await auditMediaEvent(transaction, { action: 'media.download_url_issued', actorUserId: auth.userId, agencyId: params.agencyId, targetId: params.assetId });
-      return asset.objectKey;
+      return key;
     });
 
     const url = await storage.presignGetObject({ key: objectKey, expiresInSeconds: config.downloadUrlExpirySeconds });

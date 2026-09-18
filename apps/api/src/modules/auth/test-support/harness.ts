@@ -17,6 +17,7 @@ import { createRequireAgencyAccess, createRequireClientAccess, requirePermission
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from '../../invitations/routes.js';
 import type { ContextModuleDependencies } from '../../contexts/routes.js';
 import { createRequireSession } from '../session-guard.js';
+import { createMediaJobDispatcher, type MediaJobDispatcher } from '../../media/job-dispatcher.js';
 import type { MediaModuleDependencies } from '../../media/routes.js';
 import { createMediaStorageClient } from '../../media/storage-client.js';
 
@@ -168,13 +169,18 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   };
   const requireClientAccess = createRequireClientAccess({ database });
   const contexts: ContextModuleDependencies = { database, auth, requireClientAccess };
+  const mediaJobDispatcher: MediaJobDispatcher | undefined = config.storage === undefined
+    ? undefined
+    : createMediaJobDispatcher({ connectionString: config.databaseUrl, logger: createLogger({ enabled: false }) });
+  if (mediaJobDispatcher !== undefined) await mediaJobDispatcher.start();
   const media: MediaModuleDependencies | undefined = config.storage === undefined ? undefined : {
     database,
     auth,
     storage: createMediaStorageClient(config.storage),
     config: config.storage,
     requireAgencyAccess: createRequireAgencyAccess({ database }),
-    requirePermission
+    requirePermission,
+    jobs: mediaJobDispatcher
   };
   const app = await buildApp({ config, logger, auth: { auth, limiter, auditRecorder, invitationTokenLookup }, invitations, contexts, media });
   if (options.registerExtraRoutes !== undefined) {
@@ -199,6 +205,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     media,
     async close(): Promise<void> {
       await emailService.drain();
+      await mediaJobDispatcher?.stop();
       await app.close();
       await database.close();
       await pool.end();
