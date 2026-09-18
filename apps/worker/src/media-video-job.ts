@@ -50,13 +50,16 @@ const objectKeyFor = (agencyId: string, assetId: string, name: 'thumbnail.jpg' |
  * records the outcome. The original is never transcoded or modified.
  *
  * Concurrency and per-job timeout are the queue's own settings (`apps/worker/src/queue.ts`):
- * `WORKER_CONCURRENCY` (1-2) bounds how many of these run at once, and `expireInSeconds` below
- * bounds how long one is allowed to run before pg-boss marks it crashed and retries it.
+ * `concurrency` below bounds how many of these run at once — issue #24 asks for 1 to 2, because
+ * ffmpeg saturates CPU the VPS shares with PostgreSQL and the API — and `expireInSeconds` bounds
+ * how long one may run before pg-boss marks it crashed and retries it.
  */
 export const mediaVideoProcessingJob = (
   dependencies: MediaVideoJobDependencies
 ): DurableJobDefinition<MediaVideoProcessingJobPayload> => ({
   name: MEDIA_VIDEO_PROCESSING_JOB_NAME,
+  // Issue #24: one ffmpeg run at a time, whatever headroom the worker has for lighter jobs.
+  concurrency: 1,
   // ffmpeg runs at most twice (thumbnail, then preview); the extra time covers probing plus the
   // original's download and the outputs' upload.
   expireInSeconds: dependencies.config.ffmpegTimeoutSeconds * 2 + 120,

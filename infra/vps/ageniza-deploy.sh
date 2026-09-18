@@ -93,7 +93,7 @@ validate_runtime_env() {
     case "$key" in
       APP_ENV) [[ "$value" == production ]] || die 'APP_ENV must be production' ;;
       WORKER_SMOKE_JOB) [[ "$value" == false ]] || die 'WORKER_SMOKE_JOB must be false' ;;
-      WORKER_CONCURRENCY) [[ "$value" =~ ^[1-2]$ ]] || die 'WORKER_CONCURRENCY must be an integer from 1 to 2' ;;
+      WORKER_CONCURRENCY) [[ "$value" =~ ^[1-4]$ ]] || die 'WORKER_CONCURRENCY must be an integer from 1 to 4' ;;
       AUTH_TERMS_VERSION|AUTH_PRIVACY_VERSION) [[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die "$key must use YYYY-MM-DD" ;;
       BETTER_AUTH_SECRET|APP_PUBLIC_URL|DATABASE_URL|API_CORS_ORIGINS|API_TRUSTED_PROXY_CIDRS|SMTP_URL|EMAIL_FROM) [[ -n "$value" ]] || die "$key must not be blank" ;;
       # Cloudflare R2 (issue #21): required together, like the email settings above.

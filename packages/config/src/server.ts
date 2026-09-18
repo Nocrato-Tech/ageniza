@@ -191,10 +191,10 @@ const workerSchema = sharedServerSchema.extend({
   WORKER_HEALTH_HOST: z.enum(['127.0.0.1', '::1', '0.0.0.0']).default('127.0.0.1'),
   WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(3002),
   WORKER_SMOKE_JOB: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
-  // Bounded on purpose: video processing (issue #24) is CPU-heavy (ffmpeg) and the VPS shares
-  // its cores with PostgreSQL and the API, so this is 1-2, not the wider range a generic worker
-  // might allow.
-  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(2).default(1),
+  // Bounded on purpose: raising it trades API and database headroom on a shared VPS for throughput.
+  // CPU-heavy jobs cap themselves further through the queue's per-job `concurrency` (video
+  // processing, issue #24, runs one at a time), so this ceiling stays for lighter jobs.
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(4).default(1),
   // Object storage (issue #24): same Cloudflare R2 bucket/credentials as the API (issue #21); the
   // worker downloads the confirmed original and uploads thumbnail/preview outputs directly, with
   // no presigning. All four are required together, exactly like the API's copy of these settings.

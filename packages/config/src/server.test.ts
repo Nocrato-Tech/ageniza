@@ -279,6 +279,7 @@ describe('server configuration', () => {
     expect(() => loadWorkerConfig({ ...localEnvironment, WORKER_HEALTH_PORT: '0' })).toThrow('WORKER_HEALTH_PORT');
     expect(() => loadWorkerConfig({ ...localEnvironment, WORKER_SMOKE_JOB: 'yes' })).toThrow('WORKER_SMOKE_JOB');
     expect(loadWorkerConfig({ ...localEnvironment, WORKER_CONCURRENCY: '2' }).concurrency).toBe(2);
+    expect(loadWorkerConfig({ ...localEnvironment, WORKER_CONCURRENCY: '4' }).concurrency).toBe(4);
     expect(() => loadWorkerConfig({ ...localEnvironment, WORKER_CONCURRENCY: '0' })).toThrow('WORKER_CONCURRENCY');
     expect(() => loadWorkerConfig({ ...localEnvironment, WORKER_CONCURRENCY: '5' })).toThrow('WORKER_CONCURRENCY');
     expect(() => loadWorkerConfig({
