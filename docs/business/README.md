@@ -1,0 +1,39 @@
+# Negócio
+
+Regras de negócio, decisões de produto e a visão do domínio. É daqui que sai a resposta para "o sistema **deve** fazer isso?" — o código responde apenas o que ele **faz**.
+
+- [Visão do produto](product-overview.md) — o domínio, os papéis e os fluxos. Comece por aqui se você chegou agora.
+- [Decisões de negócio](decisions.md) — o registro cronológico do que foi decidido e por quê.
+- [Decisões arquiteturais](../adr/) — ADRs: escolhas técnicas com consequência de longo prazo.
+
+## Por que o código não é a fonte da verdade aqui
+
+Código e testes dizem o que o sistema faz hoje. Se eles também definissem o que ele deveria fazer, nenhum comportamento errado seria um bug — seria só comportamento, e regressão viraria "mudança".
+
+Casos reais deste repositório:
+
+- Criar dois convites equivalentes ao mesmo tempo devolvia `500`. Foi a issue #32 dizendo "criar convite revoga o pendente equivalente" que permitiu chamar aquilo de defeito.
+- A permissão exigida pela rota de cancelamento divergia da exigida pela policy do banco (#39). Sem um prescritivo externo, não havia como saber qual dos dois lados estava errado.
+- O teto de concorrência do worker foi reduzido de 4 para 2. A issue #24 pedia esse limite **para o job de vídeo**, não para o worker inteiro; sem isso, a redução passaria como decisão legítima.
+
+A ponte entre o que está escrito aqui e o que roda em produção é o **teste**. Regra de negócio que nenhum teste verifica diverge do código em semanas.
+
+## O que registrar
+
+Toda decisão de negócio, qualquer que tenha sido o contexto em que foi tomada: conversa do time, sessão de trabalho com um agente, questionamento em cima de um plano, comentário de PR ou mensagem avulsa. Se a decisão muda o que o produto faz, ou fecha uma alternativa que alguém razoavelmente tentaria de novo, ela entra em [decisions.md](decisions.md).
+
+O sinal mais confiável de que algo precisa ser registrado é este: **alguém, daqui a três meses, vai olhar o código e perguntar "por que assim?"**. A resposta não pode depender de quem estava na conversa.
+
+Não registre aqui: detalhe de implementação que o código já expressa, decisão técnica com consequência arquitetural (isso é um ADR) e regra permanente de como agentes devem trabalhar (isso é o `AGENTS.md`).
+
+## Como registrar
+
+Acrescente uma entrada ao fim de [decisions.md](decisions.md), no mesmo commit ou PR que implementa a decisão. Uma entrada tem:
+
+- **data e título** — o que foi decidido, em uma linha;
+- **contexto** — o que motivou a decisão e quais alternativas existiam;
+- **decisão** — o que vale, de forma que dê para verificar;
+- **consequência** — o que isso custa, impede ou exige depois;
+- **origem** — issue, PR ou "decidido em sessão", para quem quiser o histórico completo.
+
+Decisão ainda não validada entra marcada como **pendente de validação**, com quem precisa validar. É melhor registrar uma decisão provisória e marcá-la do que deixá-la só na cabeça de quem implementou.
