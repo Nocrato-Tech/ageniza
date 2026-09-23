@@ -4,6 +4,7 @@ Regras de negócio, decisões de produto e a visão do domínio. É daqui que sa
 
 - [Visão do produto](product-overview.md) — o domínio, os papéis e os fluxos. Comece por aqui se você chegou agora.
 - [Decisões de negócio](decisions.md) — o registro cronológico do que foi decidido e por quê.
+- [Mudanças estruturais](structural-changes.md) — leitura obrigatória antes de implementar algo novo.
 - [Decisões arquiteturais](../adr/) — ADRs: escolhas técnicas com consequência de longo prazo.
 
 ## Por que o código não é a fonte da verdade aqui

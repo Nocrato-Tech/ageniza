@@ -17,6 +17,7 @@ Nada disso exige saber programar.
 Comece pelos dois anteriores. O domínio explica escolhas que, sem ele, parecem arbitrárias. Depois:
 
 1. [`AGENTS.md`](../AGENTS.md) — os invariantes do projeto. São curtos e valem para pessoas e agentes. Leia antes do primeiro commit.
+2. [Mudanças estruturais](business/structural-changes.md) — o que custa caro mudar depois, e o que fazer ao encontrar um desses casos. Obrigatório antes de implementar algo novo.
 2. [`README.md`](../README.md) — como rodar, estrutura do workspace, comandos.
 3. [ADRs](adr/) — as decisões técnicas com consequência de longo prazo. O [0011](adr/0011-self-hosted-postgres-and-better-auth.md) é o mais importante: explica por que o PostgreSQL é próprio, como o RLS funciona aqui e por que a aplicação nunca o contorna.
 
