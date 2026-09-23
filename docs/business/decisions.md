@@ -145,3 +145,36 @@ Registro cronológico, mais recente ao fim. O processo e o que entra aqui estão
 **Consequência.** Como `admin` já detém as quatro, o comportamento hoje é idêntico; a mudança só importa quando existirem papéis personalizados. Reenviar cria uma linha nova, então a policy de inserção também reconhece `convite.reenviar` — e com isso o RLS deixa de garantir sozinho que apenas quem convida cria convite. A API mantém essa fronteira.
 
 **Origem.** Issue #39, PR #41.
+
+---
+
+## 2026-09-23 — Desenvolvimento e validação locais até os módulos iniciais ficarem prontos
+
+**Contexto.** A infraestrutura está escrita e com CI verde, mas nunca rodou num deploy real. A alternativa era contratar a VPS agora, ou ao menos apontar um Cloudflare Tunnel gratuito para a máquina de desenvolvimento e exercitar o R2 real antes de seguir. Nenhuma das duas era necessária para continuar construindo.
+
+**Decisão.** Todo o desenvolvimento e toda a validação seguem locais — PostgreSQL, MinIO, Mailpit e worker em Docker — até que os módulos iniciais estejam prontos. Só então vem o deploy e a validação contra os serviços reais.
+
+**Consequência.** Estes pontos ficam **sem validação alguma** até lá, e os ajustes que eles exigirem virão todos de uma vez:
+
+- CORS e lifecycle do bucket R2. O MinIO não implementa a API de CORS por bucket, e sem o header `ETag` exposto o upload multipart não funciona.
+- Comportamento real do R2 em multipart e URLs assinadas, onde o MinIO não é substituto fiel.
+- Cloudflare Tunnel como única borda pública.
+- Entrega real de e-mail: SPF, DKIM e reputação. O Mailpit não prova nada disso.
+- Consumo de CPU do ffmpeg disputando a VPS com o PostgreSQL e a API, que é a premissa por trás dos limites de concorrência escolhidos.
+- Backup e restore de verdade contra o R2.
+
+Para reduzir o risco, o deploy deve ser feito **antes** de haver dependência dele: a primeira validação real vai gerar ajustes, e é melhor que aconteçam numa semana tranquila.
+
+**Origem.** Decidido em sessão.
+
+---
+
+## 2026-09-23 — Escopo dos módulos iniciais é definido no repositório, não no Notion
+
+**Contexto.** Parte do escopo dos próximos módulos — colaboradores, clientes, configurações — já havia sido rascunhada no Notion.
+
+**Decisão.** Esse escopo será refeito aqui, fechando um módulo de cada vez, com as decisões saindo de sessões de questionamento e registradas neste arquivo antes da implementação. O Notion deixa de ser destino de decisão nova.
+
+**Consequência.** Nenhuma implementação de módulo novo começa antes de o escopo dele estar escrito aqui e na issue correspondente. O que já existir no Notion é insumo, não fonte de verdade, e precisa ser reescrito ou descartado explicitamente — ver issue #42.
+
+**Origem.** Decidido em sessão.
