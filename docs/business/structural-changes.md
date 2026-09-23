@@ -40,3 +40,9 @@ Nenhuma precisa ser resolvida agora. Estão aqui para serem reconhecidas quando 
 **Exclusão reversível.** Existe `status = 'archived'` em clientes, mas não há padrão geral de exclusão, nem rota que exclua. Definir isso depois de vários módulos escreverem o próprio jeito é o caminho mais caro.
 
 **Contexto de cliente na mídia.** `media_assets` é escopado apenas por agência. Se o portal do cliente precisar ver só a mídia dele, é migration mais mudança de RLS — está registrado como pendente de validação em [decisions.md](decisions.md).
+
+## O gate
+
+Isto não depende de boa vontade. `scripts/ci/verify-structural-decisions.mjs` roda no CI e reprova a mudança quando uma migration alcança algo já implantado sem que [decisions.md](decisions.md) tenha sido tocado junto.
+
+Ele cobre o banco, que é onde mudar de ideia custa mais caro. Mudança estrutural que vive só na API — um formato de resposta que os próximos módulos vão copiar, por exemplo — continua dependendo de quem revisa reconhecer o caso.
