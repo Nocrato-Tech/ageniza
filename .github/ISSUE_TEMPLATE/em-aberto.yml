@@ -1,0 +1,32 @@
+name: Ponto em aberto
+description: Decisão que ainda não foi tomada, com o evento que vai obrigá-la
+title: "[EM ABERTO] "
+labels: ["em-aberto"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ponto em aberto **sem gatilho é dívida invisível**. O gatilho é um evento, não uma data.
+  - type: textarea
+    id: ponto
+    attributes:
+      label: O que não foi decidido
+    validations:
+      required: true
+  - type: input
+    id: gatilho
+    attributes:
+      label: Gatilho
+      description: O evento que obriga a decisão.
+      placeholder: quando o portal do cliente existir
+    validations:
+      required: true
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas na mesa
+      description: O que já foi considerado, para a conversa não recomeçar do zero.
+  - type: input
+    id: decide
+    attributes:
+      label: Quem decide
