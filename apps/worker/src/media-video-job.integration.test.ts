@@ -16,8 +16,8 @@ import { createMediaProcessingStorageClient } from './media-storage.js';
 import { MEDIA_VIDEO_RETRY_LIMIT, mediaVideoProcessingJob } from './media-video-job.js';
 import type { DurableJobContext } from './queue.js';
 
-// Issue #24 acceptance tests. Runs against the real local PostgreSQL and MinIO started by
-// `pnpm db:migrate` / `docker compose up -d minio minio-init` -- see
+// Issue #24 acceptance tests. Runs against the real local PostgreSQL and LocalStack started by
+// `pnpm db:migrate` / `pnpm storage:start` -- see
 // apps/api/src/modules/media/README.md for how those are started, and real ffmpeg/ffprobe on
 // PATH (see media-ffmpeg.integration.test.ts for why these are not mocked).
 const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
@@ -87,7 +87,7 @@ const insertOwnerAndAgency = async (label: string): Promise<{ userId: string; ag
 
 /** Inserts a confirmed video asset row directly (bypassing the API's own upload flow, which
  * issue #21 already tests) and, unless `skipUpload` is set, puts `body` at its object key in
- * MinIO first. Returns the fixed assetId so tests can build the exact object key up front. */
+ * the bucket first. Returns the fixed assetId so tests can build the exact object key up front. */
 const insertConfirmedVideoAsset = async (input: {
   agencyId: string;
   userId: string;
@@ -193,7 +193,7 @@ afterAll(async () => {
   }
 });
 
-describe('media video processing job (real PostgreSQL + MinIO, real ffmpeg)', () => {
+describe('media video processing job (real PostgreSQL + LocalStack, real ffmpeg)', () => {
   it('downloads the original, generates a thumbnail and 720p preview, uploads them, and records the outcome', async () => {
     const { userId, agencyId } = await insertOwnerAndAgency('ready');
     const { assetId } = await insertConfirmedVideoAsset({ agencyId, userId, body: sampleVideoBytes });

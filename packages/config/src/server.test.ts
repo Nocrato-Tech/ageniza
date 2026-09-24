@@ -295,13 +295,13 @@ describe('server configuration', () => {
     const withStorage = {
       ...localEnvironment,
       APP_CONTAINER_LOCAL: 'true',
-      R2_ENDPOINT: 'http://minio:9000',
+      R2_ENDPOINT: 'http://localstack:4566',
       R2_ACCESS_KEY_ID: 'local-access-key',
       R2_SECRET_ACCESS_KEY: 'local-secret-key'
     };
     expect(() => loadApiConfig(withStorage)).toThrow('must be set together');
     expect(loadApiConfig({ ...withStorage, R2_BUCKET: 'ageniza-media-local' }).storage).toMatchObject({
-      endpoint: 'http://minio:9000',
+      endpoint: 'http://localstack:4566',
       region: 'auto',
       accessKeyId: 'local-access-key',
       secretAccessKey: 'local-secret-key',
@@ -346,13 +346,13 @@ describe('server configuration', () => {
     const withStorage = {
       ...localEnvironment,
       APP_CONTAINER_LOCAL: 'true',
-      R2_ENDPOINT: 'http://minio:9000',
+      R2_ENDPOINT: 'http://localstack:4566',
       R2_ACCESS_KEY_ID: 'local-access-key',
       R2_SECRET_ACCESS_KEY: 'local-secret-key'
     };
     expect(() => loadWorkerConfig(withStorage)).toThrow('must be set together');
     expect(loadWorkerConfig({ ...withStorage, R2_BUCKET: 'ageniza-media-local' }).storage).toEqual({
-      endpoint: 'http://minio:9000',
+      endpoint: 'http://localstack:4566',
       region: 'auto',
       accessKeyId: 'local-access-key',
       secretAccessKey: 'local-secret-key',
@@ -397,7 +397,7 @@ describe('server configuration', () => {
     expect(() => loadApiConfig({
       ...localEnvironment,
       APP_CONTAINER_LOCAL: 'true',
-      R2_ENDPOINT: 'http://minio:9000',
+      R2_ENDPOINT: 'http://localstack:4566',
       R2_ACCESS_KEY_ID: 'local-access-key',
       R2_SECRET_ACCESS_KEY: 'local-secret-key',
       R2_BUCKET: 'ageniza-media-local',

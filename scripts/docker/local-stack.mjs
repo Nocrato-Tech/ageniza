@@ -49,11 +49,11 @@ const migrationEnvironment = () => {
 };
 
 const startDatabase = () => runCompose(['up', '-d', '--wait', 'postgres']);
-/** MinIO stands in for R2 locally and in CI; minio-init is one-shot, so it is run, not waited on. */
-const startStorage = () => {
-  runCompose(['up', '-d', '--wait', '--force-recreate', 'minio']);
-  runCompose(['run', '--rm', 'minio-init']);
-};
+/**
+ * LocalStack stands in for R2 locally and in CI. The bucket is created by a ready hook inside the
+ * container, and the healthcheck waits on its marker -- so `--wait` returning means the bucket exists.
+ */
+const startStorage = () => runCompose(['up', '-d', '--wait', '--force-recreate', 'localstack']);
 const migrate = () => run('pnpm', ['--filter', '@ageniza/database', 'migrate'], { env: { ...localEnvironment, ...migrationEnvironment() } });
 
 switch (command) {

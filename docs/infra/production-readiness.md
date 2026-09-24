@@ -46,7 +46,7 @@ This bucket stores user media. It is separate from the database-backup bucket.
   `ETag` visibility, confirmation, signed download, thumbnail generation, and preview generation.
 - [ ] Confirm that the bucket and its objects are not publicly readable.
 
-Detailed behavior and the R2/MinIO differences are documented in the
+Detailed behavior and the R2/LocalStack differences are documented in the
 [media module runbook](../../apps/api/src/modules/media/README.md#what-must-be-configured-by-hand-in-production-cannot-be-expressed-as-a-migration-or-compose-file).
 Use Cloudflare's current [CORS](https://developers.cloudflare.com/r2/buckets/cors/) and
 [object lifecycle](https://developers.cloudflare.com/r2/buckets/object-lifecycles/) documentation

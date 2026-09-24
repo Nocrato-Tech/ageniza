@@ -26,38 +26,33 @@ services:
     ports: ["127.0.0.1:8025:8025", "127.0.0.1:1025:1025"]
     networks: [internal, database-host]
     healthcheck: { test: ["CMD", "/mailpit", "readyz"], interval: 5s, timeout: 3s, retries: 12 }
-  # Local S3-compatible object storage standing in for Cloudflare R2 (issue #21). Console on
-  # 127.0.0.1:9001; the S3 API on 127.0.0.1:9000 is published only for host tools/tests, same as postgres.
-  minio:
-    image: quay.io/minio/minio:RELEASE.2025-01-20T14-49-07Z
+  # Local S3-compatible object storage standing in for Cloudflare R2 (issue #21). LocalStack took
+  # MinIO's place when MinIO's community images left every public registry -- see decisions.md.
+  # The S3 API is published on 127.0.0.1:9000 so every existing R2_ENDPOINT keeps working; inside
+  # the network the endpoint is http://localstack:4566.
+  localstack:
+    image: localstack/localstack:4.9
     environment:
-      MINIO_ROOT_USER: ${R2_ACCESS_KEY_ID:-}
-      MINIO_ROOT_PASSWORD: ${R2_SECRET_ACCESS_KEY:-}
-      # MinIO has no per-bucket CORS API (unlike R2/S3: `mc cors set` returns NotImplemented); CORS
-      # is server-wide instead. MinIO always exposes ETag once CORS is enabled, which multipart needs.
-      MINIO_API_CORS_ALLOW_ORIGIN: http://127.0.0.1:5173
-    command: ["server", "/data", "--console-address", ":9001"]
+      SERVICES: s3
+      # LocalStack accepts any credential, so the init hook signs with the same pair the application
+      # uses only for consistency. MinIO did reject a wrong key; that check is now unverifiable
+      # locally -- see apps/api/src/modules/media/README.md.
+      AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: us-east-1
     volumes:
-      - minio-data:/data
-    ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]
+      - localstack-data:/var/lib/localstack
+      - ./infra/localstack/init-bucket.sh:/etc/localstack/init/ready.d/init-bucket.sh:ro
+    # No console port: MinIO had one on 9001; LocalStack has no local web UI to publish.
+    ports: ["127.0.0.1:9000:4566"]
     networks: [internal, database-host]
-    healthcheck: { test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"], interval: 5s, timeout: 3s, retries: 12 }
-  # One-shot: creates the local bucket and makes it private. Never runs in production; R2 buckets
-  # (including their CORS rule and lifecycle policy) are configured by hand -- see
-  # apps/api/src/modules/media/README.md.
-  minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-01-17T23-25-50Z
-    depends_on: { minio: { condition: service_healthy } }
-    networks: [internal]
-    environment:
-      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
-      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        mc alias set local http://minio:9000 "$${R2_ACCESS_KEY_ID}" "$${R2_SECRET_ACCESS_KEY}" &&
-        mc mb --ignore-existing local/ageniza-media-local &&
-        mc anonymous set none local/ageniza-media-local
+    # The marker is what makes `--wait` mean "bucket exists": LocalStack reports healthy before its
+    # ready hooks finish running.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:4566/_localstack/health && test -f /tmp/ageniza-bucket-ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
   api:
     build: { context: ., dockerfile: apps/api/Dockerfile }
     environment:
@@ -73,15 +68,15 @@ services:
       DATABASE_URL: postgresql://ageniza_app:ageniza_app@postgres:5432/ageniza
       SMTP_URL: smtp://mailpit:1025
       EMAIL_FROM: Ageniza <no-reply@ageniza.local>
-      R2_ENDPOINT: http://minio:9000
-      # The browser resolves this endpoint directly; "minio" only exists inside the Compose network.
+      R2_ENDPOINT: http://localstack:4566
+      # The browser resolves this endpoint directly; "localstack" only exists inside the Compose network.
       R2_PUBLIC_ENDPOINT: http://127.0.0.1:9000
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
       R2_BUCKET: ageniza-media-local
       R2_REGION: auto
       R2_FORCE_PATH_STYLE: 'true'
-    depends_on: { postgres: { condition: service_healthy }, mailpit: { condition: service_healthy }, minio: { condition: service_healthy } }
+    depends_on: { postgres: { condition: service_healthy }, mailpit: { condition: service_healthy }, localstack: { condition: service_healthy } }
     ports: ["127.0.0.1:3001:3001"]
     networks: [edge, internal]
     healthcheck: { test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"], interval: 5s, timeout: 3s, retries: 12 }
@@ -97,13 +92,13 @@ services:
       WORKER_HEALTH_PORT: 3002
       # Video processing (issue #24): same bucket/credentials as the API (issue #21). The worker
       # downloads the confirmed original and uploads thumbnail/preview outputs directly.
-      R2_ENDPOINT: http://minio:9000
+      R2_ENDPOINT: http://localstack:4566
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
       R2_BUCKET: ageniza-media-local
       R2_REGION: auto
       R2_FORCE_PATH_STYLE: 'true'
-    depends_on: { postgres: { condition: service_healthy }, mailpit: { condition: service_healthy }, minio: { condition: service_healthy } }
+    depends_on: { postgres: { condition: service_healthy }, mailpit: { condition: service_healthy }, localstack: { condition: service_healthy } }
     networks: [internal, egress]
     # Docker's default 10s would SIGKILL a draining worker. The queue drains for up to 45s (apps/worker).
     stop_grace_period: 60s
@@ -129,4 +124,4 @@ networks:
   egress: {}
 volumes:
   postgres-data: {}
-  minio-data: {}
+  localstack-data: {}

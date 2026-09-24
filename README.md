@@ -17,7 +17,7 @@ pnpm install
 pnpm dev
 ```
 
-Copy `.env.example` to `.env`, start local PostgreSQL with `pnpm db:start`, start MinIO with `pnpm storage:start` (this generates ignored local credentials), and apply migrations with `pnpm db:migrate` before running database-backed modules. `pnpm db:test:local` runs the integration and RLS isolation suite, and `pnpm db:reset` rebuilds the local database from migrations. Local development must never point at production resources.
+Copy `.env.example` to `.env`, start local PostgreSQL with `pnpm db:start`, start the local object storage with `pnpm storage:start` (this generates ignored local credentials), and apply migrations with `pnpm db:migrate` before running database-backed modules. `pnpm db:test:local` runs the integration and RLS isolation suite, and `pnpm db:reset` rebuilds the local database from migrations. Local development must never point at production resources.
 
 ## Workspace layout
 
