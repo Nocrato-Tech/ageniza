@@ -13,6 +13,7 @@
 - No new module is implemented before its SPEC exists in `specs/`: follow [docs/business/module-process.md](docs/business/module-process.md), which closes a module across backend, frontend and UX before any code.
 - A module's interview does not open while the previous one is not closed **and** cut up: SPEC approved, and its history, tasks, open points and debts created as issues, with the SPEC's section 12 carrying their numbers.
 - Record every business decision in `docs/business/decisions.md`, in the same change that implements it, whoever took it and wherever it was taken: a working session, a plan being challenged, a PR comment or a passing message. A decision that closes an alternative someone would reasonably try again belongs there. Mark it as pending validation when nobody has approved it yet.
+- Code, identifiers, comments and log messages are English; `docs/business/`, `specs/` and user-facing messages are Portuguese. A commit follows the language of what it changes.
 - Keep comments to a minimum: comment only what the code cannot say by itself, such as a non-obvious constraint or the reason behind a surprising decision. Never restate what the next line does, and never leave a paragraph where one line serves. Unnecessary comments are noise in the codebase.
 - Before handoff, run relevant lint, typecheck, tests, and build checks.
 - Never push to `main` or `develop` (not even with `--no-verify`); work on a branch and open a pull request.

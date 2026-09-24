@@ -462,3 +462,36 @@ Quando a resposta revelar algo que a API não faz, quem conduz diz isso na hora 
 **Consequência.** UX continua sendo o sétimo bloco, e continua fechando o esboço: o bloco 0 levanta as telas, o bloco 6 as desenha. O risco que isso cria é a abertura virar desenho antecipado, e é por isso que ela é explicitamente sem layout. O que se ganha é a chance de acrescentar algo que o backend não tem enquanto ainda é barato decidir.
 
 **Origem.** Decidido em sessão, a partir da entrevista do módulo de autenticação.
+
+## 2026-09-24 — Idioma: código em inglês, documentação de negócio em português
+
+**Contexto.** O repositório já misturava os dois sem regra escrita: código, identificadores e comentários em inglês; `docs/business/` e as SPECs em português; mensagens ao usuário em português. Os commits eram em inglês com escopo (`feat(api):`) até 23/09 e passaram a português sem escopo a partir da sessão seguinte — mudança feita sem registro, e percebida só na auditoria de documentação.
+
+**Decisão.** **Código em inglês**: identificadores, comentários, nomes de arquivo, schemas e mensagens de log. **Documentação de negócio em português**: `docs/business/`, `specs/`, `README` de módulo, issues. **Mensagem ao usuário em português**, inclusive as da API, que já respondem assim.
+
+O **commit segue o idioma do que ele muda**. Um commit que mistura código e documentação de negócio é sinal de que deveriam ser dois commits.
+
+Junto com isso, o `AGENTS.md` já exigia comentário mínimo, e a regra continua valendo com ênfase: comentário existe para o que o código não consegue dizer — uma restrição não óbvia, a razão de uma decisão surpreendente. Nunca para repetir o que a próxima linha faz.
+
+**Consequência.** O histórico de commits fica bilíngue, e converter o passado não vale o esforço: a regra passa a valer daqui em diante. Quem escreve código lê e escreve inglês de qualquer forma, porque é o idioma das bibliotecas; quem decide produto lê português, e é para essa pessoa que `docs/business/` existe.
+
+**Origem.** Decidido em sessão, durante a auditoria de documentação para entrada de novos desenvolvedores.
+
+---
+
+## 2026-09-24 — A documentação de entrada passa a ter dono explícito
+
+**Contexto.** Antes de abrir o projeto para mais desenvolvedores, a documentação foi auditada contra a pergunta "o que falta para alguém começar sozinho?". Faltavam seis coisas, e a mais grave era estrutural: `pnpm cli:agency` é o **único** jeito de criar uma agência — logo, o único jeito de obter um ambiente utilizável — e estava mencionado uma única vez, dentro de uma entrada antiga de decisão. Um clone novo levava a um banco vazio sem caminho para frente.
+
+**Decisão.** A documentação de entrada passa a ser composta por quatro peças, cada uma com um papel que as outras não têm:
+
+- [`CONTRIBUTING.md`](../../CONTRIBUTING.md) — branch, commit, PR, revisão, o que fazer quando o CI reprova.
+- [`docs/local-environment.md`](local-environment.md) — do clone até um ambiente em que dá para entrar no produto, incluindo criar agência e ler o convite no Mailpit.
+- [`docs/module-anatomy.md`](module-anatomy.md) — o molde que todo módulo da API segue, que o `AGENTS.md` afirmava existir sem descrever.
+- [`docs/onboarding.md`](onboarding.md) — o roteiro de leitura, o processo de trabalho e as regras de sessão com agente.
+
+Mais um template de pull request que cobra verificação real e a checagem estrutural.
+
+**Consequência.** O roteiro de ambiente local foi **executado do início ao fim** antes de ser escrito, e isso revelou uma divergência que nenhuma leitura teria pego: o e-mail de convite aponta para `/invite/<token>` e o de recuperação para `/reset-password`, enquanto `specs/auth.md` decidiu rotas em português. Documentação de ambiente que não foi executada descreve o que deveria funcionar, não o que funciona.
+
+**Origem.** Decidido em sessão.

@@ -4,6 +4,8 @@ Agency Operations Platform by Nocrato Tech.
 
 New here? Start with [onboarding](docs/onboarding.md), or read the [product overview](docs/business/product-overview.md) for the domain alone. Business rules and the decisions behind them live in [docs/business](docs/business/README.md).
 
+Going to write code? [`CONTRIBUTING.md`](CONTRIBUTING.md) covers branching, commits, pull requests and review; [docs/local-environment.md](docs/local-environment.md) takes a fresh clone to an environment you can actually sign into — **the database starts empty and there is no public sign-up**, so creating an agency is a documented step you cannot skip.
+
 ## Prerequisites
 
 - Node.js 22.14+ (see `.nvmrc`)

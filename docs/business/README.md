@@ -6,6 +6,7 @@ Regras de negócio, decisões de produto e a visão do domínio. É daqui que sa
 - [Decisões de negócio](decisions.md) — o registro cronológico do que foi decidido e por quê.
 - [Mudanças estruturais](structural-changes.md) — leitura obrigatória antes de implementar algo novo.
 - [Como um módulo é fechado](module-process.md) — o fluxo da entrevista até a issue, e o que cada artefato responde.
+- [Anatomia de um módulo](../module-anatomy.md) — o molde que todo módulo da API segue.
 - [Decisões arquiteturais](../adr/) — ADRs: escolhas técnicas com consequência de longo prazo.
 
 ## Por que o código não é a fonte da verdade aqui
