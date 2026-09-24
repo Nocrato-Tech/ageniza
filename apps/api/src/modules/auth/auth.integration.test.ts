@@ -307,7 +307,7 @@ describe('POST /auth/password/forgot (#8, #8b)', () => {
     expect(sender.sent).toHaveLength(1);
     expect(sender.sent[0]?.to).toBe(user.email);
     expect(sender.sent[0]?.text).toMatch(
-      new RegExp(`^.*${TEST_APP_PUBLIC_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/reset-password\\?token=`, 's')
+      new RegExp(`^.*${TEST_APP_PUBLIC_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/senha\\/redefinir\\?token=`, 's')
     );
   });
 
@@ -352,7 +352,7 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
     await app.app.inject({ method: 'POST', url: '/auth/password/forgot', headers: origin, payload: { email } });
     await app.emailService.drain();
     const link = sender.sent.at(-1)?.text ?? '';
-    const match = /reset-password\?token=([^\s"'&]+)/.exec(link);
+    const match = /senha\/redefinir\?token=([^\s"'&]+)/.exec(link);
     if (!match?.[1]) throw new Error('Reset token was not found in the captured email.');
     return decodeURIComponent(match[1]);
   };

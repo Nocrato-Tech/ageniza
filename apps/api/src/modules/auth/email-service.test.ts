@@ -37,7 +37,7 @@ describe('auth email service', () => {
       template: 'password-reset',
       subject: 'Redefina sua senha do Ageniza'
     });
-    expect(sent[0]?.text).toContain('https://app.ageniza.example/reset-password?token=token%20with%20%2B%20and%20%2F');
+    expect(sent[0]?.text).toContain('https://app.ageniza.example/senha/redefinir?token=token%20with%20%2B%20and%20%2F');
     expect(sent[0]?.text).toContain('&invite=unused-invite-token');
   });
 
@@ -67,13 +67,13 @@ describe('auth email service', () => {
 
     await service.sendCollaboratorInvitation({
       to: 'person@example.com',
-      actionUrl: 'https://app.ageniza.example/invite/invite-token',
+      actionUrl: 'https://app.ageniza.example/convite/invite-token',
       expiresInMinutes: 7 * 1_440,
       agencyName: 'Ageniza'
     });
     await service.sendClientInvitation({
       to: 'person@example.com',
-      actionUrl: 'https://app.ageniza.example/invite/client-token',
+      actionUrl: 'https://app.ageniza.example/convite/client-token',
       expiresInMinutes: 1_440,
       agencyName: 'Ageniza',
       clientName: 'Cliente A'
@@ -95,7 +95,7 @@ describe('auth email service', () => {
 
     await expect(service.sendCollaboratorInvitation({
       to: 'person@example.com',
-      actionUrl: 'https://app.ageniza.example/invite/invite-token',
+      actionUrl: 'https://app.ageniza.example/convite/invite-token',
       expiresInMinutes: 60,
       agencyName: 'Ageniza'
     })).rejects.toThrow('SMTP rejected invitation token');

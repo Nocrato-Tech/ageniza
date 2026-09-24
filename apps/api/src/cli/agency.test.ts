@@ -114,7 +114,7 @@ describe('agency operator CLI', () => {
     expect(result).toEqual({ agencyId, expiresAt: '2030-01-08T12:00:00.000Z' });
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ to: 'owner@example.com', agencyName: 'Acme' });
-    const token = sent[0]!.actionUrl.split('/invite/')[1];
+    const token = sent[0]!.actionUrl.split('/convite/')[1];
     expect(token).toBeDefined();
     const dbValues = calls.flatMap((call) => call.bindings.map(String));
     expect(dbValues).toContain(hashInvitationToken(decodeURIComponent(token!)));
@@ -151,7 +151,7 @@ describe('agency operator CLI', () => {
     expect(result).toEqual({ agencyId, expiresAt: '2030-01-08T12:00:00.000Z' });
     expect(calls.findIndex((call) => call.statement.startsWith('update public.invitations')))
       .toBeLessThan(calls.findIndex((call) => call.statement.includes('insert into public.invitations')));
-    const token = decodeURIComponent(sent[0]!.actionUrl.split('/invite/')[1]!);
+    const token = decodeURIComponent(sent[0]!.actionUrl.split('/convite/')[1]!);
     expect(calls.flatMap((call) => call.bindings.map(String))).not.toContain(token);
     expect(calls.filter((call) => call.statement.includes('insert into audit.events'))).toHaveLength(3);
   });
@@ -192,7 +192,7 @@ describe('agency operator CLI', () => {
     expect(exitCode).toBe(0);
     expect(errors).toEqual([]);
     expect(JSON.parse(output.join(''))).toEqual({ agencyId, expiresAt: '2030-01-08T12:00:00.000Z' });
-    expect(output.join('')).not.toContain('/invite/');
+    expect(output.join('')).not.toContain('/convite/');
   });
 
   it('generates a 32-byte base64url token and a one-way hexadecimal hash', () => {

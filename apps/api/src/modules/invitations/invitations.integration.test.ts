@@ -83,7 +83,7 @@ const insertInvitation = async (input: {
 
 const invitationTokenFromLatestEmail = (emailSender = sender): string => {
   const text = emailSender.sent.at(-1)?.text ?? '';
-  const token = text.match(/\/invite\/([^\s]+)/)?.[1];
+  const token = text.match(/\/convite\/([^\s]+)/)?.[1];
   if (token === undefined) throw new Error('The invitation email did not contain a token.');
   return token;
 };
@@ -147,7 +147,7 @@ describe('invitation HTTP module', () => {
     expect(created.statusCode).toBe(201);
     const invitationId = created.json<{ invitationId: string }>().invitationId;
     expect(sender.sent).toHaveLength(1);
-    const link = sender.sent[0]?.text.match(/\/invite\/([^\s]+)/)?.[1];
+    const link = sender.sent[0]?.text.match(/\/convite\/([^\s]+)/)?.[1];
     expect(link).toBeDefined();
 
     const preview = await app.app.inject({ method: 'GET', url: `/invitations/${link}` });
@@ -179,7 +179,7 @@ describe('invitation HTTP module', () => {
       payload: { email: invitee.email }
     });
     expect(created.statusCode).toBe(201);
-    const inviteToken = sender.sent.at(-1)?.text.match(/\/invite\/([^\s]+)/)?.[1];
+    const inviteToken = sender.sent.at(-1)?.text.match(/\/convite\/([^\s]+)/)?.[1];
     expect(inviteToken).toBeDefined();
 
     const forgot = await app.app.inject({
@@ -191,7 +191,7 @@ describe('invitation HTTP module', () => {
     expect(forgot.statusCode).toBe(202);
     await app.emailService.drain();
     const resetMessage = sender.sent.at(-1)?.text ?? '';
-    const resetToken = /reset-password\?token=([^&\s]+)/.exec(resetMessage)?.[1];
+    const resetToken = /senha\/redefinir\?token=([^&\s]+)/.exec(resetMessage)?.[1];
     expect(resetToken).toBeDefined();
     expect(resetMessage).toContain(`invite=${inviteToken}`);
 
@@ -255,7 +255,7 @@ describe('invitation HTTP module', () => {
     });
     expect(created.statusCode).toBe(201);
     const invitationId = created.json<{ invitationId: string }>().invitationId;
-    const oldToken = sender.sent.at(-1)?.text.match(/\/invite\/([^\s]+)/)?.[1];
+    const oldToken = sender.sent.at(-1)?.text.match(/\/convite\/([^\s]+)/)?.[1];
     expect(oldToken).toBeDefined();
 
     const resent = await app.app.inject({
@@ -265,7 +265,7 @@ describe('invitation HTTP module', () => {
     });
     expect(resent.statusCode).toBe(200);
     const newInvitationId = resent.json<{ invitationId: string }>().invitationId;
-    const newToken = sender.sent.at(-1)?.text.match(/\/invite\/([^\s]+)/)?.[1];
+    const newToken = sender.sent.at(-1)?.text.match(/\/convite\/([^\s]+)/)?.[1];
     expect(newToken).toBeDefined();
     expect(newInvitationId).not.toBe(invitationId);
 
@@ -542,7 +542,7 @@ describe('invitation HTTP module', () => {
       headers: { ...origin, cookie: adminCookie }
     });
     expect(resent.statusCode).toBe(200);
-    const resentToken = logSender.sent.at(-1)?.text.match(/\/invite\/([^\s]+)/)?.[1];
+    const resentToken = logSender.sent.at(-1)?.text.match(/\/convite\/([^\s]+)/)?.[1];
     expect(resentToken).toBeDefined();
 
     const logClientId = randomUUID();
@@ -555,13 +555,13 @@ describe('invitation HTTP module', () => {
       payload: { email: logInvitee.email }
     });
     expect(clientInvite.statusCode).toBe(201);
-    const clientToken = logSender.sent.at(-1)?.text.match(/\/invite\/([^\s]+)/)?.[1];
+    const clientToken = logSender.sent.at(-1)?.text.match(/\/convite\/([^\s]+)/)?.[1];
     expect(clientToken).toBeDefined();
     const forgot = await logApp.app.inject({ method: 'POST', url: '/auth/password/forgot', headers: origin, payload: { email: logInvitee.email, inviteToken: clientToken } });
     expect(forgot.statusCode).toBe(202);
     await logApp.emailService.drain();
     const resetMessage = logSender.sent.at(-1)?.text ?? '';
-    const resetToken = /reset-password\?token=([^&\s]+)/.exec(resetMessage)?.[1];
+    const resetToken = /senha\/redefinir\?token=([^&\s]+)/.exec(resetMessage)?.[1];
     expect(resetToken).toBeDefined();
     const nextPassword = 'a secure logging reset password';
     const reset = await logApp.app.inject({

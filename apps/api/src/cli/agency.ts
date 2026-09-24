@@ -93,7 +93,7 @@ export const hashInvitationToken = (token: string): string =>
   createHash('sha256').update(token, 'utf8').digest('hex');
 
 const appUrlFor = (appPublicUrl: string, token: string): string =>
-  `${appPublicUrl.replace(/\/+$/, '')}/invite/${encodeURIComponent(token)}`;
+  `${appPublicUrl.replace(/\/+$/, '')}/convite/${encodeURIComponent(token)}`;
 
 const asIsoDate = (value: string | Date): string => {
   const date = new Date(value);
