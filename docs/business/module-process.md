@@ -27,6 +27,8 @@ Os sete blocos são a ordem da árvore, que é a ordem do custo de errar:
 6. **UX** — quais telas existem, o que cada uma mostra, o que muda conforme o papel de quem olha, e como ficam o estado vazio, o de carregamento e o de erro.
 7. **Impacto estrutural** — o que isso arrasta.
 
+**O bloco de UX é o briefing do designer.** Ele não produz a tela: produz o esboço em nível de wireframe — que telas existem, o que cada uma mostra, o que muda por papel — que é entregue ao designer, e é dele que a tela real volta. A sequência é sempre esboço → design → código.
+
 **UX vem no fim, de propósito.** Tela desenhada antes de estado definido inventa estado. E o bloco de UX é esboço: quais telas, com o quê, para quem. Cor, tipografia e espaçamento são trabalho do designer e não entram na sessão — discuti-los ali transforma a entrevista em reunião de design e o módulo não fecha.
 
 **Mudança estrutural para a sessão.** Se o bloco 7 acusar uma das condições de [structural-changes.md](structural-changes.md), a decisão é registrada antes de qualquer implementação, dizendo explicitamente que é estrutural.
@@ -51,6 +53,7 @@ A SPEC vira uma **history** por capacidade entregável, e **tasks** dentro dela.
 
 - A *history* descreve o resultado do ponto de vista de quem usa, e aponta para a seção da SPEC que a define.
 - As *tasks* são o trabalho: uma por frente (`escopo:api`, `escopo:web`, `escopo:db`, `escopo:infra`). Task que atravessa duas frentes vira duas tasks — PR que mistura API e interface não tem revisão possível.
+- **Task de `escopo:web` nasce pronta, mas bloqueada.** Ela é escrita a partir do esboço e das decisões da SPEC, e recebe `aguardando-design` até o designer entregar a tela. A API não espera por isso: `escopo:api` e `escopo:db` seguem em paralelo.
 - O que ficou em aberto com gatilho vira issue `em-aberto`, não comentário solto.
 - O que ficou como dívida reconhecida vira issue `debito`.
 
@@ -63,6 +66,7 @@ Labels em uso:
 | `tipo:spec` | a sessão de entrevista/consolidação do módulo |
 | `escopo:api` `escopo:web` `escopo:db` `escopo:infra` | onde o trabalho acontece |
 | `modulo:<nome>` | a que módulo pertence |
+| `aguardando-design` | task de interface escrita e bloqueada até a tela ser entregue |
 | `estrutural` | exige decisão registrada antes de implementar |
 | `em-aberto` | ponto não decidido, com gatilho no corpo |
 | `debito` | dívida reconhecida e aceita conscientemente |
