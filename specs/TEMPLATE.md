@@ -81,7 +81,9 @@ Quais policies, e por qual coluna o isolamento acontece. Toda tabela de negócio
 
 ### Esboço
 
-Baixa fidelidade: o que existe em cada tela e onde. Sem cor, sem tipografia, sem espaçamento — isso é do designer.
+Baixa fidelidade: o que existe em cada tela e onde. Sem cor, sem tipografia, sem espaçamento.
+
+**Esta seção é o briefing do designer.** Ela não descreve a tela final — descreve o que a tela precisa resolver, para que o designer a desenhe. O código vem depois da entrega dele.
 
 ```
 ┌─────────────────────────────┐
