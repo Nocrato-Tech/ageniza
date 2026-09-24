@@ -67,6 +67,12 @@ Labels em uso:
 | `em-aberto` | ponto não decidido, com gatilho no corpo |
 | `debito` | dívida reconhecida e aceita conscientemente |
 
+## O portão entre módulos
+
+**A entrevista de um módulo não abre enquanto o anterior não estiver fechado e recortado.** Fechado é a SPEC aprovada; recortado é a *history*, as *tasks*, os abertos e os débitos criados no GitHub, com a seção 12 da SPEC preenchida com os números.
+
+Uma precisão que o primeiro módulo já exigiu: **"recortado" não quer dizer "tem pelo menos uma history"**. A SPEC de autorização e transversais tem zero, porque convenção não é capacidade entregável. O portão é o recorte existir, não a contagem.
+
 ## Fase 4 — Fechamento
 
 O PR implementa a task. Quando a implementação divergir da SPEC — e vai divergir — **a SPEC é corrigida no mesmo PR**. Duas fontes de verdade divergentes são piores do que uma fonte desatualizada admitida.
