@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | em revisão |
+| **Status** | aprovado |
 | **Submódulos** | sessão e recuperação de senha · aceite de convite · criação de conta · resolução e troca de contexto |
 | **Sessões** | 2026-09-24 |
 | **Decidido por** | Pedro Vidal, em sessão |
