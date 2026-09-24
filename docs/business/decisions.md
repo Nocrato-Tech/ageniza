@@ -374,3 +374,79 @@ As **tasks de `escopo:web` são escritas junto com as demais**, a partir do esbo
 **Consequência.** A entrega do designer entra no caminho crítico de toda tela, e é um prazo que não depende de nós. Em troca, o trabalho de interface fica descrito e priorizado antes de existir tela — quem receber o design já encontra a issue pronta, com aceite e dependências. Ninguém codifica tela a partir do wireframe.
 
 **Origem.** Decidido em sessão.
+
+## 2026-09-24 — Escopo do módulo de autenticação: o que entra, e por que verificação de e-mail já está resolvida
+
+**Contexto.** O backend de autenticação, convites e contextos está implementado desde as issues #31, #32 e #33, sem nunca ter passado por uma SPEC. Ao fechar o escopo, três capacidades foram levantadas como faltantes: verificação de e-mail, alteração de senha por quem está logado, e troca de e-mail.
+
+**Decisão.** O módulo cobre **login, recuperação de senha, aceite de convite com conta existente, criação de conta no aceite com Termos, resolução e seleção de contexto, troca de contexto, logout e logout de todas as sessões**.
+
+Sobre as três levantadas:
+
+- **Verificação de e-mail já está satisfeita, e não por omissão.** `apps/api/src/modules/invitations/routes.ts` cria a conta com `emailVerified = true` porque o convite chegou naquele endereço e o token só existe lá. Um passo de verificação depois pediria à pessoa que provasse de novo o que o link já provou.
+- **Alteração de senha por quem está logado fica fora do MVP.** A recuperação por link, que já existe, atende o caso real de quem perdeu o acesso.
+- **Troca de e-mail fica fora do MVP**, com gatilho: o primeiro colaborador ou cliente real pedir. Até lá é operação, pelo mesmo caminho por onde a agência nasce.
+
+**Consequência.** Nenhuma das três exige backend novo agora. Se a troca de e-mail entrar, ela traz rota, token, e-mail transacional e **aviso ao endereço antigo** — sem esse aviso, quem rouba uma sessão troca o e-mail e a pessoa perde a conta em silêncio.
+
+**Origem.** Decidido em sessão (entrevista do módulo de autenticação).
+
+---
+
+## 2026-09-24 — A mesma pessoa com dois e-mails são duas contas, e identidades não se vinculam
+
+**Contexto.** `auth."user".email` é único e o `User` é a identidade global. Perguntou-se o que acontece quando alguém é owner de uma agência com um endereço e colaborador de outra com endereço diferente.
+
+**Decisão.** São **duas contas**, independentes, e isso é aceito. Vincular identidades — um login enxergando os contextos de todos os e-mails de uma pessoa — está **fora**: mudaria o que `User` significa, de identidade para agregado de identidades, atravessando RLS, `current_user_id()` e toda tabela que referencia usuário.
+
+Com isso a regra de e-mail fecha por conta, não por papel: **se a conta é owner de alguma agência, o e-mail dela não é autosserviço**, porque amarra a assinatura que ainda não existe.
+
+**Consequência.** "A mesma pessoa em vários lugares", como o `product-overview.md` descreve, vale apenas para contextos atrelados **ao mesmo e-mail** — convite é endereçado a um endereço, e o endereço define a conta. Quem tem duas contas precisa sair e entrar de novo para alternar: o seletor de contexto mostra somente os contextos daquela conta.
+
+**Origem.** Decidido em sessão (entrevista do módulo de autenticação).
+
+---
+
+## 2026-09-24 — Credencial correta sem nenhum contexto não cria sessão
+
+**Contexto.** Hoje `POST /auth/login` cria sessão para qualquer credencial válida, e `GET /me/contexts/resolve` responde `none` quando a pessoa não tem agência nem cliente — o que acontece com quem foi removido de todas as agências. O resultado é alguém autenticado dentro de uma aplicação sem nada.
+
+**Decisão.** Autenticar primeiro, negar depois. Senha errada continua devolvendo o genérico de credencial inválida; senha **correta com zero contextos** devolve mensagem própria — acesso encerrado, procure quem administra a agência — e **nenhuma sessão é criada**. Isso não revela quais e-mails têm conta: quem chegou a esse ponto já provou que sabe a senha.
+
+A regra é cobrada **no login e na resolução de contexto**, não no guard de sessão. Cobrar em toda requisição custaria uma consulta a mais para sempre, e é desnecessário: `requireAgencyAccess` e `requireClientAccess` já devolvem 404 para tudo que a pessoa não alcança, então uma sessão sem contexto já é inofensiva. O que faltava não era barrar acesso, era não deixar a pessoa presa.
+
+**Consequência.** É **mudança de contrato numa rota implantada**: o comportamento de `POST /auth/login` muda e seus testes de integração mudam junto. A conta continua existindo, então um convite novo para o mesmo e-mail volta a funcionar pelo fluxo de conta existente — não é exclusão, é acesso sem vínculo.
+
+**Origem.** Decidido em sessão (entrevista do módulo de autenticação).
+
+---
+
+## 2026-09-24 — Sete telas de autenticação, com o convite em uma rota e dois estados
+
+**Contexto.** O módulo não tem nenhuma tela, e o backend já decide mais do que a interface costuma assumir: `GET /me/contexts/resolve` devolve `none`, `enter` ou `select`, e `GET /invitations/:token` devolve `accountExists`.
+
+**Decisão.** Sete telas: **Entrar**, **Esqueci a senha**, **Redefinir senha**, **Convite**, **Escolher contexto**, **Acesso encerrado**, e as páginas de **Termos** e **Privacidade**. "Link inválido" é **estado** das telas de convite e reset, não tela própria.
+
+- **O convite é uma rota com dois estados.** A URL é a mesma que chegou no e-mail; `accountExists` escolhe entre confirmar e preencher nome, senha e Termos. Os dois estados mostram para qual agência, qual cliente quando houver, e para qual e-mail o convite foi endereçado.
+- **O reset continua o convite automaticamente.** A API já carrega o `inviteToken` pelo fluxo de recuperação e autentica no fim; mandar a pessoa buscar o e-mail de convite de novo seria pedir que ela reconstruísse à mão um estado que o servidor já tem.
+- **Seletor de contexto: tela própria depois do login, menu durante o uso.** No login a escolha é bloqueante e não há contexto ativo; durante o trabalho, trocar é ação secundária. `PUT /me/last-context` é gravado nos dois casos, e é isso que faz o segundo login não repetir a pergunta.
+- **Menu de conta no cabeçalho** em toda tela autenticada, com o contexto ativo, sair e sair de todas as sessões — sem ele, `POST /auth/logout-all` existe na API e é inalcançável na interface.
+- **As rotas do navegador são em português**: `/entrar`, `/convite/:token`, `/senha/esquecida`, `/senha/redefinir`, `/contextos`, `/termos`, `/privacidade`. As rotas da API continuam em inglês; só uma das duas camadas é lida por gente, e o link de convite vai por e-mail.
+
+**Consequência.** A interface obedece o `resolve` em vez de recalcular a decisão, o que mantém uma única fonte para "onde esta pessoa entra". Qualquer tela nova de autenticação herda as convenções da seção 7 de `specs/autorizacao.md`.
+
+**Origem.** Decidido em sessão (entrevista do módulo de autenticação).
+
+---
+
+## 2026-09-24 — Termos e Privacidade são conteúdo estático versionado, com aceite único
+
+**Contexto.** O banco registra as versões de Termos e de Privacidade separadamente, o contrato de aceite pede um único `acceptTerms: true`, e nenhuma rota entrega os documentos ao navegador.
+
+**Decisão.** O conteúdo dos dois documentos vive **estático e versionado no repositório**, servido pelas páginas `/termos` e `/privacidade` — sem rota de API. O aceite é **um checkbox**, com os links dos dois documentos dentro do próprio texto, e grava as duas versões.
+
+**Reaceite quando uma versão muda fica em aberto**, com gatilho: a primeira alteração de um dos documentos depois de existir gente com conta. Hoje ninguém tem conta.
+
+**Consequência.** Redigir os dois textos é **trabalho da implementação**, não decisão pendente: entra como task do épico. Os textos precisam de revisão jurídica antes de valerem como documento — o que sai daqui é minuta, não parecer.
+
+**Origem.** Decidido em sessão (entrevista do módulo de autenticação).
