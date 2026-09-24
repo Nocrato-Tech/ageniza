@@ -31,13 +31,13 @@ O erro caro não é escolher a opção errada; é escolher em silêncio, dentro 
 
 Nenhuma precisa ser resolvida agora. Estão aqui para serem reconhecidas quando aparecerem numa conversa de módulo.
 
-**Papéis personalizados.** Hoje existem cinco papéis de sistema e cinco permissões, todas concedidas apenas ao Admin. Permitir que uma agência configure os próprios papéis muda as policies de tudo que já tem RLS, e reabre a decisão registrada na issue #39 sobre quais permissões o banco reconhece em convites.
+**Papéis personalizados.** *Adiado com gatilho na sessão 0.* O schema já suporta papel por agência, e tanto a RLS quanto o guard da API já o aceitam — o que não existe é tela nem regra. Ficou fora do MVP porque o catálogo tem quatro permissões e não há combinação a montar. Reabre quando uma agência precisar de uma combinação que os cinco presets não expressam.
 
-**Formato de listagem.** `packages/contracts/src/pagination.ts` existe, mas nenhuma rota o usou ainda. A primeira listagem define paginação, ordenação, filtro e contagem para todas as outras. Vale desenhar com cuidado, porque será copiada.
+**Formato de listagem.** *Decidido na sessão 0.* Paginação por página com o contrato de `packages/contracts/src/pagination.ts`, teto global de 100, tamanho padrão por rota declarado na SPEC, e filtro e ordenação como parâmetros nomeados por rota. Bloco de resumo não pagina. Mudar isso depois de a primeira listagem existir altera o `meta` de toda rota publicada — continua estrutural.
 
 **Rastreio de alteração de dados.** `audit.events` registra ações específicas — convite enviado, agência ativada — não "quem mudou este campo e quando". Se auditoria de campo virar requisito, é retrofit em toda tabela de negócio.
 
-**Exclusão reversível.** Existe `status = 'archived'` em clientes, mas não há padrão geral de exclusão, nem rota que exclua. Definir isso depois de vários módulos escreverem o próprio jeito é o caminho mais caro.
+**Exclusão reversível.** *Decidido na sessão 0.* `archived` é a entidade guardada e recuperável; `removed` é o vínculo desfeito. Nenhuma rota da aplicação exclui fisicamente entidade de negócio — purga só no fluxo de retenção e LGPD. Introduzir um `DELETE` de verdade reabre esta decisão.
 
 **Contexto de cliente na mídia.** `media_assets` é escopado apenas por agência. Se o portal do cliente precisar ver só a mídia dele, é migration mais mudança de RLS — está registrado como pendente de validação em [decisions.md](decisions.md).
 
