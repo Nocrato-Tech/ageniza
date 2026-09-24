@@ -4,9 +4,7 @@ import { ConfigValidationError, loadWebConfig, type BrowserEnvironment } from '.
 
 const localEnvironment: BrowserEnvironment = {
   MODE: 'development',
-  VITE_API_BASE_URL: 'http://127.0.0.1:3001',
-  VITE_SUPABASE_URL: 'http://127.0.0.1:54321',
-  VITE_SUPABASE_ANON_KEY: 'local-anon-key'
+  VITE_API_BASE_URL: 'http://127.0.0.1:3001'
 };
 
 describe('browser configuration', () => {
@@ -18,21 +16,16 @@ describe('browser configuration', () => {
     expect(loadWebConfig({ ...localEnvironment, MODE: 'test' }).environment).toBe('test');
   });
 
-  it('supports production mode only with an HTTPS Supabase URL', () => {
-    const productionEnvironment = {
-      ...localEnvironment,
-      MODE: 'production',
-      VITE_API_BASE_URL: 'https://api.ageniza.example',
-      VITE_SUPABASE_URL: 'https://project.supabase.co'
-    };
+  it('supports production mode only with an HTTPS API URL', () => {
+    const productionEnvironment = { ...localEnvironment, MODE: 'production', VITE_API_BASE_URL: 'https://api.ageniza.example' };
     expect(loadWebConfig(productionEnvironment).environment).toBe('production');
-    expect(() => loadWebConfig({ ...productionEnvironment, VITE_SUPABASE_URL: 'http://project.supabase.co' })).toThrow(
+    expect(() => loadWebConfig({ ...productionEnvironment, VITE_API_BASE_URL: 'http://api.ageniza.example' })).toThrow(
       'must use HTTPS in production'
     );
   });
 
   it('requires HTTPS public Sentry DSNs in production', () => {
-    const productionEnvironment = { ...localEnvironment, MODE: 'production', VITE_API_BASE_URL: 'https://api.ageniza.example', VITE_SUPABASE_URL: 'https://project.supabase.co', VITE_SENTRY_DSN: 'https://public@sentry.example/1' };
+    const productionEnvironment = { ...localEnvironment, MODE: 'production', VITE_API_BASE_URL: 'https://api.ageniza.example', VITE_SENTRY_DSN: 'https://public@sentry.example/1' };
     expect(loadWebConfig(productionEnvironment).sentryDsn).toBe('https://public@sentry.example/1');
     expect(() => loadWebConfig({ ...productionEnvironment, VITE_SENTRY_DSN: 'http://public@sentry.example/1' })).toThrow('must use HTTPS');
   });
@@ -46,9 +39,9 @@ describe('browser configuration', () => {
     expect(() => loadWebConfig({ ...localEnvironment, VITE_API_BASE_URL: 'relative-url' })).toThrow('VITE_API_BASE_URL');
   });
 
-  it('rejects staging mode and remote Supabase in local mode', () => {
+  it('rejects staging mode and a remote API in local mode', () => {
     expect(() => loadWebConfig({ ...localEnvironment, MODE: 'staging' })).toThrow('staging is not modeled');
-    expect(() => loadWebConfig({ ...localEnvironment, VITE_SUPABASE_URL: 'https://project.supabase.co' })).toThrow(
+    expect(() => loadWebConfig({ ...localEnvironment, VITE_API_BASE_URL: 'https://api.ageniza.example' })).toThrow(
       'must point to a loopback resource'
     );
     expect(() => loadWebConfig({ ...localEnvironment, MODE: 'test', VITE_API_BASE_URL: 'https://ci.example.com' })).toThrow(
@@ -63,7 +56,7 @@ describe('browser configuration', () => {
       SUPABASE_SERVICE_ROLE_KEY: 'server-only-secret'
     });
 
-    expect(Object.keys(config)).toEqual(['environment', 'apiBaseUrl', 'supabaseUrl', 'supabaseAnonKey', 'sentryDsn', 'deployVersion']);
+    expect(Object.keys(config)).toEqual(['environment', 'apiBaseUrl', 'sentryDsn', 'deployVersion']);
     expect(JSON.stringify(config)).not.toContain('server-only-secret');
     expect(JSON.stringify(config)).not.toContain('postgresql://secret');
   });
