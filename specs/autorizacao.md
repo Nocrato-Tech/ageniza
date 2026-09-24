@@ -211,11 +211,13 @@ Esta SPEC **não gera history**: não há capacidade nova a entregar. Ela produz
 
 Isso não a isenta do portão: nenhum módulo abre enquanto o anterior não estiver com SPEC aprovada e recorte feito. "Recortado" é o recorte existir — não ter pelo menos uma history.
 
-| issue | tipo |
-|---|---|
-| Papéis personalizados por agência | `em-aberto` |
-| Trial, plano e cobrança | `em-aberto` |
-| Frontend de autenticação e convite nunca desenhado | `debito` |
-| ~~Auth do frontend ainda é Supabase~~ — [#51](https://github.com/Nocrato-Tech/ageniza/issues/51) | `debito` · criada |
+| issue | tipo | labels |
+|---|---|---|
+| [#52](https://github.com/Nocrato-Tech/ageniza/issues/52) — Papéis personalizados por agência | `em-aberto` | `modulo:autorizacao` |
+| [#53](https://github.com/Nocrato-Tech/ageniza/issues/53) — Trial, plano e cobrança | `em-aberto` | `modulo:autorizacao` |
+| [#54](https://github.com/Nocrato-Tech/ageniza/issues/54) — As telas de autenticação e convite nunca foram desenhadas | `debito` | `modulo:auth` · `escopo:web` |
+| [#51](https://github.com/Nocrato-Tech/ageniza/issues/51) — O auth do frontend ainda é Supabase | `debito` | `escopo:web` |
+
+Nenhuma **task**: nenhuma dessas issues é trabalho a executar agora. As duas primeiras são decisões esperando gatilho; as duas últimas são dívida que vira trabalho quando a sessão de frontend de auth abrir, com a #51 bloqueando a #54.
 
 A validação real destas convenções acontece na primeira listagem implementada, que será a de Clientes.
