@@ -1,7 +1,7 @@
-import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { useSyncExternalStore } from 'react';
 
-import type { BrowserConfig } from '@ageniza/config/browser';
+import { AuthSessionResponseSchema } from '@ageniza/contracts';
+import { HttpClientError, type HttpClient } from './http.js';
 
 export interface AuthSessionSnapshot {
   status: 'loading' | 'ready';
@@ -11,51 +11,51 @@ export interface AuthSessionSnapshot {
 export interface AuthSessionStore {
   subscribe(listener: () => void): () => void;
   getSnapshot(): AuthSessionSnapshot;
-  getAccessToken(): Promise<string | null>;
+  refresh(): Promise<void>;
   dispose(): void;
 }
 
-/** Creates a browser-only Supabase client using only the public project URL and anon key. */
-export const createSupabaseBrowserClient = (config: Pick<BrowserConfig, 'supabaseUrl' | 'supabaseAnonKey'>): SupabaseClient =>
-  createClient(config.supabaseUrl, config.supabaseAnonKey, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-  });
-
-const snapshotFor = (session: Session | null): AuthSessionSnapshot => ({ status: 'ready', isAuthenticated: session !== null });
-
-/** Bridges Supabase's session lifecycle into React without exposing tokens to page components. */
-export const createAuthSessionStore = (client: SupabaseClient): AuthSessionStore => {
+/**
+ * Session state for the browser. The API issues an httpOnly cookie (Better Auth, ADR 0011), so the
+ * page never holds a token: `GET /auth/session` answering is itself the proof of an active session,
+ * and 401 is the ordinary answer for a visitor, not a failure.
+ */
+export const createAuthSessionStore = (client: HttpClient): AuthSessionStore => {
   let snapshot: AuthSessionSnapshot = { status: 'loading', isAuthenticated: false };
   let initialized = false;
-  let unsubscribe: (() => void) | undefined;
+  // Guards against React Strict Mode replaying subscribe/unsubscribe: a resolution belonging to a
+  // previous generation must never publish over the current one.
   let generation = 0;
   const listeners = new Set<() => void>();
+
   const publish = (next: AuthSessionSnapshot): void => {
     snapshot = next;
     listeners.forEach((listener) => listener());
   };
+
+  const load = async (activeGeneration: number): Promise<void> => {
+    try {
+      await client.request({ path: '/auth/session', response: AuthSessionResponseSchema });
+      if (generation === activeGeneration) publish({ status: 'ready', isAuthenticated: true });
+    } catch (error: unknown) {
+      // Only an authenticated answer proves a session; every other outcome -- 401, network, an
+      // unparseable body -- leaves the page unauthenticated rather than guessing.
+      if (generation === activeGeneration) publish({ status: 'ready', isAuthenticated: false });
+      if (!(error instanceof HttpClientError)) throw error;
+    }
+  };
+
   const initialize = (): void => {
     if (initialized) return;
     initialized = true;
-    const activeGeneration = ++generation;
-    let authEventSeen = false;
-    const subscription = client.auth.onAuthStateChange((_event, session) => {
-      authEventSeen = true;
-      if (generation === activeGeneration) publish(snapshotFor(session));
-    });
-    unsubscribe = () => subscription.data.subscription.unsubscribe();
-    void client.auth.getSession().then(({ data }) => {
-      if (generation === activeGeneration && !authEventSeen) publish(snapshotFor(data.session));
-    }).catch(() => {
-      if (generation === activeGeneration && !authEventSeen) publish({ status: 'ready', isAuthenticated: false });
-    });
+    void load(++generation);
   };
+
   const teardown = (): void => {
     generation += 1;
     initialized = false;
-    unsubscribe?.();
-    unsubscribe = undefined;
   };
+
   return {
     subscribe(listener) {
       listeners.add(listener);
@@ -66,11 +66,8 @@ export const createAuthSessionStore = (client: SupabaseClient): AuthSessionStore
       };
     },
     getSnapshot: () => snapshot,
-    getAccessToken: async () => {
-      const { data, error } = await client.auth.getSession();
-      if (error) throw error;
-      return data.session?.access_token ?? null;
-    },
+    /** Re-reads the session after login, logout, or any action that can end it server-side. */
+    refresh: async () => { await load(++generation); },
     dispose() { teardown(); listeners.clear(); }
   };
 };

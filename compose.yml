@@ -112,9 +112,6 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         VITE_API_BASE_URL: http://127.0.0.1:3001
-        # Removed with the Supabase web client in issue #20.
-        VITE_SUPABASE_URL: http://127.0.0.1:54321
-        VITE_SUPABASE_ANON_KEY: local-container-placeholder
     ports: ["127.0.0.1:5173:8080"]
     networks: [edge]
     healthcheck: { test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health"], interval: 5s, timeout: 3s, retries: 12 }

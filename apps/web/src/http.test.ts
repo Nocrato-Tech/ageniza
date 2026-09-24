@@ -48,22 +48,7 @@ describe('HttpClient', () => {
     } satisfies Partial<HttpClientError>);
   });
 
-  it('keeps bearer-token injection inside the transport boundary', async () => {
-    let authorization: string | null = null;
-    const client = new HttpClient('http://127.0.0.1:3001', async (_input, init) => {
-      authorization = new Headers(init?.headers).get('authorization');
-      return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
-    }, async () => 'session-token');
-
-    await expect(client.request({
-      path: '/health',
-      response: HealthResponseSchema,
-      headers: { authorization: 'Bearer caller-controlled-token' }
-    })).resolves.toEqual({ status: 'ok' });
-    expect(authorization).toBe('Bearer session-token');
-  });
-
-  it('removes caller-provided authorization when there is no current session', async () => {
+  it('never lets a caller attach an Authorization header', async () => {
     let authorization: string | null = 'not-observed';
     const client = new HttpClient('http://127.0.0.1:3001', async (_input, init) => {
       authorization = new Headers(init?.headers).get('authorization');
@@ -71,6 +56,7 @@ describe('HttpClient', () => {
     });
 
     await client.request({ path: '/health', response: HealthResponseSchema, headers: { authorization: 'Bearer untrusted' } });
+    // The API authenticates by httpOnly cookie: a page holding a bearer token is the defect.
     expect(authorization).toBeNull();
   });
 

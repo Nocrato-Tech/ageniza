@@ -3,7 +3,6 @@ import { createContext, createElement, useContext, type ReactNode } from 'react'
 import { z, type ZodType } from 'zod';
 
 export type HttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';
-export type AccessTokenProvider = () => Promise<string | null>;
 
 export interface RequestOptions<TResponse> {
   path: string;
@@ -96,8 +95,7 @@ const combineSignals = (externalSignal: AbortSignal | undefined, timeoutMs: numb
 export class HttpClient {
   public constructor(
     private readonly baseUrl: string,
-    private readonly fetchImplementation: typeof fetch = fetch,
-    private readonly accessTokenProvider: AccessTokenProvider = async () => null
+    private readonly fetchImplementation: typeof fetch = fetch
   ) {}
 
   public async request<TResponse>(options: RequestOptions<TResponse>): Promise<TResponse> {
@@ -111,17 +109,12 @@ export class HttpClient {
     const headers = new Headers(options.headers);
     headers.set('accept', 'application/json');
     headers.set('x-request-id', requestId);
+    // The API authenticates by httpOnly cookie (ADR 0011); an Authorization header from a caller
+    // would be the page trying to carry a credential it must never hold.
     headers.delete('authorization');
     if (options.body !== undefined) headers.set('content-type', 'application/json');
 
     try {
-      let accessToken: string | null;
-      try {
-        accessToken = await this.accessTokenProvider();
-      } catch (error: unknown) {
-        throw new HttpClientError('The session could not be resolved.', { code: 'TOKEN_PROVIDER_ERROR', cause: error });
-      }
-      if (accessToken !== null) headers.set('authorization', `Bearer ${accessToken}`);
       const response = await this.fetchImplementation(url, {
         method: options.method ?? 'GET',
         headers,
