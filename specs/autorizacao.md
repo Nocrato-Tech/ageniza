@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | em revisão |
+| **Status** | aprovado |
 | **Submódulos** | catálogo de permissões · papéis e presets · ciclo de vida de entidade e vínculo · contrato de listagem · convenções de tela |
 | **Sessões** | 2026-09-24 (sessão 0) |
 | **Decidido por** | Pedro Vidal, em sessão |
