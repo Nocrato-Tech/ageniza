@@ -84,10 +84,10 @@ Toda entidade de negócio nova nasce com `status` e um estado terminal reversív
 
 ```
 active  → removed   # exige a permissão administrativa do módulo de colaboradores
-removed → active    # o MESMO registro (unique agency_id+user_id), e exige role_id novo no corpo
+removed → active    # o MESMO registro, por unique (agency_id, user_id)
 ```
 
-O papel anterior **não volta sozinho**: quem retorna à agência pode retornar em outra função, e herdar a permissão antiga em silêncio é exatamente o caso que esta regra existe para impedir.
+O papel anterior **não volta sozinho**: quem retorna à agência pode retornar em outra função, e herdar a permissão antiga em silêncio é exatamente o caso que esta regra existe para impedir. Como o registro é o mesmo, isso significa que a reativação exige o papel no corpo em vez de deixar o valor antigo intacto — a rota é declarada na SPEC de Colaboradores.
 
 ### Entidade de negócio
 
@@ -106,9 +106,10 @@ Não existe transição para exclusão física por rota.
 5. Owner de agência `active` passa em qualquer permissão daquela agência.
 6. Papel de sistema tem `agency_id is null`; papel de agência tem `agency_id` preenchido. O contrário é rejeitado pelo banco.
 7. Nenhuma rota da aplicação apaga fisicamente entidade de negócio.
-8. Reativar vínculo `removed` sem `role_id` no corpo é rejeitado.
+8. **Reativação de vínculo nunca herda a autorização anterior**: o papel é informado de novo, sempre. A rota que materializa isso é declarada na SPEC de Colaboradores.
 9. Listagem devolve `pageSize` de **no máximo 100**, qualquer que seja o pedido.
 10. Listagem **não** devolve entidade `archived` sem que a requisição peça explicitamente.
+11. Depois de uma escrita bem-sucedida, a tela **nunca** exibe o dado anterior.
 
 ## 6. Backend
 
@@ -140,9 +141,27 @@ Não há tela. Há as convenções que toda tela herda.
 | **Sem permissão** | **não é uma tela.** O item não aparece no menu; a URL digitada na mão cai no mesmo "não encontrado" de um recurso inexistente |
 | **Vazio** | texto e **ação primária de saída** declarados na SPEC de cada listagem |
 | **Erro** | sempre oferece repetir a ação; nunca apenas informa |
-| **Carregando** | em aberto — ver seção 10 |
+| **Carregando** | skeleton com a forma do conteúdo na primeira carga; sem spinner de tela cheia depois dela |
 
 A regra de "sem permissão" existe porque `guards.ts` devolve 404 indistinto de propósito. Uma tela de acesso negado transformaria esse 404 num oráculo de existência.
+
+### Carregamento
+
+Três situações, tratamentos diferentes — tratá-las igual é o que produz a tela que pisca a cada navegação.
+
+| situação | tratamento |
+|---|---|
+| **Primeira carga**, sem dado | skeleton com a forma do conteúdo: linhas da tabela, blocos do card. Reserva o layout, e o conteúdo não pula quando chega |
+| **Revalidação**, com dado em tela | a tela não muda; o dado continua visível |
+| **Ação pontual** (submit) | o estado vive no próprio controle, com confirmação ao terminar. Nunca um overlay que trave o fluxo |
+
+**Não existe spinner de tela cheia depois da primeira carga.**
+
+### Atualização depois de escrever
+
+`apps/web/src/query.ts` usa `staleTime` de 30s e não refaz busca ao focar a janela: voltar a uma tela em menos de meio minuto serve o cache. Isso significa que navegação **não** é o que atualiza a tela depois de uma escrita.
+
+**Toda mutação invalida as queries que afeta**, e a SPEC de cada módulo declara quais. Salvar e continuar exibindo o dado anterior é defeito, não latência. Sem tempo real e sem polling: `staleTime` deixa de governar a atualização e passa a ser apenas economia de requisição.
 
 ### Navegação
 
@@ -170,7 +189,6 @@ O que **passa** a ser estrutural daqui em diante: mudar o formato de `meta` depo
 |---|---|---|
 | Papéis personalizados por agência | uma agência precisar de uma combinação que os cinco presets não expressam | Pedro Vidal |
 | Trial, plano e cobrança | o primeiro limite — clientes, colaboradores ou armazenamento — que precise ser imposto **por plano** e não por configuração da operação | Pedro Vidal |
-| Estado de carregamento das telas | a primeira tela de listagem | Pedro Vidal |
 
 ## 11. Decisões registradas
 
@@ -189,12 +207,15 @@ Todas em [`docs/business/decisions.md`](../docs/business/decisions.md), datadas 
 
 ## 12. Recorte de implementação
 
-Esta SPEC **não gera history**: não há capacidade nova a entregar. Ela produz as convenções que as SPECs seguintes consomem, e três issues de acompanhamento:
+Esta SPEC **não gera history**: não há capacidade nova a entregar. Ela produz as convenções que as SPECs seguintes consomem, e as issues de acompanhamento abaixo.
+
+Isso não a isenta do portão: nenhum módulo abre enquanto o anterior não estiver com SPEC aprovada e recorte feito. "Recortado" é o recorte existir — não ter pelo menos uma history.
 
 | issue | tipo |
 |---|---|
 | Papéis personalizados por agência | `em-aberto` |
 | Trial, plano e cobrança | `em-aberto` |
 | Frontend de autenticação e convite nunca desenhado | `debito` |
+| ~~Auth do frontend ainda é Supabase~~ — [#51](https://github.com/Nocrato-Tech/ageniza/issues/51) | `debito` · criada |
 
 A validação real destas convenções acontece na primeira listagem implementada, que será a de Clientes.

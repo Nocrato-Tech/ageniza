@@ -338,3 +338,27 @@ O **gatilho** que obriga a decisão: **a primeira vez que um limite — de clien
 **Consequência.** A interface não pode inventar uma tela de acesso negado sem reabrir esta decisão, porque isso transformaria o 404 deliberado do backend num oráculo de existência. Listagem sem texto de vazio e ação de saída declarados está incompleta na SPEC.
 
 **Origem.** Decidido em sessão (sessão 0 de autorização e transversais).
+
+## 2026-09-24 — Carregamento tem três tratamentos, e escrita nunca deixa dado velho na tela
+
+**Contexto.** `apps/web/src/query.ts` usa `staleTime` de 30s, sem refazer busca ao focar a janela ou reconectar. Isso significa que voltar a uma tela em menos de meio minuto serve o cache: navegação não é o que atualiza a tela depois de uma escrita, ao contrário do que a intuição sugere. Sem uma convenção escrita, a primeira tela decidiria isso sozinha.
+
+**Decisão.** Carregamento tem três situações e tratamentos distintos: **primeira carga** usa skeleton com a forma do conteúdo, que reserva o layout; **revalidação com dado em tela** não muda a tela; **ação pontual** mantém o estado no próprio controle, com confirmação ao terminar e sem travar o fluxo. **Não existe spinner de tela cheia depois da primeira carga.**
+
+E a regra que governa atualização: **toda mutação invalida as queries que afeta**, declaradas na SPEC do módulo. Salvar e continuar exibindo o dado anterior é defeito, não latência. Sem tempo real e sem polling.
+
+**Consequência.** `staleTime` deixa de governar a atualização e vira apenas economia de requisição. Toda SPEC de módulo passa a declarar, por rota de escrita, quais listagens ela invalida — sem isso a regra não é verificável.
+
+**Origem.** Decidido em sessão (sessão 0 de autorização e transversais).
+
+---
+
+## 2026-09-24 — Nenhum módulo abre antes de o anterior estar fechado e recortado
+
+**Contexto.** `module-process.md` descrevia as quatro fases sem dizer que elas são um portão. Com mais desenvolvedores entrando, "a SPEC sai depois" é exatamente como a implementação volta a preceder a decisão.
+
+**Decisão.** A entrevista de um módulo **não abre** enquanto o anterior não estiver **fechado** — SPEC aprovada — e **recortado** — history, tasks, abertos e débitos criados, com a seção 12 da SPEC preenchida com os números das issues. A precisão que o primeiro módulo exigiu: **recortado não significa ter pelo menos uma history**. A SPEC de autorização tem zero, porque convenção não é capacidade entregável; o portão é o recorte existir.
+
+**Consequência.** Cada módulo custa um passo a mais antes do seguinte, e o benefício é que nenhum módulo começa em cima de um anterior cujas pontas ninguém amarrou. A separação entre os três documentos permanece: **ADR** para decisão técnica de consequência longa, **SPEC** para o fechamento do módulo, **decisions.md** para o registro cronológico — um módulo pode gerar um ADR além da SPEC, nunca no lugar dela.
+
+**Origem.** Decidido em sessão (sessão 0 de autorização e transversais).
