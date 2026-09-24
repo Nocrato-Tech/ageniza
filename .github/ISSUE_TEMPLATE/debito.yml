@@ -1,0 +1,29 @@
+name: Débito
+description: Dívida reconhecida e aceita conscientemente
+title: "[DEBITO] "
+labels: ["debito"]
+body:
+  - type: textarea
+    id: divida
+    attributes:
+      label: O que ficou devendo
+    validations:
+      required: true
+  - type: textarea
+    id: porque
+    attributes:
+      label: Por que foi aceito
+      description: A decisão de deixar para depois foi deliberada. Registre o motivo.
+    validations:
+      required: true
+  - type: textarea
+    id: custo
+    attributes:
+      label: O que isso custa enquanto existir
+      description: O que fica sem funcionar, sem validação ou mais caro de mudar depois.
+    validations:
+      required: true
+  - type: input
+    id: gatilho
+    attributes:
+      label: Quando cobrar

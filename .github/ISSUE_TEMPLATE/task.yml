@@ -1,0 +1,59 @@
+name: Task
+description: Uma unidade de trabalho, em uma única frente
+title: "[<MODULO>] "
+labels: ["tipo:task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Uma task tem **um** escopo. Trabalho que atravessaria API e interface vira duas tasks —
+        PR misturando as duas não tem revisão possível.
+  - type: dropdown
+    id: escopo
+    attributes:
+      label: Escopo
+      options:
+        - api
+        - web
+        - db
+        - infra
+    validations:
+      required: true
+  - type: input
+    id: history
+    attributes:
+      label: History
+      placeholder: "#0"
+    validations:
+      required: true
+  - type: textarea
+    id: trabalho
+    attributes:
+      label: O que fazer
+      description: Contexto suficiente para quem não esteve na entrevista. Linke a seção da SPEC.
+    validations:
+      required: true
+  - type: textarea
+    id: aceite
+    attributes:
+      label: Aceite
+      value: |
+        - [ ] 
+    validations:
+      required: true
+  - type: input
+    id: depende
+    attributes:
+      label: Depende de
+      placeholder: "#0, ou nada"
+  - type: checkboxes
+    id: estrutural
+    attributes:
+      label: Verificação estrutural
+      description: "Ver docs/business/structural-changes.md. Se marcar, a decisão precisa estar em decisions.md antes de implementar."
+      options:
+        - label: altera tabela que já existe
+        - label: muda formato de resposta que outras rotas copiam
+        - label: mexe em RLS de mais de um módulo
+        - label: muda como a autorização é avaliada
+        - label: exigiria backfill

@@ -1,0 +1,46 @@
+name: History
+description: Uma capacidade entregável de um módulo, derivada da SPEC
+title: "[<MODULO>] "
+labels: ["tipo:history"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        History descreve o **resultado** do ponto de vista de quem usa. O trabalho vive nas tasks.
+        Ela nasce de uma SPEC em `specs/`, nunca de uma conversa solta.
+  - type: input
+    id: spec
+    attributes:
+      label: SPEC
+      description: Caminho e seção que definem esta capacidade.
+      placeholder: specs/clientes.md · seção 3 e 7
+    validations:
+      required: true
+  - type: textarea
+    id: resultado
+    attributes:
+      label: Resultado esperado
+      description: O que passa a ser possível, para quem, e por quê.
+    validations:
+      required: true
+  - type: textarea
+    id: aceite
+    attributes:
+      label: Aceite
+      description: Verificável, não desejo. Cada linha deve dar para checar.
+      value: |
+        - [ ] 
+    validations:
+      required: true
+  - type: textarea
+    id: tasks
+    attributes:
+      label: Tasks
+      description: Uma por frente de trabalho, na ordem em que precisam acontecer.
+      value: |
+        - [ ] #
+  - type: textarea
+    id: fora
+    attributes:
+      label: Fora de escopo
+      description: O que esta history explicitamente não entrega.
