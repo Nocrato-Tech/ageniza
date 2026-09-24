@@ -52,7 +52,10 @@ services:
       test: ["CMD-SHELL", "curl -sf http://127.0.0.1:4566/_localstack/health && test -f /tmp/ageniza-bucket-ready"]
       interval: 5s
       timeout: 3s
-      retries: 24
+      # A cold CI runner boots this far slower than a warm laptop: start_period keeps those first
+      # attempts from counting, and the retries then cover a genuinely stuck container.
+      start_period: 60s
+      retries: 60
   api:
     build: { context: ., dockerfile: apps/api/Dockerfile }
     environment:

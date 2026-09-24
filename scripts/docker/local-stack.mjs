@@ -53,7 +53,17 @@ const startDatabase = () => runCompose(['up', '-d', '--wait', 'postgres']);
  * LocalStack stands in for R2 locally and in CI. The bucket is created by a ready hook inside the
  * container, and the healthcheck waits on its marker -- so `--wait` returning means the bucket exists.
  */
-const startStorage = () => runCompose(['up', '-d', '--wait', '--force-recreate', 'localstack']);
+const startStorage = () => {
+  try {
+    runCompose(['up', '-d', '--wait', '--force-recreate', 'localstack']);
+  } catch (error) {
+    // `--wait` fails with nothing but an exit code, so a container that never turned healthy looks
+    // identical to one that crashed. Its own log is the only thing that tells them apart.
+    console.error('Local object storage did not become healthy. Container log follows:');
+    try { runCompose(['logs', '--no-color', '--tail', '80', 'localstack']); } catch { /* the log is best effort */ }
+    throw error;
+  }
+};
 const migrate = () => run('pnpm', ['--filter', '@ageniza/database', 'migrate'], { env: { ...localEnvironment, ...migrationEnvironment() } });
 
 switch (command) {
