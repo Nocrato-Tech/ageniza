@@ -16,6 +16,16 @@ Você vai conduzir a entrevista de escopo do módulo **$1**. Seu papel é **perg
 
 Abra dizendo, em poucas linhas, o que você encontrou que já restringe este módulo. Não resuma o que o usuário já sabe.
 
+## Bloco 0 — o fluxo pela ótica de quem usa
+
+**Antes da primeira rodada de grill, faça uma pergunta aberta**: como este módulo deve funcionar na prática, e quais telas o usuário imagina. Uma pergunta, ampla, sem opções numeradas — é conversa, não rodada.
+
+Isso existe porque o bloco de UX é o **sétimo** assunto: sem esta abertura, uma capacidade que o backend não tem só aparece no fim, depois de a sessão inteira ter decidido em cima do que já existe. Aqui ela aparece antes de custar.
+
+O que você colhe é **intenção e inventário de telas**, não desenho: que telas existem, o que a pessoa faz em cada uma, o que ela espera ver. Nada de layout, e nada de decisão fechada — o que sair daqui é refinado pelos blocos seguintes contra os contratos e as regras que já existem.
+
+Quando a resposta revelar algo que a API não faz, diga isso na hora e trate como **capacidade nova**: ela é escopo a decidir, não detalhe de tela.
+
 ## O roteiro
 
 Sete blocos, nesta ordem — que é a ordem do custo de errar. Não pule para o seguinte enquanto o atual tiver buraco.
@@ -25,7 +35,7 @@ Sete blocos, nesta ordem — que é a ordem do custo de errar. Não pule para o 
 3. **Entidades e campos** — invariante de domínio, não campo de formulário.
 4. **Estados e transições** — o que é legítimo e o que cada transição exige.
 5. **Regras invioláveis** — o que nunca pode acontecer. Vira teste.
-6. **UX** — quais telas, o que mostram, o que muda por papel, e os estados vazio, carregando, erro e sem permissão. Abra este bloco pelo *Intent First* da skill `interface-design` — quem é a pessoa concreta que usa, o verbo concreto que ela precisa cumprir, e como aquilo deve sentir. O resto daquela skill é craft visual e não entra aqui.
+6. **UX** — fecha o esboço das telas levantadas no bloco 0: o que mostram, o que fazem com os dados, o que muda por papel, e os estados vazio, carregando, erro e sem permissão. Abra este bloco pelo *Intent First* da skill `interface-design` — quem é a pessoa concreta que usa, o verbo concreto que ela precisa cumprir, e como aquilo deve sentir. O resto daquela skill é craft visual e não entra aqui.
 7. **Impacto estrutural** — confronte com `structural-changes.md`, item por item.
 
 ## Como conduzir
