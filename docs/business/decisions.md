@@ -218,3 +218,49 @@ Três regras sustentam o fluxo:
 **Consequência.** Cada módulo passa a custar uma sessão antes da primeira linha de código, e a entrada de devs novos depende de a SPEC existir e estar honesta. Em troca, a issue deixa de ser o lugar onde a regra de negócio nasce. Duas consequências imediatas: as páginas do Notion viram insumo histórico explícito — `AGENTS.md` não as trata mais como autoritativas — e **autenticação e convite ficam com débito de frontend reconhecido**, porque pelo critério deste fluxo o módulo não está fechado: login, aceite de convite, criação de conta com Termos e troca de contexto nunca foram desenhados.
 
 **Origem.** Decidido em sessão, a partir da leitura das páginas de domínio e de permissões do Notion.
+
+## 2026-09-24 — Permissão nomeada é híbrida: módulo para ver e operar, ação para o administrativo
+
+**Contexto.** O catálogo de permissões já existe desde a migration `20260919000000_tenancy_and_invitations.mjs`, com `permissions`, `roles`, `role_permissions` e `app_private.has_agency_permission` resolvendo por permissão nomeada — não era decisão nova, era decisão de conteúdo. O Notion propunha uma permissão por módulo **e** uma por ação, o que chegaria a cerca de quarenta linhas quando todos os módulos existissem, a maioria sem ninguém que as diferenciasse.
+
+**Decisão.** O catálogo é híbrido: `<modulo>.visualizar` e `<modulo>.operar` cobrem o uso normal do módulo, e permissão nomeada de ação existe **apenas** para o que é administrativo ou destrutivo. As quatro permissões já existentes — `colaborador.convidar`, `cliente.convidar_usuario`, `convite.reenviar`, `convite.cancelar` — já seguem esse formato e permanecem como estão.
+
+**Consequência.** Um nível de módulo por si só não expressa "vê e opera cliente mas não convida usuário do cliente", e é exatamente por isso que a metade administrativa continua sendo por ação. Cada entrevista de módulo passa a produzir duas coisas no catálogo: o par de módulo e a lista de ações administrativas dele. Permissão nova é `insert` em `permissions` e `role_permissions` — migration aditiva, sem alcance estrutural.
+
+**Origem.** Decidido em sessão (sessão 0 de autorização e transversais).
+
+---
+
+## 2026-09-24 — Preset de papel é preenchido na entrevista do módulo, não antecipadamente
+
+**Contexto.** Existem cinco papéis de sistema, e quatro deles — `account_manager`, `production`, `sales` e `finance` — estão com **zero permissões**: hoje não podem fazer nada. Preencher todos agora exigiria decidir permissões de Pipeline e Financeiro, que o próprio material do Notion tirou do MVP.
+
+**Decisão.** Cada entrevista de módulo fecha a linha de preset do seu módulo: os cinco papéis e o que cada um pode ali. A SPEC de um módulo **não está completa sem essa linha**, e `specs/TEMPLATE.md` cobra isso na seção 2.
+
+**Consequência.** Nenhum papel além de Admin ganha capacidade por antecipação, e o preset deixa de ser decidido no vácuo. O risco é preset esquecido por omissão; o template é o que impede. Enquanto um módulo não for entrevistado, os papéis continuam sem permissão nele — ver a decisão sobre presets vazios.
+
+**Origem.** Decidido em sessão (sessão 0 de autorização e transversais).
+
+---
+
+## 2026-09-24 — `archived` e `removed` coexistem, e nenhuma rota exclui entidade de negócio
+
+**Contexto.** `clients.status` usa `active | archived` e `agency_memberships.status` usa `active | removed`. Dois vocabulários já conviviam sem regra escrita, e `structural-changes.md` registrava que definir exclusão depois de vários módulos escreverem o próprio jeito é o caminho mais caro.
+
+**Decisão.** Os dois termos permanecem, com significados distintos: **`archived`** é a entidade de negócio guardada e recuperável; **`removed`** é o vínculo entre pessoa e tenant desfeito. Entidade usa `archived`, vínculo usa `removed`. E a regra dura: **nenhuma rota da aplicação exclui fisicamente entidade de negócio.** Purga real existe apenas no fluxo de retenção e LGPD, que é separado e não passa por rota de produto.
+
+**Consequência.** Toda entidade de negócio nova nasce com `status` e um estado terminal reversível; quem quiser um `DELETE` de verdade precisa reabrir esta decisão. Unificar os dois termos depois seria migration em toda tabela que já os usa.
+
+**Origem.** Decidido em sessão (sessão 0 de autorização e transversais).
+
+---
+
+## 2026-09-24 — Listagem é paginada por página, com filtro e ordenação nomeados por rota
+
+**Contexto.** Nenhuma rota lista nada ainda, e `packages/contracts/src/pagination.ts` já contratava `{ data, meta }` com `page`, `pageSize`, `totalItems` e `totalPages` sem nunca ter sido usado. A primeira listagem define o padrão que todas as outras copiam.
+
+**Decisão.** Paginação **por página**, com o contrato que já existe. Ordenação e filtro entram como **parâmetros nomeados por rota** — `sort=name:asc`, `status=active` —, declarados na SPEC do módulo. Não existe linguagem de consulta genérica na query string.
+
+**Consequência.** O volume é de agência, e a contagem total é necessária para a interface; cursor fica fora até que alguma listagem prove precisar dele, e trocar depois muda o `meta` de toda rota já publicada. Parâmetro de filtro não declarado em SPEC não existe: isso é o que impede a query string virar API paralela.
+
+**Origem.** Decidido em sessão (sessão 0 de autorização e transversais).
