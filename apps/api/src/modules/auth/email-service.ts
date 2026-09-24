@@ -59,7 +59,7 @@ const DRAIN_TIMEOUT_MS = 10_000;
 const PASSWORD_RESET_OPERATION = 'auth.password_reset_email';
 
 const actionUrlFor = (appPublicUrl: string, token: string): string =>
-  `${appPublicUrl.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
+  `${appPublicUrl.replace(/\/$/, '')}/senha/redefinir?token=${encodeURIComponent(token)}`;
 
 const resetActionUrlFor = (appPublicUrl: string, token: string, inviteToken?: string): string => {
   const actionUrl = actionUrlFor(appPublicUrl, token);

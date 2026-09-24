@@ -196,7 +196,7 @@ As rotas do navegador são em português; as da API continuam em inglês.
 └──────────────────────────────────┘
 ```
 
-**O que faz:** `POST /auth/password/reset` com o token da URL e, quando presente na URL, o `inviteToken`. Ao terminar, a pessoa **já está autenticada**: segue direto para o aceite do convite quando houver um, ou para o `resolve`.
+**O que faz:** `POST /auth/password/reset` com o token da URL e, quando presente, o parâmetro `invite` da própria URL (`/senha/redefinir?token=…&invite=…`). Ao terminar, a pessoa **já está autenticada**: segue direto para o aceite do convite quando houver um, ou para o `resolve`.
 
 **Link inválido** é estado desta tela: token usado ou expirado mostra que o link não vale mais e oferece pedir outro, sem dizer qual dos dois casos ocorreu.
 

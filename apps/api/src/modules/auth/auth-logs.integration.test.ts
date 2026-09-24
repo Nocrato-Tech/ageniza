@@ -66,7 +66,7 @@ describe('auth logging never leaks secrets (#15)', () => {
     await app.emailService.drain();
 
     const link = sender.sent.at(-1)?.text ?? '';
-    const match = /reset-password\?token=([^\s"'&]+)/.exec(link);
+    const match = /senha\/redefinir\?token=([^\s"'&]+)/.exec(link);
     const token = match?.[1] !== undefined ? decodeURIComponent(match[1]) : undefined;
     expect(token).toBeDefined();
 
@@ -82,7 +82,7 @@ describe('auth logging never leaks secrets (#15)', () => {
     await bootstrapApp.app.inject({ method: 'POST', url: '/auth/password/forgot', headers: origin, payload: { email: user.email } });
     await bootstrapApp.emailService.drain();
     const link = sender.sent.at(-1)?.text ?? '';
-    const match = /reset-password\?token=([^\s"'&]+)/.exec(link);
+    const match = /senha\/redefinir\?token=([^\s"'&]+)/.exec(link);
     const token = match?.[1] !== undefined ? decodeURIComponent(match[1]) : undefined;
     expect(token).toBeDefined();
 

@@ -25,7 +25,7 @@ export const hashInvitationToken = (token: string): string => createHash('sha256
 
 /** Builds the public invitation URL without exposing any token in logs or database values. */
 export const invitationLink = (appPublicUrl: string, token: string): string =>
-  `${appPublicUrl.replace(/\/+$/, '')}/invite/${token}`;
+  `${appPublicUrl.replace(/\/+$/, '')}/convite/${token}`;
 
 const assertValidDate = (value: Date): void => {
   if (Number.isNaN(value.getTime())) throw new RangeError('Invitation token timestamp must be a valid date.');

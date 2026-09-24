@@ -35,13 +35,15 @@ describe('invitation token primitives', () => {
     expect(result.tokenHash).toBe(hashInvitationToken(result.token));
     expect(result.expiresAt.toISOString()).toBe('2026-09-24T12:00:00.000Z');
     expect(result.expiresAt.getTime() - now.getTime()).toBe(INVITATION_TOKEN_TTL_MS);
-    expect(result.actionUrl).toBe(`https://app.example.test/invite/${result.token}`);
+    expect(result.actionUrl).toBe(`https://app.example.test/convite/${result.token}`);
+    // Rota em português é decisão de specs/auth.md: o link viaja por e-mail e por mensagem.
+    expect(result.actionUrl).not.toContain('/invite/');
     expect(invitationLink('https://app.example.test', result.token)).toBe(result.actionUrl);
   });
 
   it('does not leak a trailing slash into the invitation link', () => {
     const token = 'abc';
 
-    expect(invitationLink('https://app.example.test/', token)).toBe('https://app.example.test/invite/abc');
+    expect(invitationLink('https://app.example.test/', token)).toBe('https://app.example.test/convite/abc');
   });
 });
