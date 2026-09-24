@@ -351,16 +351,22 @@ E, herdadas de [`autorizacao.md`](autorizacao.md): "sem permissão" não é tela
 
 ## 12. Recorte de implementação
 
-Um **épico**, porque nenhuma history isolada cobre o módulo.
+**Épico [#62](https://github.com/Nocrato-Tech/ageniza/issues/62)** — nenhuma history isolada cobre o módulo.
 
-| history | o que entrega |
-|---|---|
-| Entrar e sair | login, logout, logout-all, menu de conta |
-| Recuperar a senha | pedir link e redefinir, com o convite continuando |
-| Aceitar convite | os dois estados, mais Termos e Privacidade |
-| Escolher e trocar de contexto | tela de escolha, seletor no menu, `last-context` |
-| Negar acesso sem vínculo | a checagem no login e no `resolve`, mais a tela |
+| history | tasks | escopo |
+|---|---|---|
+| [#63](https://github.com/Nocrato-Tech/ageniza/issues/63) Entrar e sair | [#69](https://github.com/Nocrato-Tech/ageniza/issues/69) tela Entrar · [#70](https://github.com/Nocrato-Tech/ageniza/issues/70) menu de conta · [#71](https://github.com/Nocrato-Tech/ageniza/issues/71) 401 como fim de sessão | web |
+| [#64](https://github.com/Nocrato-Tech/ageniza/issues/64) Recuperar a senha | [#72](https://github.com/Nocrato-Tech/ageniza/issues/72) esqueci a senha · [#73](https://github.com/Nocrato-Tech/ageniza/issues/73) redefinir senha | web |
+| [#65](https://github.com/Nocrato-Tech/ageniza/issues/65) Aceitar convite | [#74](https://github.com/Nocrato-Tech/ageniza/issues/74) minutas · [#75](https://github.com/Nocrato-Tech/ageniza/issues/75) páginas legais · [#76](https://github.com/Nocrato-Tech/ageniza/issues/76) tela Convite | web |
+| [#66](https://github.com/Nocrato-Tech/ageniza/issues/66) Escolher e trocar de contexto | [#77](https://github.com/Nocrato-Tech/ageniza/issues/77) tela `/contextos` · [#78](https://github.com/Nocrato-Tech/ageniza/issues/78) seletor no menu | web |
+| [#67](https://github.com/Nocrato-Tech/ageniza/issues/67) Negar acesso sem vínculo | [#68](https://github.com/Nocrato-Tech/ageniza/issues/68) zero contextos no login e no resolve · [#79](https://github.com/Nocrato-Tech/ageniza/issues/79) tela Acesso encerrado | api · web |
 
-Tasks de `escopo:web` nascem escritas e **`aguardando-design`**: o esboço da seção 7 é o briefing, e o código espera a entrega do designer. `escopo:api` segue em paralelo — o contrato já está fechado aqui.
+**Em aberto:** [#80](https://github.com/Nocrato-Tech/ageniza/issues/80) troca de e-mail · [#81](https://github.com/Nocrato-Tech/ageniza/issues/81) reaceite de Termos.
 
-Redigir as minutas de Termos e Privacidade é **task**, não ponto em aberto. O que sai dela é minuta para revisão jurídica.
+A [#54](https://github.com/Nocrato-Tech/ageniza/issues/54), que registrava a dívida de "as telas nunca foram desenhadas", foi fechada por este recorte.
+
+### O que pode começar hoje
+
+Duas tasks não esperam design: **#68**, a única de API do épico, e **#71**, que é comportamento do cliente HTTP e do roteador. **#74**, as minutas, também não depende de tela.
+
+As outras nove são `aguardando-design`: nascem escritas a partir do esboço da seção 7, e o código espera a entrega do designer. Sendo onze tasks de web contra uma de API, **o designer é o gargalo real deste módulo** — o backend já existe.
