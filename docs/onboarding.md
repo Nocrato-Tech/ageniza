@@ -26,7 +26,7 @@ Comece pelos dois anteriores. O domínio explica escolhas que, sem ele, parecem 
 ```sh
 pnpm install
 pnpm db:start        # PostgreSQL local
-pnpm storage:start   # MinIO, substitui o R2 localmente
+pnpm storage:start   # LocalStack, substitui o R2 localmente
 pnpm db:migrate
 ```
 

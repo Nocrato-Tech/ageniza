@@ -19,22 +19,22 @@ export interface ServerConfig {
 }
 
 /** S3-compatible object storage for direct-to-bucket media upload (issue #21). Cloudflare R2 in
- * production; MinIO locally. All five are required together, and required in production. */
+ * production; LocalStack locally. All five are required together, and required in production. */
 export interface StorageConfig {
   /** Endpoint the API itself calls (HeadObject, multipart control operations). */
   readonly endpoint: string;
   /**
    * Endpoint embedded in presigned URLs, which the *browser* calls directly. Equal to `endpoint`
-   * for R2 (one globally reachable endpoint) and for a host-run API talking to local MinIO.
-   * Differs only when the API runs inside the local Compose network (`minio:9000`) while the
-   * browser reaches the same MinIO through its published port (`127.0.0.1:9000`).
+   * for R2 (one globally reachable endpoint) and for a host-run API talking to local storage.
+   * Differs only when the API runs inside the local Compose network (`localstack:4566`) while the
+   * browser reaches the same storage through its published port (`127.0.0.1:9000`).
    */
   readonly publicEndpoint: string;
   readonly region: string;
   readonly accessKeyId: string;
   readonly secretAccessKey: string;
   readonly bucket: string;
-  /** MinIO and R2 both accept path-style addressing; this avoids per-bucket DNS/virtual-host setup. */
+  /** LocalStack and R2 both accept path-style addressing; this avoids per-bucket DNS/virtual-host setup. */
   readonly forcePathStyle: boolean;
   /** Presigned PUT/part URL lifetime. Short-lived by design; the client re-requests on expiry. */
   readonly uploadUrlExpirySeconds: number;
@@ -178,7 +178,7 @@ const apiSchema = sharedServerSchema.extend({
   API_CORS_ORIGINS: z.string().default('http://127.0.0.1:5173').transform(commaSeparatedValues),
   API_BODY_LIMIT_BYTES: z.coerce.number().int().min(1_024).max(50 * 1024 * 1024).default(1_048_576),
   API_TRUSTED_PROXY_CIDRS: z.string().default('').transform(commaSeparatedValues),
-  // Object storage (issue #21): R2 in production, MinIO locally. All required together.
+  // Object storage (issue #21): R2 in production, LocalStack locally. All required together.
   ...storageEnvironmentShape,
   R2_PUBLIC_ENDPOINT: optionalUrl('must be a valid storage endpoint URL'),
   MEDIA_UPLOAD_URL_EXPIRY_SECONDS: z.coerce.number().int().min(60).max(3_600).default(900),

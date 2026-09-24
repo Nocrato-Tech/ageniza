@@ -1,6 +1,6 @@
 # Media module (issue #21)
 
-Direct-to-bucket media upload. The browser uploads straight to Cloudflare R2 (MinIO locally);
+Direct-to-bucket media upload. The browser uploads straight to Cloudflare R2 (LocalStack locally);
 neither the file nor a proxy passes through the VPS.
 
 ## Flow
@@ -11,7 +11,7 @@ neither the file nor a proxy passes through the VPS.
 2. For multipart, `POST .../uploads/:assetId/parts` returns presigned part URLs. It can be called
    again for a subset of part numbers to resume after a dropped connection -- a fresh URL replaces
    an expired or failed one; nothing about the upload has to restart from part 1.
-3. The browser `PUT`s directly to a server-minted `staging/.../upload.<ext>` key in R2/MinIO. That
+3. The browser `PUT`s directly to a server-minted `staging/.../upload.<ext>` key in the bucket. That
    leading prefix lets production lifecycle rules target temporary objects only, and the key is
    distinct from the canonical `.../original.<ext>` key stored in `media_assets.object_key`.
 4. `POST .../uploads/:assetId/complete` completes the multipart upload (if any), then calls
@@ -52,13 +52,13 @@ See `apps/worker/src/media-video-job.ts` and its README/tests for the worker sid
 
 ## Environment variables
 
-See `.env.example` (local/MinIO defaults) and `infra/vps/runtime.env.example` (production). Local
-MinIO access keys are generated into ignored `.local/storage.env` by `pnpm storage:start`; no
+See `.env.example` (local defaults) and `infra/vps/runtime.env.example` (production). Local
+access keys are generated into ignored `.local/storage.env` by `pnpm storage:start`; no
 storage credential is versioned. All
 four of `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` are required
 together and required in production; every other `R2_*`/`MEDIA_*`/`STORAGE_QUOTA_*` variable has a
 sensible default. `R2_PUBLIC_ENDPOINT` only matters when the API itself runs inside the local
-Compose network (its `endpoint` there is the internal `minio:9000`, unreachable from a browser on
+Compose network (its `endpoint` there is the internal `localstack:4566`, unreachable from a browser on
 the host) -- see the `StorageConfig` doc comment in `packages/config/src/server.ts`.
 
 ## What must be configured by hand in production (cannot be expressed as a migration or Compose file)
@@ -67,9 +67,9 @@ the host) -- see the `StorageConfig` doc comment in `packages/config/src/server.
   endpoint/key/secret/bucket name into `runtime.env` on the VPS (`infra/vps/runtime.env.example`).
 - **Bucket CORS**, allowing `PUT`/`GET` from the application's real origin and exposing the
   `ETag` response header (multipart completion needs it). Cloudflare's dashboard/API is the only
-  way to set this for R2; MinIO has no equivalent bucket-level CORS API at all -- locally, CORS is
-  a MinIO *server* setting instead (`MINIO_API_CORS_ALLOW_ORIGIN` in `compose.yml`), which is why
-  there is no code path that could set this for R2 either.
+  way to set this for R2, which is why no code path here sets it. Locally the equivalent rule is
+  applied by `infra/localstack/init-bucket.sh` through `PutBucketCors`, the same S3 call R2 does not
+  expose -- so the local rule is shaped like the production one, but reaches the bucket differently.
 - **Bucket lifecycle rules**: abort incomplete multipart uploads and expire objects under the
   `staging/` prefix after a short window (for example 1-2 days), and, if desired, expire objects still in this app's own `pending` state past
   that same window (their DB row stays as a rejected/expired record; nothing here auto-deletes a
@@ -77,18 +77,21 @@ the host) -- see the `StorageConfig` doc comment in `packages/config/src/server.
 - **Never make the bucket or any object public.** Every object is fetched only through a signed
   URL issued by this module.
 
-## What could not be verified against MinIO
+## What could not be verified locally
 
 Everything in this module's automated tests (`media.integration.test.ts`,
-`media-storage.integration.test.ts`) runs against the real local MinIO started by
+`media-storage.integration.test.ts`) runs against the real local LocalStack started by
 `pnpm storage:start`, including full single-part and multipart round trips,
 quota/size/type rejection with real object deletion, and cross-tenant isolation. Two things are
 genuinely specific to R2 and were not (and could not be) exercised locally:
 
 - **R2's actual multipart minimum part size and any R2-specific quirks in presigned URL behavior**
-  (MinIO's S3 API is highly compatible but is not R2 itself). The client code follows the
+  (LocalStack's S3 emulation is highly compatible but is not R2 itself). The client code follows the
   documented S3 multipart contract (5 MiB minimum per part except the last), which R2 also
   documents, but this was not run against a real R2 bucket in this environment.
 - **R2 bucket CORS and lifecycle configuration**, since neither is expressible through code or
-  Compose -- see the "configured by hand" section above. The local MinIO equivalents (a
-  server-wide CORS origin, no lifecycle rule at all) are close but not identical mechanisms.
+  Compose for R2 -- see the "configured by hand" section above. Locally the CORS rule is real and
+  per-bucket, including the exposed `ETag`; there is still no local lifecycle rule at all.
+- **Credential rejection.** LocalStack accepts any credential pair, so a wrong key fails nowhere
+  locally. MinIO did enforce this before it left every public registry; that check moved to the
+  list of things only a real R2 bucket can prove.

@@ -87,7 +87,7 @@ export const captureLogs = (): CapturedLogs => {
   };
 };
 
-/** Points at the Compose MinIO started by `docker compose up -d minio minio-init` (issue #21).
+/** Points at the Compose LocalStack started by `pnpm storage:start` (issue #21).
  * Integration tests that never reach the media module still pay nothing extra for this: the
  * client is only constructed, never connected to, until a route actually calls it. */
 export const TEST_STORAGE_CONFIG: StorageConfig = {

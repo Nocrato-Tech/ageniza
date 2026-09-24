@@ -15,8 +15,8 @@ import {
   type TestUserFixture
 } from '../auth/test-support/harness.js';
 
-// Issue #21 acceptance tests. Runs against the real local MinIO started by
-// `docker compose up -d minio minio-init` -- see apps/api/src/modules/media/README.md.
+// Issue #21 acceptance tests. Runs against the real local LocalStack started by
+// `pnpm storage:start` -- see apps/api/src/modules/media/README.md.
 const origin = { origin: TEST_APP_PUBLIC_URL };
 
 let owner: DatabaseClient;

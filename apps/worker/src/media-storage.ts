@@ -6,7 +6,7 @@ import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } fro
 import type { WorkerStorageConfig } from '@ageniza/config/server';
 
 /**
- * S3-compatible client the worker uses directly (issue #24): Cloudflare R2 in production, MinIO
+ * S3-compatible client the worker uses directly (issue #24): Cloudflare R2 in production, LocalStack
  * locally -- the same bucket the API's media module writes originals to (issue #21). Unlike the
  * API's client, this one never presigns a browser-facing URL: every call runs against
  * `config.endpoint`, which only the worker itself needs to reach.

@@ -26,7 +26,7 @@ export interface CompletedPart {
 }
 
 /**
- * S3-compatible client for the media module (issue #21): Cloudflare R2 in production, MinIO
+ * S3-compatible client for the media module (issue #21): Cloudflare R2 in production, LocalStack
  * locally. Every mutating/inspecting call (multipart control, HeadObject, delete) runs against
  * `endpoint`, which only the API itself needs to reach. Presigned URLs are always built against
  * `publicEndpoint`, because the *browser* is the one following them -- see `StorageConfig` for why
@@ -114,7 +114,7 @@ export const createMediaStorageClient = (config: StorageConfig): MediaStorageCli
         return { sizeBytes: result.ContentLength, contentType: result.ContentType };
       } catch (error) {
         if (error instanceof NotFound) return undefined;
-        // MinIO answers a missing key with a plain 404 that the SDK does not always model as
+        // A missing key can come back as a plain 404 that the SDK does not always model as
         // `NotFound`; treat any "Not Found"-shaped error the same way instead of masking real faults.
         if (typeof error === 'object' && error !== null && 'name' in error && (error as { name?: unknown }).name === 'NotFound') return undefined;
         throw error;
