@@ -264,3 +264,49 @@ Três regras sustentam o fluxo:
 **Consequência.** O volume é de agência, e a contagem total é necessária para a interface; cursor fica fora até que alguma listagem prove precisar dele, e trocar depois muda o `meta` de toda rota já publicada. Parâmetro de filtro não declarado em SPEC não existe: isso é o que impede a query string virar API paralela.
 
 **Origem.** Decidido em sessão (sessão 0 de autorização e transversais).
+
+## 2026-09-24 — Teto de página é global, tamanho é por rota, e bloco de resumo não pagina
+
+**Contexto.** A decisão de paginar por página não dizia tamanho nem ordem, e tratar isso como um número único não serve: o dashboard mostra quatro itens com um "ver mais", enquanto a listagem de clientes mostra dezenas. São dois papéis diferentes no mesmo parâmetro — um é segurança, o outro é interface.
+
+**Decisão.** O **teto** de `pageSize` é global e vale **100** para toda rota, no contrato. O **tamanho padrão** é declarado por rota na SPEC do módulo, sem valor global. E **bloco de resumo não é listagem paginada**: usa `limit` fixo declarado na SPEC, sem `page` e sem `totalItems`, com link para a listagem completa.
+
+**Consequência.** `pageSize=100000` deixa de ser um jeito barato de derrubar a API, e o dashboard não herda paginação que nunca vai exercitar. Rota que não declarar seu tamanho padrão na SPEC está incompleta.
+
+**Origem.** Decidido em sessão (sessão 0 de autorização e transversais).
+
+---
+
+## 2026-09-24 — Arquivado fica fora da listagem até ser pedido
+
+**Contexto.** Com `archived` definido como estado terminal reversível de entidade de negócio, faltava dizer se ele aparece nas listagens.
+
+**Decisão.** Entidade arquivada **não aparece** na listagem padrão. Ela é devolvida apenas quando a requisição pedir explicitamente, pelo parâmetro nomeado de status da rota.
+
+**Consequência.** Arquivar passa a significar algo na tela, e não apenas um rótulo. Toda listagem de entidade que tenha `archived` precisa declarar na SPEC o parâmetro que revela o arquivado.
+
+**Origem.** Decidido em sessão (sessão 0 de autorização e transversais).
+
+---
+
+## 2026-09-24 — `<modulo>.visualizar` existe mesmo onde hoje todos veem tudo
+
+**Contexto.** A regra do v1 é que todo colaborador enxerga Dashboard, Clientes, Colaboradores e Tarefas. Com essa regra, conceder `visualizar` aos cinco presets em todo módulo do MVP produz linhas que hoje não diferenciam ninguém — e a alternativa era tornar a visibilidade implícita para quem é membro, criando permissão nomeada só nos módulos restritos.
+
+**Decisão.** `<modulo>.visualizar` existe em todo módulo, mesmo quando todos os presets a recebem.
+
+**Consequência.** Evita duas formas concorrentes de decidir visibilidade — implícita para uns, nomeada para outros —, sendo que a primeira escrita viraria a copiada. É `visualizar` que permite, depois, um colaborador ver certas coisas e não outras, e restringir Vendas e Financeiro sem mudar como a autorização é avaliada. O custo é `insert` em migration aditiva.
+
+**Origem.** Decidido em sessão (sessão 0 de autorização e transversais).
+
+---
+
+## 2026-09-24 — Papéis personalizados ficam fora do MVP, e a única capacidade não delegável hoje é a posse
+
+**Contexto.** O schema já suporta papel por agência — `roles.agency_id` com `is_system`, aceito tanto pela RLS quanto pelo guard da API. O que falta é tela de criar, duplicar e atribuir, e a regra do que nunca pode entrar num papel personalizado. Mas o catálogo tem quatro permissões: não há combinação a montar.
+
+**Decisão.** Papéis personalizados ficam **fora do MVP**. O gatilho que reabre o assunto é **uma agência precisar de uma combinação que os cinco presets não expressam** — não uma data. Quando existirem, a capacidade **não delegável** é a **transferência de posse**.
+
+**Consequência.** Adiar custa quase nada porque o modelo já está pronto; o que se evita é construir tela para combinar quatro permissões. Assinatura e faturamento **não** entram na lista de não delegáveis por enquanto porque ainda não existem no produto — quando existirem, entram por definição, junto com a decisão que os criar.
+
+**Origem.** Decidido em sessão (sessão 0 de autorização e transversais).
