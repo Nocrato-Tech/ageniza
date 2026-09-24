@@ -6,7 +6,9 @@ Para quem chegou agora e precisa entender o domínio antes do código. Os detalh
 
 Uma plataforma de operação para **agências** que gerenciam conteúdo de redes sociais para seus **clientes**. A agência produz o conteúdo, o cliente aprova, e a plataforma publica.
 
-Não é um produto de autoatendimento. Não existe cadastro público, não existe cobrança dentro do sistema, e uma agência só passa a existir quando alguém da operação cria por comando interno. O produto atende a nossa agência e parceiros.
+Não é um produto de autoatendimento. Não existe cadastro público, e uma agência só passa a existir quando alguém da operação cria por comando interno. O produto atende a nossa agência e parceiros.
+
+**Cobrança ainda não existe no sistema, mas está prevista.** Trial e cobrança por volume — clientes, colaboradores, armazenamento — são intenção registrada e não desenhada, e a nossa própria agência é isenta. Nada disso está implementado; ver a entrada correspondente em [decisions.md](decisions.md) antes de projetar qualquer coisa que dependa de plano.
 
 ## Os dois lados
 

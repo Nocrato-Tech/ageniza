@@ -310,3 +310,31 @@ Três regras sustentam o fluxo:
 **Consequência.** Adiar custa quase nada porque o modelo já está pronto; o que se evita é construir tela para combinar quatro permissões. Assinatura e faturamento **não** entram na lista de não delegáveis por enquanto porque ainda não existem no produto — quando existirem, entram por definição, junto com a decisão que os criar.
 
 **Origem.** Decidido em sessão (sessão 0 de autorização e transversais).
+
+## 2026-09-24 — Cobrança existe no plano do produto, não no sistema, e tem gatilho
+
+**Contexto.** `product-overview.md` afirmava que não existe cobrança dentro do sistema. A afirmação está errada quanto à intenção do produto: há a intenção de um modelo de trial e de cobrança por volume — clientes, colaboradores, armazenamento, tarefas, dias, o que se mostrar melhor. Como `AGENTS.md` trata `docs/business/` como autoritativo, um agente lendo aquela frase projetaria ativamente contra cobrança.
+
+**Decisão.** O documento passa a dizer o que é verdade: **cobrança não existe hoje e está prevista**, sem nada desenhado. A **nossa própria agência é isenta**, e a isenção é modelada como estado explícito da agência quando o assunto for desenhado — nunca como ausência de plano, que é o mesmo estado de uma agência inadimplente.
+
+O **gatilho** que obriga a decisão: **a primeira vez que um limite — de clientes, colaboradores ou armazenamento — precisar ser imposto por plano, e não por configuração da operação.** É o único gatilho observável dentro do sistema, e é também o momento mais barato para desenhar, porque `media_assets` já tem quota por agência e o gancho existe.
+
+**Consequência.** Enquanto o gatilho não acontecer, nenhum módulo assume plano, limite comercial ou estado de pagamento. Quando acontecer, assinatura e faturamento entram por definição na lista de capacidades não delegáveis a papel personalizado.
+
+**Origem.** Decidido em sessão (sessão 0 de autorização e transversais).
+
+---
+
+## 2026-09-24 — "Sem permissão" não é uma tela: a interface espelha o 404 do backend
+
+**Contexto.** `apps/api/src/modules/tenancy/guards.ts` devolve **404** indistintamente para agência inexistente, suspensa e inacessível — de propósito, para nunca revelar existência. Faltava dizer o que a interface faz com isso, antes que a primeira tela decidisse sozinha.
+
+**Decisão.** Três convenções que toda tela herda:
+
+- **Sem permissão não é uma tela.** O item não aparece no menu, e a URL digitada na mão cai no mesmo "não encontrado" de um recurso inexistente. Nunca um "você não tem acesso a isto", que confirmaria a existência do recurso.
+- **Vazio** é declarado na SPEC de cada listagem: o texto e a **ação primária de saída** — o que a pessoa faz quando não há nada.
+- **Erro** sempre oferece repetir a ação; nunca apenas informa.
+
+**Consequência.** A interface não pode inventar uma tela de acesso negado sem reabrir esta decisão, porque isso transformaria o 404 deliberado do backend num oráculo de existência. Listagem sem texto de vazio e ação de saída declarados está incompleta na SPEC.
+
+**Origem.** Decidido em sessão (sessão 0 de autorização e transversais).
