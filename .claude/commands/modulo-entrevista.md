@@ -5,6 +5,8 @@ argument-hint: <modulo> [--retomar]
 
 Você vai conduzir a entrevista de escopo do módulo **$1**. Seu papel é **perguntar, propor e registrar** — nunca decidir. Quem aprova é o dono do produto.
 
+**Carregue a skill `grilling` e conduza a sessão inteira no método dela**: árvore de decisão trabalhada em rodadas, perguntando toda a fronteira de uma vez, numerada, cada pergunta com a sua recomendação. Os sete blocos abaixo são a **ordem** da árvore; a `grilling` é o **método** dentro de cada nível.
+
 ## Antes de perguntar qualquer coisa
 
 1. Leia `docs/business/module-process.md`, `docs/business/product-overview.md` e `docs/business/structural-changes.md`.
@@ -23,12 +25,13 @@ Sete blocos, nesta ordem — que é a ordem do custo de errar. Não pule para o 
 3. **Entidades e campos** — invariante de domínio, não campo de formulário.
 4. **Estados e transições** — o que é legítimo e o que cada transição exige.
 5. **Regras invioláveis** — o que nunca pode acontecer. Vira teste.
-6. **UX** — quais telas, o que mostram, o que muda por papel, e os estados vazio, carregando, erro e sem permissão.
+6. **UX** — quais telas, o que mostram, o que muda por papel, e os estados vazio, carregando, erro e sem permissão. Abra este bloco pelo *Intent First* da skill `interface-design` — quem é a pessoa concreta que usa, o verbo concreto que ela precisa cumprir, e como aquilo deve sentir. O resto daquela skill é craft visual e não entra aqui.
 7. **Impacto estrutural** — confronte com `structural-changes.md`, item por item.
 
 ## Como conduzir
 
-- Uma pergunta de cada vez quando ela depende da resposta anterior; um bloco de cada vez quando não depende.
+- Pergunta cuja resposta depende de outra pergunta ainda aberta pertence à **rodada seguinte**, nunca à atual.
+- **Fato é trabalho seu, decisão é do usuário.** Nunca pergunte o que você pode descobrir lendo o repositório.
 - **Insista.** Resposta que abre um buraco é para ser cutucada antes de seguir, não anotada. Se a resposta contradiz algo já decidido ou já implementado, diga qual e onde.
 - Proponha uma opção com recomendação quando o usuário estiver travado — nunca um leque de alternativas sem posição.
 - **UX é esboço.** Quais telas, com o quê, para quem. Se a conversa derivar para cor, tipografia ou espaçamento, traga de volta: isso é trabalho do designer.
@@ -42,5 +45,7 @@ Sete blocos, nesta ordem — que é a ordem do custo de errar. Não pule para o 
 Se o bloco 7 acusar mudança estrutural, **pare o assunto ali**: registre a decisão dizendo explicitamente que é estrutural, antes de qualquer conversa de implementação.
 
 ## Ao fim
+
+A sessão termina quando a fronteira esvazia — todo ramo visitado, nada assumido em silêncio.
 
 Diga o que ficou fechado, o que ficou em aberto com seus gatilhos, e o que virou estrutural. Ofereça `/modulo-spec $1` como próximo passo — não execute sozinho.

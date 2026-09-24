@@ -15,7 +15,9 @@ A SPEC é o documento final da conversa. É dela que sai todo o resto: as *histo
 
 Uma sessão de questionamento por módulo, conduzida por agente ou pessoa. O papel de quem conduz é **perguntar, propor e registrar** — nunca decidir. Quando a resposta não existe ainda, o ponto vai para "Em aberto"; não vira palpite escrito com cara de fato.
 
-O roteiro segue esta ordem, que é a ordem do custo de errar:
+A sessão é conduzida pelo método da skill `grilling`: a conversa é uma árvore de decisão trabalhada em rodadas, cada rodada perguntando toda a fronteira de uma vez — as decisões cujos pré-requisitos já estão resolvidos —, numeradas e com recomendação. Quem responde decide; quem pergunta busca os fatos sozinho.
+
+Os sete blocos são a ordem da árvore, que é a ordem do custo de errar:
 
 1. **Propósito** — o que o módulo resolve e o que ele explicitamente **não** resolve.
 2. **Atores e autorização** — quem faz o quê, em permissões nomeadas.
