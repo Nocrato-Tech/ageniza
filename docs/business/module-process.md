@@ -56,6 +56,7 @@ A SPEC vira uma **history** por capacidade entregável, e **tasks** dentro dela.
 - A *history* descreve o resultado do ponto de vista de quem usa, e aponta para a seção da SPEC que a define.
 - As *tasks* são o trabalho: uma por frente (`escopo:api`, `escopo:web`, `escopo:db`, `escopo:infra`). Task que atravessa duas frentes vira duas tasks — PR que mistura API e interface não tem revisão possível.
 - **Task de `escopo:web` nasce pronta, mas bloqueada.** Ela é escrita a partir do esboço e das decisões da SPEC, e recebe `aguardando-design` até o designer entregar a tela. A API não espera por isso: `escopo:api` e `escopo:db` seguem em paralelo.
+- **O esboço vai dentro da task, não só linkado.** Wireframe, o que cada elemento faz e os estados a cobrir. Quem vai desenhar a tela precisa ler uma issue, não caçar a seção certa de uma SPEC longa.
 - O que ficou em aberto com gatilho vira issue `em-aberto`, não comentário solto.
 - O que ficou como dívida reconhecida vira issue `debito`.
 
