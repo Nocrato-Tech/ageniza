@@ -15,7 +15,9 @@ A SPEC é o documento final da conversa. É dela que sai todo o resto: as *histo
 
 Uma sessão de questionamento por módulo, conduzida por agente ou pessoa. O papel de quem conduz é **perguntar, propor e registrar** — nunca decidir. Quando a resposta não existe ainda, o ponto vai para "Em aberto"; não vira palpite escrito com cara de fato.
 
-A sessão é conduzida pelo método da skill `grilling`: a conversa é uma árvore de decisão trabalhada em rodadas, cada rodada perguntando toda a fronteira de uma vez — as decisões cujos pré-requisitos já estão resolvidos —, numeradas e com recomendação. Quem responde decide; quem pergunta busca os fatos sozinho.
+A sessão abre com uma **pergunta aberta sobre o fluxo**, antes de qualquer rodada: como o módulo deve funcionar na prática e quais telas quem usa imagina. Não é desenho e não é decisão — é intenção e inventário, que os blocos seguintes refinam contra os contratos e as regras que já existem. Ela existe porque UX é o sétimo assunto: sem a abertura, uma capacidade que o backend não tem só aparece no fim, depois de a sessão ter decidido tudo em cima do que já existia.
+
+Depois dela, a sessão é conduzida pelo método da skill `grilling`: a conversa é uma árvore de decisão trabalhada em rodadas, cada rodada perguntando toda a fronteira de uma vez — as decisões cujos pré-requisitos já estão resolvidos —, numeradas e com recomendação. Quem responde decide; quem pergunta busca os fatos sozinho.
 
 Os sete blocos são a ordem da árvore, que é a ordem do custo de errar:
 
