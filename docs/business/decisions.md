@@ -495,3 +495,138 @@ Mais um template de pull request que cobra verificação real e a checagem estru
 **Consequência.** O roteiro de ambiente local foi **executado do início ao fim** antes de ser escrito, e isso revelou uma divergência que nenhuma leitura teria pego: o e-mail de convite aponta para `/invite/<token>` e o de recuperação para `/reset-password`, enquanto `specs/auth.md` decidiu rotas em português. Documentação de ambiente que não foi executada descreve o que deveria funcionar, não o que funciona.
 
 **Origem.** Decidido em sessão.
+
+## 2026-09-24 — Escopo do módulo de colaboradores
+
+**Contexto.** Primeira entrevista conduzida pelo bloco 0, a pergunta aberta de fluxo. Ela levantou cinco capacidades que o backend não tem — foto de perfil, remuneração, estatísticas do colaborador, edição do próprio nome e solicitação de troca de e-mail — e três delas mudavam o tamanho do módulo.
+
+**Decisão.** O módulo cobre: **listar a equipe** em grade de crachás com busca e filtros, **ver o detalhe** de uma pessoa num modal com abas, **convidar** colaborador, **reenviar e cancelar** convite, **remover** do quadro e **reativar**, **trocar o papel** de alguém, **editar o cargo** de alguém, e **editar o próprio nome e a própria foto**.
+
+Fica fora, com razão declarada:
+
+- **Remuneração** — vai para o módulo Financeiro; ver a decisão seguinte.
+- **Estatísticas do colaborador** (entregas, pendências) — não há o que contar antes de Tarefas existir. O modal nasce com a estrutura de abas e a área reservada. Gatilho: a primeira entrevista que criar tarefa atribuível a colaborador.
+- **Pré-cadastro no convite** — o convite leva e-mail e `role_id`, e nada mais. Guardar cargo ou remuneração de um convite pendente exigiria alterar `invitations`, cuja policy de `UPDATE` é deliberadamente restrita a `revoked_at` (issue #39); dado editável de RH ali obrigaria a afrouxar aquela trava.
+- **Solicitação de troca de e-mail** — a tela informa que a troca é feita pela operação, e a conversa acontece fora do produto. Criar uma fila de solicitações, com estado e notificação, para um evento raro cujo desfecho é alguém rodando um comando não se paga. Volta à mesa quando a troca de e-mail for destravada.
+- **Telefone e qualquer campo além dos definidos** — o vínculo carrega nome, foto, e-mail, cargo, papel e data de entrada. Nada mais no MVP.
+
+**Consequência.** Nenhuma tabela nova e nenhuma coluna nova: `job_title` já existe em `agency_memberships`, e `image` já existe em `auth."user"`. O que falta é policy, rota e tela.
+
+**Origem.** Decidido em sessão (entrevista do módulo de colaboradores).
+
+---
+
+## 2026-09-24 — Remuneração pertence ao Financeiro, que entra no MVP depois de Tarefas
+
+**Contexto.** A descrição inicial do módulo colocava o salário no crachá, visível para Owner e Financeiro e **não** para o Admin. Isso abria três problemas: RLS no PostgreSQL é por linha e não por coluna, então proteger um campo dentro de `agency_memberships` é frágil; quem convida é o Admin, que não poderia ler o dado que definiria; e a própria descrição vinculava remuneração à "saúde financeira da agência", que é outro módulo.
+
+**Decisão.** A remuneração **nasce no módulo Financeiro**, não em Colaboradores. O crachá do MVP **não mostra salário para ninguém**, inclusive para o Owner, e o espaço é reincluído quando o Financeiro estiver estruturado. Gatilho: **a entrevista do módulo Financeiro**.
+
+O **Financeiro deixa de ser pós-MVP** — o material do Notion o excluía. Ele entra em versão básica, com o que o dono de uma agência precisa para ver saúde do negócio, e sua posição na ordem é **depois de Tarefas, antes do Dashboard**: depende de Clientes para falar de cobrança, e adiantá-lo na frente de Conteúdo inverteria a prioridade do produto.
+
+Três regras já ficam **pré-decididas** para não serem redecididas do zero lá:
+
+- **Quem lê**: o Owner lê todas; quem tem `remuneracao.visualizar` (preset Financeiro) lê todas; **qualquer pessoa lê a própria**, independentemente do papel. O colaborador vê o próprio número — esconder dele removeria a segurança que o dado existe para dar.
+- **Onde vive**: tabela própria, nunca coluna em `agency_memberships`. Um `select *` descuidado, uma view ou um `RETURNING` expõem coluna; a RLS decide linha.
+- **Histórico**: cada alteração é uma linha com vigência, e o valor atual é a mais recente. Reajuste, promoção e correção são o uso normal; trocar para histórico depois exigiria backfill, que é critério de mudança estrutural.
+
+**Consequência.** O Admin passará a ver a própria remuneração e não a dos outros — a primeira vez que um preset Admin ficará sem uma permissão do catálogo. A ordem de módulos passa a ser: Colaboradores, Clientes, Conteúdo, Tarefas, Financeiro básico, Dashboard.
+
+**Origem.** Decidido em sessão (entrevista do módulo de colaboradores).
+
+---
+
+## 2026-09-24 — Foto de perfil vive em armazenamento de identidade, separado do módulo de mídia
+
+**Contexto.** `auth."user".image` já existe, mas não há fluxo de upload. E há um conflito de escopo: o **usuário é global** e a **mídia é por agência, com quota**. A foto de quem trabalha em duas agências não pertence a nenhuma delas.
+
+**Decisão.** Existe um **armazenamento de identidade**, separado do módulo de mídia e **sem consumir quota de agência**. Ele serve a foto de usuário hoje e a identidade visual de portal depois, quando a personalização por agência existir.
+
+**Consequência.** É infraestrutura nova neste módulo — a primeira desde a mídia. O que se evita é um defeito verificável: com a foto dentro da mídia da agência, a pessoa sai daquela agência ou a agência é suspensa, e o avatar dela desaparece nas outras, porque o arquivo pertencia ao tenant e não a ela. A quota de vídeo de cliente também deixa de disputar espaço com avatar, que é uso decorativo.
+
+**Origem.** Decidido em sessão (entrevista do módulo de colaboradores).
+
+---
+
+## 2026-09-24 — Permissões de colaboradores: o Gestor edita cargo, nunca papel
+
+**Contexto.** Faltava definir o que separa o Admin do Gestor de conta. O modelo não tem hierarquia entre colaboradores — `ClientAssignment` liga colaborador a cliente, nunca colaborador a colaborador —, então qualquer poder administrativo do Gestor é poder sobre **todos**, inclusive sobre Admins.
+
+**Decisão.** O catálogo do módulo:
+
+| capacidade | permissão | quem recebe no preset |
+|---|---|---|
+| Ver a equipe | `colaborador.visualizar` | todos os cinco papéis |
+| Convidar | `colaborador.convidar` *(já existe)* | Admin |
+| Reenviar e cancelar convite | `convite.reenviar` · `convite.cancelar` *(já existem)* | Admin |
+| Remover do quadro | `colaborador.remover` | Admin |
+| Trocar o papel de outro | `colaborador.alterar_papel` | Admin |
+| Editar o cargo de outro | `colaborador.alterar_funcao` | Admin e **Gestor de conta** |
+
+**Não existe `colaborador.operar`.** A decisão da sessão 0 obriga `visualizar` em todo módulo, mas não obriga `operar`, e aqui não há uso entre olhar a equipe e administrar alguém. Editar o próprio perfil não é permissão: é sobre si, e se resolve por identidade.
+
+A distinção que sustenta o Gestor: **cargo é dado profissional e não concede autorização; papel concede.** Ele organiza a equipe sem poder aumentar o acesso de ninguém. E ele **não convida**, porque convidar obriga a escolher o papel, e os cinco presets **não têm ordem entre si** — sem hierarquia de papéis, nada impediria um Gestor de convidar alguém como Admin e pedir para ser promovido de volta.
+
+**Consequência.** "Gestor de operação", "gestor financeiro" e "gestor de vendas" são **cargos**, não papéis: o papel `account_manager` é um só, e o que diferencia um do outro é o `job_title` mais as permissões que os outros módulos derem a ele. Ninguém deve criar três papéis onde um basta.
+
+**Origem.** Decidido em sessão (entrevista do módulo de colaboradores).
+
+---
+
+## 2026-09-24 — ESTRUTURAL: só o Owner concede o papel de Admin, e a autorização passa a depender do valor
+
+**Esta é uma mudança estrutural**, por dois dos cinco critérios de [structural-changes.md](structural-changes.md): mexe em policies de RLS de **mais de um módulo**, e muda **como a autorização é avaliada**. Registrada antes de qualquer implementação.
+
+**Contexto.** Até aqui toda autorização do sistema responde uma pergunta só: *tem a chave?*. `app_private.has_agency_permission(agency_id, permission)` recebe uma permissão e devolve sim ou não. A regra "quem pode atribuir outros Admins é o Owner" pergunta outra coisa: *tem a chave **e** qual valor está sendo concedido?*. E ela tem um segundo ponto de fuga: se só o Owner promove a Admin mas o Admin pode **convidar** alguém já como Admin, a regra não existe.
+
+**Decisão.** A regra é expressa por **duas permissões**, não por uma condição escondida na rota:
+
+- `colaborador.alterar_papel` — o Admin recebe, e vale para papéis **não administrativos**.
+- `colaborador.atribuir_admin` — **nenhum preset recebe**. Só o Owner passa, porque ele faz curto-circuito na verificação por posse.
+
+A mesma dupla vale nos dois pontos onde um papel é concedido: **a troca de papel** de um vínculo e **a criação de um convite** de colaborador. Uma regra que vale em um lugar e não no outro não é regra.
+
+**Consequência.** Duas policies são tocadas, em módulos diferentes:
+
+- `agency_memberships` ganha policy de `UPDATE`, que **não existe hoje** — a tabela só tem `SELECT`, e é por isso que trocar papel e remover colaborador não funcionam em nenhuma das duas camadas.
+- `invitations` tem sua policy de `INSERT` **substituída** para reconhecer a nova condição. `drop policy` dispara o gate de CI, e é por isso que esta entrada existe antes do código.
+
+Ganha-se uma propriedade que vale registrar: `colaborador.atribuir_admin` é uma permissão que **existe e não é concedida a ninguém**, porque a posse é a única forma de tê-la. Quando papéis personalizados existirem (#52), ela já está na lista de não delegáveis por construção.
+
+**Origem.** Decidido em sessão (entrevista do módulo de colaboradores).
+
+---
+
+## 2026-09-24 — Proteções de integridade do quadro, e a que não deve existir
+
+**Contexto.** O material do Notion listava quatro proteções para a tela de colaboradores. Uma delas custa caro e protege algo que já está garantido.
+
+**Decisão.** Três valem:
+
+1. **O Owner não é removido nem tem o papel alterado por esta tela.** Transferência de posse é fluxo próprio, e não existe hoje.
+2. **Ninguém altera o próprio papel**, nem o Admin.
+3. **Ninguém remove a si mesmo.**
+
+E a quarta é **descartada**: "a agência nunca fica sem administração válida". O Owner tem acesso total por posse, não por papel, e não pode ser removido por esta tela — então a agência nunca fica sem administração, aconteça o que acontecer com os Admins. Implementar "não pode remover o último Admin" custaria uma contagem sob concorrência para proteger algo que a posse já garante, e contagem sob concorrência é exatamente a classe de defeito da #59.
+
+**Consequência.** Quem remover o último Admin deixa a agência administrável apenas pelo Owner, o que é um estado legítimo e não um defeito.
+
+**Origem.** Decidido em sessão (entrevista do módulo de colaboradores).
+
+---
+
+## 2026-09-24 — A listagem de colaboradores estreia o contrato de listagem
+
+**Contexto.** Nenhuma rota do produto lista nada. Esta é a primeira, e a sessão 0 fixou teto global de 100 com tamanho padrão declarado por rota.
+
+**Decisão.** **24 por página, ordenado por nome ascendente.** Vinte e quatro é múltiplo de 3 e de 4, então a grade de crachás fecha em qualquer largura sem deixar linha quebrada. Ordem alfabética, não data de entrada: numa tela onde se procura uma pessoa específica, é a única ordem em que quem procura sabe onde olhar.
+
+Busca por **nome e e-mail**; filtros por **papel** e **cargo**; todos como parâmetros nomeados.
+
+**Convites pendentes ficam em seção separada**, não misturados à equipe. O banco já exige isso de fato: `invitations_select` pede `colaborador.convidar`, enquanto **todos** veem a equipe — na mesma lista, a mesma tela mostraria quantidades diferentes para pessoas diferentes, e "página 2" passaria a depender de quem olha.
+
+**Quem foi removido fica fora da listagem por padrão**, visível por filtro explícito de status e **apenas para Admin e Owner**. Quem saiu não é informação de equipe, é informação administrativa — e é preciso encontrar a pessoa para reativá-la.
+
+**Consequência.** Toda listagem seguinte copia esta rota como referência. A lista da equipe **nunca tem estado vazio**: quem olha está nela, e uma agência recém-ativada tem o Owner. Busca sem resultado é estado distinto de vazio, e precisa manter visível o termo buscado.
+
+**Origem.** Decidido em sessão (entrevista do módulo de colaboradores).

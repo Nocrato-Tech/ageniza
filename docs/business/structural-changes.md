@@ -35,6 +35,8 @@ Nenhuma precisa ser resolvida agora. Estão aqui para serem reconhecidas quando 
 
 **Formato de listagem.** *Decidido na sessão 0.* Paginação por página com o contrato de `packages/contracts/src/pagination.ts`, teto global de 100, tamanho padrão por rota declarado na SPEC, e filtro e ordenação como parâmetros nomeados por rota. Bloco de resumo não pagina. Mudar isso depois de a primeira listagem existir altera o `meta` de toda rota publicada — continua estrutural.
 
+**Autorização dependente do valor.** *Decidido na sessão de colaboradores, e é estrutural.* Até aqui `app_private.has_agency_permission` responde "tem a chave?". A regra de que só o Owner concede o papel de Admin obriga a perguntar também "qual valor está sendo concedido?". Ela é expressa por duas permissões — `colaborador.alterar_papel` e `colaborador.atribuir_admin`, esta última sem preset —, toca a policy de `UPDATE` de `agency_memberships` e **substitui** a de `INSERT` de `invitations`. Qualquer regra futura do mesmo tipo segue este formato, não um `if` dentro da rota.
+
 **Rastreio de alteração de dados.** `audit.events` registra ações específicas — convite enviado, agência ativada — não "quem mudou este campo e quando". Se auditoria de campo virar requisito, é retrofit em toda tabela de negócio.
 
 **Exclusão reversível.** *Decidido na sessão 0.* `archived` é a entidade guardada e recuperável; `removed` é o vínculo desfeito. Nenhuma rota da aplicação exclui fisicamente entidade de negócio — purga só no fluxo de retenção e LGPD. Introduzir um `DELETE` de verdade reabre esta decisão.
