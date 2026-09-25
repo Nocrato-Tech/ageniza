@@ -1,0 +1,59 @@
+name: Close referenced issues
+
+# GitHub closes a referenced issue only when the pull request lands on the default branch, which
+# here is `main`. Every working pull request targets `develop`, so `Closes #123` never fires on its
+# own and a finished task stays open until a release -- which makes the project board unreliable.
+on:
+  pull_request:
+    types: [closed]
+    branches: [develop]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  close:
+    name: Close what this pull request says it closes
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+      - name: Collect the referenced issues
+        id: refs
+        env:
+          # Through the environment, never as an argument: a pull request body is text anyone with
+          # write access can craft, and it must not reach a shell as code.
+          PULL_REQUEST_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          numbers="$(node scripts/ci/closing-references.mjs)"
+          {
+            echo 'numbers<<NUMBERS_EOF'
+            echo "$numbers"
+            echo 'NUMBERS_EOF'
+          } >> "$GITHUB_OUTPUT"
+      - name: Close them
+        if: steps.refs.outputs.numbers != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NUMBERS: ${{ steps.refs.outputs.numbers }}
+          PR: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          printf '%s\n' "$NUMBERS" | while read -r number; do
+            [ -n "$number" ] || continue
+            state="$(gh issue view "$number" --repo "$REPOSITORY" --json state --jq .state 2>/dev/null || echo MISSING)"
+            if [ "$state" != "OPEN" ]; then
+              echo "#$number: $state, nada a fazer"
+              continue
+            fi
+            gh issue close "$number" --repo "$REPOSITORY" \
+              --comment "Fechada pelo PR #${PR}, mergeado em \`develop\`.
+
+          O \`Closes\` do GitHub não dispara aqui porque a branch padrão é \`main\` e todo PR de trabalho vai para \`develop\` — este fechamento é do workflow \`Close referenced issues\`."
+            echo "#$number: fechada"
+          done

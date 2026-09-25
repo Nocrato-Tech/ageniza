@@ -60,6 +60,8 @@ A SPEC vira uma **history** por capacidade entregável, e **tasks** dentro dela.
 - O que ficou em aberto com gatilho vira issue `em-aberto`, não comentário solto.
 - O que ficou como dívida reconhecida vira issue `debito`.
 
+O andamento de tudo isso é acompanhado no quadro [Ageniza — MVP](https://github.com/orgs/Nocrato-Tech/projects/1), onde épico, history e task estão ligados por **sub-issue** do GitHub e o campo **Onda** diz o que pode ser feito em paralelo. As regras de uso do quadro estão em [`CONTRIBUTING.md`](../../CONTRIBUTING.md).
+
 Labels em uso:
 
 | label | para quê |

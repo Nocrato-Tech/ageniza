@@ -630,3 +630,34 @@ Busca por **nome e e-mail**; filtros por **papel** e **cargo**; todos como parâ
 **Consequência.** Toda listagem seguinte copia esta rota como referência. A lista da equipe **nunca tem estado vazio**: quem olha está nela, e uma agência recém-ativada tem o Owner. Busca sem resultado é estado distinto de vazio, e precisa manter visível o termo buscado.
 
 **Origem.** Decidido em sessão (entrevista do módulo de colaboradores).
+
+## 2026-09-25 — O andamento vive num quadro; a issue continua sendo a fonte
+
+**Contexto.** Com quarenta e seis issues abertas em três módulos, a lista deixou de responder as duas perguntas que importam para um time de quatro pessoas: **o que dá para fazer em paralelo agora** e **o que está esperando o quê**. Label não expressa dependência, e menção no texto não expressa parentesco.
+
+**Decisão.** Existe um quadro, [Ageniza — MVP](https://github.com/orgs/Nocrato-Tech/projects/1), vinculado ao repositório. Ele é **visão**, nunca fonte: aceite, dependências e esboço de tela continuam na issue.
+
+- **Parentesco é nativo.** Épico, history e task estão ligados por **sub-issue** do GitHub, não por convenção de texto — a issue mostra a árvore com progresso, e o quadro mostra pai e progresso em campo próprio.
+- **O campo `Onda`** é a camada de dependência: onda 1 começa hoje, onda 2 depende da 1 ter entrado. É ele que responde onde quatro pessoas trabalham sem fila.
+- **`Bloqueio`** distingue esperar **dependência** de esperar **decisão** do dono do produto. Esperar **design** virou coluna, porque fila de designer precisa ser vista de longe, não filtrada.
+- **Nove colunas**, terminando em duas que espelham o modelo de branch: *Pronto para subir* é mergeado em `develop`, *Em produção* é promovido para `main`.
+
+O Projects novo só existe em nível de organização — projeto dono por repositório era o Projects clássico, descontinuado. O nosso está vinculado ao repositório, o que o faz aparecer na aba dele.
+
+**Consequência.** O quadro só diz a verdade se quem pega uma task se atribuir a ela, e se quem descobre uma dependência nova atualizar a onda. Isso é disciplina, não automação. Em troca, "o que posso pegar agora" deixa de ser uma pergunta feita a outra pessoa.
+
+**Origem.** Decidido em sessão.
+
+---
+
+## 2026-09-25 — Issue fecha no merge em `develop`, e isso significa "feito", não "no ar"
+
+**Contexto.** O GitHub fecha uma issue referenciada apenas quando o pull request entra na **branch padrão**, que aqui é `main`. Todo pull request de trabalho vai para `develop`, então `Closes #123` **nunca disparou** neste repositório — a #85 foi implementada, mergeada, e continuou aberta sem ninguém notar. Com dezenas de tasks, o quadro mostraria como pendente um monte de trabalho pronto, e deixaria de ser confiável.
+
+**Decisão.** O workflow `Close referenced issues` fecha as issues referenciadas no corpo do pull request quando ele é mergeado em `develop`. Aceita as duas línguas — `Closes`, `Fixes`, `Resolves`, `Fecha`, `Encerra` —, ignora menção solta e ignora referência dentro de bloco de código, porque exemplo em documentação não é intenção. A lógica fica em `scripts/ci/closing-references.mjs`, com teste.
+
+**Issue fechada significa "feito e revisado", não "em produção".** O card permanece em *Pronto para subir* até a promoção para `main` movê-lo para *Em produção*: quem quer saber o que está no ar olha a coluna, não o estado da issue.
+
+**Consequência.** A alternativa — fechar só na promoção para produção — exigiria um **token pessoal guardado como secret**, porque o `GITHUB_TOKEN` padrão não escreve em projeto de organização. Uma credencial a mais para rotacionar, por uma diferença de poucos dias, num sinal que a coluna já dá. O movimento `develop → Pronto para subir` sai de graça pela automação nativa do Projects.
+
+**Origem.** Decidido em sessão.
