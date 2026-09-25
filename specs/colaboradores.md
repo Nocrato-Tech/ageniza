@@ -333,4 +333,22 @@ Herdadas de [`autorizacao.md`](autorizacao.md): o vocabulário `archived`/`remov
 
 ## 12. Recorte de implementação
 
-A ser preenchido por `/modulo-issues colaboradores`.
+**Épico [#88](https://github.com/Nocrato-Tech/ageniza/issues/88)** — 5 histories, 15 tasks, 2 pontos em aberto.
+
+| history | tasks | escopo |
+|---|---|---|
+| [#89](https://github.com/Nocrato-Tech/ageniza/issues/89) Ver a equipe | [#95](https://github.com/Nocrato-Tech/ageniza/issues/95) `GET` da listagem · [#102](https://github.com/Nocrato-Tech/ageniza/issues/102) grade de crachás | api · web |
+| [#90](https://github.com/Nocrato-Tech/ageniza/issues/90) Ver o detalhe | [#96](https://github.com/Nocrato-Tech/ageniza/issues/96) `GET` do detalhe · [#103](https://github.com/Nocrato-Tech/ageniza/issues/103) modal com abas | api · web |
+| [#91](https://github.com/Nocrato-Tech/ageniza/issues/91) Administrar o vínculo | [#94](https://github.com/Nocrato-Tech/ageniza/issues/94) migration `estrutural` · [#97](https://github.com/Nocrato-Tech/ageniza/issues/97) `PATCH` com a regra de admin · [#98](https://github.com/Nocrato-Tech/ageniza/issues/98) remover e reativar · [#104](https://github.com/Nocrato-Tech/ageniza/issues/104) ações no modal · [#105](https://github.com/Nocrato-Tech/ageniza/issues/105) filtro de removidos | db · api · web |
+| [#92](https://github.com/Nocrato-Tech/ageniza/issues/92) Gerir convites | [#99](https://github.com/Nocrato-Tech/ageniza/issues/99) `GET` dos pendentes · [#106](https://github.com/Nocrato-Tech/ageniza/issues/106) seção de convites · [#107](https://github.com/Nocrato-Tech/ageniza/issues/107) modal de convidar | api · web |
+| [#93](https://github.com/Nocrato-Tech/ageniza/issues/93) Editar o próprio perfil | [#100](https://github.com/Nocrato-Tech/ageniza/issues/100) armazenamento de identidade · [#101](https://github.com/Nocrato-Tech/ageniza/issues/101) `PATCH` do nome e foto · [#108](https://github.com/Nocrato-Tech/ageniza/issues/108) edição no próprio perfil | infra · api · web |
+
+**Em aberto:** [#109](https://github.com/Nocrato-Tech/ageniza/issues/109) remuneração no crachá · [#110](https://github.com/Nocrato-Tech/ageniza/issues/110) abas Performance e Entregas.
+
+### A ordem que a dependência impõe
+
+A migration [#94](https://github.com/Nocrato-Tech/ageniza/issues/94) vem **primeira** e destrava tudo: sem a policy de `UPDATE`, as rotas de alteração devolvem sucesso e não mudam nada. Ela e [#97](https://github.com/Nocrato-Tech/ageniza/issues/97) carregam o rótulo `estrutural`.
+
+**Oito das quinze tasks não esperam o designer** — a migration, cinco de API e a de infraestrutura. É a diferença em relação ao épico de auth, onde o backend já existia e onze das doze tasks eram de interface.
+
+As sete de `escopo:web` nascem escritas, com o wireframe e a tabela de elementos no corpo da própria issue, e esperam com `aguardando-design`.
