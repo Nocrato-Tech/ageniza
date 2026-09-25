@@ -40,6 +40,8 @@ Três consequências práticas para quem chega:
 - **Task `aguardando-design` espera o designer.** Ela já traz o esboço da tela no corpo — esse esboço é o briefing dele, não a sua licença para inventar o layout.
 - **Módulo novo não abre** enquanto o anterior não estiver com SPEC aprovada e recortado em issues.
 
+O andamento fica no quadro [Ageniza — MVP](https://github.com/orgs/Nocrato-Tech/projects/1) — a coluna diz em que etapa a coisa está, e o campo **Onda** diz o que dá para pegar agora sem esperar ninguém. As regras estão em [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+
 Os rótulos das issues: `tipo:epico` · `tipo:history` · `tipo:task` · `escopo:api|web|db|infra` · `modulo:<nome>` · `estrutural` · `em-aberto` · `debito` · `aguardando-design`.
 
 ## Subindo o ambiente

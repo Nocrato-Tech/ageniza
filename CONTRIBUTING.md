@@ -69,6 +69,74 @@ pnpm --filter @ageniza/api test:integration
 pnpm --filter @ageniza/worker test:integration
 ```
 
+## O quadro: onde ver o que dá para pegar
+
+As issues continuam sendo a fonte — elas têm o aceite, as dependências e o esboço da tela. O quadro é a **visão**: [Ageniza — MVP](https://github.com/orgs/Nocrato-Tech/projects/1), também alcançável pela aba **Projects** do repositório.
+
+> O Projects novo só existe no nível de organização; projeto dono por repositório era o Projects clássico, que a GitHub descontinuou. O nosso está **vinculado** ao repositório, que é o que o faz aparecer na aba dele.
+
+Ele existe para responder duas perguntas que uma lista de issues responde mal: **o que dá para fazer em paralelo agora**, e **o que está esperando o quê**.
+
+### As colunas
+
+| coluna | o que significa |
+|---|---|
+| **Backlog** | reconhecido, sem estar pronto para começar |
+| **Refinamento** | o escopo não fechou. Raro aqui, porque task nasce de SPEC aprovada — existe para o caso em que alguém pega uma task e descobre um buraco |
+| **Design** | esperando a tela do designer. É a fila dele, visível como coluna |
+| **Design review** | tela entregue, aguardando aprovação |
+| **Pronto para dev** | sem bloqueio e sem responsável: **pode ser pego agora** |
+| **Em andamento** | alguém se atribuiu |
+| **Revisão** | PR aberto, aguardando revisão independente |
+| **Pronto para subir** | revisado e mergeado em `develop` |
+| **Em produção** | promovido para `main` |
+
+As duas últimas espelham o modelo de branch: `develop` é integração, `main` é produção.
+
+### Os campos, e o que cada um decide
+
+| campo | para que serve |
+|---|---|
+| **Onda** | a camada de dependência. Onda 1 pode começar hoje; onda 2 depende da 1 ter entrado. **É o campo que diz onde quatro pessoas trabalham sem fila** |
+| **Bloqueio** | `dependência` espera outra task, `decisão` espera o dono do produto. Design virou coluna e saiu daqui na prática |
+| **Módulo** | de qual módulo é o trabalho |
+| **Escopo** | `db`, `api`, `web`, `infra`, `docs` — qual disciplina pega |
+| **Tipo** | épico, history, task, em aberto, débito, bug |
+| **Depende de** | os números que a task também cita no corpo |
+| **Parent issue** · **Sub-issues progress** | nativos do GitHub: o parentesco real entre épico, history e task |
+
+### O parentesco é nativo, não é convenção
+
+Épico, history e task estão ligados por **sub-issue** do GitHub, não por menção no texto. Então a issue de um épico mostra a árvore com barra de progresso, e o quadro mostra pai e progresso em coluna própria.
+
+Quem criar uma task nova amarra no pai pela própria issue — em "Sub-issues", na history a que ela pertence. Task órfã fica invisível no progresso do épico.
+
+### Regras de uso
+
+- **Onda não é prioridade, é possibilidade.** Uma task de onda 3 não é menos importante; ela só não pode começar antes.
+- **Quem pega se atribui** e move para *Em andamento*. É o que impede duas pessoas na mesma coisa, e o que faz *Pronto para dev* dizer a verdade.
+- **Quem descobre uma dependência nova atualiza a onda e o campo Depende de.** Dependência que fica só na cabeça de quem descobriu volta a travar o próximo.
+- **Épico, history e "em aberto" não têm onda.** Onda é de trabalho executável — filtre por `Tipo:task,bug` para ver só o que se pega.
+
+### Módulo não atropela módulo
+
+A view de **Sequência de módulos** mostra só os épicos, em ordem. A entrevista de um módulo não abre enquanto o anterior não estiver com SPEC aprovada e recortado — é o portão do `AGENTS.md`; o quadro só o torna visível.
+
+## Issue fechada por PR: é automático, mas não pelo GitHub
+
+O GitHub fecha uma issue referenciada apenas quando o PR entra na **branch padrão**, que aqui é `main`. Como todo PR de trabalho vai para `develop`, `Closes #123` **não dispara sozinho** — e sem isso o quadro mostraria como abertas dezenas de tasks já prontas.
+
+O workflow `Close referenced issues` fecha no merge em `develop`. Ele lê o **corpo do pull request** e aceita as duas línguas:
+
+```
+Closes #12 · Fixes #12 · Resolves #12
+Fecha #12 · Encerra #12
+```
+
+Menção solta (`ver #12`) não fecha nada, e referência dentro de bloco de código é ignorada — exemplo em documentação não é intenção. A lógica vive em `scripts/ci/closing-references.mjs`, com teste.
+
+**Issue fechada significa "feito e revisado", não "no ar".** O card continua em *Pronto para subir* até a promoção para `main` movê-lo para *Em produção* — quem quer saber o que já está em produção olha a coluna, não o estado da issue.
+
 ## Revisão
 
 Toda entrega passa por revisão independente antes do merge, **inclusive entrega de agente** — principalmente entrega de agente. Quem escreve o código escreve o teste com os mesmos pontos cegos, e revisões aqui já acharam falhas reais que os testes do próprio autor não pegavam.
