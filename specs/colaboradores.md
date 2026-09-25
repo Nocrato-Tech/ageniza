@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | em revisão |
+| **Status** | aprovado |
 | **Submódulos** | equipe e crachás · detalhe do colaborador · convites pendentes · perfil próprio |
 | **Sessões** | 2026-09-24 |
 | **Decidido por** | Pedro Vidal, em sessão |
