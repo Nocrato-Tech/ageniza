@@ -137,6 +137,15 @@ Menção solta (`ver #12`) não fecha nada, e referência dentro de bloco de có
 
 **Issue fechada significa "feito e revisado", não "no ar".** O card continua em *Pronto para subir* até a promoção para `main` movê-lo para *Em produção* — quem quer saber o que já está em produção olha a coluna, não o estado da issue.
 
+Na promoção para `main`, o comando abaixo move de uma vez todos os cards de *Pronto para subir* para *Em produção* — é o único passo do fluxo sem automação, porque o `GITHUB_TOKEN` de um workflow não escreve em projeto de organização:
+
+```sh
+pnpm board:released --dry-run   # mostra o que moveria
+pnpm board:released
+```
+
+Ele exige o `gh` autenticado com o escopo `project` (`gh auth refresh -s project`).
+
 ## Revisão
 
 Toda entrega passa por revisão independente antes do merge, **inclusive entrega de agente** — principalmente entrega de agente. Quem escreve o código escreve o teste com os mesmos pontos cegos, e revisões aqui já acharam falhas reais que os testes do próprio autor não pegavam.

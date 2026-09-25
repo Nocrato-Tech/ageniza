@@ -23,6 +23,7 @@
     "docker:down": "node scripts/docker/local-stack.mjs down",
     "docker:logs": "docker compose logs --tail=200 -f",
     "deploy:validate": "node scripts/deploy/validate-production.mjs",
+    "board:released": "node scripts/board/mark-released.mjs",
     "test:scripts": "vitest run --dir scripts",
     "clean": "turbo run clean && rimraf node_modules .turbo"
   },
