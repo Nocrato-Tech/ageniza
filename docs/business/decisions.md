@@ -661,3 +661,309 @@ O Projects novo só existe em nível de organização — projeto dono por repos
 **Consequência.** A alternativa — fechar só na promoção para produção — exigiria um **token pessoal guardado como secret**, porque o `GITHUB_TOKEN` padrão não escreve em projeto de organização. Uma credencial a mais para rotacionar, por uma diferença de poucos dias, num sinal que a coluna já dá. O movimento `develop → Pronto para subir` sai de graça pela automação nativa do Projects.
 
 **Origem.** Decidido em sessão.
+
+---
+
+## 2026-09-26 — Escopo do módulo de clientes: o cliente e a casca, nas duas frentes
+
+**Contexto.** O bloco 0 da entrevista levantou, para a área da agência, uma listagem em cards e um detalhe com abas — Geral, Conteúdos, Tarefas, Estudo de marca e Relatórios —, e para o portal um cliente dono do negócio que entra para acompanhar o calendário, aprovar, comentar, ver relatório e o estudo da própria marca. A maior parte disso depende de entidades que não existem: não há conteúdo, tarefa, atribuição nem comentário no banco, e `ClientAssignment`, citado em decisões anteriores, também não existe em nenhuma migration. Ao mesmo tempo, `clients` só tem policy de `SELECT`: hoje não há como criar um cliente pelo produto, embora a rota de convidar usuário de cliente já exista.
+
+**Decisão.** Clientes entrega **o cliente e a casca**: cadastro, foto, arquivar e reativar, listagem em cards com busca, página de detalhe com as abas, estudo de marca, e as pessoas do portal — convidar, reenviar, cancelar, remover. As abas **Conteúdos**, **Tarefas** e **Relatórios** e os indicadores do card — pendentes, em revisão, atrasados — nascem com **área reservada**, preenchida pelas entrevistas de Conteúdo, Tarefas e Financeiro/Dashboard.
+
+O **portal do cliente nasce neste módulo** como casca: entrada, onboarding de boas-vindas, navegação e estudo de marca. Calendário, aprovação e comentário de conteúdo chegam com Conteúdo.
+
+**Consequência.** O que o bloco 0 levantou e não pertence a Clientes é o **bloco 0 já colhido da entrevista de Conteúdo**, e não deve ser perguntado do zero lá: calendário editorial com arrastar para outra data e criar numa data; card com miniatura e hover detalhado; modal de conteúdo com abas Descrição e Atribuição; tipos reels, vídeo longo, VSL e carrossel; alerta de prazo a dois dias e de atraso; capa de vídeo; prévia ao vivo do post e simulador de feed do Instagram com grade de nove e navegação entre períodos; conteúdo sempre ligado a uma pasta de mídia; tarefas por conteúdo com responsável, prazo e percentual de conclusão.
+
+Fica em aberto, com gatilho: **o portal não é liberado a cliente real antes de Conteúdo entregar a aprovação** — um portal cujo único conteúdo é o estudo de marca não entrega o valor pelo qual o cliente entra.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-26 — O portal nunca mostra o trabalho interno, e quem garante é a RLS
+
+**Contexto.** O cliente entra no portal para ver o que agrega valor a ele — calendário, aprovação, relatório, marca —, não o andamento bruto da equipe.
+
+**Decisão.** Regra **pré-decidida para o módulo de Tarefas**: tarefa, responsável interno e prazo interno **nunca são dados do portal**. A garantia é da RLS, não da tela — nenhuma tabela de trabalho interno tem policy que um vínculo de cliente satisfaça.
+
+**Consequência.** Esconder só na interface deixaria o dado alcançável pela API, e o vazamento só apareceria nas ferramentas do navegador de alguém. Quando o portal precisar de um sinal derivado do trabalho interno — "em produção", "atrasado" —, ele é exposto pelo objeto que o cliente enxerga, o conteúdo, nunca pela tarefa.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-26 — Integração com a Meta fica fora do MVP, e publicar e medir decidem juntos
+
+**Contexto.** O relatório imaginado para o cliente inclui retenção por conteúdo e resultado de anúncio. Os dois vêm da API da Meta, e o sistema não tem integração com rede social alguma — nem para publicar, embora `product-overview.md` descreva a plataforma como quem publica.
+
+**Decisão.** Métrica externa **fica fora do MVP**. O relatório do MVP é de **dado interno** — entregue, atrasado, o que foi feito no mês — e é decidido quando Conteúdo e Tarefas existirem. Gatilho da integração: **a decisão de publicar pela plataforma**, que exige a mesma conexão.
+
+**Consequência.** Publicar e medir usam a mesma conexão com a conta do cliente — OAuth, revisão de app pela Meta, token por cliente —, e decidi-los separados faria o cliente conectar a conta duas vezes. A aba Relatórios nasce reservada.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-26 — O cliente sugere sobre a marca por conversa em thread, e esse é o modelo de conversa do produto
+
+**Contexto.** O cliente precisa sugerir alterações no estudo da própria marca já no MVP. Conteúdo vai precisar da mesma capacidade para o cliente conversar com a equipe sobre um post, e o primeiro módulo a resolver isso define o formato que o segundo copia.
+
+**Decisão.** Cada seção do estudo de marca tem uma **thread de comentários**. O cliente escreve, a agência responde, edita o estudo se concordar e marca a thread como resolvida. **O cliente nunca edita o estudo** — ele conversa sobre ele.
+
+Foram descartadas: a **proposta de alteração**, em que o cliente edita e a agência aceita ou recusa, por exigir estado de revisão, diff e conflito para servir a um único lugar; e o **campo livre de sugestões**, que não tem resposta nem fechamento.
+
+**Consequência.** Clientes cria o primeiro mecanismo de conversa entre cliente e equipe, e **Conteúdo reaproveita o mesmo formato** para os comentários de post — não inventa um segundo. A forma de armazenar e de autorizar essa conversa passa a ser decisão com peso de modelo, e é tratada nos blocos 3 e 7 desta entrevista.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes). **Pendente de validação** — aceita para ser validada na prática.
+
+---
+
+## 2026-09-26 — Contato do cliente é cadastro; acesso ao portal é vínculo, e pode haver vários
+
+**Contexto.** Na conversa, "o cliente" significava ao mesmo tempo a empresa, o contato do dono e a conta que entra no portal. O sistema já trata o acesso como vínculo por pessoa — `client_memberships` com `unique (client_id, user_id)` —, e nada limitava a um.
+
+**Decisão.** São duas coisas independentes:
+
+- **Dados do cliente** — empresa e contato do dono — são **cadastro**, preenchido pela agência. Existem antes de qualquer convite e continuam existindo se ninguém nunca aceitar.
+- **Acesso ao portal** é convite para um e-mail, que vira vínculo quando aceito. O e-mail do convite pode ou não ser o do contato.
+
+Um cliente pode ter **várias pessoas no portal, todas com o mesmo acesso**. Papel dentro do portal fica fora do MVP.
+
+**Consequência.** Nenhuma regra nova de banco para limitar o vínculo. O dado de contato nunca é derivado da conta global de quem aceitou — se fosse, a pessoa o editaria no próprio perfil e a agência perderia o controle do cadastro. Quando o dono quiser passar a aprovação a outra pessoa, a resposta é convidá-la.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-26 — Permissões de clientes: todos veem todos, e cadastrar é administrativo
+
+**Contexto.** O v1 diz que todo colaborador enxerga Clientes. A alternativa era restringir cada colaborador aos clientes atribuídos a ele — mas a tabela de atribuição não existe, e `clients_select` libera leitura a qualquer membro da agência.
+
+**Decisão.** Todo colaborador vê **todos** os clientes da agência. O catálogo do módulo:
+
+| capacidade | permissão |
+|---|---|
+| Ver listagem, detalhe e estudo de marca | `cliente.visualizar` |
+| Editar cadastro e estudo de marca, responder e resolver thread | `cliente.operar` |
+| Cadastrar cliente novo | `cliente.cadastrar` |
+| Arquivar e reativar | `cliente.arquivar` |
+| Convidar pessoa para o portal | `cliente.convidar_usuario` *(já existe)* |
+| Reenviar e cancelar convite de portal | `convite.reenviar` · `convite.cancelar` *(já existem)* |
+| Remover pessoa do portal e reativá-la | `cliente.remover_usuario` |
+
+**Cadastrar é administrativo**, separado de `operar`: cliente novo é compromisso comercial, e a cobrança prevista é por número de clientes.
+
+No portal, a pessoa do cliente abre e responde thread, mas **só a agência resolve** — resolvida significa "a agência tratou", e o cliente fechando a própria sugestão apagaria esse sinal.
+
+**Consequência.** Restringir visibilidade por atribuição fica em aberto, com gatilho: **a primeira agência precisar esconder um cliente de parte da equipe**. Atribuir responsável nasce em Conteúdo e Tarefas; usar a atribuição para restringir leitura é decisão à parte, local à RLS de `clients`.
+
+`convite.reenviar` e `convite.cancelar` valem para os dois tipos de convite, e `invitations_select` não separa por tipo: quem recebe `cliente.convidar_usuario` enxerga também os convites pendentes de colaborador. Enquanto só o Admin detiver as duas famílias, isso é invisível.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-26 — Preset de clientes: o Gestor opera e cadastra, só o Admin arquiva e gerencia o portal
+
+**Contexto.** A linha de preset do módulo é obrigatória na SPEC. O ponto sensível era o acesso ao portal: dar ao Gestor de conta as permissões de convite de cliente daria a ele, pelas policies atuais, leitura e cancelamento de convites de colaborador.
+
+**Decisão.**
+
+| permissão | Admin | Gestor de conta | Produção | Vendas | Financeiro |
+|---|---|---|---|---|---|
+| `cliente.visualizar` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `cliente.operar` | ✅ | ✅ | — | — | — |
+| `cliente.cadastrar` | ✅ | ✅ | — | — | — |
+| `cliente.arquivar` | ✅ | — | — | — | — |
+| `cliente.convidar_usuario` | ✅ | — | — | — | — |
+| `cliente.remover_usuario` | ✅ | — | — | — | — |
+
+Produção lê o estudo de marca para trabalhar, mas não o edita nem responde o cliente. Vendas não cadastra: quem cadastra é quem vai atender. Arquivar corta o portal na requisição seguinte — é fim de contrato, e fica com o Admin.
+
+**Consequência.** As permissões de convite continuam compartilhadas entre os dois tipos, e nada estrutural acontece agora. Separá-las por tipo reescreve as policies de `insert`, `update` e `select` de `invitations` — **estrutural**, por atravessar RLS de outro módulo. Gatilho: **o primeiro Gestor precisar convidar pessoa de cliente sem o Admin**. Vendas volta à mesa quando Pipeline entrar.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-26 — Campos do cliente e forma do estudo de marca
+
+**Contexto.** `clients` tem apenas `name` e `status`. O bloco 0 pediu dados da empresa, contato do dono, foto e um estudo de marca "quanto mais detalhado, melhor", com personas múltiplas e sugestão do cliente por thread.
+
+**Decisão.**
+
+- **Cadastro**: nome de exibição, foto; razão social, CNPJ **ou** CPF, segmento, site, @ do Instagram; nome, telefone/WhatsApp e e-mail do contato do dono. **Só o nome é obrigatório** — o cadastro começa numa ligação e se completa depois. Valor de contrato, início e forma de pagamento ficam no Financeiro.
+- **Nome único entre os clientes ativos da agência**, sem diferenciar maiúsculas. Arquivado não bloqueia o nome. **CNPJ não é único**: a mesma empresa pode ser atendida como duas marcas.
+- **Estudo de marca em seções fixas do produto**: Branding, Tom de voz, Cores, Posicionamento, Arquétipo, Personas e Observações. Texto livre, exceto **Cores** — lista de nome e código — e **Arquétipo** — um dos doze clássicos. Seções configuráveis por agência e documento único foram descartados: o primeiro é um construtor de formulário, o segundo tira a âncora da conversa e impede medir preenchimento.
+- **Personas**: várias por cliente, com nome, descrição, dores, desejos e objeções. Persona retirada é **arquivada**, porque pode ter conversa pendurada.
+- **Conversa**: várias threads por seção e por persona. Comentário **não se edita nem se apaga**, nem pelo autor. A thread guarda quem resolveu e quando, e **comentário novo em thread resolvida a reabre**.
+- **Histórico do estudo**: só quem alterou por último e quando, por seção. Versões ficam fora; a thread já registra o porquê.
+
+**Consequência.** O @ do Instagram mora no cliente, e o simulador de feed de Conteúdo o lê daqui. A seção fixa é o que torna possível o "quanto do estudo está preenchido" na aba Geral. Onde esses campos vivem — colunas novas em `clients`, que é `alter table` em tabela implantada, ou tabelas próprias — é decidido no bloco de impacto estrutural desta entrevista.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-26 — Estados de cliente, de acesso ao portal, de thread e de persona
+
+**Contexto.** O banco já corta o portal de cliente arquivado — `requireClientAccess` devolve 404 — e já recusa o aceite de convite de cliente arquivado. Não mexe nos vínculos ao arquivar, e um convite aceito por alguém removido reativa o vínculo antigo.
+
+**Decisão.**
+
+- **Arquivar o cliente** corta o portal na requisição seguinte, **revoga os convites pendentes** no ato e **preserva os vínculos**, de modo que reativar devolve o acesso a quem já tinha. Não há pré-condição: arquiva-se com thread aberta, persona ou o que houver. Revogar evita que um link antigo volte a valer sozinho na reativação.
+- **Cliente arquivado é somente leitura** na área da agência: aparece pelo filtro de status e mostra tudo, mas não se edita, não se comenta e não se convida. A única ação é **reativar**.
+- **Pessoa do portal**: `active → removed` tira o acesso dela na requisição seguinte, sem afetar as demais. Volta por **reativação direta** pelo Admin, como em Colaboradores; o caminho por convite novo continua existindo.
+- **Thread**: aberta ↔ resolvida. Só a agência resolve; **comentário novo reabre**, de qualquer lado. Não existe ação separada de reabrir — o único jeito é dizer por quê.
+- **Persona**: ativa ↔ arquivada. Arquivada some do estudo que o cliente vê, suas threads ficam somente leitura, e quem tem `cliente.operar` a desarquiva.
+
+**Consequência.** Arquivar cliente com conteúdo agendado é pergunta que só existe quando Conteúdo existir, e é tratada entre as regras invioláveis desta entrevista.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-26 — Regras invioláveis de clientes, garantidas pelo banco
+
+**Contexto.** O módulo abre a primeira superfície em que uma pessoa de fora da agência — o cliente — lê e escreve. Regra que vive só na rota é furada pela primeira rota nova que a esquecer, e Conteúdo vai criar várias.
+
+**Decisão.** Garantidas pela RLS, por *grant* ou por índice, não apenas pela API:
+
+1. Pessoa do portal **nunca lê nada de outro cliente**, nem da mesma agência — cadastro, estudo, personas e threads.
+2. Colaborador **sem vínculo de cliente não entra no portal**, nem Admin nem Owner.
+3. Pessoa do portal **nunca escreve no estudo de marca nem nas personas**; só comenta, e só nas threads do próprio cliente.
+4. **Comentário não tem `UPDATE` nem `DELETE`** para o papel da aplicação.
+5. **Cliente arquivado não aceita escrita** — cadastro, estudo, personas, threads e convites. A policy confere o status.
+6. **Nome único entre os ativos da agência**, por índice único parcial sem diferenciar maiúsculas; nunca por consulta prévia, que perde para a concorrência.
+7. **Só a agência resolve thread**: a policy exige `cliente.operar`, que vínculo de cliente nunca satisfaz.
+8. **Não existe thread interna.** Toda thread do estudo é conversa com o cliente. Uma marca de "interna" numa tabela que o portal lê é o vazamento mais provável do módulo; discussão interna acontece fora, ou em Tarefas quando existir.
+
+E duas regras de comportamento:
+
+- **Reativar um cliente cujo nome já está em uso entre os ativos é recusado**, com mensagem clara; alguém renomeia um dos dois antes. Renomear sozinho mudaria um dado que o cliente vê no portal sem a agência perceber.
+- **O portal lê o próprio cadastro**, somente leitura — `clients_select` já entrega a linha inteira ao vínculo de cliente.
+
+**Consequência.** Pela última regra, **nenhum campo interno da agência sobre o cliente** — nota, avaliação, risco de churn — pode morar em `clients`. Se existir um dia, nasce em tabela própria que o portal não alcança. Cada item numerado vira teste de integração contra o banco.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-26 — Contrato de cliente termina com aviso prévio, e o conteúdo além da data é cancelado
+
+**Contexto.** Ao pré-decidir o que acontece com conteúdo agendado de cliente arquivado, a regra dada foi "só publica até o começo da desativação; o que vier depois se cancela". Isso pressupõe uma desativação com data futura, que a decisão de estados não previa — ali, arquivar era sempre imediato.
+
+**Decisão.** O cliente pode ter uma **data de encerramento**, registrada por quem tem `cliente.arquivar`. Até ela tudo funciona normalmente — **inclusive o portal**, porque o cliente ainda está no período contratado —, com aviso visível na área da agência. Na data, um **job arquiva o cliente**, com os mesmos efeitos do arquivamento manual. O encerramento pode ser **desmarcado** até a data. Arquivar na hora continua existindo, e equivale ao encerramento com a data de hoje.
+
+Regra **pré-decidida para Conteúdo**: conteúdo com publicação **até** a data de encerramento publica normalmente; o que estiver **depois** é **cancelado** quando o cliente é arquivado. Sai do agendamento e **não volta sozinho** na reativação — a agência reagenda o que quiser. Cancelado não é excluído: o conteúdo continua guardado, com esse status. Cliente arquivado não executa nenhuma ação externa em nome dele, como já vale para agência suspensa.
+
+Foram descartados o arquivamento sempre imediato, que obrigaria alguém a lembrar do dia certo, e o conteúdo suspenso que volta sozinho, porque um post reaparecendo meses depois com data vencida é pior que reagendar.
+
+**Consequência.** É o **primeiro job agendado de negócio** do sistema, e ele esbarra na decisão de que o worker não contorna a RLS: precisa agir como alguém. Com que identidade ele arquiva é tratado no bloco de impacto estrutural desta entrevista.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-26 — A área de clientes é um painel de triagem, e o detalhe nasce com todas as abas
+
+**Contexto.** Quem abre Clientes na agência é, tipicamente, o Gestor de conta com oito a vinte clientes, várias vezes por dia, perguntando "qual cliente precisa de mim agora?". No MVP, porém, os sinais que responderiam isso — pendente, em revisão, atrasado — só existem depois de Conteúdo e Tarefas.
+
+**Decisão.**
+
+- **Intenção da área da agência**: o verbo é **triar**. A tela funciona como painel de plantão — o cliente com problema salta aos olhos, o cliente em dia fica quieto.
+- **Intenção do portal**: o dono do negócio, sem familiaridade com ferramenta de agência, entrando pelo celular poucas vezes por semana para **conferir e aprovar**. Vitrine do trabalho, sem termo técnico, sempre com uma próxima ação óbvia. **O portal é pensado primeiro para celular**; a área da agência, para desktop.
+- **Listagem `/clientes`**: 20 por página; ordem padrão **clientes com thread aberta pelo cliente primeiro, depois nome ascendente** — atraso passa a ser o primeiro critério quando Conteúdo existir; busca por nome, razão social e @; filtro de status ativos (padrão) e arquivados. O card mostra foto ou iniciais, nome, @, os selos *encerra em dd/mm*, *N sugestões aguardando* e *convite pendente*, e a faixa de indicadores reservada. Vazio: "Nenhum cliente ainda", com **Cadastrar cliente** para quem tem permissão.
+- **Cadastrar** é um modal curto, só com o nome; ao salvar, abre o detalhe do cliente novo, onde **Editar** tem todos os campos.
+- **Detalhe `/clientes/:id`**: cabeçalho com foto, nome, @, status e selo de encerramento, **Editar** com `cliente.operar` e o menu **Encerrar contrato** e **Arquivar/Reativar** com `cliente.arquivar`. **Todas as abas nascem no MVP** — Geral, Conteúdos, Tarefas, Estudo de marca, Relatórios e Acessos, esta só para quem tem `cliente.convidar_usuario`. As que dependem de módulo futuro nascem como **esqueleto**, preenchidas conforme os módulos entram.
+
+**Consequência.** A ordem por "espera resposta" é o que torna a tela útil antes de Conteúdo. Aba esqueleto não pode mostrar dado fictício nem controle que não funciona: mostra que a área existe e o que virá, e nada que pareça quebrado. O custo aceito é conviver com abas sem uso até seus módulos entrarem.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-26 — O portal nasce com navegação de celular, tour do que funciona e sem notificação
+
+**Contexto.** O portal não tem tela nenhuma, e a única rota de cliente é a que marca o onboarding como visto. O sistema só envia e-mail de autenticação; não existe notificação de nenhum tipo.
+
+**Decisão.**
+
+- **Rotas** `/portal/:clienteId/...`, em português como as de autenticação. **Barra inferior** com Início, Calendário, Marca e Relatórios; Calendário e Relatórios nascem como esqueleto. Quem acessa mais de um cliente troca pelo menu de conta já decidido em auth.
+- **Início**: saudação com o nome do cliente e a próxima ação óbvia — no MVP, "a agência respondeu N sugestões suas" ou "conheça o estudo da sua marca" —, com o espaço dos conteúdos a aprovar reservado.
+- **Onboarding**: tour guiado na primeira entrada daquela pessoa naquele cliente, usando o `onboarding_seen_at` que já existe; pode ser pulado e revisto pelo menu de conta. **Mostra só o que funciona** — no MVP, Marca e como sugerir.
+- **Estudo de marca no portal**: seções em leitura, em linguagem de cliente; **Sugerir** e as conversas em cada seção; seção não preenchida diz "sua agência está preparando esta parte"; o cliente vê nome e foto de quem respondeu.
+- **Aba Acessos** na agência: pessoas no portal com Remover e Reativar, removidas num filtro; convites pendentes com Reenviar e Cancelar; Convidar é um modal só com o e-mail; vazio "ninguém deste cliente acessa o portal ainda", com Convidar. O mesmo desenho da seção de convites de Colaboradores.
+- **Sem notificação no MVP**: cada lado descobre a conversa dentro do produto — o selo na listagem da agência, o aviso no Início do portal.
+
+**Consequência.** Notificação fica em aberto, com gatilho: **Conteúdo fechar o fluxo de aprovação** — é ali que o cliente precisa ser chamado de fora, e notificação é mecanismo transversal (destinatário, preferência, agrupamento) que não deve ser desenhado para o caso menos urgente. O risco aceito é o cliente sugerir e só ver a resposta na entrada seguinte.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-26 — ESTRUTURAL: os campos do cliente entram como colunas em `clients`
+
+**Esta é uma mudança estrutural**, pelo primeiro critério de [structural-changes.md](structural-changes.md): altera uma tabela que já existe. Registrada antes de qualquer implementação.
+
+**Contexto.** O cadastro decidido nesta entrevista — empresa, contato do dono, @ do Instagram, foto —, a data de encerramento, o "quem alterou por último" e a unicidade de nome entre ativos não cabem nas duas colunas atuais de `clients`. A alternativa era uma tabela 1:1, `client_profiles`, para não tocar a tabela implantada.
+
+**Decisão.** **Colunas novas em `clients`**, todas anuláveis, sem backfill, mais o **índice único parcial** de nome entre ativos, sem diferenciar maiúsculas. `clients` ganha também as policies de `INSERT` e `UPDATE`, que hoje não existem. O estudo de marca, as personas e as threads nascem em tabelas próprias.
+
+**Consequência.** O cadastro **é** o cliente, e a tabela 1:1 obrigaria um join em toda leitura só para evitar um `alter table` que agora custa pouco: não há dado real em lugar nenhum, porque tudo é local até o deploy. A migration dispara o gate de CI, e esta entrada é o que o satisfaz. Como o portal lê a linha inteira de `clients`, vale a regra já decidida: nenhum campo interno da agência sobre o cliente mora aqui.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-26 — ESTRUTURAL: a conversa com o cliente é uma tabela de threads por cliente, com assunto tipado
+
+**Esta é uma mudança estrutural**, pelo critério de formato que outras rotas copiam: é o primeiro mecanismo de conversa entre cliente e equipe, e Conteúdo vai reaproveitá-lo.
+
+**Contexto.** As threads do estudo de marca e, depois, as de conteúdo precisam da mesma RLS — só a agência e as pessoas daquele cliente — e da mesma contagem de "conversas aguardando resposta" que alimenta o card da listagem.
+
+**Decisão.** **Uma tabela de threads** com `client_id` sempre preenchido e o assunto em **colunas tipadas com chave estrangeira** — a seção do estudo ou `persona_id` —, com restrição de exatamente um assunto por thread. Os comentários pendem da thread. A RLS é uma só, pelo `client_id`.
+
+Descartadas: **uma tabela por assunto**, que duplicaria RLS e contagem a cada módulo; e a **polimórfica** com `subject_type` e `subject_id` sem chave estrangeira, que perde integridade e obriga a RLS a descobrir o dono do assunto em tempo de consulta.
+
+**Consequência.** **Conteúdo acrescenta uma coluna `content_id`** a esta tabela — `alter table` aditivo que também passará pelo gate, e que já fica anunciado aqui. "Quantas conversas esperam resposta neste cliente" continua uma consulta só depois disso.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-26 — ESTRUTURAL: arquivar cliente é uma função `security definer` de escopo único, usada pelo job e pela rota
+
+**Esta é uma mudança estrutural**, por mudar **como a autorização é avaliada** para trabalho sem requisição: abre uma exceção à decisão de 18/09 de que o worker age como um usuário e não contorna a RLS.
+
+**Contexto.** O encerramento agendado precisa de um job que arquive o cliente na data. Pelo modelo atual ele agiria como quem agendou, e o defeito já registrado para a mídia se repetiria com consequência pior: se essa pessoa perder a permissão, o job vira no-op silencioso, **o contrato não se encerra e o portal continua aberto**. Havia um segundo acoplamento: arquivar revoga convites pendentes, o que exige permissão sobre `invitations`, que `cliente.arquivar` não implica.
+
+**Decisão.** Uma função `security definer` que faz **uma coisa só**: arquiva o cliente, revoga os convites pendentes dele e grava um evento em `audit.events`. O **job** a chama apenas para clientes com data de encerramento vencida. A **rota de arquivar** chama a mesma função, depois de a API conferir `cliente.arquivar` — os dois caminhos têm exatamente o mesmo efeito.
+
+**Consequência.** A regra "o worker não contorna a RLS" passa a ter uma exceção documentada: **função de escopo único, auditada, chamável só para o efeito que nomeia** — nunca uma identidade de serviço com acesso amplo. Esse é o **modelo que a publicação agendada de Conteúdo deve seguir**, e qualquer exceção nova precisa ter a mesma forma. O defeito da mídia, que continua agindo como o usuário, não é corrigido por esta decisão.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-26 — Cliente na mídia fica para Conteúdo, com diagnóstico mais grave que o registrado
+
+**Contexto.** A estrutural conhecida dizia que `media_assets` é escopado só por agência. A leitura das policies mostra mais: o `SELECT` de `media_assets` exige `midia.enviar`, então **o portal não vê mídia nenhuma**, nem a própria. E Clientes não usa `media_assets` — a foto do cliente vai para o armazenamento de identidade.
+
+**Decisão.** A estrutural continua **pendente** e é decidida no **bloco de impacto estrutural da entrevista de Conteúdo**, que é o gatilho. A forma — cliente por arquivo, por pasta ou pelo conteúdo que usa o arquivo — depende do modelo de pastas que só Conteúdo vai desenhar.
+
+**Consequência.** Qualquer que seja a forma, ela terá de dar ao vínculo de cliente leitura sobre mídia, que hoje nenhuma policy concede — é migration mais RLS nova, e continua estrutural.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-26 — A foto do cliente vive no armazenamento de identidade
+
+**Contexto.** O armazenamento de identidade, decidido em Colaboradores, é separado da mídia, não consome quota e já previa servir a identidade visual de portal.
+
+**Decisão.** A foto do cliente vai para esse armazenamento, não para `media_assets`.
+
+**Consequência.** A foto do cliente **depende da issue #100**, que cria o armazenamento de identidade; isso entra como dependência no recorte deste módulo. Avatar decorativo não disputa quota com vídeo de cliente.
+
+**Origem.** Decidido em sessão (entrevista do módulo de clientes).

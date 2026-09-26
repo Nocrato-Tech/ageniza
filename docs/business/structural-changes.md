@@ -41,7 +41,13 @@ Nenhuma precisa ser resolvida agora. Estão aqui para serem reconhecidas quando 
 
 **Exclusão reversível.** *Decidido na sessão 0.* `archived` é a entidade guardada e recuperável; `removed` é o vínculo desfeito. Nenhuma rota da aplicação exclui fisicamente entidade de negócio — purga só no fluxo de retenção e LGPD. Introduzir um `DELETE` de verdade reabre esta decisão.
 
-**Contexto de cliente na mídia.** `media_assets` é escopado apenas por agência. Se o portal do cliente precisar ver só a mídia dele, é migration mais mudança de RLS — está registrado como pendente de validação em [decisions.md](decisions.md).
+**Contexto de cliente na mídia.** *Pendente, com gatilho na entrevista de Conteúdo.* `media_assets` é escopado apenas por agência, e o `SELECT` exige `midia.enviar` — hoje o portal não vê mídia nenhuma, nem a própria. Dar ao cliente a mídia dele é migration mais RLS nova; a forma — por arquivo, por pasta ou pelo conteúdo — depende do modelo de pastas que Conteúdo vai desenhar. Clientes não usa `media_assets`.
+
+**Conversa com o cliente.** *Decidido na sessão de clientes, e é estrutural.* Uma tabela de threads por cliente, com `client_id` sempre preenchido e o assunto em colunas tipadas com chave estrangeira. Conteúdo **acrescenta** `content_id` nela, não cria uma segunda tabela de conversa. Tabela por assunto ou polimórfica sem chave estrangeira reabrem esta decisão.
+
+**Trabalho agendado sem requisição.** *Decidido na sessão de clientes, e é estrutural.* A regra é que o worker age como um usuário e não contorna a RLS — com o defeito de virar no-op silencioso se esse usuário perder a permissão. Quando o efeito não pode deixar de acontecer, a exceção é uma **função `security definer` de escopo único, auditada**, chamada pelo job e pela rota equivalente; nunca uma identidade de serviço com acesso amplo. O arquivamento por encerramento de contrato é o primeiro caso; a publicação agendada de Conteúdo deve seguir a mesma forma.
+
+**Permissões de convite compartilhadas entre tipos.** `convite.reenviar` e `convite.cancelar` valem para convite de colaborador e de cliente, e `invitations_select` não separa por tipo: quem recebe `cliente.convidar_usuario` vê também convites de colaborador. Invisível enquanto só o Admin detém as duas famílias. Separar por tipo reescreve três policies de `invitations`. Reabre quando um papel além do Admin precisar gerenciar um só dos dois tipos.
 
 ## O gate
 
