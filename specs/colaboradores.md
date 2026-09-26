@@ -21,7 +21,7 @@ Administrar quem faz parte da agência: quem entra, com que papel, em que cargo,
 - **Estatísticas do colaborador** (entregas, pendências). Não há o que contar antes de Tarefas existir — seção 10.
 - **Pré-cadastro no convite.** O convite leva e-mail e papel, e nada mais.
 - **Solicitação de troca de e-mail.** A troca é operação, e a conversa acontece fora do produto.
-- **Hierarquia entre colaboradores.** Não existe "gestor de quem": `ClientAssignment` liga colaborador a cliente, nunca colaborador a colaborador.
+- **Hierarquia entre colaboradores.** Não existe "gestor de quem": o modelo nunca liga colaborador a colaborador. A ligação entre colaborador e cliente — citada como `ClientAssignment` — também não existe em migration; nasce em Conteúdo e Tarefas (ver [`clientes.md`](clientes.md)).
 - **Transferência de posse.** Fluxo próprio, que não existe.
 - **Qualquer campo além dos seis da seção 3** — telefone incluído.
 
