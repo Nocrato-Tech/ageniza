@@ -1,0 +1,33 @@
+/**
+ * Semantic tokens: what primitives mean in context. Components must
+ * prefer these over primitives (docs/design-system.md section 17).
+ *
+ * `:root` carries the Light values as the default — Light is the theme
+ * that applies before `themes/dark.css` overrides it under
+ * `[data-theme="dark"]`. themes/light.css exists only for structural
+ * symmetry; its content is a pointer back here, not a duplicate.
+ *
+ * `action-danger-*` is not in the design system page (see
+ * docs/design-system.md section 5.1); kept here, next to the rest of the
+ * `action/*` family, marked proposed like its underlying primitive.
+ */
+:root {
+  --bg-canvas: var(--color-cloud-50);
+  --bg-surface: var(--color-white);
+  --bg-elevated: var(--color-white);
+  --bg-hover: var(--color-mist-100);
+
+  --text-primary: var(--color-ink-900);
+  --text-secondary: var(--color-slate-600);
+  --text-muted: var(--color-slate-500);
+
+  --border-default: var(--color-mist-200);
+  --border-subtle: var(--color-mist-100);
+
+  --action-primary-bg: var(--color-indigo-600);
+  --action-primary-fg: var(--color-white);
+  --action-danger-bg: var(--color-red-700); /* proposto */
+  --action-danger-fg: var(--color-white); /* proposto */
+
+  --focus-ring: var(--color-indigo-600);
+}

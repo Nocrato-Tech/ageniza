@@ -1,0 +1,21 @@
+/**
+ * Typography: font-family tokens and the type scale from
+ * docs/design-system.md section 10. Each scale step is one custom property
+ * using the CSS `font` shorthand (weight size/line-height family), so a
+ * component applies it with a single declaration: `font: var(--body-md);`.
+ */
+:root {
+  --font-brand: 'Sora', sans-serif;
+  --font-ui: 'Inter', sans-serif;
+
+  --display-lg: 700 2.5rem/3rem var(--font-brand); /* 40/48 */
+  --heading-xl: 700 2rem/2.5rem var(--font-brand); /* 32/40 */
+  --heading-lg: 600 1.5rem/2rem var(--font-brand); /* 24/32 */
+  --heading-md: 600 1.25rem/1.75rem var(--font-brand); /* 20/28 */
+  --body-lg: 400 1rem/1.5rem var(--font-ui); /* 16/24 */
+  --body-md: 400 0.875rem/1.25rem var(--font-ui); /* 14/20 */
+  --label-md: 500 0.875rem/1.25rem var(--font-ui); /* 14/20 */
+  --label-sm: 500 0.75rem/1rem var(--font-ui); /* 12/16 */
+  --button-md: 600 0.875rem/1.25rem var(--font-ui); /* 14/20 */
+  --caption: 400 0.75rem/1rem var(--font-ui); /* 12/16 */
+}

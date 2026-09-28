@@ -1,0 +1,26 @@
+/**
+ * Dark overrides. Not an automatic inversion of Light — see
+ * docs/design-system.md section 7. Applies under `[data-theme="dark"]`;
+ * nothing in the app sets that attribute yet, so this file has no visible
+ * effect until a theme switch exists.
+ */
+[data-theme='dark'] {
+  --bg-canvas: var(--color-ink-900);
+  --bg-surface: var(--color-ink-800);
+  --bg-elevated: var(--color-ink-700);
+  --bg-hover: var(--color-ink-700);
+
+  --text-primary: var(--color-cloud-50);
+  --text-secondary: var(--color-slate-300);
+  --text-muted: var(--color-slate-400);
+
+  --border-default: var(--color-ink-600);
+  --border-subtle: var(--color-ink-700);
+
+  --action-primary-bg: var(--color-indigo-550);
+  --action-primary-fg: var(--color-white);
+  --action-danger-bg: var(--color-red-700); /* proposto; mesmo valor do Light, contraste conferido em separado */
+  --action-danger-fg: var(--color-white); /* proposto */
+
+  --focus-ring: var(--color-indigo-400);
+}
