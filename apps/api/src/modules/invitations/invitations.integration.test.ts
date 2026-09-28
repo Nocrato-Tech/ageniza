@@ -498,6 +498,125 @@ describe('invitation HTTP module', () => {
     expect(invalidClientResponse.json().error).toMatchObject({ code: 'NOT_FOUND' });
   });
 
+  describe('GET /agencies/:agencyId/invitations', () => {
+    const systemRoleId = async (key: string): Promise<string> => {
+      const role = await owner.knex('roles').where({ key }).whereNull('agency_id').first('id');
+      if (role === undefined) throw new Error(`Role seed "${key}" is missing.`);
+      return role.id as string;
+    };
+
+    it('returns only pending collaborator invitations for that agency, paginated by the shared contract', async () => {
+      const pendingAgencyOwner = await makeUser('invitations-pending-owner');
+      const pendingAgencyId = await createAgency('Pending invitations agency', pendingAgencyOwner.id);
+      const otherAgencyId = await createAgency('Other pending invitations agency', pendingAgencyOwner.id);
+      const otherClientId = randomUUID();
+      createdClientIds.push(otherClientId);
+      await owner.knex('clients').insert({ id: otherClientId, agency_id: pendingAgencyId, name: 'Pending invitations client' });
+
+      const pendingEmail = `pending-list-${randomUUID()}@example.test`;
+      const pending = await insertInvitation({ agencyId: pendingAgencyId, email: pendingEmail, roleId: productionRoleId });
+      const used = await insertInvitation({ agencyId: pendingAgencyId, email: `used-list-${randomUUID()}@example.test`, roleId: productionRoleId, usedAt: new Date() });
+      const revoked = await insertInvitation({ agencyId: pendingAgencyId, email: `revoked-list-${randomUUID()}@example.test`, roleId: productionRoleId, revokedAt: new Date() });
+      const expired = await insertInvitation({ agencyId: pendingAgencyId, email: `expired-list-${randomUUID()}@example.test`, roleId: productionRoleId, expiresAt: new Date(Date.now() - 1_000) });
+      // Same policy (`invitations_select`) grants read access for both invitation types; only the
+      // query's own `purpose` filter is what has to keep this out of a collaborator-only list.
+      const clientInvite = await insertInvitation({ agencyId: pendingAgencyId, email: `client-list-${randomUUID()}@example.test`, purpose: 'client_invite', roleId: null, clientId: otherClientId });
+      const elsewhere = await insertInvitation({ agencyId: otherAgencyId, email: `elsewhere-list-${randomUUID()}@example.test`, roleId: productionRoleId });
+
+      const response = await app.app.inject({
+        method: 'GET',
+        url: `/agencies/${pendingAgencyId}/invitations`,
+        headers: { ...origin, cookie: await loginCookie(pendingAgencyOwner) }
+      });
+      expect(response.statusCode).toBe(200);
+      const body = response.json<{ data: Array<Record<string, unknown>>; meta: Record<string, unknown> }>();
+
+      expect(body.meta).toEqual({ page: 1, pageSize: 24, totalItems: 1, totalPages: 1 });
+      expect(body.data).toHaveLength(1);
+      const [item] = body.data;
+      expect(item).toMatchObject({
+        id: pending.invitationId,
+        email: pendingEmail,
+        purpose: 'collaborator_invite',
+        role: { key: 'production', name: expect.any(String) },
+        client: null
+      });
+      expect(item).toHaveProperty('createdAt');
+      expect(item).toHaveProperty('expiresAt');
+      expect(Object.keys(item ?? {}).sort()).toEqual(['client', 'createdAt', 'email', 'expiresAt', 'id', 'purpose', 'role']);
+
+      const returnedIds = body.data.map((row) => row.id);
+      expect(returnedIds).not.toContain(used.invitationId);
+      expect(returnedIds).not.toContain(revoked.invitationId);
+      expect(returnedIds).not.toContain(expired.invitationId);
+      expect(returnedIds).not.toContain(clientInvite.invitationId);
+      expect(returnedIds).not.toContain(elsewhere.invitationId);
+
+      const serialized = JSON.stringify(body);
+      expect(serialized).not.toMatch(/token/i);
+      const storedHash = (await owner.knex('invitations').where({ id: pending.invitationId }).first('token_hash'))?.token_hash;
+      expect(storedHash).toBeDefined();
+      expect(serialized).not.toContain(storedHash);
+    });
+
+    it('paginates with the shared { data, meta } contract and a 100-item ceiling on pageSize', async () => {
+      const pageOwner = await makeUser('invitations-pending-page-owner');
+      const pageAgencyId = await createAgency('Pending invitations page agency', pageOwner.id);
+      const emails = await Promise.all(
+        [0, 1, 2].map((index) => insertInvitation({ agencyId: pageAgencyId, email: `page-list-${index}-${randomUUID()}@example.test`, roleId: productionRoleId }))
+      );
+      expect(emails).toHaveLength(3);
+
+      const firstPage = await app.app.inject({
+        method: 'GET',
+        url: `/agencies/${pageAgencyId}/invitations?page=1&pageSize=2`,
+        headers: { ...origin, cookie: await loginCookie(pageOwner) }
+      });
+      expect(firstPage.statusCode).toBe(200);
+      const firstBody = firstPage.json<{ data: unknown[]; meta: Record<string, unknown> }>();
+      expect(firstBody.data).toHaveLength(2);
+      expect(firstBody.meta).toEqual({ page: 1, pageSize: 2, totalItems: 3, totalPages: 2 });
+
+      const secondPage = await app.app.inject({
+        method: 'GET',
+        url: `/agencies/${pageAgencyId}/invitations?page=2&pageSize=2`,
+        headers: { ...origin, cookie: await loginCookie(pageOwner) }
+      });
+      const secondBody = secondPage.json<{ data: unknown[]; meta: Record<string, unknown> }>();
+      expect(secondBody.data).toHaveLength(1);
+      expect(secondBody.meta).toEqual({ page: 2, pageSize: 2, totalItems: 3, totalPages: 2 });
+
+      const ceiling = await app.app.inject({
+        method: 'GET',
+        url: `/agencies/${pageAgencyId}/invitations?pageSize=100000`,
+        headers: { ...origin, cookie: await loginCookie(pageOwner) }
+      });
+      expect(ceiling.statusCode).toBe(200);
+      expect(ceiling.json<{ meta: { pageSize: number } }>().meta.pageSize).toBe(100);
+    });
+
+    it.each(['account_manager', 'production', 'sales', 'finance'])('returns 403 for a %s collaborator', async (roleKey) => {
+      const member = await makeUser(`invitations-pending-${roleKey}`);
+      await owner.knex('agency_memberships').insert({ agency_id: agencyId, user_id: member.id, role_id: await systemRoleId(roleKey) });
+      const response = await app.app.inject({
+        method: 'GET',
+        url: `/agencies/${agencyId}/invitations`,
+        headers: { ...origin, cookie: await loginCookie(member) }
+      });
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('returns 404 for a user without access to the agency', async () => {
+      const outsider = await makeUser('invitations-pending-outsider');
+      const response = await app.app.inject({
+        method: 'GET',
+        url: `/agencies/${agencyId}/invitations`,
+        headers: { ...origin, cookie: await loginCookie(outsider) }
+      });
+      expect(response.statusCode).toBe(404);
+    });
+  });
+
   it('rolls back the new account when acceptance fails after the auth rows are inserted', async () => {
     const rollbackEmail = `rollback-api-${randomUUID()}@example.test`;
     const invitation = await insertInvitation({ agencyId, email: rollbackEmail });
@@ -586,6 +705,18 @@ describe('invitation HTTP module', () => {
     const activationSession = await logApp.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie: sessionCookieHeader(activation.cookies) } });
     expect(activationSession.statusCode).toBe(200);
     createdUserIds.push(activationSession.json<{ user: { id: string } }>().user.id);
+
+    // `resentToken`'s invitation is still pending at this point (only the client and activation
+    // invitations above were accepted), so the pending list is exercised with a live token in play.
+    const pendingList = await logApp.app.inject({
+      method: 'GET',
+      url: `/agencies/${logAgencyId}/invitations`,
+      headers: { ...origin, cookie: adminCookie }
+    });
+    expect(pendingList.statusCode).toBe(200);
+    const pendingListBody = JSON.stringify(pendingList.json());
+    expect(pendingListBody).not.toContain(resentToken!);
+
     await new Promise<void>((resolve) => setImmediate(resolve));
     const logs = text();
     expect(logs).not.toContain(collaboratorToken);

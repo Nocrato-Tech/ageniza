@@ -5,7 +5,9 @@ import {
   InvitationAcceptNewAccountResponseSchema,
   InvitationAcceptResponseSchema,
   InvitationPreviewResponseSchema,
-  AuthEmailSchema
+  AuthEmailSchema,
+  PaginationInputSchema,
+  PendingInvitationListResponseSchema
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 import { raw, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
@@ -181,6 +183,28 @@ const lockPendingInvitationSlot = async (
 };
 
 const routeParams = <T>(schema: z.ZodType<T>, request: FastifyRequest): T => parseRequest(schema, request.params);
+const routeQuery = <T>(schema: z.ZodType<T>, request: FastifyRequest): T => parseRequest(schema, request.query);
+
+// The pending-invitations list has no dedicated SPEC default; 24 matches the collaborator listing
+// this route pairs with in the frontend (specs/colaboradores.md §6-7), pending explicit review.
+const PENDING_INVITATIONS_DEFAULT_PAGE_SIZE = 24;
+const PENDING_INVITATIONS_PAGE_SIZE_CEILING = 100;
+
+interface PendingInvitationRow {
+  readonly id: string;
+  readonly email: string;
+  readonly purpose: InvitationLookup['purpose'];
+  readonly role_key: string | null;
+  readonly role_name: string | null;
+  readonly client_name: string | null;
+  readonly created_at: string | Date;
+  readonly expires_at: string | Date;
+}
+
+interface PendingInvitationPage {
+  readonly items: readonly PendingInvitationRow[];
+  readonly totalItems: number;
+}
 
 const invitationFromLookupRow = (row: InvitationLookupRow): InvitationLookup => ({
   id: row.id,
@@ -465,6 +489,71 @@ const acceptInvitation = async (
   return { status: result.status, context: { agencyId: result.agency_id, clientId: result.client_id } };
 };
 
+/**
+ * Lists pending collaborator invitations for one agency, paginated per the shared list contract
+ * (`packages/contracts/src/pagination.ts`). Scoped to `purpose = 'collaborator_invite'` even
+ * though `invitations_select` also grants `cliente.convidar_usuario` holders read access to this
+ * table: the RLS policy is shared across invitation types, so the type filter has to live here,
+ * in the query, and not in the guard (docs/business/structural-changes.md, "Permissões de convite
+ * compartilhadas entre tipos"). Never selects `token_hash`.
+ */
+const listPendingCollaboratorInvitations = async (
+  dependencies: InvitationModuleDependencies,
+  request: FastifyRequest,
+  agencyId: string,
+  page: number,
+  pageSize: number
+): Promise<PendingInvitationPage> => {
+  const auth = request.auth;
+  if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
+  return withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+    const countResult = await raw<RawRows<{ total: string | number }>>(transaction, `
+      select count(*) as total
+      from public.invitations invitation
+      where invitation.agency_id = ?::uuid
+        and invitation.purpose = 'collaborator_invite'
+        and invitation.used_at is null
+        and invitation.revoked_at is null
+        and invitation.expires_at > now()
+    `, [agencyId]);
+    const totalItems = Number(countResult.rows[0]?.total ?? 0);
+
+    const itemsResult = await raw<RawRows<PendingInvitationRow>>(transaction, `
+      select
+        invitation.id,
+        invitation.email,
+        invitation.purpose,
+        role.key as role_key,
+        role.name as role_name,
+        client.name as client_name,
+        invitation.created_at,
+        invitation.expires_at
+      from public.invitations invitation
+      left join public.roles role on role.id = invitation.role_id
+      left join public.clients client on client.id = invitation.client_id
+      where invitation.agency_id = ?::uuid
+        and invitation.purpose = 'collaborator_invite'
+        and invitation.used_at is null
+        and invitation.revoked_at is null
+        and invitation.expires_at > now()
+      order by invitation.created_at asc, invitation.id asc
+      limit ? offset ?
+    `, [agencyId, pageSize, (page - 1) * pageSize]);
+
+    return { items: itemsResult.rows, totalItems };
+  });
+};
+
+const pendingInvitationFromRow = (row: PendingInvitationRow) => ({
+  id: row.id,
+  email: row.email,
+  purpose: row.purpose,
+  role: row.role_key === null || row.role_name === null ? null : { key: row.role_key, name: row.role_name },
+  client: row.client_name === null ? null : { name: row.client_name },
+  createdAt: new Date(row.created_at).toISOString(),
+  expiresAt: new Date(row.expires_at).toISOString()
+});
+
 /** Registers authenticated administration and public invitation routes. */
 export const registerInvitationModule = (app: FastifyInstance, dependencies: InvitationModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
@@ -474,6 +563,18 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     config: { rateLimit: { max: AUTH_RATE_LIMITS.invitation.authenticatedIp.max, timeWindow: AUTH_RATE_LIMITS.invitation.authenticatedIp.windowMs, addHeaders: false } }
   });
   const publicConfig = { config: { rateLimit: { max: AUTH_RATE_LIMITS.invitation.publicIp.max, timeWindow: AUTH_RATE_LIMITS.invitation.publicIp.windowMs, addHeaders: false } } };
+
+  app.get('/agencies/:agencyId/invitations', authenticated('colaborador.convidar'), async (request) => {
+    const params = routeParams(agencyParamsSchema, request);
+    const query = routeQuery(PaginationInputSchema, request);
+    const pageSize = Math.min(query.pageSize ?? PENDING_INVITATIONS_DEFAULT_PAGE_SIZE, PENDING_INVITATIONS_PAGE_SIZE_CEILING);
+    const page = query.page ?? 1;
+    const { items, totalItems } = await listPendingCollaboratorInvitations(dependencies, request, params.agencyId, page, pageSize);
+    return parseResponse(PendingInvitationListResponseSchema, {
+      data: items.map(pendingInvitationFromRow),
+      meta: { page, pageSize, totalItems, totalPages: Math.ceil(totalItems / pageSize) }
+    });
+  });
 
   app.post('/agencies/:agencyId/invitations/collaborators', authenticated('colaborador.convidar'), async (request, reply) => {
     const params = routeParams(agencyParamsSchema, request);
