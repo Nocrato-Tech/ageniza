@@ -243,9 +243,11 @@ describe('AUTH-20B database RLS and invitation functions', () => {
     await expect(asUser(userA, (transaction) => transaction('legal_acceptances').select('user_id'))).resolves.toEqual([{ user_id: userA }, { user_id: userA }]);
     // Permissions and system roles are global authorization metadata. They are intentionally
     // readable by every authenticated user, while all tenant-bearing rows remain RLS-scoped.
-    await expect(asUser(userA, (transaction) => transaction('permissions').select('key'))).resolves.toHaveLength(5);
+    // These counts include the CLIENTS module catalog (#122): cliente.visualizar, cliente.operar,
+    // cliente.cadastrar, cliente.arquivar and cliente.remover_usuario, plus their preset grants.
+    await expect(asUser(userA, (transaction) => transaction('permissions').select('key'))).resolves.toHaveLength(10);
     await expect(asUser(userA, (transaction) => transaction('roles').whereNull('agency_id').select('key'))).resolves.toHaveLength(5);
-    await expect(asUser(userA, (transaction) => transaction('role_permissions').select('permission_key'))).resolves.toHaveLength(5);
+    await expect(asUser(userA, (transaction) => transaction('role_permissions').select('permission_key'))).resolves.toHaveLength(16);
 
     await expect(asUser(userA, (transaction) => transaction('agencies').insert({ id: randomUUID(), name: 'Denied' }))).rejects.toThrow(/row-level security/);
     await expect(asUser(userA, (transaction) => transaction('clients').insert({ id: randomUUID(), agency_id: agencyB, name: 'Denied' }))).rejects.toThrow(/row-level security/);
@@ -261,7 +263,8 @@ describe('AUTH-20B database RLS and invitation functions', () => {
     await expect(asUser(userA, (transaction) => transaction('role_permissions').insert({ role_id: randomUUID(), permission_key: 'colaborador.convidar' }))).rejects.toThrow(/row-level security/);
 
     await expect(asUser(userA, (transaction) => transaction('agencies').where({ id: agencyB }).update({ name: 'Should not change' }))).resolves.toBe(0);
-    await expect(asUser(userA, (transaction) => transaction('clients').where({ id: clientB }).delete())).resolves.toBe(0);
+    // CLIENTS module (#122) revokes DELETE on clients outright: no route deletes a business entity.
+    await expect(asUser(userA, (transaction) => transaction('clients').where({ id: clientB }).delete())).rejects.toThrow(/permission denied/);
     await expect(asUser(userA, (transaction) => transaction('agency_memberships').where({ agency_id: agencyB }).delete())).resolves.toBe(0);
     await expect(asUser(userA, (transaction) => transaction('client_memberships').where({ client_id: clientB }).delete())).resolves.toBe(0);
     await expect(asUser(userA, (transaction) => transaction('invitations').where({ id: invitationB }).delete())).resolves.toBe(0);
