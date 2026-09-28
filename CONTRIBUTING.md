@@ -14,7 +14,7 @@ Módulo novo **não começa** por código. Ele passa por entrevista, vira uma SP
 
 Uma **task** de implementação já chega com aceite verificável e a seção da SPEC que a define. Se ela não tiver isso, ela não está pronta para ser pega.
 
-Task de interface (`escopo:web`) traz o esboço da tela no corpo, e ele é a **especificação**: o wireframe e a tabela de elementos dizem o que existe e o que cada coisa faz, e a implementação cobre todos os estados listados — vazio, carregando, erro, busca sem resultado e variação por papel. Use só o design system existente; nada de estilo avulso, nem layout inventado. O designer **refina a tela depois do merge**, e a tela mergeada que espera esse refino leva **`refino-design`**.
+Task de interface (`escopo:web`) traz o esboço da tela no corpo, e ele é a **especificação**: o wireframe e a tabela de elementos dizem o que existe e o que cada coisa faz, e a implementação cobre todos os estados listados — vazio, carregando, erro, busca sem resultado e variação por papel. Use só componentes e tokens do design system, definido em [UI System — Figma, Design Tokens & CSS](https://app.notion.com/p/3d886d2ba8b08172a3fbcc31e1548c31), e cumpra a Definition of Done de UI da seção 23 dela; nada de estilo avulso, nem layout inventado. O designer **refina a tela depois do merge**, e a tela mergeada que espera esse refino leva **`refino-design`**.
 
 ## Branch
 

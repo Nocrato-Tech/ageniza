@@ -29,7 +29,7 @@ Os sete blocos são a ordem da árvore, que é a ordem do custo de errar:
 6. **UX** — quais telas existem, o que cada uma mostra, o que muda conforme o papel de quem olha, e como ficam o estado vazio, o de carregamento e o de erro.
 7. **Impacto estrutural** — o que isso arrasta.
 
-**O bloco de UX é a especificação da tela.** Ele não produz o design final: produz o esboço em nível de wireframe — que telas existem, o que cada uma mostra, o que muda por papel, e os estados a cobrir — e é dele que a tela é implementada, com o design system existente. O designer refina depois, sobre a tela já funcionando. A sequência é esboço → código → refino.
+**O bloco de UX é a especificação da tela.** Ele não produz o design final: produz o esboço em nível de wireframe — que telas existem, o que cada uma mostra, o que muda por papel, e os estados a cobrir — e é dele que a tela é implementada, só com componentes e tokens do design system, definido em [UI System — Figma, Design Tokens & CSS](https://app.notion.com/p/3d886d2ba8b08172a3fbcc31e1548c31). O designer refina depois, sobre a tela já funcionando. A sequência é esboço → código → refino.
 
 **UX vem no fim, de propósito.** Tela desenhada antes de estado definido inventa estado. E o bloco de UX é esboço: quais telas, com o quê, para quem. Cor, tipografia e espaçamento vêm do design system e do refino do designer, e não entram na sessão — discuti-los ali transforma a entrevista em reunião de design e o módulo não fecha.
 
@@ -55,7 +55,7 @@ A SPEC vira uma **history** por capacidade entregável, e **tasks** dentro dela.
 
 - A *history* descreve o resultado do ponto de vista de quem usa, e aponta para a seção da SPEC que a define.
 - As *tasks* são o trabalho: uma por frente (`escopo:api`, `escopo:web`, `escopo:db`, `escopo:infra`). Task que atravessa duas frentes vira duas tasks — PR que mistura API e interface não tem revisão possível.
-- **Task de `escopo:web` nasce pronta e só espera a dependência real.** Ela é escrita a partir do esboço e das decisões da SPEC e é implementada com o design system existente, sem esperar o designer: ele refina a tela já funcionando, depois do merge. O que a bloqueia é, em geral, a task de API que a alimenta — declarada em "Depende de", e no campo Bloqueio do quadro como `dependência`. `escopo:api` e `escopo:db` seguem em paralelo.
+- **Task de `escopo:web` nasce pronta e só espera a dependência real.** Ela é escrita a partir do esboço e das decisões da SPEC e é implementada só com componentes e tokens do [design system](https://app.notion.com/p/3d886d2ba8b08172a3fbcc31e1548c31), sem esperar o designer: ele refina a tela já funcionando, depois do merge. O que a bloqueia é, em geral, a task de API que a alimenta — declarada em "Depende de", e no campo Bloqueio do quadro como `dependência`. `escopo:api` e `escopo:db` seguem em paralelo.
 - **O esboço vai dentro da task, não só linkado.** Wireframe, o que cada elemento faz e os estados a cobrir. É a especificação da tela: quem vai implementá-la precisa ler uma issue, não caçar a seção certa de uma SPEC longa.
 - O que ficou em aberto com gatilho vira issue `em-aberto`, não comentário solto.
 - O que ficou como dívida reconhecida vira issue `debito`.
