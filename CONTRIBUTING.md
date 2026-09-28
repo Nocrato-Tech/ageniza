@@ -98,7 +98,7 @@ As duas últimas espelham o modelo de branch: `develop` é integração, `main` 
 | campo | para que serve |
 |---|---|
 | **Onda** | a camada de dependência. Onda 1 pode começar hoje; onda 2 depende da 1 ter entrado. **É o campo que diz onde quatro pessoas trabalham sem fila** |
-| **Bloqueio** | `dependência` espera outra task, `decisão` espera o dono do produto. Design não entra aqui: tela não espera o designer |
+| **Bloqueio** | `dependência` espera outra task, `decisão` espera o dono do produto. Design não entra aqui: tela não espera o designer. Enquanto a fundação do design system não existir no código, toda task de tela fica com `decisão`, e a dependência técnica continua só em **Depende de**: ver a entrada de 2026-09-28 em [`decisions.md`](docs/business/decisions.md) |
 | **Módulo** | de qual módulo é o trabalho |
 | **Escopo** | `db`, `api`, `web`, `infra`, `docs` — qual disciplina pega |
 | **Tipo** | épico, history, task, em aberto, débito, bug |

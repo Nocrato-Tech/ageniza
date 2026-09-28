@@ -646,7 +646,7 @@ O Projects novo só existe em nível de organização — projeto dono por repos
 
 **Consequência.** O quadro só diz a verdade se quem pega uma task se atribuir a ela, e se quem descobre uma dependência nova atualizar a onda. Isso é disciplina, não automação. Em troca, "o que posso pegar agora" deixa de ser uma pergunta feita a outra pessoa.
 
-**Origem.** Decidido em sessão. **Substituída em parte em 2026-09-28**, quanto ao que a coluna *Design* significa: ela deixa de ser a fila de telas esperando o designer e passa a receber telas já mergeadas para refino (ver a entrada de 2026-09-28, ao fim). As nove colunas, o `Bloqueio` e o resto continuam valendo.
+**Origem.** Decidido em sessão. **Substituída em parte em 2026-09-28**, quanto ao que a coluna *Design* significa: ela deixa de ser a fila de telas esperando o designer e passa a receber telas já mergeadas para refino (ver a entrada de 2026-09-28, ao fim). Deixa de valer também a frase do bullet de `Bloqueio` sobre esperar design ("Esperar **design** virou coluna"): a tela não espera mais o designer, então esperar design não existe como bloqueio. As nove colunas e a distinção de `Bloqueio` entre dependência e decisão continuam valendo.
 
 ---
 
