@@ -14,7 +14,7 @@ Módulo novo **não começa** por código. Ele passa por entrevista, vira uma SP
 
 Uma **task** de implementação já chega com aceite verificável e a seção da SPEC que a define. Se ela não tiver isso, ela não está pronta para ser pega.
 
-Task de interface (`escopo:web`) traz o esboço da tela no corpo, e ele é a **especificação**: o wireframe e a tabela de elementos dizem o que existe e o que cada coisa faz, e a implementação cobre todos os estados listados — vazio, carregando, erro, busca sem resultado e variação por papel. Use só componentes e tokens do design system, definido em [UI System — Figma, Design Tokens & CSS](https://app.notion.com/p/3d886d2ba8b08172a3fbcc31e1548c31), e cumpra a Definition of Done de UI da seção 23 dela; nada de estilo avulso, nem layout inventado. O designer **refina a tela depois do merge**, e a tela mergeada que espera esse refino leva **`refino-design`**.
+Task de interface (`escopo:web`) traz o esboço da tela no corpo, e ele é a **especificação**: o wireframe e a tabela de elementos dizem o que existe e o que cada coisa faz, e a implementação cobre todos os estados que o esboço lista. Use só tokens e componentes definidos em [UI System — Figma, Design Tokens & CSS](https://app.notion.com/p/3d886d2ba8b08172a3fbcc31e1548c31); nada de estilo avulso, nem layout inventado. O designer **refina a tela depois do merge**, e a tela mergeada que espera esse refino leva **`refino-design`**.
 
 ## Branch
 
@@ -83,7 +83,7 @@ Ele existe para responder duas perguntas que uma lista de issues responde mal: *
 |---|---|
 | **Backlog** | reconhecido, sem estar pronto para começar |
 | **Refinamento** | o escopo não fechou. Raro aqui, porque task nasce de SPEC aprovada — existe para o caso em que alguém pega uma task e descobre um buraco |
-| **Design** | telas **já mergeadas** em `develop`, esperando o refino do designer (label `refino-design`). É a fila dele, visível como coluna |
+| **Design** | telas **já mergeadas** em `develop`, esperando o refino do designer (label `refino-design`). É a fila dele, visível como coluna. O fluxo do card depois do merge está pendente: ver a entrada de 2026-09-28 em [`decisions.md`](docs/business/decisions.md) |
 | **Design review** | refino entregue, aguardando aprovação |
 | **Pronto para dev** | sem bloqueio e sem responsável: **pode ser pego agora** |
 | **Em andamento** | alguém se atribuiu |
