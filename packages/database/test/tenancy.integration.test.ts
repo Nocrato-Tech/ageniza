@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   createLocalTestDatabaseClient,
@@ -243,9 +243,9 @@ describe('AUTH-20B database RLS and invitation functions', () => {
     await expect(asUser(userA, (transaction) => transaction('legal_acceptances').select('user_id'))).resolves.toEqual([{ user_id: userA }, { user_id: userA }]);
     // Permissions and system roles are global authorization metadata. They are intentionally
     // readable by every authenticated user, while all tenant-bearing rows remain RLS-scoped.
-    await expect(asUser(userA, (transaction) => transaction('permissions').select('key'))).resolves.toHaveLength(5);
+    await expect(asUser(userA, (transaction) => transaction('permissions').select('key'))).resolves.toHaveLength(10);
     await expect(asUser(userA, (transaction) => transaction('roles').whereNull('agency_id').select('key'))).resolves.toHaveLength(5);
-    await expect(asUser(userA, (transaction) => transaction('role_permissions').select('permission_key'))).resolves.toHaveLength(5);
+    await expect(asUser(userA, (transaction) => transaction('role_permissions').select('permission_key'))).resolves.toHaveLength(14);
 
     await expect(asUser(userA, (transaction) => transaction('agencies').insert({ id: randomUUID(), name: 'Denied' }))).rejects.toThrow(/row-level security/);
     await expect(asUser(userA, (transaction) => transaction('clients').insert({ id: randomUUID(), agency_id: agencyB, name: 'Denied' }))).rejects.toThrow(/row-level security/);
@@ -463,5 +463,149 @@ describe('AUTH-20B database RLS and invitation functions', () => {
     await expect(getOwner().knex('agency_memberships').where({ agency_id: agencyA, user_id: rollbackUser }).select('id')).resolves.toEqual([]);
     await expect(getOwner().knex('invitations').where({ id: rollbackInvitation }).first('used_at')).resolves.toEqual({ used_at: null });
     await getOwner().knex('invitations').where({ id: rollbackInvitation }).delete();
+  });
+});
+
+describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', () => {
+  // A dedicated agency keeps this fixture independent from the row counts the suite above asserts
+  // on agencyA/agencyB.
+  const agencyC = randomUUID();
+  const ownerC = randomUUID();
+  const adminC = randomUUID();
+  const managerC = randomUUID();
+  const productionC = randomUUID();
+  const targetC = randomUUID();
+
+  let accountManagerRoleId: string;
+
+  beforeAll(async () => {
+    const database = getOwner();
+    const accountManagerRole = await database.knex('roles').whereNull('agency_id').where({ key: 'account_manager' }).first('id');
+    if (accountManagerRole === undefined) throw new Error('account_manager system role seed is missing.');
+    accountManagerRoleId = accountManagerRole.id;
+
+    await database.transaction(async (transaction) => {
+      await transaction('auth.user').insert([
+        { id: ownerC, name: 'Owner C', email: `owner-c-${ownerC}@example.test`, emailVerified: true },
+        { id: adminC, name: 'Admin C', email: `admin-c-${adminC}@example.test`, emailVerified: true },
+        { id: managerC, name: 'Manager C', email: `manager-c-${managerC}@example.test`, emailVerified: true },
+        { id: productionC, name: 'Production C', email: `production-c-${productionC}@example.test`, emailVerified: true },
+        { id: targetC, name: 'Target C', email: `target-c-${targetC}@example.test`, emailVerified: true }
+      ]);
+      await transaction('agencies').insert({ id: agencyC, name: 'Agency C', owner_user_id: ownerC });
+      await transaction('agency_memberships').insert([
+        { agency_id: agencyC, user_id: ownerC, role_id: adminRoleId },
+        { agency_id: agencyC, user_id: adminC, role_id: adminRoleId },
+        { agency_id: agencyC, user_id: managerC, role_id: accountManagerRoleId },
+        { agency_id: agencyC, user_id: productionC, role_id: productionRoleId },
+        { agency_id: agencyC, user_id: targetC, role_id: productionRoleId, job_title: 'Original' }
+      ]);
+    });
+  });
+
+  afterAll(async () => {
+    const database = getOwner();
+    await database.knex('agency_memberships').where({ agency_id: agencyC }).delete();
+    await database.knex('agencies').where({ id: agencyC }).update({ owner_user_id: null });
+    await database.knex('agencies').where({ id: agencyC }).delete();
+    await database.knex('auth.user').whereIn('id', [ownerC, adminC, managerC, productionC, targetC]).delete();
+  });
+
+  afterEach(async () => {
+    await getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC })
+      .update({ role_id: productionRoleId, job_title: 'Original', status: 'active' });
+  });
+
+  it('grants the new permissions exactly as the module preset table requires', async () => {
+    const systemRoleIds = await getOwner().knex('roles').whereNull('agency_id').pluck('id');
+    const visualizarRoles = await getOwner().knex('role_permissions').where({ permission_key: 'colaborador.visualizar' }).pluck('role_id');
+    expect([...visualizarRoles].sort()).toEqual([...systemRoleIds].sort());
+
+    // Nobody may hold this preset: only the Owner passes it, by ownership.
+    await expect(getOwner().knex('role_permissions').where({ permission_key: 'colaborador.atribuir_admin' }).select()).resolves.toEqual([]);
+
+    await expect(getOwner().knex('role_permissions').where({ permission_key: 'colaborador.remover' }).pluck('role_id')).resolves.toEqual([adminRoleId]);
+    await expect(getOwner().knex('role_permissions').where({ permission_key: 'colaborador.alterar_papel' }).pluck('role_id')).resolves.toEqual([adminRoleId]);
+
+    const alterarFuncaoRoles = await getOwner().knex('role_permissions').where({ permission_key: 'colaborador.alterar_funcao' }).pluck('role_id');
+    expect([...alterarFuncaoRoles].sort()).toEqual([accountManagerRoleId, adminRoleId].sort());
+  });
+
+  // Postgres semantics, not a choice: USING already admitted the row (the actor holds a module
+  // permission and the target isn't the Owner), so a WITH CHECK failure past that point raises a
+  // row-security error instead of returning 0 -- there is no proposed-value-dependent rule that can
+  // be expressed in USING alone, since USING only ever sees the row as it stood before the
+  // statement. Every case below that depends on the *new* role_id/job_title/status value is
+  // asserted by the thrown error, then double-checked with a plain read that nothing moved.
+  it('lets an admin change a role to a non-administrative role but never to admin', async () => {
+    await expect(asUser(adminC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: targetC }).update({ role_id: accountManagerRoleId }))).resolves.toBe(1);
+    await expect(asUser(adminC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: targetC }).update({ role_id: adminRoleId }))).rejects.toThrow(/row-level security/);
+    await expect(getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).first('role_id'))
+      .resolves.toEqual({ role_id: accountManagerRoleId });
+  });
+
+  it('lets only the Owner grant the admin role, by ownership rather than a preset', async () => {
+    await expect(asUser(ownerC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: targetC }).update({ role_id: adminRoleId }))).resolves.toBe(1);
+  });
+
+  it('confines the account manager to job_title, never role_id', async () => {
+    await expect(asUser(managerC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: targetC }).update({ job_title: 'Renamed' }))).resolves.toBe(1);
+    await expect(asUser(managerC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: targetC }).update({ role_id: accountManagerRoleId }))).rejects.toThrow(/row-level security/);
+    await expect(getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).first('role_id'))
+      .resolves.toEqual({ role_id: productionRoleId });
+  });
+
+  it("denies production any update on another collaborator's row", async () => {
+    await expect(asUser(productionC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: targetC }).update({ job_title: 'Should not change' }))).resolves.toBe(0);
+  });
+
+  it('lets an admin remove and reactivate a collaborator, each gated by its own permission', async () => {
+    await expect(asUser(managerC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: targetC }).update({ status: 'removed' }))).rejects.toThrow(/row-level security/);
+    await expect(asUser(adminC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: targetC }).update({ status: 'removed' }))).resolves.toBe(1);
+    await expect(asUser(managerC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: targetC }).update({ status: 'active', role_id: productionRoleId }))).rejects.toThrow(/row-level security/);
+    await expect(asUser(adminC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: targetC }).update({ status: 'active', role_id: productionRoleId }))).resolves.toBe(1);
+  });
+
+  it('never lets the Owner be the target of a role or status change', async () => {
+    await expect(asUser(adminC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: ownerC }).update({ role_id: productionRoleId }))).resolves.toBe(0);
+    await expect(asUser(adminC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: ownerC }).update({ status: 'removed' }))).resolves.toBe(0);
+  });
+
+  it('keeps every update scoped to its own agency', async () => {
+    await expect(asUser(userA, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: targetC }).update({ job_title: 'Cross agency' }))).resolves.toBe(0);
+  });
+
+  it('requires colaborador.atribuir_admin to invite someone as admin, which only the Owner passes', async () => {
+    const adminInvite = randomUUID();
+    const email = `admin-invite-${adminInvite}@example.test`;
+    const inviteRow = {
+      id: adminInvite,
+      agency_id: agencyC,
+      purpose: 'collaborator_invite',
+      email,
+      role_id: adminRoleId,
+      token_hash: `admin-invite-${adminInvite}`,
+      expires_at: new Date(Date.now() + 86_400_000)
+    };
+
+    await expect(asUser(adminC, (transaction) => transaction('invitations').insert(inviteRow))).rejects.toThrow(/row-level security/);
+
+    await expect(asUser(ownerC, (transaction) => transaction('invitations').insert(inviteRow))).resolves.toBeDefined();
+    await expect(getOwner().knex('invitations').where({ id: adminInvite }).first('role_id')).resolves.toEqual({ role_id: adminRoleId });
+
+    await getOwner().knex('invitations').where({ id: adminInvite }).delete();
   });
 });
