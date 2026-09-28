@@ -87,6 +87,37 @@ describe('auth session store', () => {
     expect(onSessionEnded).not.toHaveBeenCalled();
   });
 
+  it('ends the session when a refresh of a proven session answers 401', async () => {
+    let answer: () => Response = activeSession;
+    const onSessionEnded = vi.fn();
+    const store = createAuthSessionStore(new HttpClient('http://127.0.0.1:3001', async () => answer(), { onSessionEnded }));
+
+    store.subscribe(() => undefined);
+    await settle();
+    answer = unauthenticated;
+    await store.refresh();
+
+    expect(onSessionEnded).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs onSessionStarted before publishing each newly confirmed session, not on a mere refresh', async () => {
+    const seenWhenStarted: boolean[] = [];
+    let answer: () => Response = activeSession;
+    const store = createAuthSessionStore(clientAnswering(async () => answer()), {
+      onSessionStarted: () => seenWhenStarted.push(store.getSnapshot().isAuthenticated)
+    });
+
+    store.subscribe(() => undefined);
+    await settle();
+    await store.refresh();
+    answer = unauthenticated;
+    await store.refresh();
+    answer = activeSession;
+    await store.refresh();
+
+    expect(seenWhenStarted).toEqual([false, false]);
+  });
+
   it('drops the session at once when told it ended, ignoring a probe still in flight', async () => {
     let answerProbe: (response: Response) => void = () => undefined;
     const store = createAuthSessionStore(clientAnswering(() => new Promise<Response>((resolve) => { answerProbe = resolve; })));

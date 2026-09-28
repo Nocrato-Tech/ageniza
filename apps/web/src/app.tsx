@@ -14,7 +14,7 @@ export function App({ config }: { config: BrowserConfig }) {
   const [queryClient] = useState(createQueryClient);
   const [sessionEnd] = useState(createSessionEndSignal);
   const [httpClient] = useState(() => new HttpClient(config.apiBaseUrl, fetch, { onSessionEnded: sessionEnd.notify }));
-  const [authStore] = useState(() => createAuthSessionStore(httpClient));
+  const [authStore] = useState(() => createAuthSessionStore(httpClient, { onSessionStarted: () => queryClient.clear() }));
   const session = useAuthSession(authStore);
 
   return <AppErrorBoundary><QueryClientProvider client={queryClient}><ApiClientProvider client={httpClient}><BrowserRouter><SessionEndRedirect signal={sessionEnd} authStore={authStore} /><ApplicationRoutes session={session} /></BrowserRouter></ApiClientProvider></QueryClientProvider></AppErrorBoundary>;

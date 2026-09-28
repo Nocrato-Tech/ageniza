@@ -75,24 +75,26 @@ describe('HttpClient', () => {
   });
 
   describe('session end', () => {
-    const answering = (status: number, code: string) => async () => new Response(JSON.stringify({
+    const rejection = (status: number, code: string) => new Response(JSON.stringify({
       error: { code, message: 'Rejected.' }
     }), { status, headers: { 'content-type': 'application/json' } });
+    const answering = (status: number, code: string) => async () => rejection(status, code);
 
-    it('reports a 401 UNAUTHENTICATED on any request as the end of the session', async () => {
+    it('ends a confirmed session on the first 401 UNAUTHENTICATED of any request, once', async () => {
       const onSessionEnded = vi.fn();
       const client = new HttpClient('http://127.0.0.1:3001', answering(401, 'UNAUTHENTICATED'), { onSessionEnded });
+      client.confirmSession();
 
-      await expect(client.request({ path: '/clients', response: HealthResponseSchema })).rejects.toMatchObject({ status: 401 });
       await expect(client.request({ path: '/clients', method: 'POST', body: {}, response: HealthResponseSchema })).rejects.toMatchObject({ status: 401 });
-      expect(onSessionEnded).toHaveBeenCalledTimes(2);
+      await expect(client.request({ path: '/clients', response: HealthResponseSchema })).rejects.toMatchObject({ status: 401 });
+      expect(onSessionEnded).toHaveBeenCalledTimes(1);
     });
 
-    it('does not end the session where 401 is the expected answer', async () => {
+    it('treats a 401 as the ordinary answer while no session has been confirmed', async () => {
       const onSessionEnded = vi.fn();
       const client = new HttpClient('http://127.0.0.1:3001', answering(401, 'UNAUTHENTICATED'), { onSessionEnded });
 
-      await expect(client.request({ path: '/auth/session', response: HealthResponseSchema, unauthenticatedIsExpected: true })).rejects.toMatchObject({ status: 401 });
+      await expect(client.request({ path: '/auth/session', response: HealthResponseSchema })).rejects.toMatchObject({ status: 401 });
       expect(onSessionEnded).not.toHaveBeenCalled();
     });
 
@@ -100,8 +102,40 @@ describe('HttpClient', () => {
       const onSessionEnded = vi.fn();
       for (const [status, code] of [[401, 'INVALID_CREDENTIALS'], [403, 'FORBIDDEN'], [404, 'NOT_FOUND'], [500, 'INTERNAL_ERROR']] as const) {
         const client = new HttpClient('http://127.0.0.1:3001', answering(status, code), { onSessionEnded });
+        client.confirmSession();
         await expect(client.request({ path: '/auth/login', method: 'POST', body: {}, response: HealthResponseSchema })).rejects.toMatchObject({ status });
       }
+      expect(onSessionEnded).not.toHaveBeenCalled();
+    });
+
+    it('ignores a late 401 from an ended session once the next session is confirmed', async () => {
+      const onSessionEnded = vi.fn();
+      const pending: Array<(response: Response) => void> = [];
+      const client = new HttpClient('http://127.0.0.1:3001', () => new Promise<Response>((resolve) => { pending.push(resolve); }), { onSessionEnded });
+      client.confirmSession();
+
+      const first = client.request({ path: '/clients', response: HealthResponseSchema }).catch(() => undefined);
+      const second = client.request({ path: '/clients/1', response: HealthResponseSchema }).catch(() => undefined);
+      pending[0]?.(rejection(401, 'UNAUTHENTICATED'));
+      await first;
+      expect(onSessionEnded).toHaveBeenCalledTimes(1);
+
+      client.confirmSession();
+      pending[1]?.(rejection(401, 'UNAUTHENTICATED'));
+      await second;
+      expect(onSessionEnded).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores a 401 from a request sent while signed out, after the next session is confirmed', async () => {
+      const onSessionEnded = vi.fn();
+      const pending: Array<(response: Response) => void> = [];
+      const client = new HttpClient('http://127.0.0.1:3001', () => new Promise<Response>((resolve) => { pending.push(resolve); }), { onSessionEnded });
+
+      const signedOut = client.request({ path: '/clients', response: HealthResponseSchema }).catch(() => undefined);
+      client.confirmSession();
+      pending[0]?.(rejection(401, 'UNAUTHENTICATED'));
+      await signedOut;
+
       expect(onSessionEnded).not.toHaveBeenCalled();
     });
   });

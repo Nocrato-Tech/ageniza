@@ -22,7 +22,15 @@ export interface AuthSessionStore {
  * page never holds a token: `GET /auth/session` answering is itself the proof of an active session,
  * and 401 is the ordinary answer for a visitor, not a failure.
  */
-export const createAuthSessionStore = (client: HttpClient): AuthSessionStore => {
+export interface AuthSessionStoreOptions {
+  /**
+   * Runs before a newly confirmed session is published, so nothing cached under a previous session
+   * can render for the next person who signs in on the same browser.
+   */
+  onSessionStarted?: () => void;
+}
+
+export const createAuthSessionStore = (client: HttpClient, options: AuthSessionStoreOptions = {}): AuthSessionStore => {
   let snapshot: AuthSessionSnapshot = { status: 'loading', isAuthenticated: false };
   let initialized = false;
   // Guards against React Strict Mode replaying subscribe/unsubscribe: a resolution belonging to a
@@ -37,8 +45,11 @@ export const createAuthSessionStore = (client: HttpClient): AuthSessionStore => 
 
   const load = async (activeGeneration: number): Promise<void> => {
     try {
-      await client.request({ path: '/auth/session', response: AuthSessionResponseSchema, unauthenticatedIsExpected: true });
-      if (generation === activeGeneration) publish({ status: 'ready', isAuthenticated: true });
+      await client.request({ path: '/auth/session', response: AuthSessionResponseSchema });
+      if (generation !== activeGeneration) return;
+      if (!snapshot.isAuthenticated) options.onSessionStarted?.();
+      client.confirmSession();
+      publish({ status: 'ready', isAuthenticated: true });
     } catch (error: unknown) {
       // Only an authenticated answer proves a session; every other outcome -- 401, network, an
       // unparseable body -- leaves the page unauthenticated rather than guessing.
