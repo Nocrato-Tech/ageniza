@@ -2,7 +2,7 @@
 
 Como a identidade visual da Ageniza vira um sistema de UI consistente entre design e código. O objetivo é impedir que telas criem cor, espaçamento, tipografia e componente de forma independente.
 
-**O repositório é a fonte de verdade.** Até 2026-09-28 este conteúdo vivia numa página do Notion, ["UI System — Figma, Design Tokens & CSS"](https://app.notion.com/p/3d886d2ba8b08172a3fbcc31e1548c31) (histórico — não usar como referência de trabalho); o dono do produto decidiu que passa a viver aqui, com uma página em `/design-system` no próprio app mostrando os tokens e componentes ao vivo (em preparo, PR separado). Ver a entrada de 2026-09-28 em [`decisions.md`](business/decisions.md). O Notion permanece como registro histórico da decisão original, nunca mais como referência para implementar.
+**O repositório é a fonte de verdade.** Até 2026-09-28 este conteúdo vivia numa página do Notion, ["UI System — Figma, Design Tokens & CSS"](https://app.notion.com/p/3d886d2ba8b08172a3fbcc31e1548c31) (histórico — não usar como referência de trabalho); o dono do produto decidiu que passa a viver aqui, com uma página em `/design-system` no próprio app mostrando os tokens e componentes ao vivo (em preparo, PR separado). Ver a entrada de 2026-09-28 "O repositório é a fonte do design system, com documento e página viva" em [`decisions.md`](business/decisions.md), que também lista o que continua pendente. O Notion permanece como registro histórico da decisão original, nunca mais como referência para implementar.
 
 Este documento migra o conteúdo da página original, adaptado aos caminhos e à stack reais deste repositório: React 19 + Vite, CSS puro com custom properties (sem Tailwind nem shadcn hoje — a seção 15 cobre a ponte para quando algum dos dois entrar).
 
@@ -41,8 +41,8 @@ A mesma nomenclatura vale no Figma, quando ele existir, e no código.
 ## 2. Fonte de verdade
 
 - **O repositório Git é a fonte de verdade dos tokens**, tanto do valor quanto do uso em runtime: `apps/web/src/styles/`.
-- **Este documento** define princípios, tabelas de valor e a Definition of Done.
-- **Figma** representa a aplicação visual dos tokens, componentes e telas, quando existir — hoje não existe nenhum arquivo Figma para este projeto. Ele entra no refino de cada tela (ver a entrada de 2026-09-28 em `decisions.md`), não antes.
+- **Este documento** define princípios e tabelas de valor, e traz a proposta de Definition of Done (seção 23). As tabelas repetem os valores para leitura; **em divergência entre um valor citado aqui e o arquivo de CSS, vale o CSS**.
+- **Figma** representa a aplicação visual dos tokens, componentes e telas, quando existir — hoje não existe nenhum arquivo Figma para este projeto. Ele entra no refino de cada tela (ver a entrada de 2026-09-28 sobre esboço → código → refino, em `decisions.md`), não antes.
 - Nomes de tokens no Figma, quando existir, e no código devem permanecer equivalentes.
 
 Quando o sistema amadurecer, os tokens podem ser centralizados em JSON compatível com Style Dictionary / Tokens Studio. Não é obrigatório automatizar isso agora.
@@ -169,6 +169,8 @@ Implementados em [`apps/web/src/styles/tokens/semantic.css`](../apps/web/src/sty
 | `text/primary` | `color/ink/900` |
 | `text/secondary` | `color/slate/600` |
 | `text/muted` | `color/slate/500` |
+| `text/link` | `color/indigo/600` (proposto) |
+| `text/danger` | `color/red/700` (proposto — mensagem de erro de campo) |
 | `border/default` | `color/mist/200` |
 | `border/subtle` | `color/mist/100` (proposto) |
 | `action/primary/bg` | `color/indigo/600` |
@@ -177,7 +179,9 @@ Implementados em [`apps/web/src/styles/tokens/semantic.css`](../apps/web/src/sty
 | `action/danger/fg` | `color/white` (proposto) |
 | `focus/ring` | `color/indigo/600` |
 
-`text/muted` continua apto para captions, metadata e helper text. Conteúdo disabled usa `action/disabled/fg` (sem valor ainda), não `text/muted`.
+`text/muted` continua apto para captions, metadata e helper text, **mas não sobre `bg/hover` nem `bg/elevated`** enquanto os valores não forem aprovados (seção 20.1). Conteúdo disabled usa `action/disabled/fg` (sem valor ainda), não `text/muted`.
+
+`text/link` e `text/danger` entraram nesta migração para que link e mensagem de erro deixem de consumir `action/primary/bg` e um primitive direto. Os valores são os que o código já usava, e estão pendentes junto com os demais propostos.
 
 ## 7. Semantic tokens — Dark
 
@@ -192,6 +196,8 @@ Implementados em [`apps/web/src/styles/themes/dark.css`](../apps/web/src/styles/
 | `text/primary` | `color/cloud/50` |
 | `text/secondary` | `color/slate/300` (proposto) |
 | `text/muted` | `color/slate/400` (proposto) |
+| `text/link` | `color/indigo/550` (proposto — **falha AA**, seção 20.1) |
+| `text/danger` | `color/red/700` (proposto — **falha AA**, seção 20.1) |
 | `border/default` | `color/ink/600` (proposto) |
 | `border/subtle` | `color/ink/700` (proposto) |
 | `action/primary/bg` | `color/indigo/550` |
@@ -237,7 +243,7 @@ Uso sugerido: input/button em `sm` ou `md`; cards em `md` ou `lg`; dialogs em `l
 
 ## 10. Tipografia
 
-Implementada em [`apps/web/src/styles/tokens/typography.css`](../apps/web/src/styles/tokens/typography.css), com Sora e Inter carregadas em [`apps/web/index.html`](../apps/web/index.html).
+Implementada em [`apps/web/src/styles/tokens/typography.css`](../apps/web/src/styles/tokens/typography.css). Sora e Inter são **servidas pelo próprio app**, pelos pacotes `@fontsource/sora` e `@fontsource/inter` importados em [`globals.css`](../apps/web/src/styles/globals.css), só nos pesos que a escala usa (Inter 400/500/600, Sora 600/700). Nenhuma requisição vai a uma CDN de fontes, então o IP de quem visita não chega a terceiro.
 
 ```
 font/brand → Sora
@@ -298,6 +304,8 @@ Button
 ```
 
 O `variant` `outline` do shadcn corresponde ao nosso `secondary`; não expor `outline` como API pública da aplicação. Evitar cópias soltas como `Button Blue`, `Button New`, `Button Final 2`.
+
+**Duas adaptações provisórias** no `Button`, até existirem os tokens que o vocabulário prevê: o hover de `primary` e `destructive` usa `filter: brightness(0.94)` no lugar de `action/primary/hover` e `action/danger/hover`, e o estado disabled usa `opacity: 0.55` no lugar de `action/disabled/fg`. No loading, o botão fica desabilitado, com `aria-busy`, e o rótulo fica transparente sem sair da árvore de acessibilidade, para o spinner aparecer na cor do variant.
 
 `leadingIcon`/`trailingIcon`, do vocabulário original, ainda não entraram: nenhuma tela pediu ícone em botão até agora. Adicionar quando pedir.
 
@@ -399,6 +407,8 @@ Evitar:
 
 Isso permite trocar tema e evoluir a marca sem procurar HEX espalhado pelo projeto.
 
+**Exceção conhecida:** o cabeçalho de `.app-shell` usa `color/ink/900` e `color/white` direto, e fica escuro nos dois temas. É o visual herdado da folha de estilo anterior aos tokens, e não há semantic token para uma faixa escura fixa; fica assim até o refino do designer definir o cabeçalho.
+
 ## 18. Design tokens no repositório — evolução recomendada
 
 Quando houver necessidade de automação, evoluir para um diretório `design-tokens/` com `color.json`, `spacing.json`, `radius.json`, `typography.json`, `semantic-light.json` e `semantic-dark.json`, idealmente em formato compatível com DTCG, permitindo gerar depois CSS variables, tema Tailwind, documentação e eventual sincronização com Figma. Para o MVP, não adicionar pipeline de tokens se isso atrasar produto — a arquitetura atual (arquivos CSS simples, um por camada) não bloqueia essa evolução.
@@ -420,20 +430,32 @@ Antes de aprovar um componente: contraste adequado; foco visível; estado disabl
 
 ### 20.1 Contraste conferido nesta migração
 
-Todos os pares texto/fundo semânticos definidos nas seções 6 e 7, em Light e Dark, incluindo os oito valores propostos na seção 5.1, foram conferidos contra WCAG AA (4.5:1 para texto normal):
+Pares de texto sobre fundo em Light e Dark, contra WCAG AA (4.5:1 para texto normal), com os valores atuais, inclusive os propostos. **Nem todos passam.**
 
 | Par | Light | Dark |
 |---|---|---|
 | `text/primary` sobre `bg/canvas` | 16.96:1 | 16.96:1 |
 | `text/primary` sobre `bg/surface` | 17.74:1 | 14.03:1 |
-| `text/secondary` sobre `bg/surface` | 7.58:1 | 9.89:1 |
-| `text/muted` sobre `bg/surface` | 4.76:1 | 5.72:1 |
+| `text/primary` sobre `bg/elevated` / `bg/hover` | 17.74:1 / 16.40:1 | 9.85:1 / 9.85:1 |
+| `text/secondary` sobre `bg/canvas` / `bg/surface` | 7.24:1 / 7.58:1 | 11.95:1 / 9.89:1 |
+| `text/secondary` sobre `bg/elevated` / `bg/hover` | 7.58:1 / 7.00:1 | 6.94:1 / 6.94:1 |
+| `text/muted` sobre `bg/canvas` / `bg/surface` | 4.55:1 / 4.76:1 | 6.92:1 / 5.72:1 |
+| `text/muted` sobre `bg/elevated` | 4.76:1 | **4.02:1 — falha** |
+| `text/muted` sobre `bg/hover` | **4.40:1 — falha** | **4.02:1 — falha** |
+| `text/link` sobre `bg/canvas` / `bg/surface` | 6.01:1 / 6.29:1 | **3.59:1 / 2.97:1 — falha** |
+| `text/danger` sobre `bg/canvas` / `bg/surface` | 6.28:1 / 6.57:1 | **2.70:1 / 2.23:1 — falha** |
 | `action/primary/fg` sobre `action/primary/bg` | 6.29:1 | 4.94:1 |
 | `action/danger/fg` sobre `action/danger/bg` | 6.57:1 | 6.57:1 |
+| `focus/ring` sobre `bg/canvas` | 6.01:1 | 5.95:1 |
 
-Todos passam. `text/muted` sobre `bg/surface` no Light é o par mais apertado (4.76:1, contra o mínimo de 4.5:1) — qualquer proposta futura de mudar `color/slate/500` precisa reconferir esse par.
+**Falhas conhecidas, pendentes com os valores propostos:**
 
-Para `action/danger/bg`, cheguei a considerar um vermelho mais claro no Dark (Tailwind `red-500 #EF4444`, seguindo a mesma lógica que deu a `indigo/550` ao invés de `indigo/600` no Dark) — ele falha AA para texto normal (3.76:1). Por isso `action/danger/bg` usa o mesmo `color/red/700` nos dois temas: já passa nos dois, e evita propor um décimo valor sem necessidade.
+- `text/muted` sobre `bg/hover` (Light e Dark) e sobre `bg/elevated` (Dark). Até os valores serem aprovados, **`text/muted` não vai sobre `bg/hover` nem sobre `bg/elevated`**.
+- `text/link` e `text/danger` no Dark, sobre qualquer fundo. Os valores são os que o código já usava; o Dark não está ativo em nenhuma tela, porque nada define `[data-theme="dark"]` ainda.
+
+`text/muted` sobre `bg/canvas` no Light (4.55:1) é o par aprovado mais apertado: qualquer mudança em `color/slate/500` ou `color/cloud/50` precisa reconferi-lo.
+
+Para `action/danger/bg`, cheguei a considerar um vermelho mais claro no Dark (Tailwind `red-500 #EF4444`, seguindo a mesma lógica que deu a `indigo/550` ao invés de `indigo/600` no Dark) — ele falha AA para texto normal (3.76:1). Por isso `action/danger/bg` usa o mesmo `color/red/700` nos dois temas.
 
 ## 21. Handoff Figma → código
 
@@ -455,9 +477,11 @@ Code:  <Button variant="primary" size="md" />
 - evitar duplicar componentes só por pequenas diferenças visuais;
 - PR que altera foundation visual indica quais tokens/componentes foram alterados.
 
-## 23. Definition of Done de UI
+## 23. Definition of Done de UI — proposta
 
-Isto é critério de aceite, não aspiração. Uma entrega visual só está concluída quando:
+> **Proposta, pendente de decisão do dono do produto; não é critério de aceite.** A página original trazia esta lista, e a decisão de trazer o design system para o repositório não incluiu adotá-la, nem reescrever o item do Figma abaixo. Ver o ponto em aberto na entrada de 2026-09-28 sobre o repositório como fonte do design system, em [`decisions.md`](business/decisions.md).
+
+A proposta: uma entrega visual só está concluída quando:
 
 - [ ] usa tokens oficiais;
 - [ ] não contém HEX arbitrário relevante;
@@ -466,7 +490,7 @@ Isto é critério de aceite, não aspiração. Uma entrega visual só está conc
 - [ ] estados hover/focus/disabled definidos quando aplicável;
 - [ ] funciona em Light e Dark quando o componente exigir;
 - [ ] acessibilidade básica validada (seção 20);
-- [ ] **quando houver Figma**, Figma e código usam o mesmo vocabulário de componente — este item não se aplica enquanto o projeto não tiver um arquivo Figma, e a sequência esboço → código → refino (ver `decisions.md`) significa que o Figma só entra depois que a tela já está no ar;
+- [ ] Figma e código usam o mesmo vocabulário de componente. **Redação proposta, também pendente:** "quando houver Figma", porque na sequência esboço → código → refino o Figma só entra depois que a tela já está no ar;
 - [ ] componente novo foi criado só quando não existia equivalente reutilizável.
 
 > A meta não é construir um design system gigantesco antes do produto. A meta é garantir que cada nova tela aumente um sistema consistente, em vez de criar uma nova linguagem visual a cada implementação.
