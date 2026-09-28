@@ -2,7 +2,7 @@
 
 Como a identidade visual da Ageniza vira um sistema de UI consistente entre design e código. O objetivo é impedir que telas criem cor, espaçamento, tipografia e componente de forma independente.
 
-**O repositório é a fonte de verdade.** Até 2026-09-28 este conteúdo vivia numa página do Notion, ["UI System — Figma, Design Tokens & CSS"](https://app.notion.com/p/3d886d2ba8b08172a3fbcc31e1548c31) (histórico — não usar como referência de trabalho); o dono do produto decidiu que passa a viver aqui, com uma página em `/design-system` no próprio app mostrando os tokens e componentes ao vivo (em preparo, PR separado). Ver a entrada de 2026-09-28 "O repositório é a fonte do design system, com documento e página viva" em [`decisions.md`](business/decisions.md), que também lista o que continua pendente. O Notion permanece como registro histórico da decisão original, nunca mais como referência para implementar.
+**O repositório é a fonte de verdade — confirmado pelo dono do produto em 2026-09-28.** Até então este conteúdo vivia numa página do Notion, ["UI System — Figma, Design Tokens & CSS"](https://app.notion.com/p/3d886d2ba8b08172a3fbcc31e1548c31) (histórico — não usar como referência de trabalho); a página vira registro histórico, e a fonte passa a ser aqui, com uma página em `/design-system` no próprio app mostrando os tokens e componentes ao vivo (parte B, em preparo, PR separado — não é pré-requisito para as telas: ver seção 23 e a entrada de 2026-09-28 em `decisions.md`). Ver a entrada de 2026-09-28 "O repositório é a fonte do design system, com documento e página viva" em [`decisions.md`](business/decisions.md), que registra as decisões fechadas nesta data. O Notion permanece como registro histórico da decisão original, nunca mais como referência para implementar.
 
 Este documento migra o conteúdo da página original, adaptado aos caminhos e à stack reais deste repositório: React 19 + Vite, CSS puro com custom properties (sem Tailwind nem shadcn hoje — a seção 15 cobre a ponte para quando algum dos dois entrar).
 
@@ -131,30 +131,36 @@ Implementada em [`apps/web/src/styles/tokens/primitives.css`](../apps/web/src/st
 | Token | Valor | Uso conceitual |
 |---|---|---|
 | `color/ink/900` | `#111827` | base escura / texto forte |
-| `color/ink/800` | `#1F2937` | superfície escura — **proposto, pendente de aprovação do humano** |
-| `color/ink/700` | `#374151` | superfície escura elevada / hover — **proposto, pendente de aprovação do humano** |
-| `color/ink/600` | `#4B5563` | borda no Dark — **proposto, pendente de aprovação do humano** |
+| `color/ink/800` | `#1F2937` | superfície escura |
+| `color/ink/700` | `#374151` | superfície escura elevada / hover |
+| `color/ink/600` | `#4B5563` | borda no Dark |
 | `color/indigo/600` | `#4F46E5` | marca / ação principal Light |
 | `color/indigo/550` | `#5B5FE8` | ação principal Dark; mantém contraste com texto branco e superfície |
-| `color/indigo/400` | `#818CF8` | anel de foco no Dark — **proposto, pendente de aprovação do humano** |
+| `color/indigo/400` | `#818CF8` | anel de foco no Dark; `text/link` no Dark (seção 7 e 20.1) |
 | `color/violet/600` | `#7C3AED` | identidade / destaque |
 | `color/teal/500` | `#14B8A6` | acento / fluxo |
 | `color/slate/600` | `#475569` | texto secundário no Light |
-| `color/slate/500` | `#64748B` | texto muted no Light |
-| `color/slate/400` | `#94A3B8` | texto muted no Dark — **proposto, pendente de aprovação do humano** |
-| `color/slate/300` | `#CBD5E1` | texto secundário no Dark — **proposto, pendente de aprovação do humano** |
+| `color/slate/500` | `#617087` | texto muted no Light |
+| `color/slate/400` | `#A1AFC1` | texto muted no Dark |
+| `color/slate/300` | `#CBD5E1` | texto secundário no Dark |
 | `color/mist/200` | `#E8ECF4` | bordas / superfícies |
-| `color/mist/100` | `#F4F6FA` | hover / borda sutil no Light — **proposto, pendente de aprovação do humano** |
+| `color/mist/100` | `#F4F6FA` | hover / borda sutil no Light |
 | `color/cloud/50` | `#F8FAFC` | canvas claro |
-| `color/white` | `#FFFFFF` | branco puro, como token — **proposto, pendente de aprovação do humano** |
+| `color/white` | `#FFFFFF` | branco puro, como token |
+| `color/red/700` | `#B42318` | cor de dano (`action/danger/bg`, `text/danger` no Light) |
+| `color/red/400` | `#E9675D` | `text/danger` no Dark, só (seção 7 e 20.1) |
 
-### 5.1 Lacuna encontrada nesta migração
+### 5.1 Lacuna encontrada nesta migração — valores aprovados em 2026-09-28
 
 A página original referenciava, nas tabelas de semantic tokens (seções 6 e 7) e no bloco de CSS (seção 16), oito tokens sem valor definido em lugar nenhum: `color/mist/100`, `color/ink/800`, `color/ink/700`, `color/ink/600`, `color/slate/300`, `color/slate/400`, `color/indigo/400` e `color/white`. Os valores que a página definia batem exatamente com a paleta Tailwind na mesma família e no mesmo degrau (`slate/600` = Tailwind `slate-600` `#475569`, `indigo/600` = Tailwind `indigo-600` `#4F46E5`, `ink/900` = Tailwind `gray-900` `#111827`, `cloud/50` = Tailwind `slate-50` `#F8FAFC`). Os seis primeiros seguem a mesma família Tailwind, no mesmo degrau que falta (`gray-800/700/600`, `slate-400/300`, `indigo-400`). `color/mist/100` não tem correspondente exato no Tailwind — é a mesma cor de `mist/200`, misturada 50% com branco. `color/white` é `#FFFFFF` literal; a página já o usava, só não o tinha como token nomeado, embora o cite por nome na seção 6.
 
-Todos os oito estão marcados **"proposto, pendente de aprovação do humano"** no código e nesta tabela, e não devem ser tratados como decididos.
+Um nono valor entrou por necessidade própria desta migração, fora da lista acima e da página original: `color/red/700 = #B42318`, usado em `action/danger/bg`. A página não define nenhuma cor de dano com valor — só a direção ("danger → red") — mas o vocabulário de Button que esta mesma tarefa pede (`variant = primary | secondary | ghost | destructive`) exige uma. `#B42318` é o vermelho que `packages/ui` já usa em produção hoje (antes chamado `tone="danger"`); esta migração o transforma em token, sem mudar o valor.
 
-Um nono valor entrou por necessidade própria desta migração, fora da lista acima e da página original: `color/red/700 = #B42318`, usado em `action/danger/bg`. A página não define nenhuma cor de dano com valor — só a direção ("danger → red") — mas o vocabulário de Button que esta mesma tarefa pede (`variant = primary | secondary | ghost | destructive`) exige uma. `#B42318` é o vermelho que `packages/ui` já usa em produção hoje (antes chamado `tone="danger"`); esta migração o transforma em token, sem mudar o valor. Também está **proposto, pendente de aprovação do humano** — mais que os outros oito, porque não vem de nenhum valor que a página já tivesse escrito em algum lugar.
+**O dono do produto aprovou os nove valores em 2026-09-28**, depois de corrigir os pares que falhavam WCAG AA (seção 20.1): `color/slate/500` (Light `text/muted`) foi escurecido de `#64748B` para `#617087`, e `color/slate/400` (Dark `text/muted`) foi clareado de `#94A3B8` para `#A1AFC1` — mesma matiz e saturação da paleta Tailwind original, só a luminosidade mudou, para que `text/muted` passasse sobre `bg/hover` (Light e Dark) e sobre `bg/elevated` (Dark). Os outros sete (`color/ink/800`, `color/ink/700`, `color/ink/600`, `color/slate/300`, `color/indigo/400`, `color/mist/100`, `color/white`) foram aprovados sem alteração de valor.
+
+Um décimo token entrou nesta correção, fora da lista original: `color/red/400 = #E9675D`, mesma matiz de `color/red/700`, só clareado, usado exclusivamente por `text/danger` no Dark (seção 7). `color/red/700` continua o valor de `action/danger/bg` nos dois temas e de `text/danger` no Light — não foi tocado, porque já passava AA como texto sobre `action/danger/bg` (fundo branco) e sobre `bg/canvas`/`bg/surface` no Light; clareá-lo mais para servir também de texto sobre fundo escuro no Dark teria enfraquecido o contraste de `action/danger/fg` (branco) sobre ele. Por isso o Dark usa um décimo primitive novo só para o texto.
+
+`text/link` no Dark também passou a apontar para `color/indigo/400` (já existente, usado por `focus/ring` no Dark) em vez de `color/indigo/550`, pelo mesmo motivo: `color/indigo/550` já passava AA como fundo sob texto branco (`action/primary/fg`/`action/primary/bg`), e clareá-lo mais teria enfraquecido esse par.
 
 ## 6. Semantic tokens — Light
 
@@ -165,23 +171,23 @@ Implementados em [`apps/web/src/styles/tokens/semantic.css`](../apps/web/src/sty
 | `bg/canvas` | `color/cloud/50` |
 | `bg/surface` | `color/white` |
 | `bg/elevated` | `color/white` |
-| `bg/hover` | `color/mist/100` (proposto) |
+| `bg/hover` | `color/mist/100` |
 | `text/primary` | `color/ink/900` |
 | `text/secondary` | `color/slate/600` |
 | `text/muted` | `color/slate/500` |
-| `text/link` | `color/indigo/600` (proposto) |
-| `text/danger` | `color/red/700` (proposto — mensagem de erro de campo) |
+| `text/link` | `color/indigo/600` |
+| `text/danger` | `color/red/700` (mensagem de erro de campo) |
 | `border/default` | `color/mist/200` |
-| `border/subtle` | `color/mist/100` (proposto) |
+| `border/subtle` | `color/mist/100` |
 | `action/primary/bg` | `color/indigo/600` |
-| `action/primary/fg` | `color/white` (proposto) |
-| `action/danger/bg` | `color/red/700` (proposto, fora da página original — seção 5.1) |
-| `action/danger/fg` | `color/white` (proposto) |
+| `action/primary/fg` | `color/white` |
+| `action/danger/bg` | `color/red/700` (fora da página original — seção 5.1) |
+| `action/danger/fg` | `color/white` |
 | `focus/ring` | `color/indigo/600` |
 
-`text/muted` continua apto para captions, metadata e helper text, **mas não sobre `bg/hover` nem `bg/elevated`** enquanto os valores não forem aprovados (seção 20.1). Conteúdo disabled usa `action/disabled/fg` (sem valor ainda), não `text/muted`.
+`text/muted` está apto para captions, metadata e helper text, inclusive sobre `bg/hover` e `bg/elevated` (seção 20.1, valor de `color/slate/500` ajustado em 2026-09-28 para isso). Conteúdo disabled usa `action/disabled/fg` (sem valor ainda), não `text/muted`.
 
-`text/link` e `text/danger` entraram nesta migração para que link e mensagem de erro deixem de consumir `action/primary/bg` e um primitive direto. Os valores são os que o código já usava, e estão pendentes junto com os demais propostos.
+`text/link` e `text/danger` entraram nesta migração para que link e mensagem de erro deixem de consumir `action/primary/bg` e um primitive direto. Os valores são os que o código já usava e foram aprovados em 2026-09-28. **`text/link` e `text/danger` só têm contraste garantido sobre `bg/canvas` e `bg/surface`** (seção 20.1); não colocar sobre `bg/elevated` nem `bg/hover`.
 
 ## 7. Semantic tokens — Dark
 
@@ -190,23 +196,23 @@ Implementados em [`apps/web/src/styles/themes/dark.css`](../apps/web/src/styles/
 | Token | Aponta para |
 |---|---|
 | `bg/canvas` | `color/ink/900` |
-| `bg/surface` | `color/ink/800` (proposto) |
-| `bg/elevated` | `color/ink/700` (proposto) |
-| `bg/hover` | `color/ink/700` (proposto) |
+| `bg/surface` | `color/ink/800` |
+| `bg/elevated` | `color/ink/700` |
+| `bg/hover` | `color/ink/700` |
 | `text/primary` | `color/cloud/50` |
-| `text/secondary` | `color/slate/300` (proposto) |
-| `text/muted` | `color/slate/400` (proposto) |
-| `text/link` | `color/indigo/550` (proposto — **falha AA**, seção 20.1) |
-| `text/danger` | `color/red/700` (proposto — **falha AA**, seção 20.1) |
-| `border/default` | `color/ink/600` (proposto) |
-| `border/subtle` | `color/ink/700` (proposto) |
+| `text/secondary` | `color/slate/300` |
+| `text/muted` | `color/slate/400` |
+| `text/link` | `color/indigo/400` (mesmo primitive do `focus/ring` — seção 20.1) |
+| `text/danger` | `color/red/400` (primitive próprio, distinto de `action/danger/bg` — seção 20.1) |
+| `border/default` | `color/ink/600` |
+| `border/subtle` | `color/ink/700` |
 | `action/primary/bg` | `color/indigo/550` |
-| `action/primary/fg` | `color/white` (proposto) |
-| `action/danger/bg` | `color/red/700` (proposto — mesmo valor do Light; ver seção 20.1) |
-| `action/danger/fg` | `color/white` (proposto) |
-| `focus/ring` | `color/indigo/400` (proposto) |
+| `action/primary/fg` | `color/white` |
+| `action/danger/bg` | `color/red/700` (mesmo valor do Light; ver seção 20.1) |
+| `action/danger/fg` | `color/white` |
+| `focus/ring` | `color/indigo/400` |
 
-`color/indigo/550 = #5B5FE8` foi escolhido, na página original, para manter contraste suficiente tanto com texto branco quanto contra a superfície escura.
+`color/indigo/550 = #5B5FE8` foi escolhido, na página original, para manter contraste suficiente tanto com texto branco quanto contra a superfície escura. Por isso `text/link` no Dark não usa `color/indigo/550`: clareá-lo mais, para passar como texto sobre `bg/surface`, teria enfraquecido o contraste de `action/primary/fg` (branco) sobre ele. `text/link` usa `color/indigo/400`, o mesmo primitive já usado por `focus/ring`. A mesma lógica vale para `text/danger`: `color/red/700` já está no limite certo para servir de fundo sob texto branco (`action/danger/fg`), então `text/danger` no Dark usa um primitive próprio, `color/red/400`, mesma matiz clareada.
 
 Nada no app define `[data-theme="dark"]` ainda — este bloco não tem efeito visível até existir um seletor de tema.
 
@@ -285,7 +291,7 @@ As curvas de easing (`motion/easing/standard`, `motion/easing/exit`) não têm v
 
 ## 13. Estratégia de componentes — shadcn + Ageniza
 
-Este projeto **não usa shadcn/ui nem Tailwind hoje**. Quando um dos dois entrar, vale a estratégia original:
+Este projeto **não usa shadcn/ui nem Tailwind hoje**. O dono do produto decidiu em 2026-09-28 (ver `decisions.md`) que a parte B adota shadcn/ui, copiado para o repositório como base de mecânica e acessibilidade, com as variáveis do shadcn como ponte para os tokens Ageniza (seção 15). Até a parte B entrar, vale a estratégia original:
 
 - shadcn/ui como base mecânica e de acessibilidade; o código copiado para o repositório, adaptável sem criar dependência visual;
 - Ageniza define tokens, aparência, semântica e API pública;
@@ -428,9 +434,9 @@ Breakpoints se definem no código uma única vez. Não criar breakpoint diferent
 
 Antes de aprovar um componente: contraste adequado; foco visível; estado disabled identificável; área clicável suficiente; label acessível; estado não comunicado só por cor; navegação por teclado quando aplicável.
 
-### 20.1 Contraste conferido nesta migração
+### 20.1 Contraste — tabela final, aprovada em 2026-09-28
 
-Pares de texto sobre fundo em Light e Dark, contra WCAG AA (4.5:1 para texto normal), com os valores atuais, inclusive os propostos. **Nem todos passam.**
+Pares de texto sobre fundo em Light e Dark, contra WCAG AA (4.5:1 para texto normal, 3:1 para texto grande e componentes de UI), recalculados com os valores finais do CSS (fórmula de luminância relativa do WCAG 2.x). **Todos os pares em uso passam.** Esta rodada corrigiu as quatro falhas que a migração inicial havia deixado (ver histórico abaixo), ajustando a luminosidade de dois primitives e introduzindo dois primitives novos, sem mudar a matiz de nenhum.
 
 | Par | Light | Dark |
 |---|---|---|
@@ -439,23 +445,29 @@ Pares de texto sobre fundo em Light e Dark, contra WCAG AA (4.5:1 para texto nor
 | `text/primary` sobre `bg/elevated` / `bg/hover` | 17.74:1 / 16.40:1 | 9.85:1 / 9.85:1 |
 | `text/secondary` sobre `bg/canvas` / `bg/surface` | 7.24:1 / 7.58:1 | 11.95:1 / 9.89:1 |
 | `text/secondary` sobre `bg/elevated` / `bg/hover` | 7.58:1 / 7.00:1 | 6.94:1 / 6.94:1 |
-| `text/muted` sobre `bg/canvas` / `bg/surface` | 4.55:1 / 4.76:1 | 6.92:1 / 5.72:1 |
-| `text/muted` sobre `bg/elevated` | 4.76:1 | **4.02:1 — falha** |
-| `text/muted` sobre `bg/hover` | **4.40:1 — falha** | **4.02:1 — falha** |
-| `text/link` sobre `bg/canvas` / `bg/surface` | 6.01:1 / 6.29:1 | **3.59:1 / 2.97:1 — falha** |
-| `text/danger` sobre `bg/canvas` / `bg/surface` | 6.28:1 / 6.57:1 | **2.70:1 / 2.23:1 — falha** |
+| `text/muted` sobre `bg/canvas` / `bg/surface` | 4.81:1 / 5.03:1 | 7.96:1 / 6.58:1 |
+| `text/muted` sobre `bg/elevated` | 5.03:1 | 4.62:1 |
+| `text/muted` sobre `bg/hover` | 4.65:1 | 4.62:1 |
+| `text/link` sobre `bg/canvas` / `bg/surface` | 6.01:1 / 6.29:1 | 5.95:1 / 4.92:1 |
+| `text/danger` sobre `bg/canvas` / `bg/surface` | 6.28:1 / 6.57:1 | 5.54:1 / 4.59:1 |
 | `action/primary/fg` sobre `action/primary/bg` | 6.29:1 | 4.94:1 |
 | `action/danger/fg` sobre `action/danger/bg` | 6.57:1 | 6.57:1 |
 | `focus/ring` sobre `bg/canvas` | 6.01:1 | 5.95:1 |
 
-**Falhas conhecidas, pendentes com os valores propostos:**
+**Restrição de uso, não falha:** `text/link` e `text/danger` só foram conferidos sobre `bg/canvas` e `bg/surface`, os fundos onde link e mensagem de erro aparecem hoje. Sobre `bg/elevated`/`bg/hover` no Dark eles cairiam a 3.46:1 e 3.22:1 — por isso o comentário em `themes/dark.css` e a nota na seção 6 dizem para não os usar ali. Se uma tela real precisar de link ou erro sobre esses fundos, isso volta a ser um ponto em aberto, não uma aprovação silenciosa.
 
-- `text/muted` sobre `bg/hover` (Light e Dark) e sobre `bg/elevated` (Dark). Até os valores serem aprovados, **`text/muted` não vai sobre `bg/hover` nem sobre `bg/elevated`**.
-- `text/link` e `text/danger` no Dark, sobre qualquer fundo. Os valores são os que o código já usava; o Dark não está ativo em nenhuma tela, porque nada define `[data-theme="dark"]` ainda.
+`text/muted` sobre `bg/hover` no Dark (4.62:1) é o par aprovado mais apertado agora: qualquer mudança futura em `color/slate/400` ou `color/ink/700` precisa reconferi-lo.
 
-`text/muted` sobre `bg/canvas` no Light (4.55:1) é o par aprovado mais apertado: qualquer mudança em `color/slate/500` ou `color/cloud/50` precisa reconferi-lo.
+**Histórico — o que a migração inicial (parte A) tinha deixado em aberto e como foi corrigido:**
 
-Para `action/danger/bg`, cheguei a considerar um vermelho mais claro no Dark (Tailwind `red-500 #EF4444`, seguindo a mesma lógica que deu a `indigo/550` ao invés de `indigo/600` no Dark) — ele falha AA para texto normal (3.76:1). Por isso `action/danger/bg` usa o mesmo `color/red/700` nos dois temas.
+A primeira rodada de valores propostos falhava em quatro pares: `text/muted` sobre `bg/hover` (Light 4.40:1, Dark 4.02:1) e sobre `bg/elevated` (Dark 4.02:1); `text/link` sobre `bg/canvas`/`bg/surface` no Dark (3.59:1 / 2.97:1); `text/danger` sobre `bg/canvas`/`bg/surface` no Dark (2.70:1 / 2.23:1). O dono do produto aprovou os valores em 2026-09-28 só depois desta correção:
+
+- `color/slate/500` (Light `text/muted`) escureceu de `#64748B` para `#617087` — mesma matiz e saturação, luminosidade menor, resolve `bg/hover`.
+- `color/slate/400` (Dark `text/muted`) clareou de `#94A3B8` para `#A1AFC1` — mesma matiz e saturação, luminosidade maior, resolve `bg/elevated`/`bg/hover`.
+- `text/link` no Dark passou a apontar para `color/indigo/400` (já existente, do `focus/ring`) em vez de `color/indigo/550`: clarear `color/indigo/550` diretamente teria enfraquecido `action/primary/fg` sobre `action/primary/bg`, que já passava (4.94:1).
+- `text/danger` no Dark passou a apontar para um primitive novo, `color/red/400 = #E9675D` (mesma matiz de `color/red/700`, clareada), pelo mesmo motivo: `color/red/700` já estava no ponto certo para `action/danger/fg` sobre `action/danger/bg` (6.57:1 nos dois temas) e para `text/danger` no Light; clareá-lo mais teria enfraquecido esse par. `action/danger/bg` continua `color/red/700` nos dois temas — não foi tocado.
+
+Nenhuma correção mudou a matiz de um token: cada ajuste manteve a família de cor (slate continua slate, indigo continua indigo, red continua red) e mudou só a luminosidade, ou introduziu um primitive irmão na mesma matiz para separar um uso de texto de um uso de fundo que já estava correto.
 
 ## 21. Handoff Figma → código
 
@@ -477,11 +489,11 @@ Code:  <Button variant="primary" size="md" />
 - evitar duplicar componentes só por pequenas diferenças visuais;
 - PR que altera foundation visual indica quais tokens/componentes foram alterados.
 
-## 23. Definition of Done de UI — proposta
+## 23. Definition of Done de UI — critério de aceite
 
-> **Proposta, pendente de decisão do dono do produto; não é critério de aceite.** A página original trazia esta lista, e a decisão de trazer o design system para o repositório não incluiu adotá-la, nem reescrever o item do Figma abaixo. Ver o ponto em aberto na entrada de 2026-09-28 sobre o repositório como fonte do design system, em [`decisions.md`](business/decisions.md).
+> **Decidido pelo dono do produto em 2026-09-28.** Esta lista é critério de aceite de toda task `escopo:web`, não uma proposta. A única mudança em relação à versão proposta (que a entrada de fundação deste documento trazia) é a remoção do item de paridade com o Figma: na sequência esboço → código → refino (ver `decisions.md`), o Figma só entra no refino, depois que a tela já está no ar, então não é critério de aceite da implementação inicial. Ver a entrada de 2026-09-28 "O repositório é a fonte do design system, com documento e página viva" em [`decisions.md`](business/decisions.md).
 
-A proposta: uma entrega visual só está concluída quando:
+Uma entrega visual de uma task `escopo:web` só está concluída quando:
 
 - [ ] usa tokens oficiais;
 - [ ] não contém HEX arbitrário relevante;
@@ -490,7 +502,8 @@ A proposta: uma entrega visual só está concluída quando:
 - [ ] estados hover/focus/disabled definidos quando aplicável;
 - [ ] funciona em Light e Dark quando o componente exigir;
 - [ ] acessibilidade básica validada (seção 20);
-- [ ] Figma e código usam o mesmo vocabulário de componente. **Redação proposta, também pendente:** "quando houver Figma", porque na sequência esboço → código → refino o Figma só entra depois que a tela já está no ar;
 - [ ] componente novo foi criado só quando não existia equivalente reutilizável.
+
+Paridade entre Figma e código **não** é critério de aceite aqui: entra no refino de cada tela, depois que ela está no ar, com o designer (ver `decisions.md`).
 
 > A meta não é construir um design system gigantesco antes do produto. A meta é garantir que cada nova tela aumente um sistema consistente, em vez de criar uma nova linguagem visual a cada implementação.
