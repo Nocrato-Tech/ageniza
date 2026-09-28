@@ -1,0 +1,11 @@
+/**
+ * Motion: timing tokens from docs/design-system.md section 12. Easing
+ * curves are conceptual only there (no concrete cubic-bezier given), so
+ * they are deferred here too rather than invented; add them once a
+ * component actually needs one and the value is decided.
+ */
+:root {
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 240ms;
+}

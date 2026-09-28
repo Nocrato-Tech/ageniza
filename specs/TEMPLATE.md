@@ -83,7 +83,7 @@ Quais policies, e por qual coluna o isolamento acontece. Toda tabela de negócio
 
 Baixa fidelidade: o que existe em cada tela e onde. Sem cor, sem tipografia, sem espaçamento.
 
-**Esta seção é a especificação da tela.** Ela não descreve o design final — descreve o que a tela precisa resolver, e é dela que a tela é implementada, só com componentes e tokens do design system ([UI System — Figma, Design Tokens & CSS](https://app.notion.com/p/3d886d2ba8b08172a3fbcc31e1548c31)). O designer refina depois, sobre a tela já funcionando.
+**Esta seção é a especificação da tela.** Ela não descreve o design final — descreve o que a tela precisa resolver, e é dela que a tela é implementada, só com componentes e tokens do [design system](../docs/design-system.md). O designer refina depois, sobre a tela já funcionando.
 
 ```
 ┌─────────────────────────────┐

@@ -1,0 +1,41 @@
+/**
+ * Semantic tokens: what primitives mean in context. Components must
+ * prefer these over primitives (docs/design-system.md section 17).
+ *
+ * Light is the default at `:root`, and also applies under `[data-theme='light']`
+ * so a light subtree inside a dark ancestor switches back. `themes/dark.css`
+ * overrides it under `[data-theme='dark']`; themes/light.css only points here.
+ *
+ * `action-danger-*` is not in the design system page (see
+ * docs/design-system.md section 5.1); kept here, next to the rest of the
+ * `action/*` family.
+ *
+ * `text-link` and `text-danger` are only guaranteed to pass WCAG AA over
+ * `bg-canvas` and `bg-surface` (docs/design-system.md 20.1); do not place
+ * them over `bg-elevated` or `bg-hover`.
+ */
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
+  --bg-canvas: var(--color-cloud-50);
+  --bg-surface: var(--color-white);
+  --bg-elevated: var(--color-white);
+  --bg-hover: var(--color-mist-100);
+
+  --text-primary: var(--color-ink-900);
+  --text-secondary: var(--color-slate-600);
+  --text-muted: var(--color-slate-500);
+  --text-link: var(--color-indigo-600); /* approved 2026-09-28 (docs/design-system.md 5.1) */
+  --text-danger: var(--color-red-700); /* approved 2026-09-28 (docs/design-system.md 5.1) */
+
+  --border-default: var(--color-mist-200);
+  --border-subtle: var(--color-mist-100);
+
+  --action-primary-bg: var(--color-indigo-600);
+  --action-primary-fg: var(--color-white);
+  --action-danger-bg: var(--color-red-700); /* approved 2026-09-28 (docs/design-system.md 5.1) */
+  --action-danger-fg: var(--color-white); /* approved 2026-09-28 (docs/design-system.md 5.1) */
+
+  --focus-ring: var(--color-indigo-600);
+}
