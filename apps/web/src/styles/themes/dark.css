@@ -5,6 +5,8 @@
  * effect until a theme switch exists.
  */
 [data-theme='dark'] {
+  color-scheme: dark;
+
   --bg-canvas: var(--color-ink-900);
   --bg-surface: var(--color-ink-800);
   --bg-elevated: var(--color-ink-700);
@@ -13,6 +15,9 @@
   --text-primary: var(--color-cloud-50);
   --text-secondary: var(--color-slate-300);
   --text-muted: var(--color-slate-400);
+  /* Both fail WCAG AA on every dark background (docs/design-system.md 20.1); values pending. */
+  --text-link: var(--color-indigo-550);
+  --text-danger: var(--color-red-700);
 
   --border-default: var(--color-ink-600);
   --border-subtle: var(--color-ink-700);

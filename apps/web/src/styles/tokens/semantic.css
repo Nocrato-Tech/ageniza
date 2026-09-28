@@ -2,16 +2,18 @@
  * Semantic tokens: what primitives mean in context. Components must
  * prefer these over primitives (docs/design-system.md section 17).
  *
- * `:root` carries the Light values as the default — Light is the theme
- * that applies before `themes/dark.css` overrides it under
- * `[data-theme="dark"]`. themes/light.css exists only for structural
- * symmetry; its content is a pointer back here, not a duplicate.
+ * Light is the default at `:root`, and also applies under `[data-theme='light']`
+ * so a light subtree inside a dark ancestor switches back. `themes/dark.css`
+ * overrides it under `[data-theme='dark']`; themes/light.css only points here.
  *
  * `action-danger-*` is not in the design system page (see
  * docs/design-system.md section 5.1); kept here, next to the rest of the
  * `action/*` family, marked proposed like its underlying primitive.
  */
-:root {
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
   --bg-canvas: var(--color-cloud-50);
   --bg-surface: var(--color-white);
   --bg-elevated: var(--color-white);
@@ -20,6 +22,8 @@
   --text-primary: var(--color-ink-900);
   --text-secondary: var(--color-slate-600);
   --text-muted: var(--color-slate-500);
+  --text-link: var(--color-indigo-600); /* proposed, pending product-owner approval (docs/design-system.md 5.1) */
+  --text-danger: var(--color-red-700); /* proposed, pending product-owner approval (docs/design-system.md 5.1) */
 
   --border-default: var(--color-mist-200);
   --border-subtle: var(--color-mist-100);

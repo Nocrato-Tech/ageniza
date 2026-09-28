@@ -2,6 +2,12 @@
  * Entry point: token layers, then themes, then base resets and component
  * classes. See docs/design-system.md for the full system this implements.
  */
+/* Self-hosted fonts (section 10): no request reaches a font CDN, so visitors' IPs stay with us. */
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/sora/600.css';
+@import '@fontsource/sora/700.css';
 @import './tokens/primitives.css';
 @import './tokens/typography.css';
 @import './tokens/motion.css';
@@ -33,7 +39,7 @@ body {
 }
 
 a {
-  color: var(--action-primary-bg);
+  color: var(--text-link);
 }
 
 a:focus-visible,
@@ -49,6 +55,7 @@ input:focus-visible {
 
 .app-shell > header {
   padding: var(--space-4) max(var(--space-6), calc((100vw - 72rem) / 2));
+  /* Dark in both themes on purpose, carried over from the pre-token stylesheet (docs/design-system.md 17). */
   background: var(--color-ink-900);
   color: var(--color-white);
   font: var(--heading-md);
@@ -76,8 +83,8 @@ input:focus-visible {
   position: fixed;
   left: var(--space-4);
   top: -5rem;
-  background: var(--color-white);
-  color: var(--color-ink-900);
+  background: var(--bg-surface);
+  color: var(--text-primary);
   padding: var(--space-3);
   z-index: 1;
 }
@@ -191,7 +198,7 @@ input:focus-visible {
 .ui-field-message {
   margin: var(--space-1) 0 0;
   font: var(--caption);
-  color: var(--color-red-700);
+  color: var(--text-danger);
 }
 
 .ui-live-status {
