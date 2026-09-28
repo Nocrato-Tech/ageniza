@@ -914,7 +914,7 @@ Foram descartados o arquivamento sempre imediato, que obrigaria alguém a lembra
 
 **Origem.** Decidido em sessão (entrevista do módulo de clientes).
 
-**Implementação.** PR #161, migration `20260928000100_clients_module.mjs`.
+**Implementação.** PR #162, migration `20260928000100_clients_module.mjs`.
 
 ---
 
