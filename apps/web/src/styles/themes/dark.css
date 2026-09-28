@@ -15,17 +15,20 @@
   --text-primary: var(--color-cloud-50);
   --text-secondary: var(--color-slate-300);
   --text-muted: var(--color-slate-400);
-  /* Both fail WCAG AA on every dark background (docs/design-system.md 20.1); values pending. */
-  --text-link: var(--color-indigo-550);
-  --text-danger: var(--color-red-700);
+  /* Distinct primitives from action/primary/bg and action/danger/bg: those
+     pass AA against white text already, and lightening them further to also
+     satisfy text-on-canvas contrast would have broken that (docs/design-system.md 20.1).
+     Only guaranteed over bg-canvas and bg-surface, not bg-elevated/bg-hover. */
+  --text-link: var(--color-indigo-400);
+  --text-danger: var(--color-red-400);
 
   --border-default: var(--color-ink-600);
   --border-subtle: var(--color-ink-700);
 
   --action-primary-bg: var(--color-indigo-550);
   --action-primary-fg: var(--color-white);
-  --action-danger-bg: var(--color-red-700); /* proposed, pending product-owner approval; same value as Light (docs/design-system.md 20.1) */
-  --action-danger-fg: var(--color-white); /* proposed, pending product-owner approval (docs/design-system.md 5.1) */
+  --action-danger-bg: var(--color-red-700); /* approved 2026-09-28; same value as Light (docs/design-system.md 20.1) */
+  --action-danger-fg: var(--color-white); /* approved 2026-09-28 (docs/design-system.md 5.1) */
 
   --focus-ring: var(--color-indigo-400);
 }

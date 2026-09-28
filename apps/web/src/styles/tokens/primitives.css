@@ -3,40 +3,42 @@
  * deliberate exception. Naming follows docs/design-system.md section 1:
  * `--` + the Figma path, `/` becomes `-` (e.g. `color/ink/900` -> `--color-ink-900`).
  *
- * Values marked "proposed" fill a gap the design system page left open: it
- * references the token in a semantic mapping but never assigns it a value.
- * See docs/design-system.md section 5 for the full list and the derivation
- * of each one. Pending approval from the product owner.
+ * Values marked "approved 2026-09-28" filled a gap the design system page
+ * left open (it referenced the token in a semantic mapping but never
+ * assigned it a value) or were adjusted from that gap-filling value to pass
+ * WCAG AA. See docs/design-system.md sections 5.1 and 20.1 for the full list
+ * and the derivation of each one.
  */
 :root {
   /* Ink (near-black neutrals, primarily dark-theme surfaces and light-theme text) */
   --color-ink-900: #111827;
-  --color-ink-800: #1f2937; /* proposed, pending product-owner approval (docs/design-system.md 5.1) */
-  --color-ink-700: #374151; /* proposed, pending product-owner approval (docs/design-system.md 5.1) */
-  --color-ink-600: #4b5563; /* proposed, pending product-owner approval (docs/design-system.md 5.1) */
+  --color-ink-800: #1f2937; /* approved 2026-09-28 (docs/design-system.md 5.1) */
+  --color-ink-700: #374151; /* approved 2026-09-28 (docs/design-system.md 5.1) */
+  --color-ink-600: #4b5563; /* approved 2026-09-28 (docs/design-system.md 5.1) */
 
   /* Brand */
   --color-indigo-600: #4f46e5;
   --color-indigo-550: #5b5fe8;
-  --color-indigo-400: #818cf8; /* proposed, pending product-owner approval (docs/design-system.md 5.1) */
+  --color-indigo-400: #818cf8; /* approved 2026-09-28 (docs/design-system.md 5.1) */
   --color-violet-600: #7c3aed;
   --color-teal-500: #14b8a6;
 
   /* Neutrals (light-theme text and dark-theme secondary text) */
   --color-slate-600: #475569;
-  --color-slate-500: #64748b;
-  --color-slate-400: #94a3b8; /* proposed, pending product-owner approval (docs/design-system.md 5.1) */
-  --color-slate-300: #cbd5e1; /* proposed, pending product-owner approval (docs/design-system.md 5.1) */
+  --color-slate-500: #617087; /* approved 2026-09-28; darkened from #64748b to pass AA on bg/hover (docs/design-system.md 20.1) */
+  --color-slate-400: #a1afc1; /* approved 2026-09-28; lightened from #94a3b8 to pass AA on bg/elevated and bg/hover (docs/design-system.md 20.1) */
+  --color-slate-300: #cbd5e1; /* approved 2026-09-28 (docs/design-system.md 5.1) */
 
   /* Borders and hover surfaces */
   --color-mist-200: #e8ecf4;
-  --color-mist-100: #f4f6fa; /* proposed, pending product-owner approval (docs/design-system.md 5.1) */
+  --color-mist-100: #f4f6fa; /* approved 2026-09-28 (docs/design-system.md 5.1) */
   --color-cloud-50: #f8fafc;
-  --color-white: #ffffff; /* proposed: named as a token for the section 17 rule */
+  --color-white: #ffffff; /* approved 2026-09-28: named as a token for the section 17 rule */
 
   /* Danger: outside the original palette (docs/design-system.md 5.1); the red
-     packages/ui already used, now a token, pending approval like the rest. */
-  --color-red-700: #b42318; /* proposed, pending product-owner approval (docs/design-system.md 5.1) */
+     packages/ui already used, now a token, approved like the rest. */
+  --color-red-700: #b42318; /* approved 2026-09-28 (docs/design-system.md 5.1) */
+  --color-red-400: #e9675d; /* approved 2026-09-28; lightened from color/red/700 for dark-theme text only, to pass AA (docs/design-system.md 20.1) */
 
   /* Spacing, 4px scale */
   --space-1: 0.25rem;
