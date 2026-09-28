@@ -9,7 +9,7 @@ Leia `specs/$1.md` e derive dela o recorte de implementação no GitHub. O proce
 
 - **Uma issue `tipo:history` por capacidade entregável.** Descreve o resultado do ponto de vista de quem usa, aponta para a seção da SPEC que a define, e lista as tasks.
 - **Uma issue `tipo:task` por frente de trabalho.** Task que atravessaria API e interface vira duas — PR misturando as duas não tem revisão possível. Cada task carrega exatamente um `escopo:`.
-- **Task `aguardando-design` carrega o esboço da tela no próprio corpo**, não só o link da SPEC: o wireframe, uma tabela dizendo o que cada elemento faz ali, e os estados que a tela precisa cobrir. O designer trabalha a partir da issue e não deveria precisar abrir o repositório para saber o que desenhar. Link para a seção da SPEC continua, como origem — mas ele não substitui o esboço.
+- **Task de `escopo:web` carrega o esboço da tela no próprio corpo**, não só o link da SPEC: o wireframe, uma tabela dizendo o que cada elemento faz ali, e os estados que a tela precisa cobrir. É a especificação da tela: quem implementa trabalha a partir da issue e não deveria precisar abrir o repositório para saber o que construir. Link para a seção da SPEC continua, como origem — mas ele não substitui o esboço. A task não recebe rótulo de espera por design: o que a bloqueia é a dependência real, em geral a task de API, declarada em "Depende de". Enquanto a fundação do design system não existir no código, toda task de tela também espera essa decisão do dono do produto: ver a entrada de 2026-09-28 em `docs/business/decisions.md`.
 - **Uma issue `em-aberto` por item da seção 10**, com o gatilho no corpo.
 - **Uma issue `debito` por dívida reconhecida.**
 

@@ -373,7 +373,7 @@ As **tasks de `escopo:web` são escritas junto com as demais**, a partir do esbo
 
 **Consequência.** A entrega do designer entra no caminho crítico de toda tela, e é um prazo que não depende de nós. Em troca, o trabalho de interface fica descrito e priorizado antes de existir tela — quem receber o design já encontra a issue pronta, com aceite e dependências. Ninguém codifica tela a partir do wireframe.
 
-**Origem.** Decidido em sessão.
+**Origem.** Decidido em sessão. **Substituída em 2026-09-28** quanto à ordem esboço → design → código e ao rótulo `aguardando-design`: a tela passa a ser codificada a partir do esboço e refinada depois pelo designer (ver a entrada de 2026-09-28, ao fim). O esboço em nível de wireframe, as tasks de web escritas junto com as demais e `escopo:api` e `escopo:db` em paralelo continuam valendo.
 
 ## 2026-09-24 — Escopo do módulo de autenticação: o que entra, e por que verificação de e-mail já está resolvida
 
@@ -646,7 +646,7 @@ O Projects novo só existe em nível de organização — projeto dono por repos
 
 **Consequência.** O quadro só diz a verdade se quem pega uma task se atribuir a ela, e se quem descobre uma dependência nova atualizar a onda. Isso é disciplina, não automação. Em troca, "o que posso pegar agora" deixa de ser uma pergunta feita a outra pessoa.
 
-**Origem.** Decidido em sessão.
+**Origem.** Decidido em sessão. **Substituída em parte em 2026-09-28**, quanto ao que a coluna *Design* significa: ela deixa de ser a fila de telas esperando o designer e passa a receber telas já mergeadas para refino (ver a entrada de 2026-09-28, ao fim). Deixa de valer também a frase do bullet de `Bloqueio` sobre esperar design ("Esperar **design** virou coluna"): a tela não espera mais o designer, então esperar design não existe como bloqueio. As nove colunas e a distinção de `Bloqueio` entre dependência e decisão continuam valendo.
 
 ---
 
@@ -967,3 +967,28 @@ Descartadas: **uma tabela por assunto**, que duplicaria RLS e contagem a cada m�
 **Consequência.** A foto do cliente **depende da issue #100**, que cria o armazenamento de identidade; isso entra como dependência no recorte deste módulo. Avatar decorativo não disputa quota com vídeo de cliente.
 
 **Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-28 — A tela é implementada a partir do esboço, e o designer refina a tela que já funciona
+
+**Contexto.** A entrada de 2026-09-24 fixou a sequência esboço → design → código: a task de `escopo:web` nascia pronta e ficava parada em `aguardando-design` até o designer entregar a tela. Ela mesma registrou o custo — a entrega do designer entra no caminho crítico de toda tela, num prazo que não depende de nós — e o custo se realizou: em 2026-09-28 há 27 tasks de interface abertas com esse rótulo, das SPECs de autenticação, colaboradores e clientes, e ao menos três delas não dependem de nenhuma outra task e esperam só o design.
+
+**Decisão.** A sequência passa a ser **esboço → código → refino**.
+
+- A tela de `escopo:web` é **implementada a partir do esboço e da tabela de elementos da issue**, com o design system do produto, definido na página [UI System — Figma, Design Tokens & CSS](https://app.notion.com/p/3d886d2ba8b08172a3fbcc31e1548c31) do Notion, filha de "Branding & Design System — Ageniza": os tokens e os componentes são os definidos nela. Nada de componente ou estilo avulso, nada de layout inventado. O esboço deixa de ser briefing e passa a ser a **especificação da tela**, e a primeira implementação cobre todos os estados que ele lista.
+- O designer **refina a tela já funcionando**, depois do merge. No quadro, a coluna **Design** passa a receber telas **já mergeadas** para refino, marcadas com o label **`refino-design`**, e **Design review** passa a ser o refino entregue, à espera de aprovação.
+- **`aguardando-design` deixa de existir, e falta de design não bloqueia mais.** A task de interface espera a dependência real — normalmente a task de API que a alimenta, declarada em "Depende de" — **e a fundação do design system no código**, o segundo ponto de "Fica em aberto". Sem essa fundação nenhuma tela consegue cumprir "só tokens e componentes do design system". O campo **Bloqueio** do quadro tem um valor só, então vale a precedência: **enquanto a fundação estiver pendente, toda task de tela fica com Bloqueio `decisão`**, e a dependência técnica continua visível só em "Depende de"; quando a fundação entrar no código, a task passa a `dependência` onde couber.
+- Da entrada de 2026-09-24 continuam valendo o esboço em nível de wireframe, sem cor, tipografia ou espaçamento; as tasks de web escritas junto com as demais, com o esboço dentro do corpo; e `escopo:api` e `escopo:db` em paralelo.
+
+**Consequência.** O risco aceito é o **retrabalho quando o refino mudar estrutura**: hierarquia, componentes ou navegação de uma tela já codificada e testada que o designer decida refazer. O custo deixa de ser espera e passa a ser código refeito, e isso é escolha, não descuido: em troca, o designer sai do caminho crítico de toda tela. A frase "ninguém codifica tela a partir do wireframe", da entrada anterior, deixa de valer.
+
+As issues que hoje carregam `aguardando-design` deixam de esperar design e passam a esperar as dependências que já declaram **e a fundação do design system**. Isso vale para as 27, inclusive as que não dependem de nenhuma outra task: todas ficam com Bloqueio `decisão` enquanto a fundação estiver pendente, e nenhuma deve ser pega antes de ela existir no código.
+
+**Fica em aberto**, cada ponto com o seu gatilho:
+
+- **Quem aplica o refino, em qual issue e PR, e onde fica o card enquanto a tela mergeada também espera a promoção.** Não é decidido aqui. O `pnpm board:released` só move o que está em *Pronto para subir*; um card parado em *Design* na promoção não iria para *Em produção*. Gatilho: a primeira tela mergeada que chegar à coluna Design. Até lá, `refino-design` e a coluna descrevem um estado, não um procedimento.
+- **A fundação do design system no código, que precisa entrar antes da primeira task de tela.** O design system **está especificado** na página [UI System — Figma, Design Tokens & CSS](https://app.notion.com/p/3d886d2ba8b08172a3fbcc31e1548c31): tokens em três camadas (primitives → semantic Light/Dark → component), nome CSS igual ao caminho do Figma com `/` virando `-` (`action/primary/bg` → `--action-primary-bg`), shadcn/ui copiado para o repositório como base de mecânica e acessibilidade, com as variáveis do shadcn só como ponte para os tokens da Ageniza, a estrutura `src/styles/` (`tokens/`, `themes/`, `globals.css`), as fontes Sora e Inter, a escala de espaço em 4px e o radius `sm`/`md`/`lg`/`xl`/`full`. O que **falta é a fundação no código**: `apps/web/src/styles.css` tem 20 linhas com as cores escritas direto e nenhum token, e `packages/ui` tem quatro peças (`Button`, `TextInput`, `FieldMessage`, `LiveStatus`), sem a ponte do shadcn — o `Button` de hoje usa `tone`, e a página define `variant`. **Pendente de decisão do dono do produto:** quem constrói a fundação e com que escopo, isto é, o que entra antes da primeira tela e o que chega junto com cada tela. Também fica com ele se a especificação passa a viver no repositório: o `AGENTS.md` trata o Notion como insumo e não como fonte de verdade, e a própria página diz que o repositório guarda os tokens usados em runtime. E fica com ele a **Definition of Done de UI** da seção 23 da página, que **não é critério de aceite** enquanto isso não for decidido: entre outros itens, ela traz "Figma e código usam o mesmo vocabulário de componente", que o fluxo novo não cumpre antes do refino, já que o Figma só entra depois. Gatilho: antes de a primeira task de `escopo:web` ser pega.
+- **Como fica, na primeira implementação, um ponto que a SPEC deixou para o designer.** A seção de UX das SPECs entrega decisões ao designer que, no fluxo novo, chegam à tela sem dono: em `specs/clientes.md`, a navegação do portal no desktop ("a lateral ou o topo — decisão do designer") e os rótulos das seções do portal ("são do designer"); em `specs/auth.md`, o esboço "para o designer desenhar", sem cor, tipografia nem espaçamento, que dependem da fundação do ponto anterior. Não é decidido aqui: as SPECs não foram alteradas, e "nada de layout inventado" não diz o que fazer com um ponto que a SPEC deixou em aberto. **Pendente de decisão do dono do produto.** Gatilho: a task #141, ou a primeira task que esbarrar em um ponto assim, ser pega.
+
+**Origem.** Decidido em sessão (orquestração do projeto). Substitui a entrada de 2026-09-24 quanto à ordem e ao rótulo `aguardando-design`, e a de 2026-09-25 quanto ao que a coluna *Design* significa.
