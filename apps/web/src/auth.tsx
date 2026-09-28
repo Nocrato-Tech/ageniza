@@ -12,6 +12,8 @@ export interface AuthSessionStore {
   subscribe(listener: () => void): () => void;
   getSnapshot(): AuthSessionSnapshot;
   refresh(): Promise<void>;
+  /** Drops the session at once, without asking the API, after a request proved it has ended. */
+  end(): void;
   dispose(): void;
 }
 
@@ -35,7 +37,7 @@ export const createAuthSessionStore = (client: HttpClient): AuthSessionStore => 
 
   const load = async (activeGeneration: number): Promise<void> => {
     try {
-      await client.request({ path: '/auth/session', response: AuthSessionResponseSchema });
+      await client.request({ path: '/auth/session', response: AuthSessionResponseSchema, unauthenticatedIsExpected: true });
       if (generation === activeGeneration) publish({ status: 'ready', isAuthenticated: true });
     } catch (error: unknown) {
       // Only an authenticated answer proves a session; every other outcome -- 401, network, an
@@ -68,6 +70,10 @@ export const createAuthSessionStore = (client: HttpClient): AuthSessionStore => 
     getSnapshot: () => snapshot,
     /** Re-reads the session after login, logout, or any action that can end it server-side. */
     refresh: async () => { await load(++generation); },
+    end() {
+      generation += 1;
+      publish({ status: 'ready', isAuthenticated: false });
+    },
     dispose() { teardown(); listeners.clear(); }
   };
 };

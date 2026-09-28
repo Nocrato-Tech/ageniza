@@ -12,6 +12,13 @@ export interface RequestOptions<TResponse> {
   headers?: HeadersInit;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** Set only where 401 is an ordinary answer (the session probe), so it does not end the session. */
+  unauthenticatedIsExpected?: boolean;
+}
+
+export interface HttpClientHooks {
+  /** Called when the API rejects a request because the session no longer exists. */
+  onSessionEnded?: () => void;
 }
 
 export class HttpClientError extends Error {
@@ -95,7 +102,8 @@ const combineSignals = (externalSignal: AbortSignal | undefined, timeoutMs: numb
 export class HttpClient {
   public constructor(
     private readonly baseUrl: string,
-    private readonly fetchImplementation: typeof fetch = fetch
+    private readonly fetchImplementation: typeof fetch = fetch,
+    private readonly hooks: HttpClientHooks = {}
   ) {}
 
   public async request<TResponse>(options: RequestOptions<TResponse>): Promise<TResponse> {
@@ -128,6 +136,10 @@ export class HttpClient {
       if (!response.ok) {
         const parsedError = ApiErrorResponseSchema.safeParse(payload);
         if (parsedError.success) {
+          // INVALID_CREDENTIALS is also a 401, but it answers a login attempt, not a dead session.
+          if (response.status === 401 && parsedError.data.error.code === 'UNAUTHENTICATED' && options.unauthenticatedIsExpected !== true) {
+            this.hooks.onSessionEnded?.();
+          }
           throw new HttpClientError(parsedError.data.error.message, {
             code: parsedError.data.error.code,
             status: response.status,

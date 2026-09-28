@@ -1,5 +1,5 @@
 import { HealthResponseSchema } from '@ageniza/contracts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { HttpClient } from './http.js';
 import type { HttpClientError } from './http.js';
@@ -72,5 +72,37 @@ describe('HttpClient', () => {
     await expect(client.request({ path: '/health', timeoutMs: 0, response: HealthResponseSchema })).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
     await expect(client.request({ path: '/health', timeoutMs: Number.NaN, response: HealthResponseSchema })).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
     expect(calls).toBe(0);
+  });
+
+  describe('session end', () => {
+    const answering = (status: number, code: string) => async () => new Response(JSON.stringify({
+      error: { code, message: 'Rejected.' }
+    }), { status, headers: { 'content-type': 'application/json' } });
+
+    it('reports a 401 UNAUTHENTICATED on any request as the end of the session', async () => {
+      const onSessionEnded = vi.fn();
+      const client = new HttpClient('http://127.0.0.1:3001', answering(401, 'UNAUTHENTICATED'), { onSessionEnded });
+
+      await expect(client.request({ path: '/clients', response: HealthResponseSchema })).rejects.toMatchObject({ status: 401 });
+      await expect(client.request({ path: '/clients', method: 'POST', body: {}, response: HealthResponseSchema })).rejects.toMatchObject({ status: 401 });
+      expect(onSessionEnded).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not end the session where 401 is the expected answer', async () => {
+      const onSessionEnded = vi.fn();
+      const client = new HttpClient('http://127.0.0.1:3001', answering(401, 'UNAUTHENTICATED'), { onSessionEnded });
+
+      await expect(client.request({ path: '/auth/session', response: HealthResponseSchema, unauthenticatedIsExpected: true })).rejects.toMatchObject({ status: 401 });
+      expect(onSessionEnded).not.toHaveBeenCalled();
+    });
+
+    it('does not mistake a rejected login or another error for a dead session', async () => {
+      const onSessionEnded = vi.fn();
+      for (const [status, code] of [[401, 'INVALID_CREDENTIALS'], [403, 'FORBIDDEN'], [404, 'NOT_FOUND'], [500, 'INTERNAL_ERROR']] as const) {
+        const client = new HttpClient('http://127.0.0.1:3001', answering(status, code), { onSessionEnded });
+        await expect(client.request({ path: '/auth/login', method: 'POST', body: {}, response: HealthResponseSchema })).rejects.toMatchObject({ status });
+      }
+      expect(onSessionEnded).not.toHaveBeenCalled();
+    });
   });
 });

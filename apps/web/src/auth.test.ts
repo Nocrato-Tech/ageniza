@@ -74,4 +74,28 @@ describe('auth session store', () => {
     expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false });
     expect(listener).toHaveBeenCalled();
   });
+
+  it('probes the session without treating the visitor 401 as a session that ended', async () => {
+    const onSessionEnded = vi.fn();
+    const store = createAuthSessionStore(new HttpClient('http://127.0.0.1:3001', async () => unauthenticated(), { onSessionEnded }));
+
+    store.subscribe(() => undefined);
+    await settle();
+    await store.refresh();
+
+    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false });
+    expect(onSessionEnded).not.toHaveBeenCalled();
+  });
+
+  it('drops the session at once when told it ended, ignoring a probe still in flight', async () => {
+    let answerProbe: (response: Response) => void = () => undefined;
+    const store = createAuthSessionStore(clientAnswering(() => new Promise<Response>((resolve) => { answerProbe = resolve; })));
+
+    store.subscribe(() => undefined);
+    store.end();
+    answerProbe(activeSession());
+    await settle();
+
+    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false });
+  });
 });
