@@ -26,8 +26,8 @@
 
   --action-primary-bg: var(--color-indigo-600);
   --action-primary-fg: var(--color-white);
-  --action-danger-bg: var(--color-red-700); /* proposto */
-  --action-danger-fg: var(--color-white); /* proposto */
+  --action-danger-bg: var(--color-red-700); /* proposed, pending product-owner approval (docs/design-system.md 5.1) */
+  --action-danger-fg: var(--color-white); /* proposed, pending product-owner approval (docs/design-system.md 5.1) */
 
   --focus-ring: var(--color-indigo-600);
 }

@@ -145,14 +145,19 @@ input:focus-visible {
   background: var(--bg-hover);
 }
 
-.ui-button:disabled {
+.ui-button:disabled:not(.ui-button--loading) {
   cursor: not-allowed;
   opacity: 0.55;
 }
 
 .ui-button--loading {
   position: relative;
-  color: transparent;
+  cursor: progress;
+}
+
+/* opacity, not visibility: the label must stay in the accessibility tree as the button's name. */
+.ui-button--loading > .ui-button__label {
+  opacity: 0;
 }
 
 .ui-button--loading::after {
@@ -163,9 +168,6 @@ input:focus-visible {
   border: 2px solid currentColor;
   border-right-color: transparent;
   border-radius: var(--radius-full);
-  color: inherit;
-  /* currentColor on this pseudo-element resolves against the button's own
-     text color, so the spinner never needs a token of its own. */
   animation: ui-button-spin var(--motion-slow) linear infinite;
 }
 

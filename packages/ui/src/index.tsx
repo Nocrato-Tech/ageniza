@@ -9,14 +9,14 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 /** A semantic button with a stable focus indicator supplied by the consumer stylesheet. */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { className, variant = 'primary', size = 'md', loading = false, type = 'button', disabled, ...props },
+  { className, variant = 'primary', size = 'md', loading = false, type = 'button', disabled, children, ...props },
   ref
 ) {
   return (
     <button
       ref={ref}
       type={type}
-      disabled={disabled ?? loading}
+      disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={[
         'ui-button',
@@ -28,7 +28,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         .filter(Boolean)
         .join(' ')}
       {...props}
-    />
+    >
+      <span className="ui-button__label">{children}</span>
+    </button>
   );
 });
 
