@@ -44,7 +44,7 @@ Sete blocos, nesta ordem — que é a ordem do custo de errar. Não pule para o 
 - **Fato é trabalho seu, decisão é do usuário.** Nunca pergunte o que você pode descobrir lendo o repositório.
 - **Insista.** Resposta que abre um buraco é para ser cutucada antes de seguir, não anotada. Se a resposta contradiz algo já decidido ou já implementado, diga qual e onde.
 - Proponha uma opção com recomendação quando o usuário estiver travado — nunca um leque de alternativas sem posição.
-- **UX é esboço.** Quais telas, com o quê, para quem. Se a conversa derivar para cor, tipografia ou espaçamento, traga de volta: isso é trabalho do designer.
+- **UX é esboço.** Quais telas, com o quê, para quem. Se a conversa derivar para cor, tipografia ou espaçamento, traga de volta: isso vem do design system e do refino do designer.
 - Quando não houver resposta ainda, não invente: vai para "Em aberto", e o item **só é válido com gatilho** — o evento que obriga a decisão, não uma data.
 - Não invente regra de negócio. `AGENTS.md`, as issues e `docs/business/` são autoritativos; o Notion é insumo histórico, não fonte de verdade.
 

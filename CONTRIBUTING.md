@@ -14,7 +14,7 @@ Módulo novo **não começa** por código. Ele passa por entrevista, vira uma SP
 
 Uma **task** de implementação já chega com aceite verificável e a seção da SPEC que a define. Se ela não tiver isso, ela não está pronta para ser pega.
 
-Task marcada **`aguardando-design`** espera a entrega do designer. Ela já traz o esboço da tela no corpo — é o briefing dele, não a sua especificação para inventar o layout.
+Task de interface (`escopo:web`) traz o esboço da tela no corpo, e ele é a **especificação**: o wireframe e a tabela de elementos dizem o que existe e o que cada coisa faz, e a implementação cobre todos os estados listados — vazio, carregando, erro, busca sem resultado e variação por papel. Use só o design system existente; nada de estilo avulso, nem layout inventado. O designer **refina a tela depois do merge**, e a tela mergeada que espera esse refino leva **`refino-design`**.
 
 ## Branch
 
@@ -83,8 +83,8 @@ Ele existe para responder duas perguntas que uma lista de issues responde mal: *
 |---|---|
 | **Backlog** | reconhecido, sem estar pronto para começar |
 | **Refinamento** | o escopo não fechou. Raro aqui, porque task nasce de SPEC aprovada — existe para o caso em que alguém pega uma task e descobre um buraco |
-| **Design** | esperando a tela do designer. É a fila dele, visível como coluna |
-| **Design review** | tela entregue, aguardando aprovação |
+| **Design** | telas **já mergeadas** em `develop`, esperando o refino do designer (label `refino-design`). É a fila dele, visível como coluna |
+| **Design review** | refino entregue, aguardando aprovação |
 | **Pronto para dev** | sem bloqueio e sem responsável: **pode ser pego agora** |
 | **Em andamento** | alguém se atribuiu |
 | **Revisão** | PR aberto, aguardando revisão independente |
@@ -98,7 +98,7 @@ As duas últimas espelham o modelo de branch: `develop` é integração, `main` 
 | campo | para que serve |
 |---|---|
 | **Onda** | a camada de dependência. Onda 1 pode começar hoje; onda 2 depende da 1 ter entrado. **É o campo que diz onde quatro pessoas trabalham sem fila** |
-| **Bloqueio** | `dependência` espera outra task, `decisão` espera o dono do produto. Design virou coluna e saiu daqui na prática |
+| **Bloqueio** | `dependência` espera outra task, `decisão` espera o dono do produto. Design não entra aqui: tela não espera o designer |
 | **Módulo** | de qual módulo é o trabalho |
 | **Escopo** | `db`, `api`, `web`, `infra`, `docs` — qual disciplina pega |
 | **Tipo** | épico, history, task, em aberto, débito, bug |

@@ -373,7 +373,7 @@ As **tasks de `escopo:web` são escritas junto com as demais**, a partir do esbo
 
 **Consequência.** A entrega do designer entra no caminho crítico de toda tela, e é um prazo que não depende de nós. Em troca, o trabalho de interface fica descrito e priorizado antes de existir tela — quem receber o design já encontra a issue pronta, com aceite e dependências. Ninguém codifica tela a partir do wireframe.
 
-**Origem.** Decidido em sessão.
+**Origem.** Decidido em sessão. **Substituída em 2026-09-28** quanto à ordem esboço → design → código e ao rótulo `aguardando-design`: a tela passa a ser codificada a partir do esboço e refinada depois pelo designer (ver a entrada de 2026-09-28, ao fim). O esboço em nível de wireframe, as tasks de web escritas junto com as demais e `escopo:api` e `escopo:db` em paralelo continuam valendo.
 
 ## 2026-09-24 — Escopo do módulo de autenticação: o que entra, e por que verificação de e-mail já está resolvida
 
@@ -967,3 +967,27 @@ Descartadas: **uma tabela por assunto**, que duplicaria RLS e contagem a cada m�
 **Consequência.** A foto do cliente **depende da issue #100**, que cria o armazenamento de identidade; isso entra como dependência no recorte deste módulo. Avatar decorativo não disputa quota com vídeo de cliente.
 
 **Origem.** Decidido em sessão (entrevista do módulo de clientes).
+
+---
+
+## 2026-09-28 — A tela é implementada a partir do esboço, e o designer refina a tela que já funciona
+
+**Contexto.** A entrada de 2026-09-24 fixou a sequência esboço → design → código: a task de `escopo:web` nascia pronta e ficava parada em `aguardando-design` até o designer entregar a tela. Ela mesma registrou o custo — a entrega do designer entra no caminho crítico de toda tela, num prazo que não depende de nós — e o custo se realizou: em 2026-09-28 há 27 tasks de interface abertas com esse rótulo, das SPECs de autenticação, colaboradores e clientes, e ao menos três delas não dependem de nenhuma outra task e esperam só o design.
+
+**Decisão.** A sequência passa a ser **esboço → código → refino**.
+
+- A tela de `escopo:web` é **implementada a partir do esboço e da tabela de elementos da issue**, com o design system que já existe (`packages/ui` e a folha de estilos de `apps/web`): nada de componente ou estilo avulso, nada de layout inventado. O esboço deixa de ser briefing e passa a ser a **especificação da tela**, e a primeira implementação cobre todos os estados que ele lista — vazio, carregando, erro, busca sem resultado e a variação por papel.
+- O designer **refina a tela já funcionando**, depois do merge. No quadro, a coluna **Design** passa a receber telas **já mergeadas** para refino, marcadas com o label **`refino-design`**, e **Design review** passa a ser o refino entregue, à espera de aprovação.
+- **`aguardando-design` deixa de existir.** A task de interface espera apenas a dependência real, normalmente a task de API que a alimenta, declarada em "Depende de" e no campo **Bloqueio** do quadro como `dependência`. Falta de design não bloqueia mais.
+- Da entrada de 2026-09-24 continuam valendo o esboço em nível de wireframe, sem cor, tipografia ou espaçamento; as tasks de web escritas junto com as demais, com o esboço dentro do corpo; e `escopo:api` e `escopo:db` em paralelo.
+
+**Consequência.** O risco aceito é o **retrabalho quando o refino mudar estrutura**: hierarquia, componentes ou navegação de uma tela já codificada e testada que o designer decida refazer. O custo deixa de ser espera e passa a ser código refeito, e isso é escolha, não descuido: em troca, o designer sai do caminho crítico de toda tela. A frase "ninguém codifica tela a partir do wireframe", da entrada anterior, deixa de valer.
+
+As issues que hoje carregam `aguardando-design` deixam de esperar design e passam a esperar só as dependências que já declaram.
+
+**Fica em aberto**, cada ponto com o seu gatilho:
+
+- **Quem aplica o refino, em qual issue e PR, e onde fica o card enquanto a tela mergeada também espera a promoção.** Não é decidido aqui. O `pnpm board:released` só move o que está em *Pronto para subir*; um card parado em *Design* na promoção não iria para *Em produção*. Gatilho: a primeira tela mergeada que chegar à coluna Design. Até lá, `refino-design` e a coluna descrevem um estado, não um procedimento.
+- **O que fazer quando a tela precisa de um componente que o design system não tem.** Hoje `packages/ui` tem quatro peças (`Button`, `TextInput`, `FieldMessage`, `LiveStatus`) e a folha de estilos não declara tokens: cores e medidas vão escritas direto. Gatilho: a primeira task de interface que precisar de algo além disso — cartão, modal, abas, tabela, esqueleto.
+
+**Origem.** Decidido em sessão (orquestração do projeto). Substitui a entrada de 2026-09-24 quanto à ordem e ao rótulo `aguardando-design`.

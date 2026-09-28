@@ -83,7 +83,7 @@ Quais policies, e por qual coluna o isolamento acontece. Toda tabela de negócio
 
 Baixa fidelidade: o que existe em cada tela e onde. Sem cor, sem tipografia, sem espaçamento.
 
-**Esta seção é o briefing do designer.** Ela não descreve a tela final — descreve o que a tela precisa resolver, para que o designer a desenhe. O código vem depois da entrega dele.
+**Esta seção é a especificação da tela.** Ela não descreve o design final — descreve o que a tela precisa resolver, e é dela que a tela é implementada, com o design system existente. O designer refina depois, sobre a tela já funcionando.
 
 ```
 ┌─────────────────────────────┐
