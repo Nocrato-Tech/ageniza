@@ -70,11 +70,9 @@ export const readQuotaSnapshot = async (
   };
 };
 
-/** Serializes every quota decision for one agency. Advisory locks avoid RLS's separate UPDATE
- * policy requirement for SELECT ... FOR UPDATE, which would otherwise turn a missing policy into
- * a successful query that locked no rows. */
+// Advisory, not a row lock: `agencies` has no UPDATE policy, so FOR UPDATE under RLS matches no rows.
 export const lockAgencyStorageQuota = async (transaction: Transaction, agencyId: string): Promise<void> => {
-  await raw(transaction, 'select pg_advisory_xact_lock(hashtextextended(?::text, 0))', [agencyId]);
+  await raw(transaction, 'select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended((\'media-quota:\' || (?::uuid)::text), 0))', [agencyId]);
 };
 
 export interface PendingAssetInput {

@@ -20,8 +20,10 @@ neither the file nor a proxy passes through the VPS.
    limits or the tenant's quota, the object is deleted from the bucket and the asset is marked
    `rejected`; otherwise the API copies the validated staging object to the canonical key and
    marks it `confirmed`. Reusing an unexpired upload URL can only mutate staging, never the
-   confirmed original. Quota decisions lock the agency row, so concurrent confirmations cannot
-   consume the same remaining bytes/object slot.
+   confirmed original. Quota decisions take a transaction-scoped advisory lock keyed by
+   `media-quota:<canonical agency UUID>`, so concurrent confirmations cannot consume the same
+   remaining bytes/object slot. It is advisory rather than a row lock because `agencies` has RLS
+   without an UPDATE policy; `SELECT ... FOR UPDATE` would silently match no rows for `ageniza_app`.
 5. `GET /agencies/:agencyId/media/:assetId/download-url?variant=original|thumbnail|preview` issues
    a short-lived signed `GET`, meant to be requested only at the moment it is actually needed
    (a social network's API fetching the original, or the app displaying a preview). `variant`
