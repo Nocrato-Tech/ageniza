@@ -595,6 +595,8 @@ Ganha-se uma propriedade que vale registrar: `colaborador.atribuir_admin` é uma
 
 **Origem.** Decidido em sessão (entrevista do módulo de colaboradores).
 
+**Nota de implementação (2026-09-28, issue [#94](https://github.com/Nocrato-Tech/ageniza/issues/94)).** A migration `20260928000000_collaborator_permissions_and_admin_grant.mjs` cria `agency_memberships_update` — a policy de `UPDATE` que faltava — e substitui `invitations_insert`. A policy nova checa cada coluna contra o próprio valor atual (via sub-select sem `FOR UPDATE`, que lê o snapshot do início do statement): sem isso, `colaborador.alterar_funcao` sozinho deixaria passar uma troca de `role_id` em qualquer `UPDATE` que também tocasse `job_title`. A checagem do papel `admin` ficou numa função nova, `app_private.is_admin_role`, reaproveitada nos dois pontos onde um papel é concedido, como a decisão pedia.
+
 ---
 
 ## 2026-09-24 — Proteções de integridade do quadro, e a que não deve existir
