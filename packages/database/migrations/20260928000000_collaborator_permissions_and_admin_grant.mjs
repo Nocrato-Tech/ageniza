@@ -10,6 +10,16 @@
  * UPDATE — see https://www.postgresql.org/docs/current/ddl-rowsecurity.html on sub-selects in
  * policies. Without that, colaborador.alterar_funcao alone (job_title) would also let role_id
  * through on any statement that touches both columns.
+ *
+ * The Owner's row is a special case, but only for job_title: the SPEC (seção 4/5, regra 4)
+ * forbids removing the Owner or changing their role_id, never editing their job_title. USING
+ * cannot see the statement's target column (it only ever sees the row as it stood before the
+ * UPDATE), so it cannot admit the row "for job_title only" — it must admit or reject the whole
+ * row for a given actor. It therefore admits the Owner's row exactly when the actor holds
+ * colaborador.alterar_funcao (the Owner passes by ownership, same as everyone else), and WITH
+ * CHECK then makes role_id and status unconditionally immovable on that row: any attempt to
+ * change either raises a row-security error rather than silently affecting 0 rows, because by
+ * then USING has already admitted the row into the update.
  */
 export async function up(knex) {
   await knex.raw(`
@@ -97,12 +107,15 @@ export async function up(knex) {
     create policy agency_memberships_update on public.agency_memberships
       for update to ageniza_app
       using (
-        not app_private.is_agency_owner(agency_memberships.agency_id, agency_memberships.user_id)
-        and (
-          app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_papel')
-          or app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_funcao')
-          or app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.remover')
-        )
+        case
+          when app_private.is_agency_owner(agency_memberships.agency_id, agency_memberships.user_id)
+            then app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_funcao')
+          else (
+            app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_papel')
+            or app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_funcao')
+            or app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.remover')
+          )
+        end
       )
       with check (
         (
@@ -110,7 +123,8 @@ export async function up(knex) {
             select membership.role_id from public.agency_memberships membership where membership.id = agency_memberships.id
           )
           or (
-            app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_papel')
+            not app_private.is_agency_owner(agency_memberships.agency_id, agency_memberships.user_id)
+            and app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_papel')
             and (
               not app_private.is_admin_role(agency_memberships.role_id, agency_memberships.agency_id)
               or app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.atribuir_admin')
@@ -127,8 +141,13 @@ export async function up(knex) {
           agency_memberships.status = (
             select membership.status from public.agency_memberships membership where membership.id = agency_memberships.id
           )
-          or (agency_memberships.status = 'removed' and app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.remover'))
-          or (agency_memberships.status = 'active' and app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_papel'))
+          or (
+            not app_private.is_agency_owner(agency_memberships.agency_id, agency_memberships.user_id)
+            and (
+              (agency_memberships.status = 'removed' and app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.remover'))
+              or (agency_memberships.status = 'active' and app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_papel'))
+            )
+          )
         )
       );
   `);

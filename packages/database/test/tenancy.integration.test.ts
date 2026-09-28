@@ -514,6 +514,8 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
   afterEach(async () => {
     await getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC })
       .update({ role_id: productionRoleId, job_title: 'Original', status: 'active' });
+    await getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: ownerC })
+      .update({ role_id: adminRoleId, job_title: null, status: 'active' });
   });
 
   it('grants the new permissions exactly as the module preset table requires', async () => {
@@ -576,11 +578,46 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
       .where({ agency_id: agencyC, user_id: targetC }).update({ status: 'active', role_id: productionRoleId }))).resolves.toBe(1);
   });
 
+  // job_title on the Owner's own row is not covered by rule 4 of the SPEC (seção 4/5): only
+  // removing the Owner or changing their role_id is forbidden. Admin and the account manager both
+  // hold colaborador.alterar_funcao, so USING admits the Owner's row for them, and WITH CHECK lets
+  // the job_title branch through -- exactly like editing anyone else's job_title.
+  it("lets an admin and the account manager edit the Owner's job_title", async () => {
+    await expect(asUser(adminC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: ownerC }).update({ job_title: 'Renamed by admin' }))).resolves.toBe(1);
+    await expect(getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: ownerC }).first('job_title'))
+      .resolves.toEqual({ job_title: 'Renamed by admin' });
+
+    await expect(asUser(managerC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: ownerC }).update({ job_title: 'Renamed by manager' }))).resolves.toBe(1);
+    await expect(getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: ownerC }).first('job_title'))
+      .resolves.toEqual({ job_title: 'Renamed by manager' });
+  });
+
+  // role_id and status on the Owner's row stay unconditionally immovable, for anyone, including the
+  // Owner themselves. USING cannot see which column a statement targets (it only ever sees the row
+  // as it stood before the UPDATE), so it admits or rejects the whole row per actor: it admits the
+  // Owner's row for whoever holds colaborador.alterar_funcao (admin, the account manager, and the
+  // Owner by ownership) so job_title edits can succeed, which means a role_id/status attempt by one
+  // of those actors is admitted too and then fails WITH CHECK -- a row-security error, not 0 rows.
+  // An actor without colaborador.alterar_funcao (production here) never gets past USING at all, so
+  // the same attempt returns 0 rows silently. Either way the final state must not move.
   it('never lets the Owner be the target of a role or status change', async () => {
     await expect(asUser(adminC, (transaction) => transaction('agency_memberships')
-      .where({ agency_id: agencyC, user_id: ownerC }).update({ role_id: productionRoleId }))).resolves.toBe(0);
+      .where({ agency_id: agencyC, user_id: ownerC }).update({ role_id: productionRoleId }))).rejects.toThrow(/row-level security/);
     await expect(asUser(adminC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: ownerC }).update({ status: 'removed' }))).rejects.toThrow(/row-level security/);
+    await expect(asUser(ownerC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: ownerC }).update({ role_id: productionRoleId }))).rejects.toThrow(/row-level security/);
+    await expect(asUser(managerC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: ownerC }).update({ status: 'removed' }))).rejects.toThrow(/row-level security/);
+    await expect(asUser(productionC, (transaction) => transaction('agency_memberships')
+      .where({ agency_id: agencyC, user_id: ownerC }).update({ role_id: productionRoleId }))).resolves.toBe(0);
+    await expect(asUser(productionC, (transaction) => transaction('agency_memberships')
       .where({ agency_id: agencyC, user_id: ownerC }).update({ status: 'removed' }))).resolves.toBe(0);
+
+    await expect(getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: ownerC }).first('role_id', 'status'))
+      .resolves.toEqual({ role_id: adminRoleId, status: 'active' });
   });
 
   it('keeps every update scoped to its own agency', async () => {
