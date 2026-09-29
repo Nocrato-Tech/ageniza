@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import type { AuthSessionSnapshot } from './auth.js';
 import { LiveStatus } from '@ageniza/ui';
+import { ForgotPasswordPage } from './forgot-password.js';
 import { getHealth } from './health.js';
 import { useApiClient } from './http.js';
 
@@ -40,6 +41,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
     <Route element={<PublicLayout />}>
       <Route index element={<PublicHome />} />
       <Route path="status" element={<ServiceStatus />} />
+      <Route path="senha/esquecida" element={<ForgotPasswordPage />} />
     </Route>
     <Route element={<ProtectedLayout session={session} />}>
       <Route path="app" element={<WorkspaceHome />} />

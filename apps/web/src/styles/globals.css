@@ -204,3 +204,26 @@ input:focus-visible {
 .ui-live-status {
   min-height: 1.5rem;
 }
+
+/* Auth form layout: specs/auth.md section 7, the centred single column the auth screens share. */
+.form-panel {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 28rem;
+  margin: 0 auto;
+}
+
+.form-field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.form-field > label {
+  font: var(--label-md);
+}
+
+.form-actions {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
