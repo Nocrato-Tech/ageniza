@@ -233,9 +233,10 @@ input:focus-visible {
   background: var(--bg-hover);
 }
 
+/* There is no "emphasis/suggested" border token yet; `--focus-ring` is the documented strong
+ * emphasis colour, used here on purpose and registered as a design-system gap in the PR. */
 .ui-choice-card--highlighted {
-  border-color: var(--action-primary-bg);
-  box-shadow: inset 0 0 0 1px var(--action-primary-bg);
+  border-color: var(--focus-ring);
 }
 
 .ui-choice-card:disabled {
@@ -252,8 +253,84 @@ input:focus-visible {
   font: var(--body-md);
 }
 
+.ui-choice-card__badge {
+  align-self: flex-start;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font: var(--label-sm);
+}
+
 .ui-skeleton {
   height: 4.5rem;
   border-radius: var(--radius-md);
   background: var(--bg-hover);
+}
+
+/* Auth form layout: specs/auth.md section 7, the centred single column the auth screens share. */
+.form-panel {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 28rem;
+  margin: 0 auto;
+}
+
+.form-field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.form-field > label {
+  font: var(--label-md);
+}
+
+.form-stack {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.form-actions {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+/* Legal pages: specs/auth.md section 7, a long-form reading column with a comfortable line length. */
+.legal-document {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 40rem;
+  margin: 0 auto;
+}
+
+.legal-document h1 {
+  font: var(--heading-lg);
+}
+
+.legal-document h2 {
+  margin-top: var(--space-6);
+  font: var(--heading-md);
+}
+
+.legal-document p,
+.legal-document li {
+  font: var(--body-lg);
+}
+
+.legal-version {
+  color: var(--text-muted);
+  font: var(--body-md);
+}
+
+.legal-draft {
+  color: var(--text-danger);
+  font: var(--body-md);
+}
+
+.legal-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-8);
 }
