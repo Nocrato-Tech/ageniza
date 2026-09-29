@@ -221,6 +221,52 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
     await getOwner().knex('clients').where({ id: clientA1 }).update({ contact_phone: null });
   });
 
+  it('never lets an UPDATE move a row to another client or agency by rewriting its tenant columns', async () => {
+    // A table-wide UPDATE grant combined with a WITH CHECK that reads the identity columns off the
+    // *new* row would let a caller with cliente.operar on both clients rewrite client_id/agency_id
+    // and move the row instead of editing it. The column grant has to make that impossible on its
+    // own, independent of what any policy checks.
+    await expect(
+      asUser(adminA, (transaction) => transaction('clients').where({ id: clientA1 }).update({ agency_id: agencyB }))
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      asUser(adminA, (transaction) => transaction('clients').where({ id: clientA1 }).update({ id: randomUUID() }))
+    ).rejects.toThrow(/permission denied/);
+
+    const sectionKey = 'observations' as const;
+    await getOwner().knex('client_brand_sections').insert({ client_id: clientA1, section_key: sectionKey, body: 'Immovable' });
+    await expect(
+      asUser(managerA, (transaction) => transaction('client_brand_sections').where({ client_id: clientA1, section_key: sectionKey }).update({ client_id: clientA2 }))
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      asUser(managerA, (transaction) => transaction('client_brand_sections').where({ client_id: clientA1, section_key: sectionKey }).update({ section_key: 'branding' }))
+    ).rejects.toThrow(/permission denied/);
+    await getOwner().knex('client_brand_sections').where({ client_id: clientA1, section_key: sectionKey }).delete();
+
+    const personaId = randomUUID();
+    await getOwner().knex('client_personas').insert({ id: personaId, client_id: clientA1, name: 'Immovable persona' });
+    await expect(
+      asUser(managerA, (transaction) => transaction('client_personas').where({ id: personaId }).update({ client_id: clientA2 }))
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      asUser(managerA, (transaction) => transaction('client_personas').where({ id: personaId }).update({ id: randomUUID() }))
+    ).rejects.toThrow(/permission denied/);
+    await getOwner().knex('client_personas').where({ id: personaId }).delete();
+
+    const threadId = randomUUID();
+    await getOwner().knex('client_threads').insert({ id: threadId, client_id: clientA1, section_key: 'observations', opened_by: adminA, opened_side: 'agency' });
+    await expect(
+      asUser(managerA, (transaction) => transaction('client_threads').where({ id: threadId }).update({ client_id: clientA2 }))
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      asUser(managerA, (transaction) => transaction('client_threads').where({ id: threadId }).update({ section_key: 'branding' }))
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      asUser(managerA, (transaction) => transaction('client_threads').where({ id: threadId }).update({ opened_side: 'client' }))
+    ).rejects.toThrow(/permission denied/);
+    await getOwner().knex('client_threads').where({ id: threadId }).delete();
+  });
+
   it('rejects every write on clients, brand sections, personas, threads and comments once the client is archived', async () => {
     await expect(
       asUser(adminA, (transaction) => transaction('clients').where({ id: clientArchived }).update({ contact_phone: '+55 11 91111-1111' }))

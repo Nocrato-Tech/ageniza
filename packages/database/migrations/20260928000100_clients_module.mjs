@@ -177,11 +177,20 @@ export async function up(knex) {
     -- New tables inherit select/insert/update/delete to ageniza_app from the foundation migration's
     -- default privileges; these grants are rewritten explicitly rather than relied on implicitly,
     -- and narrowed to exactly what specs/clientes.md §5 (rules 4 and 5) allows.
+    -- Column-restricted, not table-level: a table-wide UPDATE grant would let a WITH CHECK that
+    -- reads client_id off the *new* row (as client_brand_sections_update below does) be satisfied
+    -- by rewriting client_id itself to a client the caller also has cliente.operar on, moving the
+    -- row to another tenant. Excluding the PK columns from the grant closes that off at the
+    -- privilege check, before RLS is even evaluated.
     revoke all on public.client_brand_sections from ageniza_app;
-    grant select, insert, update on public.client_brand_sections to ageniza_app;
+    grant select, insert on public.client_brand_sections to ageniza_app;
+    grant update (body, colors, archetype, updated_by, updated_at) on public.client_brand_sections to ageniza_app;
 
+    -- Same reasoning: id and client_id stay out of the UPDATE grant so a persona can never be
+    -- reassigned to another client through an ordinary update.
     revoke all on public.client_personas from ageniza_app;
-    grant select, insert, update on public.client_personas to ageniza_app;
+    grant select, insert on public.client_personas to ageniza_app;
+    grant update (name, description, pains, desires, objections, status, updated_by, updated_at) on public.client_personas to ageniza_app;
 
     revoke all on public.client_threads from ageniza_app;
     grant select, insert on public.client_threads to ageniza_app;
