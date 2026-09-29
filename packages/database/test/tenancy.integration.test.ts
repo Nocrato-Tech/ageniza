@@ -814,4 +814,116 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
       await getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).update({ role_id: productionRoleId, job_title: 'Original' });
     }
   });
+
+  // Re-review finding N1: app_private.accept_invitation is security definer and reactivates a
+  // removed membership via INSERT ... ON CONFLICT DO UPDATE, which fires this trigger while
+  // app.user_id is the invitee -- not an actor holding colaborador.alterar_papel. The trigger must
+  // let that statement through as the schema owner (current_user, not app.user_id, decides the
+  // bypass) or accepting a re-invitation as a removed collaborator regresses into an error.
+  it('accepts a re-invitation for a removed collaborator despite the trigger', async () => {
+    await getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).update({ status: 'removed' });
+
+    const reInvite = randomUUID();
+    const tokenHash = `re-invite-${reInvite}`;
+    await getOwner().knex('invitations').insert({
+      id: reInvite,
+      agency_id: agencyC,
+      purpose: 'collaborator_invite',
+      email: `target-c-${targetC}@example.test`,
+      role_id: accountManagerRoleId,
+      token_hash: tokenHash,
+      expires_at: new Date(Date.now() + 86_400_000)
+    });
+
+    try {
+      // recordAcceptance: false -- this fixture's users never seed legal_acceptances, and the
+      // outer suite's afterAll does not clean that table for them.
+      await expect(acceptInvitation(tokenHash, targetC, '2026-09-19', '2026-09-19', false)).resolves.toEqual({
+        status: 'accepted',
+        agency_id: agencyC,
+        client_id: null
+      });
+      await expect(getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).first('role_id', 'status'))
+        .resolves.toEqual({ role_id: accountManagerRoleId, status: 'active' });
+    } finally {
+      await getOwner().knex('invitations').where({ id: reInvite }).delete();
+    }
+  });
+
+  // Re-review finding N1 (agency_activation branch): accept_invitation sets agencies.owner_user_id
+  // to the new owner *before* the ON CONFLICT DO UPDATE on agency_memberships, in the same
+  // transaction -- so by the time this trigger fires, is_agency_owner already reads true for that
+  // row, and it must not then treat the very update that grants ownership as forbidden.
+  it('accepts an agency activation despite an existing membership row for the new Owner', async () => {
+    const activationAgencyD = randomUUID();
+    const activationUserD = randomUUID();
+    const activationInvitationD = randomUUID();
+    const tokenHash = `activation-d-${activationInvitationD}`;
+
+    await getOwner().knex('auth.user').insert({
+      id: activationUserD, name: 'Activation D', email: `activation-d-${activationUserD}@example.test`, emailVerified: true
+    });
+    await getOwner().knex('agencies').insert({ id: activationAgencyD, name: 'Agency D', owner_user_id: null });
+    // The invitee already has a row on this not-yet-activated agency, e.g. a removed
+    // collaborator from before it was ever owned -- the exact shape accept_invitation's
+    // ON CONFLICT DO UPDATE reactivates.
+    await getOwner().knex('agency_memberships').insert({
+      agency_id: activationAgencyD, user_id: activationUserD, role_id: productionRoleId, status: 'removed'
+    });
+    await getOwner().knex('invitations').insert({
+      id: activationInvitationD,
+      agency_id: activationAgencyD,
+      purpose: 'agency_activation',
+      email: `activation-d-${activationUserD}@example.test`,
+      token_hash: tokenHash,
+      expires_at: new Date(Date.now() + 86_400_000)
+    });
+
+    try {
+      await expect(acceptInvitation(tokenHash, activationUserD, '2026-09-19', '2026-09-19', false)).resolves.toEqual({
+        status: 'accepted',
+        agency_id: activationAgencyD,
+        client_id: null
+      });
+      await expect(getOwner().knex('agency_memberships').where({ agency_id: activationAgencyD, user_id: activationUserD }).first('role_id', 'status'))
+        .resolves.toEqual({ role_id: adminRoleId, status: 'active' });
+    } finally {
+      await getOwner().knex('audit.events').where({ agency_id: activationAgencyD }).delete();
+      await getOwner().knex('invitations').where({ id: activationInvitationD }).delete();
+      await getOwner().knex('agency_memberships').where({ agency_id: activationAgencyD }).delete();
+      await getOwner().knex('agencies').where({ id: activationAgencyD }).update({ owner_user_id: null });
+      await getOwner().knex('agencies').where({ id: activationAgencyD }).delete();
+      await getOwner().knex('auth.user').where({ id: activationUserD }).delete();
+    }
+  });
+
+  // Re-review finding N2: set_config is callable by ageniza_app (it is PUBLIC), so app.user_id
+  // could be cleared mid-statement -- inside the SET expression's subquery, after USING has
+  // already admitted the row and before this trigger runs. A bypass keyed on GUC state cannot
+  // tell that apart from a genuinely unauthenticated connection; current_user can, because it is
+  // the connection's own role and cannot change mid-statement without a role change ageniza_app
+  // is not granted. The attack must now fail inside the trigger, not merely at WITH CHECK
+  // afterwards with the GUC already empty.
+  it('refuses a mid-statement app.user_id clear: the trigger runs as ageniza_app regardless of the GUC', async () => {
+    const attack = asUser(adminC, (transaction) => raw(
+      transaction,
+      `update agency_memberships
+          set role_id = (
+            select id from roles
+             where agency_id is null and key = 'admin'
+               and set_config('app.user_id', '', true) is not null
+          )
+        where agency_id = ? and user_id = ?`,
+      [agencyC, targetC]
+    ));
+
+    // set_config runs inside the SET expression's subquery, which Postgres evaluates before this
+    // BEFORE UPDATE trigger fires -- so by the time the trigger runs, app.user_id already reads
+    // empty and every has_agency_permission check inside it returns false, denying on the first
+    // branch reached (colaborador.alterar_papel, not colaborador.atribuir_admin). Either message
+    // proves the same thing: the trigger denies as ageniza_app, before WITH CHECK ever runs.
+    await expect(attack).rejects.toThrow(membershipRuleDenied);
+    await expect(getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).first('role_id'))
+      .resolves.toEqual({ role_id: productionRoleId });
+  });
 });

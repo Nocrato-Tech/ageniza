@@ -132,25 +132,32 @@ export async function up(knex) {
   await knex.raw(`
     -- Enforces the value-dependent half of the rule that RLS cannot express safely (see the
     -- top-of-file note): which column may change, and to what, given OLD as it truly stands at
-    -- the moment this row is locked for update -- not a sub-select's stale snapshot. Runs as
-    -- security definer so app_private.has_agency_permission and is_agency_owner/is_admin_role see
-    -- the same authorization surface RLS policies do, regardless of table grants on this role.
+    -- the moment this row is locked for update -- not a sub-select's stale snapshot.
+    --
+    -- security invoker (the default), not definer: app_private.accept_invitation is itself
+    -- security definer and reactivates a removed membership via INSERT ... ON CONFLICT DO
+    -- UPDATE, which fires this trigger while app.user_id is the invitee, not an actor holding a
+    -- module permission -- that update must reach this trigger as the schema owner, the same way
+    -- it already reaches RLS as the schema owner, or accepting a re-invitation as a removed
+    -- collaborator regresses into a 500. Bypassing by GUC state (whether app.user_id is set)
+    -- rather than by role cannot tell those two callers apart, and ageniza_app can clear that GUC
+    -- mid-statement (set_config runs inside the SET expression, after USING and before this
+    -- trigger), which would make the bypass reachable from the application role too, defended
+    -- only by WITH CHECK re-evaluating afterwards with the GUC already empty. current_user is
+    -- neither: only the connection's own role, immovable mid-statement without a role change the
+    -- application role cannot perform. has_agency_permission/is_agency_owner/is_admin_role stay
+    -- security definer with execute granted to ageniza_app, so they run under the same
+    -- authorization surface regardless of who invokes this trigger.
     create function app_private.check_agency_membership_update()
     returns trigger
     language plpgsql
-    security definer
     set search_path = ''
     as $function$
     begin
-      -- RLS itself is bypassed for the table owner (migrations, this package's tests, any future
-      -- ops tooling), which is how those connections write fixtures directly today; a trigger is
-      -- not bypassed the same way, so it must bypass explicitly for the one case RLS already
-      -- does: no authenticated user context at all. app_private.has_agency_permission always
-      -- resolves against current_user_id(), so without app.user_id every permission check below
-      -- would read as false and this trigger would block administrative writes RLS never gated.
-      -- ageniza_app itself never reaches here without app.user_id set: without it, USING already
-      -- sees no permission and the update affects zero rows before this trigger ever runs.
-      if pg_catalog.current_setting('app.user_id', true) is null or pg_catalog.current_setting('app.user_id', true) = '' then
+      -- Only the application role is governed here. The schema owner (migrations, this package's
+      -- fixtures) and anything running as a security definer function owned by it -- chiefly
+      -- accept_invitation -- already bypass RLS on this table and keep bypassing this trigger too.
+      if current_user <> 'ageniza_app' then
         return new;
       end if;
 
