@@ -285,6 +285,12 @@ input:focus-visible {
   font: var(--label-md);
 }
 
+.form-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font: var(--caption);
+}
+
 .form-stack {
   display: grid;
   gap: var(--space-4);
