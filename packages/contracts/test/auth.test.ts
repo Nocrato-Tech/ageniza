@@ -8,6 +8,7 @@ import {
   AuthPasswordForgotRequestSchema,
   AuthPasswordForgotResponseSchema,
   AuthPasswordResetRequestSchema,
+  AuthPasswordResetResponseSchema,
   AuthSessionResponseSchema
 } from '../src/index.js';
 
@@ -38,8 +39,11 @@ describe('authentication contracts', () => {
     expect(() => AuthPasswordResetRequestSchema.parse({ token: 'reset-token', newPassword: 'short' })).toThrow();
   });
 
-  it('accepts an opaque invitation continuation token on forgot/reset', () => {
+  it('accepts an opaque invitation continuation token on login/forgot/reset', () => {
     const inviteToken = 'invite-token';
+    expect(AuthLoginRequestSchema.parse({ email: 'person@example.test', password: '1234567890', inviteToken })).toEqual({
+      email: 'person@example.test', password: '1234567890', inviteToken
+    });
     expect(AuthPasswordForgotRequestSchema.parse({ email: 'person@example.test', inviteToken })).toEqual({
       email: 'person@example.test', inviteToken
     });
@@ -47,6 +51,20 @@ describe('authentication contracts', () => {
       token: 'reset-token', newPassword: 'new-password', inviteToken
     });
     expect(() => AuthPasswordForgotRequestSchema.parse({ email: 'person@example.test', inviteToken: '' })).toThrow();
+  });
+
+  it('models the three password/reset response shapes (issue #175, PR #176 security review)', () => {
+    expect(AuthPasswordResetResponseSchema.parse({ signedIn: true })).toEqual({ signedIn: true });
+    expect(AuthPasswordResetResponseSchema.parse({ signedIn: false, reason: 'NO_CONTEXT_ACCESS' })).toEqual({
+      signedIn: false, reason: 'NO_CONTEXT_ACCESS'
+    });
+    expect(AuthPasswordResetResponseSchema.parse({ signedIn: false, reason: 'SIGN_IN_REQUIRED' })).toEqual({
+      signedIn: false, reason: 'SIGN_IN_REQUIRED'
+    });
+    expect(() => AuthPasswordResetResponseSchema.parse({ signedIn: true, reason: 'NO_CONTEXT_ACCESS' })).toThrow();
+    expect(() => AuthPasswordResetResponseSchema.parse({ signedIn: false })).toThrow();
+    expect(() => AuthPasswordResetResponseSchema.parse({ signedIn: false, reason: 'SOMETHING_ELSE' })).toThrow();
+    expect(() => AuthPasswordResetResponseSchema.parse(undefined)).toThrow();
   });
 
   it('models logout requests and 204 responses as bodyless', () => {
