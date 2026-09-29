@@ -1,14 +1,17 @@
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Navigate, useNavigate } from 'react-router-dom';
-import { ContextResolveResponseSchema, type Context } from '@ageniza/contracts';
-import { Button, ChoiceCard, Skeleton } from '@ageniza/ui';
-import { z } from 'zod';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  AuthLogoutResponseSchema,
+  ContextResolveResponseSchema,
+  PutLastContextResponseSchema,
+  type Context
+} from '@ageniza/contracts';
+import { Button, ChoiceCard, LiveStatus, Skeleton } from '@ageniza/ui';
 
 import { useAuthSessionStore } from './auth.js';
-import { useApiClient } from './http.js';
-
-/** `PUT /me/last-context` and `POST /auth/logout` answer 204; the client still wants a schema. */
-const NoContentResponseSchema = z.void();
+import { useDocumentTitle } from './document-title.js';
+import { HttpClientError, useApiClient } from './http.js';
 
 const contextKey = (context: Context): string =>
   context.type === 'agency' ? `agency:${context.agencyId}` : `client:${context.clientId}`;
@@ -21,20 +24,33 @@ const contextTitle = (context: Context): string =>
 const contextDescription = (context: Context): string =>
   context.type === 'agency' ? `Área da agência · ${context.roleName}` : `Portal do cliente · ${context.agencyName}`;
 
+/** `agency:<uuid>` or `client:<uuid>`, the shape `resolve` accepts for `preferred`. */
+const PREFERRED_PATTERN = /^(agency|client):[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 /**
  * `GET /me/contexts/resolve` already ordered and highlighted the contexts (specs/auth.md section 7);
  * this screen renders that answer verbatim -- it never calls `/me/contexts` again and never sorts.
- * Choosing writes `PUT /me/last-context` and enters the workspace.
+ * The `preferred` context (e.g. just accepted from an invitation) arrives in the URL and is
+ * forwarded to `resolve`, which is the only place that fills `highlighted`. Choosing writes
+ * `PUT /me/last-context` and enters the workspace.
  */
 export function ContextSelectPage() {
   const httpClient = useApiClient();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const authStore = useAuthSessionStore();
+  const [searchParams] = useSearchParams();
+  useDocumentTitle('Onde você quer entrar? — Ageniza');
+
+  const requestedPreferred = searchParams.get('preferred');
+  const preferred = requestedPreferred !== null && PREFERRED_PATTERN.test(requestedPreferred) ? requestedPreferred : undefined;
 
   const resolve = useQuery({
-    queryKey: ['contexts', 'resolve'],
-    queryFn: () => httpClient.request({ path: '/me/contexts/resolve', response: ContextResolveResponseSchema })
+    queryKey: ['contexts', 'resolve', preferred ?? null],
+    queryFn: () => httpClient.request({
+      path: preferred === undefined ? '/me/contexts/resolve' : `/me/contexts/resolve?preferred=${encodeURIComponent(preferred)}`,
+      response: ContextResolveResponseSchema
+    })
   });
 
   const choose = useMutation({
@@ -44,25 +60,42 @@ export function ContextSelectPage() {
       body: context.type === 'agency'
         ? { type: 'agency' as const, agencyId: context.agencyId }
         : { type: 'client' as const, clientId: context.clientId },
-      response: NoContentResponseSchema
+      response: PutLastContextResponseSchema
     }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['contexts'] });
+      queryClient.removeQueries({ queryKey: ['contexts'] });
       navigate('/app');
+    },
+    onError: (error: unknown) => {
+      // The chosen context can stop being valid between the resolve and the click; reload the list
+      // so the dead option disappears.
+      if (error instanceof HttpClientError && error.status === 404) void queryClient.invalidateQueries({ queryKey: ['contexts'] });
     }
   });
 
   const signOut = useMutation({
-    mutationFn: () => httpClient.request({ path: '/auth/logout', method: 'POST', response: NoContentResponseSchema }),
+    mutationFn: () => httpClient.request({ path: '/auth/logout', method: 'POST', response: AuthLogoutResponseSchema }),
     onSuccess: () => {
+      queryClient.clear();
       authStore.end();
       navigate('/entrar');
     }
   });
 
+  const decision = resolve.data?.decision;
+  // `resolve` with no context ends the session server-side (specs/auth.md section 7): go to the
+  // "no access" screen and drop the client session at once.
+  useEffect(() => {
+    if (decision === 'none') {
+      navigate('/sem-acesso', { replace: true });
+      authStore.end();
+    }
+  }, [decision, navigate, authStore]);
+
   if (resolve.isPending) {
     return <section aria-labelledby="context-select-title">
       <h1 id="context-select-title">Onde você quer entrar?</h1>
+      <LiveStatus>Carregando seus contextos…</LiveStatus>
       <div className="ui-choice-list"><Skeleton /><Skeleton /></div>
     </section>;
   }
@@ -75,28 +108,45 @@ export function ContextSelectPage() {
     </section>;
   }
 
-  // Exactly one valid context is entered without asking; none at all ends the session server-side.
+  // Exactly one valid context is entered without asking; none at all is handled by the effect above.
   if (resolve.data.decision === 'enter') return <Navigate to="/app" replace />;
-  if (resolve.data.decision === 'none') return <Navigate to="/entrar" replace />;
+  if (resolve.data.decision === 'none') return <LiveStatus>Encerrando a sessão…</LiveStatus>;
 
   const { contexts, highlighted } = resolve.data;
   const highlightedKey = highlighted === null ? null : contextKey(highlighted);
 
+  const actionError = choose.isError
+    ? 'Não foi possível entrar nesse contexto. Tente de novo.'
+    : signOut.isError
+      ? 'Não foi possível sair. Tente de novo.'
+      : undefined;
+  const retryAction = (): void => {
+    if (choose.isError && choose.variables !== undefined) choose.mutate(choose.variables);
+    else if (signOut.isError) signOut.mutate();
+  };
+
   return <section aria-labelledby="context-select-title">
     <h1 id="context-select-title">Onde você quer entrar?</h1>
+    {actionError !== undefined && <div role="alert">
+      <p>{actionError}</p>
+      <Button onClick={retryAction}>Tentar de novo</Button>
+    </div>}
     <ul className="ui-choice-list">
-      {contexts.map((context) => (
-        <li key={contextKey(context)}>
+      {contexts.map((context) => {
+        const isHighlighted = contextKey(context) === highlightedKey;
+        return <li key={contextKey(context)}>
           <ChoiceCard
             title={contextTitle(context)}
             description={contextDescription(context)}
-            highlighted={contextKey(context) === highlightedKey}
+            highlighted={isHighlighted}
+            badge={isHighlighted ? 'Sugerido' : undefined}
+            aria-current={isHighlighted ? 'true' : undefined}
             disabled={choose.isPending}
             aria-busy={choose.isPending && choose.variables === context ? true : undefined}
             onClick={() => choose.mutate(context)}
           />
-        </li>
-      ))}
+        </li>;
+      })}
     </ul>
     <Button variant="ghost" onClick={() => signOut.mutate()} disabled={signOut.isPending}>Sair</Button>
   </section>;

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { AuthNoContentResponseSchema } from './auth.js';
+
 /** An agency context the current user may enter (owner or an active membership). */
 export const AgencyContextSchema = z.object({
   type: z.literal('agency'),
@@ -67,6 +69,9 @@ export const PutLastContextRequestSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('agency'), agencyId: z.string().uuid() }).strict(),
   z.object({ type: z.literal('client'), clientId: z.string().uuid() }).strict()
 ]);
+
+/** `PUT /me/last-context` answers 204 with no body, like the other no-content routes. */
+export const PutLastContextResponseSchema = AuthNoContentResponseSchema;
 
 export type AgencyContext = z.infer<typeof AgencyContextSchema>;
 export type ClientContext = z.infer<typeof ClientContextSchema>;
