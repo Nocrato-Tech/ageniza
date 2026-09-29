@@ -17,7 +17,7 @@ response bodies are validated against `packages/contracts/src/auth.ts` with `par
 | `POST /auth/logout-all` | — (session cookie) | `204`, revokes every session for the user; audits `auth.logout_all` | `401 UNAUTHENTICATED` |
 | `GET /auth/session` | — (session cookie) | `200 { user: { id, name, email }, session: { expiresAt } }` | `401 UNAUTHENTICATED`; `401 SESSION_EXPIRED` |
 | `POST /auth/password/forgot` | `{ email }` | always `202 {}` | `429 RATE_LIMITED` |
-| `POST /auth/password/reset` | `{ token, newPassword }` | `204`, revokes every session for the user; audits `auth.password_reset` | `400 INVALID_LINK`; `400 VALIDATION_ERROR` |
+| `POST /auth/password/reset` | `{ token, newPassword, inviteToken? }` | `200 { signedIn: true }` (with a new session cookie) or `200 { signedIn: false, reason }` (no cookie; `reason` is `'NO_CONTEXT_ACCESS'` or `'SIGN_IN_REQUIRED'`); revokes every previous session for the user either way; audits `auth.password_reset` | `400 INVALID_LINK`; `400 VALIDATION_ERROR` |
 
 Login failure (wrong password vs. unknown email) is byte-for-byte identical, so a client cannot
 enumerate accounts. `password/reset` returns the same `INVALID_LINK` whether the token is unknown,
@@ -59,6 +59,29 @@ this same session **before** ever calling `GET /me/contexts/resolve`. Calling `r
 the session on sight (`decision: 'none'`, same as any other zero-context session), and the person
 would need to log in again with the token to retry. Once `accept` succeeds, the account has a real
 context and an ordinary login (no `inviteToken` needed) works from then on.
+
+**`password/reset` always authenticates (issue #175, 2026-09-29 decision "O reset de senha sempre
+autentica, exceto sem nenhum contexto").** The reset already ended every previous session
+(`revokeSessionsOnPasswordReset`); after that, `routes.ts` signs the account back in with the new
+password, reusing the same `signInEmail` mechanism the invite-continuation branch always used, and
+applies the same zero-context gate login has (issue #68): with a valid `inviteToken` continuation
+the session is kept unconditionally (still contextless, same rule as login above); otherwise
+`countValidContexts` decides, **counted before signing in** — at least one context signs the
+account in and responds `200 { signedIn: true }` with a cookie; a **confirmed** zero count never
+attempts a sign-in at all and responds `200 { signedIn: false, reason: 'NO_CONTEXT_ACCESS' }`, no
+cookie. An invalid/expired/used reset token is unaffected: it still gets the generic
+`400 INVALID_LINK`, no session ever created.
+
+**`reason: 'SIGN_IN_REQUIRED'` (2026-09-29 security review of PR #176, achado 1 and 2).** Counting
+contexts before signing in matters for a second reason beyond avoiding a create-then-revoke: it
+keeps `NO_CONTEXT_ACCESS` reserved for a *confirmed* zero count. Anything else that stops a session
+from being created — the account no longer being identifiable, the context count itself failing, or
+`signInEmail` failing (including the race of two valid reset tokens for the same account, where the
+second call's `newPassword` no longer matches the hash the first call just wrote) — responds
+`200 { signedIn: false, reason: 'SIGN_IN_REQUIRED' }` instead. The password still changed in every
+one of these cases; the distinction is only ever about the client's next step: `/sem-acesso` for
+`NO_CONTEXT_ACCESS`, `/entrar` for `SIGN_IN_REQUIRED`. Every such failure is logged, structured,
+without the password, the reset token, or the e-mail.
 
 ## Composition
 
