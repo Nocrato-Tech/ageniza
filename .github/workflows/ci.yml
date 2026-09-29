@@ -126,7 +126,9 @@ jobs:
       - name: Verify the generated API documentation is current
         run: |
           pnpm api:docs
-          if [ -n "$(git status --porcelain -- docs/api)" ]; then
+          # Content-based on purpose: `git status` can report a stat-dirty file whose bytes match
+          # the index (racy timestamp right after checkout), which would fail this check falsely.
+          if ! git diff --exit-code -- docs/api || [ -n "$(git ls-files --others --exclude-standard -- docs/api)" ]; then
             echo 'docs/api is stale; run pnpm api:docs and commit the result.' >&2
             git --no-pager diff -- docs/api
             exit 1
