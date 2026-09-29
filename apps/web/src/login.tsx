@@ -88,7 +88,11 @@ export function LoginPage() {
     event.preventDefault();
     setFormError(undefined);
     setResolveError(undefined);
-    const validation = validateForm(AuthLoginRequestSchema, { email, password });
+    const validation = validateForm(AuthLoginRequestSchema, {
+      email,
+      password,
+      ...(inviteToken === undefined ? {} : { inviteToken })
+    });
     if (!validation.success) {
       setErrors({
         email: validation.errors.email === undefined ? undefined : 'Informe um e-mail válido.',
@@ -103,9 +107,7 @@ export function LoginPage() {
       await httpClient.request({
         path: '/auth/login',
         method: 'POST',
-        // `AuthLoginRequestSchema` will carry `inviteToken` once #175 lands; until then the field is
-        // sent beside the validated body (the API accepts it).
-        body: inviteToken === undefined ? validation.data : { ...validation.data, inviteToken },
+        body: validation.data,
         response: AuthLoginResponseSchema
       });
     } catch (error: unknown) {
