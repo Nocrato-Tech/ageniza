@@ -1085,3 +1085,15 @@ A resposta passa a ser sempre `200`, com corpo que diz o que aconteceu: `{ signe
 A correção: a contagem de contextos passa a rodar **antes** da assinatura, não depois — uma conta confirmada em zero contextos nunca chega a ter sessão criada para revogar, o que também fecha o caso da sessão órfã. E `signedIn: false` passa a ter dois motivos: `NO_CONTEXT_ACCESS` fica reservado ao zero **confirmado** pela contagem; qualquer outra causa que impeça a sessão — conta não identificável, contagem falhando, ou a própria assinatura falhando — usa `reason: 'SIGN_IN_REQUIRED'`, e a tela leva a `/entrar` em vez de `/sem-acesso`. A senha muda nos dois casos; a distinção é só sobre o próximo passo da pessoa. `AuthPasswordResetResponseSchema`, `specs/auth.md` (regra 8a, §6, §7) e o README do módulo `auth` foram atualizados juntos. Toda falha nesse caminho passa a gerar um log estruturado (sem senha, token ou e-mail), onde antes o `catch` era silencioso.
 
 **Origem da correção.** Revisão de segurança do PR #176 (issue #175); decisão do dono do produto em sessão, em 2026-09-29.
+
+---
+
+## 2026-09-29 — A área da agência vive em `/agencia/:agenciaId/...` no navegador
+
+**Contexto.** A decisão de 2026-09-15 manda o contexto na rota e nunca na sessão, mas ela falava da API (`/agencies/:agencyId/...`). No navegador, as SPECs de colaboradores e clientes usavam `/colaboradores` e `/clientes/:clienteId` sem contexto, e depois do login a pessoa caía em `/app`, um stub. A casca da área da agência (#181) não podia começar sem essa forma definida.
+
+**Decisão.** Toda tela da área da agência fica sob **`/agencia/:agenciaId/...`**, com as rotas em português (`/agencia/:agenciaId/colaboradores`, `/agencia/:agenciaId/clientes/:clienteId/<aba>`). É o espelho do `/portal/:clienteId` já decidido para o cliente. A página inicial da agência é `/agencia/:agenciaId`, e `/app` deixa de ser destino.
+
+**Consequência.** Duas abas com duas agências funcionam lado a lado sem interferência, e o link de qualquer tela carrega o contexto. As seções 7 de `specs/colaboradores.md` e `specs/clientes.md` passam a ser lidas com esse prefixo, e a #181 corrige o texto delas no mesmo PR. Trocar a agência na URL troca o contexto inteiro, inclusive o cache.
+
+**Origem.** Decidido pelo dono do produto em sessão, a partir da #181.
