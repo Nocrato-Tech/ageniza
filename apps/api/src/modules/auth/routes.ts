@@ -78,6 +78,9 @@ const noContextAccessError = {
   message: 'Sua conta não tem acesso a nenhum espaço de trabalho. Fale com quem administra a agência para receber um convite.'
 } as const;
 
+const authLoginWithInvitationSchema = AuthLoginRequestSchema.extend({
+  inviteToken: z.string().min(1).max(2_048).optional()
+}).strict();
 const authPasswordForgotWithInvitationSchema = AuthPasswordForgotRequestSchema.extend({
   inviteToken: z.string().min(1).max(2_048).optional()
 }).strict();
@@ -94,7 +97,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
   const requireSession = createRequireSession({ auth: dependencies.auth });
 
   app.post('/auth/login', perIpRateLimit(AUTH_RATE_LIMITS.login.ip), async (request, reply) => {
-    const body = parseRequest(AuthLoginRequestSchema, request.body);
+    const body = parseRequest(authLoginWithInvitationSchema, request.body);
     dependencies.limiter.consume('login', normalizeRateLimitIp(request.ip), body.email);
 
     let headers: Headers;
@@ -110,10 +113,14 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     }
 
     // Credential correct; deny only now, per the 2026-09-24 decision (autenticar primeiro, negar
-    // depois). The session Better Auth just created above is revoked before it ever reaches the
-    // client: no cookie is ever applied on this path, and no row survives in `auth."session"`.
+    // depois). A zero-context account still gets a session when `inviteToken` continues straight
+    // into accepting an existing-account invitation addressed to it (2026-09-29 decision) — the
+    // invite screen (issue #76) must call `POST /invitations/:token/accept` with that same session
+    // before ever calling `resolve`, which ends a still-zero-context session on sight. Otherwise
+    // the session Better Auth just created above is revoked before it ever reaches the client: no
+    // cookie is ever applied on this path, and no row survives in `auth."session"`.
     const contextCount = await dependencies.countValidContexts(response.user.id);
-    if (contextCount === 0) {
+    if (contextCount === 0 && !(await grantsZeroContextAccessViaInvite(dependencies, body.inviteToken, body.email))) {
       await revokeJustCreatedSession(dependencies.auth, response.token, request);
       throw new HttpError(noContextAccessError);
     }
@@ -242,6 +249,27 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
 
     return reply.status(204).send(parseResponse(AuthPasswordResetResponseSchema, undefined));
   });
+};
+
+/**
+ * Whether a zero-context login may still get a session because it continues straight into
+ * accepting an existing-account invitation (2026-09-29 decision, complementing the 2026-09-24
+ * "credencial correta sem nenhum contexto não cria sessão"): an account removed from every agency
+ * and re-invited has zero contexts until it accepts, and accepting needs a session. Reuses the
+ * same `app_private.invitation_by_token_hash` validity check (`invitationTokenLookup`, also used
+ * by `password/forgot` and `password/reset` above) the invitations module itself relies on — never
+ * re-implemented here: not used, not revoked, not expired, agency active, and client active when
+ * the invite is one. An invalid, mismatched-email, or absent token is indistinguishable from one
+ * another (B1): none of them ever changes the response the caller sees.
+ */
+const grantsZeroContextAccessViaInvite = async (
+  dependencies: AuthModuleDependencies,
+  inviteToken: string | undefined,
+  email: string
+): Promise<boolean> => {
+  if (inviteToken === undefined || dependencies.invitationTokenLookup === undefined) return false;
+  const invitation = await dependencies.invitationTokenLookup(inviteToken).catch(() => undefined);
+  return invitation?.valid === true && invitation.email === email;
 };
 
 /**
