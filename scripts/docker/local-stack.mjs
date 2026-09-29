@@ -6,27 +6,47 @@ import { dirname, resolve } from 'node:path';
 const command = process.argv[2];
 const localStorageEnvFile = resolve('.local/storage.env');
 
+// Hex, not base64url: its alphabet contains '-', and a secret starting with one is read as a
+// flag by every CLI that receives it as an argument (mc aborts with "flag provided but not
+// defined"), which made roughly one run in sixty fail.
+const generateCredentialPair = (prefix) => ({
+  accessKeyId: `${prefix}-${randomBytes(12).toString('hex')}`,
+  secretAccessKey: randomBytes(32).toString('hex')
+});
+
+const parseEnvFile = (content) => Object.fromEntries(content
+  .split(/\r?\n/)
+  .filter(Boolean)
+  .map((line) => {
+    const separator = line.indexOf('=');
+    return [line.slice(0, separator), line.slice(separator + 1)];
+  }));
+
+/**
+ * Generates and persists local credentials for every storage destination this project needs:
+ * the media bucket (`R2_*`) and, since issue #100, the separate identity bucket
+ * (`IDENTITY_STORAGE_*`). Never touches a key that already exists -- a dev who ran
+ * `pnpm storage:start` before issue #100 still has a file missing the `IDENTITY_STORAGE_*` pair,
+ * and re-running this must fill only the gap, never rotate what is already there.
+ */
 const ensureLocalStorageEnvironment = () => {
-  if (!existsSync(localStorageEnvFile)) {
-    mkdirSync(dirname(localStorageEnvFile), { recursive: true });
-    const accessKeyId = `local-${randomBytes(12).toString('hex')}`;
-    // Hex, not base64url: its alphabet contains '-', and a secret starting with one is read as a
-    // flag by every CLI that receives it as an argument (mc aborts with "flag provided but not
-    // defined"), which made roughly one run in sixty fail.
-    const secretAccessKey = randomBytes(32).toString('hex');
-    writeFileSync(localStorageEnvFile, [
-      `R2_ACCESS_KEY_ID=${accessKeyId}`,
-      `R2_SECRET_ACCESS_KEY=${secretAccessKey}`,
-      ''
-    ].join('\n'), { mode: 0o600 });
+  const existingValues = existsSync(localStorageEnvFile) ? parseEnvFile(readFileSync(localStorageEnvFile, 'utf8')) : {};
+  const values = { ...existingValues };
+  let changed = false;
+  for (const [accessKeyIdKey, secretKey, accessKeyIdPrefix] of [
+    ['R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'local'],
+    ['IDENTITY_STORAGE_ACCESS_KEY_ID', 'IDENTITY_STORAGE_SECRET_ACCESS_KEY', 'local-identity']
+  ]) {
+    if (values[accessKeyIdKey] !== undefined && values[secretKey] !== undefined) continue;
+    const pair = generateCredentialPair(accessKeyIdPrefix);
+    values[accessKeyIdKey] = pair.accessKeyId;
+    values[secretKey] = pair.secretAccessKey;
+    changed = true;
   }
-  const values = Object.fromEntries(readFileSync(localStorageEnvFile, 'utf8')
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => {
-      const separator = line.indexOf('=');
-      return [line.slice(0, separator), line.slice(separator + 1)];
-    }));
+  if (changed) {
+    mkdirSync(dirname(localStorageEnvFile), { recursive: true });
+    writeFileSync(localStorageEnvFile, [...Object.entries(values).map(([key, value]) => `${key}=${value}`), ''].join('\n'), { mode: 0o600 });
+  }
   return { ...process.env, ...values };
 };
 

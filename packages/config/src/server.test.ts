@@ -25,6 +25,12 @@ const productionStorageSettings = {
   R2_SECRET_ACCESS_KEY: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4a1b2c3d4e5f6',
   R2_BUCKET: 'ageniza-media'
 };
+const productionIdentityStorageSettings = {
+  IDENTITY_STORAGE_ENDPOINT: 'https://accountid.r2.cloudflarestorage.com',
+  IDENTITY_STORAGE_ACCESS_KEY_ID: 'production-identity-access-key-id',
+  IDENTITY_STORAGE_SECRET_ACCESS_KEY: 'b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4a1b2c3d4e5f6a1',
+  IDENTITY_STORAGE_BUCKET: 'ageniza-identity'
+};
 
 describe('server configuration', () => {
   it('loads typed local API and worker configuration', () => {
@@ -72,7 +78,8 @@ describe('server configuration', () => {
       API_CORS_ORIGINS: 'https://app.ageniza.example',
       SMTP_URL: 'smtps://user:key@smtp.example.com:465',
       EMAIL_FROM: 'no-reply@ageniza.example',
-      ...productionStorageSettings
+      ...productionStorageSettings,
+      ...productionIdentityStorageSettings
     }).smtpUrl).toBe('smtps://user:key@smtp.example.com:465');
   });
 
@@ -116,7 +123,8 @@ describe('server configuration', () => {
       DATABASE_URL: productionDatabaseUrl,
       API_CORS_ORIGINS: 'https://app.ageniza.example',
       ...productionEmailSettings,
-      ...productionStorageSettings
+      ...productionStorageSettings,
+      ...productionIdentityStorageSettings
     };
     expect(() => loadApiConfig({ ...production, APP_PUBLIC_URL: 'http://app.ageniza.example' })).toThrow('must use HTTPS');
     expect(loadApiConfig({ ...production, APP_PUBLIC_URL: 'https://app.ageniza.example' }).appPublicUrl).toBe('https://app.ageniza.example');
@@ -156,7 +164,8 @@ describe('server configuration', () => {
       API_CORS_ORIGINS: 'https://app.ageniza.example',
       SENTRY_DSN: 'https://public@sentry.example/1',
       ...productionEmailSettings,
-      ...productionStorageSettings
+      ...productionStorageSettings,
+      ...productionIdentityStorageSettings
     };
     expect(loadApiConfig(production).sentryDsn).toBe('https://public@sentry.example/1');
     expect(() => loadApiConfig({ ...production, SENTRY_DSN: 'http://public@sentry.example/1' })).toThrow('must use HTTPS');
@@ -176,7 +185,8 @@ describe('server configuration', () => {
       APP_PUBLIC_URL: 'https://app.ageniza.example',
       API_CORS_ORIGINS: 'https://app.ageniza.example',
       ...productionEmailSettings,
-      ...productionStorageSettings
+      ...productionStorageSettings,
+      ...productionIdentityStorageSettings
     }).environment).toBe('production');
     expect(() => loadApiConfig({
       ...localEnvironment,
@@ -234,7 +244,7 @@ describe('server configuration', () => {
     expect(() => loadApiConfig({ ...productionWithoutEmail, SMTP_URL: productionEmailSettings.SMTP_URL })).toThrow(
       'must be set together with EMAIL_FROM'
     );
-    expect(loadApiConfig({ ...productionWithoutEmail, ...productionEmailSettings, ...productionStorageSettings }).smtpUrl).toBe(productionEmailSettings.SMTP_URL);
+    expect(loadApiConfig({ ...productionWithoutEmail, ...productionEmailSettings, ...productionStorageSettings, ...productionIdentityStorageSettings }).smtpUrl).toBe(productionEmailSettings.SMTP_URL);
     // Local/test stay unaffected: SMTP remains fully optional there.
     expect(loadApiConfig(localEnvironment).smtpUrl).toBeUndefined();
   });
@@ -247,7 +257,8 @@ describe('server configuration', () => {
       APP_PUBLIC_URL: 'https://app.ageniza.example',
       API_CORS_ORIGINS: 'https://app.ageniza.example',
       ...productionEmailSettings,
-      ...productionStorageSettings
+      ...productionStorageSettings,
+      ...productionIdentityStorageSettings
     };
     // localEnvironment's own secret contains both "placeholder" and "change-me".
     expect(() => loadApiConfig(production)).toThrow('BETTER_AUTH_SECRET');
@@ -330,7 +341,7 @@ describe('server configuration', () => {
     };
     expect(() => loadApiConfig(productionWithoutStorage)).toThrow('required in production');
     expect(() => loadApiConfig({ ...productionWithoutStorage, R2_ENDPOINT: productionStorageSettings.R2_ENDPOINT })).toThrow('must be set together');
-    expect(loadApiConfig({ ...productionWithoutStorage, ...productionStorageSettings }).storage?.bucket).toBe('ageniza-media');
+    expect(loadApiConfig({ ...productionWithoutStorage, ...productionStorageSettings, ...productionIdentityStorageSettings }).storage?.bucket).toBe('ageniza-media');
     expect(() => loadApiConfig({ ...productionWithoutStorage, ...productionStorageSettings, R2_ENDPOINT: 'http://accountid.r2.cloudflarestorage.com' })).toThrow('HTTPS');
     for (const marker of ['placeholder', 'change-me', 'example']) {
       expect(() => loadApiConfig({
@@ -404,5 +415,101 @@ describe('server configuration', () => {
       MEDIA_MULTIPART_THRESHOLD_BYTES: String(8 * 1024 * 1024),
       MEDIA_MULTIPART_PART_BYTES: String(16 * 1024 * 1024)
     })).toThrow('MEDIA_MULTIPART_PART_BYTES');
+  });
+
+  it('leaves identity storage undefined locally and loads it with defaults when the four settings are present (issue #100)', () => {
+    expect(loadApiConfig(localEnvironment).identityStorage).toBeUndefined();
+    const withIdentityStorage = {
+      ...localEnvironment,
+      APP_CONTAINER_LOCAL: 'true',
+      IDENTITY_STORAGE_ENDPOINT: 'http://localstack:4566',
+      IDENTITY_STORAGE_ACCESS_KEY_ID: 'local-access-key',
+      IDENTITY_STORAGE_SECRET_ACCESS_KEY: 'local-secret-key'
+    };
+    expect(() => loadApiConfig(withIdentityStorage)).toThrow('must be set together');
+    expect(loadApiConfig({ ...withIdentityStorage, IDENTITY_STORAGE_BUCKET: 'ageniza-identity-local' }).identityStorage).toMatchObject({
+      endpoint: 'http://localstack:4566',
+      publicEndpoint: 'http://localstack:4566',
+      region: 'auto',
+      accessKeyId: 'local-access-key',
+      secretAccessKey: 'local-secret-key',
+      bucket: 'ageniza-identity-local',
+      forcePathStyle: true,
+      downloadUrlExpirySeconds: 300,
+      maxImageBytes: 5 * 1024 * 1024
+    });
+    // The media storage config stays fully independent: unset here, unaffected by identity storage.
+    expect(loadApiConfig({ ...withIdentityStorage, IDENTITY_STORAGE_BUCKET: 'ageniza-identity-local' }).storage).toBeUndefined();
+  });
+
+  it('requires the four identity storage settings together in production, keeps its own bucket distinct from media, and rejects a placeholder secret (issue #100)', () => {
+    const productionWithoutIdentityStorage = {
+      ...localEnvironment,
+      BETTER_AUTH_SECRET: productionAuthSecret,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl,
+      APP_PUBLIC_URL: 'https://app.ageniza.example',
+      API_CORS_ORIGINS: 'https://app.ageniza.example',
+      ...productionEmailSettings,
+      ...productionStorageSettings
+    };
+    expect(() => loadApiConfig(productionWithoutIdentityStorage)).toThrow('IDENTITY_STORAGE_ENDPOINT');
+    expect(() => loadApiConfig({ ...productionWithoutIdentityStorage, IDENTITY_STORAGE_ENDPOINT: productionIdentityStorageSettings.IDENTITY_STORAGE_ENDPOINT })).toThrow('must be set together');
+    expect(loadApiConfig({ ...productionWithoutIdentityStorage, ...productionIdentityStorageSettings }).identityStorage?.bucket).toBe('ageniza-identity');
+    expect(() => loadApiConfig({ ...productionWithoutIdentityStorage, ...productionIdentityStorageSettings, IDENTITY_STORAGE_ENDPOINT: 'http://accountid.r2.cloudflarestorage.com' })).toThrow('HTTPS');
+    for (const marker of ['placeholder', 'change-me', 'example']) {
+      expect(() => loadApiConfig({
+        ...productionWithoutIdentityStorage,
+        ...productionIdentityStorageSettings,
+        IDENTITY_STORAGE_SECRET_ACCESS_KEY: `a1b2c3d4e5f6a1b2c3d4e5f6-${marker}`
+      })).toThrow(ConfigValidationError);
+    }
+    // The identity bucket must never be the same bucket as media: the whole point is separation
+    // from a per-agency, quota-limited bucket (issue #100).
+    expect(() => loadApiConfig({
+      ...productionWithoutIdentityStorage,
+      ...productionIdentityStorageSettings,
+      IDENTITY_STORAGE_BUCKET: productionStorageSettings.R2_BUCKET
+    })).toThrow('must be a different bucket than R2_BUCKET');
+    // Nor the same R2 API token: a shared access key would let a compromised credential for one
+    // destination reach the other, defeating the separation just as completely as a shared bucket.
+    expect(() => loadApiConfig({
+      ...productionWithoutIdentityStorage,
+      ...productionIdentityStorageSettings,
+      IDENTITY_STORAGE_ACCESS_KEY_ID: productionStorageSettings.R2_ACCESS_KEY_ID
+    })).toThrow('must be a different access key than R2_ACCESS_KEY_ID');
+  });
+
+  it('caps IDENTITY_MAX_IMAGE_BYTES: this upload runs through the API body parser, unlike media\'s presigned PUT (issue #100)', () => {
+    expect(loadApiConfig({
+      ...localEnvironment,
+      APP_CONTAINER_LOCAL: 'true',
+      IDENTITY_STORAGE_ENDPOINT: 'http://localstack:4566',
+      IDENTITY_STORAGE_ACCESS_KEY_ID: 'local-access-key',
+      IDENTITY_STORAGE_SECRET_ACCESS_KEY: 'local-secret-key',
+      IDENTITY_STORAGE_BUCKET: 'ageniza-identity-local',
+      IDENTITY_MAX_IMAGE_BYTES: String(10 * 1024 * 1024)
+    }).identityStorage?.maxImageBytes).toBe(10 * 1024 * 1024);
+    expect(() => loadApiConfig({
+      ...localEnvironment,
+      APP_CONTAINER_LOCAL: 'true',
+      IDENTITY_STORAGE_ENDPOINT: 'http://localstack:4566',
+      IDENTITY_STORAGE_ACCESS_KEY_ID: 'local-access-key',
+      IDENTITY_STORAGE_SECRET_ACCESS_KEY: 'local-secret-key',
+      IDENTITY_STORAGE_BUCKET: 'ageniza-identity-local',
+      IDENTITY_MAX_IMAGE_BYTES: String(10 * 1024 * 1024 + 1)
+    })).toThrow(ConfigValidationError);
+  });
+
+  it('lets the identity storage public endpoint differ from its internal endpoint, mirroring media storage (issue #100)', () => {
+    expect(loadApiConfig({
+      ...localEnvironment,
+      APP_CONTAINER_LOCAL: 'true',
+      IDENTITY_STORAGE_ENDPOINT: 'http://localstack:4566',
+      IDENTITY_STORAGE_PUBLIC_ENDPOINT: 'http://127.0.0.1:9000',
+      IDENTITY_STORAGE_ACCESS_KEY_ID: 'local-access-key',
+      IDENTITY_STORAGE_SECRET_ACCESS_KEY: 'local-secret-key',
+      IDENTITY_STORAGE_BUCKET: 'ageniza-identity-local'
+    }).identityStorage).toMatchObject({ endpoint: 'http://localstack:4566', publicEndpoint: 'http://127.0.0.1:9000' });
   });
 });
