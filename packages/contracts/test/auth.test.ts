@@ -53,13 +53,17 @@ describe('authentication contracts', () => {
     expect(() => AuthPasswordForgotRequestSchema.parse({ email: 'person@example.test', inviteToken: '' })).toThrow();
   });
 
-  it('models both password/reset response shapes (issue #175)', () => {
+  it('models the three password/reset response shapes (issue #175, PR #176 security review)', () => {
     expect(AuthPasswordResetResponseSchema.parse({ signedIn: true })).toEqual({ signedIn: true });
     expect(AuthPasswordResetResponseSchema.parse({ signedIn: false, reason: 'NO_CONTEXT_ACCESS' })).toEqual({
       signedIn: false, reason: 'NO_CONTEXT_ACCESS'
     });
+    expect(AuthPasswordResetResponseSchema.parse({ signedIn: false, reason: 'SIGN_IN_REQUIRED' })).toEqual({
+      signedIn: false, reason: 'SIGN_IN_REQUIRED'
+    });
     expect(() => AuthPasswordResetResponseSchema.parse({ signedIn: true, reason: 'NO_CONTEXT_ACCESS' })).toThrow();
     expect(() => AuthPasswordResetResponseSchema.parse({ signedIn: false })).toThrow();
+    expect(() => AuthPasswordResetResponseSchema.parse({ signedIn: false, reason: 'SOMETHING_ELSE' })).toThrow();
     expect(() => AuthPasswordResetResponseSchema.parse(undefined)).toThrow();
   });
 
