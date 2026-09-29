@@ -17,7 +17,8 @@ import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
 
 const INVITATION_INVALID = 'Este convite não é mais válido';
-const RESOLVE_FAILED = 'Não foi possível carregar seus contextos. Tente de novo.';
+const ACCEPT_FAILED = 'Não foi possível aceitar o convite. Tente de novo.';
+const RESOLVE_FAILED = 'O convite foi aceito, mas não foi possível carregar seus contextos. Tente de novo.';
 
 /**
  * `/convite/:token`, one route with two states chosen by `accountExists` of `GET /invitations/:token`
@@ -37,7 +38,10 @@ export function InvitationPage() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; password?: string }>({});
   const [formError, setFormError] = useState<string | undefined>();
-  const [notice, setNotice] = useState<string | undefined>();
+  const [resolveError, setResolveError] = useState<string | undefined>();
+  const [mismatch, setMismatch] = useState(false);
+  const [accepted, setAccepted] = useState(false);
+  const [resolving, setResolving] = useState(false);
   useDocumentTitle('Convite — Ageniza');
 
   const preview = useQuery({
@@ -45,38 +49,54 @@ export function InvitationPage() {
     queryFn: () => httpClient.request({ path: `/invitations/${encodeURIComponent(token)}`, response: InvitationPreviewResponseSchema })
   });
 
-  /** After acceptance the session exists; only then the resolve decides the destination. */
-  const routeAfterAccept = async (alreadyMember: boolean): Promise<void> => {
-    if (alreadyMember) setNotice('Você já tinha acesso a este espaço.');
-    await authStore.refresh();
+  /** The acceptance succeeded; only the resolve is left, and it is repeatable on its own. */
+  const runResolve = async (): Promise<void> => {
+    setResolveError(undefined);
+    setResolving(true);
     try {
       const resolve = await httpClient.request({ path: '/me/contexts/resolve', response: ContextResolveResponseSchema });
       if (resolve.decision === 'none') { authStore.end(); queryClient.clear(); navigate('/sem-acesso', { replace: true }); return; }
       navigate(resolve.decision === 'select' ? '/contextos' : '/app', { replace: true });
     } catch {
-      setFormError(RESOLVE_FAILED);
+      setResolveError(RESOLVE_FAILED);
+    } finally {
+      setResolving(false);
     }
+  };
+
+  const routeAfterAccept = async (): Promise<void> => {
+    setAccepted(true);
+    // The new session may belong to a different account; drop the previous account's cache first.
+    queryClient.clear();
+    await authStore.refresh();
+    await runResolve();
   };
 
   const accept = useMutation({
     mutationFn: () => httpClient.request({ path: `/invitations/${encodeURIComponent(token)}/accept`, method: 'POST', response: InvitationAcceptResponseSchema }),
-    onSuccess: (result) => routeAfterAccept(result.status === 'already_member'),
-    onError: () => setFormError('Não foi possível aceitar o convite. Tente de novo.')
+    onSuccess: () => routeAfterAccept(),
+    onError: (error: unknown) => {
+      if (error instanceof HttpClientError && error.status === 403 && error.code === 'INVITATION_ACCOUNT_MISMATCH') { setMismatch(true); return; }
+      if (error instanceof HttpClientError && error.status === 410) { setAccepted(false); void preview.refetch(); return; }
+      setFormError(ACCEPT_FAILED);
+    }
   });
 
   const createAccount = useMutation({
     mutationFn: (body: { name: string; password: string; acceptTerms: true }) =>
       httpClient.request({ path: `/invitations/${encodeURIComponent(token)}/accept-new-account`, method: 'POST', body, response: InvitationAcceptNewAccountResponseSchema }),
-    onSuccess: () => routeAfterAccept(false),
+    onSuccess: () => routeAfterAccept(),
     onError: (error: unknown) => {
       if (error instanceof HttpClientError && error.status === 410) { void preview.refetch(); return; }
+      // The account already exists (created in another tab): show the existing-account state.
+      if (error instanceof HttpClientError && error.status === 409 && error.code === 'ACCOUNT_EXISTS') { void preview.refetch(); return; }
       setFormError('Não foi possível criar a conta. Tente de novo.');
     }
   });
 
   const goToLogin = (): void => {
     navigate('/entrar', {
-      state: { inviteToken: token, sessionDestination: { path: `/convite/${token}`, savedAt: Date.now() } }
+      state: { inviteToken: token, sessionDestination: { path: `/convite/${encodeURIComponent(token)}`, savedAt: Date.now() } }
     });
   };
 
@@ -96,13 +116,26 @@ export function InvitationPage() {
     if (!validation.success) {
       setErrors({
         name: validation.errors.name === undefined ? undefined : 'Informe o seu nome.',
-        password: validation.errors.password === undefined ? undefined : 'A senha tem no mínimo 10 caracteres.'
+        password: validation.errors.password === undefined ? undefined : (password.length > 128 ? 'A senha pode ter no máximo 128 caracteres.' : 'A senha tem no mínimo 10 caracteres.')
       });
       return;
     }
     setErrors({});
     createAccount.mutate(validation.data);
   };
+
+  // Once the invitation is accepted, the preview no longer matters: show the resolve stage.
+  if (accepted) {
+    return <section className="form-panel" aria-labelledby="invite-title">
+      <h1 id="invite-title">Você foi convidado</h1>
+      {resolveError === undefined
+        ? <LiveStatus>Entrando…</LiveStatus>
+        : <div role="alert">
+          <p>{resolveError}</p>
+          <Button onClick={() => { void runResolve(); }} loading={resolving}>Tentar de novo</Button>
+        </div>}
+    </section>;
+  }
 
   if (preview.isPending) {
     return <section className="form-panel" aria-labelledby="invite-title">
@@ -137,17 +170,21 @@ export function InvitationPage() {
       {client !== null && <><dt>Cliente</dt><dd>{client.name}</dd></>}
       <dt>Convite enviado para</dt><dd>{email}</dd>
     </dl>
-    {notice !== undefined && <p role="status">{notice}</p>}
 
     {accountExists
-      ? <div className="form-actions">
-        <Button
-          onClick={() => { if (session.isAuthenticated) accept.mutate(); else goToLogin(); }}
-          loading={accept.isPending}
-        >Aceitar convite</Button>
-        <Button variant="ghost" onClick={() => { void enterWithAnotherAccount(); }}>Entrar com outra conta</Button>
-        {formError !== undefined && <p role="alert">{formError}</p>}
-      </div>
+      ? mismatch
+        ? <div role="alert">
+          <p>Você está conectado com outra conta. Entre com o e-mail do convite.</p>
+          <Button onClick={() => { void enterWithAnotherAccount(); }}>Entrar com outra conta</Button>
+        </div>
+        : <div className="form-actions">
+          <Button
+            onClick={() => { if (session.isAuthenticated) accept.mutate(); else goToLogin(); }}
+            loading={accept.isPending}
+          >Aceitar convite</Button>
+          <Button variant="ghost" onClick={() => { void enterWithAnotherAccount(); }}>Entrar com outra conta</Button>
+          {formError !== undefined && <p role="alert">{formError}</p>}
+        </div>
       : <form className="form-stack" onSubmit={onSubmitNewAccount} noValidate>
         <div className="form-field">
           <label htmlFor="invite-name">Nome</label>
@@ -159,9 +196,9 @@ export function InvitationPage() {
           <label htmlFor="invite-password">Senha</label>
           <TextInput id="invite-password" name="password" type="password" autoComplete="new-password" value={password}
             onChange={(event) => setPassword(event.target.value)} aria-invalid={errors.password !== undefined}
-            aria-describedby="invite-password-help" />
+            aria-describedby={errors.password === undefined ? 'invite-password-help' : 'invite-password-help invite-password-error'} />
           <p id="invite-password-help" className="form-hint">Mínimo de 10 caracteres</p>
-          {errors.password !== undefined && <FieldMessage>{errors.password}</FieldMessage>}
+          {errors.password !== undefined && <FieldMessage id="invite-password-error">{errors.password}</FieldMessage>}
         </div>
         <label className="form-check">
           <input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} />
