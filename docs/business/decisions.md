@@ -595,6 +595,24 @@ Ganha-se uma propriedade que vale registrar: `colaborador.atribuir_admin` é uma
 
 **Origem.** Decidido em sessão (entrevista do módulo de colaboradores).
 
+**Nota de implementação (2026-09-28, issue [#94](https://github.com/Nocrato-Tech/ageniza/issues/94)).** A migration `20260928000000_collaborator_permissions_and_admin_grant.mjs` cria `agency_memberships_update` — a policy de `UPDATE` que faltava — e substitui `invitations_insert`. A checagem do papel `admin` ficou numa função nova, `app_private.is_admin_role`, reaproveitada nos dois pontos onde um papel é concedido, como a decisão pedia.
+
+**Correção pós-revisão (2026-09-29, PR [#159](https://github.com/Nocrato-Tech/ageniza/pull/159)).** A revisão de segurança do PR achou dois defeitos na primeira versão, ambos na mesma migration (ainda não mergeada):
+
+1. O grant de `UPDATE` continuava de tabela inteira, então `agency_id`/`user_id`/`id` seguiam graváveis; qualquer ator com uma permissão do módulo movia um vínculo entre agências ou usuários sem tocar `role_id`/`job_title`/`status`, contornando o gate por completo. Corrigido com `revoke update` + `grant update (role_id, job_title, status, updated_at)`, no mesmo padrão já usado por `client_memberships` (2026-09-20) e `invitations` (2026-09-25).
+2. A comparação valor-antigo/valor-novo, feita por sub-select sem `FOR UPDATE` na `WITH CHECK`, lia o snapshot do início do statement — correto contra um único escritor, mas sob `READ COMMITTED` com duas transações concorrentes o `UPDATE` reaplica via EvalPlanQual sobre a versão mais nova, e o sub-select continua lendo a antiga. Um Admin sem `colaborador.atribuir_admin` conseguia reconceder `admin` logo depois que o Owner rebaixava o mesmo vínculo. Corrigido movendo a comparação para um trigger `BEFORE UPDATE` (`app_private.check_agency_membership_update`), cujo `OLD` é a linha realmente travada para a escrita, não uma leitura independente.
+
+A `WITH CHECK` ficou só com a filtragem de linha (mesma condição da `USING`); toda a lógica que depende do valor novo — inclusive o escopo de `role_id` por agência (também endereçado aqui, e replicado em `invitations_insert`) — está no trigger. Uma consequência visível nos testes: o trigger lança uma exceção com `errcode 42501` e mensagem própria em vez do texto "row-level security" do Postgres, então `tenancy.integration.test.ts` passou a casar contra essas mensagens onde antes usava `/row-level security/`.
+
+**Segunda correção pós-revisão (2026-09-29, mesma PR).** A re-revisão achou que o trigger, sendo `security definer` e decidindo o bypass administrativo pela ausência de `app.user_id`, tinha dois defeitos:
+
+1. **[ALTO] Regressão no aceite de convite.** `app_private.accept_invitation` também é `security definer` e reativa um vínculo `removed` (ou grava o vínculo do novo Owner) via `INSERT ... ON CONFLICT DO UPDATE` — o que dispara o trigger com `app.user_id` igual ao **convidado**, não a um ator com `colaborador.alterar_papel`. Aceitar um reconvite como colaborador removido, ou uma ativação de agência quando o convidado já tinha uma linha na agência, passou a devolver erro em vez de reativar o vínculo.
+2. **[MÉDIO] O bypass dependia do GUC, não do papel.** `set_config` é `PUBLIC`, então `ageniza_app` podia limpar `app.user_id` **no meio da própria instrução** (dentro do subselect da cláusula `SET`, que o Postgres avalia depois da `USING` e antes do trigger). Hoje isso não é explorável porque a `WITH CHECK`, reavaliada depois com o GUC já vazio, ainda barra — mas a segurança do trigger passava a depender desse detalhe de ordem de avaliação, não de uma verificação própria.
+
+**Correção.** O trigger deixou de ser `security definer` (roda como quem chama, `security invoker`, o padrão) e o critério do early return trocou de "há `app.user_id`?" para "`current_user = 'ageniza_app'`?". `current_user` é o papel da própria conexão — imutável no meio de uma instrução, ao contrário do GUC — e diferencia exatamente o que importa: o dono do schema (migrations, fixtures de teste, e qualquer função `security definer` de sua propriedade, `accept_invitation` incluída) sempre contorna este trigger, como já contorna a RLS da tabela; só uma instrução executada como `ageniza_app` é sempre checada, e nenhum SQL que `ageniza_app` possa emitir muda o papel da própria conexão. As funções chamadas de dentro do trigger (`has_agency_permission`, `is_agency_owner`, `is_admin_role`) continuam `security definer` com `execute` para `ageniza_app`, então a superfície de autorização não muda.
+
+**Fica para a API (issues [#97](https://github.com/Nocrato-Tech/ageniza/issues/97)/[#98](https://github.com/Nocrato-Tech/ageniza/issues/98)):** mapear os erros de RLS/trigger (42501) para 403 em vez de 500, inclusive no reenvio de convite de admin por quem não tem `colaborador.atribuir_admin`; e as regras "ninguém altera o próprio papel", "ninguém remove a si mesmo" e "reativar exige `role_id` novo no corpo", que a #94 nunca cobriu no banco.
+
 ---
 
 ## 2026-09-24 — Proteções de integridade do quadro, e a que não deve existir
@@ -914,6 +932,8 @@ Foram descartados o arquivamento sempre imediato, que obrigaria alguém a lembra
 
 **Origem.** Decidido em sessão (entrevista do módulo de clientes).
 
+**Implementação.** PR #162, migration `20260928000100_clients_module.mjs`.
+
 ---
 
 ## 2026-09-26 — ESTRUTURAL: a conversa com o cliente é uma tabela de threads por cliente, com assunto tipado
@@ -1031,3 +1051,15 @@ A sessão criada assim continua **sem contexto** até o convite ser de fato acei
 **Consequência.** O caso que a entrada de 2026-09-24 já previa ("convite novo volta a funcionar pelo fluxo de conta existente") passa a ter um caminho de fato executável. O custo é a tela de convite ter que conhecer essa ordem (`login` com token → `accept` → só então `resolve`), documentada no README do módulo `auth`. Nenhuma migration; nenhum formato de resposta muda, só um campo opcional a mais no corpo de `POST /auth/login`.
 
 **Origem.** Decidido em sessão (orquestração), a partir do achado registrado no PR #164. **Pendente de validação.**
+
+---
+
+## 2026-09-29 — O SQL do papel de runtime (ageniza_app) é confiável
+
+**Contexto.** A re-revisão de segurança do PR #159 (issue #94) mostrou que a autorização dentro do trigger `app_private.check_agency_membership_update`, que decide *se* roda por `current_user`, continua lendo o GUC `app.user_id` — forjável por `ageniza_app` no meio do `UPDATE`. Forjando o GUC para o `user_id` do Owner, um `account_manager` sem `colaborador.atribuir_admin` concede `admin`. O achado é pré-existente (reproduzido igualmente no commit `4120330`), exige SQL bruto emitido como o papel de runtime e não é alcançável pelas rotas atuais, que só escrevem em `agency_memberships` a partir da #97.
+
+**Decisão.** Aceitar o modelo de confiança em que o SQL emitido pela aplicação como `ageniza_app` é confiável: a aplicação define `app.user_id` por transação via `SET LOCAL`, a partir da sessão autenticada, e todo SQL é parametrizado (Knex), de modo que o cliente não influencia o GUC. Em troca, o trigger deixa de alegar imunidade a "any GUC trick"; o que ele garante é que roda sob `ageniza_app` e que um GUC limpo não pula a verificação.
+
+**Consequência.** O endurecimento real — um contexto de ator por transação não forjável pelo papel de runtime — fica na #166 e precisa landar antes da #97. Até lá, qualquer barreira que dependa de `app.user_id` apoia-se na confiança no papel de runtime, e isso vale para a autorização do produto como um todo, não só para este trigger.
+
+**Origem.** Re-revisão de segurança do PR #159 (issue #94); decisão do dono do produto em 2026-09-29.
