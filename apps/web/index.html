@@ -3,6 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Credential links (/convite/:token, /senha/redefinir?token=…) must not leak through the
+         Referer header to any third party; there is no cross-site navigation that needs it. -->
+    <meta name="referrer" content="no-referrer" />
     <title>Ageniza</title>
   </head>
   <body>
