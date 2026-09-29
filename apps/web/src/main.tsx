@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './app.js';
 import { loadBrowserConfig } from './config.js';
 import { configureBrowserSentry } from './sentry.js';
-import './styles.css';
+import './styles/globals.css';
 
 const config = loadBrowserConfig();
 configureBrowserSentry(config);

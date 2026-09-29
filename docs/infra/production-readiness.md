@@ -44,13 +44,37 @@ This bucket stores user media. It is separate from the database-backup bucket.
   credentials in GitHub or in the repository.
 - [ ] From the real browser origin, verify a single-part image upload, a multipart video upload,
   `ETag` visibility, confirmation, signed download, thumbnail generation, and preview generation.
-- [ ] Confirm that the bucket and its objects are not publicly readable.
+- [ ] Confirm that the bucket and its objects are not publicly readable: an anonymous `GET` of an
+  object and an anonymous `ListObjects` of the bucket are both refused. LocalStack does not enforce
+  this locally, so it is verifiable only against the real bucket.
 
 Detailed behavior and the R2/LocalStack differences are documented in the
 [media module runbook](../../apps/api/src/modules/media/README.md#what-must-be-configured-by-hand-in-production-cannot-be-expressed-as-a-migration-or-compose-file).
 Use Cloudflare's current [CORS](https://developers.cloudflare.com/r2/buckets/cors/) and
 [object lifecycle](https://developers.cloudflare.com/r2/buckets/object-lifecycles/) documentation
 when applying these settings.
+
+## 3b. Identity storage bucket (Cloudflare R2, issue #100)
+
+A **second**, separate R2 bucket for identity images (a user's own profile photo, and later a
+client's) -- never the media bucket above. It has no agency quota and, unlike media, no staging
+prefix or multipart uploads to clean up.
+
+- [ ] Create a private R2 bucket, distinct from the media bucket, and an API token restricted to
+  only that bucket.
+- [ ] Configure bucket CORS for the exact production application origin: allow only `GET` (upload
+  runs through the API server, never a direct browser `PUT`).
+- [ ] No lifecycle rule is needed: every write is a single, already-validated object.
+- [ ] Fill the `IDENTITY_STORAGE_*` values in the root-owned runtime file using
+  [`infra/vps/runtime.env.example`](../../infra/vps/runtime.env.example), using a **different**
+  bucket name and API token/access key than the media bucket's -- `ageniza-deploy apply` refuses a
+  `runtime.env` where they match. Do not store these credentials in GitHub or in the repository.
+- [ ] Confirm that the bucket and its objects are not publicly readable: an anonymous `GET` of an
+  object and an anonymous `ListObjects` of the bucket are both refused. LocalStack does not enforce
+  this locally, so it is verifiable only against the real bucket.
+
+Detailed behavior is documented in the
+[identity storage module runbook](../../apps/api/src/modules/identity-storage/README.md#what-must-be-configured-by-hand-in-production-cannot-be-expressed-as-a-migration-or-compose-file).
 
 ## 4. VPS and host-only configuration
 

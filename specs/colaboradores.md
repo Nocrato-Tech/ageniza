@@ -133,6 +133,8 @@ As rotas de perfil **não são escopadas por agência**: o usuário é global, e
 - **Busca** por nome e e-mail; **filtros** por papel, por cargo e por status.
 - `status=removed` exige permissão administrativa; sem ele, só `active` é devolvido.
 
+`GET /agencies/:agencyId/invitations` (convites pendentes) usa o mesmo teto global e o mesmo contrato de página, com tamanho e ordem próprios da rota, como `autorizacao.md` §6 exige: **24 por página**, ordenada por **data de criação ascendente** — convite não tem nome, então a ordem que existe é a de quem está esperando há mais tempo. Sem busca e sem filtro: a issue #99 não pede nenhum.
+
 ### Persistência
 
 Nenhuma tabela nova e nenhuma coluna nova — o schema não muda. Mas a migration **não é puramente aditiva**: ela substitui uma policy existente (ver RLS abaixo), e é por isso que a seção 9 está marcada.

@@ -3,7 +3,7 @@ import { PassThrough } from 'node:stream';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import type { ApiConfig, StorageConfig } from '@ageniza/config/server';
+import type { ApiConfig, IdentityStorageConfig, StorageConfig } from '@ageniza/config/server';
 import { createLogger, type CoreLogger } from '@ageniza/core';
 import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, type DatabaseClient } from '@ageniza/database';
 import type { EmailSender, OutgoingEmail } from '@ageniza/email';
@@ -108,11 +108,26 @@ export const TEST_STORAGE_CONFIG: StorageConfig = {
   quotaDefaultObjectCount: 2_000
 };
 
+/** Points at the same local LocalStack, but a distinct bucket (issue #100) -- identity storage
+ * is never the media bucket, and config loading refuses to start otherwise (`server.test.ts`). */
+export const TEST_IDENTITY_STORAGE_CONFIG: IdentityStorageConfig = {
+  endpoint: process.env.IDENTITY_STORAGE_ENDPOINT ?? process.env.R2_ENDPOINT ?? 'http://127.0.0.1:9000',
+  publicEndpoint: process.env.IDENTITY_STORAGE_PUBLIC_ENDPOINT ?? process.env.IDENTITY_STORAGE_ENDPOINT ?? process.env.R2_PUBLIC_ENDPOINT ?? process.env.R2_ENDPOINT ?? 'http://127.0.0.1:9000',
+  region: 'auto',
+  accessKeyId: testStorageCredentials.accessKeyId,
+  secretAccessKey: testStorageCredentials.secretAccessKey,
+  bucket: process.env.IDENTITY_STORAGE_BUCKET ?? 'ageniza-identity-local',
+  forcePathStyle: true,
+  downloadUrlExpirySeconds: 300,
+  maxImageBytes: 5 * 1024 * 1024
+};
+
 export const buildTestConfig = (overrides: Partial<ApiConfig> = {}): ApiConfig => ({
   service: 'api',
   environment: 'test',
   databaseUrl: APPLICATION_DATABASE_URL,
   storage: TEST_STORAGE_CONFIG,
+  identityStorage: TEST_IDENTITY_STORAGE_CONFIG,
   deployVersion: 'test',
   authSecret: TEST_AUTH_SECRET,
   appPublicUrl: TEST_APP_PUBLIC_URL,
