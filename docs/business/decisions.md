@@ -1063,3 +1063,19 @@ A sessão criada assim continua **sem contexto** até o convite ser de fato acei
 **Consequência.** O endurecimento real — um contexto de ator por transação não forjável pelo papel de runtime — fica na #166 e precisa landar antes da #97. Até lá, qualquer barreira que dependa de `app.user_id` apoia-se na confiança no papel de runtime, e isso vale para a autorização do produto como um todo, não só para este trigger.
 
 **Origem.** Re-revisão de segurança do PR #159 (issue #94); decisão do dono do produto em 2026-09-29.
+
+---
+
+## 2026-09-29 — O reset de senha sempre autentica, exceto sem nenhum contexto
+
+**Contexto.** `specs/auth.md` (§7, "Redefinir senha") já decidia que, ao final do reset, a pessoa **já está autenticada** — segue para o aceite do convite quando houver um, ou para o `resolve`. A API só cumpria isso no ramo **com** `inviteToken`: `POST /auth/password/reset` sem convite respondia `204` sem cookie, e não havia como a tela cumprir esse aceite. A divergência foi achada pela #73, ao tentar implementar a tela de reset contra o contrato real.
+
+**Decisão.** `POST /auth/password/reset` sempre autentica quem redefiniu, pelo mesmo mecanismo `signInEmail` que o ramo com convite já usava — **exceto** a mesma exceção que já vale para o login (2026-09-24, "Credencial correta sem nenhum contexto não cria sessão"): conta com **zero contextos** e sem `inviteToken` válido para o mesmo e-mail. Nesse caso a senha é trocada (a redefinição em si nunca deixa de acontecer, regra 8), mas **nenhuma sessão é criada** — se o mecanismo do Better Auth chegar a criar uma, ela é revogada pelo mesmo caminho que o login já usa (issue #68), e nenhuma linha sobrevive em `auth."session"`.
+
+A resposta passa a ser sempre `200`, com corpo que diz o que aconteceu: `{ signedIn: true }` quando há sessão, `{ signedIn: false, reason: 'NO_CONTEXT_ACCESS' }` quando não há. O `400 INVALID_LINK` de token de reset inválido, usado ou expirado não muda. A resposta não vira oráculo de existência de conta além do que um token de reset **válido** já prova — quem chegou até aqui já provou o e-mail pelo link.
+
+`AuthLoginRequestSchema`, em `packages/contracts/src/auth.ts`, passa a declarar o `inviteToken` opcional que a rota de login já aceitava desde a decisão de 2026-09-29 anterior ("O login aceita o token do convite..."), mas que só existia como extensão local em `routes.ts` — o web enviava esse campo fora do que o contrato validava.
+
+**Consequência.** É **mudança de contrato numa rota implantada**: o `204` sem corpo, fora do ramo de convite, deixa de existir; os testes de integração de `password/reset` mudaram junto. Não há migration nem policy nova — reaproveita `countValidContexts` (injetado do módulo `contexts`) e a mesma rotina de revogação que o login já tinha.
+
+**Origem.** Issue #175, achado registrado pela #73. Decidido pelo dono do produto em sessão, em 2026-09-29.

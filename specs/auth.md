@@ -92,13 +92,14 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 
 1. Senha errada e e-mail inexistente devolvem **a mesma** resposta.
 2. `POST /auth/password/forgot` responde igual para e-mail existente e inexistente.
-3. Credencial correta com **zero contextos** não cria sessão — **salvo** quando o login carrega `inviteToken` de um convite válido para o mesmo e-mail (regra 3a, 2026-09-29, pendente de validação).
+3. Credencial correta com **zero contextos** não cria sessão — **salvo** quando o login carrega `inviteToken` de um convite válido para o mesmo e-mail (regra 3a, 2026-09-29, pendente de validação). A mesma exceção vale para `POST /auth/password/reset`: a senha é sempre trocada, mas a sessão só é criada se, depois de contar os contextos, houver pelo menos um, ou se um `inviteToken` válido para o mesmo e-mail cobrir o caso de zero (regra 8a, 2026-09-29).
 3a. Com `inviteToken` válido, a sessão criada continua **sem contexto** até o convite ser aceito por `POST /invitations/:token/accept`; chamar `resolve` antes do aceite encerra essa sessão como qualquer outra sem contexto (regra 3).
 4. Token de convite consumido, expirado ou revogado devolve **o mesmo** `INVALID_LINK`, sem dizer qual dos três.
 5. A tela nunca exibe o e-mail do convite antes de o token ser validado pela API.
 6. Conta criada por aceite nasce com o e-mail **do convite**, nunca de um campo do formulário.
 7. Aceitar os Termos grava as **duas** versões, Termos e Privacidade, com data e hora.
 8. Redefinir senha encerra **todas** as sessões.
+8a. Redefinir senha **sempre autentica** quem redefiniu, pelo mesmo mecanismo do login — **salvo** quando a conta tem zero contextos e não há `inviteToken` válido para o mesmo e-mail: nesse caso a senha é trocada, mas nenhuma sessão é criada, e a resposta diz o motivo (`signedIn: false, reason: 'NO_CONTEXT_ACCESS'`), para a tela levar a `/sem-acesso` (2026-09-29, substitui o comportamento anterior de `204` sem sessão fora do fluxo de convite).
 9. Trocar de contexto grava a preferência e **não** recria a sessão.
 10. `401` em qualquer requisição leva ao login preservando o destino, e nunca deixa dado antigo na tela.
 11. Quem tem sessão válida e abre uma tela deste módulo é levado ao seu contexto, em vez de logar de novo.
@@ -114,7 +115,7 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 | `POST` | `/auth/logout-all` | 204 |
 | `GET` | `/auth/session` | `{ user, session: { expiresAt } }` |
 | `POST` | `/auth/password/forgot` | 202, sempre |
-| `POST` | `/auth/password/reset` | 204, com `inviteToken` opcional |
+| `POST` | `/auth/password/reset` | `200 { signedIn: true }` ou `200 { signedIn: false, reason: 'NO_CONTEXT_ACCESS' }`, com `inviteToken` opcional (regra 8a) |
 | `GET` | `/invitations/:token` | preview com `accountExists` |
 | `POST` | `/invitations/:token/accept` | `{ status, context }` |
 | `POST` | `/invitations/:token/accept-new-account` | `{ status, context }` + cookie |
@@ -132,6 +133,18 @@ Limites de tentativa já aplicados por IP, por IP+e-mail e por e-mail global (`p
 2. `GET /me/contexts/resolve` — `decision: 'none'` encerra a sessão, em vez de devolver uma aplicação vazia.
 
 Foi **mudança de contrato numa rota implantada**: os testes de integração de login mudaram junto.
+
+### Implementado (issue #175)
+
+**`POST /auth/password/reset` sempre autentica** (regra 8a), pelo mesmo mecanismo de `signInEmail` que já existia no ramo com convite:
+
+1. A senha é redefinida (o que já encerra **todas** as sessões antigas, regra 8).
+2. Sem `inviteToken` válido: assina de volta com a senha nova e conta os contextos. Com pelo menos um, mantém a sessão e responde `200 { signedIn: true }` com cookie. Com zero, revoga a sessão recém-criada (mesmo mecanismo do login, issue #68) e responde `200 { signedIn: false, reason: 'NO_CONTEXT_ACCESS' }`, sem cookie.
+3. Com `inviteToken` válido para o mesmo e-mail: comportamento inalterado desde a issue #68/#76 — assina de volta incondicionalmente, sessão sem contexto até o aceite, `200 { signedIn: true }`.
+
+Um token de reset inválido, usado ou expirado continua devolvendo o mesmo `400 INVALID_LINK` de sempre, sem sessão — não é afetado por esta mudança.
+
+Foi **mudança de contrato numa rota implantada**: o `204` anterior (fora do ramo de convite) vira `200` com corpo; os testes de integração mudaram junto.
 
 ### Persistência
 
@@ -197,7 +210,7 @@ As rotas do navegador são em português; as da API continuam em inglês.
 └──────────────────────────────────┘
 ```
 
-**O que faz:** `POST /auth/password/reset` com o token da URL e, quando presente, o parâmetro `invite` da própria URL (`/senha/redefinir?token=…&invite=…`). Ao terminar, a pessoa **já está autenticada**: segue direto para o aceite do convite quando houver um, ou para o `resolve`.
+**O que faz:** `POST /auth/password/reset` com o token da URL e, quando presente, o parâmetro `invite` da própria URL (`/senha/redefinir?token=…&invite=…`). Ao terminar, a pessoa **já está autenticada** (regra 8a) — salvo a exceção de zero contextos sem convite, tratada a seguir. `signedIn: true` segue direto para o aceite do convite quando houver um, ou para o `resolve`. `signedIn: false` (motivo `NO_CONTEXT_ACCESS`) vai direto para `/sem-acesso`, sem passar por `resolve`: a senha já foi trocada, mas não existe sessão para consultá-lo.
 
 **Link inválido** é estado desta tela: token usado ou expirado mostra que o link não vale mais e oferece pedir outro, sem dizer qual dos dois casos ocorreu.
 
