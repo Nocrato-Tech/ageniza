@@ -15,7 +15,13 @@ const configuredVersion = (source: string, variable: string): string | undefined
   new RegExp(`${variable}\\s*[:=]\\s*'?(\\d{4}-\\d{2}-\\d{2})'?`).exec(source)?.[1];
 
 const documentText = (document: LegalDocument): string =>
-  [document.title, ...document.sections.flatMap((section) => [section.heading, ...section.paragraphs, ...(section.items ?? [])])].join('\n');
+  [
+    document.title,
+    ...document.sections.flatMap((section) => [
+      section.heading,
+      ...section.blocks.flatMap((block) => (block.type === 'paragraph' ? [block.text] : block.items))
+    ])
+  ].join('\n');
 
 describe('legal documents', () => {
   it.each([
@@ -30,6 +36,6 @@ describe('legal documents', () => {
   it.each([termsOfUse, privacyPolicy])('$title keeps the draft notice while any pending marker remains', (document) => {
     if (documentText(document).includes(PENDING_MARKER)) expect(document.draftNotice).toBeDefined();
     expect(document.sections.length).toBeGreaterThan(0);
-    for (const section of document.sections) expect(section.paragraphs.length).toBeGreaterThan(0);
+    for (const section of document.sections) expect(section.blocks.length).toBeGreaterThan(0);
   });
 });
