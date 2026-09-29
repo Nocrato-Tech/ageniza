@@ -393,11 +393,20 @@ describe('media upload HTTP module (issue #21)', () => {
       updated_at: new Date(Date.now() - (TEST_STORAGE_CONFIG.uploadUrlExpirySeconds + 60) * 1_000)
     });
 
-    const complete = (assetId: string) => app.app.inject({
-      method: 'POST', url: `/agencies/${agencyId}/media/uploads/${assetId}/complete`, headers: { ...origin, cookie }, payload: {}
+    const complete = (assetId: string, requestAgencyId: string) => app.app.inject({
+      method: 'POST', url: `/agencies/${requestAgencyId}/media/uploads/${assetId}/complete`, headers: { ...origin, cookie }, payload: {}
     });
-    const responses = await Promise.all([complete(first.assetId as string), complete(second.assetId as string)]);
+    const assetIds = [first.assetId as string, second.assetId as string];
+    const responses = await Promise.all([
+      complete(assetIds[0], agencyId),
+      complete(assetIds[1], agencyId.toUpperCase())
+    ]);
     expect(responses.map((response) => response.statusCode).sort()).toEqual([200, 422]);
+    const rejectedIndex = responses.findIndex((response) => response.statusCode === 422);
+    expect(rejectedIndex).toBeGreaterThanOrEqual(0);
+    expect(responses[rejectedIndex]!.json()).toMatchObject({ error: { details: { reason: 'quota_exceeded' } } });
+    await expect(owner.knex('media_assets').where({ id: assetIds[rejectedIndex] }).select('status', 'rejected_reason'))
+      .resolves.toEqual([{ status: 'rejected', rejected_reason: 'quota_exceeded' }]);
     await expect(owner.knex('media_assets').where({ agency_id: agencyId, status: 'confirmed' }).count<{ count: string }[]>('* as count'))
       .resolves.toEqual([{ count: '1' }]);
   });

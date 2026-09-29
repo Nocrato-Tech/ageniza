@@ -1,0 +1,6 @@
+/**
+ * Light is the default theme, so its semantic values live in
+ * tokens/semantic.css (`:root, [data-theme='light']`) instead of being repeated
+ * here. This file keeps the theme pair visible next to themes/dark.css
+ * (docs/design-system.md section 15).
+ */

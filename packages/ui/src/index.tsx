@@ -1,15 +1,37 @@
 import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  tone?: 'primary' | 'neutral' | 'danger';
+  /** `secondary` is shadcn's `outline`; Ageniza never exposes `outline` itself (docs/design-system.md section 13). */
+  variant?: 'primary' | 'secondary' | 'ghost' | 'destructive';
+  size?: 'sm' | 'md' | 'lg';
+  loading?: boolean;
 };
 
 /** A semantic button with a stable focus indicator supplied by the consumer stylesheet. */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { className, tone = 'primary', type = 'button', ...props },
+  { className, variant = 'primary', size = 'md', loading = false, type = 'button', disabled, children, ...props },
   ref
 ) {
-  return <button ref={ref} type={type} className={['ui-button', `ui-button--${tone}`, className].filter(Boolean).join(' ')} {...props} />;
+  return (
+    <button
+      ref={ref}
+      type={type}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      className={[
+        'ui-button',
+        `ui-button--${variant}`,
+        `ui-button--${size}`,
+        loading && 'ui-button--loading',
+        className
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      {...props}
+    >
+      <span className="ui-button__label">{children}</span>
+    </button>
+  );
 });
 
 export type TextInputProps = InputHTMLAttributes<HTMLInputElement>;

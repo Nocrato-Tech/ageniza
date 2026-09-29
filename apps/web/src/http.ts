@@ -14,6 +14,11 @@ export interface RequestOptions<TResponse> {
   timeoutMs?: number;
 }
 
+export interface HttpClientHooks {
+  /** Called when the API rejects a request because the session no longer exists. */
+  onSessionEnded?: () => void;
+}
+
 export class HttpClientError extends Error {
   public constructor(
     message: string,
@@ -95,14 +100,27 @@ const combineSignals = (externalSignal: AbortSignal | undefined, timeoutMs: numb
 export class HttpClient {
   public constructor(
     private readonly baseUrl: string,
-    private readonly fetchImplementation: typeof fetch = fetch
+    private readonly fetchImplementation: typeof fetch = fetch,
+    private readonly hooks: HttpClientHooks = {}
   ) {}
+
+  // A 401 ends the session only while one is confirmed, and only when the request was sent inside
+  // it: a visitor's 401 is ordinary, and a late 401 from a session already ended must not end the next.
+  private sessionGeneration = 0;
+  private sessionArmed = false;
+
+  /** Called once the API has proven a session exists; requests sent from now on can end it. */
+  public confirmSession(): void {
+    this.sessionGeneration += 1;
+    this.sessionArmed = true;
+  }
 
   public async request<TResponse>(options: RequestOptions<TResponse>): Promise<TResponse> {
     if (options.timeoutMs !== undefined && (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0)) {
       throw invalidRequest('Request timeout must be a finite, positive number.');
     }
     const url = resolveRelativePath(this.baseUrl, options.path);
+    const generation = this.sessionGeneration;
     const requestId = createRequestId();
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const combined = combineSignals(options.signal, timeoutMs);
@@ -128,6 +146,8 @@ export class HttpClient {
       if (!response.ok) {
         const parsedError = ApiErrorResponseSchema.safeParse(payload);
         if (parsedError.success) {
+          // INVALID_CREDENTIALS is also a 401, but it answers a login attempt, not a dead session.
+          if (response.status === 401 && parsedError.data.error.code === 'UNAUTHENTICATED') this.endSession(generation);
           throw new HttpClientError(parsedError.data.error.message, {
             code: parsedError.data.error.code,
             status: response.status,
@@ -158,6 +178,13 @@ export class HttpClient {
     } finally {
       combined.cleanup();
     }
+  }
+
+  private endSession(generation: number): void {
+    if (!this.sessionArmed || generation !== this.sessionGeneration) return;
+    this.sessionArmed = false;
+    this.sessionGeneration += 1;
+    this.hooks.onSessionEnded?.();
   }
 }
 

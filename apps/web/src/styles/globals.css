@@ -1,0 +1,206 @@
+/**
+ * Entry point: token layers, then themes, then base resets and component
+ * classes. See docs/design-system.md for the full system this implements.
+ */
+/* Self-hosted fonts (section 10): no request reaches a font CDN, so visitors' IPs stay with us. */
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/sora/600.css';
+@import '@fontsource/sora/700.css';
+@import './tokens/primitives.css';
+@import './tokens/typography.css';
+@import './tokens/motion.css';
+@import './tokens/semantic.css';
+@import './themes/light.css';
+@import './themes/dark.css';
+
+/**
+ * shadcn/Tailwind bridge (docs/design-system.md section 15): not active.
+ * Neither is a dependency of this app yet. If either is adopted, its
+ * variables (shadcn's `--primary`, `--muted-foreground`, `--ring`, or a
+ * Tailwind theme config) must point at the tokens above, never carry their
+ * own values — no parallel palette.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  color: var(--text-primary);
+  background: var(--bg-canvas);
+  font: var(--body-lg);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+a {
+  color: var(--text-link);
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.app-shell > header {
+  padding: var(--space-4) max(var(--space-6), calc((100vw - 72rem) / 2));
+  /* Dark in both themes on purpose, carried over from the pre-token stylesheet (docs/design-system.md 17). */
+  background: var(--color-ink-900);
+  color: var(--color-white);
+  font: var(--heading-md);
+}
+
+.app-shell > header a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-shell > main,
+.page-status {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--space-12) var(--space-4);
+}
+
+.page-status {
+  min-height: 60vh;
+  display: grid;
+  align-content: center;
+}
+
+.skip-link {
+  position: fixed;
+  left: var(--space-4);
+  top: -5rem;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  padding: var(--space-3);
+  z-index: 1;
+}
+
+.skip-link:focus {
+  top: var(--space-4);
+}
+
+/* Button: docs/design-system.md section 13, variant/size/state/loading */
+
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font: var(--button-md);
+  cursor: pointer;
+}
+
+.ui-button--sm {
+  min-height: 2rem;
+  padding: 0 var(--space-3);
+}
+
+.ui-button--md {
+  min-height: 2.75rem;
+  padding: 0 var(--space-4);
+}
+
+.ui-button--lg {
+  min-height: 3.25rem;
+  padding: 0 var(--space-6);
+}
+
+.ui-button--primary {
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+}
+
+.ui-button--destructive {
+  background: var(--action-danger-bg);
+  color: var(--action-danger-fg);
+}
+
+.ui-button--primary:hover:not(:disabled),
+.ui-button--destructive:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+
+.ui-button--secondary {
+  background: transparent;
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+
+.ui-button--ghost {
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.ui-button--secondary:hover:not(:disabled),
+.ui-button--ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.ui-button:disabled:not(.ui-button--loading) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ui-button--loading {
+  position: relative;
+  cursor: progress;
+}
+
+/* opacity, not visibility: the label must stay in the accessibility tree as the button's name. */
+.ui-button--loading > .ui-button__label {
+  opacity: 0;
+}
+
+.ui-button--loading::after {
+  content: '';
+  position: absolute;
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--radius-full);
+  animation: ui-button-spin var(--motion-slow) linear infinite;
+}
+
+@keyframes ui-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ui-text-input {
+  min-height: 2.75rem;
+  width: 100%;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font: var(--body-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.ui-field-message {
+  margin: var(--space-1) 0 0;
+  font: var(--caption);
+  color: var(--text-danger);
+}
+
+.ui-live-status {
+  min-height: 1.5rem;
+}
