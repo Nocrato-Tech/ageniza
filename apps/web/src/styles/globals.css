@@ -222,6 +222,11 @@ input:focus-visible {
   font: var(--label-md);
 }
 
+.form-stack {
+  display: grid;
+  gap: var(--space-4);
+}
+
 .form-actions {
   display: grid;
   gap: var(--space-3);
