@@ -5,12 +5,18 @@ on:
     branches:
       - develop
       - main
+  # A pull request validates the merge result; this validates what actually landed
+  # on develop once it did, so two merges in a row cannot pass in isolation and
+  # break the branch. It reuses the same jobs as the pull-request run.
+  push:
+    branches:
+      - develop
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 defaults:
@@ -20,6 +26,7 @@ defaults:
 jobs:
   branch-route:
     name: Branch route
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -58,7 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
@@ -66,15 +73,15 @@ jobs:
       - name: Validate migration changes
         run: >-
           node scripts/ci/validate-migrations.mjs
-          --base "${{ github.event.pull_request.base.sha }}"
-          --head "${{ github.event.pull_request.head.sha }}"
+          --base "${{ github.event.pull_request.base.sha || github.event.before }}"
+          --head "${{ github.event.pull_request.head.sha || github.sha }}"
       # docs/business/structural-changes.md asks for the decision to be recorded before the change.
       # This is what makes that hold for anyone, agent or person.
       - name: Require a recorded decision for a structural migration
         run: >-
           node scripts/ci/verify-structural-decisions.mjs
-          --base "${{ github.event.pull_request.base.sha }}"
-          --head "${{ github.event.pull_request.head.sha }}"
+          --base "${{ github.event.pull_request.base.sha || github.event.before }}"
+          --head "${{ github.event.pull_request.head.sha || github.sha }}"
 
   quality:
     name: Quality gates
@@ -116,6 +123,7 @@ jobs:
 
   docker-images:
     name: Docker images
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
