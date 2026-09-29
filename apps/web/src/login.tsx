@@ -49,6 +49,9 @@ export function LoginPage() {
 
   const state = location.state as { inviteToken?: unknown } | null;
   const inviteToken = typeof state?.inviteToken === 'string' ? state.inviteToken : undefined;
+  const notice = typeof (location.state as { notice?: unknown } | null)?.notice === 'string'
+    ? (location.state as { notice: string }).notice
+    : undefined;
   const destination = sessionDestination(location.state);
 
   /**
@@ -133,6 +136,7 @@ export function LoginPage() {
 
   return <section className="form-panel" aria-labelledby="login-title">
     <h1 id="login-title">Ageniza</h1>
+    {notice !== undefined && <p role="status">{notice}</p>}
     <form className="form-stack" onSubmit={onSubmit} noValidate>
       <div className="form-field">
         <label htmlFor="login-email">E-mail</label>
