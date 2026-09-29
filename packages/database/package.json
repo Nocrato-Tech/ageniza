@@ -17,7 +17,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "migrate": "node bin/migrate.mjs",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
-    "test:integration": "pnpm build && vitest run test/postgres.integration.test.ts test/rls-coverage.integration.test.ts test/tenancy.integration.test.ts test/media-storage.integration.test.ts test/quota-lock.integration.test.ts",
+    "test:integration": "pnpm build && vitest run test/postgres.integration.test.ts test/rls-coverage.integration.test.ts test/tenancy.integration.test.ts test/media-storage.integration.test.ts test/quota-lock.integration.test.ts test/clients-module.integration.test.ts",
     "clean": "rimraf dist"
   },
   "dependencies": {
