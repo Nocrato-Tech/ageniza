@@ -160,7 +160,9 @@ describe('ContextSelectPage (/contextos)', () => {
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('Não foi possível sair');
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Page not found' })).toBeTruthy());
+    // The sign-out navigates away; the destination (login, or the workspace it redirects to) is not
+    // this screen's contract, so assert the list is gone rather than a specific route.
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Onde você quer entrar?' })).toBeNull());
   });
 
   it('enters directly when resolve answers with a single context', async () => {
