@@ -209,6 +209,72 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
     await getOwner().knex('clients').whereIn('id', [idA, idB, secondId]).delete();
   });
 
+  it('accepts an http(s) website and rejects one without a scheme', async () => {
+    // The check constraint once read '^https$1://' because knex.raw rewrote the regex's question
+    // mark as a bind placeholder, which rejected every real site. Both http and https are valid
+    // per specs/clientes.md §3 ("URL http(s)").
+    const httpsId = randomUUID();
+    await expect(
+      asUser(adminA, (transaction) =>
+        transaction('clients')
+          .insert({ id: httpsId, agency_id: agencyA, name: `Website https ${httpsId}`, website: 'https://example.test' })
+          .returning('id')
+      )
+    ).resolves.toHaveLength(1);
+    await expect(getOwner().knex('clients').where({ id: httpsId }).first('website')).resolves.toMatchObject({ website: 'https://example.test' });
+
+    const httpId = randomUUID();
+    await expect(
+      asUser(adminA, (transaction) =>
+        transaction('clients')
+          .insert({ id: httpId, agency_id: agencyA, name: `Website http ${httpId}`, website: 'http://example.test' })
+          .returning('id')
+      )
+    ).resolves.toHaveLength(1);
+
+    await expect(
+      asUser(adminA, (transaction) =>
+        transaction('clients').insert({ id: randomUUID(), agency_id: agencyA, name: `Website bad ${randomUUID()}`, website: 'example.test' })
+      )
+    ).rejects.toThrow(/check constraint/);
+
+    await getOwner().knex('clients').whereIn('id', [httpsId, httpId]).delete();
+  });
+
+  it('normalizes tabs, repeated spaces and NBSP in the active-name index while distinct names coexist', async () => {
+    // The real index must collapse any run of whitespace, not just trim ASCII spaces at the ends,
+    // and it must not collapse the letter "s" -- the buggy expression was 's+', which made
+    // "Class"/"Cla" and "Casa Nova"/"Ca a Nova" collide as if they were the same name.
+    const base = `Nav ${randomUUID()}`;
+    const variants = [base, `${base}\t`, `${base}  `, `${base}${String.fromCharCode(160)}`];
+    const variantIds = variants.map(() => randomUUID());
+
+    await expect(
+      asUser(adminA, (transaction) => transaction('clients').insert({ id: variantIds[0], agency_id: agencyA, name: variants[0] }).returning('id'))
+    ).resolves.toHaveLength(1);
+    for (let index = 1; index < variants.length; index += 1) {
+      await expect(
+        asUser(adminA, (transaction) => transaction('clients').insert({ id: variantIds[index], agency_id: agencyA, name: variants[index] }))
+      ).rejects.toMatchObject({ code: '23505' });
+    }
+
+    const indexDef = await getOwner().knex.raw(`select pg_get_indexdef('public.clients_active_name_unique'::regclass) as def`);
+    expect(indexDef.rows[0].def).toContain('[[:space:]]+');
+
+    const suffix = randomUUID();
+    const coexisting = [`Class ${suffix}`, `Cla ${suffix}`, `Casa Nova ${suffix}`, `Ca a Nova ${suffix}`];
+    const coexistingIds = coexisting.map(() => randomUUID());
+    for (let index = 0; index < coexisting.length; index += 1) {
+      await expect(
+        asUser(adminA, (transaction) =>
+          transaction('clients').insert({ id: coexistingIds[index], agency_id: agencyA, name: coexisting[index] }).returning('id')
+        )
+      ).resolves.toHaveLength(1);
+    }
+
+    await getOwner().knex('clients').whereIn('id', [...variantIds, ...coexistingIds]).delete();
+  });
+
   it('lets account_manager edit contact_phone but not status, by column privilege', async () => {
     await expect(
       asUser(managerA, (transaction) => transaction('clients').where({ id: clientA1 }).update({ contact_phone: '+55 11 90000-0000', updated_by: managerA }))
@@ -500,6 +566,60 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
       )
     ).rejects.toThrow(/permission denied/);
     await getOwner().knex('client_threads').where({ id: forgeThreadId }).delete();
+  });
+
+  it('rejects caller-supplied updated_at, status and created_at on a section or persona INSERT', async () => {
+    // The inherited table-wide INSERT let the caller forge the row's own stamps, and a persona could
+    // be created already archived by the very statement that creates it. The column grant now leaves
+    // them to their defaults.
+    await expect(
+      asUser(managerA, (transaction) =>
+        transaction('client_brand_sections').insert({
+          client_id: clientA1, section_key: 'observations', body: 'Forged stamp', updated_by: managerA, updated_at: new Date('2001-01-01')
+        })
+      )
+    ).rejects.toThrow(/permission denied/);
+
+    await expect(
+      asUser(managerA, (transaction) =>
+        transaction('client_personas').insert({ id: randomUUID(), client_id: clientA1, name: 'Born archived', updated_by: managerA, status: 'archived' })
+      )
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      asUser(managerA, (transaction) =>
+        transaction('client_personas').insert({
+          id: randomUUID(), client_id: clientA1, name: 'Backdated', updated_by: managerA, created_at: new Date('2001-01-01')
+        })
+      )
+    ).rejects.toThrow(/permission denied/);
+
+    // The legitimate column set still inserts, and the defaults are applied.
+    const personaId = randomUUID();
+    await expect(
+      asUser(managerA, (transaction) =>
+        transaction('client_personas').insert({ id: personaId, client_id: clientA1, name: 'Legitimate', updated_by: managerA }).returning('id')
+      )
+    ).resolves.toHaveLength(1);
+    const created = await getOwner().knex('client_personas').where({ id: personaId }).first('status', 'created_at');
+    expect(created?.status).toBe('active');
+    expect(created?.created_at).not.toBeNull();
+
+    await getOwner().knex('client_personas').where({ id: personaId }).delete();
+  });
+
+  it('does not resolve an open thread on an UPDATE outside resolved_at/resolved_by', async () => {
+    // The stamping trigger is scoped to a resolve. An ordinary column update -- including one made by
+    // the schema owner, whom no grant can hide it from -- must leave an open thread open; otherwise a
+    // future backfill (Content will add content_id here) silently resolves every thread it touches.
+    const threadId = randomUUID();
+    await getOwner().knex('client_threads').insert({ id: threadId, client_id: clientA1, section_key: 'observations', opened_by: adminA, opened_side: 'agency' });
+
+    await getOwner().knex('client_threads').where({ id: threadId }).update({ section_key: 'observations' });
+    const untouched = await getOwner().knex('client_threads').where({ id: threadId }).first('resolved_at', 'resolved_by');
+    expect(untouched?.resolved_at).toBeNull();
+    expect(untouched?.resolved_by).toBeNull();
+
+    await getOwner().knex('client_threads').where({ id: threadId }).delete();
   });
 
   it('lets only cliente.operar resolve a thread, pins resolved_at/resolved_by, and never lets it be unresolved', async () => {

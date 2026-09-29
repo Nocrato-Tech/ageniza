@@ -21,8 +21,11 @@ export async function up(knex) {
         check (tax_id is null or tax_id ~ '^[0-9]{11}$' or tax_id ~ '^[0-9]{14}$'),
       add column segment text null
         check (segment is null or octet_length(segment) <= 120),
+      -- The scheme is written as an alternation on purpose: a bare question-mark metacharacter is
+      -- rewritten by knex.raw as a bind placeholder, which once turned this check into a regex that
+      -- matched nothing and rejected every valid site.
       add column website text null
-        check (website is null or (website ~ '^https?://' and octet_length(website) <= 2048)),
+        check (website is null or (website ~ '^(https|http)://' and octet_length(website) <= 2048)),
       add column instagram_handle text null
         check (instagram_handle is null or instagram_handle ~ '^[A-Za-z0-9._]{1,30}$'),
       add column contact_name text null
@@ -37,12 +40,14 @@ export async function up(knex) {
 
     -- The expression normalizes whitespace, not just its ends: btrim(name) alone still lets
     -- "Padaria Central" and "Padaria  Central" (or a tab, or a NBSP instead of a space) coexist as
-    -- two distinct active names, which rule 7 does not intend. chr(160) is NBSP; \s then collapses
-    -- every remaining run of ASCII whitespace to one space before the final btrim/lower. The API
-    -- (#124) must normalize a candidate name with this exact expression before comparing or erroring
-    -- on conflict, or its message and this index will disagree (documented on issue #124).
+    -- two distinct active names, which rule 7 does not intend. chr(160) is NBSP; the class
+    -- [[:space:]] then collapses every remaining run of whitespace to one space before the final
+    -- btrim/lower. It is spelled as a class, not as a backslash-s sequence, so it survives the JS
+    -- template literal and knex.raw unchanged. The API (#124) must normalize a candidate name with
+    -- this exact expression before comparing or erroring on conflict, or its message and this index
+    -- will disagree (documented on issue #124).
     create unique index clients_active_name_unique
-      on public.clients (agency_id, lower(btrim(regexp_replace(replace(name, chr(160), ' '), '\s+', ' ', 'g'))))
+      on public.clients (agency_id, lower(btrim(regexp_replace(replace(name, chr(160), ' '), '[[:space:]]+', ' ', 'g'))))
       where status = 'active';
 
     -- Narrowing the UPDATE grant is what keeps status, archived_at and closing_date out of reach
@@ -206,14 +211,19 @@ export async function up(knex) {
     -- by rewriting client_id itself to a client the caller also has cliente.operar on, moving the
     -- row to another tenant. Excluding the PK columns from the grant closes that off at the
     -- privilege check, before RLS is even evaluated.
+    -- INSERT is column-restricted too, leaving updated_at (sections) and status/created_at/updated_at
+    -- (personas) to their defaults: an inherited table-wide INSERT let the caller forge those
+    -- stamps, and a persona could be born already archived by the same write that creates it.
     revoke all on public.client_brand_sections from ageniza_app;
-    grant select, insert on public.client_brand_sections to ageniza_app;
+    grant select on public.client_brand_sections to ageniza_app;
+    grant insert (client_id, section_key, body, colors, archetype, updated_by) on public.client_brand_sections to ageniza_app;
     grant update (body, colors, archetype, updated_by, updated_at) on public.client_brand_sections to ageniza_app;
 
     -- Same reasoning: id and client_id stay out of the UPDATE grant so a persona can never be
     -- reassigned to another client through an ordinary update.
     revoke all on public.client_personas from ageniza_app;
-    grant select, insert on public.client_personas to ageniza_app;
+    grant select on public.client_personas to ageniza_app;
+    grant insert (id, client_id, name, description, pains, desires, objections, updated_by) on public.client_personas to ageniza_app;
     grant update (name, description, pains, desires, objections, status, updated_by, updated_at) on public.client_personas to ageniza_app;
 
     -- INSERT is column-restricted like clients: resolved_at/resolved_by/created_at stay off the
@@ -288,26 +298,26 @@ export async function up(knex) {
       before insert on public.client_thread_comments
       for each row execute function app_private.check_comment_thread_client();
 
-    -- The UPDATE grant on client_threads only ever reaches this trigger through a resolve (the
-    -- grant covers just resolved_at/resolved_by), so every row that gets here is being resolved.
-    -- Stamping resolved_at unconditionally means a caller-supplied value -- backdated to hide a
-    -- late response, or postdated so "comentário novo reabre" (SPEC §4) can never trigger again --
-    -- is always overwritten, and resolved_at can never end up null again: there is no "unresolve".
+    -- Stamping is scoped to a real resolution: the trigger fires only when resolved_at/resolved_by
+    -- are in the SET, and only rewrites resolved_at when resolved_by is being set. A resolve still
+    -- cannot backdate or postdate itself (SPEC §4), but any other UPDATE -- a backfill, the future
+    -- content_id column, the schema owner, a security definer function -- leaves open threads alone.
     create function app_private.stamp_thread_resolved_at()
     returns trigger
     language plpgsql
-    security definer
     set search_path = ''
     as $$
     begin
-      new.resolved_at := pg_catalog.now();
+      if new.resolved_by is not null then
+        new.resolved_at := pg_catalog.now();
+      end if;
       return new;
     end;
     $$;
     revoke all on function app_private.stamp_thread_resolved_at() from public;
 
     create trigger client_threads_resolve_stamp
-      before update on public.client_threads
+      before update of resolved_at, resolved_by on public.client_threads
       for each row execute function app_private.stamp_thread_resolved_at();
   `);
 
