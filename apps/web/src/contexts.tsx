@@ -43,7 +43,9 @@ export function ContextSelectPage() {
   useDocumentTitle('Onde você quer entrar? — Ageniza');
 
   const requestedPreferred = searchParams.get('preferred');
-  const preferred = requestedPreferred !== null && PREFERRED_PATTERN.test(requestedPreferred) ? requestedPreferred : undefined;
+  // The server compares the exact string against UUIDs Postgres returns in lowercase, so normalize
+  // before forwarding; a valid-but-uppercase UUID would otherwise highlight nothing.
+  const preferred = requestedPreferred !== null && PREFERRED_PATTERN.test(requestedPreferred) ? requestedPreferred.toLowerCase() : undefined;
 
   const resolve = useQuery({
     queryKey: ['contexts', 'resolve', preferred ?? null],

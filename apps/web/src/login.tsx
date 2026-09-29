@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   AuthLoginRequestSchema,
   AuthLoginResponseSchema,
-  AuthLogoutResponseSchema,
   ContextResolveResponseSchema
 } from '@ageniza/contracts';
 import { Button, FieldMessage, TextInput } from '@ageniza/ui';
@@ -17,7 +16,7 @@ import { sessionDestination } from './session-end.js';
 
 /** Wrong password and unknown e-mail answer the same 401, so the screen shows one sentence for both. */
 const INVALID_CREDENTIALS_MESSAGE = 'E-mail ou senha incorretos.';
-const NO_ACCESS = '/sem-acesso';
+const LOGIN_FAILED = 'Não foi possível entrar. Tente de novo.';
 const RESOLVE_FAILED = 'Não foi possível carregar seus contextos. Tente de novo.';
 
 /**
@@ -41,7 +40,9 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [formError, setFormError] = useState<string | undefined>();
+  const [resolveError, setResolveError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
+  const [resolving, setResolving] = useState(false);
   // While the chain runs the login screen owns the redirect; the session must not drive it yet.
   const [authenticating, setAuthenticating] = useState(false);
   useDocumentTitle('Entrar — Ageniza');
@@ -50,49 +51,43 @@ export function LoginPage() {
   const inviteToken = typeof state?.inviteToken === 'string' ? state.inviteToken : undefined;
   const destination = sessionDestination(location.state);
 
-  /** Ends the session on the server (idempotent) and on the client, clears the cache, goes to no-access. */
-  const leaveToNoAccess = async (): Promise<void> => {
-    try { await httpClient.request({ path: '/auth/logout', method: 'POST', response: AuthLogoutResponseSchema }); } catch { /* idempotent */ }
+  /**
+   * The server already ended the session for a `none` resolve, and a 403 never created one, so
+   * there is nothing to revoke: drop the client session and the cache, then navigate. Calling
+   * `logout` here would answer 401 without a session and trigger the session-ended redirect.
+   */
+  const leaveToNoAccess = (): void => {
     authStore.end();
     queryClient.clear();
-    navigate(NO_ACCESS, { replace: true });
+    navigate('/sem-acesso', { replace: true });
   };
 
-  /** Resolves the destination: no context ends the session; a kept destination wins over enter/select. */
-  const resolveDestination = async (): Promise<string | null> => {
-    const resolve = await httpClient.request({ path: '/me/contexts/resolve', response: ContextResolveResponseSchema });
-    if (resolve.decision === 'none') return null;
-    if (destination !== null) return destination;
-    return resolve.decision === 'select' ? '/contextos' : '/app';
-  };
-
-  const enterAfterAuth = async (): Promise<void> => {
-    const target = await resolveDestination();
-    await authStore.refresh();
-    if (target === null) { await leaveToNoAccess(); return; }
-    navigate(target, { replace: true });
+  /** Runs the resolve and navigates; a failure is repeatable on its own, without the password again. */
+  const runResolve = async (): Promise<void> => {
+    setResolveError(undefined);
+    setResolving(true);
+    try {
+      const resolve = await httpClient.request({ path: '/me/contexts/resolve', response: ContextResolveResponseSchema });
+      if (resolve.decision === 'none') { leaveToNoAccess(); return; }
+      await authStore.refresh();
+      navigate(destination ?? (resolve.decision === 'select' ? '/contextos' : '/app'), { replace: true });
+    } catch {
+      setResolveError(RESOLVE_FAILED);
+    } finally {
+      setResolving(false);
+    }
   };
 
   // A valid session opening `/entrar` goes to the active context (specs/auth.md, "Já autenticado").
   useEffect(() => {
     if (authenticating || session.status !== 'ready' || !session.isAuthenticated) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const target = await resolveDestination();
-        if (cancelled) return;
-        if (target === null) { await leaveToNoAccess(); return; }
-        navigate(target, { replace: true });
-      } catch {
-        if (!cancelled) setFormError(RESOLVE_FAILED);
-      }
-    })();
-    return () => { cancelled = true; };
+    void runResolve();
   }, [authenticating, session.status, session.isAuthenticated]);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     setFormError(undefined);
+    setResolveError(undefined);
     const validation = validateForm(AuthLoginRequestSchema, { email, password });
     if (!validation.success) {
       setErrors({
@@ -113,33 +108,25 @@ export function LoginPage() {
         body: inviteToken === undefined ? validation.data : { ...validation.data, inviteToken },
         response: AuthLoginResponseSchema
       });
-      if (inviteToken !== undefined) {
-        // Rule 3a: a zero-context session created for an invitation must not call resolve, which
-        // would end it before the invitation is accepted. Go back to the invitation instead.
-        await authStore.refresh();
-        navigate(destination ?? `/convite/${encodeURIComponent(inviteToken)}`, { replace: true });
-        return;
-      }
-      await enterAfterAuth();
     } catch (error: unknown) {
+      // The login itself failed: the message is about entering, never about loading contexts.
       setAuthenticating(false);
-      if (error instanceof HttpClientError && error.status === 429) {
-        setFormError('Muitas tentativas. Tente novamente mais tarde.');
-      } else if (error instanceof HttpClientError && error.status === 403 && error.code === 'NO_CONTEXT_ACCESS') {
-        authStore.end();
-        queryClient.clear();
-        navigate(NO_ACCESS, { replace: true });
-      } else if (error instanceof HttpClientError && error.status === 401) {
-        setFormError(INVALID_CREDENTIALS_MESSAGE);
-      } else if (error instanceof HttpClientError) {
-        // A resolve that failed after a successful login: keep the person here, with a retry.
-        setFormError(RESOLVE_FAILED);
-      } else {
-        setFormError('Não foi possível entrar. Tente de novo.');
-      }
+      if (error instanceof HttpClientError && error.status === 429) setFormError('Muitas tentativas. Tente novamente mais tarde.');
+      else if (error instanceof HttpClientError && error.status === 403 && error.code === 'NO_CONTEXT_ACCESS') leaveToNoAccess();
+      else if (error instanceof HttpClientError && error.status === 401) setFormError(INVALID_CREDENTIALS_MESSAGE);
+      else setFormError(LOGIN_FAILED);
+      return;
     } finally {
       setSubmitting(false);
     }
+    if (inviteToken !== undefined) {
+      // Rule 3a: a zero-context session created for an invitation must not call resolve, which
+      // would end it before the invitation is accepted. Go back to the invitation instead.
+      await authStore.refresh();
+      navigate(destination ?? `/convite/${encodeURIComponent(inviteToken)}`, { replace: true });
+      return;
+    }
+    await runResolve();
   };
 
   return <section className="form-panel" aria-labelledby="login-title">
@@ -173,6 +160,10 @@ export function LoginPage() {
         />
         {errors.password !== undefined && <FieldMessage id="login-password-error">{errors.password}</FieldMessage>}
       </div>
+      {resolveError !== undefined && <div role="alert">
+        <p>{resolveError}</p>
+        <Button onClick={() => { void runResolve(); }} loading={resolving}>Tentar de novo</Button>
+      </div>}
       {formError !== undefined && <p role="alert">{formError}</p>}
       <div className="form-actions">
         <Button type="submit" loading={submitting}>Entrar</Button>
