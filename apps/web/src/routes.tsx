@@ -10,6 +10,7 @@ import { useApiClient } from './http.js';
 import { LegalDocumentPage } from './legal-pages.js';
 import { privacyPolicy } from './legal/privacy.js';
 import { termsOfUse } from './legal/terms.js';
+import { LoginPage } from './login.js';
 
 export function LoadingPage() {
   return <main className="page-status"><LiveStatus>Loading your workspace…</LiveStatus></main>;
@@ -45,6 +46,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
     <Route element={<PublicLayout />}>
       <Route index element={<PublicHome />} />
       <Route path="status" element={<ServiceStatus />} />
+      <Route path="entrar" element={<LoginPage />} />
       <Route path="senha/esquecida" element={session.isAuthenticated ? <Navigate to="/app" replace /> : <ForgotPasswordPage />} />
       <Route path="termos" element={<LegalDocumentPage document={termsOfUse} sibling={{ title: 'Política de Privacidade', to: '/privacidade' }} />} />
       <Route path="privacidade" element={<LegalDocumentPage document={privacyPolicy} sibling={{ title: 'Termos de Uso', to: '/termos' }} />} />

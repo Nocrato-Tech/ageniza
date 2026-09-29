@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -69,7 +69,7 @@ describe('ForgotPasswordPage (/senha/esquecida)', () => {
     const heading = await screen.findByRole('heading', { name: 'Verifique seu e-mail' });
     expect(bodies).toEqual([{ email: 'someone@example.test' }]);
     expect(screen.getByText(/Se existir uma conta com esse endereço, o link chegou/)).toBeTruthy();
-    expect(document.activeElement).toBe(heading);
+    await waitFor(() => expect(document.activeElement).toBe(heading));
   });
 
   it('sends the canonicalized address and the invite token from router state, never the URL', async () => {

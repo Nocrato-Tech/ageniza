@@ -24,8 +24,8 @@ const contextTitle = (context: Context): string =>
 const contextDescription = (context: Context): string =>
   context.type === 'agency' ? `Área da agência · ${context.roleName}` : `Portal do cliente · ${context.agencyName}`;
 
-/** `agency:<uuid>` or `client:<uuid>`, the shape `resolve` accepts for `preferred`. */
-const PREFERRED_PATTERN = /^(agency|client):[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+/** `agency:<uuid>` or `client:<uuid>`, the shape `resolve` accepts for `preferred` (UUIDs, either case). */
+const PREFERRED_PATTERN = /^(?:agency|client):[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[1-8][0-9A-Fa-f]{3}-[89abAB][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$/;
 
 /**
  * `GET /me/contexts/resolve` already ordered and highlighted the contexts (specs/auth.md section 7);
@@ -43,7 +43,9 @@ export function ContextSelectPage() {
   useDocumentTitle('Onde você quer entrar? — Ageniza');
 
   const requestedPreferred = searchParams.get('preferred');
-  const preferred = requestedPreferred !== null && PREFERRED_PATTERN.test(requestedPreferred) ? requestedPreferred : undefined;
+  // The server compares the exact string against UUIDs Postgres returns in lowercase, so normalize
+  // before forwarding; a valid-but-uppercase UUID would otherwise highlight nothing.
+  const preferred = requestedPreferred !== null && PREFERRED_PATTERN.test(requestedPreferred) ? requestedPreferred.toLowerCase() : undefined;
 
   const resolve = useQuery({
     queryKey: ['contexts', 'resolve', preferred ?? null],
@@ -121,7 +123,10 @@ export function ContextSelectPage() {
       ? 'Não foi possível sair. Tente de novo.'
       : undefined;
   const retryAction = (): void => {
-    if (choose.isError && choose.variables !== undefined) choose.mutate(choose.variables);
+    // A 404 means the chosen context stopped being valid; resending it would fail again, so reload
+    // the list instead.
+    if (choose.isError && choose.error instanceof HttpClientError && choose.error.status === 404) void resolve.refetch();
+    else if (choose.isError && choose.variables !== undefined) choose.mutate(choose.variables);
     else if (signOut.isError) signOut.mutate();
   };
 
@@ -140,7 +145,6 @@ export function ContextSelectPage() {
             description={contextDescription(context)}
             highlighted={isHighlighted}
             badge={isHighlighted ? 'Sugerido' : undefined}
-            aria-current={isHighlighted ? 'true' : undefined}
             disabled={choose.isPending}
             aria-busy={choose.isPending && choose.variables === context ? true : undefined}
             onClick={() => choose.mutate(context)}

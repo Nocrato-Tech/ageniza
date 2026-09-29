@@ -62,14 +62,13 @@ describe('ContextSelectPage (/contextos)', () => {
     ]);
   });
 
-  it('communicates the highlighted context with visible text and an attribute, not colour alone', async () => {
+  it('communicates the highlighted context with visible text, not colour alone', async () => {
     renderContexts(async () => json(selectResponse));
     await screen.findByText('Área da agência · Admin');
 
     const highlighted = screen.getAllByRole('button').filter((element) => element.classList.contains('ui-choice-card--highlighted'));
     expect(highlighted).toHaveLength(1);
     expect(highlighted[0]?.textContent).toContain('Sugerido');
-    expect(highlighted[0]?.getAttribute('aria-current')).toBe('true');
     // Highlight is visual only: the workspace must not be entered by itself.
     expect(screen.queryByRole('heading', { name: 'Workspace' })).toBeNull();
   });
@@ -83,7 +82,20 @@ describe('ContextSelectPage (/contextos)', () => {
 
     await screen.findByText('Área da agência · Produção');
     expect(urls.some((url) => url.includes(`preferred=agency%3A${AGENCY_B}`))).toBe(true);
-    expect(screen.getByRole('button', { name: /Agência Dois/ }).getAttribute('aria-current')).toBe('true');
+    expect(screen.getByRole('button', { name: /Agência Dois/ }).textContent).toContain('Sugerido');
+  });
+
+  it('normalizes an uppercase preferred UUID to lowercase before sending it', async () => {
+    const withLetters = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const urls: string[] = [];
+    renderContexts(async (input) => {
+      urls.push(String(input));
+      return json(selectResponse);
+    }, { preferred: `agency:${withLetters.toUpperCase()}` });
+
+    await screen.findByText('Área da agência · Produção');
+    expect(urls.some((url) => url.includes(`preferred=agency%3A${withLetters}`))).toBe(true);
+    expect(urls.some((url) => url.includes(withLetters.toUpperCase()))).toBe(false);
   });
 
   it('never calls /me/contexts, only resolve', async () => {
@@ -114,17 +126,16 @@ describe('ContextSelectPage (/contextos)', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Workspace' })).toBeTruthy());
   });
 
-  it('shows a repeatable error when choosing fails, and reloads the list on 404', async () => {
+  it('reloads the list on a 404 instead of resending the context that vanished', async () => {
     let resolveCalls = 0;
     let putCalls = 0;
+    const withoutB = { decision: 'select', contexts: [agencyA, clientC], highlighted: null };
     renderContexts(async (input, init) => {
       const url = String(input);
-      if (url.endsWith('/me/contexts/resolve')) { resolveCalls += 1; return json(selectResponse); }
+      if (url.endsWith('/me/contexts/resolve')) { resolveCalls += 1; return json(resolveCalls === 1 ? selectResponse : withoutB); }
       if (url.endsWith('/me/last-context') && init?.method === 'PUT') {
         putCalls += 1;
-        return putCalls === 1
-          ? json({ error: { code: 'NOT_FOUND', message: 'Context not found.' } }, 404)
-          : noContent();
+        return json({ error: { code: 'NOT_FOUND', message: 'Context not found.' } }, 404);
       }
       throw new Error(`unexpected ${url}`);
     });
@@ -132,12 +143,12 @@ describe('ContextSelectPage (/contextos)', () => {
     await screen.findByText('Área da agência · Admin');
     fireEvent.click(screen.getByRole('button', { name: /Agência Dois/ }));
 
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('Não foi possível entrar nesse contexto');
+    expect((await screen.findByRole('alert')).textContent).toContain('Não foi possível entrar nesse contexto');
     await waitFor(() => expect(resolveCalls).toBeGreaterThan(1));
-
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Workspace' })).toBeTruthy());
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Agência Dois/ })).toBeNull());
+    // The retry reloaded the list; it did not resend the context that no longer exists.
+    expect(putCalls).toBe(1);
   });
 
   it('shows a repeatable error when signing out fails', async () => {
