@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { Button } from './index.js';
+import { Button, ChoiceCard, Skeleton } from './index.js';
 
 afterEach(cleanup);
 
@@ -33,5 +33,37 @@ describe('Button', () => {
     expect(free.disabled).toBe(false);
     expect(free.hasAttribute('aria-busy')).toBe(false);
     expect((screen.getByRole('button', { name: 'Travado' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('ChoiceCard', () => {
+  it('exposes the whole card as a non-submitting button with title and description', () => {
+    render(<ChoiceCard title="Agência A" description="Área da agência · Admin" />);
+    const card = screen.getByRole('button', { name: /Agência A/ });
+
+    expect(card.getAttribute('type')).toBe('button');
+    expect(card.className.split(' ')).not.toContain('ui-choice-card--highlighted');
+    expect(card.textContent).toContain('Área da agência · Admin');
+  });
+
+  it('marks only a highlighted card, and never selects on its own', () => {
+    render(<><ChoiceCard title="A" description="x" /><ChoiceCard title="B" description="y" highlighted /></>);
+
+    expect(screen.getByRole('button', { name: /A/ }).classList.contains('ui-choice-card--highlighted')).toBe(false);
+    expect(screen.getByRole('button', { name: /B/ }).classList.contains('ui-choice-card--highlighted')).toBe(true);
+  });
+
+  it('keeps an explicit disabled state', () => {
+    render(<ChoiceCard title="A" description="x" disabled />);
+    expect((screen.getByRole('button', { name: /A/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('Skeleton', () => {
+  it('is decorative and never announced', () => {
+    render(<Skeleton data-testid="skeleton" />);
+    const skeleton = screen.getByTestId('skeleton');
+    expect(skeleton.getAttribute('aria-hidden')).toBe('true');
+    expect(skeleton.className.split(' ')).toContain('ui-skeleton');
   });
 });

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import type { AuthSessionSnapshot } from './auth.js';
 import { LiveStatus } from '@ageniza/ui';
+import { ContextSelectPage } from './contexts.js';
 import { getHealth } from './health.js';
 import { useApiClient } from './http.js';
 
@@ -43,6 +44,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
     </Route>
     <Route element={<ProtectedLayout session={session} />}>
       <Route path="app" element={<WorkspaceHome />} />
+      <Route path="contextos" element={<ContextSelectPage />} />
     </Route>
     <Route path="*" element={<NotFoundPage />} />
   </Routes>;
