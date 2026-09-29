@@ -6,6 +6,9 @@ import { LiveStatus } from '@ageniza/ui';
 import { ForgotPasswordPage } from './forgot-password.js';
 import { getHealth } from './health.js';
 import { useApiClient } from './http.js';
+import { LegalDocumentPage } from './legal-pages.js';
+import { privacyPolicy } from './legal/privacy.js';
+import { termsOfUse } from './legal/terms.js';
 
 export function LoadingPage() {
   return <main className="page-status"><LiveStatus>Loading your workspace…</LiveStatus></main>;
@@ -42,6 +45,8 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route index element={<PublicHome />} />
       <Route path="status" element={<ServiceStatus />} />
       <Route path="senha/esquecida" element={<ForgotPasswordPage />} />
+      <Route path="termos" element={<LegalDocumentPage document={termsOfUse} sibling={{ title: 'Política de Privacidade', to: '/privacidade' }} />} />
+      <Route path="privacidade" element={<LegalDocumentPage document={privacyPolicy} sibling={{ title: 'Termos de Uso', to: '/termos' }} />} />
     </Route>
     <Route element={<ProtectedLayout session={session} />}>
       <Route path="app" element={<WorkspaceHome />} />
