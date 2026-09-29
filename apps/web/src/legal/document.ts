@@ -15,11 +15,22 @@ export interface LegalDocument {
   readonly sections: readonly LegalSection[];
 }
 
+/**
+ * One block of a section, in the order the document reads. A list belongs to the paragraph that
+ * introduces it, which is not always the last one (e.g. "Ele tem dois lados separados:" is followed
+ * by two more paragraphs before the list), so the position of each list has to be explicit.
+ */
+export type LegalBlock =
+  | { readonly type: 'paragraph'; readonly text: string }
+  | { readonly type: 'list'; readonly items: readonly string[] };
+
 export interface LegalSection {
   readonly heading: string;
-  readonly paragraphs: readonly string[];
-  readonly items?: readonly string[];
+  readonly blocks: readonly LegalBlock[];
 }
+
+export const paragraph = (text: string): LegalBlock => ({ type: 'paragraph', text });
+export const list = (items: readonly string[]): LegalBlock => ({ type: 'list', items });
 
 export const PENDING_MARKER = '[PENDENTE:';
 
