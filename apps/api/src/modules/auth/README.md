@@ -17,7 +17,7 @@ response bodies are validated against `packages/contracts/src/auth.ts` with `par
 | `POST /auth/logout-all` | — (session cookie) | `204`, revokes every session for the user; audits `auth.logout_all` | `401 UNAUTHENTICATED` |
 | `GET /auth/session` | — (session cookie) | `200 { user: { id, name, email }, session: { expiresAt } }` | `401 UNAUTHENTICATED`; `401 SESSION_EXPIRED` |
 | `POST /auth/password/forgot` | `{ email }` | always `202 {}` | `429 RATE_LIMITED` |
-| `POST /auth/password/reset` | `{ token, newPassword }` | `204`, revokes every session for the user; audits `auth.password_reset` | `400 INVALID_LINK`; `400 VALIDATION_ERROR` |
+| `POST /auth/password/reset` | `{ token, newPassword, inviteToken? }` | `200 { signedIn: true }` (with a new session cookie) or `200 { signedIn: false, reason: 'NO_CONTEXT_ACCESS' }` (no cookie); revokes every previous session for the user either way; audits `auth.password_reset` | `400 INVALID_LINK`; `400 VALIDATION_ERROR` |
 
 Login failure (wrong password vs. unknown email) is byte-for-byte identical, so a client cannot
 enumerate accounts. `password/reset` returns the same `INVALID_LINK` whether the token is unknown,
@@ -59,6 +59,18 @@ this same session **before** ever calling `GET /me/contexts/resolve`. Calling `r
 the session on sight (`decision: 'none'`, same as any other zero-context session), and the person
 would need to log in again with the token to retry. Once `accept` succeeds, the account has a real
 context and an ordinary login (no `inviteToken` needed) works from then on.
+
+**`password/reset` always authenticates (issue #175, 2026-09-29 decision "O reset de senha sempre
+autentica, exceto sem nenhum contexto").** The reset already ended every previous session
+(`revokeSessionsOnPasswordReset`); after that, `routes.ts` signs the account back in with the new
+password, reusing the same `signInEmail` mechanism the invite-continuation branch always used, and
+applies the same zero-context gate login has (issue #68): with a valid `inviteToken` continuation
+the session is kept unconditionally (still contextless, same rule as login above); otherwise
+`countValidContexts` decides — at least one context keeps the session and responds
+`200 { signedIn: true }` with a cookie, zero contexts revokes the session `signInEmail` just created
+(same `internalAdapter.deleteSession` login uses) and responds
+`200 { signedIn: false, reason: 'NO_CONTEXT_ACCESS' }`, no cookie. An invalid/expired/used reset
+token is unaffected: it still gets the generic `400 INVALID_LINK`, no session ever created.
 
 ## Composition
 

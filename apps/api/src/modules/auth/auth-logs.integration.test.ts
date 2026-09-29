@@ -101,7 +101,8 @@ describe('auth logging never leaks secrets (#15)', () => {
       method: 'POST', url: '/auth/password/reset', headers: origin,
       payload: { token: token as string, newPassword }
     });
-    expect(response.statusCode).toBe(204);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ signedIn: true });
 
     assertNoSecretsLogged(text(), { password: newPassword, email: user.email, token });
   });

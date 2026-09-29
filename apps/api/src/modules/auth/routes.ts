@@ -87,7 +87,6 @@ const authPasswordForgotWithInvitationSchema = AuthPasswordForgotRequestSchema.e
 const authPasswordResetWithInvitationSchema = AuthPasswordResetRequestSchema.extend({
   inviteToken: z.string().min(1).max(2_048).optional()
 }).strict();
-const signedInResetResponseSchema = z.object({ signedIn: z.literal(true) }).strict();
 
 /**
  * Registers the six public auth routes (issue #31 section 6). CSRF/origin checking is handled
@@ -228,27 +227,70 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
       throw toPublicAuthError(error, { statusCode: 400, code: 'INVALID_LINK', message: 'Este link não é mais válido.' });
     }
 
+    // A reset always authenticates (issue #175, 2026-09-29 decision "O reset de senha sempre
+    // autentica, exceto sem nenhum contexto"), reusing the same mechanism as the invite-login
+    // branch above: sign in with the new password, then decide whether the session survives.
     if (resetInviteContinuation !== undefined) {
-      try {
-        const context = await dependencies.auth.$context;
-        const user = await context.internalAdapter.findUserById(resetInviteContinuation.userId);
-        if (user !== null && user !== undefined) {
-          const { headers } = await dependencies.auth.api.signInEmail({
-            body: { email: user.email, password: body.newPassword },
-            headers: toAuthHeaders(request),
-            returnHeaders: true
-          });
-          applyAuthCookies(reply, headers);
-          return reply.status(200).send(parseResponse(signedInResetResponseSchema, { signedIn: true }));
+      // With a valid invite continuation the session is kept unconditionally, same as before
+      // (regra 3a): it stays contextless until `POST /invitations/:token/accept` runs.
+      const signedIn = await signInAfterReset(dependencies, request, resetInviteContinuation.userId, body.newPassword);
+      if (signedIn !== undefined) {
+        applyAuthCookies(reply, signedIn.headers);
+        return reply.status(200).send(parseResponse(AuthPasswordResetResponseSchema, { signedIn: true }));
+      }
+      // The password reset itself already succeeded; a sign-in that unexpectedly fails here must
+      // not turn that success into a public error. Fall through to the ordinary path below.
+    }
+
+    if (userIdForRecovery !== undefined) {
+      const signedIn = await signInAfterReset(dependencies, request, userIdForRecovery, body.newPassword);
+      if (signedIn !== undefined) {
+        // Same rule as `POST /auth/login` (2026-09-24 decision): a correct credential resolving to
+        // zero contexts never keeps a session.
+        const contextCount = await dependencies.countValidContexts(userIdForRecovery);
+        if (contextCount > 0) {
+          applyAuthCookies(reply, signedIn.headers);
+          return reply.status(200).send(parseResponse(AuthPasswordResetResponseSchema, { signedIn: true }));
         }
-      } catch {
-        // The password reset itself already succeeded. A missing continuation session must not
-        // turn a successful reset into a public error; the normal 204 response remains safe.
+        await revokeJustCreatedSession(dependencies.auth, signedIn.response.token, request);
       }
     }
 
-    return reply.status(204).send(parseResponse(AuthPasswordResetResponseSchema, undefined));
+    // Either zero contexts (regra 3), or the sign-in after a successful reset could not be
+    // completed (rare edge: the user was not identifiable). Either way the password was already
+    // changed, no session exists, and the response says so explicitly instead of a bare 204 —
+    // this response shape proves nothing beyond what a valid reset token already proved (B1).
+    return reply.status(200).send(
+      parseResponse(AuthPasswordResetResponseSchema, { signedIn: false, reason: 'NO_CONTEXT_ACCESS' })
+    );
   });
+};
+
+/**
+ * Signs a user back in right after a successful password reset — the mechanism both branches of
+ * `POST /auth/password/reset` share (issue #175). Returns `undefined` on any failure (a user that
+ * can no longer be found, or `signInEmail` itself failing), so callers fall back to the "no
+ * session" response instead of turning an already-successful reset into a public error.
+ */
+const signInAfterReset = async (
+  dependencies: AuthModuleDependencies,
+  request: FastifyRequest,
+  userId: string,
+  newPassword: string
+): Promise<{ readonly headers: Headers; readonly response: { readonly token: string } } | undefined> => {
+  try {
+    const context = await dependencies.auth.$context;
+    const user = await context.internalAdapter.findUserById(userId);
+    if (user === null || user === undefined) return undefined;
+    const { headers, response } = await dependencies.auth.api.signInEmail({
+      body: { email: user.email, password: newPassword },
+      headers: toAuthHeaders(request),
+      returnHeaders: true
+    });
+    return { headers, response };
+  } catch {
+    return undefined;
+  }
 };
 
 /**

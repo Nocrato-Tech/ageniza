@@ -631,7 +631,7 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
     return decodeURIComponent(match[1]);
   };
 
-  it('#9 resets the password with a valid token, revokes all sessions, and audits auth.password_reset', async () => {
+  it('#9 resets the password with a valid token, revokes all sessions, signs the account back in, and audits auth.password_reset', async () => {
     const sender = createFakeEmailSender();
     const app = await openApp({ sender });
     const user = await makeUser(app, 'reset-ok');
@@ -645,10 +645,19 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
       method: 'POST', url: '/auth/password/reset', headers: origin,
       payload: { token, newPassword }
     });
-    expect(reset.statusCode).toBe(204);
+    // Issue #175: a reset with at least one context always authenticates, not just the
+    // invite-continuation branch — a new, valid, cookied session, same mechanism as login.
+    expect(reset.statusCode).toBe(200);
+    expect(reset.json()).toEqual({ signedIn: true });
+    expect(reset.cookies.length).toBeGreaterThan(0);
 
     const oldSessionCheck = await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie: firstCookie } });
     expect(oldSessionCheck.statusCode).toBe(401);
+
+    const newSessionCheck = await app.app.inject({
+      method: 'GET', url: '/auth/session', headers: { cookie: sessionCookieHeader(reset.cookies) }
+    });
+    expect(newSessionCheck.statusCode).toBe(200);
 
     const loginWithNewPassword = await app.app.inject({
       method: 'POST', url: '/auth/login', headers: origin, payload: { email: user.email, password: newPassword }
@@ -660,6 +669,33 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
       [user.id]
     );
     expect(auditRows.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('resets the password with zero contexts, creates no session, and a following login gets NO_CONTEXT_ACCESS', async () => {
+    const sender = createFakeEmailSender();
+    const app = await openApp({ sender });
+    const user = await insertTestUser(app.pool, app.auth, { emailLabel: 'reset-zero-context' });
+    createdUsers.push({ app, userId: user.id });
+
+    const token = await requestResetToken(app, sender, user.email);
+    const newPassword = 'a brand new zero context password';
+    const reset = await app.app.inject({
+      method: 'POST', url: '/auth/password/reset', headers: origin,
+      payload: { token, newPassword }
+    });
+
+    expect(reset.statusCode).toBe(200);
+    expect(reset.json()).toEqual({ signedIn: false, reason: 'NO_CONTEXT_ACCESS' });
+    expect(reset.cookies.length).toBe(0);
+
+    const sessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id]);
+    expect(sessionRows.rowCount).toBe(0);
+
+    const loginWithNewPassword = await app.app.inject({
+      method: 'POST', url: '/auth/login', headers: origin, payload: { email: user.email, password: newPassword }
+    });
+    expect(loginWithNewPassword.statusCode).toBe(403);
+    expect(loginWithNewPassword.json()).toMatchObject({ error: { code: 'NO_CONTEXT_ACCESS' } });
   });
 
   it('#10 a reused token and an expired token both return 400 INVALID_LINK', async () => {
@@ -685,7 +721,8 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
       method: 'POST', url: '/auth/password/reset', headers: origin,
       payload: { token: reusedToken, newPassword: 'first use new password value' }
     });
-    expect(firstUse.statusCode).toBe(204);
+    expect(firstUse.statusCode).toBe(200);
+    expect(firstUse.json()).toEqual({ signedIn: true });
     const secondUse = await app.app.inject({
       method: 'POST', url: '/auth/password/reset', headers: origin,
       payload: { token: reusedToken, newPassword: 'second use new password value' }
