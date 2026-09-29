@@ -33,6 +33,12 @@ export interface ApiAppOptions {
   agencies?: AgencyModuleDependencies;
   /** Media dependencies are optional; undefined for tests that never touch object storage. */
   media?: MediaModuleDependencies;
+  /**
+   * Test-only observer for every registered route, fired by Fastify's `onRoute` hook before
+   * `app.ready()`. The API documentation test uses it to prove the OpenAPI document covers the
+   * real surface; production never passes it.
+   */
+  onRoute?: (route: { readonly method: string; readonly url: string }) => void;
 }
 
 /** Builds the HTTP application without binding a port, enabling deterministic Fastify inject tests. */
@@ -52,6 +58,13 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
     genReqId: (request) => resolveRequestId(request.headers[REQUEST_ID_HEADER])
   });
 
+  if (options.onRoute !== undefined) {
+    const observeRoute = options.onRoute;
+    app.addHook('onRoute', (routeOptions) => {
+      const methods = Array.isArray(routeOptions.method) ? routeOptions.method : [routeOptions.method];
+      for (const method of methods) observeRoute({ method: method.toLowerCase(), url: routeOptions.url });
+    });
+  }
   app.addHook('onRequest', (request, reply, done) => {
     reply.header(REQUEST_ID_HEADER, request.id);
     reply.header(CORRELATION_ID_HEADER, resolveRequestId(request.headers[CORRELATION_ID_HEADER] ?? request.id));
@@ -101,6 +114,13 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   }
   if (options.media !== undefined) {
     registerMediaModule(app, options.media);
+  }
+  // Development-only API reference (issue #182). The dynamic import keeps the viewer and the
+  // OpenAPI generator out of the production image, which prunes devDependencies; `APP_ENV=local`
+  // is the `pnpm dev` default and cannot point at a non-loopback database (config validation).
+  if (options.config.environment === 'local') {
+    const { registerApiDocsModule } = await import('./modules/api-docs/routes.js');
+    await registerApiDocsModule(app);
   }
   return app;
 };

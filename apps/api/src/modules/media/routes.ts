@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
 import {
+  AgencyMediaAssetPathParamsSchema,
+  AgencyPathParamsSchema,
   CompleteMediaUploadRequestSchema,
   CompleteMediaUploadResponseSchema,
   CreateMediaUploadRequestSchema,
   CreateMediaUploadResponseSchema,
+  MediaDownloadUrlQuerySchema,
   MediaDownloadUrlResponseSchema,
   RequestMediaUploadPartsRequestSchema,
   RequestMediaUploadPartsResponseSchema
@@ -12,7 +15,7 @@ import {
 import { HttpError } from '@ageniza/core';
 import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { z } from 'zod';
+import type { z } from 'zod';
 
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
@@ -61,10 +64,6 @@ export interface MediaModuleDependencies {
    * preview job (issue #24) right after a video's `HeadObject` confirms it. */
   readonly jobs?: MediaJobDispatcher;
 }
-
-const agencyParamsSchema = z.object({ agencyId: z.string().uuid() }).strict();
-const assetParamsSchema = z.object({ agencyId: z.string().uuid(), assetId: z.string().uuid() }).strict();
-const downloadUrlQuerySchema = z.object({ variant: z.enum(['original', 'thumbnail', 'preview']).optional().default('original') }).strict();
 
 const unauthenticated = (): HttpError => new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
 const assetNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Media asset not found.' });
@@ -134,7 +133,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
 
   app.post('/agencies/:agencyId/media/uploads', { preHandler: guarded('midia.enviar'), ...uploadUrlRoute }, async (request, reply) => {
     const auth = requireAuth(request);
-    const params = routeParams(agencyParamsSchema, request);
+    const params = routeParams(AgencyPathParamsSchema, request);
     const body = parseRequest(CreateMediaUploadRequestSchema, request.body);
 
     const descriptor = describeMediaContentType(body.contentType);
@@ -192,7 +191,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
 
   app.post('/agencies/:agencyId/media/uploads/:assetId/parts', { preHandler: guarded('midia.enviar'), ...uploadUrlRoute }, async (request, reply) => {
     const auth = requireAuth(request);
-    const params = routeParams(assetParamsSchema, request);
+    const params = routeParams(AgencyMediaAssetPathParamsSchema, request);
     const body = parseRequest(RequestMediaUploadPartsRequestSchema, request.body);
     const expiresAt = new Date(Date.now() + config.uploadUrlExpirySeconds * 1_000).toISOString();
 
@@ -221,7 +220,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
 
   app.post('/agencies/:agencyId/media/uploads/:assetId/complete', { preHandler: guarded('midia.enviar') }, async (request, reply) => {
     const auth = requireAuth(request);
-    const params = routeParams(assetParamsSchema, request);
+    const params = routeParams(AgencyMediaAssetPathParamsSchema, request);
     const body = parseRequest(CompleteMediaUploadRequestSchema, request.body);
 
     let copiedCanonicalKey: string | undefined;
@@ -347,8 +346,8 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
 
   app.get('/agencies/:agencyId/media/:assetId/download-url', { preHandler: guarded('midia.enviar') }, async (request, reply) => {
     const auth = requireAuth(request);
-    const params = routeParams(assetParamsSchema, request);
-    const query = parseRequest(downloadUrlQuerySchema, request.query);
+    const params = routeParams(AgencyMediaAssetPathParamsSchema, request);
+    const query = parseRequest(MediaDownloadUrlQuerySchema, request.query);
 
     const objectKey = await withAuthenticatedUserTransaction(database, auth.claims, async (transaction) => {
       const asset = await findConfirmedAssetWithVariants(transaction, params.assetId, params.agencyId);

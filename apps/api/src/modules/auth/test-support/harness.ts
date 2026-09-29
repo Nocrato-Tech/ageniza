@@ -10,7 +10,7 @@ import type { EmailSender, OutgoingEmail } from '@ageniza/email';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Pool } from 'pg';
 
-import { buildApp } from '../../../app.js';
+import { buildApp, type ApiAppOptions } from '../../../app.js';
 import type { AgencyModuleDependencies } from '../../agencies/routes.js';
 import { createAuthAuditRecorder, type AuthAuditRecorder } from '../audit.js';
 import { createAuthLimiter, type AuthLimiterOptions, type InMemoryAuthLimiter } from '../auth-limiter.js';
@@ -164,6 +164,8 @@ export interface TestAppOptions {
    * review of PR #176, achado 2) without relying on a real, hard-to-trigger database error.
    */
   readonly countValidContexts?: (userId: string) => Promise<number>;
+  /** Test-only route observer, forwarded to `buildApp` (issue #182 route-inventory test). */
+  readonly onRoute?: ApiAppOptions['onRoute'];
 }
 
 /** Real prehandler builders, wired to this test app's own `auth`/`database`, for `registerExtraRoutes`. */
@@ -239,7 +241,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     invitationTokenLookup,
     countValidContexts: options.countValidContexts ?? ((userId: string) => countValidContexts(database, userId))
   };
-  const app = await buildApp({ config, logger, auth: authDependencies, invitations, contexts, agencies, media });
+  const app = await buildApp({ config, logger, auth: authDependencies, invitations, contexts, agencies, media, onRoute: options.onRoute });
   if (options.registerExtraRoutes !== undefined) {
     const guards: TestGuardBuilders = {
       requireSession: createRequireSession({ auth }),

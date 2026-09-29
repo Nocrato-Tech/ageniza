@@ -14,6 +14,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "api:docs": "pnpm --filter @ageniza/contracts build && pnpm --filter @ageniza/api api:docs",
     "db:start": "node scripts/docker/local-stack.mjs db:start",
     "storage:start": "node scripts/docker/local-stack.mjs storage:start",
     "db:migrate": "node scripts/docker/local-stack.mjs db:migrate",

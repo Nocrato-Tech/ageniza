@@ -70,6 +70,11 @@ export const CompleteMediaUploadResponseSchema = z.object({
   contentType: z.string().min(1)
 }).strict();
 
+/** `GET /agencies/:agencyId/media/:assetId/download-url` query: which variant to sign. */
+export const MediaDownloadUrlQuerySchema = z.object({
+  variant: z.enum(['original', 'thumbnail', 'preview']).optional().default('original')
+}).strict();
+
 /** `GET /agencies/:agencyId/media/:assetId/download-url`: a short-lived signed GET, issued only
  * at social-publish time (issue #21 scope), never cached or reused past its expiry. */
 export const MediaDownloadUrlResponseSchema = z.object({
@@ -84,4 +89,5 @@ export type RequestMediaUploadPartsRequest = z.infer<typeof RequestMediaUploadPa
 export type RequestMediaUploadPartsResponse = z.infer<typeof RequestMediaUploadPartsResponseSchema>;
 export type CompleteMediaUploadRequest = z.infer<typeof CompleteMediaUploadRequestSchema>;
 export type CompleteMediaUploadResponse = z.infer<typeof CompleteMediaUploadResponseSchema>;
+export type MediaDownloadUrlQuery = z.infer<typeof MediaDownloadUrlQuerySchema>;
 export type MediaDownloadUrlResponse = z.infer<typeof MediaDownloadUrlResponseSchema>;
