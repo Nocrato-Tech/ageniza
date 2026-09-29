@@ -35,10 +35,14 @@ export async function up(knex) {
       add column archived_at timestamptz null,
       add column updated_by uuid null references auth."user"(id);
 
-    -- The index -- not a prior SELECT in the API -- is what makes uniqueness hold under
-    -- concurrent inserts (specs/clientes.md §5, rule 6; issue #122 acceptance).
+    -- The expression normalizes whitespace, not just its ends: btrim(name) alone still lets
+    -- "Padaria Central" and "Padaria  Central" (or a tab, or a NBSP instead of a space) coexist as
+    -- two distinct active names, which rule 7 does not intend. chr(160) is NBSP; \s then collapses
+    -- every remaining run of ASCII whitespace to one space before the final btrim/lower. The API
+    -- (#124) must normalize a candidate name with this exact expression before comparing or erroring
+    -- on conflict, or its message and this index will disagree (documented on issue #124).
     create unique index clients_active_name_unique
-      on public.clients (agency_id, lower(btrim(name)))
+      on public.clients (agency_id, lower(btrim(regexp_replace(replace(name, chr(160), ' '), '\s+', ' ', 'g'))))
       where status = 'active';
 
     -- Narrowing the UPDATE grant is what keeps status, archived_at and closing_date out of reach
@@ -51,14 +55,34 @@ export async function up(knex) {
       contact_name, contact_phone, contact_email, updated_by, updated_at
     ) on public.clients to ageniza_app;
 
+    -- INSERT is column-restricted the same way: the table grant clients inherited from the
+    -- foundation's default privileges covered every column, so a caller holding only
+    -- cliente.cadastrar (no cliente.arquivar) could set closing_date/archived_at directly, bypassing
+    -- set_client_closing_date's validation (#123) and producing an 'active' row with archived_at
+    -- already filled -- a state specs/clientes.md §3 does not allow. status, closing_date,
+    -- archived_at, created_at and updated_at are left to their defaults; updated_by is not part of
+    -- registration (nobody has "last edited" a client that was just created).
+    revoke insert on public.clients from ageniza_app;
+    grant insert (
+      id, agency_id, name, photo_key, legal_name, tax_id, segment, website, instagram_handle,
+      contact_name, contact_phone, contact_email
+    ) on public.clients to ageniza_app;
+
     create policy clients_insert on public.clients
       for insert to ageniza_app
       with check (status = 'active' and app_private.has_agency_permission(agency_id, 'cliente.cadastrar'));
 
+    -- updated_by stays in the UPDATE grant (it is how "quem alterou por último" gets recorded), but
+    -- WITH CHECK pins it to the caller: without this, any column grant that includes updated_by lets
+    -- an editor attribute the change to somebody else, including a user in another agency.
     create policy clients_update on public.clients
       for update to ageniza_app
       using (status = 'active' and app_private.has_agency_permission(agency_id, 'cliente.operar'))
-      with check (status = 'active' and app_private.has_agency_permission(agency_id, 'cliente.operar'));
+      with check (
+        status = 'active'
+        and app_private.has_agency_permission(agency_id, 'cliente.operar')
+        and updated_by = app_private.current_user_id()
+      );
   `);
 
   await knex.raw(`
@@ -192,12 +216,23 @@ export async function up(knex) {
     grant select, insert on public.client_personas to ageniza_app;
     grant update (name, description, pains, desires, objections, status, updated_by, updated_at) on public.client_personas to ageniza_app;
 
+    -- INSERT is column-restricted like clients: resolved_at/resolved_by/created_at stay off the
+    -- grant so a caller (either side) cannot open a thread that is already "resolved" -- num_nonnulls
+    -- on section_key/persona_id already forces exactly one subject, but nothing else stopped a portal
+    -- member from setting resolved_at/resolved_by on the INSERT itself, attributing a resolution to
+    -- someone else and burying the thread out of "aguardando a agência" the moment it is created.
     revoke all on public.client_threads from ageniza_app;
-    grant select, insert on public.client_threads to ageniza_app;
+    grant select on public.client_threads to ageniza_app;
+    grant insert (id, client_id, section_key, persona_id, opened_by, opened_side) on public.client_threads to ageniza_app;
     grant update (resolved_at, resolved_by) on public.client_threads to ageniza_app;
 
+    -- Same reasoning for client_thread_comments: created_at off the INSERT grant. The thread's
+    -- open/resolved state and "most recent first" ordering both depend on comparing created_at
+    -- across rows, so a caller-supplied timestamp -- backdated or postdated -- forges that order and
+    -- the state derived from it, for a table the SPEC calls immutable.
     revoke all on public.client_thread_comments from ageniza_app;
-    grant select, insert on public.client_thread_comments to ageniza_app;
+    grant select on public.client_thread_comments to ageniza_app;
+    grant insert (id, thread_id, client_id, author_user_id, author_side, body) on public.client_thread_comments to ageniza_app;
   `);
 
   await knex.raw(`
@@ -222,6 +257,8 @@ export async function up(knex) {
     end;
     $$;
 
+    revoke all on function app_private.check_thread_persona_client() from public;
+
     create trigger client_threads_persona_client_check
       before insert or update on public.client_threads
       for each row execute function app_private.check_thread_persona_client();
@@ -245,10 +282,33 @@ export async function up(knex) {
       return new;
     end;
     $$;
+    revoke all on function app_private.check_comment_thread_client() from public;
 
     create trigger client_thread_comments_client_check
       before insert on public.client_thread_comments
       for each row execute function app_private.check_comment_thread_client();
+
+    -- The UPDATE grant on client_threads only ever reaches this trigger through a resolve (the
+    -- grant covers just resolved_at/resolved_by), so every row that gets here is being resolved.
+    -- Stamping resolved_at unconditionally means a caller-supplied value -- backdated to hide a
+    -- late response, or postdated so "comentário novo reabre" (SPEC §4) can never trigger again --
+    -- is always overwritten, and resolved_at can never end up null again: there is no "unresolve".
+    create function app_private.stamp_thread_resolved_at()
+    returns trigger
+    language plpgsql
+    security definer
+    set search_path = ''
+    as $$
+    begin
+      new.resolved_at := pg_catalog.now();
+      return new;
+    end;
+    $$;
+    revoke all on function app_private.stamp_thread_resolved_at() from public;
+
+    create trigger client_threads_resolve_stamp
+      before update on public.client_threads
+      for each row execute function app_private.stamp_thread_resolved_at();
   `);
 
   await knex.raw(`
@@ -259,11 +319,16 @@ export async function up(knex) {
         or app_private.is_client_member(client_id)
       );
 
+    -- updated_by = current_user_id() in WITH CHECK is what keeps "quem alterou por último" honest:
+    -- the column stays in the INSERT/UPDATE grant (the API has to be able to set it at all), so
+    -- without this an editor could stamp the change with any user id, including one from another
+    -- agency or the portal.
     create policy client_brand_sections_insert on public.client_brand_sections
       for insert to ageniza_app
       with check (
         app_private.has_agency_permission(app_private.client_agency_id(client_id), 'cliente.operar')
         and app_private.client_is_active(client_id)
+        and updated_by = app_private.current_user_id()
       );
 
     create policy client_brand_sections_update on public.client_brand_sections
@@ -275,6 +340,7 @@ export async function up(knex) {
       with check (
         app_private.has_agency_permission(app_private.client_agency_id(client_id), 'cliente.operar')
         and app_private.client_is_active(client_id)
+        and updated_by = app_private.current_user_id()
       );
 
     -- The portal never sees an archived persona (specs/clientes.md §5, rule 4); the agency side
@@ -291,6 +357,7 @@ export async function up(knex) {
       with check (
         app_private.has_agency_permission(app_private.client_agency_id(client_id), 'cliente.operar')
         and app_private.client_is_active(client_id)
+        and updated_by = app_private.current_user_id()
       );
 
     create policy client_personas_update on public.client_personas
@@ -302,13 +369,25 @@ export async function up(knex) {
       with check (
         app_private.has_agency_permission(app_private.client_agency_id(client_id), 'cliente.operar')
         and app_private.client_is_active(client_id)
+        and updated_by = app_private.current_user_id()
       );
 
+    -- The portal branch also requires the thread's persona (if any) to still be active: specs/
+    -- clientes.md §4 says an archived persona's threads go read-only for the portal, and reading
+    -- them at all is the more basic half of that -- an archived persona already "some do portal",
+    -- so a conversation about it should not keep surfacing there either. The agency side is
+    -- unfiltered: collaborators keep the full history regardless of persona status.
     create policy client_threads_select on public.client_threads
       for select to ageniza_app
       using (
         app_private.is_agency_member(app_private.client_agency_id(client_id))
-        or app_private.is_client_member(client_id)
+        or (
+          app_private.is_client_member(client_id)
+          and (
+            persona_id is null
+            or exists (select 1 from public.client_personas persona where persona.id = persona_id and persona.status = 'active')
+          )
+        )
       );
 
     -- The side cannot be forged: 'agency' requires cliente.operar, 'client' requires the vínculo,
@@ -331,22 +410,44 @@ export async function up(knex) {
 
     -- Resolving is the only UPDATE the column grant allows, and only cliente.operar reaches it --
     -- a vínculo de cliente never satisfies has_agency_permission, so it never writes resolved_at.
+    -- resolved_by = current_user_id() in WITH CHECK stops a resolver from attributing the resolution
+    -- to someone else (the client_threads_resolve_stamp trigger separately pins resolved_at to
+    -- now(), so together neither column is forgeable). The persona-active clause matches the SPEC's
+    -- "threads ficam somente leitura" for an archived persona: resolving is a write, so it is refused
+    -- the same as any other write once the persona behind the thread is archived.
     create policy client_threads_resolve on public.client_threads
       for update to ageniza_app
       using (
         app_private.has_agency_permission(app_private.client_agency_id(client_id), 'cliente.operar')
         and app_private.client_is_active(client_id)
+        and (
+          persona_id is null
+          or exists (select 1 from public.client_personas persona where persona.id = persona_id and persona.status = 'active')
+        )
       )
       with check (
         app_private.has_agency_permission(app_private.client_agency_id(client_id), 'cliente.operar')
         and app_private.client_is_active(client_id)
+        and resolved_by = app_private.current_user_id()
       );
 
+    -- Same persona-active filter as client_threads_select, reached through the thread since a
+    -- comment does not carry persona_id itself.
     create policy client_thread_comments_select on public.client_thread_comments
       for select to ageniza_app
       using (
         app_private.is_agency_member(app_private.client_agency_id(client_id))
-        or app_private.is_client_member(client_id)
+        or (
+          app_private.is_client_member(client_id)
+          and exists (
+            select 1
+            from public.client_threads thread
+            left join public.client_personas persona on persona.id = thread.persona_id
+            where thread.id = thread_id
+              and thread.client_id = client_thread_comments.client_id
+              and (thread.persona_id is null or persona.status = 'active')
+          )
+        )
       );
 
     create policy client_thread_comments_insert on public.client_thread_comments
