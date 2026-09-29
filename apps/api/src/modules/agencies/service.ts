@@ -33,11 +33,20 @@ export const loadAgencyMe = async (transaction: AgencyTransaction, agencyId: str
       agency.id as agency_id,
       agency.name as agency_name,
       (agency.owner_user_id = app_private.current_user_id()) as is_owner,
-      -- Owner is not a role; the fallback label mirrors GET /me/contexts exactly. Permissions
-      -- below stay the authoritative field: a membership pointing at another agency's role is
-      -- labelled but grants nothing.
-      coalesce(role.key, 'admin') as role_key,
-      coalesce(role.name, 'Admin') as role_name,
+      -- Owner is not a role, so an owner without an effective membership role is labelled with the
+      -- admin preset, exactly like GET /me/contexts. Every other case without a role (a
+      -- membership pointing at another agency's role, hidden by the scope above) gets a neutral
+      -- label instead of borrowing "Admin": permissions below stay the authoritative field.
+      case
+        when role.id is not null then role.key
+        when agency.owner_user_id = app_private.current_user_id() then 'admin'
+        else 'sem-papel'
+      end as role_key,
+      case
+        when role.id is not null then role.name
+        when agency.owner_user_id = app_private.current_user_id() then 'Admin'
+        else 'Sem papel'
+      end as role_name,
       case
         when agency.owner_user_id = app_private.current_user_id() then (
           select coalesce(array_agg(permission.key order by permission.key), array[]::text[])

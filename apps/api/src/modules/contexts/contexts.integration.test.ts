@@ -29,6 +29,7 @@ let app: TestApp;
 const createdUserIds: string[] = [];
 const createdAgencyIds: string[] = [];
 const createdClientIds: string[] = [];
+const createdRoleIds: string[] = [];
 
 let adminRoleId: string;
 let productionRoleId: string;
@@ -137,6 +138,7 @@ describe('contexts module (AUTH-20C)', () => {
     await owner.knex('user_context_preferences').whereIn('user_id', createdUserIds).delete();
     await owner.knex('client_memberships').whereIn('client_id', clientIds).delete();
     await owner.knex('agency_memberships').whereIn('agency_id', agencyIds).delete();
+    await owner.knex('roles').whereIn('id', createdRoleIds).delete();
     await owner.knex('clients').whereIn('id', clientIds).delete();
     await owner.knex('agencies').whereIn('id', agencyIds).update({ owner_user_id: null });
     await owner.knex('agencies').whereIn('id', agencyIds).delete();
@@ -434,6 +436,23 @@ describe('contexts module (AUTH-20C)', () => {
 
     const status = await postOnboardingSeen(collaboratorCookie, client);
     expect(status).toBe(404);
+  });
+
+  it('#18 a membership pointing at another agency role shows a neutral label, never Admin', async () => {
+    const user = await makeUser('ctx-foreign-role');
+    const homeAgency = await createAgency('Foreign Role Home', null);
+    const sourceAgency = await createAgency('Foreign Role Source', null);
+    const roleId = randomUUID();
+    createdRoleIds.push(roleId);
+    await owner.knex('roles').insert({ id: roleId, agency_id: sourceAgency, key: 'bigrole', name: 'Big Role', is_system: false });
+    await addAgencyMembership(homeAgency, user.id, roleId);
+    const cookie = await loginCookie(user);
+
+    const { status, contexts } = await getContexts(cookie);
+    expect(status).toBe(200);
+    expect(contexts).toEqual([
+      expect.objectContaining({ type: 'agency', agencyId: homeAgency, roleKey: 'sem-papel', roleName: 'Sem papel', isOwner: false })
+    ]);
   });
 
   it('#17 no log line contains a full email address or a cookie value across the context routes', async () => {
