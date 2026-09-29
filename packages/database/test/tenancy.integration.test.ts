@@ -210,6 +210,11 @@ afterAll(async () => {
   }
 });
 
+// PR #159 (issue #94): the value-dependent half of the agency_memberships UPDATE rule now lives in
+// a BEFORE UPDATE trigger (app_private.check_agency_membership_update), not in WITH CHECK, so a
+// denial there raises this custom message instead of Postgres's own "row-level security" wording.
+const membershipRuleDenied = /colaborador\.\w+ is required|Owner's role and status cannot be changed|role_id must be a system role/;
+
 describe('AUTH-20B database RLS and invitation functions', () => {
   it('hides every tenant table without app.user_id', async () => {
     const rows = await getApplication().transaction(async (transaction) => ({
@@ -543,7 +548,7 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
     await expect(asUser(adminC, (transaction) => transaction('agency_memberships')
       .where({ agency_id: agencyC, user_id: targetC }).update({ role_id: accountManagerRoleId }))).resolves.toBe(1);
     await expect(asUser(adminC, (transaction) => transaction('agency_memberships')
-      .where({ agency_id: agencyC, user_id: targetC }).update({ role_id: adminRoleId }))).rejects.toThrow(/row-level security/);
+      .where({ agency_id: agencyC, user_id: targetC }).update({ role_id: adminRoleId }))).rejects.toThrow(membershipRuleDenied);
     await expect(getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).first('role_id'))
       .resolves.toEqual({ role_id: accountManagerRoleId });
   });
@@ -557,7 +562,7 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
     await expect(asUser(managerC, (transaction) => transaction('agency_memberships')
       .where({ agency_id: agencyC, user_id: targetC }).update({ job_title: 'Renamed' }))).resolves.toBe(1);
     await expect(asUser(managerC, (transaction) => transaction('agency_memberships')
-      .where({ agency_id: agencyC, user_id: targetC }).update({ role_id: accountManagerRoleId }))).rejects.toThrow(/row-level security/);
+      .where({ agency_id: agencyC, user_id: targetC }).update({ role_id: accountManagerRoleId }))).rejects.toThrow(membershipRuleDenied);
     await expect(getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).first('role_id'))
       .resolves.toEqual({ role_id: productionRoleId });
   });
@@ -569,11 +574,11 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
 
   it('lets an admin remove and reactivate a collaborator, each gated by its own permission', async () => {
     await expect(asUser(managerC, (transaction) => transaction('agency_memberships')
-      .where({ agency_id: agencyC, user_id: targetC }).update({ status: 'removed' }))).rejects.toThrow(/row-level security/);
+      .where({ agency_id: agencyC, user_id: targetC }).update({ status: 'removed' }))).rejects.toThrow(membershipRuleDenied);
     await expect(asUser(adminC, (transaction) => transaction('agency_memberships')
       .where({ agency_id: agencyC, user_id: targetC }).update({ status: 'removed' }))).resolves.toBe(1);
     await expect(asUser(managerC, (transaction) => transaction('agency_memberships')
-      .where({ agency_id: agencyC, user_id: targetC }).update({ status: 'active', role_id: productionRoleId }))).rejects.toThrow(/row-level security/);
+      .where({ agency_id: agencyC, user_id: targetC }).update({ status: 'active', role_id: productionRoleId }))).rejects.toThrow(membershipRuleDenied);
     await expect(asUser(adminC, (transaction) => transaction('agency_memberships')
       .where({ agency_id: agencyC, user_id: targetC }).update({ status: 'active', role_id: productionRoleId }))).resolves.toBe(1);
   });
@@ -604,13 +609,13 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
   // the same attempt returns 0 rows silently. Either way the final state must not move.
   it('never lets the Owner be the target of a role or status change', async () => {
     await expect(asUser(adminC, (transaction) => transaction('agency_memberships')
-      .where({ agency_id: agencyC, user_id: ownerC }).update({ role_id: productionRoleId }))).rejects.toThrow(/row-level security/);
+      .where({ agency_id: agencyC, user_id: ownerC }).update({ role_id: productionRoleId }))).rejects.toThrow(membershipRuleDenied);
     await expect(asUser(adminC, (transaction) => transaction('agency_memberships')
-      .where({ agency_id: agencyC, user_id: ownerC }).update({ status: 'removed' }))).rejects.toThrow(/row-level security/);
+      .where({ agency_id: agencyC, user_id: ownerC }).update({ status: 'removed' }))).rejects.toThrow(membershipRuleDenied);
     await expect(asUser(ownerC, (transaction) => transaction('agency_memberships')
-      .where({ agency_id: agencyC, user_id: ownerC }).update({ role_id: productionRoleId }))).rejects.toThrow(/row-level security/);
+      .where({ agency_id: agencyC, user_id: ownerC }).update({ role_id: productionRoleId }))).rejects.toThrow(membershipRuleDenied);
     await expect(asUser(managerC, (transaction) => transaction('agency_memberships')
-      .where({ agency_id: agencyC, user_id: ownerC }).update({ status: 'removed' }))).rejects.toThrow(/row-level security/);
+      .where({ agency_id: agencyC, user_id: ownerC }).update({ status: 'removed' }))).rejects.toThrow(membershipRuleDenied);
     await expect(asUser(productionC, (transaction) => transaction('agency_memberships')
       .where({ agency_id: agencyC, user_id: ownerC }).update({ role_id: productionRoleId }))).resolves.toBe(0);
     await expect(asUser(productionC, (transaction) => transaction('agency_memberships')
@@ -644,5 +649,169 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
     await expect(getOwner().knex('invitations').where({ id: adminInvite }).first('role_id')).resolves.toEqual({ role_id: adminRoleId });
 
     await getOwner().knex('invitations').where({ id: adminInvite }).delete();
+  });
+
+  // PR #159 review, finding 1: the table-wide UPDATE grant let any actor who passed USING move a
+  // membership between agencies or users by setting agency_id/user_id/id, bypassing the
+  // admin-grant gate entirely (role_id/job_title/status compared equal to themselves). The grant
+  // is now column-scoped, so this fails before RLS or the trigger ever run, for every actor.
+  it('refuses to move a membership between agencies or users, regardless of who asks', async () => {
+    for (const actor of [adminC, managerC, ownerC]) {
+      await expect(asUser(actor, (transaction) => transaction('agency_memberships')
+        .where({ agency_id: agencyC, user_id: targetC }).update({ agency_id: agencyA }))).rejects.toThrow(/permission denied/);
+      await expect(asUser(actor, (transaction) => transaction('agency_memberships')
+        .where({ agency_id: agencyC, user_id: targetC }).update({ user_id: userA }))).rejects.toThrow(/permission denied/);
+      await expect(asUser(actor, (transaction) => transaction('agency_memberships')
+        .where({ agency_id: agencyC, user_id: targetC }).update({ id: randomUUID() }))).rejects.toThrow(/permission denied/);
+    }
+
+    await expect(getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).first('agency_id', 'user_id'))
+      .resolves.toEqual({ agency_id: agencyC, user_id: targetC });
+  });
+
+  // The exact attack proven in the review: the account manager (only colaborador.alterar_funcao)
+  // took the Owner's row, whose role_id already reads 'admin', and reassigned user_id to an
+  // unrelated account -- handing out admin without ever touching colaborador.atribuir_admin.
+  it("rejects the reviewer's attack: the account manager cannot move the Owner's row to another user", async () => {
+    const looseUser = randomUUID();
+    await getOwner().knex('auth.user').insert({ id: looseUser, name: 'Loose User', email: `loose-${looseUser}@example.test`, emailVerified: true });
+
+    try {
+      await expect(asUser(managerC, (transaction) => transaction('agency_memberships')
+        .where({ agency_id: agencyC, user_id: ownerC }).update({ user_id: looseUser }))).rejects.toThrow(/permission denied/);
+
+      await expect(getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: ownerC }).first('user_id'))
+        .resolves.toEqual({ user_id: ownerC });
+      await expect(getOwner().knex('agency_memberships').where({ user_id: looseUser }).select('id')).resolves.toEqual([]);
+    } finally {
+      await getOwner().knex('auth.user').where({ id: looseUser }).delete();
+    }
+  });
+
+  // Finding 3: is_admin_role's own agency filter makes it return false for a role from another
+  // agency, so the admin-grant gate never sees it -- but nothing else stopped the assignment
+  // itself. Both places a role is handed out must recognise "not mine, and not a system role" on
+  // their own.
+  it('refuses a role_id belonging to another agency, on UPDATE and on invite', async () => {
+    const foreignRoleId = randomUUID();
+    await getOwner().knex('roles').insert({ id: foreignRoleId, agency_id: agencyA, key: `foreign-${foreignRoleId}`, name: 'Foreign Role', is_system: false });
+
+    try {
+      await expect(asUser(adminC, (transaction) => transaction('agency_memberships')
+        .where({ agency_id: agencyC, user_id: targetC }).update({ role_id: foreignRoleId }))).rejects.toThrow(membershipRuleDenied);
+      await expect(getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).first('role_id'))
+        .resolves.toEqual({ role_id: productionRoleId });
+
+      const foreignInvite = randomUUID();
+      const inviteRow = {
+        id: foreignInvite,
+        agency_id: agencyC,
+        purpose: 'collaborator_invite',
+        email: `foreign-invite-${foreignInvite}@example.test`,
+        role_id: foreignRoleId,
+        token_hash: `foreign-invite-${foreignInvite}`,
+        expires_at: new Date(Date.now() + 86_400_000)
+      };
+      await expect(asUser(adminC, (transaction) => transaction('invitations').insert(inviteRow))).rejects.toThrow(/row-level security/);
+      await expect(getOwner().knex('invitations').where({ id: foreignInvite }).select('id')).resolves.toEqual([]);
+    } finally {
+      await getOwner().knex('roles').where({ id: foreignRoleId }).delete();
+    }
+  });
+
+  it('lets a non-Owner admin invite with a non-admin role, and keeps resend working', async () => {
+    const collaboratorInviteId = randomUUID();
+    const email = `admin-c-collab-invite-${collaboratorInviteId}@example.test`;
+    const inviteRow = {
+      id: collaboratorInviteId,
+      agency_id: agencyC,
+      purpose: 'collaborator_invite',
+      email,
+      role_id: productionRoleId,
+      token_hash: `admin-c-collab-invite-${collaboratorInviteId}`,
+      expires_at: new Date(Date.now() + 86_400_000)
+    };
+    await expect(asUser(adminC, (transaction) => transaction('invitations').insert(inviteRow))).resolves.toBeDefined();
+
+    // Resend, as convite.reenviar does in the API: revoke, then insert a replacement.
+    await expect(asUser(adminC, (transaction) => transaction('invitations').where({ id: collaboratorInviteId }).update({ revoked_at: new Date() }))).resolves.toBe(1);
+    const resendId = randomUUID();
+    await expect(asUser(adminC, (transaction) => transaction('invitations').insert({
+      ...inviteRow,
+      id: resendId,
+      token_hash: `admin-c-collab-resend-${resendId}`
+    }))).resolves.toBeDefined();
+
+    await getOwner().knex('invitations').whereIn('id', [collaboratorInviteId, resendId]).delete();
+  });
+
+  it('keeps client invitations and their resend unaffected by the admin-grant gate', async () => {
+    const clientId = randomUUID();
+    await getOwner().knex('clients').insert({ id: clientId, agency_id: agencyC, name: 'Client C' });
+
+    try {
+      const clientInviteId = randomUUID();
+      const email = `client-invite-${clientInviteId}@example.test`;
+      await expect(asUser(adminC, (transaction) => transaction('invitations').insert({
+        id: clientInviteId,
+        agency_id: agencyC,
+        purpose: 'client_invite',
+        client_id: clientId,
+        email,
+        token_hash: `client-invite-${clientInviteId}`,
+        expires_at: new Date(Date.now() + 86_400_000)
+      }))).resolves.toBeDefined();
+
+      await expect(asUser(adminC, (transaction) => transaction('invitations').where({ id: clientInviteId }).update({ revoked_at: new Date() }))).resolves.toBe(1);
+      const resendId = randomUUID();
+      await expect(asUser(adminC, (transaction) => transaction('invitations').insert({
+        id: resendId,
+        agency_id: agencyC,
+        purpose: 'client_invite',
+        client_id: clientId,
+        email,
+        token_hash: `client-invite-resend-${resendId}`,
+        expires_at: new Date(Date.now() + 86_400_000)
+      }))).resolves.toBeDefined();
+
+      await getOwner().knex('invitations').whereIn('id', [clientInviteId, resendId]).delete();
+    } finally {
+      await getOwner().knex('clients').where({ id: clientId }).delete();
+    }
+  });
+
+  // Finding 2: under READ COMMITTED, a sub-select's snapshot goes stale the moment a concurrent
+  // writer commits. T1 (the Owner) demotes the target and holds the row lock past its own commit
+  // via pg_sleep; T2 (a plain Admin, who never holds colaborador.atribuir_admin) tries to re-grant
+  // admin on the very same row and blocks on the lock. Once T1 commits, Postgres's EvalPlanQual
+  // reapplies T2's UPDATE against the row T1 just committed, and the trigger's OLD is that fresh
+  // row -- not a stale sub-select -- so the re-grant is still refused.
+  it('closes the concurrent-update race: a re-grant of admin cannot outlive a committed demotion', async () => {
+    await getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).update({ role_id: adminRoleId });
+
+    try {
+      const ownerDemotion = asUser(ownerC, async (transaction) => {
+        await transaction('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).update({ role_id: productionRoleId });
+        await raw(transaction, 'select pg_sleep(0.4)', []);
+      });
+
+      const adminReGrant = (async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return asUser(adminC, (transaction) => transaction('agency_memberships')
+          .where({ agency_id: agencyC, user_id: targetC }).update({ role_id: adminRoleId, job_title: 'Re-grant attempt' }));
+      })();
+
+      const [demotionResult, reGrantResult] = await Promise.allSettled([ownerDemotion, adminReGrant]);
+      expect(demotionResult.status).toBe('fulfilled');
+      expect(reGrantResult.status).toBe('rejected');
+      if (reGrantResult.status === 'rejected') {
+        expect(String(reGrantResult.reason)).toMatch(membershipRuleDenied);
+      }
+
+      await expect(getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).first('role_id', 'job_title'))
+        .resolves.toEqual({ role_id: productionRoleId, job_title: 'Original' });
+    } finally {
+      await getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).update({ role_id: productionRoleId, job_title: 'Original' });
+    }
   });
 });

@@ -4,22 +4,32 @@
  * the UPDATE policy it has never had, and invitations_insert is replaced to recognise the same
  * admin-grant gate.
  *
- * agency_memberships_update checks each column against its own current value, not just "does the
- * actor hold one of the module's permissions": a plain sub-select against the same row (no FOR
- * UPDATE) reads the snapshot taken at the start of the statement, i.e. the value before this
- * UPDATE — see https://www.postgresql.org/docs/current/ddl-rowsecurity.html on sub-selects in
- * policies. Without that, colaborador.alterar_funcao alone (job_title) would also let role_id
- * through on any statement that touches both columns.
+ * Post-review correction (PR #159, issue #94). The first cut compared each column against a
+ * plain sub-select of the same row inside WITH CHECK, which has two defects a security review
+ * found:
  *
- * The Owner's row is a special case, but only for job_title: the SPEC (seção 4/5, regra 4)
- * forbids removing the Owner or changing their role_id, never editing their job_title. USING
- * cannot see the statement's target column (it only ever sees the row as it stood before the
- * UPDATE), so it cannot admit the row "for job_title only" — it must admit or reject the whole
- * row for a given actor. It therefore admits the Owner's row exactly when the actor holds
- * colaborador.alterar_funcao (the Owner passes by ownership, same as everyone else), and WITH
- * CHECK then makes role_id and status unconditionally immovable on that row: any attempt to
- * change either raises a row-security error rather than silently affecting 0 rows, because by
- * then USING has already admitted the row into the update.
+ * 1. The table-wide UPDATE grant (20260919000000) left agency_id/user_id/id writable. When those
+ *    are the only columns a statement touches, role_id/job_title/status trivially equal
+ *    themselves and every WITH CHECK branch is satisfied — any actor holding a module permission
+ *    could move a membership to another agency or hand it to another user_id, which is exactly
+ *    how atribuir_admin was bypassed. Fixed by revoking table UPDATE and granting it only on
+ *    (role_id, job_title, status, updated_at): the identity columns are no longer part of the
+ *    grant, so Postgres refuses any statement that touches them before RLS is even evaluated.
+ * 2. A plain sub-select with no FOR UPDATE reads the snapshot taken at the start of the
+ *    statement. That is correct against a single writer, but under READ COMMITTED with a second,
+ *    concurrent UPDATE the row goes through EvalPlanQual and is reapplied on the newest committed
+ *    version — while the sub-select still reads the pre-concurrent-write snapshot. An actor who
+ *    started their UPDATE first can have their WITH CHECK re-evaluated against a value someone
+ *    else just committed, and a rule keyed on "did this column change" can be reapplied on stale
+ *    data. Fixed by moving the OLD/NEW comparison into a BEFORE UPDATE trigger: OLD there is the
+ *    row actually being updated (the same one EvalPlanQual reapplies the SET against), not an
+ *    independent read.
+ *
+ * USING keeps only row-level filtering — does the actor hold any of the module's permissions on
+ * this agency — and no longer special-cases the Owner: whether a specific column may move on a
+ * specific row is entirely the trigger's job now, since only it sees a trustworthy OLD/NEW pair.
+ * WITH CHECK repeats the same filter (Postgres defaults it to USING when omitted, but the
+ * decisions.md pattern for this table spells it out).
  */
 export async function up(knex) {
   await knex.raw(`
@@ -95,66 +105,127 @@ export async function up(knex) {
   `);
 
   await knex.raw(`
-    -- No UPDATE policy existed on this table before: every collaborator-role or job_title change,
-    -- and every remove/reactivate, has found zero rows in both layers since AUTH-20B.
-    --
-    -- The Owner exclusion lives in USING, not WITH CHECK: USING only sees the row as it stood
-    -- before the statement, so it cannot depend on a proposed new value, but it can silently drop
-    -- an ineligible row from the update (0 rows affected). WITH CHECK runs only after USING has
-    -- already admitted the row, so once it fails there Postgres raises a row-security error instead
-    -- of returning 0 -- that is unavoidable for any rule that depends on the new value, such as the
-    -- admin-grant gate below or a role/status change outside the permission that governs it.
+    -- No UPDATE policy or grant existed on this table before: every collaborator-role or
+    -- job_title change, and every remove/reactivate, has found zero rows in both layers since
+    -- AUTH-20B. The table-wide grant is narrowed first: agency_id, user_id and id must never be
+    -- part of the application role's UPDATE vocabulary, because no rule below depends on their
+    -- own values, and any rule that did would still be racing the same value it is comparing
+    -- against (see the top-of-file note on sub-selects vs. triggers). A statement that touches
+    -- any of them is refused by the grant itself, before RLS or the trigger below ever run.
+    revoke update on public.agency_memberships from ageniza_app;
+    grant update (role_id, job_title, status, updated_at) on public.agency_memberships to ageniza_app;
+
     create policy agency_memberships_update on public.agency_memberships
       for update to ageniza_app
       using (
-        case
-          when app_private.is_agency_owner(agency_memberships.agency_id, agency_memberships.user_id)
-            then app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_funcao')
-          else (
-            app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_papel')
-            or app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_funcao')
-            or app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.remover')
-          )
-        end
+        app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_papel')
+        or app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_funcao')
+        or app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.remover')
       )
       with check (
-        (
-          agency_memberships.role_id = (
-            select membership.role_id from public.agency_memberships membership where membership.id = agency_memberships.id
-          )
-          or (
-            not app_private.is_agency_owner(agency_memberships.agency_id, agency_memberships.user_id)
-            and app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_papel')
-            and (
-              not app_private.is_admin_role(agency_memberships.role_id, agency_memberships.agency_id)
-              or app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.atribuir_admin')
-            )
-          )
-        )
-        and (
-          agency_memberships.job_title is not distinct from (
-            select membership.job_title from public.agency_memberships membership where membership.id = agency_memberships.id
-          )
-          or app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_funcao')
-        )
-        and (
-          agency_memberships.status = (
-            select membership.status from public.agency_memberships membership where membership.id = agency_memberships.id
-          )
-          or (
-            not app_private.is_agency_owner(agency_memberships.agency_id, agency_memberships.user_id)
-            and (
-              (agency_memberships.status = 'removed' and app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.remover'))
-              or (agency_memberships.status = 'active' and app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_papel'))
-            )
-          )
-        )
+        app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_papel')
+        or app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.alterar_funcao')
+        or app_private.has_agency_permission(agency_memberships.agency_id, 'colaborador.remover')
       );
   `);
 
   await knex.raw(`
+    -- Enforces the value-dependent half of the rule that RLS cannot express safely (see the
+    -- top-of-file note): which column may change, and to what, given OLD as it truly stands at
+    -- the moment this row is locked for update -- not a sub-select's stale snapshot. Runs as
+    -- security definer so app_private.has_agency_permission and is_agency_owner/is_admin_role see
+    -- the same authorization surface RLS policies do, regardless of table grants on this role.
+    create function app_private.check_agency_membership_update()
+    returns trigger
+    language plpgsql
+    security definer
+    set search_path = ''
+    as $function$
+    begin
+      -- RLS itself is bypassed for the table owner (migrations, this package's tests, any future
+      -- ops tooling), which is how those connections write fixtures directly today; a trigger is
+      -- not bypassed the same way, so it must bypass explicitly for the one case RLS already
+      -- does: no authenticated user context at all. app_private.has_agency_permission always
+      -- resolves against current_user_id(), so without app.user_id every permission check below
+      -- would read as false and this trigger would block administrative writes RLS never gated.
+      -- ageniza_app itself never reaches here without app.user_id set: without it, USING already
+      -- sees no permission and the update affects zero rows before this trigger ever runs.
+      if pg_catalog.current_setting('app.user_id', true) is null or pg_catalog.current_setting('app.user_id', true) = '' then
+        return new;
+      end if;
+
+      if app_private.is_agency_owner(old.agency_id, old.user_id) then
+        if new.role_id is distinct from old.role_id or new.status is distinct from old.status then
+          raise exception using
+            errcode = '42501',
+            message = 'The agency Owner''s role and status cannot be changed by this module.';
+        end if;
+      elsif new.role_id is distinct from old.role_id then
+        if not app_private.has_agency_permission(old.agency_id, 'colaborador.alterar_papel') then
+          raise exception using
+            errcode = '42501',
+            message = 'colaborador.alterar_papel is required to change role_id.';
+        end if;
+
+        if not exists (
+          select 1
+          from public.roles role
+          where role.id = new.role_id
+            and (role.agency_id is null or role.agency_id = old.agency_id)
+        ) then
+          raise exception using
+            errcode = '42501',
+            message = 'role_id must be a system role or belong to this agency.';
+        end if;
+
+        if app_private.is_admin_role(new.role_id, old.agency_id)
+           and not app_private.has_agency_permission(old.agency_id, 'colaborador.atribuir_admin')
+        then
+          raise exception using
+            errcode = '42501',
+            message = 'colaborador.atribuir_admin is required to grant the admin role.';
+        end if;
+      end if;
+
+      if new.job_title is distinct from old.job_title
+         and not app_private.has_agency_permission(old.agency_id, 'colaborador.alterar_funcao')
+      then
+        raise exception using
+          errcode = '42501',
+          message = 'colaborador.alterar_funcao is required to change job_title.';
+      end if;
+
+      -- The Owner branch above already rejects any status change on the Owner's row, so reaching
+      -- here with new.status distinct from old.status means old.user_id is not the Owner.
+      if new.status is distinct from old.status then
+        if new.status = 'removed' and not app_private.has_agency_permission(old.agency_id, 'colaborador.remover') then
+          raise exception using
+            errcode = '42501',
+            message = 'colaborador.remover is required to remove a collaborator.';
+        elsif new.status = 'active' and not app_private.has_agency_permission(old.agency_id, 'colaborador.alterar_papel') then
+          raise exception using
+            errcode = '42501',
+            message = 'colaborador.alterar_papel is required to reactivate a collaborator.';
+        end if;
+      end if;
+
+      return new;
+    end;
+    $function$;
+    revoke all on function app_private.check_agency_membership_update() from public;
+
+    create trigger agency_memberships_check_update
+      before update on public.agency_memberships
+      for each row
+      execute function app_private.check_agency_membership_update();
+  `);
+
+  await knex.raw(`
     -- Same admin-grant gate as the UPDATE policy above, at the other place a role is handed out.
-    -- The resend path (convite.reenviar) also re-inserts a row, so it is covered by the same check.
+    -- The resend path (convite.reenviar) also re-inserts a row, so it is covered by the same
+    -- check. The role-scope condition closes the same gap the trigger closes for UPDATE: without
+    -- it, an inviter could carry a role_id belonging to another agency's custom role into their
+    -- own agency's invitation, which is_admin_role's own agency filter would silently miss.
     drop policy invitations_insert on public.invitations;
 
     create policy invitations_insert on public.invitations
@@ -163,6 +234,11 @@ export async function up(knex) {
         (purpose = 'collaborator_invite' and (
           app_private.has_agency_permission(agency_id, 'colaborador.convidar')
           or app_private.has_agency_permission(agency_id, 'convite.reenviar')
+        ) and exists (
+          select 1
+          from public.roles role
+          where role.id = invitations.role_id
+            and (role.agency_id is null or role.agency_id = invitations.agency_id)
         ) and (
           not app_private.is_admin_role(role_id, agency_id)
           or app_private.has_agency_permission(agency_id, 'colaborador.atribuir_admin')
