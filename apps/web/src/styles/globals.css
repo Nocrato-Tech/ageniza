@@ -204,3 +204,42 @@ input:focus-visible {
 .ui-live-status {
   min-height: 1.5rem;
 }
+
+/* Legal pages: specs/auth.md section 7, a long-form reading column with a comfortable line length. */
+.legal-document {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 40rem;
+  margin: 0 auto;
+}
+
+.legal-document h1 {
+  font: var(--heading-lg);
+}
+
+.legal-document h2 {
+  margin-top: var(--space-6);
+  font: var(--heading-md);
+}
+
+.legal-document p,
+.legal-document li {
+  font: var(--body-lg);
+}
+
+.legal-version {
+  color: var(--text-muted);
+  font: var(--body-md);
+}
+
+.legal-draft {
+  color: var(--text-danger);
+  font: var(--body-md);
+}
+
+.legal-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-8);
+}
