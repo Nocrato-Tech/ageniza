@@ -71,7 +71,10 @@ export interface IdentityStorageConfig {
   readonly downloadUrlExpirySeconds: number;
   /** Upload runs through the API itself, not a presigned PUT (identity images are small enough
    * that a synchronous server-side `PutObject` can validate real bytes before writing, with no
-   * staging/confirm round trip). This is the limit enforced on that upload. */
+   * staging/confirm round trip). This is the limit enforced on that upload -- capped at 10 MiB by
+   * the schema. Because this body passes through Fastify's own parser, the route that accepts it
+   * (#101, #126) must declare its own `bodyLimit` at least this large; the global
+   * `API_BODY_LIMIT_BYTES` is not raised to accommodate it. */
   readonly maxImageBytes: number;
 }
 export interface ApiConfig extends ServerConfig {
@@ -240,7 +243,12 @@ const apiSchema = sharedServerSchema.extend({
   ...identityStorageEnvironmentShape,
   IDENTITY_STORAGE_PUBLIC_ENDPOINT: optionalUrl('must be a valid storage endpoint URL'),
   IDENTITY_DOWNLOAD_URL_EXPIRY_SECONDS: z.coerce.number().int().min(30).max(3_600).default(300),
-  IDENTITY_MAX_IMAGE_BYTES: z.coerce.number().int().min(1).default(5 * 1024 * 1024)
+  // Capped: this upload runs through the API's own body parser (see IdentityStorageConfig's doc
+  // comment), unlike media's direct-to-bucket presigned PUT, so an unbounded value here would let
+  // the route buffer arbitrarily large request bodies in memory. The route that accepts this body
+  // (#101, #126) must declare its own Fastify `bodyLimit` at least this large -- the global
+  // API_BODY_LIMIT_BYTES (1 MiB by default) is not raised for this.
+  IDENTITY_MAX_IMAGE_BYTES: z.coerce.number().int().min(1).max(10 * 1024 * 1024).default(5 * 1024 * 1024)
 });
 const workerSchema = sharedServerSchema.extend({
   // Binding all interfaces is reserved for the isolated local container network.
@@ -448,6 +456,15 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
     throw new ConfigValidationError('API', [{
       path: 'IDENTITY_STORAGE_BUCKET',
       message: 'must be a different bucket than R2_BUCKET: identity storage is separate from media storage'
+    }]);
+  }
+  // A shared bucket-scoped R2 API token would defeat the point of the separation above just as
+  // completely as a shared bucket: a compromised credential for one destination must never reach
+  // the other.
+  if (allStoragePresent && allIdentityStoragePresent && result.data.R2_ACCESS_KEY_ID === result.data.IDENTITY_STORAGE_ACCESS_KEY_ID) {
+    throw new ConfigValidationError('API', [{
+      path: 'IDENTITY_STORAGE_ACCESS_KEY_ID',
+      message: 'must be a different access key than R2_ACCESS_KEY_ID: identity storage uses its own R2 API token'
     }]);
   }
 

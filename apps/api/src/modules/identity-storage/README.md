@@ -19,38 +19,83 @@ This module has no routes of its own: it is infrastructure that `colaboradores` 
 ## What is here
 
 - `storage-client.ts` -- `createIdentityStorageClient`, an S3-compatible client against the
-  separate identity bucket: `uploadObject`, `deleteObject`, `presignGetObject`. Mirrors
-  `apps/api/src/modules/media/storage-client.ts`.
-- `policy.ts` -- the accepted content types (the same still-image allowlist media uses: PNG,
-  JPEG, WebP, GIF; no video) and the two object-key shapes this storage must serve.
+  separate identity bucket, with exactly three operations: `uploadIdentityImage`,
+  `deleteObject`, `presignGetObject`. Mirrors `apps/api/src/modules/media/storage-client.ts`.
+- `policy.ts` -- `detectIdentityImageType` (magic-byte detection of the still-image allowlist
+  media uses: PNG, JPEG, WebP, GIF; no video), `contentTypeForExtension` (the reverse lookup a
+  signed read URL uses to force a safe response type), and the object-key builders for the two
+  owners this storage must serve.
 
 ## Decisions made by this task (justified here, per issue #100)
 
 **Transport: upload through the API server, not a presigned PUT.** Media uses presigned PUT plus
 a `HeadObject` confirm step because files can be large and multipart; an identity image is capped
-at `IDENTITY_MAX_IMAGE_BYTES` (5 MiB by default) and always a single `PutObject`. Routing the
-bytes through the server lets the route that will call this client (#101, #126) validate the real
-size and content type of what was actually sent *before* it is written -- no staging key, no
-confirm round trip, no window where an unconfirmed object sits in the bucket. The trade-off is
-that the request body passes through the API process instead of going straight from the browser to
-the bucket; for an object this small, that cost is negligible next to the complexity it removes.
+at `IDENTITY_MAX_IMAGE_BYTES` (default 5 MiB, schema maximum 10 MiB) and always a single
+`PutObject`. Routing the bytes through the server lets `uploadIdentityImage` validate the real
+size and detect the real content type of what was actually sent *before* it is written -- no
+staging key, no confirm round trip, no window where an unconfirmed object sits in the bucket. The
+trade-off is that the request body passes through the API process instead of going straight from
+the browser to the bucket; for an object this small, that cost is negligible next to the
+complexity it removes.
 
-**Object key shape.** `users/<userId>/avatar.<ext>` and
-`agencies/<agencyId>/clients/<clientId>/avatar.<ext>` (`policy.ts`'s `buildUserAvatarKey` /
-`buildClientAvatarKey`). Deterministic per owner -- a re-upload overwrites the previous object at
-the same key -- so the caller does not need a list-and-clean step, only a `deleteObject` of the old
-key when an owner explicitly removes their photo. The prefix is the owner, never the agency alone:
-an agency-first key (`agencies/<agencyId>/avatar.<ext>`) would have quietly rebuilt the same
-per-tenant coupling this storage exists to avoid.
+Because this body is read by Fastify's own parser (unlike media's direct-to-bucket presigned PUT,
+which never touches it), **the route that calls `uploadIdentityImage` (#101, #126) must declare
+its own Fastify `bodyLimit`, at least the configured `maxImageBytes` plus any transport overhead
+(multipart form-data or base64 add their own).** The global
+`API_BODY_LIMIT_BYTES` (1 MiB by default) is deliberately not raised to accommodate this: raising
+it would widen every other route's exposure to large bodies, for the benefit of only this one.
 
-**Size and type limits.** Same still-image allowlist as media (`describeIdentityContentType`);
-video is never accepted here. `IDENTITY_MAX_IMAGE_BYTES` defaults to 5 MiB -- generous for a
-profile photo, small enough that a synchronous upload never risks blocking the API event loop for
-long.
+**Type detection is by content, never by a declared header or file name.** `uploadIdentityImage`
+ignores whatever `Content-Type` or extension a caller might have received from the browser and
+sniffs the first bytes itself (`detectIdentityImageType`): PNG, JPEG, GIF and WebP each have a
+fixed signature. Anything else -- including HTML or SVG wearing an `image/png` label, which is
+exactly the shape of attack a signed URL later serving `text/html` would enable -- is rejected
+before anything is written, via `IdentityImageTypeRejectedError`. `presignGetObject` then forces
+`ResponseContentType` (from the key's own extension) and `ResponseContentDisposition: inline` on
+every signed URL it issues, so what the browser receives can never be `text/html`, regardless of
+what ended up stored as the object's own metadata.
+
+**Size is validated by `uploadIdentityImage` itself**, against `IdentityStorageConfig.maxImageBytes`,
+throwing `IdentityImageTooLargeError` and writing nothing when the body is too large.
+
+**Object key shape: versioned, not deterministic.** `users/<userId>/avatar/<versionId>.<ext>` and
+`agencies/<agencyId>/clients/<clientId>/avatar/<versionId>.<ext>` (`policy.ts`'s
+`buildUserAvatarKeyPrefix`/`buildClientAvatarKeyPrefix`, which `uploadIdentityImage` appends the
+detected extension to). `versionId` is a fresh UUID the caller generates per upload -- **not** a
+fixed name like `avatar.<ext>`. A fixed name looked deterministic but had two real defects: an
+upload that changes content type (PNG to JPEG) left the previous extension's object behind
+forever, and even when the extension repeated, the object was overwritten *before* the caller's
+own database commit, so a rolled-back transaction left a photo live that no reference in the
+database ever pointed at.
+
+The protocol #101 and #126 must both follow:
+
+1. Call `uploadIdentityImage({ keyPrefix: buildUserAvatarKeyPrefix(userId, randomUUID()), body })`.
+   It returns the final `key` (extension included).
+2. Commit that `key` as the owner's current photo reference in the same database transaction the
+   route already needs for its other writes. Only after this commits does anything treat the new
+   key as current.
+3. If the owner had a previous key, `deleteObject` it now that the commit succeeded.
+
+If step 3 never runs (the process crashes between steps 2 and 3, for example), the previous
+object is merely orphaned, never referenced by anything and never served -- not the accumulating
+liability. This module does not (yet) sweep orphans; if that becomes worth doing, it is a
+follow-up, not a blocker for #101/#126. When an account or a client is deleted, the identity
+objects under its prefix should be removed too, once that deletion flow exists (out of scope
+here).
+
+Every id in a key is a UUID and every extension one of `detectIdentityImageType`'s own outputs
+(`policy.ts`'s `requireUuid`/`requireKnownExtension`, private to that module): a builder call with
+anything else -- including a `../` path segment -- throws rather than producing a key.
 
 **Read access: signed URL, like media.** Never a public bucket or object. A short-lived signed
 `GET` (`IDENTITY_DOWNLOAD_URL_EXPIRY_SECONDS`, 300s by default) is the only way anything reads an
 identity object, matching the media module's own invariant.
+
+**Credential separation is enforced, not just documented.** `packages/config/src/server.ts`
+refuses to load if `IDENTITY_STORAGE_BUCKET` equals `R2_BUCKET`, or if
+`IDENTITY_STORAGE_ACCESS_KEY_ID` equals `R2_ACCESS_KEY_ID`; `infra/vps/ageniza-deploy.sh` runs the
+same two checks against the production `runtime.env` before a deploy is allowed to proceed.
 
 ## Environment variables
 
@@ -58,15 +103,18 @@ See `.env.example` (local defaults) and `infra/vps/runtime.env.example` (product
 `IDENTITY_STORAGE_ENDPOINT`, `IDENTITY_STORAGE_ACCESS_KEY_ID`, `IDENTITY_STORAGE_SECRET_ACCESS_KEY`
 and `IDENTITY_STORAGE_BUCKET` are required together and required in production, exactly like
 media's `R2_*` variables -- see the `IdentityStorageConfig` doc comment in
-`packages/config/src/server.ts`. Configuration also refuses to load if
-`IDENTITY_STORAGE_BUCKET` is ever set to the same value as `R2_BUCKET`: the two buckets must stay
-distinct, or the whole point of this module is undone. `IDENTITY_STORAGE_PUBLIC_ENDPOINT` only
-matters when the API runs inside the local Compose network, exactly like `R2_PUBLIC_ENDPOINT`.
+`packages/config/src/server.ts`. Configuration also refuses to load if `IDENTITY_STORAGE_BUCKET` equals `R2_BUCKET`, or if
+`IDENTITY_STORAGE_ACCESS_KEY_ID` equals `R2_ACCESS_KEY_ID`: bucket and credential must both stay
+distinct from media's, or the whole point of this module is undone. `IDENTITY_STORAGE_PUBLIC_ENDPOINT`
+only matters when the API runs inside the local Compose network, exactly like `R2_PUBLIC_ENDPOINT`
+(and, like it, is not an allowed key in production's `runtime.env` -- see
+`infra/vps/ageniza-deploy.sh`).
 
 Local credentials come from the same `.local/storage.env` `pnpm storage:start` already generates
-for media -- LocalStack accepts any credential pair for any bucket, so no second secret pair is
-generated locally. Production uses a **separate R2 API token**, scoped only to the identity
-bucket (see below).
+for media, but as their **own generated pair** (`scripts/docker/local-stack.mjs`): LocalStack does
+not actually enforce any credential, but the two pairs are kept genuinely distinct locally too, so
+nothing about the local setup hides a real bug the production separation exists to prevent.
+Production uses a **separate R2 API token**, scoped only to the identity bucket (see below).
 
 ## Local environment: `pnpm storage:start`
 
@@ -89,14 +137,18 @@ prepares this destination with no manual step, same as media's bucket.
 - **No lifecycle rules are needed here.** Unlike media, there is no staging prefix and no
   multipart upload to clean up: every write is a single, already-validated `PutObject`.
 - **Never make the bucket or any object public.** Every object is fetched only through a signed
-  URL issued by this module.
+  URL issued by this module. Confirm this by checking that an anonymous `GET` of an object and an
+  anonymous `ListObjects` of the bucket are both refused -- see the note below on why this cannot
+  be checked locally.
 
 ## What could not be verified locally
 
 Everything this module's own automated test exercises runs against the real local LocalStack
-started by `pnpm storage:start` (upload, signed-URL read, delete, and the content-type/size
-policy helpers). Three things are specific to R2 (or absent from LocalStack's emulation) and were
-not, and could not be, exercised locally, for the same reasons the media module's README gives:
+started by `pnpm storage:start` (upload with size/type validation and rejection, signed-URL read
+with forced response headers, delete, key-builder validation, and that an identity upload never
+reaches the media bucket). Three things are specific to R2 (or absent from LocalStack's emulation)
+and were not, and could not be, exercised locally, for the same reasons the media module's README
+gives:
 
 - **R2's own presigned-URL quirks.**
 - **R2 bucket CORS**, not expressible through code or Compose for R2 -- see the "configured by

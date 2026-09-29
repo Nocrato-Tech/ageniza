@@ -82,12 +82,13 @@ services:
       R2_BUCKET: ageniza-media-local
       R2_REGION: auto
       R2_FORCE_PATH_STYLE: 'true'
-      # Identity storage (issue #100): separate bucket from media, same LocalStack account locally
-      # -- production uses a distinct R2 API token scoped only to this bucket.
+      # Identity storage (issue #100): separate bucket AND separate credentials from media, even
+      # locally -- `pnpm storage:start` generates both pairs into `.local/storage.env`. Production
+      # uses a distinct R2 API token scoped only to this bucket.
       IDENTITY_STORAGE_ENDPOINT: http://localstack:4566
       IDENTITY_STORAGE_PUBLIC_ENDPOINT: http://127.0.0.1:9000
-      IDENTITY_STORAGE_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
-      IDENTITY_STORAGE_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      IDENTITY_STORAGE_ACCESS_KEY_ID: ${IDENTITY_STORAGE_ACCESS_KEY_ID:-}
+      IDENTITY_STORAGE_SECRET_ACCESS_KEY: ${IDENTITY_STORAGE_SECRET_ACCESS_KEY:-}
       IDENTITY_STORAGE_BUCKET: ageniza-identity-local
       IDENTITY_STORAGE_REGION: auto
       IDENTITY_STORAGE_FORCE_PATH_STYLE: 'true'

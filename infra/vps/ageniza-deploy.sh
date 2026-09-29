@@ -103,13 +103,26 @@ validate_runtime_env() {
       MEDIA_UPLOAD_URL_EXPIRY_SECONDS|MEDIA_DOWNLOAD_URL_EXPIRY_SECONDS|MEDIA_MULTIPART_THRESHOLD_BYTES|MEDIA_MULTIPART_PART_BYTES|MEDIA_MAX_BYTES_IMAGE|MEDIA_MAX_BYTES_VIDEO|STORAGE_QUOTA_DEFAULT_BYTES|STORAGE_QUOTA_DEFAULT_OBJECT_COUNT) [[ "$value" =~ ^[0-9]+$ ]] || die "$key must be a positive integer" ;;
       # Video processing (issue #24): the worker's ffmpeg thumbnail/preview settings.
       MEDIA_PROCESSING_TIMEOUT_SECONDS|MEDIA_PROCESSING_MAX_DURATION_SECONDS|MEDIA_THUMBNAIL_WIDTH_PIXELS|MEDIA_PREVIEW_MAX_HEIGHT_PIXELS|MEDIA_PREVIEW_MAX_OUTPUT_BYTES) [[ "$value" =~ ^[0-9]+$ ]] || die "$key must be a positive integer" ;;
+      # Identity storage (issue #100): a second bucket/token, separate from media, required together.
+      IDENTITY_STORAGE_ENDPOINT|IDENTITY_STORAGE_ACCESS_KEY_ID|IDENTITY_STORAGE_SECRET_ACCESS_KEY|IDENTITY_STORAGE_BUCKET) [[ -n "$value" ]] || die "$key must not be blank" ;;
+      IDENTITY_STORAGE_REGION) ;;
+      IDENTITY_STORAGE_FORCE_PATH_STYLE) [[ "$value" == true || "$value" == false ]] || die 'IDENTITY_STORAGE_FORCE_PATH_STYLE must be true or false' ;;
+      IDENTITY_DOWNLOAD_URL_EXPIRY_SECONDS|IDENTITY_MAX_IMAGE_BYTES) [[ "$value" =~ ^[0-9]+$ ]] || die "$key must be a positive integer" ;;
       SENTRY_DSN) ;;
       *) die "$RUNTIME_ENV contains a key that is not allowed: $key" ;;
     esac
   done < "$RUNTIME_ENV"
-  for required in APP_ENV BETTER_AUTH_SECRET APP_PUBLIC_URL AUTH_TERMS_VERSION AUTH_PRIVACY_VERSION DATABASE_URL API_CORS_ORIGINS API_TRUSTED_PROXY_CIDRS WORKER_SMOKE_JOB SMTP_URL EMAIL_FROM R2_ENDPOINT R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET; do
+  for required in APP_ENV BETTER_AUTH_SECRET APP_PUBLIC_URL AUTH_TERMS_VERSION AUTH_PRIVACY_VERSION DATABASE_URL API_CORS_ORIGINS API_TRUSTED_PROXY_CIDRS WORKER_SMOKE_JOB SMTP_URL EMAIL_FROM R2_ENDPOINT R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET IDENTITY_STORAGE_ENDPOINT IDENTITY_STORAGE_ACCESS_KEY_ID IDENTITY_STORAGE_SECRET_ACCESS_KEY IDENTITY_STORAGE_BUCKET; do
     [[ -n "${seen[$required]+x}" ]] || die "$RUNTIME_ENV is missing $required"
   done
+  # Issue #100: identity storage must use a token/bucket distinct from media's, mirroring the
+  # config-load-time check in packages/config/src/server.ts.
+  if [[ -n "${seen[R2_BUCKET]+x}" && -n "${seen[IDENTITY_STORAGE_BUCKET]+x}" ]]; then
+    [[ "$(read_value "$RUNTIME_ENV" R2_BUCKET)" != "$(read_value "$RUNTIME_ENV" IDENTITY_STORAGE_BUCKET)" ]] || die 'IDENTITY_STORAGE_BUCKET must differ from R2_BUCKET'
+  fi
+  if [[ -n "${seen[R2_ACCESS_KEY_ID]+x}" && -n "${seen[IDENTITY_STORAGE_ACCESS_KEY_ID]+x}" ]]; then
+    [[ "$(read_value "$RUNTIME_ENV" R2_ACCESS_KEY_ID)" != "$(read_value "$RUNTIME_ENV" IDENTITY_STORAGE_ACCESS_KEY_ID)" ]] || die 'IDENTITY_STORAGE_ACCESS_KEY_ID must differ from R2_ACCESS_KEY_ID'
+  fi
 }
 
 prepare_github_access() {

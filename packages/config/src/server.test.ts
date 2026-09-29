@@ -471,6 +471,34 @@ describe('server configuration', () => {
       ...productionIdentityStorageSettings,
       IDENTITY_STORAGE_BUCKET: productionStorageSettings.R2_BUCKET
     })).toThrow('must be a different bucket than R2_BUCKET');
+    // Nor the same R2 API token: a shared access key would let a compromised credential for one
+    // destination reach the other, defeating the separation just as completely as a shared bucket.
+    expect(() => loadApiConfig({
+      ...productionWithoutIdentityStorage,
+      ...productionIdentityStorageSettings,
+      IDENTITY_STORAGE_ACCESS_KEY_ID: productionStorageSettings.R2_ACCESS_KEY_ID
+    })).toThrow('must be a different access key than R2_ACCESS_KEY_ID');
+  });
+
+  it('caps IDENTITY_MAX_IMAGE_BYTES: this upload runs through the API body parser, unlike media\'s presigned PUT (issue #100)', () => {
+    expect(loadApiConfig({
+      ...localEnvironment,
+      APP_CONTAINER_LOCAL: 'true',
+      IDENTITY_STORAGE_ENDPOINT: 'http://localstack:4566',
+      IDENTITY_STORAGE_ACCESS_KEY_ID: 'local-access-key',
+      IDENTITY_STORAGE_SECRET_ACCESS_KEY: 'local-secret-key',
+      IDENTITY_STORAGE_BUCKET: 'ageniza-identity-local',
+      IDENTITY_MAX_IMAGE_BYTES: String(10 * 1024 * 1024)
+    }).identityStorage?.maxImageBytes).toBe(10 * 1024 * 1024);
+    expect(() => loadApiConfig({
+      ...localEnvironment,
+      APP_CONTAINER_LOCAL: 'true',
+      IDENTITY_STORAGE_ENDPOINT: 'http://localstack:4566',
+      IDENTITY_STORAGE_ACCESS_KEY_ID: 'local-access-key',
+      IDENTITY_STORAGE_SECRET_ACCESS_KEY: 'local-secret-key',
+      IDENTITY_STORAGE_BUCKET: 'ageniza-identity-local',
+      IDENTITY_MAX_IMAGE_BYTES: String(10 * 1024 * 1024 + 1)
+    })).toThrow(ConfigValidationError);
   });
 
   it('lets the identity storage public endpoint differ from its internal endpoint, mirroring media storage (issue #100)', () => {
