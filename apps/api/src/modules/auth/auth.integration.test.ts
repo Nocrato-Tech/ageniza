@@ -2,8 +2,10 @@ import { afterAll, afterEach, describe, expect, it } from 'vitest';
 
 import {
   captureLogs,
+  cleanupOwnedAgencyContext,
   cleanupTestUser,
   createFakeEmailSender,
+  grantOwnedAgencyContext,
   insertTestUser,
   queryAsOwner,
   TEST_APP_PUBLIC_URL,
@@ -20,6 +22,7 @@ import {
 const origin = { origin: TEST_APP_PUBLIC_URL };
 
 const createdUsers: Array<{ app: TestApp; userId: string }> = [];
+const createdAgencyIds: string[] = [];
 const openApps: TestApp[] = [];
 
 const openApp: typeof buildTestApp = async (...args) => {
@@ -28,13 +31,18 @@ const openApp: typeof buildTestApp = async (...args) => {
   return app;
 };
 
+/** Also grants an owned agency: every test below needs the login it exercises to actually
+ * succeed, and issue #68 now rejects a correct credential that resolves to zero contexts. Tests
+ * for that rejection itself use `insertTestUser` directly instead, deliberately with no context. */
 const makeUser = async (app: TestApp, emailLabel: string): Promise<TestUserFixture> => {
   const user = await insertTestUser(app.pool, app.auth, { emailLabel });
   createdUsers.push({ app, userId: user.id });
+  createdAgencyIds.push(await grantOwnedAgencyContext(user.id));
   return user;
 };
 
 afterEach(async () => {
+  await Promise.all(createdAgencyIds.splice(0).map((agencyId) => cleanupOwnedAgencyContext(agencyId)));
   await Promise.all(createdUsers.splice(0).map(({ app, userId }) => cleanupTestUser(app.pool, userId)));
 });
 
@@ -111,6 +119,64 @@ describe('POST /auth/login (#1, #2, #3)', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ user: { id: user.id, email: user.email } });
+  });
+});
+
+// Issue #68 acceptance tests. Deliberately uses `insertTestUser` directly, never `makeUser`
+// above, so the user starts with exactly zero valid contexts.
+describe('POST /auth/login rejects a correct credential with zero contexts (#68)', () => {
+  it('responds with NO_CONTEXT_ACCESS and creates no row in auth."session"', async () => {
+    const app = await openApp();
+    const user = await insertTestUser(app.pool, app.auth, { emailLabel: 'login-zero-context' });
+    createdUsers.push({ app, userId: user.id });
+
+    const response = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({
+      error: {
+        code: 'NO_CONTEXT_ACCESS',
+        message: 'Sua conta não tem acesso a nenhum espaço de trabalho. Fale com quem administra a agência para receber um convite.'
+      }
+    });
+    expect(response.cookies.length).toBe(0);
+
+    const sessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id]);
+    expect(sessionRows.rowCount).toBe(0);
+  });
+
+  it('still responds with the generic INVALID_CREDENTIALS for a wrong password on a zero-context account', async () => {
+    const app = await openApp();
+    const user = await insertTestUser(app.pool, app.auth, { emailLabel: 'login-zero-context-wrong-password' });
+    createdUsers.push({ app, userId: user.id });
+
+    const response = await app.app.inject({
+      method: 'POST', url: '/auth/login', headers: origin,
+      payload: { email: user.email, password: 'definitely the wrong password' }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ error: { code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas.' } });
+    expect(response.cookies.length).toBe(0);
+
+    const sessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id]);
+    expect(sessionRows.rowCount).toBe(0);
+  });
+
+  it('succeeds once the account is granted a context', async () => {
+    const app = await openApp();
+    const user = await insertTestUser(app.pool, app.auth, { emailLabel: 'login-gains-context' });
+    createdUsers.push({ app, userId: user.id });
+
+    const denied = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
+    expect(denied.statusCode).toBe(403);
+
+    const agencyId = await grantOwnedAgencyContext(user.id);
+    createdAgencyIds.push(agencyId);
+
+    const granted = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
+    expect(granted.statusCode).toBe(200);
+    expect(granted.cookies.length).toBeGreaterThan(0);
   });
 });
 

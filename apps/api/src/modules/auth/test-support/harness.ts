@@ -18,6 +18,7 @@ import { createEmailService, type EmailService } from '../email-service.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../../tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from '../../invitations/routes.js';
 import type { ContextModuleDependencies } from '../../contexts/routes.js';
+import { countValidContexts } from '../../contexts/service.js';
 import { createRequireSession } from '../session-guard.js';
 import { createMediaJobDispatcher, type MediaJobDispatcher } from '../../media/job-dispatcher.js';
 import type { MediaModuleDependencies } from '../../media/routes.js';
@@ -208,7 +209,8 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     requirePermission,
     jobs: mediaJobs
   };
-  const app = await buildApp({ config, logger, auth: { auth, limiter, auditRecorder, invitationTokenLookup }, invitations, contexts, media });
+  const authDependencies = { auth, limiter, auditRecorder, invitationTokenLookup, countValidContexts: (userId: string) => countValidContexts(database, userId) };
+  const app = await buildApp({ config, logger, auth: authDependencies, invitations, contexts, media });
   if (options.registerExtraRoutes !== undefined) {
     const guards: TestGuardBuilders = {
       requireSession: createRequireSession({ auth }),
@@ -292,6 +294,29 @@ export const cleanupTestUser = async (pool: Pool, userId: string): Promise<void>
 };
 
 export const ownerClient = (): DatabaseClient => createLocalTestDatabaseClient(OWNER_DATABASE_URL);
+
+/**
+ * Grants a user exactly one context — ownership of a freshly created agency — so a test login or
+ * `resolve` call is not rejected by the zero-context rule (issue #68). `public.agencies` has no
+ * insert policy for the application role, so this goes through the migration owner, same as every
+ * other test file's own `createAgency` helper. Returns the agency id, for `cleanupOwnedAgencyContext`.
+ */
+export const grantOwnedAgencyContext = async (userId: string, name = 'Auth Test Agency'): Promise<string> => {
+  const id = randomUUID();
+  await queryAsOwner('insert into public.agencies (id, name, owner_user_id, status) values ($1, $2, $3, $4)', [
+    id, `${name} ${id.slice(0, 8)}`, userId, 'active'
+  ]);
+  return id;
+};
+
+/**
+ * Cleans up an agency created by `grantOwnedAgencyContext`. Clears `owner_user_id` first: that
+ * column has no `on delete` action, so a still-owned agency would block deleting the user.
+ */
+export const cleanupOwnedAgencyContext = async (agencyId: string): Promise<void> => {
+  await queryAsOwner('update public.agencies set owner_user_id = null where id = $1', [agencyId]);
+  await queryAsOwner('delete from public.agencies where id = $1', [agencyId]);
+};
 
 /**
  * Reads with the migration owner role, never the application role: `ageniza_app` only has

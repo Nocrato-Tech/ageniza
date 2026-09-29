@@ -13,6 +13,7 @@ import { createEmailService } from './modules/auth/email-service.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from './modules/tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from './modules/invitations/routes.js';
 import type { ContextModuleDependencies } from './modules/contexts/routes.js';
+import { countValidContexts } from './modules/contexts/service.js';
 import { createMediaJobDispatcher } from './modules/media/job-dispatcher.js';
 import type { MediaModuleDependencies } from './modules/media/routes.js';
 import { createMediaStorageClient } from './modules/media/storage-client.js';
@@ -81,7 +82,7 @@ export const startApi = async (): Promise<void> => {
     logger,
     readiness,
     dependencyChecks,
-    auth: { auth, limiter, auditRecorder, invitationTokenLookup },
+    auth: { auth, limiter, auditRecorder, invitationTokenLookup, countValidContexts: (userId) => countValidContexts(database, userId) },
     invitations: invitationDependencies,
     contexts: contextDependencies,
     media: mediaDependencies

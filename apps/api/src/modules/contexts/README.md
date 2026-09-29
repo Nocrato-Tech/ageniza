@@ -41,7 +41,13 @@ contextos diferentes, e `requireClientAccess` exige um vínculo de cliente expl�
 Nesta ordem exata (issue #33, spec seções 5 e 12.1):
 
 1. Calcula `contexts = listValidContexts(...)`, já ordenado (ver abaixo).
-2. Se `contexts` está vazio: `{ decision: 'none' }`.
+2. Se `contexts` está vazio: encerra a sessão da requisição (mesmo `signOut` de
+   `POST /auth/logout`, revogando a linha em `auth."session"` e limpando o cookie) e só então
+   responde `{ decision: 'none' }` (issue #68, decisão de 2026-09-24 "Credencial correta sem
+   nenhum contexto não cria sessão" em `docs/business/decisions.md`). Quem perde o último contexto
+   durante o uso é encerrado na próxima passagem por aqui, em vez de ficar autenticado numa
+   aplicação sem nada. O guard de sessão (`session-guard.ts`) nunca cobra essa regra: ela vive só
+   aqui e em `POST /auth/login`.
 3. Se há exatamente um contexto válido: `{ decision: 'enter', context: contexts[0] }`.
 4. Se a query `preferred` (`agency:<uuid>` ou `client:<uuid>`) aponta para um contexto presente em
    `contexts`, esse contexto "ganha" mesmo que exista um último contexto usado válido:

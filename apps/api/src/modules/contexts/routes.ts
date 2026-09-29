@@ -10,6 +10,7 @@ import { HttpError } from '@ageniza/core';
 import { raw, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 
 import type { AuthInstance } from '../auth/better-auth.js';
+import { applyAuthCookies, toAuthHeaders } from '../auth/bridge.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
 import { findPreferredContext, isValidAgencyContext, isValidClientContext, listValidContexts } from './service.js';
@@ -31,6 +32,25 @@ const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth'
   const auth = request.auth;
   if (auth === undefined) throw unauthenticated();
   return auth;
+};
+
+/**
+ * Ends the current request's session (issue #68) by calling the same Better Auth `signOut`
+ * `/auth/logout` uses, forwarding the request's own cookie so it revokes exactly that session.
+ * Never throws: a failure here must not turn an otherwise-normal `decision: 'none'` response into
+ * an unrelated 500, and the cleared cookie (when it succeeds) is applied to the reply either way.
+ */
+const endSessionForNoContext = async (auth: AuthInstance, request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+  try {
+    const { headers } = await auth.api.signOut({ headers: toAuthHeaders(request), returnHeaders: true });
+    applyAuthCookies(reply, headers);
+  } catch (error) {
+    request.log.error({
+      operation: 'contexts.resolve_no_context_end_session',
+      status: 'failed',
+      error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'RESOLVE_NO_CONTEXT_SESSION_END_FAILED' }
+    }, 'Failed to end the session for a resolve that found zero contexts');
+  }
 };
 
 /** Registers `/me/contexts*` and the client onboarding-seen route (issue #33). */
@@ -56,8 +76,11 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
       (transaction) => listValidContexts(transaction)
     );
 
-    // Step 2: no valid context.
+    // Step 2: no valid context. Per the 2026-09-24 decision, this ends the session instead of
+    // leaving the caller authenticated inside an app with nothing to do — the person who lost
+    // their last context mid-use is signed out on the very next pass through `resolve`.
     if (contexts.length === 0) {
+      await endSessionForNoContext(dependencies.auth, request, reply);
       return reply.send(parseResponse(ContextResolveResponseSchema, { decision: 'none' }));
     }
     // Step 3: exactly one valid context.
