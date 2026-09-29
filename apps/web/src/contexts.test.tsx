@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { AuthSessionProvider, createAuthSessionStore, type AuthSessionStore } from './auth.js';
+import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
+import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
 
 afterEach(cleanup);
 
@@ -22,6 +23,13 @@ const clientC = { type: 'client', clientId: CLIENT_C, clientName: 'Cliente Um', 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const noContent = (): Response => new Response(null, { status: 204 });
+const unauthenticated = (): Response => json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication is required.' } }, 401);
+const sessionBody = { user: { id: '11111111-1111-4111-8111-111111111111', name: 'Pessoa', email: 'pessoa@example.test' }, session: { expiresAt: '2026-01-01T00:00:00.000Z' } };
+
+function LocationProbe({ probe }: { probe: { pathname: string } }) {
+  probe.pathname = useLocation().pathname;
+  return null;
+}
 
 const renderContexts = (
   fetchImpl: typeof fetch,
@@ -30,17 +38,20 @@ const renderContexts = (
   const client = new HttpClient('http://127.0.0.1:3001', fetchImpl);
   const store = options.store ?? createAuthSessionStore(client);
   const path = options.preferred === undefined ? '/contextos' : `/contextos?preferred=${encodeURIComponent(options.preferred)}`;
-  return render(
+  const probe = { pathname: '' };
+  render(
     <AuthSessionProvider store={store}>
       <QueryClientProvider client={createQueryClient()}>
         <ApiClientProvider client={client}>
           <MemoryRouter initialEntries={[path]}>
+            <LocationProbe probe={probe} />
             <ApplicationRoutes session={{ status: 'ready', isAuthenticated: true }} />
           </MemoryRouter>
         </ApiClientProvider>
       </QueryClientProvider>
     </AuthSessionProvider>
   );
+  return { probe, store };
 };
 
 const selectResponse = { decision: 'select', contexts: [agencyA, agencyB, clientC], highlighted: agencyB };
@@ -182,13 +193,49 @@ describe('ContextSelectPage (/contextos)', () => {
     expect(screen.queryByRole('heading', { name: 'Onde você quer entrar?' })).toBeNull();
   });
 
-  it('ends the session and leaves when resolve answers none', async () => {
+  it('ends the session and goes to /sem-acesso when resolve answers none', async () => {
     const client = new HttpClient('http://127.0.0.1:3001', async () => json({ decision: 'none' }));
     const store = createAuthSessionStore(client);
     const end = vi.spyOn(store, 'end');
 
-    renderContexts(async () => json({ decision: 'none' }), { store });
+    const { probe } = renderContexts(async () => json({ decision: 'none' }), { store });
     await waitFor(() => expect(end).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(probe.pathname).toBe('/sem-acesso'));
+  });
+
+  it('reaches /sem-acesso on none and never /entrar, with the real session and the session-ended redirect', async () => {
+    const sessionEnd = createSessionEndSignal();
+    let serverLoggedIn = true;
+    const calls = { logout: 0 };
+    // The real API answers 401 UNAUTHENTICATED on an authenticated route without a session.
+    const client = new HttpClient('http://127.0.0.1:3001', async (input) => {
+      const url = String(input);
+      if (url.endsWith('/auth/session')) return serverLoggedIn ? json(sessionBody) : unauthenticated();
+      if (url.endsWith('/me/contexts/resolve')) { serverLoggedIn = false; return json({ decision: 'none' }); }
+      if (url.endsWith('/auth/logout')) { calls.logout += 1; return unauthenticated(); }
+      throw new Error(`unexpected ${url}`);
+    }, { onSessionEnded: sessionEnd.notify });
+    const queryClient = createQueryClient();
+    const store = createAuthSessionStore(client, { onSessionStarted: () => queryClient.clear() });
+    const probe = { pathname: '' };
+    function Harness() { const session = useAuthSession(store); return <ApplicationRoutes session={session} />; }
+    render(
+      <AuthSessionProvider store={store}>
+        <QueryClientProvider client={queryClient}>
+          <ApiClientProvider client={client}>
+            <MemoryRouter initialEntries={['/contextos']}>
+              <SessionEndRedirect signal={sessionEnd} authStore={store} />
+              <LocationProbe probe={probe} />
+              <Harness />
+            </MemoryRouter>
+          </ApiClientProvider>
+        </QueryClientProvider>
+      </AuthSessionProvider>
+    );
+
+    await waitFor(() => expect(probe.pathname).toBe('/sem-acesso'));
+    // The none path never calls logout, so nothing 401s into the /entrar redirect.
+    expect(calls.logout).toBe(0);
   });
 
   it('shows skeletons on the first load', () => {

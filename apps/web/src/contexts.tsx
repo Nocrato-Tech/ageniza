@@ -85,20 +85,15 @@ export function ContextSelectPage() {
   });
 
   const decision = resolve.data?.decision;
-  // `resolve` with no context means there is no workspace to show: end the session on the server
-  // (idempotent) and on the client, drop the cache, and only then go to the "no access" screen.
+  // `resolve` already ended the session on the server. Calling `logout` here would answer 401
+  // without a session and trigger the session-ended redirect to `/entrar`; so only drop the client
+  // session and the cache, then go to the "no access" screen.
   useEffect(() => {
     if (decision !== 'none') return;
-    let cancelled = false;
-    void (async () => {
-      try { await httpClient.request({ path: '/auth/logout', method: 'POST', response: AuthLogoutResponseSchema }); } catch { /* idempotent */ }
-      if (cancelled) return;
-      authStore.end();
-      queryClient.clear();
-      navigate('/sem-acesso', { replace: true });
-    })();
-    return () => { cancelled = true; };
-  }, [decision, httpClient, authStore, queryClient, navigate]);
+    authStore.end();
+    queryClient.clear();
+    navigate('/sem-acesso', { replace: true });
+  }, [decision, authStore, queryClient, navigate]);
 
   if (resolve.isPending) {
     return <section aria-labelledby="context-select-title">
