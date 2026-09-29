@@ -157,6 +157,12 @@ export interface TestAppOptions {
    * `requireAgencyAccess`/`requireClientAccess` prehandlers without a bespoke fixture.
    */
   readonly registerExtraRoutes?: (app: FastifyInstance, guards: TestGuardBuilders) => void | Promise<void>;
+  /**
+   * Overrides the real `countValidContexts` the auth module is normally wired with. Exists so a
+   * test can deterministically simulate the context-count lookup failing (2026-09-29 security
+   * review of PR #176, achado 2) without relying on a real, hard-to-trigger database error.
+   */
+  readonly countValidContexts?: (userId: string) => Promise<number>;
 }
 
 /** Real prehandler builders, wired to this test app's own `auth`/`database`, for `registerExtraRoutes`. */
@@ -224,7 +230,13 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     requirePermission,
     jobs: mediaJobs
   };
-  const authDependencies = { auth, limiter, auditRecorder, invitationTokenLookup, countValidContexts: (userId: string) => countValidContexts(database, userId) };
+  const authDependencies = {
+    auth,
+    limiter,
+    auditRecorder,
+    invitationTokenLookup,
+    countValidContexts: options.countValidContexts ?? ((userId: string) => countValidContexts(database, userId))
+  };
   const app = await buildApp({ config, logger, auth: authDependencies, invitations, contexts, media });
   if (options.registerExtraRoutes !== undefined) {
     const guards: TestGuardBuilders = {
