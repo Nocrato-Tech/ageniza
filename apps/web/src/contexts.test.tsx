@@ -85,6 +85,19 @@ describe('ContextSelectPage (/contextos)', () => {
     expect(screen.getByRole('button', { name: /Agência Dois/ }).textContent).toContain('Sugerido');
   });
 
+  it('normalizes an uppercase preferred UUID to lowercase before sending it', async () => {
+    const withLetters = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const urls: string[] = [];
+    renderContexts(async (input) => {
+      urls.push(String(input));
+      return json(selectResponse);
+    }, { preferred: `agency:${withLetters.toUpperCase()}` });
+
+    await screen.findByText('Área da agência · Produção');
+    expect(urls.some((url) => url.includes(`preferred=agency%3A${withLetters}`))).toBe(true);
+    expect(urls.some((url) => url.includes(withLetters.toUpperCase()))).toBe(false);
+  });
+
   it('never calls /me/contexts, only resolve', async () => {
     const urls: string[] = [];
     renderContexts(async (input) => { urls.push(String(input)); return json(selectResponse); });
