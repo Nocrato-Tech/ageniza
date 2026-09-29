@@ -85,14 +85,15 @@ export function ContextSelectPage() {
   });
 
   const decision = resolve.data?.decision;
-  // `resolve` with no context ends the session server-side (specs/auth.md section 7): go to the
-  // "no access" screen and drop the client session at once.
+  // `resolve` already ended the session on the server. Calling `logout` here would answer 401
+  // without a session and trigger the session-ended redirect to `/entrar`; so only drop the client
+  // session and the cache, then go to the "no access" screen.
   useEffect(() => {
-    if (decision === 'none') {
-      navigate('/sem-acesso', { replace: true });
-      authStore.end();
-    }
-  }, [decision, navigate, authStore]);
+    if (decision !== 'none') return;
+    authStore.end();
+    queryClient.clear();
+    navigate('/sem-acesso', { replace: true });
+  }, [decision, authStore, queryClient, navigate]);
 
   if (resolve.isPending) {
     return <section aria-labelledby="context-select-title">
