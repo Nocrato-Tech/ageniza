@@ -7,6 +7,7 @@ import { ContextSelectPage } from './contexts.js';
 import { ForgotPasswordPage } from './forgot-password.js';
 import { getHealth } from './health.js';
 import { useApiClient } from './http.js';
+import { InvitationPage } from './invite.js';
 import { LegalDocumentPage } from './legal-pages.js';
 import { privacyPolicy } from './legal/privacy.js';
 import { termsOfUse } from './legal/terms.js';
@@ -52,6 +53,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="sem-acesso" element={session.isAuthenticated ? <Navigate to="/app" replace /> : <NoAccessPage />} />
       <Route path="senha/esquecida" element={session.isAuthenticated ? <Navigate to="/app" replace /> : <ForgotPasswordPage />} />
       <Route path="senha/redefinir" element={<ResetPasswordPage />} />
+      <Route path="convite/:token" element={<InvitationPage />} />
       <Route path="termos" element={<LegalDocumentPage document={termsOfUse} sibling={{ title: 'Política de Privacidade', to: '/privacidade' }} />} />
       <Route path="privacidade" element={<LegalDocumentPage document={privacyPolicy} sibling={{ title: 'Termos de Uso', to: '/termos' }} />} />
     </Route>
