@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { createContext, useContext, useSyncExternalStore, type ReactNode } from 'react';
 
 import { AuthSessionResponseSchema } from '@ageniza/contracts';
 import { HttpClientError, type HttpClient } from './http.js';
@@ -91,3 +91,16 @@ export const createAuthSessionStore = (client: HttpClient, options: AuthSessionS
 
 export const useAuthSession = (store: AuthSessionStore): AuthSessionSnapshot =>
   useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+
+const AuthSessionStoreContext = createContext<AuthSessionStore | null>(null);
+
+/** Publishes the session store so a screen can end the session after a server-side sign-out. */
+export function AuthSessionProvider({ store, children }: { store: AuthSessionStore; children: ReactNode }) {
+  return <AuthSessionStoreContext.Provider value={store}>{children}</AuthSessionStoreContext.Provider>;
+}
+
+export const useAuthSessionStore = (): AuthSessionStore => {
+  const store = useContext(AuthSessionStoreContext);
+  if (store === null) throw new Error('AuthSessionProvider is required.');
+  return store;
+};

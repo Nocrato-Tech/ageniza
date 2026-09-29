@@ -205,6 +205,69 @@ input:focus-visible {
   min-height: 1.5rem;
 }
 
+/* ChoiceCard and Skeleton: docs/design-system.md section 13 */
+.ui-choice-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-6) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ui-choice-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-4);
+  text-align: left;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.ui-choice-card:hover:not(:disabled),
+.ui-choice-card:focus-visible:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+/* There is no "emphasis/suggested" border token yet; `--focus-ring` is the documented strong
+ * emphasis colour, used here on purpose and registered as a design-system gap in the PR. */
+.ui-choice-card--highlighted {
+  border-color: var(--focus-ring);
+}
+
+.ui-choice-card:disabled {
+  cursor: progress;
+  opacity: 0.55;
+}
+
+.ui-choice-card__title {
+  font: var(--body-lg);
+}
+
+.ui-choice-card__description {
+  color: var(--text-muted);
+  font: var(--body-md);
+}
+
+.ui-choice-card__badge {
+  align-self: flex-start;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font: var(--label-sm);
+}
+
+.ui-skeleton {
+  height: 4.5rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+}
+
 /* Auth form layout: specs/auth.md section 7, the centred single column the auth screens share. */
 .form-panel {
   display: grid;

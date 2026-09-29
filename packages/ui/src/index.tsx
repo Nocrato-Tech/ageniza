@@ -49,3 +49,38 @@ export function FieldMessage({ id, children, ...props }: HTMLAttributes<HTMLPara
 export function LiveStatus({ children, ...props }: HTMLAttributes<HTMLParagraphElement> & { children: ReactNode }) {
   return <p role="status" aria-live="polite" className="ui-live-status" {...props}>{children}</p>;
 }
+
+export type ChoiceCardProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'title'> & {
+  /** Primary line, the item's own name. */
+  title: string;
+  /** Secondary line that distinguishes items sharing a name (kind, role, owner). */
+  description: string;
+  /** Visual emphasis for the server's probable option; it never selects or submits on its own. */
+  highlighted?: boolean;
+  /** Short visible label (e.g. "Sugerido"); part of the card's accessible name. */
+  badge?: string;
+};
+
+/** A full-width, whole-surface clickable card used by single-choice pickers. */
+export const ChoiceCard = forwardRef<HTMLButtonElement, ChoiceCardProps>(function ChoiceCard(
+  { className, title, description, highlighted = false, badge, type = 'button', ...props },
+  ref
+) {
+  return (
+    <button
+      ref={ref}
+      type={type}
+      className={['ui-choice-card', highlighted && 'ui-choice-card--highlighted', className].filter(Boolean).join(' ')}
+      {...props}
+    >
+      {badge !== undefined && <span className="ui-choice-card__badge">{badge}</span>}
+      <span className="ui-choice-card__title">{title}</span>
+      <span className="ui-choice-card__description">{description}</span>
+    </button>
+  );
+});
+
+/** Reserves the shape of content during its first load; decorative, never announced. */
+export function Skeleton({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div aria-hidden="true" className={['ui-skeleton', className].filter(Boolean).join(' ')} {...props} />;
+}
