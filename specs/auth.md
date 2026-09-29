@@ -80,7 +80,7 @@ As três causas de invalidez são **indistinguíveis** para quem recebe.
 ### Contexto
 
 ```
-nenhum          → sessão negada          # não cria sessão no login
+nenhum          → sessão negada          # não cria sessão no login, salvo inviteToken válido (regra 3a)
 exatamente um   → entra direto           # decision: 'enter'
 mais de um      → escolhe                # decision: 'select'
 escolhido       → gravado em last-context # o próximo login entra direto
@@ -92,7 +92,8 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 
 1. Senha errada e e-mail inexistente devolvem **a mesma** resposta.
 2. `POST /auth/password/forgot` responde igual para e-mail existente e inexistente.
-3. Credencial correta com **zero contextos** não cria sessão.
+3. Credencial correta com **zero contextos** não cria sessão — **salvo** quando o login carrega `inviteToken` de um convite válido para o mesmo e-mail (regra 3a, 2026-09-29, pendente de validação).
+3a. Com `inviteToken` válido, a sessão criada continua **sem contexto** até o convite ser aceito por `POST /invitations/:token/accept`; chamar `resolve` antes do aceite encerra essa sessão como qualquer outra sem contexto (regra 3).
 4. Token de convite consumido, expirado ou revogado devolve **o mesmo** `INVALID_LINK`, sem dizer qual dos três.
 5. A tela nunca exibe o e-mail do convite antes de o token ser validado pela API.
 6. Conta criada por aceite nasce com o e-mail **do convite**, nunca de um campo do formulário.
@@ -108,7 +109,7 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 
 | método | rota | devolve |
 |---|---|---|
-| `POST` | `/auth/login` | `{ user }` + cookie |
+| `POST` | `/auth/login` | `{ user }` + cookie. Aceita `inviteToken` opcional (regra 3a) |
 | `POST` | `/auth/logout` | 204 |
 | `POST` | `/auth/logout-all` | 204 |
 | `GET` | `/auth/session` | `{ user, session: { expiresAt } }` |
@@ -123,14 +124,14 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 
 Limites de tentativa já aplicados por IP, por IP+e-mail e por e-mail global (`policy.ts`): login 10 por 15 min no par IP+e-mail, recuperação 3.
 
-### O que falta implementar
+### Implementado (issue #68, PR #164)
 
 **A checagem de zero contextos**, nos dois pontos decididos:
 
-1. `POST /auth/login` — autentica, conta os contextos e, quando não houver nenhum, **não cria sessão** e devolve um código próprio.
-2. `GET /me/contexts/resolve` — `decision: 'none'` passa a encerrar a sessão, em vez de devolver uma aplicação vazia.
+1. `POST /auth/login` — autentica, conta os contextos e, quando não houver nenhum, **não cria sessão** e devolve um código próprio (`403 NO_CONTEXT_ACCESS`) — **exceto** com `inviteToken` válido para o mesmo e-mail (regra 3a, 2026-09-29).
+2. `GET /me/contexts/resolve` — `decision: 'none'` encerra a sessão, em vez de devolver uma aplicação vazia.
 
-É **mudança de contrato numa rota implantada**: os testes de integração de login mudam junto.
+Foi **mudança de contrato numa rota implantada**: os testes de integração de login mudaram junto.
 
 ### Persistência
 
@@ -346,6 +347,8 @@ Em [`docs/business/decisions.md`](../docs/business/decisions.md), 2026-09-24:
 - Credencial correta sem nenhum contexto não cria sessão
 - Sete telas de autenticação, com o convite em uma rota e dois estados
 - Termos e Privacidade são conteúdo estático versionado, com aceite único
+
+E, 2026-09-29 (**pendente de validação**): o login aceita o token do convite para quem tem zero contextos, complementando a decisão de 2026-09-24 sobre credencial correta sem contexto.
 
 E, herdadas de [`autorizacao.md`](autorizacao.md): "sem permissão" não é tela, os três tratamentos de carregamento, e mutação invalidando as queries que afeta.
 
