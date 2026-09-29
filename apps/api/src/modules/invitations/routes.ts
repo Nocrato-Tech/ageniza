@@ -7,7 +7,10 @@ import {
   InvitationPreviewResponseSchema,
   AuthEmailSchema,
   PaginationInputSchema,
-  PendingInvitationListResponseSchema
+  PendingInvitationListResponseSchema,
+  buildPaginationMetadata,
+  resolvePagination,
+  type ResolvedPagination
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 import { raw, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
@@ -185,10 +188,9 @@ const lockPendingInvitationSlot = async (
 const routeParams = <T>(schema: z.ZodType<T>, request: FastifyRequest): T => parseRequest(schema, request.params);
 const routeQuery = <T>(schema: z.ZodType<T>, request: FastifyRequest): T => parseRequest(schema, request.query);
 
-// The pending-invitations list has no dedicated SPEC default; 24 matches the collaborator listing
-// this route pairs with in the frontend (specs/colaboradores.md §6-7), pending explicit review.
+// specs/colaboradores.md §6, "Convites pendentes": 24 per page, created_at ascending. The route
+// only declares this default and the order; `resolvePagination` owns the ceiling and the offset.
 const PENDING_INVITATIONS_DEFAULT_PAGE_SIZE = 24;
-const PENDING_INVITATIONS_PAGE_SIZE_CEILING = 100;
 
 interface PendingInvitationRow {
   readonly id: string;
@@ -501,8 +503,7 @@ const listPendingCollaboratorInvitations = async (
   dependencies: InvitationModuleDependencies,
   request: FastifyRequest,
   agencyId: string,
-  page: number,
-  pageSize: number
+  pagination: ResolvedPagination
 ): Promise<PendingInvitationPage> => {
   const auth = request.auth;
   if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
@@ -538,18 +539,24 @@ const listPendingCollaboratorInvitations = async (
         and invitation.expires_at > now()
       order by invitation.created_at asc, invitation.id asc
       limit ? offset ?
-    `, [agencyId, pageSize, (page - 1) * pageSize]);
+    `, [agencyId, pagination.pageSize, pagination.offset]);
 
     return { items: itemsResult.rows, totalItems };
   });
 };
 
+/**
+ * `PendingInvitationSchema` pins `purpose` to the literal and requires `role`; a row that violated
+ * the query's own `purpose = 'collaborator_invite'` filter -- an activation invite with no role, or
+ * a client invite -- fails to parse here instead of being served. That is deliberate: this endpoint
+ * only ever sees rows the `invitations_purpose_fields_check` constraint guarantees have both.
+ */
 const pendingInvitationFromRow = (row: PendingInvitationRow) => ({
   id: row.id,
   email: row.email,
   purpose: row.purpose,
   role: row.role_key === null || row.role_name === null ? null : { key: row.role_key, name: row.role_name },
-  client: row.client_name === null ? null : { name: row.client_name },
+  client: null,
   createdAt: new Date(row.created_at).toISOString(),
   expiresAt: new Date(row.expires_at).toISOString()
 });
@@ -567,12 +574,11 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
   app.get('/agencies/:agencyId/invitations', authenticated('colaborador.convidar'), async (request) => {
     const params = routeParams(agencyParamsSchema, request);
     const query = routeQuery(PaginationInputSchema, request);
-    const pageSize = Math.min(query.pageSize ?? PENDING_INVITATIONS_DEFAULT_PAGE_SIZE, PENDING_INVITATIONS_PAGE_SIZE_CEILING);
-    const page = query.page ?? 1;
-    const { items, totalItems } = await listPendingCollaboratorInvitations(dependencies, request, params.agencyId, page, pageSize);
+    const pagination = resolvePagination(query, PENDING_INVITATIONS_DEFAULT_PAGE_SIZE);
+    const { items, totalItems } = await listPendingCollaboratorInvitations(dependencies, request, params.agencyId, pagination);
     return parseResponse(PendingInvitationListResponseSchema, {
       data: items.map(pendingInvitationFromRow),
-      meta: { page, pageSize, totalItems, totalPages: Math.ceil(totalItems / pageSize) }
+      meta: buildPaginationMetadata(pagination, totalItems)
     });
   });
 

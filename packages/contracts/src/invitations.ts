@@ -50,16 +50,23 @@ export const InvitationRoleSchema = z.object({
 }).strict();
 
 /**
- * One pending invitation as returned by `GET /agencies/:agencyId/invitations`. Never carries the
- * token or its hash -- the list exists to let an admin track and manage outstanding invites, not
- * to hand the link back out.
+ * One pending *collaborator* invitation as returned by `GET /agencies/:agencyId/invitations`.
+ * Never carries the token or its hash -- the list exists to let an admin track and manage
+ * outstanding invites, not to hand the link back out.
+ *
+ * `purpose` is pinned to the literal, `role` is required, and `client` is pinned to `null`: the
+ * `invitations_purpose_fields_check` database constraint guarantees a `collaborator_invite` row
+ * always has a role and never a client, so this schema doubles as a second barrier against a
+ * query-filter regression (`purpose <> 'client_invite'` instead of `purpose =
+ * 'collaborator_invite'`, say) -- such a row would fail to parse instead of silently serving a
+ * client or agency-activation invitation through the collaborator list.
  */
 export const PendingInvitationSchema = z.object({
   id: z.string().uuid(),
   email: AuthEmailSchema,
-  purpose: InvitationPurposeSchema,
-  role: InvitationRoleSchema.nullable(),
-  client: InvitationClientSchema.nullable(),
+  purpose: z.literal('collaborator_invite'),
+  role: InvitationRoleSchema,
+  client: z.null(),
   createdAt: z.string(),
   expiresAt: z.string()
 }).strict();
