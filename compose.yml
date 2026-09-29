@@ -43,13 +43,16 @@ services:
     volumes:
       - localstack-data:/var/lib/localstack
       - ./infra/localstack/init-bucket.sh:/etc/localstack/init/ready.d/init-bucket.sh:ro
+      # Identity storage (issue #100): a second bucket, separate from media's, created by its own
+      # ready hook -- see apps/api/src/modules/identity-storage/README.md.
+      - ./infra/localstack/init-identity-bucket.sh:/etc/localstack/init/ready.d/init-identity-bucket.sh:ro
     # No console port: MinIO had one on 9001; LocalStack has no local web UI to publish.
     ports: ["127.0.0.1:9000:4566"]
     networks: [internal, database-host]
-    # The marker is what makes `--wait` mean "bucket exists": LocalStack reports healthy before its
-    # ready hooks finish running.
+    # Both markers are what makes `--wait` mean "both buckets exist": LocalStack reports healthy
+    # before its ready hooks finish running.
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:4566/_localstack/health && test -f /tmp/ageniza-bucket-ready"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:4566/_localstack/health && test -f /tmp/ageniza-bucket-ready && test -f /tmp/ageniza-identity-bucket-ready"]
       interval: 5s
       timeout: 3s
       # A cold CI runner boots this far slower than a warm laptop: start_period keeps those first
@@ -79,6 +82,15 @@ services:
       R2_BUCKET: ageniza-media-local
       R2_REGION: auto
       R2_FORCE_PATH_STYLE: 'true'
+      # Identity storage (issue #100): separate bucket from media, same LocalStack account locally
+      # -- production uses a distinct R2 API token scoped only to this bucket.
+      IDENTITY_STORAGE_ENDPOINT: http://localstack:4566
+      IDENTITY_STORAGE_PUBLIC_ENDPOINT: http://127.0.0.1:9000
+      IDENTITY_STORAGE_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      IDENTITY_STORAGE_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      IDENTITY_STORAGE_BUCKET: ageniza-identity-local
+      IDENTITY_STORAGE_REGION: auto
+      IDENTITY_STORAGE_FORCE_PATH_STYLE: 'true'
     depends_on: { postgres: { condition: service_healthy }, mailpit: { condition: service_healthy }, localstack: { condition: service_healthy } }
     ports: ["127.0.0.1:3001:3001"]
     networks: [edge, internal]

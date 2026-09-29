@@ -50,10 +50,36 @@ export interface StorageConfig {
   readonly quotaDefaultBytes: number;
   readonly quotaDefaultObjectCount: number;
 }
+/** S3-compatible object storage for identity assets (issue #100): user avatars today, an agency
+ * portal's visual identity later, once per-agency portal personalization exists. Deliberately a
+ * separate bucket and credentials from `StorageConfig`'s media bucket -- the user is global while
+ * media is per-agency and quota-limited, so an identity file must never depend on any one agency's
+ * lifecycle or count against its quota. All settings are required together, and required in
+ * production. */
+export interface IdentityStorageConfig {
+  /** Endpoint the API itself calls (upload, delete, HeadObject). */
+  readonly endpoint: string;
+  /** Endpoint embedded in signed read URLs, which the *browser* calls directly. See
+   * `StorageConfig.publicEndpoint` for why this can differ from `endpoint` locally. */
+  readonly publicEndpoint: string;
+  readonly region: string;
+  readonly accessKeyId: string;
+  readonly secretAccessKey: string;
+  readonly bucket: string;
+  readonly forcePathStyle: boolean;
+  /** Signed GET lifetime; issued only when an object is actually about to be displayed. */
+  readonly downloadUrlExpirySeconds: number;
+  /** Upload runs through the API itself, not a presigned PUT (identity images are small enough
+   * that a synchronous server-side `PutObject` can validate real bytes before writing, with no
+   * staging/confirm round trip). This is the limit enforced on that upload. */
+  readonly maxImageBytes: number;
+}
 export interface ApiConfig extends ServerConfig {
   service: 'api';
   /** Undefined only where storage is genuinely unused (e.g. lightweight app tests); required in production. */
   storage?: StorageConfig;
+  /** Undefined only where identity storage is genuinely unused; required in production. */
+  identityStorage?: IdentityStorageConfig;
   /** Better Auth signing/encryption secret; never expose this to browser code. */
   authSecret: string;
   /** Version of the terms document recorded when an invitation is accepted. */
@@ -168,6 +194,27 @@ const storageEnvironmentShape = {
   R2_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('true').transform((value) => value === 'true')
 } as const;
 
+/** Same shape as `storageEnvironmentShape`, for the separate identity bucket (issue #100). Kept as
+ * its own field set rather than a shared bucket/credential pair: identity storage has no quota,
+ * no lifecycle rules, and a different production API token scoped to a different bucket. */
+const identityStorageEnvironmentShape = {
+  IDENTITY_STORAGE_ENDPOINT: optionalUrl('must be a valid storage endpoint URL'),
+  IDENTITY_STORAGE_REGION: z.string().trim().min(1).max(64).default('auto'),
+  IDENTITY_STORAGE_ACCESS_KEY_ID: z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.string().trim().min(1).optional()
+  ),
+  IDENTITY_STORAGE_SECRET_ACCESS_KEY: z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.string().min(1).optional()
+  ),
+  IDENTITY_STORAGE_BUCKET: z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.string().trim().min(1).max(63).optional()
+  ),
+  IDENTITY_STORAGE_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('true').transform((value) => value === 'true')
+} as const;
+
 const apiSchema = sharedServerSchema.extend({
   BETTER_AUTH_SECRET: z.string().min(32, 'must be at least 32 characters; supplied values are redacted'),
   AUTH_TERMS_VERSION: authDocumentVersion,
@@ -188,7 +235,12 @@ const apiSchema = sharedServerSchema.extend({
   MEDIA_MAX_BYTES_IMAGE: z.coerce.number().int().min(1).default(25 * 1024 * 1024),
   MEDIA_MAX_BYTES_VIDEO: z.coerce.number().int().min(1).default(5 * 1024 * 1024 * 1024),
   STORAGE_QUOTA_DEFAULT_BYTES: z.coerce.number().int().min(1).default(10 * 1024 * 1024 * 1024),
-  STORAGE_QUOTA_DEFAULT_OBJECT_COUNT: z.coerce.number().int().min(1).default(2_000)
+  STORAGE_QUOTA_DEFAULT_OBJECT_COUNT: z.coerce.number().int().min(1).default(2_000),
+  // Identity storage (issue #100): separate bucket from media, never counted against agency quota.
+  ...identityStorageEnvironmentShape,
+  IDENTITY_STORAGE_PUBLIC_ENDPOINT: optionalUrl('must be a valid storage endpoint URL'),
+  IDENTITY_DOWNLOAD_URL_EXPIRY_SECONDS: z.coerce.number().int().min(30).max(3_600).default(300),
+  IDENTITY_MAX_IMAGE_BYTES: z.coerce.number().int().min(1).default(5 * 1024 * 1024)
 });
 const workerSchema = sharedServerSchema.extend({
   // Binding all interfaces is reserved for the isolated local container network.
@@ -289,6 +341,50 @@ const validateStorageEnvironment = (
   return allPresent;
 };
 
+interface IdentityStorageEnvironmentValues {
+  readonly IDENTITY_STORAGE_ENDPOINT?: string;
+  readonly IDENTITY_STORAGE_ACCESS_KEY_ID?: string;
+  readonly IDENTITY_STORAGE_SECRET_ACCESS_KEY?: string;
+  readonly IDENTITY_STORAGE_BUCKET?: string;
+}
+
+/** Same all-or-nothing shape as `validateStorageEnvironment`, for the identity bucket (issue #100). */
+const validateIdentityStorageEnvironment = (
+  environment: RuntimeEnvironment,
+  values: IdentityStorageEnvironmentValues,
+  allowLocalContainerHosts: boolean
+): boolean => {
+  const present = [values.IDENTITY_STORAGE_ENDPOINT, values.IDENTITY_STORAGE_ACCESS_KEY_ID, values.IDENTITY_STORAGE_SECRET_ACCESS_KEY, values.IDENTITY_STORAGE_BUCKET]
+    .map((value) => value !== undefined);
+  const anyPresent = present.some(Boolean);
+  const allPresent = present.every(Boolean);
+  if (anyPresent && !allPresent) {
+    throw new ConfigValidationError('API', [{
+      path: 'IDENTITY_STORAGE_ENDPOINT',
+      message: 'IDENTITY_STORAGE_ENDPOINT, IDENTITY_STORAGE_ACCESS_KEY_ID, IDENTITY_STORAGE_SECRET_ACCESS_KEY and IDENTITY_STORAGE_BUCKET must be set together'
+    }]);
+  }
+  if (environment === 'production' && !allPresent) {
+    throw new ConfigValidationError('API', [{
+      path: 'IDENTITY_STORAGE_ENDPOINT',
+      message: 'IDENTITY_STORAGE_ENDPOINT, IDENTITY_STORAGE_ACCESS_KEY_ID, IDENTITY_STORAGE_SECRET_ACCESS_KEY and IDENTITY_STORAGE_BUCKET are required in production'
+    }]);
+  }
+  if (values.IDENTITY_STORAGE_ENDPOINT !== undefined) {
+    assertRuntimeUrlSafety(environment, 'IDENTITY_STORAGE_ENDPOINT', values.IDENTITY_STORAGE_ENDPOINT, {
+      allowLocalContainerHosts,
+      requireHttpsInProduction: true
+    });
+  }
+  if (environment === 'production' && values.IDENTITY_STORAGE_SECRET_ACCESS_KEY !== undefined && containsExampleSecretMarker(values.IDENTITY_STORAGE_SECRET_ACCESS_KEY)) {
+    throw new ConfigValidationError('API', [{
+      path: 'IDENTITY_STORAGE_SECRET_ACCESS_KEY',
+      message: 'must not be an example/placeholder value in production; supplied values are redacted'
+    }]);
+  }
+  return allPresent;
+};
+
 /** Loads server-only API settings. Never import this module from browser code. */
 export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
   const result = apiSchema.safeParse(env);
@@ -343,6 +439,18 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
     throw new ConfigValidationError('API', [{ path: 'MEDIA_MULTIPART_PART_BYTES', message: 'must not exceed MEDIA_MULTIPART_THRESHOLD_BYTES' }]);
   }
 
+  // Identity storage (issue #100): separate bucket from media, validated the same all-or-nothing way.
+  const allIdentityStoragePresent = validateIdentityStorageEnvironment(serverConfig.environment, result.data, result.data.APP_CONTAINER_LOCAL === 'true');
+  if (result.data.IDENTITY_STORAGE_PUBLIC_ENDPOINT !== undefined) {
+    assertRuntimeUrlSafety(serverConfig.environment, 'IDENTITY_STORAGE_PUBLIC_ENDPOINT', result.data.IDENTITY_STORAGE_PUBLIC_ENDPOINT, { requireHttpsInProduction: true });
+  }
+  if (allStoragePresent && allIdentityStoragePresent && result.data.R2_BUCKET === result.data.IDENTITY_STORAGE_BUCKET) {
+    throw new ConfigValidationError('API', [{
+      path: 'IDENTITY_STORAGE_BUCKET',
+      message: 'must be a different bucket than R2_BUCKET: identity storage is separate from media storage'
+    }]);
+  }
+
   return {
     service: 'api',
     ...serverConfig,
@@ -371,6 +479,17 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
       maxVideoBytes: result.data.MEDIA_MAX_BYTES_VIDEO,
       quotaDefaultBytes: result.data.STORAGE_QUOTA_DEFAULT_BYTES,
       quotaDefaultObjectCount: result.data.STORAGE_QUOTA_DEFAULT_OBJECT_COUNT
+    } : undefined,
+    identityStorage: allIdentityStoragePresent ? {
+      endpoint: result.data.IDENTITY_STORAGE_ENDPOINT!,
+      publicEndpoint: result.data.IDENTITY_STORAGE_PUBLIC_ENDPOINT ?? result.data.IDENTITY_STORAGE_ENDPOINT!,
+      region: result.data.IDENTITY_STORAGE_REGION,
+      accessKeyId: result.data.IDENTITY_STORAGE_ACCESS_KEY_ID!,
+      secretAccessKey: result.data.IDENTITY_STORAGE_SECRET_ACCESS_KEY!,
+      bucket: result.data.IDENTITY_STORAGE_BUCKET!,
+      forcePathStyle: result.data.IDENTITY_STORAGE_FORCE_PATH_STYLE,
+      downloadUrlExpirySeconds: result.data.IDENTITY_DOWNLOAD_URL_EXPIRY_SECONDS,
+      maxImageBytes: result.data.IDENTITY_MAX_IMAGE_BYTES
     } : undefined
   };
 };
