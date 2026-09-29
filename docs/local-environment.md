@@ -67,6 +67,30 @@ pnpm --filter @ageniza/api cli:agency reactivate --agency-id <uuid>
 pnpm --filter @ageniza/api cli:agency resend-activation --agency-id <uuid>
 ```
 
+## Dados de demonstração
+
+Para pular a criação manual e já ter um cenário realista no banco local:
+
+```sh
+pnpm seed:demo --i-know-this-is-local
+```
+
+O comando **se recusa a rodar fora do ambiente local**: exige a flag `--i-know-this-is-local`, recusa `NODE_ENV` ou `APP_ENV` igual a `production` e recusa qualquer banco que não seja loopback — nas duas conexões (`DATABASE_URL` e `MIGRATION_DATABASE_URL`).
+
+O que ele cria, sempre no banco local:
+
+- a agência **Agência Horizonte**, com o Owner e uma pessoa para cada preset (Admin, Gestor de conta, Produção, Vendas, Financeiro), com nome e cargo plausíveis;
+- 6 clientes com cadastro e estudo de marca em graus variados, personas e conversas — algumas aguardando a agência;
+- uma pessoa de portal na Padaria Central;
+- 2 convites de colaborador pendentes;
+- a agência **Estúdio Ponte**, pequena, para demonstrar o isolamento entre agências.
+
+Rodar de novo **não duplica nem falha**: os identificadores derivam de chaves estáveis e cada escrita é um upsert ou um insert guardado. As contas, vínculos e convites passam pelos mesmos caminhos da aplicação (`app_private.accept_invitation`, RLS do papel `ageniza_app`), não por inserts que contornem regra.
+
+No fim o comando imprime o e-mail, a senha e a URL de entrada de cada perfil. **As senhas são geradas a cada execução e existem só nessa saída**; rodar de novo troca todas, e a saída mais recente é a que vale. `pnpm db:reset` apaga tudo.
+
+> Arquivar um cliente e agendar encerramento ainda ficam de fora: dependem das funções da #123, e o seed não escreve colunas que a aplicação não pode escrever.
+
 ## Pegando o link de ativação
 
 O convite **não aparece em lugar nenhum além do e-mail**. O banco guarda apenas o hash do token: nem a operação recupera o token depois de enviado — é decisão de segurança, não limitação.
