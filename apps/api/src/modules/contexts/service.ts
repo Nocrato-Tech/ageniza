@@ -1,4 +1,4 @@
-import { raw, type DatabaseClient } from '@ageniza/database';
+import { createVerifiedUserClaims, raw, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { Context } from '@ageniza/contracts';
 
 type ContextTransaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
@@ -144,6 +144,17 @@ export const listValidContexts = async (transaction: ContextTransaction): Promis
   const contexts = sortContexts([...agencyContexts, ...clientContexts], lastUsedKey);
   const lastUsedContext = lastUsedKey === undefined ? null : contexts.find((context) => contextKey(context) === lastUsedKey) ?? null;
   return { contexts, lastUsedContext };
+};
+
+/**
+ * Counts every valid context for a user, reusing the same query `listValidContexts` walks.
+ * Injected into the auth module (issue #68) so `POST /auth/login` can deny a correct credential
+ * that resolves to zero contexts without duplicating this query there.
+ */
+export const countValidContexts = async (database: DatabaseClient, userId: string): Promise<number> => {
+  const claims = createVerifiedUserClaims({ userId });
+  const { contexts } = await withAuthenticatedUserTransaction(database, claims, (transaction) => listValidContexts(transaction));
+  return contexts.length;
 };
 
 /** Finds the context matching a raw `preferred=agency:<uuid>` / `client:<uuid>` query value. */

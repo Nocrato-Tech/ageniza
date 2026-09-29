@@ -30,6 +30,11 @@ export interface AuthModuleDependencies {
   readonly auditRecorder: AuthAuditRecorder;
   /** Optional B4 adapter; keeping this as a port avoids auth/invitation repository coupling. */
   readonly invitationTokenLookup?: InvitationTokenLookup;
+  /**
+   * Injected by the contexts module so login never reimplements its context-counting query
+   * (issue #68). Counts every agency/client context the given user currently has valid access to.
+   */
+  readonly countValidContexts: (userId: string) => Promise<number>;
 }
 
 /** No informative headers on any auth 429 (B6): a client must not be able to tell, from the
@@ -61,6 +66,21 @@ const requireAuthenticatedUserId = (request: FastifyRequest): string => {
 
 const unauthenticatedFallback = { statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' } as const;
 
+/**
+ * A correct credential that resolves to zero contexts (2026-09-24 decision in decisions.md): the
+ * account exists and the password is right, but there is nothing to enter. Distinct from
+ * `INVALID_CREDENTIALS` on purpose, since by this point the caller already proved they know the
+ * password — the message says so, instead of repeating the generic invalid-credential text.
+ */
+const noContextAccessError = {
+  statusCode: 403,
+  code: 'NO_CONTEXT_ACCESS',
+  message: 'Sua conta não tem acesso a nenhum espaço de trabalho. Fale com quem administra a agência para receber um convite.'
+} as const;
+
+const authLoginWithInvitationSchema = AuthLoginRequestSchema.extend({
+  inviteToken: z.string().min(1).max(2_048).optional()
+}).strict();
 const authPasswordForgotWithInvitationSchema = AuthPasswordForgotRequestSchema.extend({
   inviteToken: z.string().min(1).max(2_048).optional()
 }).strict();
@@ -77,22 +97,38 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
   const requireSession = createRequireSession({ auth: dependencies.auth });
 
   app.post('/auth/login', perIpRateLimit(AUTH_RATE_LIMITS.login.ip), async (request, reply) => {
-    const body = parseRequest(AuthLoginRequestSchema, request.body);
+    const body = parseRequest(authLoginWithInvitationSchema, request.body);
     dependencies.limiter.consume('login', normalizeRateLimitIp(request.ip), body.email);
 
+    let headers: Headers;
+    let response: { readonly token: string; readonly user: { readonly id: string; readonly name: string; readonly email: string } };
     try {
-      const { headers, response } = await dependencies.auth.api.signInEmail({
+      ({ headers, response } = await dependencies.auth.api.signInEmail({
         body: { email: body.email, password: body.password },
         headers: toAuthHeaders(request),
         returnHeaders: true
-      });
-      applyAuthCookies(reply, headers);
-      return parseResponse(AuthLoginResponseSchema, {
-        user: { id: response.user.id, name: response.user.name, email: response.user.email }
-      });
+      }));
     } catch (error) {
       throw toPublicAuthError(error, { statusCode: 401, code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas.' });
     }
+
+    // Credential correct; deny only now, per the 2026-09-24 decision (autenticar primeiro, negar
+    // depois). A zero-context account still gets a session when `inviteToken` continues straight
+    // into accepting an existing-account invitation addressed to it (2026-09-29 decision) — the
+    // invite screen (issue #76) must call `POST /invitations/:token/accept` with that same session
+    // before ever calling `resolve`, which ends a still-zero-context session on sight. Otherwise
+    // the session Better Auth just created above is revoked before it ever reaches the client: no
+    // cookie is ever applied on this path, and no row survives in `auth."session"`.
+    const contextCount = await dependencies.countValidContexts(response.user.id);
+    if (contextCount === 0 && !(await grantsZeroContextAccessViaInvite(dependencies, body.inviteToken, body.email))) {
+      await revokeJustCreatedSession(dependencies.auth, response.token, request);
+      throw new HttpError(noContextAccessError);
+    }
+
+    applyAuthCookies(reply, headers);
+    return parseResponse(AuthLoginResponseSchema, {
+      user: { id: response.user.id, name: response.user.name, email: response.user.email }
+    });
   });
 
   app.post('/auth/logout', { preHandler: requireSession }, async (request, reply) => {
@@ -216,6 +252,27 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
 };
 
 /**
+ * Whether a zero-context login may still get a session because it continues straight into
+ * accepting an existing-account invitation (2026-09-29 decision, complementing the 2026-09-24
+ * "credencial correta sem nenhum contexto não cria sessão"): an account removed from every agency
+ * and re-invited has zero contexts until it accepts, and accepting needs a session. Reuses the
+ * same `app_private.invitation_by_token_hash` validity check (`invitationTokenLookup`, also used
+ * by `password/forgot` and `password/reset` above) the invitations module itself relies on — never
+ * re-implemented here: not used, not revoked, not expired, agency active, and client active when
+ * the invite is one. An invalid, mismatched-email, or absent token is indistinguishable from one
+ * another (B1): none of them ever changes the response the caller sees.
+ */
+const grantsZeroContextAccessViaInvite = async (
+  dependencies: AuthModuleDependencies,
+  inviteToken: string | undefined,
+  email: string
+): Promise<boolean> => {
+  if (inviteToken === undefined || dependencies.invitationTokenLookup === undefined) return false;
+  const invitation = await dependencies.invitationTokenLookup(inviteToken).catch(() => undefined);
+  return invitation?.valid === true && invitation.email === email;
+};
+
+/**
  * A reset continuation is enabled only when the invite is still valid and its e-mail belongs to
  * the user identified by Better Auth's verification row. Invalid/mismatched optional tokens are
  * intentionally ignored, preserving the ordinary 204 reset response and avoiding enumeration.
@@ -251,6 +308,25 @@ const identifyUserIdForResetToken = async (auth: AuthInstance, token: string): P
     return typeof verification?.value === 'string' && verification.value.length > 0 ? verification.value : undefined;
   } catch {
     return undefined;
+  }
+};
+
+/**
+ * Deletes the session `signInEmail` just created for a login that turned out to resolve to zero
+ * contexts (issue #68), via the same `internalAdapter.deleteSession` Better Auth's own
+ * `revoke-session` endpoint uses. Never throws: the client already gets `NO_CONTEXT_ACCESS`
+ * either way, and a failure here must not replace or mask that response with an unrelated 500.
+ */
+const revokeJustCreatedSession = async (auth: AuthInstance, token: string, request: FastifyRequest): Promise<void> => {
+  try {
+    const context = await auth.$context;
+    await context.internalAdapter.deleteSession(token);
+  } catch (error) {
+    request.log.error({
+      operation: 'auth.login_no_context_revoke',
+      status: 'failed',
+      error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'LOGIN_NO_CONTEXT_SESSION_REVOKE_FAILED' }
+    }, 'Failed to revoke the session created for a login that resolved to zero contexts');
   }
 };
 

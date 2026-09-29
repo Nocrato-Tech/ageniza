@@ -116,6 +116,9 @@ describe('invitation HTTP module', () => {
       expires_at: activation.expiresAt
     });
     await owner.knex('agency_memberships').insert({ agency_id: agencyId, user_id: admin.id, role_id: adminRole.id });
+    // Issue #68: logging invitee in below (to then accept the invitation as an existing account)
+    // requires at least one context of their own, unrelated to the invite being accepted.
+    await createAgency('Invitee Home Agency', invitee.id);
   });
 
   afterAll(async () => {
@@ -332,6 +335,8 @@ describe('invitation HTTP module', () => {
     // A dedicated user: the earlier forgot/reset test rotates `invitee`'s password, so its fixture
     // password no longer logs in.
     const otherUser = await makeUser('invitation-mismatch');
+    // Issue #68: logging in requires a context of their own, unrelated to `mismatch`'s agency.
+    await createAgency('Mismatch Home Agency', otherUser.id);
     const otherCookie = await loginCookie(otherUser);
     const mismatchResponse = await app.app.inject({
       method: 'POST',
@@ -366,6 +371,8 @@ describe('invitation HTTP module', () => {
     expect(forbidden.statusCode).toBe(403);
 
     const unrelated = await makeUser('invitation-unrelated');
+    // Issue #68: logging in requires a context of their own, unrelated to `agencyId`.
+    await createAgency('Unrelated Home Agency', unrelated.id);
     const hidden = await app.app.inject({
       method: 'POST',
       url: `/agencies/${agencyId}/invitations/collaborators`,
@@ -703,6 +710,8 @@ describe('invitation HTTP module', () => {
 
     it('returns 404 for a user without access to the agency', async () => {
       const outsider = await makeUser('invitations-pending-outsider');
+      // Issue #68: logging in requires a context of their own, unrelated to `agencyId`.
+      await createAgency('Outsider Home Agency', outsider.id);
       const response = await app.app.inject({
         method: 'GET',
         url: `/agencies/${agencyId}/invitations`,

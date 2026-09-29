@@ -181,20 +181,40 @@ describe('contexts module (AUTH-20C)', () => {
     expect(readAsA.rows).toHaveLength(1);
   });
 
-  it('#2, #3, #4, #5, #6, #7, #8, #10 (partial) cover the full resolve algorithm as contexts are added, preferred, suspended and restored', async () => {
-    const user = await makeUser('ctx-resolve');
+  it('#2 zero contexts: resolve ends the session instead of returning an empty app (issue #68)', async () => {
+    const user = await makeUser('ctx-resolve-none');
+    const agency = await createAgency('Resolve None Agency', user.id);
+    await addAgencyMembership(agency, user.id, adminRoleId);
+    // Login succeeds: the person currently has exactly one context.
     const cookie = await loginCookie(user);
 
-    // #2: no valid context at all.
-    const none = await resolve(cookie);
-    expect(none.status).toBe(200);
-    expect(none.body).toEqual({ decision: 'none' });
+    // The session guard itself never charges for zero contexts (AGENTS.md / decisions.md
+    // 2026-09-24): with a still-valid session, `GET /me/contexts` plainly reports nothing.
+    await setAgencyStatus(agency, 'suspended');
     const emptyList = await getContexts(cookie);
     expect(emptyList.contexts).toEqual([]);
 
-    // #3: exactly one valid context -> enter it directly.
+    // `resolve` is where the zero-context rule is charged: it both answers `none` and ends the
+    // session, per the 2026-09-24 decision ("quem perde o último contexto... é encerrado na
+    // próxima passagem pelo resolve").
+    const none = await resolve(cookie);
+    expect(none.status).toBe(200);
+    expect(none.body).toEqual({ decision: 'none' });
+
+    // The same cookie is now unusable: the session row is gone, not merely stale.
+    const afterNone = await resolve(cookie);
+    expect(afterNone.status).toBe(401);
+    const sessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id]);
+    expect(sessionRows.rowCount).toBe(0);
+  });
+
+  it('#3, #4, #5, #6, #7, #8, #10 (partial) cover the resolve algorithm as contexts are added, preferred, suspended and restored', async () => {
+    const user = await makeUser('ctx-resolve');
     const agencyOne = await createAgency('Resolve Agency One', user.id);
     await addAgencyMembership(agencyOne, user.id, adminRoleId);
+    const cookie = await loginCookie(user);
+
+    // #3: exactly one valid context -> enter it directly.
     const single = await resolve(cookie);
     expect(single.body).toMatchObject({ decision: 'enter', context: { type: 'agency', agencyId: agencyOne } });
 
@@ -265,10 +285,10 @@ describe('contexts module (AUTH-20C)', () => {
 
   it('#9 orders contexts: last-used first, then alphabetically ignoring accent/case, then agency before client, then by id', async () => {
     const user = await makeUser('ctx-order');
-    const cookie = await loginCookie(user);
-
     const beta = await createAgency('beta', user.id);
     await addAgencyMembership(beta, user.id, adminRoleId);
+    const cookie = await loginCookie(user);
+
     const agil = await createAgency('Ágil', user.id);
     await addAgencyMembership(agil, user.id, adminRoleId);
 
@@ -299,9 +319,9 @@ describe('contexts module (AUTH-20C)', () => {
 
   it('#11 an owner without an explicit membership row appears as isOwner with the Admin role', async () => {
     const user = await makeUser('ctx-owner-no-membership');
-    const cookie = await loginCookie(user);
     const agency = await createAgency('Owner Only Agency', user.id);
     // Deliberately no agency_memberships row: the legacy/partially-provisioned owner path.
+    const cookie = await loginCookie(user);
 
     const { contexts } = await getContexts(cookie);
     expect(contexts).toEqual([
@@ -312,11 +332,11 @@ describe('contexts module (AUTH-20C)', () => {
   it('#12 a client context carries agencyName and onboardingPending, which flips exactly once and stays fixed after', async () => {
     const owner1 = await makeUser('ctx-onboarding-owner');
     const member = await makeUser('ctx-onboarding-member');
-    const memberCookie = await loginCookie(member);
     const agency = await createAgency('Onboarding Agency', owner1.id);
     await addAgencyMembership(agency, owner1.id, adminRoleId);
     const client = await createClient(agency, 'Onboarding Client');
     await addClientMembership(client, member.id);
+    const memberCookie = await loginCookie(member);
 
     const before = await getContexts(memberCookie);
     expect(before.contexts).toEqual([
@@ -336,11 +356,11 @@ describe('contexts module (AUTH-20C)', () => {
 
   it('#13 PUT /me/last-context with an invalid context responds 404 and leaves the previous preference unchanged', async () => {
     const user = await makeUser('ctx-put-invalid');
-    const cookie = await loginCookie(user);
     const agencyY = await createAgency('Put Agency Y', user.id);
     await addAgencyMembership(agencyY, user.id, adminRoleId);
     const agencyZ = await createAgency('Put Agency Z', user.id);
     await addAgencyMembership(agencyZ, user.id, adminRoleId);
+    const cookie = await loginCookie(user);
 
     expect(await putLastContext(cookie, { type: 'agency', agencyId: agencyY })).toBe(204);
     const beforeInvalid = await resolve(cookie);
@@ -404,11 +424,11 @@ describe('contexts module (AUTH-20C)', () => {
 
   it('#16 an agency collaborator without a client membership gets 404 from requireClientAccess', async () => {
     const collaborator = await makeUser('ctx-collaborator');
-    const collaboratorCookie = await loginCookie(collaborator);
     const agencyOwner = await makeUser('ctx-collaborator-owner');
     const agency = await createAgency('Collaborator Agency', agencyOwner.id);
     await addAgencyMembership(agency, agencyOwner.id, adminRoleId);
     await addAgencyMembership(agency, collaborator.id, productionRoleId);
+    const collaboratorCookie = await loginCookie(collaborator);
     const client = await createClient(agency, 'Collaborator Client');
     // Deliberately no client_memberships row for `collaborator`.
 
@@ -422,6 +442,7 @@ describe('contexts module (AUTH-20C)', () => {
     try {
       const user = await insertTestUser(loggedApp.pool, loggedApp.auth, { emailLabel: 'ctx-log' });
       createdUserIds.push(user.id);
+      await createAgency('Log Agency', user.id);
       const login = await loggedApp.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email: user.email, password: user.password } });
       expect(login.statusCode).toBe(200);
       const cookieValue = login.cookies[0]?.value;

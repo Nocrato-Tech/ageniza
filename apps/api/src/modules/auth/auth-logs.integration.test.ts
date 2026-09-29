@@ -3,8 +3,10 @@ import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import {
   buildTestApp,
   captureLogs,
+  cleanupOwnedAgencyContext,
   cleanupTestUser,
   createFakeEmailSender,
+  grantOwnedAgencyContext,
   insertTestUser,
   TEST_APP_PUBLIC_URL,
   type TestApp,
@@ -16,9 +18,11 @@ import {
 const origin = { origin: TEST_APP_PUBLIC_URL };
 
 const createdUsers: Array<{ app: TestApp; userId: string }> = [];
+const createdAgencyIds: string[] = [];
 const openApps: TestApp[] = [];
 
 afterEach(async () => {
+  await Promise.all(createdAgencyIds.splice(0).map((agencyId) => cleanupOwnedAgencyContext(agencyId)));
   await Promise.all(createdUsers.splice(0).map(({ app, userId }) => cleanupTestUser(app.pool, userId)));
 });
 
@@ -26,9 +30,11 @@ afterAll(async () => {
   await Promise.all(openApps.splice(0).map((app) => app.close()));
 });
 
+/** Also grants an owned agency: the login below (issue #68) is now rejected for zero contexts. */
 const makeUser = async (app: TestApp, emailLabel: string): Promise<TestUserFixture> => {
   const user = await insertTestUser(app.pool, app.auth, { emailLabel });
   createdUsers.push({ app, userId: user.id });
+  createdAgencyIds.push(await grantOwnedAgencyContext(user.id));
   return user;
 };
 

@@ -12,7 +12,7 @@ response bodies are validated against `packages/contracts/src/auth.ts` with `par
 
 | Method and route | Body | Success | Errors |
 | --- | --- | --- | --- |
-| `POST /auth/login` | `{ email, password }` | `200 { user: { id, name, email } }` + session cookie | `401 INVALID_CREDENTIALS`; `429 RATE_LIMITED` |
+| `POST /auth/login` | `{ email, password, inviteToken? }` | `200 { user: { id, name, email } }` + session cookie | `401 INVALID_CREDENTIALS`; `403 NO_CONTEXT_ACCESS`; `429 RATE_LIMITED` |
 | `POST /auth/logout` | — (session cookie) | `204`, revokes only the current session | `401 UNAUTHENTICATED` |
 | `POST /auth/logout-all` | — (session cookie) | `204`, revokes every session for the user; audits `auth.logout_all` | `401 UNAUTHENTICATED` |
 | `GET /auth/session` | — (session cookie) | `200 { user: { id, name, email }, session: { expiresAt } }` | `401 UNAUTHENTICATED`; `401 SESSION_EXPIRED` |
@@ -28,6 +28,37 @@ gets the ordinary `404` route-not-found response.
 Every email is `trim()`ed and lower-cased before it is validated or handed to Better Auth
 (`AuthEmailSchema` in contracts), matching the `auth.user.email` normalized-value constraint
 enforced by the migration.
+
+**Zero contexts (issue #68).** A correct credential that resolves to zero agency/client contexts
+never gets a session: `routes.ts` authenticates first, then counts contexts through
+`countValidContexts` (injected from the `contexts` module, wired in `server.ts`/the test harness),
+and revokes the session Better Auth just created before it ever reaches the client if that count is
+zero. The response is `403 NO_CONTEXT_ACCESS`, a message distinct from `INVALID_CREDENTIALS`
+because by this point the caller already proved they know the password — see the 2026-09-24
+decision "Credencial correta sem nenhum contexto não cria sessão" in `docs/business/decisions.md`.
+The same rule ends the session on `GET /me/contexts/resolve`'s `decision: 'none'` (see the
+`contexts` module's README) — deliberately **not** in `session-guard.ts`: charging it on every
+authenticated request would cost an extra query for no benefit, since `requireAgencyAccess`/
+`requireClientAccess` already 404 anything a contextless session cannot reach.
+
+**Re-invited zero-context account (issue #76, 2026-09-29 decision, pending validation).** An
+account removed from every agency and then re-invited also has zero contexts, but the 2026-09-24
+decision itself says that case must keep working through the existing-account accept flow, and
+`POST /invitations/:token/accept` needs a session to run. `POST /auth/login` accepts an optional
+`inviteToken` for exactly this: when the credential is correct, contexts are zero, and `inviteToken`
+resolves (through the same `invitationTokenLookup`/`app_private.invitation_by_token_hash` validity
+check the invitations module itself uses — not re-implemented here) to a **valid** invitation
+addressed to the **same e-mail**, the session is kept instead of revoked. An invalid, expired,
+revoked, mismatched-email, or absent token is indistinguishable from one another: every one of them
+falls through to the ordinary `403 NO_CONTEXT_ACCESS`, byte-for-byte, so `inviteToken` can never be
+used to probe whether an invitation or an account exists.
+
+The session this creates is **still zero-context** until the invitation is actually accepted: the
+invite screen (issue #76, "já tem conta" state) **must** call `POST /invitations/:token/accept` with
+this same session **before** ever calling `GET /me/contexts/resolve`. Calling `resolve` first ends
+the session on sight (`decision: 'none'`, same as any other zero-context session), and the person
+would need to log in again with the token to retry. Once `accept` succeeds, the account has a real
+context and an ordinary login (no `inviteToken` needed) works from then on.
 
 ## Composition
 
