@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,15 +11,15 @@ import { ApplicationRoutes } from './routes.js';
 
 afterEach(cleanup);
 
-const renderNoAccess = (store?: AuthSessionStore) => {
+const renderAt = (path: string, options: { authenticated?: boolean; store?: AuthSessionStore } = {}) => {
   const client = new HttpClient('http://127.0.0.1:3001', async () => new Response(null, { status: 204 }));
-  const sessionStore = store ?? createAuthSessionStore(client);
+  const store = options.store ?? createAuthSessionStore(client);
   return render(
-    <AuthSessionProvider store={sessionStore}>
+    <AuthSessionProvider store={store}>
       <QueryClientProvider client={createQueryClient()}>
         <ApiClientProvider client={client}>
-          <MemoryRouter initialEntries={['/sem-acesso']}>
-            <ApplicationRoutes session={{ status: 'ready', isAuthenticated: false }} />
+          <MemoryRouter initialEntries={[path]}>
+            <ApplicationRoutes session={{ status: 'ready', isAuthenticated: options.authenticated ?? false }} />
           </MemoryRouter>
         </ApiClientProvider>
       </QueryClientProvider>
@@ -29,7 +29,7 @@ const renderNoAccess = (store?: AuthSessionStore) => {
 
 describe('NoAccessPage (/sem-acesso)', () => {
   it('states the cause affirmatively and never mentions a password or credential', () => {
-    renderNoAccess();
+    renderAt('/sem-acesso');
 
     expect(screen.getByRole('heading', { level: 1, name: 'Sua conta não tem acesso a nenhum espaço de trabalho' })).toBeTruthy();
     expect(screen.getByText(/o vínculo com a agência foi encerrado/)).toBeTruthy();
@@ -37,12 +37,18 @@ describe('NoAccessPage (/sem-acesso)', () => {
     expect(document.body.textContent ?? '').not.toMatch(/senha|credencial/i);
   });
 
-  it('ends any remaining session while it is displayed', async () => {
+  it('redirects a person who arrives with a live session', () => {
+    renderAt('/sem-acesso', { authenticated: true });
+    expect(screen.getByRole('heading', { name: 'Workspace' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Sua conta não tem acesso a nenhum espaço de trabalho' })).toBeNull();
+  });
+
+  it('does not end the session itself: the caller does that on the server before navigating', () => {
     const client = new HttpClient('http://127.0.0.1:3001', async () => new Response(null, { status: 204 }));
     const store = createAuthSessionStore(client);
     const end = vi.spyOn(store, 'end');
 
-    renderNoAccess(store);
-    await waitFor(() => expect(end).toHaveBeenCalled());
+    renderAt('/sem-acesso', { store });
+    expect(end).not.toHaveBeenCalled();
   });
 });
