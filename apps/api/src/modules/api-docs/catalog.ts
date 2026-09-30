@@ -16,6 +16,8 @@ import {
   ClientInvitationRequestSchema,
   ClientPathParamsSchema,
   CollaboratorInvitationRequestSchema,
+  CollaboratorListQuerySchema,
+  CollaboratorListResponseSchema,
   CompleteMediaUploadRequestSchema,
   CompleteMediaUploadResponseSchema,
   ContextResolveQuerySchema,
@@ -49,7 +51,7 @@ import {
  * schema at generation time; secret-shaped values are angle-bracket placeholders on purpose.
  */
 
-export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'media';
+export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'collaborators' | 'media';
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'delete';
 
@@ -106,6 +108,7 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   invitations: 'Convite de colaborador e de pessoa do portal, aceite e administração dos pendentes.',
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
+  collaborators: 'A equipe da agência: listagem com paginação, busca e filtros.',
   media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.'
 };
 
@@ -145,6 +148,7 @@ export const COMMON_ERRORS = {
 } as const satisfies Record<string, ApiErrorDoc>;
 
 const agencyId = '11111111-1111-4111-8111-111111111111';
+const membershipId = '22222222-2222-4222-8222-222222222222';
 const invitationId = '33333333-3333-4333-8333-333333333333';
 const assetId = '44444444-4444-4444-8444-444444444444';
 const userId = '55555555-5555-4555-8555-555555555555';
@@ -636,6 +640,50 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       COMMON_ERRORS.internal,
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/collaborators',
+    operationId: 'listCollaborators',
+    module: 'collaborators',
+    summary: 'Lista a equipe da agência',
+    description: [
+      'Paginada pelo contrato global de listagem, com busca por nome e e-mail e filtros por papel,',
+      'cargo e status (somente ativos). A lista é a mesma para todos os papéis; a foto vem como URL',
+      'assinada. O filtro de removidos chega com a guarda administrativa da #98.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'colaborador.visualizar',
+    params: AgencyPathParamsSchema,
+    query: CollaboratorListQuerySchema,
+    requestExample: { page: 1, pageSize: 24, q: 'camila', role: 'account_manager', status: 'active' },
+    responses: [{
+      status: 200,
+      description: 'Página da equipe.',
+      schema: CollaboratorListResponseSchema,
+      example: {
+        data: [{
+          membershipId,
+          name: 'Camila Nogueira',
+          email: 'camila@exemplo.test',
+          photoUrl: signedStorageUrl,
+          jobTitle: 'Gestora de contas',
+          role: { key: 'account_manager', name: 'Gestor de conta' },
+          isOwner: false,
+          status: 'active',
+          joinedAt: '2026-03-12T12:00:00.000Z'
+        }],
+        meta: { page: 1, pageSize: 24, totalItems: 1, totalPages: 1 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
     ]
   },

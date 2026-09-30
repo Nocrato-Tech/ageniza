@@ -5,6 +5,7 @@ import { CORRELATION_ID_HEADER, createLogger, createReadiness, REQUEST_ID_HEADER
 
 import { registerAgencyModule, type AgencyModuleDependencies } from './modules/agencies/routes.js';
 import { registerAuthModule, type AuthModuleDependencies } from './modules/auth/routes.js';
+import { registerCollaboratorModule, type CollaboratorModuleDependencies } from './modules/collaborators/routes.js';
 import { registerContextModule, type ContextModuleDependencies } from './modules/contexts/routes.js';
 import { createInvitationTokenLookup, registerInvitationModule, type InvitationModuleDependencies } from './modules/invitations/routes.js';
 import { registerMediaModule, type MediaModuleDependencies } from './modules/media/routes.js';
@@ -31,6 +32,8 @@ export interface ApiAppOptions {
   contexts?: ContextModuleDependencies;
   /** Agency dependencies are optional for lightweight health/app tests. */
   agencies?: AgencyModuleDependencies;
+  /** Collaborator dependencies need identity storage; optional for lightweight health/app tests. */
+  collaborators?: CollaboratorModuleDependencies;
   /** Media dependencies are optional; undefined for tests that never touch object storage. */
   media?: MediaModuleDependencies;
   /**
@@ -135,6 +138,9 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   }
   if (options.agencies !== undefined) {
     registerAgencyModule(app, options.agencies);
+  }
+  if (options.collaborators !== undefined) {
+    registerCollaboratorModule(app, options.collaborators);
   }
   if (options.media !== undefined) {
     registerMediaModule(app, options.media);
