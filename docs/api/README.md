@@ -564,9 +564,56 @@ Devolve as permissões efetivas do contexto de agência.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
+| `GET` | `/agencies/:agencyId/clients` | Sessão + vínculo com a agência | `cliente.visualizar` | Lista a carteira de clientes |
 | `POST` | `/agencies/:agencyId/clients` | Sessão + vínculo com a agência | `cliente.cadastrar` | Cadastra um cliente |
 | `GET` | `/agencies/:agencyId/clients/:clientId` | Sessão + vínculo com a agência | `cliente.visualizar` | Lê o detalhe do cliente com o resumo da aba Geral |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId` | Sessão + vínculo com a agência | `cliente.operar` | Edita o cadastro do cliente |
+
+#### `GET /agencies/:agencyId/clients`
+
+Lista a carteira de clientes.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1,
+  "pageSize": 20,
+  "search": "padaria",
+  "status": "active",
+  "sort": "attention"
+}
+```
+
+**Resposta `200`** — Página da carteira.
+
+```json
+{
+  "data": [
+    {
+      "id": "77777777-7777-4777-8777-777777777777",
+      "name": "Padaria Central",
+      "photoUrl": null,
+      "instagramHandle": "padariacentral",
+      "status": "active",
+      "closingDate": null,
+      "threadsAwaitingAgency": 2,
+      "pendingInvitations": 1
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 20,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients`
 

@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 import { AuthEmailSchema } from './auth.js';
+import { createPaginatedResponseSchema, PaginationInputSchema } from './pagination.js';
+import { SearchTextSchema } from './search.js';
 
 /**
  * Client (specs/clientes.md section 3). `name` is the only required field and the only one a POST
@@ -115,3 +117,41 @@ export type UpdateClientRequest = z.infer<typeof UpdateClientRequestSchema>;
 export type Client = z.infer<typeof ClientSchema>;
 export type ClientSummary = z.infer<typeof ClientSummarySchema>;
 export type ClientDetailResponse = z.infer<typeof ClientDetailResponseSchema>;
+
+/** Order of the client listing: `attention` (triage, the default) or `name:asc`. */
+export const ClientListSortSchema = z.enum(['attention', 'name:asc']);
+
+/**
+ * Query of `GET /agencies/:agencyId/clients`. `PaginationInputSchema` owns `page`/`pageSize` (route
+ * default 20, global ceiling of 100 that limits rather than refuses, and the `page` overflow guard);
+ * `search` uses `SearchTextSchema`, which rejects control characters. `.strict()` keeps the rule
+ * that a parameter the SPEC does not declare does not exist.
+ */
+export const ClientListQuerySchema = PaginationInputSchema.extend({
+  search: SearchTextSchema.optional(),
+  status: ClientStatusSchema.optional(),
+  sort: ClientListSortSchema.optional()
+}).strict();
+
+/**
+ * One card of the client listing (specs/clientes.md §6). `pendingInvitations` is optional on
+ * purpose: it is omitted, never zeroed, for a caller without `cliente.convidar_usuario` -- zero
+ * would be a lie the interface would show.
+ */
+export const ClientListItemSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  photoUrl: z.string().nullable(),
+  instagramHandle: z.string().nullable(),
+  status: ClientStatusSchema,
+  closingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  threadsAwaitingAgency: z.number().int().nonnegative(),
+  pendingInvitations: z.number().int().nonnegative().optional()
+}).strict();
+
+export const ClientListResponseSchema = createPaginatedResponseSchema(ClientListItemSchema);
+
+export type ClientListSort = z.infer<typeof ClientListSortSchema>;
+export type ClientListQuery = z.infer<typeof ClientListQuerySchema>;
+export type ClientListItem = z.infer<typeof ClientListItemSchema>;
+export type ClientListResponse = z.infer<typeof ClientListResponseSchema>;

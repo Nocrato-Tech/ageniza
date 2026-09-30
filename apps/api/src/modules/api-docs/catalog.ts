@@ -15,6 +15,8 @@ import {
   AuthSessionResponseSchema,
   ClientDetailResponseSchema,
   ClientInvitationRequestSchema,
+  ClientListQuerySchema,
+  ClientListResponseSchema,
   ClientPathParamsSchema,
   ClientSchema,
   CollaboratorInvitationRequestSchema,
@@ -184,6 +186,17 @@ const clientExample = {
   contactEmail: 'maria@padariacentral.exemplo.test',
   closingDate: null,
   archivedAt: null
+} as const;
+
+const clientListExampleItem = {
+  id: clientId,
+  name: 'Padaria Central',
+  photoUrl: null,
+  instagramHandle: 'padariacentral',
+  status: 'active',
+  closingDate: null,
+  threadsAwaitingAgency: 2,
+  pendingInvitations: 1
 } as const;
 
 export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
@@ -665,6 +678,40 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     ]
   },
 
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients',
+    operationId: 'listClients',
+    module: 'clients',
+    summary: 'Lista a carteira de clientes',
+    description: [
+      'Paginada pelo contrato global de listagem, com busca por nome, razão social ou @ (sem',
+      'diferenciar maiúsculas nem acento) e filtro por status. A ordem padrão é de triagem: quem tem',
+      'thread aguardando a agência primeiro, depois nome ascendente. `pendingInvitations` só vem para',
+      'quem tem `cliente.convidar_usuario`.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.visualizar',
+    params: AgencyPathParamsSchema,
+    query: ClientListQuerySchema,
+    requestExample: { page: 1, pageSize: 20, search: 'padaria', status: 'active', sort: 'attention' },
+    responses: [{
+      status: 200,
+      description: 'Página da carteira.',
+      schema: ClientListResponseSchema,
+      example: {
+        data: [clientListExampleItem],
+        meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
   {
     method: 'post',
     path: '/agencies/:agencyId/clients',

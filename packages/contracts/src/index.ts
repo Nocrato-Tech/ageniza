@@ -9,4 +9,5 @@ export * from './jobs.js';
 export * from './media.js';
 export * from './pagination.js';
 export * from './params.js';
+export * from './search.js';
 export * from './auth.js';

@@ -2,9 +2,13 @@ import {
   AgencyClientPathParamsSchema,
   AgencyPathParamsSchema,
   ClientDetailResponseSchema,
+  ClientListQuerySchema,
+  ClientListResponseSchema,
   ClientSchema,
   CreateClientRequestSchema,
-  UpdateClientRequestSchema
+  UpdateClientRequestSchema,
+  buildPaginationMetadata,
+  resolvePagination
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
@@ -17,8 +21,10 @@ import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.j
 import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
 import {
   clientFromRow,
+  clientListItemFromRow,
   createClient,
   isActiveClientNameConflict,
+  listClients,
   loadClient,
   loadClientSummary,
   updateClient
@@ -39,6 +45,10 @@ export interface ClientModuleDependencies {
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// specs/clientes.md §6: 20 clients per page. The route declares only the default; `resolvePagination`
+// owns the global ceiling (100) and the offset.
+const CLIENT_DEFAULT_PAGE_SIZE = 20;
 
 const unauthenticated = (): HttpError => new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
 
@@ -64,7 +74,7 @@ const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth'
 };
 
 // The agency guard already rejected a missing tenant; this keeps the handler total and indistinct.
-const requireTenant = (request: FastifyRequest): { readonly agencyId: string } => {
+const requireTenant = (request: FastifyRequest): NonNullable<FastifyRequest['tenant']> => {
   const tenant = request.tenant;
   if (tenant === undefined) throw clientNotFound();
   return tenant;
@@ -100,6 +110,11 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
 
   // Declared once per route: the same object is the documentation metadata and the source of the
   // schemas the handler validates with, so a handler cannot drift from what is documented.
+  const listDocs = {
+    permission: 'cliente.visualizar',
+    responseStatus: 200,
+    schemas: { params: AgencyPathParamsSchema, query: ClientListQuerySchema, response: ClientListResponseSchema }
+  } satisfies DocumentedRouteConfig;
   const createDocs = {
     permission: 'cliente.cadastrar',
     responseStatus: 201,
@@ -115,6 +130,33 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     responseStatus: 200,
     schemas: { params: AgencyClientPathParamsSchema, body: UpdateClientRequestSchema, response: ClientSchema }
   } satisfies DocumentedRouteConfig;
+
+  app.get('/agencies/:agencyId/clients', authenticated(listDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const query = parseRequest(listDocs.schemas.query, request.query);
+    const pagination = resolvePagination(query, CLIENT_DEFAULT_PAGE_SIZE);
+    // Zero pending invitations would be a lie shown to whoever cannot manage the portal: the field
+    // is selected only for a caller who holds the key (or the Owner, who passes every key).
+    const includePendingInvitations = tenant.isOwner || tenant.permissions.has('cliente.convidar_usuario');
+
+    const page = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
+      listClients(transaction, tenant.agencyId, {
+        status: query.status ?? 'active',
+        search: query.search,
+        sort: query.sort ?? 'attention',
+        includePendingInvitations
+      }, pagination)
+    );
+
+    const data = await Promise.all(page.items.map(async (row) =>
+      clientListItemFromRow(row, await signPhotoUrl(request, row.photo_key))
+    ));
+    return reply.send(parseResponse(listDocs.schemas.response, {
+      data,
+      meta: buildPaginationMetadata(pagination, page.totalItems)
+    }));
+  });
 
   app.post('/agencies/:agencyId/clients', authenticated(createDocs), async (request, reply) => {
     const auth = requireAuth(request);

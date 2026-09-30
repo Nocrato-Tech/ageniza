@@ -16,3 +16,13 @@ export const latestCommentSideSql = (threadAlias: string): string =>
 /** True while the thread is open: no resolution, or a resolution older than its latest comment. */
 export const openThreadSql = (threadAlias: string): string =>
   `(${threadAlias}.resolved_at is null or ${threadAlias}.resolved_at < (select max(comment.created_at) from public.client_thread_comments comment where comment.thread_id = ${threadAlias}.id))`;
+
+/**
+ * Count of a client's threads awaiting the agency: the open threads whose latest comment is from
+ * the client (specs/clientes.md §4). `clientIdExpression` is a fixed SQL expression chosen in this
+ * repository -- a column reference in the listing, a `?::uuid` bind in the detail summary -- never
+ * a request value. The listing (#125) and the General tab summary (#124) both use this one
+ * expression, so the badge and the summary can never disagree.
+ */
+export const threadsAwaitingAgencyCountSql = (clientIdExpression: string): string =>
+  `(select count(*) from public.client_threads thread where thread.client_id = ${clientIdExpression} and ${openThreadSql('thread')} and ${latestCommentSideSql('thread')} = 'client')`;

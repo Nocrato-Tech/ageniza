@@ -1,7 +1,7 @@
-import type { Client, ClientSummary, UpdateClientRequest } from '@ageniza/contracts';
+import type { Client, ClientListItem, ClientSummary, ResolvedPagination, UpdateClientRequest } from '@ageniza/contracts';
 import { raw, type DatabaseClient, type SqlBinding } from '@ageniza/database';
 
-import { latestCommentSideSql, openThreadSql } from './thread-state.js';
+import { latestCommentSideSql, openThreadSql, threadsAwaitingAgencyCountSql } from './thread-state.js';
 
 export type ClientTransaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
 
@@ -149,12 +149,7 @@ export const loadClientSummary = async (transaction: ClientTransaction, clientId
           where persona.client_id = ?::uuid and persona.status = 'active'
         ) then 1 else 0 end
       ) as brand_study_filled,
-      (
-        select count(*) from public.client_threads thread
-        where thread.client_id = ?::uuid
-          and ${openThreadSql('thread')}
-          and ${latestCommentSideSql('thread')} = 'client'
-      ) as threads_awaiting_agency,
+      ${threadsAwaitingAgencyCountSql('?::uuid')} as threads_awaiting_agency,
       (
         select count(*) from public.client_threads thread
         where thread.client_id = ?::uuid
@@ -192,4 +187,122 @@ export const clientFromRow = (row: ClientRow, photoUrl: string | null): Client =
   contactEmail: row.contact_email,
   closingDate: row.closing_date,
   archivedAt: row.archived_at === null ? null : new Date(row.archived_at).toISOString()
+});
+
+/** One client as the listing reads it: the fields the card needs, plus the triage counts. */
+export interface ClientListRow {
+  readonly id: string;
+  readonly name: string;
+  readonly status: 'active' | 'archived';
+  readonly photo_key: string | null;
+  readonly instagram_handle: string | null;
+  readonly closing_date: string | null;
+  readonly threads_awaiting_agency: string | number;
+  /** Present only when the caller holds `cliente.convidar_usuario` (or is the Owner). */
+  readonly pending_invitations?: string | number | null;
+}
+
+export interface ClientListFilters {
+  readonly status: 'active' | 'archived';
+  readonly search?: string;
+  readonly sort: 'attention' | 'name:asc';
+  readonly includePendingInvitations: boolean;
+}
+
+export interface ClientListPage {
+  readonly items: readonly ClientListRow[];
+  readonly totalItems: number;
+}
+
+/**
+ * Escapes the ILIKE metacharacters so a search for `100%` or `a_b` is literal. The backslash is the
+ * escape character the `ilike` clauses declare.
+ */
+const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, (character) => `\\${character}`);
+
+/**
+ * Lists the agency's clients (issue #125). The default `attention` order puts the clients with at
+ * least one thread awaiting the agency first, then name ascending, always with the id as the final
+ * tie-break so a page boundary is stable. The per-client count comes from the single thread-state
+ * definition (`thread-state.ts`), backed by `client_thread_comments (thread_id, created_at)`.
+ *
+ * `pendingInvitations` is selected only for a caller allowed to see it: zero would be a lie the
+ * interface would show to someone who cannot manage portal invitations.
+ *
+ * `totalItems` is a second, simple count over the same filter -- never the full unfiltered table.
+ */
+export const listClients = async (
+  transaction: ClientTransaction,
+  agencyId: string,
+  filters: ClientListFilters,
+  pagination: ResolvedPagination
+): Promise<ClientListPage> => {
+  const conditions = ['client.agency_id = ?::uuid', 'client.status = ?'];
+  const bindings: SqlBinding[] = [agencyId, filters.status];
+
+  if (filters.search !== undefined) {
+    const escaped = escapeLikePattern(filters.search);
+    conditions.push(`(
+      public.unaccent(client.name) ilike ('%' || public.unaccent(?) || '%') escape '\\'
+      or public.unaccent(client.legal_name) ilike ('%' || public.unaccent(?) || '%') escape '\\'
+      or public.unaccent(client.instagram_handle) ilike ('%' || public.unaccent(?) || '%') escape '\\'
+    )`);
+    bindings.push(escaped, escaped, escaped);
+  }
+  const where = conditions.join('\n    and ');
+
+  const pendingInvitations = filters.includePendingInvitations
+    ? `,
+      (
+        select count(*) from public.invitations invitation
+        where invitation.client_id = client.id
+          and invitation.purpose = 'client_invite'
+          and invitation.used_at is null
+          and invitation.revoked_at is null
+          and invitation.expires_at > now()
+      ) as pending_invitations`
+    : '';
+
+  const orderBy = filters.sort === 'name:asc'
+    ? 'name asc, id asc'
+    : 'case when threads_awaiting_agency > 0 then 0 else 1 end asc, name asc, id asc';
+
+  const itemsResult = await raw<RawRows<ClientListRow>>(transaction, `
+    select * from (
+      select
+        client.id,
+        client.name,
+        client.status,
+        client.photo_key,
+        client.instagram_handle,
+        client.closing_date::text as closing_date,
+        ${threadsAwaitingAgencyCountSql('client.id')} as threads_awaiting_agency${pendingInvitations}
+      from public.clients client
+      where ${where}
+    ) ranked
+    order by ${orderBy}
+    limit ? offset ?
+  `, [...bindings, pagination.pageSize, pagination.offset]);
+
+  const countResult = await raw<RawRows<{ total: string | number }>>(transaction, `
+    select count(*) as total
+    from public.clients client
+    where ${where}
+  `, bindings);
+
+  return { items: itemsResult.rows, totalItems: Number(countResult.rows[0]?.total ?? 0) };
+};
+
+/** Maps a listing row to the contract; `pendingInvitations` is omitted, never zeroed, when absent. */
+export const clientListItemFromRow = (row: ClientListRow, photoUrl: string | null): ClientListItem => ({
+  id: row.id,
+  name: row.name,
+  photoUrl,
+  instagramHandle: row.instagram_handle,
+  status: row.status,
+  closingDate: row.closing_date,
+  threadsAwaitingAgency: Number(row.threads_awaiting_agency),
+  ...(row.pending_invitations === undefined || row.pending_invitations === null
+    ? {}
+    : { pendingInvitations: Number(row.pending_invitations) })
 });
