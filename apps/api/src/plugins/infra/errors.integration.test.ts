@@ -232,8 +232,8 @@ describe('malformed request bodies answer 400/415, never 500 (#191)', () => {
 });
 
 // Review of #194, finding 2: an error that merely carries a 4xx `statusCode` is still unexpected
-// unless its exact code is mapped. This is also the guard that keeps the abort fix from widening to
-// any `ECONNRESET` without `readableAborted`.
+// unless its exact code is mapped. The second case also guards that a body abort is recognised by
+// the body stream's own error, not by any `ECONNRESET` (issue #195).
 describe('errors outside the map are never downgraded by statusCode (#194 review)', () => {
   it('answers 500 INTERNAL_ERROR and captures once for an unmapped 4xx error', async () => {
     const logs = captureLogs();
@@ -261,19 +261,21 @@ describe('errors outside the map are never downgraded by statusCode (#194 review
     }
   });
 
-  it('answers 500 INTERNAL_ERROR for an ECONNRESET error whose request was not aborted', async () => {
+  it('answers 500 INTERNAL_ERROR for an upstream ECONNRESET, which is not a body abort', async () => {
     const logs = captureLogs();
     const app = await buildTestApp({
       logger: logs.logger,
       registerExtraRoutes: (fastifyApp) => {
-        fastifyApp.get('/__test/econnreset-not-aborted', async () => {
-          throw Object.assign(new Error('aborted'), { statusCode: 400, code: 'ECONNRESET' });
+        fastifyApp.get('/__test/upstream-econnreset', async () => {
+          // An upstream reset (pg, S3, SMTP) reads `read ECONNRESET`; only Node's own body-abort is
+          // the exact `Error('aborted')` with `code === 'ECONNRESET'` (issue #195).
+          throw Object.assign(new Error('read ECONNRESET'), { statusCode: 400, code: 'ECONNRESET' });
         });
       }
     });
     try {
       mockedCaptureUnexpectedError.mockClear();
-      const response = await app.app.inject({ method: 'GET', url: '/__test/econnreset-not-aborted' });
+      const response = await app.app.inject({ method: 'GET', url: '/__test/upstream-econnreset' });
 
       expect(response.statusCode).toBe(500);
       expect(ApiErrorResponseSchema.parse(response.json()).error.code).toBe('INTERNAL_ERROR');
@@ -284,5 +286,85 @@ describe('errors outside the map are never downgraded by statusCode (#194 review
     } finally {
       await app.close();
     }
+  });
+});
+
+// Issue #195: `raw.readableAborted` is true whenever a client leaves, even on a bodyless GET, so the
+// body abort must be recognised by the body stream's own error. These tests use a real port and a raw
+// socket, because `inject` cannot make a client leave in the middle of a request.
+describe('a client that left does not hide a real failure (#195)', () => {
+  const openApps: TestApp[] = [];
+  let app: TestApp;
+  let logs: CapturedLogs;
+  let port: number;
+
+  beforeAll(async () => {
+    logs = captureLogs();
+    app = await buildTestApp({
+      logger: logs.logger,
+      registerExtraRoutes: (fastifyApp) => {
+        fastifyApp.get('/__test/upstream-econnreset-after-leave', async () => {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          throw Object.assign(new Error('read ECONNRESET'), { statusCode: 400, code: 'ECONNRESET' });
+        });
+        fastifyApp.get('/__test/generic-failure-after-leave', async () => {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          throw new Error('boom');
+        });
+      }
+    });
+    openApps.push(app);
+    const address = await app.app.listen({ port: 0, host: '127.0.0.1' });
+    port = Number(new URL(address).port);
+  });
+
+  afterAll(async () => {
+    await Promise.all(openApps.splice(0).map((opened) => opened.close()));
+  });
+
+  const abandonGet = async (path: string): Promise<void> => {
+    await new Promise<void>((resolve) => {
+      const socket = connect({ host: '127.0.0.1', port }, () => {
+        socket.write(`GET ${path} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n\r\n`);
+        setTimeout(() => {
+          socket.destroy();
+          resolve();
+        }, 50);
+      });
+      socket.on('error', () => resolve());
+    });
+  };
+
+  const logsAfterHandling = async (offset: number): Promise<string> => {
+    await waitUntil(() => {
+      const text = logs.lines().slice(offset).join('\n');
+      return mockedCaptureUnexpectedError.mock.calls.length > 0 || text.includes('"code":"REQUEST_ABORTED"');
+    });
+    await flushLogs();
+    return logs.lines().slice(offset).join('\n');
+  };
+
+  it('keeps an upstream ECONNRESET after the client left on the 500 + Sentry path', async () => {
+    mockedCaptureUnexpectedError.mockClear();
+    const offset = logs.lines().length;
+    await abandonGet('/__test/upstream-econnreset-after-leave');
+    const requestLogs = await logsAfterHandling(offset);
+
+    expect(mockedCaptureUnexpectedError).toHaveBeenCalledTimes(1);
+    expect(requestLogs).toContain('"code":"INTERNAL_ERROR"');
+    expect(requestLogs).toContain('"level":50');
+    expect(requestLogs).not.toContain('"code":"REQUEST_ABORTED"');
+  });
+
+  it('keeps a generic handler failure after the client left on the 500 + Sentry path', async () => {
+    mockedCaptureUnexpectedError.mockClear();
+    const offset = logs.lines().length;
+    await abandonGet('/__test/generic-failure-after-leave');
+    const requestLogs = await logsAfterHandling(offset);
+
+    expect(mockedCaptureUnexpectedError).toHaveBeenCalledTimes(1);
+    expect(requestLogs).toContain('"code":"INTERNAL_ERROR"');
+    expect(requestLogs).toContain('"level":50');
+    expect(requestLogs).not.toContain('"code":"REQUEST_ABORTED"');
   });
 });
