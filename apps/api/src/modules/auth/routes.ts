@@ -20,6 +20,7 @@ import { applyAuthCookies, toAuthHeaders, toPublicAuthError } from './bridge.js'
 import { AUTH_RATE_LIMITS } from './policy.js';
 import { createRequireSession } from './session-guard.js';
 import { normalizeRateLimitIp } from '../../plugins/infra/rate-limit-ip.js';
+import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
 import type { InvitationTokenLookup } from '../invitations/routes.js';
 
@@ -52,9 +53,38 @@ const noRateLimitHeaders = {
   }
 } as const;
 
-const perIpRateLimit = (limit: { readonly max: number; readonly windowMs: number }) => ({
-  config: { rateLimit: { max: limit.max, timeWindow: limit.windowMs, ...noRateLimitHeaders } }
+const perIpRateLimit = (limit: { readonly max: number; readonly windowMs: number }, docs: DocumentedRouteConfig) => ({
+  config: {
+    rateLimit: { max: limit.max, timeWindow: limit.windowMs, ...noRateLimitHeaders },
+    permission: docs.permission,
+    responseStatus: docs.responseStatus,
+    schemas: docs.schemas
+  }
 });
+
+// Declared once per route: the same object is the documentation metadata and the source of the
+// schemas the handler validates with.
+const loginDocs = {
+  permission: null,
+  responseStatus: 200,
+  schemas: { body: AuthLoginRequestSchema, response: AuthLoginResponseSchema }
+} satisfies DocumentedRouteConfig;
+const logoutDocs = { permission: null, responseStatus: 204, schemas: {} } satisfies DocumentedRouteConfig;
+const sessionDocs = {
+  permission: null,
+  responseStatus: 200,
+  schemas: { response: AuthSessionResponseSchema }
+} satisfies DocumentedRouteConfig;
+const forgotDocs = {
+  permission: null,
+  responseStatus: 202,
+  schemas: { body: AuthPasswordForgotRequestSchema, response: AuthPasswordForgotResponseSchema }
+} satisfies DocumentedRouteConfig;
+const resetDocs = {
+  permission: null,
+  responseStatus: 200,
+  schemas: { body: AuthPasswordResetRequestSchema, response: AuthPasswordResetResponseSchema }
+} satisfies DocumentedRouteConfig;
 
 const requireAuthenticatedUserId = (request: FastifyRequest): string => {
   if (request.auth === undefined) {
@@ -84,8 +114,8 @@ const noContextAccessError = {
 export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
 
-  app.post('/auth/login', perIpRateLimit(AUTH_RATE_LIMITS.login.ip), async (request, reply) => {
-    const body = parseRequest(AuthLoginRequestSchema, request.body);
+  app.post('/auth/login', perIpRateLimit(AUTH_RATE_LIMITS.login.ip, loginDocs), async (request, reply) => {
+    const body = parseRequest(loginDocs.schemas.body, request.body);
     dependencies.limiter.consume('login', normalizeRateLimitIp(request.ip), body.email);
 
     let headers: Headers;
@@ -114,12 +144,12 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     }
 
     applyAuthCookies(reply, headers);
-    return parseResponse(AuthLoginResponseSchema, {
+    return parseResponse(loginDocs.schemas.response, {
       user: { id: response.user.id, name: response.user.name, email: response.user.email }
     });
   });
 
-  app.post('/auth/logout', { preHandler: requireSession }, async (request, reply) => {
+  app.post('/auth/logout', { preHandler: requireSession, config: logoutDocs }, async (request, reply) => {
     try {
       const { headers } = await dependencies.auth.api.signOut({ headers: toAuthHeaders(request), returnHeaders: true });
       applyAuthCookies(reply, headers);
@@ -129,7 +159,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     return reply.status(204).send();
   });
 
-  app.post('/auth/logout-all', { preHandler: requireSession }, async (request, reply) => {
+  app.post('/auth/logout-all', { preHandler: requireSession, config: logoutDocs }, async (request, reply) => {
     const userId = requireAuthenticatedUserId(request);
     try {
       await dependencies.auth.api.revokeSessions({ headers: toAuthHeaders(request) });
@@ -146,20 +176,20 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     return reply.status(204).send();
   });
 
-  app.get('/auth/session', { preHandler: requireSession }, async (request) => {
+  app.get('/auth/session', { preHandler: requireSession, config: sessionDocs }, async (request) => {
     // The `requireSession` preHandler above already called Better Auth's `getSession` once
     // (with `returnHeaders: true`, so a renewed cookie was already applied to the reply, M1) and
     // populated `request.auth`; a second `getSession` call here would be redundant and would
     // discard the renewed cookie the guard already resolved.
     if (request.auth === undefined) throw new HttpError(unauthenticatedFallback);
-    return parseResponse(AuthSessionResponseSchema, {
+    return parseResponse(sessionDocs.schemas.response, {
       user: request.auth.user,
       session: { expiresAt: request.auth.expiresAt }
     });
   });
 
-  app.post('/auth/password/forgot', perIpRateLimit(AUTH_RATE_LIMITS.forgot.ip), async (request, reply) => {
-    const body = parseRequest(AuthPasswordForgotRequestSchema, request.body);
+  app.post('/auth/password/forgot', perIpRateLimit(AUTH_RATE_LIMITS.forgot.ip, forgotDocs), async (request, reply) => {
+    const body = parseRequest(forgotDocs.schemas.body, request.body);
     dependencies.limiter.consume('forgot', normalizeRateLimitIp(request.ip), body.email);
 
     const invitation = body.inviteToken === undefined || dependencies.invitationTokenLookup === undefined
@@ -181,11 +211,11 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
       }, 'Password reset request failed');
     });
 
-    return reply.status(202).send(parseResponse(AuthPasswordForgotResponseSchema, {}));
+    return reply.status(202).send(parseResponse(forgotDocs.schemas.response, {}));
   });
 
-  app.post('/auth/password/reset', perIpRateLimit(AUTH_RATE_LIMITS.reset.ip), async (request, reply) => {
-    const body = parseRequest(AuthPasswordResetRequestSchema, request.body);
+  app.post('/auth/password/reset', perIpRateLimit(AUTH_RATE_LIMITS.reset.ip, resetDocs), async (request, reply) => {
+    const body = parseRequest(resetDocs.schemas.body, request.body);
     // Looked up non-destructively (before `resetPassword` consumes the same verification row)
     // purely so a B10 recovery below has a user id to act on; a lookup failure never blocks the
     // reset itself.
@@ -227,7 +257,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     // race of two valid reset tokens for the same account) — is `SIGN_IN_REQUIRED` instead, so the
     // client never tells someone who *does* have access that their account has none.
     const signInFailedResponse = () => reply.status(200).send(
-      parseResponse(AuthPasswordResetResponseSchema, { signedIn: false, reason: 'SIGN_IN_REQUIRED' })
+      parseResponse(resetDocs.schemas.response, { signedIn: false, reason: 'SIGN_IN_REQUIRED' })
     );
 
     if (resetInviteContinuation !== undefined) {
@@ -238,7 +268,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
       const signedIn = await signInAfterReset(dependencies, request, resetInviteContinuation.userId, body.newPassword);
       if (signedIn !== undefined) {
         applyAuthCookies(reply, signedIn.headers);
-        return reply.status(200).send(parseResponse(AuthPasswordResetResponseSchema, { signedIn: true }));
+        return reply.status(200).send(parseResponse(resetDocs.schemas.response, { signedIn: true }));
       }
       return signInFailedResponse();
     }
@@ -277,14 +307,14 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     // `SIGN_IN_REQUIRED`.
     if (contextCount === 0) {
       return reply.status(200).send(
-        parseResponse(AuthPasswordResetResponseSchema, { signedIn: false, reason: 'NO_CONTEXT_ACCESS' })
+        parseResponse(resetDocs.schemas.response, { signedIn: false, reason: 'NO_CONTEXT_ACCESS' })
       );
     }
 
     const signedIn = await signInAfterReset(dependencies, request, userIdForRecovery, body.newPassword);
     if (signedIn !== undefined) {
       applyAuthCookies(reply, signedIn.headers);
-      return reply.status(200).send(parseResponse(AuthPasswordResetResponseSchema, { signedIn: true }));
+      return reply.status(200).send(parseResponse(resetDocs.schemas.response, { signedIn: true }));
     }
     return signInFailedResponse();
   });

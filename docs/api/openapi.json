@@ -1,0 +1,4541 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "API do Ageniza",
+    "version": "0.1.0",
+    "description": "API HTTP do Ageniza. A sessão é um cookie httpOnly emitido por `POST /auth/login`;\nas rotas autenticadas usam esse cookie e nunca um token no corpo ou na URL.\nErros seguem o mesmo corpo: `{ error: { code, message }, meta: { requestId } }`.\nA permissão exigida por cada rota aparece na extensão `x-permission` e no resumo em Markdown."
+  },
+  "tags": [
+    {
+      "name": "system",
+      "description": "Saúde e prontidão do processo."
+    },
+    {
+      "name": "auth",
+      "description": "Login, sessão, logout e recuperação de senha."
+    },
+    {
+      "name": "invitations",
+      "description": "Convite de colaborador e de pessoa do portal, aceite e administração dos pendentes."
+    },
+    {
+      "name": "contexts",
+      "description": "Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente."
+    },
+    {
+      "name": "agencies",
+      "description": "Dados do contexto de agência, incluindo as permissões efetivas."
+    },
+    {
+      "name": "media",
+      "description": "Upload direto ao armazenamento, confirmação e URLs assinadas de mídia."
+    }
+  ],
+  "components": {
+    "schemas": {
+      "ApiErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "details": {}
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "requestId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9._:-]+$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "getHealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "postAuthLoginResponse": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "email": {
+                "type": "string",
+                "maxLength": 320,
+                "format": "email"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "email"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "user"
+        ],
+        "additionalProperties": false
+      },
+      "postAuthLoginRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 128
+          },
+          "inviteToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "additionalProperties": false
+      },
+      "getAuthSessionResponse": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "email": {
+                "type": "string",
+                "maxLength": 320,
+                "format": "email"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "email"
+            ],
+            "additionalProperties": false
+          },
+          "session": {
+            "type": "object",
+            "properties": {
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "expiresAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "user",
+          "session"
+        ],
+        "additionalProperties": false
+      },
+      "postAuthPasswordForgotResponse": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "postAuthPasswordForgotRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "format": "email"
+          },
+          "inviteToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "additionalProperties": false
+      },
+      "postAuthPasswordResetResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "signedIn": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            },
+            "required": [
+              "signedIn"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "signedIn": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "NO_CONTEXT_ACCESS",
+                  "SIGN_IN_REQUIRED"
+                ]
+              }
+            },
+            "required": [
+              "signedIn",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "postAuthPasswordResetRequest": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "newPassword": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 128
+          },
+          "inviteToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "token",
+          "newPassword"
+        ],
+        "additionalProperties": false
+      },
+      "listPendingCollaboratorInvitationsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "email": {
+                  "type": "string",
+                  "maxLength": 320,
+                  "format": "email"
+                },
+                "purpose": {
+                  "type": "string",
+                  "enum": [
+                    "collaborator_invite"
+                  ]
+                },
+                "role": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                "client": {
+                  "type": "null"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "expiresAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "email",
+                "purpose",
+                "role",
+                "client",
+                "createdAt",
+                "expiresAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "pageSize": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "totalItems": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "totalPages": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "page",
+              "pageSize",
+              "totalItems",
+              "totalPages"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "createCollaboratorInvitationResponse": {
+        "type": "object",
+        "properties": {
+          "invitationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "invitationId",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "createCollaboratorInvitationRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "format": "email"
+          },
+          "roleId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "email",
+          "roleId"
+        ],
+        "additionalProperties": false
+      },
+      "createClientInvitationRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "format": "email"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "additionalProperties": false
+      },
+      "getInvitationPreviewResponse": {
+        "type": "object",
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "agency_activation",
+              "collaborator_invite",
+              "client_invite"
+            ]
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "format": "email"
+          },
+          "agency": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "client": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "accountExists": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "purpose",
+          "email",
+          "agency",
+          "client",
+          "accountExists"
+        ],
+        "additionalProperties": false
+      },
+      "acceptInvitationNewAccountResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted"
+            ]
+          },
+          "context": {
+            "type": "object",
+            "properties": {
+              "agencyId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "clientId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1,
+                "maxLength": 128
+              }
+            },
+            "required": [
+              "agencyId",
+              "clientId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "status",
+          "context"
+        ],
+        "additionalProperties": false
+      },
+      "acceptInvitationNewAccountRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "password": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 128
+          },
+          "acceptTerms": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "password",
+          "acceptTerms"
+        ],
+        "additionalProperties": false
+      },
+      "acceptInvitationResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "already_member"
+            ]
+          },
+          "context": {
+            "type": "object",
+            "properties": {
+              "agencyId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "clientId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1,
+                "maxLength": 128
+              }
+            },
+            "required": [
+              "agencyId",
+              "clientId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "status",
+          "context"
+        ],
+        "additionalProperties": false
+      },
+      "listMyContextsResponse": {
+        "type": "object",
+        "properties": {
+          "contexts": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "agency"
+                      ]
+                    },
+                    "agencyId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "agencyName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "roleKey": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "roleName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "isOwner": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "agencyId",
+                    "agencyName",
+                    "roleKey",
+                    "roleName",
+                    "isOwner"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "client"
+                      ]
+                    },
+                    "clientId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "clientName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "agencyId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "agencyName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "onboardingPending": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "clientId",
+                    "clientName",
+                    "agencyId",
+                    "agencyName",
+                    "onboardingPending"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "contexts"
+        ],
+        "additionalProperties": false
+      },
+      "resolveMyContextResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "type": "string",
+                "enum": [
+                  "none"
+                ]
+              }
+            },
+            "required": [
+              "decision"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "type": "string",
+                "enum": [
+                  "enter"
+                ]
+              },
+              "context": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "agency"
+                        ]
+                      },
+                      "agencyId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "agencyName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "roleKey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "roleName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "isOwner": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "agencyId",
+                      "agencyName",
+                      "roleKey",
+                      "roleName",
+                      "isOwner"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "client"
+                        ]
+                      },
+                      "clientId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "clientName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "agencyId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "agencyName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "onboardingPending": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "clientId",
+                      "clientName",
+                      "agencyId",
+                      "agencyName",
+                      "onboardingPending"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "decision",
+              "context"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "type": "string",
+                "enum": [
+                  "select"
+                ]
+              },
+              "contexts": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "agency"
+                          ]
+                        },
+                        "agencyId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "agencyName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "roleKey": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "roleName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "isOwner": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "agencyId",
+                        "agencyName",
+                        "roleKey",
+                        "roleName",
+                        "isOwner"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "client"
+                          ]
+                        },
+                        "clientId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "clientName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "agencyId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "agencyName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "onboardingPending": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "clientId",
+                        "clientName",
+                        "agencyId",
+                        "agencyName",
+                        "onboardingPending"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "highlighted": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "agency"
+                        ]
+                      },
+                      "agencyId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "agencyName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "roleKey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "roleName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "isOwner": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "agencyId",
+                      "agencyName",
+                      "roleKey",
+                      "roleName",
+                      "isOwner"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "client"
+                        ]
+                      },
+                      "clientId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "clientName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "agencyId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "agencyName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "onboardingPending": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "clientId",
+                      "clientName",
+                      "agencyId",
+                      "agencyName",
+                      "onboardingPending"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "decision",
+              "contexts",
+              "highlighted"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "putMyLastContextRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "agency"
+                ]
+              },
+              "agencyId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "type",
+              "agencyId"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "client"
+                ]
+              },
+              "clientId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "type",
+              "clientId"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "getAgencyMeResponse": {
+        "type": "object",
+        "properties": {
+          "agencyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agencyName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "isOwner": {
+            "type": "boolean"
+          },
+          "role": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "key",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        },
+        "required": [
+          "agencyId",
+          "agencyName",
+          "isOwner",
+          "role",
+          "permissions"
+        ],
+        "additionalProperties": false
+      },
+      "createMediaUploadResponse": {
+        "type": "object",
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "objectKey": {
+            "type": "string",
+            "minLength": 1
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video"
+            ]
+          },
+          "upload": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "single"
+                    ]
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "type",
+                  "url",
+                  "expiresAt"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "multipart"
+                    ]
+                  },
+                  "uploadId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "partSizeBytes": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "partCount": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "type",
+                  "uploadId",
+                  "partSizeBytes",
+                  "partCount"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": [
+          "assetId",
+          "objectKey",
+          "category",
+          "upload"
+        ],
+        "additionalProperties": false
+      },
+      "createMediaUploadRequest": {
+        "type": "object",
+        "properties": {
+          "fileName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "declaredSizeBytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 10737418240
+          }
+        },
+        "required": [
+          "fileName",
+          "contentType",
+          "declaredSizeBytes"
+        ],
+        "additionalProperties": false
+      },
+      "requestMediaUploadPartsResponse": {
+        "type": "object",
+        "properties": {
+          "parts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "partNumber": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "required": [
+                "partNumber",
+                "url"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "parts",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "requestMediaUploadPartsRequest": {
+        "type": "object",
+        "properties": {
+          "partNumbers": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "partNumbers"
+        ],
+        "additionalProperties": false
+      },
+      "completeMediaUploadResponse": {
+        "type": "object",
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed"
+            ]
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "assetId",
+          "status",
+          "sizeBytes",
+          "contentType"
+        ],
+        "additionalProperties": false
+      },
+      "completeMediaUploadRequest": {
+        "type": "object",
+        "properties": {
+          "parts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "partNumber": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10000
+                },
+                "eTag": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
+                }
+              },
+              "required": [
+                "partNumber",
+                "eTag"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 10000
+          }
+        },
+        "additionalProperties": false
+      },
+      "getMediaDownloadUrlResponse": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "url",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Verifica se o processo está vivo",
+        "description": "Responde sempre que o processo HTTP está de pé, sem checar dependências.\n\nAcesso: Público.",
+        "tags": [
+          "system"
+        ],
+        "x-permission": null,
+        "responses": {
+          "200": {
+            "description": "Processo vivo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getHealthResponse"
+                },
+                "example": {
+                  "status": "ok"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "operationId": "getReadiness",
+        "summary": "Verifica se a API está pronta para receber tráfego",
+        "description": "Checa as dependências configuradas; qualquer falha vira 503.\n\nAcesso: Público.",
+        "tags": [
+          "system"
+        ],
+        "x-permission": null,
+        "responses": {
+          "200": {
+            "description": "Pronta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getHealthResponse"
+                },
+                "example": {
+                  "status": "ok"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "NOT_READY: Service is not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_READY",
+                    "message": "Service is not ready"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "postAuthLogin",
+        "summary": "Autentica com e-mail e senha",
+        "description": "Credencial correta sem nenhum contexto não cria sessão e responde 403 `NO_CONTEXT_ACCESS`,\nsalvo quando o corpo traz um `inviteToken` válido para o mesmo e-mail.\n\nAcesso: Público.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/postAuthLoginRequest"
+              },
+              "example": {
+                "email": "dono@exemplo.test",
+                "password": "<senha-do-exemplo>"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sessão criada; o cookie httpOnly vem na resposta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/postAuthLoginResponse"
+                },
+                "example": {
+                  "user": {
+                    "id": "55555555-5555-4555-8555-555555555555",
+                    "name": "Dono da Agência",
+                    "email": "dono@exemplo.test"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "INVALID_CREDENTIALS: Credenciais inválidas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INVALID_CREDENTIALS",
+                    "message": "Credenciais inválidas."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | NO_CONTEXT_ACCESS: Sua conta não tem acesso a nenhum espaço de trabalho. Fale com quem administra a agência para receber um convite.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "postAuthLogout",
+        "summary": "Encerra a sessão atual",
+        "description": "Revoga a sessão do cookie da requisição e limpa o cookie.\n\nAcesso: Sessão.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "responses": {
+          "204": {
+            "description": "Sessão encerrada."
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout-all": {
+      "post": {
+        "operationId": "postAuthLogoutAll",
+        "summary": "Encerra todas as sessões da conta",
+        "description": "Revoga todas as sessões da pessoa autenticada, inclusive a atual.\n\nAcesso: Sessão.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "responses": {
+          "204": {
+            "description": "Todas as sessões encerradas."
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/session": {
+      "get": {
+        "operationId": "getAuthSession",
+        "summary": "Devolve a sessão e a pessoa autenticada",
+        "description": "Usado pelo cliente para saber se a sessão continua válida e quando expira.\n\nAcesso: Sessão.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "responses": {
+          "200": {
+            "description": "Sessão válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getAuthSessionResponse"
+                },
+                "example": {
+                  "user": {
+                    "id": "55555555-5555-4555-8555-555555555555",
+                    "name": "Dono da Agência",
+                    "email": "dono@exemplo.test"
+                  },
+                  "session": {
+                    "expiresAt": "2026-10-01T12:00:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required. | SESSION_EXPIRED: Session has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/password/forgot": {
+      "post": {
+        "operationId": "postAuthPasswordForgot",
+        "summary": "Pede o link de recuperação de senha",
+        "description": "Responde igual exista ou não a conta, para não virar oráculo de e-mail.\n\nAcesso: Público.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/postAuthPasswordForgotRequest"
+              },
+              "example": {
+                "email": "dono@exemplo.test"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Pedido aceito.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/postAuthPasswordForgotResponse"
+                },
+                "example": {}
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/password/reset": {
+      "post": {
+        "operationId": "postAuthPasswordReset",
+        "summary": "Redefine a senha e tenta autenticar de volta",
+        "description": "A senha é sempre trocada e todas as sessões antigas encerradas. Com contexto confirmado,\na resposta é `signedIn: true`; com zero contextos confirmados, `signedIn: false` e\n`reason: NO_CONTEXT_ACCESS`; se a sessão não puder ser criada por outro motivo,\n`signedIn: false` e `reason: SIGN_IN_REQUIRED`.\n\nAcesso: Público.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/postAuthPasswordResetRequest"
+              },
+              "example": {
+                "token": "<token-do-exemplo>",
+                "newPassword": "<nova-senha-do-exemplo>"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Senha redefinida; a sessão depende do resultado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/postAuthPasswordResetResponse"
+                },
+                "example": {
+                  "signedIn": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "INVALID_LINK: Este link não é mais válido. | VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INVALID_LINK",
+                    "message": "Este link não é mais válido."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/invitations": {
+      "get": {
+        "operationId": "listPendingCollaboratorInvitations",
+        "summary": "Lista os convites de colaborador pendentes",
+        "description": "Paginado pelo contrato global de listagem; nunca devolve o token, só o hash existe no banco.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.convidar`.",
+        "tags": [
+          "invitations"
+        ],
+        "x-permission": "colaborador.convidar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de convites pendentes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listPendingCollaboratorInvitationsResponse"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "id": "33333333-3333-4333-8333-333333333333",
+                      "email": "colaborador@exemplo.test",
+                      "purpose": "collaborator_invite",
+                      "role": {
+                        "key": "production",
+                        "name": "Produção"
+                      },
+                      "client": null,
+                      "createdAt": "2026-09-25T12:00:00.000Z",
+                      "expiresAt": "2026-10-02T12:00:00.000Z"
+                    }
+                  ],
+                  "meta": {
+                    "page": 1,
+                    "pageSize": 20,
+                    "totalItems": 1,
+                    "totalPages": 1
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/invitations/collaborators": {
+      "post": {
+        "operationId": "createCollaboratorInvitation",
+        "summary": "Convida uma pessoa para a agência",
+        "description": "O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail e o token só existe nele.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.convidar`.",
+        "tags": [
+          "invitations"
+        ],
+        "x-permission": "colaborador.convidar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/createCollaboratorInvitationRequest"
+              },
+              "example": {
+                "email": "colaborador@exemplo.test",
+                "roleId": "66666666-6666-4666-8666-666666666666"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Convite criado e enviado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createCollaboratorInvitationResponse"
+                },
+                "example": {
+                  "invitationId": "33333333-3333-4333-8333-333333333333",
+                  "expiresAt": "2026-10-02T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "INVALID_ROLE: O papel informado não é válido para esta agência. | VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INVALID_ROLE",
+                    "message": "O papel informado não é válido para esta agência."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "MEMBERSHIP_EXISTS: Este endereço já possui o vínculo solicitado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "MEMBERSHIP_EXISTS",
+                    "message": "Este endereço já possui o vínculo solicitado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "EMAIL_DELIVERY_FAILED: Não foi possível entregar o e-mail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "EMAIL_DELIVERY_FAILED",
+                    "message": "Não foi possível entregar o e-mail."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/invitations": {
+      "post": {
+        "operationId": "createClientInvitation",
+        "summary": "Convida uma pessoa para o portal de um cliente",
+        "description": "Cria o vínculo de portal, que é independente do vínculo de colaborador.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
+        "tags": [
+          "invitations"
+        ],
+        "x-permission": "cliente.convidar_usuario",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/createClientInvitationRequest"
+              },
+              "example": {
+                "email": "pessoa@exemplo.test"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Convite criado e enviado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createCollaboratorInvitationResponse"
+                },
+                "example": {
+                  "invitationId": "33333333-3333-4333-8333-333333333333",
+                  "expiresAt": "2026-10-02T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "MEMBERSHIP_EXISTS: Este endereço já possui o vínculo solicitado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "MEMBERSHIP_EXISTS",
+                    "message": "Este endereço já possui o vínculo solicitado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "EMAIL_DELIVERY_FAILED: Não foi possível entregar o e-mail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "EMAIL_DELIVERY_FAILED",
+                    "message": "Não foi possível entregar o e-mail."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/invitations/{invitationId}/resend": {
+      "post": {
+        "operationId": "resendInvitation",
+        "summary": "Reenvia um convite pendente",
+        "description": "Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `convite.reenviar`.",
+        "tags": [
+          "invitations"
+        ],
+        "x-permission": "convite.reenviar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "invitationId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Convite reenviado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createCollaboratorInvitationResponse"
+                },
+                "example": {
+                  "invitationId": "33333333-3333-4333-8333-333333333333",
+                  "expiresAt": "2026-10-02T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Invitation not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Invitation not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "INVITATION_NOT_PENDING: O convite não está pendente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INVITATION_NOT_PENDING",
+                    "message": "O convite não está pendente."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "EMAIL_DELIVERY_FAILED: Não foi possível entregar o e-mail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "EMAIL_DELIVERY_FAILED",
+                    "message": "Não foi possível entregar o e-mail."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/invitations/{invitationId}": {
+      "delete": {
+        "operationId": "cancelInvitation",
+        "summary": "Cancela um convite pendente",
+        "description": "Marca o convite como revogado; o link deixa de valer imediatamente.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `convite.cancelar`.",
+        "tags": [
+          "invitations"
+        ],
+        "x-permission": "convite.cancelar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "invitationId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Convite cancelado."
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Invitation not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Invitation not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "INVITATION_NOT_PENDING: O convite não está pendente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INVITATION_NOT_PENDING",
+                    "message": "O convite não está pendente."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/invitations/{token}": {
+      "get": {
+        "operationId": "getInvitationPreview",
+        "summary": "Mostra o convite antes do aceite",
+        "description": "Token inválido, usado, expirado ou revogado devolvem o mesmo 410 `INVALID_LINK`, sem dizer qual.\n\nAcesso: Token do convite.",
+        "tags": [
+          "invitations"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "required": true,
+            "name": "token",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Convite válido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getInvitationPreviewResponse"
+                },
+                "example": {
+                  "purpose": "collaborator_invite",
+                  "email": "pessoa@exemplo.test",
+                  "agency": {
+                    "name": "Agência Exemplo"
+                  },
+                  "client": null,
+                  "accountExists": true
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "INVALID_LINK: Este link não é mais válido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INVALID_LINK",
+                    "message": "Este link não é mais válido."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/invitations/{token}/accept-new-account": {
+      "post": {
+        "operationId": "acceptInvitationNewAccount",
+        "summary": "Cria a conta e aceita o convite",
+        "description": "A conta nasce com o e-mail do convite, verificado, e a sessão já vem no cookie da resposta.\n\nAcesso: Token do convite.",
+        "tags": [
+          "invitations"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "required": true,
+            "name": "token",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/acceptInvitationNewAccountRequest"
+              },
+              "example": {
+                "name": "Pessoa Convidada",
+                "password": "<senha-do-exemplo>",
+                "acceptTerms": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Conta criada, convite aceito e sessão iniciada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/acceptInvitationNewAccountResponse"
+                },
+                "example": {
+                  "status": "accepted",
+                  "context": {
+                    "agencyId": "11111111-1111-4111-8111-111111111111",
+                    "clientId": null
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ACCOUNT_EXISTS: Já existe uma conta para este endereço.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "ACCOUNT_EXISTS",
+                    "message": "Já existe uma conta para este endereço."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "INVALID_LINK: Este link não é mais válido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INVALID_LINK",
+                    "message": "Este link não é mais válido."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/invitations/{token}/accept": {
+      "post": {
+        "operationId": "acceptInvitation",
+        "summary": "Aceita o convite com a conta já autenticada",
+        "description": "O e-mail da conta precisa ser o mesmo do convite; `already_member` não é erro.\n\nAcesso: Sessão + token do convite.",
+        "tags": [
+          "invitations"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "required": true,
+            "name": "token",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Convite aceito ou vínculo já existente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/acceptInvitationResponse"
+                },
+                "example": {
+                  "status": "accepted",
+                  "context": {
+                    "agencyId": "11111111-1111-4111-8111-111111111111",
+                    "clientId": null
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | INVITATION_ACCOUNT_MISMATCH: A conta autenticada não corresponde ao convite.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "INVALID_LINK: Este link não é mais válido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INVALID_LINK",
+                    "message": "Este link não é mais válido."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/contexts": {
+      "get": {
+        "operationId": "listMyContexts",
+        "summary": "Lista os contextos válidos da pessoa",
+        "description": "Traz agências e portais de cliente ativos, já ordenados pela regra do resolve.\n\nAcesso: Sessão.",
+        "tags": [
+          "contexts"
+        ],
+        "x-permission": null,
+        "responses": {
+          "200": {
+            "description": "Contextos válidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listMyContextsResponse"
+                },
+                "example": {
+                  "contexts": [
+                    {
+                      "type": "agency",
+                      "agencyId": "11111111-1111-4111-8111-111111111111",
+                      "agencyName": "Agência Exemplo",
+                      "roleKey": "admin",
+                      "roleName": "Admin",
+                      "isOwner": true
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/contexts/resolve": {
+      "get": {
+        "operationId": "resolveMyContext",
+        "summary": "Resolve em qual contexto entrar",
+        "description": "`none` encerra a sessão quando não há contexto algum; `enter` traz o contexto único (ou o\núltimo usado); `select` traz a lista para escolher. Um `preferred` inválido é ignorado em\nsilêncio, nunca vira 400.\n\nAcesso: Sessão.",
+        "tags": [
+          "contexts"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "required": false,
+            "name": "preferred",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Decisão de contexto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/resolveMyContextResponse"
+                },
+                "example": {
+                  "decision": "enter",
+                  "context": {
+                    "type": "agency",
+                    "agencyId": "11111111-1111-4111-8111-111111111111",
+                    "agencyName": "Agência Exemplo",
+                    "roleKey": "admin",
+                    "roleName": "Admin",
+                    "isOwner": true
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/last-context": {
+      "put": {
+        "operationId": "putMyLastContext",
+        "summary": "Grava o último contexto usado",
+        "description": "Não recria a sessão; o contexto continua vindo da rota a cada requisição.\n\nAcesso: Sessão.",
+        "tags": [
+          "contexts"
+        ],
+        "x-permission": null,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/putMyLastContextRequest"
+              },
+              "example": {
+                "type": "agency",
+                "agencyId": "11111111-1111-4111-8111-111111111111"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Preferência gravada."
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Context not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Context not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clients/{clientId}/onboarding/seen": {
+      "post": {
+        "operationId": "markClientOnboardingSeen",
+        "summary": "Marca o primeiro acesso ao portal do cliente",
+        "description": "Idempotente: só a primeira chamada grava.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "tags": [
+          "contexts"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Registrado."
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/me": {
+      "get": {
+        "operationId": "getAgencyMe",
+        "summary": "Devolve as permissões efetivas do contexto de agência",
+        "description": "O Owner recebe todas as chaves do catálogo por posse; os demais recebem as chaves do papel\ndo vínculo ativo, restritas à agência. É só UX: toda operação continua validada pela guarda\ne pela RLS, então forjar esta lista não concede nada.\n\nAcesso: Sessão + vínculo com a agência.",
+        "tags": [
+          "agencies"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Permissões efetivas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getAgencyMeResponse"
+                },
+                "example": {
+                  "agencyId": "11111111-1111-4111-8111-111111111111",
+                  "agencyName": "Agência Exemplo",
+                  "isOwner": false,
+                  "role": {
+                    "key": "admin",
+                    "name": "Admin"
+                  },
+                  "permissions": [
+                    "cliente.visualizar",
+                    "colaborador.visualizar",
+                    "midia.enviar"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/media/uploads": {
+      "post": {
+        "operationId": "createMediaUpload",
+        "summary": "Inicia um upload de mídia",
+        "description": "Devolve a URL assinada de PUT ou o plano de multipart; o tipo real é validado no fim, pelo conteúdo.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar`.",
+        "tags": [
+          "media"
+        ],
+        "x-permission": "midia.enviar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/createMediaUploadRequest"
+              },
+              "example": {
+                "fileName": "foto.png",
+                "contentType": "image/png",
+                "declaredSizeBytes": 1048576
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Upload iniciado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createMediaUploadResponse"
+                },
+                "example": {
+                  "assetId": "44444444-4444-4444-8444-444444444444",
+                  "objectKey": "11111111-1111-4111-8111-111111111111/44444444-4444-4444-8444-444444444444/original.png",
+                  "category": "image",
+                  "upload": {
+                    "type": "single",
+                    "url": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+                    "expiresAt": "2026-09-29T12:15:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "QUOTA_EXCEEDED: This agency has reached its storage quota.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "QUOTA_EXCEEDED",
+                    "message": "This agency has reached its storage quota."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Request payload is too large"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "UNSUPPORTED_MEDIA_TYPE: This content type is not accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNSUPPORTED_MEDIA_TYPE",
+                    "message": "This content type is not accepted."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/media/uploads/{assetId}/parts": {
+      "post": {
+        "operationId": "requestMediaUploadParts",
+        "summary": "Pede URLs assinadas de partes do multipart",
+        "description": "Repetível para retomar um upload interrompido; pede só os números que ainda faltam.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar`.",
+        "tags": [
+          "media"
+        ],
+        "x-permission": "midia.enviar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "assetId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/requestMediaUploadPartsRequest"
+              },
+              "example": {
+                "partNumbers": [
+                  1,
+                  2
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "URLs assinadas das partes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/requestMediaUploadPartsResponse"
+                },
+                "example": {
+                  "parts": [
+                    {
+                      "partNumber": 1,
+                      "url": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia"
+                    }
+                  ],
+                  "expiresAt": "2026-09-29T12:15:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Media asset not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Media asset not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "UPLOAD_NOT_PENDING: This upload is not pending confirmation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UPLOAD_NOT_PENDING",
+                    "message": "This upload is not pending confirmation."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Request payload is too large"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/media/uploads/{assetId}/complete": {
+      "post": {
+        "operationId": "completeMediaUpload",
+        "summary": "Confirma o upload e valida o objeto",
+        "description": "Valida tipo e tamanho pelo conteúdo observado no armazenamento; rejeição vira 422 e fica registrada.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar`.",
+        "tags": [
+          "media"
+        ],
+        "x-permission": "midia.enviar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "assetId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/completeMediaUploadRequest"
+              },
+              "example": {
+                "parts": [
+                  {
+                    "partNumber": 1,
+                    "eTag": "\"exemplo-de-etag\""
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Upload confirmado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/completeMediaUploadResponse"
+                },
+                "example": {
+                  "assetId": "44444444-4444-4444-8444-444444444444",
+                  "status": "confirmed",
+                  "sizeBytes": 1048576,
+                  "contentType": "image/png"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Media asset not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Media asset not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "QUOTA_EXCEEDED: This agency has reached its storage quota. | UPLOAD_NOT_PENDING: This upload is not pending confirmation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "QUOTA_EXCEEDED",
+                    "message": "This agency has reached its storage quota."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Request payload is too large"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "UPLOAD_REJECTED: The uploaded object was rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UPLOAD_REJECTED",
+                    "message": "The uploaded object was rejected."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/media/{assetId}/download-url": {
+      "get": {
+        "operationId": "getMediaDownloadUrl",
+        "summary": "Emite uma URL assinada de leitura",
+        "description": "Válida por poucos minutos, só GET, e apenas para um objeto confirmado da agência.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar`.",
+        "tags": [
+          "media"
+        ],
+        "x-permission": "midia.enviar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "assetId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "original",
+                "thumbnail",
+                "preview"
+              ],
+              "default": "original"
+            },
+            "required": false,
+            "name": "variant",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "URL assinada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getMediaDownloadUrlResponse"
+                },
+                "example": {
+                  "url": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+                  "expiresAt": "2026-09-29T12:05:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Media asset not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Media asset not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "VARIANT_NOT_READY: This variant has not been generated yet. | VARIANT_PROCESSING_FAILED: Video processing failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VARIANT_NOT_READY",
+                    "message": "This variant has not been generated yet."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {}
+}

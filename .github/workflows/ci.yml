@@ -121,6 +121,18 @@ jobs:
           VITE_SUPABASE_URL: http://127.0.0.1:54321
           VITE_SUPABASE_ANON_KEY: ci-local-public-placeholder
         run: pnpm build
+      # docs/api is generated from packages/contracts; a route or schema change that forgets to
+      # regenerate it fails here instead of shipping stale documentation (issue #182).
+      - name: Verify the generated API documentation is current
+        run: |
+          pnpm api:docs
+          # Content-based on purpose: `git status` can report a stat-dirty file whose bytes match
+          # the index (racy timestamp right after checkout), which would fail this check falsely.
+          if ! git diff --exit-code -- docs/api || [ -n "$(git ls-files --others --exclude-standard -- docs/api)" ]; then
+            echo 'docs/api is stale; run pnpm api:docs and commit the result.' >&2
+            git --no-pager diff -- docs/api
+            exit 1
+          fi
 
   docker-images:
     name: Docker images

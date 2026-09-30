@@ -31,12 +31,17 @@ export const MeContextsResponseSchema = z.object({
 
 /** `preferred=agency:<uuid>` or `preferred=client:<uuid>`, parsed from the raw query string.
  * Syntax and access are deliberately handled by the resolver. Any malformed shape, including a
- * repeated query parameter (array) or an oversized string, becomes absent instead of a 400. */
-export const ContextResolvePreferredSchema = z.unknown().transform((value) => {
-  if (typeof value !== 'string') return undefined;
-  const normalized = value.trim();
-  return normalized.length <= 256 ? normalized : undefined;
-});
+ * repeated query parameter (array) or an oversized string, becomes absent instead of a 400.
+ * `preprocess` instead of `transform` keeps the exact same behavior while letting the generated
+ * OpenAPI document describe the parameter as a string (issue #182). */
+export const ContextResolvePreferredSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== 'string') return undefined;
+    const normalized = value.trim();
+    return normalized.length <= 256 ? normalized : undefined;
+  },
+  z.string().optional()
+);
 
 export const ContextResolveQuerySchema = z.object({
   preferred: ContextResolvePreferredSchema

@@ -97,6 +97,12 @@ export interface ApiConfig extends ServerConfig {
   bodyLimitBytes: number;
   /** Explicit proxy networks only. An empty list means Fastify does not trust forwarding headers. */
   trustedProxyCidrs: readonly string[];
+  /**
+   * True when the API runs inside the local Docker Compose stack. That stack runs the production
+   * image (no devDependencies) with `APP_ENV=local`, so host-only tooling like the interactive
+   * `/docs` viewer must check this before trying to load.
+   */
+  containerLocal: boolean;
 }
 /** Object storage the worker talks to directly (issue #24): download the confirmed original,
  * upload the generated thumbnail/preview. Unlike `StorageConfig`, the worker never presigns a
@@ -480,6 +486,7 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
     corsOrigins: result.data.API_CORS_ORIGINS,
     bodyLimitBytes: result.data.API_BODY_LIMIT_BYTES,
     trustedProxyCidrs: result.data.API_TRUSTED_PROXY_CIDRS,
+    containerLocal: result.data.APP_CONTAINER_LOCAL === 'true',
     storage: allStoragePresent ? {
       endpoint: result.data.R2_ENDPOINT!,
       publicEndpoint: result.data.R2_PUBLIC_ENDPOINT ?? result.data.R2_ENDPOINT!,

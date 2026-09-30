@@ -73,6 +73,22 @@ export const PendingInvitationSchema = z.object({
 
 export const PendingInvitationListResponseSchema = createPaginatedResponseSchema(PendingInvitationSchema);
 
+/** Body of the two agency-side invitation creation routes. The role comes pinned to the invite. */
+export const CollaboratorInvitationRequestSchema = z.object({
+  email: AuthEmailSchema,
+  roleId: z.string().uuid()
+}).strict();
+
+export const ClientInvitationRequestSchema = z.object({
+  email: AuthEmailSchema
+}).strict();
+
+/** Creation and resend answer with the invitation id and its expiry; never with the token. */
+export const InvitationCreatedResponseSchema = z.object({
+  invitationId: z.string().uuid(),
+  expiresAt: z.string().datetime()
+}).strict();
+
 export const InvitationAcceptRequestSchema = AuthNoBodySchema;
 
 export const InvitationAcceptResponseSchema = z.object({
@@ -98,5 +114,8 @@ export type InvitationPreviewResponse = z.infer<typeof InvitationPreviewResponse
 export type InvitationContext = z.infer<typeof InvitationContextSchema>;
 export type InvitationAcceptNewAccountRequest = z.infer<typeof InvitationAcceptNewAccountRequestSchema>;
 export type InvitationAcceptNewAccountResponse = z.infer<typeof InvitationAcceptNewAccountResponseSchema>;
+export type CollaboratorInvitationRequest = z.infer<typeof CollaboratorInvitationRequestSchema>;
+export type ClientInvitationRequest = z.infer<typeof ClientInvitationRequestSchema>;
+export type InvitationCreatedResponse = z.infer<typeof InvitationCreatedResponseSchema>;
 export type InvitationAcceptRequest = z.infer<typeof InvitationAcceptRequestSchema>;
 export type InvitationAcceptResponse = z.infer<typeof InvitationAcceptResponseSchema>;

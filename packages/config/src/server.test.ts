@@ -37,8 +37,12 @@ describe('server configuration', () => {
     expect(loadApiConfig(localEnvironment)).toMatchObject({
       service: 'api', environment: 'local', authSecret: localEnvironment.BETTER_AUTH_SECRET, appPublicUrl: localEnvironment.APP_PUBLIC_URL,
       authTermsVersion: '2026-01-01', authPrivacyVersion: '2026-02-01',
-      host: '0.0.0.0', port: 3001, corsOrigins: ['http://127.0.0.1:5173'], bodyLimitBytes: 1_048_576, trustedProxyCidrs: []
+      host: '0.0.0.0', port: 3001, corsOrigins: ['http://127.0.0.1:5173'], bodyLimitBytes: 1_048_576, trustedProxyCidrs: [],
+      containerLocal: false
     });
+    // The local Compose stack runs the production image with this flag; the API uses it to keep
+    // host-only tooling such as /docs from loading devDependencies the image does not have.
+    expect(loadApiConfig({ ...localEnvironment, APP_CONTAINER_LOCAL: 'true' })).toMatchObject({ containerLocal: true });
     expect(loadWorkerConfig(localEnvironment)).toEqual({
       service: 'worker',
       environment: 'local',

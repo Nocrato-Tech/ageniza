@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
 import {
+  AgencyMediaAssetPathParamsSchema,
+  AgencyPathParamsSchema,
   CompleteMediaUploadRequestSchema,
   CompleteMediaUploadResponseSchema,
   CreateMediaUploadRequestSchema,
   CreateMediaUploadResponseSchema,
+  MediaDownloadUrlQuerySchema,
   MediaDownloadUrlResponseSchema,
   RequestMediaUploadPartsRequestSchema,
   RequestMediaUploadPartsResponseSchema
@@ -12,10 +15,11 @@ import {
 import { HttpError } from '@ageniza/core';
 import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { z } from 'zod';
+import type { z } from 'zod';
 
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
+import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
 import type { MediaJobDispatcher } from './job-dispatcher.js';
 import {
@@ -61,10 +65,6 @@ export interface MediaModuleDependencies {
    * preview job (issue #24) right after a video's `HeadObject` confirms it. */
   readonly jobs?: MediaJobDispatcher;
 }
-
-const agencyParamsSchema = z.object({ agencyId: z.string().uuid() }).strict();
-const assetParamsSchema = z.object({ agencyId: z.string().uuid(), assetId: z.string().uuid() }).strict();
-const downloadUrlQuerySchema = z.object({ variant: z.enum(['original', 'thumbnail', 'preview']).optional().default('original') }).strict();
 
 const unauthenticated = (): HttpError => new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
 const assetNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Media asset not found.' });
@@ -121,21 +121,48 @@ const uploadObjectKeyFor = (agencyId: string, assetId: string, extension: string
 export const registerMediaModule = (app: FastifyInstance, dependencies: MediaModuleDependencies): void => {
   const { database, storage, config } = dependencies;
   const requireSession = createRequireSession({ auth: dependencies.auth });
-  const guarded = (permission: string) => [requireSession, dependencies.requireAgencyAccess, dependencies.requirePermission(permission)];
-  const uploadUrlRoute = {
-    config: {
-      rateLimit: {
-        max: MEDIA_RATE_LIMITS.signedUrlIssuance.max,
-        timeWindow: MEDIA_RATE_LIMITS.signedUrlIssuance.windowMs,
-        addHeaders: false
-      }
+  const guarded = (
+    docs: DocumentedRouteConfig & { permission: string },
+    extraConfig: Record<string, unknown> = {}
+  ) => ({
+    preHandler: [requireSession, dependencies.requireAgencyAccess, dependencies.requirePermission(docs.permission)],
+    config: { permission: docs.permission, responseStatus: docs.responseStatus, schemas: docs.schemas, ...extraConfig }
+  });
+  const uploadUrlRateLimit = {
+    rateLimit: {
+      max: MEDIA_RATE_LIMITS.signedUrlIssuance.max,
+      timeWindow: MEDIA_RATE_LIMITS.signedUrlIssuance.windowMs,
+      addHeaders: false
     }
   };
 
-  app.post('/agencies/:agencyId/media/uploads', { preHandler: guarded('midia.enviar'), ...uploadUrlRoute }, async (request, reply) => {
+  // Declared once per route: the same object is the documentation metadata and the source of the
+  // schemas the handler validates with.
+  const uploadDocs = {
+    permission: 'midia.enviar',
+    responseStatus: 201,
+    schemas: { params: AgencyPathParamsSchema, body: CreateMediaUploadRequestSchema, response: CreateMediaUploadResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const partsDocs = {
+    permission: 'midia.enviar',
+    responseStatus: 200,
+    schemas: { params: AgencyMediaAssetPathParamsSchema, body: RequestMediaUploadPartsRequestSchema, response: RequestMediaUploadPartsResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const completeDocs = {
+    permission: 'midia.enviar',
+    responseStatus: 200,
+    schemas: { params: AgencyMediaAssetPathParamsSchema, body: CompleteMediaUploadRequestSchema, response: CompleteMediaUploadResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const downloadDocs = {
+    permission: 'midia.enviar',
+    responseStatus: 200,
+    schemas: { params: AgencyMediaAssetPathParamsSchema, query: MediaDownloadUrlQuerySchema, response: MediaDownloadUrlResponseSchema }
+  } satisfies DocumentedRouteConfig;
+
+  app.post('/agencies/:agencyId/media/uploads', guarded(uploadDocs, uploadUrlRateLimit), async (request, reply) => {
     const auth = requireAuth(request);
-    const params = routeParams(agencyParamsSchema, request);
-    const body = parseRequest(CreateMediaUploadRequestSchema, request.body);
+    const params = routeParams(uploadDocs.schemas.params, request);
+    const body = parseRequest(uploadDocs.schemas.body, request.body);
 
     const descriptor = describeMediaContentType(body.contentType);
     if (descriptor === undefined) throw unsupportedType();
@@ -180,7 +207,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       return { type: 'single' as const, url };
     });
 
-    return reply.status(201).send(parseResponse(CreateMediaUploadResponseSchema, {
+    return reply.status(201).send(parseResponse(uploadDocs.schemas.response, {
       assetId,
       objectKey,
       category: descriptor.category,
@@ -190,10 +217,10 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     }));
   });
 
-  app.post('/agencies/:agencyId/media/uploads/:assetId/parts', { preHandler: guarded('midia.enviar'), ...uploadUrlRoute }, async (request, reply) => {
+  app.post('/agencies/:agencyId/media/uploads/:assetId/parts', guarded(partsDocs, uploadUrlRateLimit), async (request, reply) => {
     const auth = requireAuth(request);
-    const params = routeParams(assetParamsSchema, request);
-    const body = parseRequest(RequestMediaUploadPartsRequestSchema, request.body);
+    const params = routeParams(partsDocs.schemas.params, request);
+    const body = parseRequest(partsDocs.schemas.body, request.body);
     const expiresAt = new Date(Date.now() + config.uploadUrlExpirySeconds * 1_000).toISOString();
 
     const parts = await withAuthenticatedUserTransaction(database, auth.claims, async (transaction) => {
@@ -216,13 +243,13 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       })));
     });
 
-    return reply.send(parseResponse(RequestMediaUploadPartsResponseSchema, { parts, expiresAt }));
+    return reply.send(parseResponse(partsDocs.schemas.response, { parts, expiresAt }));
   });
 
-  app.post('/agencies/:agencyId/media/uploads/:assetId/complete', { preHandler: guarded('midia.enviar') }, async (request, reply) => {
+  app.post('/agencies/:agencyId/media/uploads/:assetId/complete', guarded(completeDocs), async (request, reply) => {
     const auth = requireAuth(request);
-    const params = routeParams(assetParamsSchema, request);
-    const body = parseRequest(CompleteMediaUploadRequestSchema, request.body);
+    const params = routeParams(completeDocs.schemas.params, request);
+    const body = parseRequest(completeDocs.schemas.body, request.body);
 
     let copiedCanonicalKey: string | undefined;
     let result: CompletionResult;
@@ -337,7 +364,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       request.log.warn({ error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'MEDIA_STAGING_CLEANUP_FAILED' } }, 'Failed to remove validated upload staging object');
     }
 
-    return reply.send(parseResponse(CompleteMediaUploadResponseSchema, {
+    return reply.send(parseResponse(completeDocs.schemas.response, {
       assetId: params.assetId,
       status: 'confirmed',
       sizeBytes: result.sizeBytes,
@@ -345,10 +372,10 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     }));
   });
 
-  app.get('/agencies/:agencyId/media/:assetId/download-url', { preHandler: guarded('midia.enviar') }, async (request, reply) => {
+  app.get('/agencies/:agencyId/media/:assetId/download-url', guarded(downloadDocs), async (request, reply) => {
     const auth = requireAuth(request);
-    const params = routeParams(assetParamsSchema, request);
-    const query = parseRequest(downloadUrlQuerySchema, request.query);
+    const params = routeParams(downloadDocs.schemas.params, request);
+    const query = parseRequest(downloadDocs.schemas.query, request.query);
 
     const objectKey = await withAuthenticatedUserTransaction(database, auth.claims, async (transaction) => {
       const asset = await findConfirmedAssetWithVariants(transaction, params.assetId, params.agencyId);
@@ -368,6 +395,6 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
 
     const url = await storage.presignGetObject({ key: objectKey, expiresInSeconds: config.downloadUrlExpirySeconds });
     const expiresAt = new Date(Date.now() + config.downloadUrlExpirySeconds * 1_000).toISOString();
-    return reply.send(parseResponse(MediaDownloadUrlResponseSchema, { url, expiresAt }));
+    return reply.send(parseResponse(downloadDocs.schemas.response, { url, expiresAt }));
   });
 };

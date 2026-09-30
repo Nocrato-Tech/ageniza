@@ -10,7 +10,7 @@ import type { EmailSender, OutgoingEmail } from '@ageniza/email';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Pool } from 'pg';
 
-import { buildApp } from '../../../app.js';
+import { buildApp, type ApiAppOptions } from '../../../app.js';
 import type { AgencyModuleDependencies } from '../../agencies/routes.js';
 import { createAuthAuditRecorder, type AuthAuditRecorder } from '../audit.js';
 import { createAuthLimiter, type AuthLimiterOptions, type InMemoryAuthLimiter } from '../auth-limiter.js';
@@ -138,6 +138,7 @@ export const buildTestConfig = (overrides: Partial<ApiConfig> = {}): ApiConfig =
   corsOrigins: [TEST_APP_PUBLIC_URL],
   bodyLimitBytes: 1_048_576,
   trustedProxyCidrs: [],
+  containerLocal: false,
   authTermsVersion: '2026-01-01',
   authPrivacyVersion: '2026-01-01',
   ...overrides
@@ -164,6 +165,8 @@ export interface TestAppOptions {
    * review of PR #176, achado 2) without relying on a real, hard-to-trigger database error.
    */
   readonly countValidContexts?: (userId: string) => Promise<number>;
+  /** Test-only route observer, forwarded to `buildApp` (issue #182 route-inventory test). */
+  readonly onRoute?: ApiAppOptions['onRoute'];
 }
 
 /** Real prehandler builders, wired to this test app's own `auth`/`database`, for `registerExtraRoutes`. */
@@ -239,7 +242,19 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     invitationTokenLookup,
     countValidContexts: options.countValidContexts ?? ((userId: string) => countValidContexts(database, userId))
   };
-  const app = await buildApp({ config, logger, auth: authDependencies, invitations, contexts, agencies, media });
+  const app = await buildApp({
+    config,
+    logger,
+    auth: authDependencies,
+    invitations,
+    contexts,
+    agencies,
+    media,
+    onRoute: options.onRoute,
+    // A handler whose reply status drifts from its own `config.responseStatus` fails the request,
+    // so the documented status is enforced by the suites, not only by the catalog.
+    enforceDocumentedStatus: true
+  });
   if (options.registerExtraRoutes !== undefined) {
     const guards: TestGuardBuilders = {
       requireSession: createRequireSession({ auth }),
