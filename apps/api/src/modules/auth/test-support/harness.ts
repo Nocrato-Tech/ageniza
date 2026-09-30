@@ -12,6 +12,8 @@ import { Pool } from 'pg';
 
 import { buildApp, type ApiAppOptions } from '../../../app.js';
 import type { AgencyModuleDependencies } from '../../agencies/routes.js';
+import type { CollaboratorModuleDependencies } from '../../collaborators/routes.js';
+import { createIdentityStorageClient } from '../../identity-storage/storage-client.js';
 import { createAuthAuditRecorder, type AuthAuditRecorder } from '../audit.js';
 import { createAuthLimiter, type AuthLimiterOptions, type InMemoryAuthLimiter } from '../auth-limiter.js';
 import { createAuth, type AuthInstance } from '../better-auth.js';
@@ -219,6 +221,14 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   const requireClientAccess = createRequireClientAccess({ database });
   const contexts: ContextModuleDependencies = { database, auth, requireClientAccess };
   const agencies: AgencyModuleDependencies = { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }) };
+  const collaborators: CollaboratorModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
+    database,
+    auth,
+    identityStorage: createIdentityStorageClient(config.identityStorage),
+    identityDownloadUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    requirePermission
+  };
   const ownedMediaJobDispatcher: MediaJobDispatcher | undefined = config.storage === undefined
     ? undefined
     : createMediaJobDispatcher({ connectionString: config.databaseUrl, logger: createLogger({ enabled: false }) });
@@ -249,6 +259,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     invitations,
     contexts,
     agencies,
+    collaborators,
     media,
     onRoute: options.onRoute,
     // A handler whose reply status drifts from its own `config.responseStatus` fails the request,
