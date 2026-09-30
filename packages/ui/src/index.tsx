@@ -1,4 +1,5 @@
 import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+export { ConfirmDialog, Menu, MenuItem, MenuSeparator } from './menu.js';
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   /** `secondary` is shadcn's `outline`; Ageniza never exposes `outline` itself (docs/design-system.md section 13). */

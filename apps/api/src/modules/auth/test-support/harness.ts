@@ -12,6 +12,8 @@ import { Pool } from 'pg';
 
 import { buildApp, type ApiAppOptions } from '../../../app.js';
 import type { AgencyModuleDependencies } from '../../agencies/routes.js';
+import type { CollaboratorModuleDependencies } from '../../collaborators/routes.js';
+import { createIdentityStorageClient } from '../../identity-storage/storage-client.js';
 import { createAuthAuditRecorder, type AuthAuditRecorder } from '../audit.js';
 import { createAuthLimiter, type AuthLimiterOptions, type InMemoryAuthLimiter } from '../auth-limiter.js';
 import { createAuth, type AuthInstance } from '../better-auth.js';
@@ -77,13 +79,15 @@ export interface CapturedLogs {
   text(): string;
 }
 
-/** Captures every log line written during a test so #15 can assert no secret ever reaches it. */
-export const captureLogs = (): CapturedLogs => {
+/** Captures every log line written during a test so #15 can assert no secret ever reaches it.
+ * The level is configurable because a suite that runs real logins pays for debug serialization it
+ * does not need; the default keeps the auth tests' behavior. */
+export const captureLogs = (level: 'debug' | 'info' | 'warn' | 'error' = 'debug'): CapturedLogs => {
   const stream = new PassThrough();
   const chunks: string[] = [];
   stream.on('data', (chunk: Buffer) => chunks.push(chunk.toString('utf8')));
   return {
-    logger: createLogger({ level: 'debug' }, stream),
+    logger: createLogger({ level }, stream),
     lines: () => chunks,
     text: () => chunks.join('\n')
   };
@@ -219,6 +223,14 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   const requireClientAccess = createRequireClientAccess({ database });
   const contexts: ContextModuleDependencies = { database, auth, requireClientAccess };
   const agencies: AgencyModuleDependencies = { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }) };
+  const collaborators: CollaboratorModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
+    database,
+    auth,
+    identityStorage: createIdentityStorageClient(config.identityStorage),
+    identityDownloadUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    requirePermission
+  };
   const ownedMediaJobDispatcher: MediaJobDispatcher | undefined = config.storage === undefined
     ? undefined
     : createMediaJobDispatcher({ connectionString: config.databaseUrl, logger: createLogger({ enabled: false }) });
@@ -249,6 +261,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     invitations,
     contexts,
     agencies,
+    collaborators,
     media,
     onRoute: options.onRoute,
     // A handler whose reply status drifts from its own `config.responseStatus` fails the request,

@@ -23,6 +23,7 @@ const unauthenticated = (): Response => json({ error: { code: 'UNAUTHENTICATED',
 type ResetBody = { token?: string; newPassword?: string; inviteToken?: string };
 
 interface Scenario {
+  readonly authenticated?: boolean;
   readonly reset: (body: ResetBody) => Response;
   readonly resolve?: unknown;
   readonly resolveErrorOnce?: boolean;
@@ -33,7 +34,7 @@ const makeFetch = (scenario: Scenario) => {
   const resetBodies: ResetBody[] = [];
   const loginBodies: ResetBody[] = [];
   const lastContextBodies: unknown[] = [];
-  let serverLoggedIn = false;
+  let serverLoggedIn = scenario.authenticated ?? false;
   const impl: typeof fetch = async (input, init) => {
     const url = String(input);
     if (url.endsWith('/auth/session')) return serverLoggedIn ? json(sessionBody) : unauthenticated();
@@ -77,13 +78,17 @@ function LocationProbe({ probe }: { probe: { pathname: string; search: string } 
   probe.search = location.search;
   return null;
 }
+function SessionProbe({ store, probe }: { store: AuthSessionStore; probe: { sessionStatus: string } }) {
+  probe.sessionStatus = useAuthSession(store).status;
+  return null;
+}
 
 const renderReset = (impl: typeof fetch, search = '?token=reset-token') => {
   const sessionEnd = createSessionEndSignal();
   const client = new HttpClient('http://127.0.0.1:3001', impl, { onSessionEnded: sessionEnd.notify });
   const queryClient = createQueryClient();
   const store = createAuthSessionStore(client, { onSessionStarted: () => queryClient.clear() });
-  const probe = { pathname: '', search: '' };
+  const probe = { pathname: '', search: '', sessionStatus: '' };
   render(
     <AuthSessionProvider store={store}>
       <QueryClientProvider client={queryClient}>
@@ -91,13 +96,14 @@ const renderReset = (impl: typeof fetch, search = '?token=reset-token') => {
           <MemoryRouter initialEntries={[`/senha/redefinir${search}`]}>
             <SessionEndRedirect signal={sessionEnd} authStore={store} />
             <LocationProbe probe={probe} />
+            <SessionProbe store={store} probe={probe} />
             <Harness store={store} />
           </MemoryRouter>
         </ApiClientProvider>
       </QueryClientProvider>
     </AuthSessionProvider>
   );
-  return { probe, store };
+  return { probe, store, queryClient };
 };
 
 const submit = (password: string): void => {
@@ -173,6 +179,29 @@ describe('ResetPasswordPage (/senha/redefinir)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
     expect(calls.reset).toBe(1);
+    expect(calls.resolve).toBe(2);
+  });
+
+  it('drops the previous account cache before the refresh, so no old context reaches /contextos', async () => {
+    // The previous session was authenticated, so `onSessionStarted` does not fire on refresh: only
+    // the explicit queryClient.clear() of this screen keeps account X's cache from rendering there.
+    const oldContext = { type: 'agency', agencyId: '22222222-2222-4222-8222-222222222222', agencyName: 'Agência ANTIGA', roleKey: 'admin', roleName: 'Admin', isOwner: true };
+    const newContext = { type: 'agency', agencyId: AGENCY_A, agencyName: 'Agência NOVA', roleKey: 'admin', roleName: 'Admin', isOwner: true };
+    const { impl, calls } = makeFetch({
+      authenticated: true,
+      reset: () => json({ signedIn: true }),
+      resolve: { decision: 'select', contexts: [newContext], highlighted: null }
+    });
+    const { probe, queryClient } = renderReset(impl);
+    await waitFor(() => expect(probe.sessionStatus).toBe('ready'));
+    queryClient.setQueryData(['contexts', 'resolve', null], { decision: 'select', contexts: [oldContext], highlighted: null });
+
+    submit('a new correct password');
+
+    await waitFor(() => expect(probe.pathname).toBe('/contextos'));
+    await screen.findByText('Agência NOVA');
+    expect(screen.queryByText('Agência ANTIGA')).toBeNull();
+    // With the cache dropped, /contextos loaded a fresh resolve instead of rendering the stale one.
     expect(calls.resolve).toBe(2);
   });
 

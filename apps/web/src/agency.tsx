@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query';
 
 import { AgencyMeResponseSchema, type AgencyMeResponse } from '@ageniza/contracts';
+import { AccountMenu } from './account-menu.js';
 import { Button, Skeleton } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
@@ -39,18 +40,33 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}
 /** The API is reachable but did not answer; the screen offers the one action it can: repeat. */
 function AgencyUnavailable({ onRetry }: { onRetry: () => void }) {
   useDocumentTitle('Não foi possível abrir a agência — Ageniza');
-  return <main className="page-status">
+  return <section className="page-status">
     <div role="alert">
       <h1>Não foi possível abrir a agência</h1>
       <p>Tente de novo em instantes.</p>
       <Button onClick={onRetry}>Tentar de novo</Button>
     </div>
-  </main>;
+  </section>;
+}
+
+/**
+ * The agency shell before its context is known: a malformed or unreachable id, a failure to open, or
+ * a load in progress. The person is authenticated and has no agency to show, so the header keeps the
+ * account menu (the only way out of these screens) and nothing else.
+ */
+function AgencyContextlessShell({ children }: { children: ReactNode }) {
+  return <div className="app-shell">
+    <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
+    <header className="agency-header"><AccountMenu /></header>
+    <div className="agency-layout">
+      <main className="agency-content" id="main-content">{children}</main>
+    </div>
+  </div>;
 }
 
 function AgencyShellSkeleton() {
   return <div className="app-shell">
-    <header className="agency-header"><Skeleton className="agency-header__skeleton" /></header>
+    <header className="agency-header"><Skeleton className="agency-header__skeleton" /><AccountMenu /></header>
     <div className="agency-layout">
       <nav className="agency-nav" aria-label="Navegação da agência"><Skeleton /></nav>
       <main className="agency-content" id="main-content"><Skeleton /><Skeleton /></main>
@@ -92,22 +108,25 @@ export function AgencyAreaLayout() {
     void refetch();
   }, [location.pathname, refetch, validAgencyId]);
 
-  if (!validAgencyId) return <NotFoundPage as="section" />;
+  if (!validAgencyId) return <AgencyContextlessShell><NotFoundPage as="section" /></AgencyContextlessShell>;
   if (error !== null) {
-    if (isNotFound(error)) return <NotFoundPage as="section" />;
-    return <AgencyUnavailable onRetry={() => { void refetch(); }} />;
+    if (isNotFound(error)) return <AgencyContextlessShell><NotFoundPage as="section" /></AgencyContextlessShell>;
+    return <AgencyContextlessShell><AgencyUnavailable onRetry={() => { void refetch(); }} /></AgencyContextlessShell>;
   }
   if (data === undefined) return <AgencyShellSkeleton />;
   // Defense in depth: the answer must belong to the agency in the route, or it is not shown at all.
-  if (data.agencyId !== agenciaId) return <NotFoundPage as="section" />;
+  if (data.agencyId !== agenciaId) return <AgencyContextlessShell><NotFoundPage as="section" /></AgencyContextlessShell>;
 
   return <AgencyAreaContext.Provider value={data}>
     <div className="app-shell">
       <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
       <header className="agency-header">
-        <Link className="agency-header__name" to={`/agencia/${agenciaId}`}>{data.agencyName}</Link>
-        {/* The account menu (#70) lives here; this element is its reserved space. */}
-        <div className="agency-header__account" />
+        <div className="agency-header__context">
+          <span className="agency-header__context-label">Contexto ativo</span>
+          <Link className="agency-header__name" to={`/agencia/${agenciaId}`}>{data.agencyName}</Link>
+        </div>
+        {/* The account menu (#70) lives here. */}
+        <AccountMenu activeContext={data.agencyName} />
       </header>
       <div className="agency-layout">
         <AgencyNav agenciaId={agenciaId} />

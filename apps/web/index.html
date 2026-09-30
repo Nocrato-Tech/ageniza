@@ -4,7 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Credential links (/convite/:token, /senha/redefinir?token=…) must not leak through the
-         Referer header to any third party; there is no cross-site navigation that needs it. -->
+         Referer header to any third party; no cross-site navigation needs it. Safe today because
+         the API is a different origin: a cross-origin request's Origin header does not depend on
+         the referrer policy, so registerOriginProtection still receives the app's origin on every
+         POST. If the API is ever served from this same host (a /api proxy), a same-origin POST
+         would go out with Origin: null under no-referrer and the origin check would refuse it;
+         that day, switch to strict-origin-when-cross-origin (and keep the Terms links on
+         rel=noreferrer). -->
     <meta name="referrer" content="no-referrer" />
     <title>Ageniza</title>
   </head>
