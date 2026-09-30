@@ -107,6 +107,17 @@ describe('seed:demo command refuses before connecting (issue #183 review)', () =
     })).rejects.toBeInstanceOf(SeedDemoError);
   });
 
+  it('refuses a port override in the query string before connecting', async () => {
+    await expect(runSeedDemo({
+      env: {
+        DATABASE_URL: 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza',
+        MIGRATION_DATABASE_URL: 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza?port=5433'
+      },
+      argv: [SEED_FLAG],
+      connect: neverConnect
+    })).rejects.toThrow(/same host, port and database/);
+  });
+
   it('refuses divergent databases before rotating any password', async () => {
     await expect(runSeedDemo({
       env: {
