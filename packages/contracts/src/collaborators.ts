@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { AuthEmailSchema } from './auth.js';
 import { createPaginatedResponseSchema, PaginationInputSchema } from './pagination.js';
+import { SearchTextSchema } from './search.js';
 
 /** Access role of a collaborator: the system/agency role that grants authorization. */
 export const CollaboratorRoleSchema = z.object({
@@ -38,15 +39,17 @@ export const CollaboratorSchema = z.object({
  * this schema adds only the named filters the SPEC declares (`SPEC §6`, "Listagem"). `.strict()`
  * keeps the rule that a parameter the SPEC does not declare does not exist.
  *
- * `status` defaults to `active` in the route. Revealing `removed` requires an administrative
- * permission in the removal task (`#98`); this task only guarantees removed links stay out of the
- * default listing, never that it is gated here.
+ * `q`, `role` and `jobTitle` use `SearchTextSchema`, which rejects control characters (a NUL byte
+ * would otherwise become a 500). `status` accepts only `active`: revealing `removed` requires an
+ * administrative permission (SPEC §5, rule 9), and that value plus its guard arrive with the
+ * removal task (#98/#105). Until then `?status=removed` is a 400, and the route always lists
+ * active links.
  */
 export const CollaboratorListQuerySchema = PaginationInputSchema.extend({
-  q: z.string().trim().min(1).max(320).optional(),
-  role: z.string().trim().min(1).max(128).optional(),
-  jobTitle: z.string().trim().min(1).max(256).optional(),
-  status: z.enum(['active', 'removed']).optional()
+  q: SearchTextSchema.optional(),
+  role: SearchTextSchema.max(128).optional(),
+  jobTitle: SearchTextSchema.max(256).optional(),
+  status: z.literal('active').optional()
 }).strict();
 
 export const CollaboratorListResponseSchema = createPaginatedResponseSchema(CollaboratorSchema);

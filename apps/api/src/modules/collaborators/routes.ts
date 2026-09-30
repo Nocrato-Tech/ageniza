@@ -42,17 +42,38 @@ const agencyNotFound = (): HttpError => new HttpError({ statusCode: 404, code: '
  * Turns the stored identity key into a short-lived signed URL, or null when there is no photo. The
  * key belongs to a global user, and the bucket stays private: the signed URL is the only way
  * anything reads it (`identity-storage` README).
+ *
+ * A legacy or malformed key (`presignGetObject` refuses anything without a known image extension)
+ * degrades that one person to no photo instead of failing the whole page for every role. The
+ * warning carries only the error name/code: the key contains a user id and is never logged.
  */
-const signedPhotoUrl = async (dependencies: CollaboratorModuleDependencies, key: string | null): Promise<string | null> =>
-  key === null
-    ? null
-    : dependencies.identityStorage.presignGetObject({ key, expiresInSeconds: dependencies.identityDownloadUrlExpirySeconds });
+const signedPhotoUrl = async (
+  dependencies: CollaboratorModuleDependencies,
+  key: string | null,
+  log: FastifyRequest['log']
+): Promise<string | null> => {
+  if (key === null) return null;
+  try {
+    return await dependencies.identityStorage.presignGetObject({ key, expiresInSeconds: dependencies.identityDownloadUrlExpirySeconds });
+  } catch (error) {
+    log.warn({
+      operation: 'collaborators.photo_url',
+      status: 'failed',
+      error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'IDENTITY_PHOTO_PRESIGN_FAILED' }
+    }, 'Could not sign a collaborator photo URL; serving the list without it');
+    return null;
+  }
+};
 
-const collaboratorFromRow = async (dependencies: CollaboratorModuleDependencies, row: CollaboratorRow): Promise<Collaborator> => ({
+const collaboratorFromRow = async (
+  dependencies: CollaboratorModuleDependencies,
+  row: CollaboratorRow,
+  log: FastifyRequest['log']
+): Promise<Collaborator> => ({
   membershipId: row.membership_id,
   name: row.name,
   email: row.email,
-  photoUrl: await signedPhotoUrl(dependencies, row.photo_key),
+  photoUrl: await signedPhotoUrl(dependencies, row.photo_key, log),
   jobTitle: row.job_title,
   role: { key: row.role_key, name: row.role_name },
   isOwner: row.is_owner === true,
@@ -98,7 +119,7 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     );
 
     return reply.send(parseResponse(collaboratorListDocs.schemas.response, {
-      data: await Promise.all(page.items.map((row) => collaboratorFromRow(dependencies, row))),
+      data: await Promise.all(page.items.map((row) => collaboratorFromRow(dependencies, row, request.log))),
       meta: buildPaginationMetadata(pagination, page.totalItems)
     }));
   });

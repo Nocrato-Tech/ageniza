@@ -34,12 +34,16 @@ a pessoa não tem foto. O módulo recebe o cliente de identidade por injeção; 
 `page`/`pageSize` vêm de `PaginationInputSchema` (padrão 24, teto global de 100 que **limita** em
 vez de recusar, e guarda de overflow do `page`). A busca `q` procura por trecho do nome **e** do
 e-mail, sem diferenciar maiúsculas, com `%` e `_` escapados. `role` filtra por chave de papel e
-`jobTitle` por cargo, isolados ou combinados. `status` é `active` por padrão.
+`jobTitle` por cargo, isolados ou combinados.
+
+`q`, `role` e `jobTitle` usam o `SearchTextSchema` compartilhado (`packages/contracts`), que recusa
+caracteres de controle: um byte NUL chega ao backend como parâmetro inválido (22021) e viraria 500.
 
 ## O que ficou de fora
 
-- **`status=removed` sem permissão administrativa.** A SPEC exige a permissão administrativa para
-  revelar removidos; por decisão da issue #95, essa barreira é da task de remoção (#98). Aqui
-  removidos simplesmente não aparecem sem pedido explícito.
+- **O filtro de removidos chega com a #98.** A SPEC exige permissão administrativa para revelar
+  vínculos `removed` (regra inviolável 9). Por isso, nesta task, `status` aceita só `active` e
+  `?status=removed` é 400; `status=removed` entra junto com a guarda administrativa na #98/#105, e
+  removidos não aparecem na listagem padrão.
 - **Remuneração.** Não existe neste módulo; pertence ao Financeiro.
 - **Detalhe, remoção, reativação, convites e edição de perfil.** São outras rotas do módulo.

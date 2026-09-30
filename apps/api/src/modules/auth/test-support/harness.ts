@@ -79,13 +79,15 @@ export interface CapturedLogs {
   text(): string;
 }
 
-/** Captures every log line written during a test so #15 can assert no secret ever reaches it. */
-export const captureLogs = (): CapturedLogs => {
+/** Captures every log line written during a test so #15 can assert no secret ever reaches it.
+ * The level is configurable because a suite that runs real logins pays for debug serialization it
+ * does not need; the default keeps the auth tests' behavior. */
+export const captureLogs = (level: 'debug' | 'info' | 'warn' | 'error' = 'debug'): CapturedLogs => {
   const stream = new PassThrough();
   const chunks: string[] = [];
   stream.on('data', (chunk: Buffer) => chunks.push(chunk.toString('utf8')));
   return {
-    logger: createLogger({ level: 'debug' }, stream),
+    logger: createLogger({ level }, stream),
     lines: () => chunks,
     text: () => chunks.join('\n')
   };

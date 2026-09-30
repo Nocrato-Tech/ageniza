@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   buildTestApp,
+  captureLogs,
   insertTestUser,
   ownerClient,
   TEST_APP_PUBLIC_URL,
@@ -50,6 +51,10 @@ interface ApiErrorJson {
 
 let app: TestApp;
 const owner = ownerClient();
+// Captured so a test can prove a hostile filter never becomes a logged 500, and that an invalid
+// photo key warns without leaking it. `warn` is enough for both and skips the cost of serializing
+// every info line of the many logins this suite performs.
+const logs = captureLogs('warn');
 let presetRoleIds: Record<SystemPreset, string>;
 
 const createdUserIds: string[] = [];
@@ -109,6 +114,21 @@ const addMember = async (
   return user;
 };
 
+/** Same as `addMember`, but with a caller-chosen membership id and no holder tracked. */
+const addMemberWithMembershipId = async (
+  agencyId: string,
+  input: { membershipId: string; name: string; emailLabel: string; roleId: string }
+): Promise<TestUserFixture> => {
+  const user = await makeUser(input.emailLabel, input.name);
+  await owner.knex('agency_memberships').insert({ id: input.membershipId, agency_id: agencyId, user_id: user.id, role_id: input.roleId, job_title: null, status: 'active' });
+  return user;
+};
+
+const membershipIdOf = async (agencyId: string, userId: string): Promise<string> => {
+  const row = await owner.knex('agency_memberships').where({ agency_id: agencyId, user_id: userId }).first('id');
+  return row.id as string;
+};
+
 /** An agency-scoped role with exactly the permissions given -- the strong custom-role fixture. */
 const createCustomRole = async (agencyId: string, permissionKeys: readonly string[]): Promise<string> => {
   const roleId = randomUUID();
@@ -153,7 +173,7 @@ const insertBareUsers = async (count: number, label: string): Promise<string[]> 
 
 describe('collaborators module (issue #95)', () => {
   beforeAll(async () => {
-    app = await buildTestApp();
+    app = await buildTestApp({ logger: logs.logger });
     const roles = await owner.knex('roles').whereNull('agency_id').whereIn('key', [...SYSTEM_PRESETS]).select('id', 'key');
     presetRoleIds = Object.fromEntries(roles.map((role) => [role.key, role.id])) as Record<SystemPreset, string>;
     for (const preset of SYSTEM_PRESETS) {
@@ -315,20 +335,105 @@ describe('collaborators module (issue #95)', () => {
     expect(names(searchAlphaOwn.body)).toEqual(['Ana Alfa']);
   });
 
-  it('#95: a removed link stays out of the default list and appears only with status=removed', async () => {
+  it('#95: status=removed is refused for every role and removed links never appear by default', async () => {
     const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Removed', 'removed', 'Owner Removed');
-    await addMember(agencyId, { name: 'Pessoa Ativa', emailLabel: 'removed-active', roleId: presetRoleIds.production });
+    const production = await addMember(agencyId, { name: 'Pessoa Produção', emailLabel: 'removed-production', roleId: presetRoleIds.production });
+    const onlyVisualizar = await createCustomRole(agencyId, ['colaborador.visualizar']);
+    const customRole = await addMember(agencyId, { name: 'Pessoa Papel Personalizado', emailLabel: 'removed-custom', roleId: onlyVisualizar });
     await addMember(agencyId, { name: 'Pessoa Removida', emailLabel: 'removed-gone', roleId: presetRoleIds.production, status: 'removed' });
+
+    // Owner, Produção and a custom role that only holds `colaborador.visualizar`: revealing removed
+    // links requires an administrative permission (SPEC §5, rule 9), so all three are refused until
+    // the removal task (#98) adds the value together with that guard.
+    for (const user of [ownerUser, production, customRole]) {
+      const cookie = await loginCookie(user);
+      const defaultList = await getCollaborators(cookie, agencyId);
+      expect(defaultList.status).toBe(200);
+      expect(names(defaultList.body)).not.toContain('Pessoa Removida');
+
+      const refused = await getCollaborators(cookie, agencyId, { status: 'removed' });
+      expect(refused.status).toBe(400);
+      expect(refused.body.error.code).toBe('VALIDATION_ERROR');
+
+      const active = await getCollaborators(cookie, agencyId, { status: 'active' });
+      expect(active.status).toBe(200);
+      expect(names(active.body)).not.toContain('Pessoa Removida');
+    }
+  });
+
+  it('#95: a NUL byte or a control character in a filter is a 400, never a logged 500', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Control', 'control');
+    const cookie = await loginCookie(ownerUser);
+    const before = logs.lines().length;
+
+    const hostile: readonly Record<string, string>[] = [
+      { q: '\u0000' },
+      { q: 'ana\u0001maria' },
+      { role: 'a\u0000b' },
+      { role: 'a\u001fb' },
+      { jobTitle: '\u0000' },
+      { jobTitle: 'x\u007fy' }
+    ];
+    for (const query of hostile) {
+      const response = await getCollaborators(cookie, agencyId, query);
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    }
+
+    const during = logs.lines().slice(before).join('\n');
+    expect(during).not.toContain('"level":50');
+    expect(during).not.toContain('INTERNAL_ERROR');
+  });
+
+  it('#95: same-name people page without repetition or loss, held stable by the membership id', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Tiebreak', 'tiebreak', 'Owner Tiebreak');
+    const membershipIds = Array.from({ length: 12 }, () => randomUUID());
+    // Insert in descending id order: the heap order is the reverse of the expected tie-break order,
+    // so dropping `membership.id` from `order by` cannot pass by accident.
+    for (const membershipId of [...membershipIds].sort().reverse()) {
+      await addMemberWithMembershipId(agencyId, {
+        membershipId,
+        name: 'Pessoa Repetida',
+        emailLabel: `tiebreak-${membershipId.slice(0, 8)}`,
+        roleId: presetRoleIds.production
+      });
+    }
     const cookie = await loginCookie(ownerUser);
 
-    const defaultList = await getCollaborators(cookie, agencyId);
-    expect(names(defaultList.body).sort()).toEqual(['Owner Removed', 'Pessoa Ativa'].sort());
-    expect(defaultList.body.meta.totalItems).toBe(2);
+    const collected: string[] = [];
+    for (let page = 1; page <= 4; page += 1) {
+      const response = await getCollaborators(cookie, agencyId, { page, pageSize: 4 });
+      expect(response.status).toBe(200);
+      collected.push(...response.body.data.map((item) => item.membershipId));
+    }
 
-    const removed = await getCollaborators(cookie, agencyId, { status: 'removed' });
-    expect(names(removed.body)).toEqual(['Pessoa Removida']);
-    expect(removed.body.data[0]?.status).toBe('removed');
-    expect(removed.body.meta.totalItems).toBe(1);
+    // `Owner Tiebreak` sorts before `Pessoa Repetida`; the twelve identical names must come in
+    // membership-id order, each exactly once, across the page boundaries.
+    expect(collected).toHaveLength(13);
+    expect(new Set(collected).size).toBe(13);
+    expect(collected).toEqual([await membershipIdOf(agencyId, ownerUser.id), ...[...membershipIds].sort()]);
+  });
+
+  it('#95: a link pointing at another agency role never appears in this agency list', async () => {
+    const alpha = await createAgencyWithOwner('Colab Escopo Papel A', 'scope-a', 'Owner Escopo A');
+    const beta = await createAgencyWithOwner('Colab Escopo Papel B', 'scope-b', 'Owner Escopo B');
+    // The viewer is a member of BOTH agencies, so `roles_select` shows B's role and only the
+    // explicit role-scope filter can keep it out of A's list (issue #186 lesson).
+    const viewer = await addMember(alpha.agencyId, { name: 'Viewer Escopo', emailLabel: 'scope-viewer', roleId: presetRoleIds.admin });
+    await addAgencyMembership(beta.agencyId, viewer.id, presetRoleIds.admin);
+    const foreignRole = await createCustomRole(beta.agencyId, ['colaborador.visualizar']);
+    await addMemberWithMembershipId(alpha.agencyId, {
+      membershipId: randomUUID(),
+      name: 'Pessoa Papel Externo',
+      emailLabel: 'scope-foreign',
+      roleId: foreignRole
+    });
+    await addMember(alpha.agencyId, { name: 'Pessoa Normal A', emailLabel: 'scope-normal', roleId: presetRoleIds.production });
+
+    const response = await getCollaborators(await loginCookie(viewer), alpha.agencyId);
+    expect(response.status).toBe(200);
+    expect(names(response.body)).not.toContain('Pessoa Papel Externo');
+    expect(names(response.body)).toContain('Pessoa Normal A');
   });
 
   it('#95: without colaborador.visualizar a member receives 403; without agency access, the same 404', async () => {
@@ -381,6 +486,12 @@ describe('collaborators module (issue #95)', () => {
       ['email', 'isOwner', 'jobTitle', 'joinedAt', 'membershipId', 'name', 'photoUrl', 'role', 'status'].sort()
     );
 
+    // The signed URL lasts exactly as long as the configured identity download expiry.
+    const signedPhoto = new URL(photoRow!.photoUrl!);
+    const configuredExpiry = app.config.identityStorage?.downloadUrlExpirySeconds;
+    expect(configuredExpiry).toBeDefined();
+    expect(signedPhoto.searchParams.get('X-Amz-Expires')).toBe(String(configuredExpiry));
+
     const membership = await owner.knex('agency_memberships').where({ agency_id: agencyId, user_id: withPhoto.id }).first('created_at');
     expect(photoRow?.joinedAt).toEqual(new Date(membership.created_at).toISOString());
 
@@ -390,5 +501,25 @@ describe('collaborators module (issue #95)', () => {
 
     // Remuneration does not exist in this module and must never appear.
     expect(JSON.stringify(response.body)).not.toMatch(/salar|remunera|salary|compensation/i);
+  });
+
+  it('#95: an identity key that cannot be signed degrades to photoUrl null with a key-free warning', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Bad Photo', 'bad-photo', 'Owner Bad Photo');
+    const withInvalidPhoto = await addMember(agencyId, { name: 'Foto Inválida', emailLabel: 'bad-photo-member', roleId: presetRoleIds.production });
+    // No known image extension: `presignGetObject` refuses it, which used to fail the whole page.
+    const invalidKey = `users/${withInvalidPhoto.id}/avatar`;
+    await app.pool.query('update auth."user" set image = $1 where id = $2', [invalidKey, withInvalidPhoto.id]);
+
+    const before = logs.lines().length;
+    const response = await getCollaborators(await loginCookie(ownerUser), agencyId);
+    expect(response.status).toBe(200);
+    const row = response.body.data.find((item) => item.name === 'Foto Inválida');
+    expect(row?.photoUrl).toBeNull();
+
+    const during = logs.lines().slice(before).join('\n');
+    expect(during).toContain('IDENTITY_PHOTO_PRESIGN_FAILED');
+    // The key carries a user id; the warning must never include it.
+    expect(during).not.toContain(invalidKey);
+    expect(during).not.toContain(withInvalidPhoto.id);
   });
 });

@@ -652,7 +652,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Lista a equipe da agência',
     description: [
       'Paginada pelo contrato global de listagem, com busca por nome e e-mail e filtros por papel,',
-      'cargo e status. A lista é a mesma para todos os papéis; a foto vem como URL assinada.'
+      'cargo e status (somente ativos). A lista é a mesma para todos os papéis; a foto vem como URL',
+      'assinada. O filtro de removidos chega com a guarda administrativa da #98.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'colaborador.visualizar',
