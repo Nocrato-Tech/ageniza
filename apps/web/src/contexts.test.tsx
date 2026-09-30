@@ -45,7 +45,7 @@ const renderContexts = (
         <ApiClientProvider client={client}>
           <MemoryRouter initialEntries={[path]}>
             <LocationProbe probe={probe} />
-            <ApplicationRoutes session={{ status: 'ready', isAuthenticated: true }} />
+            <ApplicationRoutes session={{ status: 'ready', isAuthenticated: true, user: sessionBody.user }} />
           </MemoryRouter>
         </ApiClientProvider>
       </QueryClientProvider>
