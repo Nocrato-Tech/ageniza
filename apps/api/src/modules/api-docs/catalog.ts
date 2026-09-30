@@ -2,6 +2,7 @@ import type { z } from 'zod';
 
 import {
   AgencyClientPathParamsSchema,
+  AgencyCollaboratorPathParamsSchema,
   AgencyInvitationPathParamsSchema,
   AgencyMeResponseSchema,
   AgencyMediaAssetPathParamsSchema,
@@ -18,6 +19,7 @@ import {
   CollaboratorInvitationRequestSchema,
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
+  CollaboratorSchema,
   CompleteMediaUploadRequestSchema,
   CompleteMediaUploadResponseSchema,
   ContextResolveQuerySchema,
@@ -685,6 +687,45 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/collaborators/:membershipId',
+    operationId: 'getCollaborator',
+    module: 'collaborators',
+    summary: 'Devolve um colaborador da agência',
+    description: [
+      'Carrega o mesmo contrato do item da listagem, com URL própria para o link ser compartilhável.',
+      'Um vínculo de outra agência, inexistente, malformado ou removido devolve o mesmo 404, sem',
+      'revelar existência.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'colaborador.visualizar',
+    params: AgencyCollaboratorPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'O colaborador pedido.',
+      schema: CollaboratorSchema,
+      example: {
+        membershipId,
+        name: 'Camila Nogueira',
+        email: 'camila@exemplo.test',
+        photoUrl: signedStorageUrl,
+        jobTitle: 'Gestora de contas',
+        role: { key: 'account_manager', name: 'Gestor de conta' },
+        isOwner: false,
+        status: 'active',
+        joinedAt: '2026-03-12T12:00:00.000Z'
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Collaborator not found.' }
     ]
   },
 

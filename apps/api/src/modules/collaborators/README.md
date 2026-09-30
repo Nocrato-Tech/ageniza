@@ -1,8 +1,10 @@
 # Colaboradores
 
-Entrega `GET /agencies/:agencyId/collaborators` (issue #95): a equipe da agência, paginada, com
-busca e filtros. É a **primeira listagem do produto**, e por isso as próximas a copiam — o contrato
-está em `packages/contracts/src/pagination.ts` e o desenho, em `specs/autorizacao.md` §6.
+Entrega `GET /agencies/:agencyId/collaborators` (issue #95) e
+`GET /agencies/:agencyId/collaborators/:membershipId` (issue #96): a equipe da agência, paginada,
+com busca e filtros, e o detalhe de uma pessoa em URL própria. A listagem é a **primeira do
+produto**, e por isso as próximas a copiam — o contrato está em
+`packages/contracts/src/pagination.ts` e o desenho, em `specs/autorizacao.md` §6.
 
 ## A consulta parte do vínculo, nunca do usuário
 
@@ -16,18 +18,24 @@ inviolável nº 2 de `specs/colaboradores.md`.
 A ordenação é sempre por nome ascendente, com desempate por `membership.id`, para que a paginação
 seja estável entre chamadas.
 
+O detalhe usa a mesma consulta, filtrada por `membership.id`, com o mesmo filtro de agência: um
+vínculo de outra agência não é uma linha, e a rota responde o mesmo 404 de um id inexistente — nunca
+403, que confirmaria a existência. Id malformado também cai nesse 404. Vínculo `removed` é 404 até
+a task de remoção (#98) trazer a visão administrativa.
+
 ## Permissão
 
-`colaborador.visualizar`, exigida por `requirePermission` depois de `requireAgencyAccess`. Quem não
-tem a chave recebe 403; quem não tem acesso à agência recebe 404 indistinto, igual ao de agência
-inexistente. A lista é a mesma para todos os papéis: o total não depende de quem olha
+`colaborador.visualizar`, exigida por `requirePermission` depois de `requireAgencyAccess` nas duas
+rotas. Quem não tem a chave recebe 403; quem não tem acesso à agência recebe 404 indistinto, igual
+ao de agência inexistente. A lista é a mesma para todos os papéis: o total não depende de quem olha
 (`specs/colaboradores.md` §5, regra 1).
 
 ## Foto
 
 `auth."user".image` guarda a **chave** do armazenamento de identidade (issue #100), nunca uma URL
-pública. A rota devolve uma URL assinada de curta duração via `presignGetObject`, ou `null` quando
-a pessoa não tem foto. O módulo recebe o cliente de identidade por injeção; não constrói o seu.
+pública. As rotas devolvem uma URL assinada de curta duração via `presignGetObject`, ou `null`
+quando a pessoa não tem foto. Uma chave que não pode ser assinada vira `null` com `log.warn`, sem
+derrubar a resposta. O módulo recebe o cliente de identidade por injeção; não constrói o seu.
 
 ## Parâmetros
 
@@ -42,8 +50,8 @@ caracteres de controle: um byte NUL chega ao backend como parâmetro inválido (
 ## O que ficou de fora
 
 - **O filtro de removidos chega com a #98.** A SPEC exige permissão administrativa para revelar
-  vínculos `removed` (regra inviolável 9). Por isso, nesta task, `status` aceita só `active` e
-  `?status=removed` é 400; `status=removed` entra junto com a guarda administrativa na #98/#105, e
-  removidos não aparecem na listagem padrão.
+  vínculos `removed` (regra inviolável 9). Por isso, nesta fase, `status` aceita só `active`,
+  `?status=removed` é 400 e o detalhe de um removido é 404; a visão administrativa entra na
+  #98/#105.
 - **Remuneração.** Não existe neste módulo; pertence ao Financeiro.
-- **Detalhe, remoção, reativação, convites e edição de perfil.** São outras rotas do módulo.
+- **Remoção, reativação, convites e edição de perfil.** São outras rotas do módulo.

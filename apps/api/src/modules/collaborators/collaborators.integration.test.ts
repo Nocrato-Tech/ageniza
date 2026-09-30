@@ -157,6 +157,19 @@ const getCollaborators = async (
 
 const names = (body: CollaboratorListJson): string[] => body.data.map((item) => item.name);
 
+const getCollaboratorDetail = async (
+  cookie: string | undefined,
+  agencyId: string,
+  membershipId: string
+): Promise<{ status: number; body: CollaboratorJson & ApiErrorJson }> => {
+  const response = await app.app.inject({
+    method: 'GET',
+    url: `/agencies/${agencyId}/collaborators/${membershipId}`,
+    headers: cookie === undefined ? origin : { ...origin, cookie }
+  });
+  return { status: response.statusCode, body: response.json<CollaboratorJson & ApiErrorJson>() };
+};
+
 /** Inserts bare users (no credential account) in one statement -- the bulk pagination fixture. */
 const insertBareUsers = async (count: number, label: string): Promise<string[]> => {
   const ids = Array.from({ length: count }, () => randomUUID());
@@ -521,5 +534,78 @@ describe('collaborators module (issue #95)', () => {
     // The key carries a user id; the warning must never include it.
     expect(during).not.toContain(invalidKey);
     expect(during).not.toContain(withInvalidPhoto.id);
+  });
+
+  it('#96: the detail is exactly the listing item for one membership', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Detail', 'detail', 'Owner Detail');
+    const person = await addMember(agencyId, { name: 'Detalhe Pessoa', emailLabel: 'detail-person', roleId: presetRoleIds.production, jobTitle: 'Editor de Vídeo' });
+    const membershipId = await membershipIdOf(agencyId, person.id);
+    const cookie = await loginCookie(ownerUser);
+
+    const list = await getCollaborators(cookie, agencyId);
+    const fromList = list.body.data.find((item) => item.membershipId === membershipId);
+    const detail = await getCollaboratorDetail(cookie, agencyId, membershipId);
+    expect(detail.status).toBe(200);
+    expect(detail.body).toEqual(fromList);
+    expect(Object.keys(detail.body).sort()).toEqual(
+      ['email', 'isOwner', 'jobTitle', 'joinedAt', 'membershipId', 'name', 'photoUrl', 'role', 'status'].sort()
+    );
+    expect(JSON.stringify(detail.body)).not.toMatch(/salar|remunera|salary|compensation/i);
+  });
+
+  it('#96: a membership of another agency answers the same 404 and leaks no user data', async () => {
+    const alpha = await createAgencyWithOwner('Colab BOLA Alfa', 'bola-alpha', 'Owner BOLA Alfa');
+    const beta = await createAgencyWithOwner('Colab BOLA Beta', 'bola-beta', 'Owner BOLA Beta');
+    // The viewer belongs to BOTH agencies, so `agency_memberships_select` shows B's link and only
+    // the query's own agency filter can keep it out (issue #186 lesson).
+    const viewer = await addMember(alpha.agencyId, { name: 'Viewer BOLA', emailLabel: 'bola-viewer', roleId: presetRoleIds.admin });
+    await addAgencyMembership(beta.agencyId, viewer.id, presetRoleIds.admin);
+    const target = await addMember(alpha.agencyId, { name: 'Pessoa Alvo', emailLabel: 'bola-target', roleId: presetRoleIds.production });
+    await addAgencyMembership(beta.agencyId, target.id, presetRoleIds.production);
+    const foreignMembershipId = await membershipIdOf(beta.agencyId, target.id);
+    const cookie = await loginCookie(viewer);
+
+    const foreign = await getCollaboratorDetail(cookie, alpha.agencyId, foreignMembershipId);
+    const nonexistent = await getCollaboratorDetail(cookie, alpha.agencyId, randomUUID());
+    const malformed = await getCollaboratorDetail(cookie, alpha.agencyId, 'not-a-uuid');
+
+    expect(foreign.status).toBe(404);
+    expect(nonexistent.status).toBe(404);
+    expect(malformed.status).toBe(404);
+    expect(foreign.body.error).toEqual(nonexistent.body.error);
+    expect(malformed.body.error).toEqual(foreign.body.error);
+    expect(foreign.body.error).toEqual({ code: 'NOT_FOUND', message: 'Collaborator not found.' });
+    // The foreign link's owner is never disclosed through this route.
+    expect(JSON.stringify(foreign.body)).not.toContain(target.email);
+    expect(JSON.stringify(foreign.body)).not.toContain('Pessoa Alvo');
+  });
+
+  it('#96: a removed link is not revealed by the detail', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Detail Removed', 'detail-removed', 'Owner Detail Removed');
+    const removed = await addMember(agencyId, { name: 'Pessoa Removida Detalhe', emailLabel: 'detail-removed-person', roleId: presetRoleIds.production, status: 'removed' });
+    const response = await getCollaboratorDetail(await loginCookie(ownerUser), agencyId, await membershipIdOf(agencyId, removed.id));
+    expect(response.status).toBe(404);
+    expect(response.body.error).toEqual({ code: 'NOT_FOUND', message: 'Collaborator not found.' });
+  });
+
+  it('#96: without colaborador.visualizar the detail answers 403', async () => {
+    const { agencyId } = await createAgencyWithOwner('Colab Detail Authz', 'detail-authz');
+    const person = await addMember(agencyId, { name: 'Pessoa Detalhe Authz', emailLabel: 'detail-authz-person', roleId: presetRoleIds.production });
+    const deniedRole = await createCustomRole(agencyId, ['cliente.visualizar']);
+    const denied = await addMember(agencyId, { name: 'Pessoa Negada Detalhe', emailLabel: 'detail-authz-denied', roleId: deniedRole });
+
+    const response = await getCollaboratorDetail(await loginCookie(denied), agencyId, await membershipIdOf(agencyId, person.id));
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('#96: a caller without access to the agency gets the agency 404', async () => {
+    const { agencyId } = await createAgencyWithOwner('Colab Detail No Access', 'detail-no-access');
+    const other = await createAgencyWithOwner('Colab Detail No Access Other', 'detail-no-access-other');
+    const outsider = await addMember(other.agencyId, { name: 'Outsider Detalhe', emailLabel: 'detail-outsider', roleId: presetRoleIds.admin });
+
+    const response = await getCollaboratorDetail(await loginCookie(outsider), agencyId, randomUUID());
+    expect(response.status).toBe(404);
+    expect(response.body.error).toEqual({ code: 'NOT_FOUND', message: 'Agency not found.' });
   });
 });
