@@ -335,9 +335,9 @@ Nenhuma policy de outro módulo é alterada.
 
 | tela | rota | o que mostra | quem acessa |
 |---|---|---|---|
-| Carteira | `/clientes` | cards de clientes para triagem | `cliente.visualizar` |
+| Carteira | `/agencia/:agenciaId/clientes` | cards de clientes para triagem | `cliente.visualizar` |
 | Cadastrar | modal sobre a carteira | só o nome | `cliente.cadastrar` |
-| Detalhe | `/clientes/:clienteId/<aba>` | cabeçalho e seis abas | `cliente.visualizar` |
+| Detalhe | `/agencia/:agenciaId/clientes/:clienteId/<aba>` | cabeçalho e seis abas | `cliente.visualizar` |
 | Editar cadastro | modal sobre o detalhe | todos os campos do cadastro | `cliente.operar` |
 | Portal — Início | `/portal/:clienteId` | saudação e próxima ação | vínculo de cliente |
 | Portal — Marca | `/portal/:clienteId/marca` | estudo em leitura e conversas | vínculo de cliente |
@@ -353,7 +353,7 @@ Nenhuma policy de outro módulo é alterada.
 
 Conteúdos, Tarefas e Relatórios na agência, e Calendário e Relatórios no portal, **existem desde o MVP** e são preenchidas pelos seus módulos. Uma aba esqueleto diz que a área existe e o que ela vai mostrar — **nunca dado fictício, nunca controle que não funciona**. Nada nela pode parecer quebrado.
 
-### Carteira — `/clientes`
+### Carteira — `/agencia/:agenciaId/clientes`
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -404,7 +404,7 @@ Card arquivado, pelo filtro, aparece esmaecido e sem selos.
 
 Só o nome, porque só ele é obrigatório: o cadastro começa numa ligação, e dez campos no primeiro contato fazem a pessoa inventar dado. Ao salvar, abre o detalhe do cliente novo. Nome em uso mostra o erro no próprio campo.
 
-### Detalhe — `/clientes/:clienteId/<aba>`
+### Detalhe — `/agencia/:agenciaId/clientes/:clienteId/<aba>`
 
 ```
 ┌──────────────────────────────────────────────────────────────┐

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AuthLogoutResponseSchema,
   ContextResolveResponseSchema,
@@ -10,6 +10,7 @@ import {
 import { Button, ChoiceCard, LiveStatus, Skeleton } from '@ageniza/ui';
 
 import { useAuthSessionStore } from './auth.js';
+import { contextDestination, contextTarget, rememberContext } from './context-destination.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 
@@ -64,9 +65,9 @@ export function ContextSelectPage() {
         : { type: 'client' as const, clientId: context.clientId },
       response: PutLastContextResponseSchema
     }),
-    onSuccess: () => {
+    onSuccess: (_data, context) => {
       queryClient.removeQueries({ queryKey: ['contexts'] });
-      navigate('/app');
+      navigate(contextDestination(context), { replace: true });
     },
     onError: (error: unknown) => {
       // The chosen context can stop being valid between the resolve and the click; reload the list
@@ -85,6 +86,7 @@ export function ContextSelectPage() {
   });
 
   const decision = resolve.data?.decision;
+  const enteredContext = resolve.data?.decision === 'enter' ? resolve.data.context : null;
   // `resolve` already ended the session on the server. Calling `logout` here would answer 401
   // without a session and trigger the session-ended redirect to `/entrar`; so only drop the client
   // session and the cache, then go to the "no access" screen.
@@ -94,6 +96,15 @@ export function ContextSelectPage() {
     queryClient.clear();
     navigate('/sem-acesso', { replace: true });
   }, [decision, authStore, queryClient, navigate]);
+
+  // Entering records the context as the last one and goes to its area (`/agencia/...` or
+  // `/portal/...`), never `/app`.
+  useEffect(() => {
+    if (enteredContext === null) return;
+    void rememberContext(httpClient, contextTarget(enteredContext));
+    queryClient.removeQueries({ queryKey: ['contexts'] });
+    navigate(contextDestination(enteredContext), { replace: true });
+  }, [enteredContext, httpClient, queryClient, navigate]);
 
   if (resolve.isPending) {
     return <section aria-labelledby="context-select-title">
@@ -112,7 +123,7 @@ export function ContextSelectPage() {
   }
 
   // Exactly one valid context is entered without asking; none at all is handled by the effect above.
-  if (resolve.data.decision === 'enter') return <Navigate to="/app" replace />;
+  if (resolve.data.decision === 'enter') return <LiveStatus>Entrando…</LiveStatus>;
   if (resolve.data.decision === 'none') return <LiveStatus>Encerrando a sessão…</LiveStatus>;
 
   const { contexts, highlighted } = resolve.data;

@@ -160,7 +160,7 @@ O **transporte** (presigned como na mídia, ou upload pelo servidor, dado que av
 
 ## 7. Frontend
 
-### Equipe — `/colaboradores`
+### Equipe — `/agencia/:agenciaId/colaboradores`
 
 ```
 ┌──────────────────────────────────────────────────────────┐

@@ -134,7 +134,8 @@ describe('ContextSelectPage (/contextos)', () => {
     fireEvent.click(screen.getByRole('button', { name: /Cliente Um/ }));
 
     await waitFor(() => expect(putBodies).toEqual([{ type: 'client', clientId: CLIENT_C }]));
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Workspace' })).toBeTruthy());
+    // The client context enters the portal address, never `/app` (issue #181).
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Portal do cliente' })).toBeTruthy());
   });
 
   it('reloads the list on a 404 instead of resending the context that vanished', async () => {
@@ -187,9 +188,20 @@ describe('ContextSelectPage (/contextos)', () => {
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'Onde você quer entrar?' })).toBeNull());
   });
 
-  it('enters directly when resolve answers with a single context', async () => {
-    renderContexts(async () => json({ decision: 'enter', context: agencyA }));
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Workspace' })).toBeTruthy());
+  it('enters directly when resolve answers with a single context, at its own address', async () => {
+    const putBodies: unknown[] = [];
+    renderContexts(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/me/contexts/resolve')) return json({ decision: 'enter', context: agencyA });
+      if (url.endsWith('/me/last-context') && init?.method === 'PUT') { putBodies.push(JSON.parse(String(init.body))); return noContent(); }
+      if (url.endsWith(`/agencies/${AGENCY_A}/me`)) {
+        return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] });
+      }
+      throw new Error(`unexpected ${init?.method ?? 'GET'} ${url}`);
+    });
+
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Agência Um' })).toBeTruthy());
+    expect(putBodies).toEqual([{ type: 'agency', agencyId: AGENCY_A }]);
     expect(screen.queryByRole('heading', { name: 'Onde você quer entrar?' })).toBeNull();
   });
 

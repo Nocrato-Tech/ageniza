@@ -39,7 +39,8 @@ describe('NoAccessPage (/sem-acesso)', () => {
 
   it('redirects a person who arrives with a live session', () => {
     renderAt('/sem-acesso', { authenticated: true });
-    expect(screen.getByRole('heading', { name: 'Workspace' })).toBeTruthy();
+    // The redirect goes through `/app`, which now lands on the context resolver (issue #181).
+    expect(screen.getByRole('heading', { name: 'Onde você quer entrar?' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Sua conta não tem acesso a nenhum espaço de trabalho' })).toBeNull();
   });
 

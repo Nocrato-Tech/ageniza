@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { AuthSessionProvider, createAuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
@@ -18,17 +19,20 @@ const renderForgot = (
   options: { authenticated?: boolean; state?: unknown } = {}
 ) => {
   const client = new HttpClient('http://127.0.0.1:3001', fetchImpl);
+  const store = createAuthSessionStore(client);
   const entry = options.state === undefined
     ? '/senha/esquecida'
     : { pathname: '/senha/esquecida', state: options.state };
   return render(
-    <QueryClientProvider client={createQueryClient()}>
-      <ApiClientProvider client={client}>
-        <MemoryRouter initialEntries={[entry]}>
-          <ApplicationRoutes session={{ status: 'ready', isAuthenticated: options.authenticated ?? false }} />
-        </MemoryRouter>
-      </ApiClientProvider>
-    </QueryClientProvider>
+    <AuthSessionProvider store={store}>
+      <QueryClientProvider client={createQueryClient()}>
+        <ApiClientProvider client={client}>
+          <MemoryRouter initialEntries={[entry]}>
+            <ApplicationRoutes session={{ status: 'ready', isAuthenticated: options.authenticated ?? false }} />
+          </MemoryRouter>
+        </ApiClientProvider>
+      </QueryClientProvider>
+    </AuthSessionProvider>
   );
 };
 
@@ -48,7 +52,8 @@ describe('ForgotPasswordPage (/senha/esquecida)', () => {
 
   it('redirects a person who already has a session', () => {
     renderForgot(async () => json({}), { authenticated: true });
-    expect(screen.getByRole('heading', { name: 'Workspace' })).toBeTruthy();
+    // The redirect goes through `/app`, which now lands on the context resolver (issue #181).
+    expect(screen.getByRole('heading', { name: 'Onde você quer entrar?' })).toBeTruthy();
     expect(screen.queryByLabelText('E-mail')).toBeNull();
   });
 

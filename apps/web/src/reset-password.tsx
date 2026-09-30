@@ -9,6 +9,7 @@ import { Button, FieldMessage, TextInput } from '@ageniza/ui';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { useAuthSessionStore } from './auth.js';
+import { contextDestination, contextTarget, rememberContext } from './context-destination.js';
 import { useDocumentTitle } from './document-title.js';
 import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -59,7 +60,12 @@ export function ResetPasswordPage() {
     try {
       const resolve = await httpClient.request({ path: '/me/contexts/resolve', response: ContextResolveResponseSchema });
       if (resolve.decision === 'none') { leaveToNoAccess(); return; }
-      navigate(resolve.decision === 'select' ? '/contextos' : '/app', { replace: true });
+      if (resolve.decision === 'enter') {
+        await rememberContext(httpClient, contextTarget(resolve.context));
+        navigate(contextDestination(resolve.context), { replace: true });
+        return;
+      }
+      navigate('/contextos', { replace: true });
     } catch {
       setResolveError(RESOLVE_FAILED);
     } finally {
