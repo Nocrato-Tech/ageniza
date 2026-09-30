@@ -67,6 +67,32 @@ pnpm --filter @ageniza/api cli:agency reactivate --agency-id <uuid>
 pnpm --filter @ageniza/api cli:agency resend-activation --agency-id <uuid>
 ```
 
+## Dados de demonstração
+
+Para pular a criação manual e já ter um cenário realista no banco local:
+
+```sh
+pnpm seed:demo --i-know-this-is-local
+```
+
+O comando **se recusa a rodar fora do ambiente local**: exige a flag `--i-know-this-is-local`, recusa `NODE_ENV` ou `APP_ENV` igual a `production` (sem diferenciar maiúsculas ou espaços), recusa banco que não seja loopback — nas duas conexões (`DATABASE_URL` e `MIGRATION_DATABASE_URL`), conferindo o host que o driver realmente usaria (um `?host=` ou caminho de socket é recusado) — e recusa quando as duas URLs apontam para bancos diferentes. Nada é escrito (nem uma senha é trocada) antes de o portão inteiro passar.
+
+O que ele cria, sempre no banco local:
+
+- a agência **Agência Horizonte**, com o Owner e uma pessoa para cada preset (Admin, Gestor de conta, Produção, Vendas, Financeiro), com nome e cargo plausíveis;
+- 6 clientes com cadastro e estudo de marca em graus variados, personas e conversas — algumas aguardando a agência;
+- uma pessoa de portal na Padaria Central;
+- 2 convites de colaborador pendentes;
+- a agência **Estúdio Ponte**, pequena, para demonstrar o isolamento entre agências.
+
+Rodar de novo **não duplica nem falha**: os identificadores derivam de chaves estáveis e cada escrita é um upsert ou um insert guardado. As contas são criadas como a rota de conta nova as cria (com o aceite de Termos e Privacidade gravado nas versões configuradas), e os vínculos e convites passam por `app_private.accept_invitation` e pela RLS do papel `ageniza_app`, nunca por inserts que contornem regra. Até o cargo (`job_title`) é gravado pelo caminho da aplicação.
+
+No fim o comando imprime o e-mail, a senha e a URL de entrada de cada perfil. **As senhas são geradas a cada execução e existem só nessa saída**; rodar de novo troca todas e encerra as sessões antigas dessas contas, e a saída mais recente é a que vale. `pnpm db:reset` apaga tudo.
+
+A suíte de integração que usa este comando (`seed-demo.integration.test.ts`) roda com um namespace e um domínio de e-mail próprios e limpa só o que criou: rodar `pnpm --filter @ageniza/api test:integration` depois do seed **não** apaga o cenário de demonstração.
+
+> Arquivar um cliente e agendar encerramento ainda ficam de fora: dependem das funções da #123, e o seed não escreve colunas que a aplicação não pode escrever.
+
 ## Pegando o link de ativação
 
 O convite **não aparece em lugar nenhum além do e-mail**. O banco guarda apenas o hash do token: nem a operação recupera o token depois de enviado — é decisão de segurança, não limitação.
@@ -121,4 +147,4 @@ Antes de abrir um PR, rode o conjunto inteiro. O CI roda exatamente isso.
 - **`pnpm storage:start` falha e o contêiner nunca fica saudável** — o script despeja o log do contêiner antes de propagar o erro. A causa costuma estar ali, não no script.
 - **Testes de integração com `ECONNREFUSED 127.0.0.1:54322`** — o PostgreSQL não está no ar. `pnpm db:start`.
 - **Consulta volta vazia sem erro** — quase sempre é contexto de usuário ausente na transação, e a RLS está fazendo o trabalho dela. Não é bug de SQL. Ver o [ADR 0011](adr/0011-self-hosted-postgres-and-better-auth.md).
-- **`cli:agency` reclama de configuração** — as quatro variáveis do comando acima são obrigatórias, e ele recusa qualquer `MIGRATION_DATABASE_URL` que não aponte para loopback.
+- **`cli:agency` reclama de configuração** — as quatro variáveis do comando acima são obrigatórias. O comando é a ferramenta de operação e aceita o banco que a operação indicar, inclusive o serviço `postgres` da rede interna no VPS; quem exige loopback é o `seed:demo`, que é só de desenvolvimento.

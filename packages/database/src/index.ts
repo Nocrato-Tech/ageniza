@@ -1,6 +1,7 @@
 import { isIP } from 'node:net';
 
 import knex, { type Knex } from 'knex';
+import { Client } from 'pg';
 
 /** Deliberately small limits: processes create their own client instead of sharing a global pool. */
 export interface DatabasePoolSettings {
@@ -114,7 +115,15 @@ const isLoopbackHost = (hostname: string): boolean => {
   return normalized === 'localhost' || normalized === '::1' || (isIP(normalized) === 4 && normalized.startsWith('127.'));
 };
 
-/** Rejects non-local URLs so test helpers cannot accidentally target cloud or production databases. */
+/**
+ * Rejects non-local URLs so test helpers and local-only CLIs cannot accidentally target cloud or
+ * production databases.
+ *
+ * The check reads the host the driver would actually connect to, not the URL's `hostname`: a
+ * `?host=` query parameter (the Cloud SQL socket shape) overrides it, a socket path starts with
+ * `/`, and a URL without a host falls back to `PGHOST`. `pg` ignores `hostaddr`, but it is
+ * rejected outright so no future driver upgrade can silently start honouring it.
+ */
 export const assertLocalDatabaseUrl = (connectionString: string): void => {
   let parsed: URL;
   try {
@@ -122,7 +131,22 @@ export const assertLocalDatabaseUrl = (connectionString: string): void => {
   } catch {
     throw new Error('Local/test database URL must be a valid PostgreSQL URL.');
   }
-  if (!['postgres:', 'postgresql:'].includes(parsed.protocol) || !isLoopbackHost(parsed.hostname)) {
+  if (!['postgres:', 'postgresql:'].includes(parsed.protocol)) {
+    throw new Error('Local/test database URL must use a loopback PostgreSQL host.');
+  }
+  if (parsed.searchParams.has('hostaddr')) {
+    throw new Error('Local/test database URL must not carry a hostaddr parameter.');
+  }
+  let effectiveHost: unknown;
+  try {
+    // Same parser the driver uses, including the environment fallbacks (PGHOST) it applies.
+    // `connectionParameters` is runtime API, not part of `@types/pg`'s public surface.
+    const parameters = (new Client(connectionString) as unknown as { connectionParameters: { host?: unknown } }).connectionParameters;
+    effectiveHost = parameters.host;
+  } catch {
+    throw new Error('Local/test database URL must be a valid PostgreSQL URL.');
+  }
+  if (typeof effectiveHost !== 'string' || effectiveHost.startsWith('/') || !isLoopbackHost(effectiveHost)) {
     throw new Error('Local/test database URL must use a loopback PostgreSQL host.');
   }
 };
