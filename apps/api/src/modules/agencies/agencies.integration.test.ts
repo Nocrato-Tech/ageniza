@@ -16,6 +16,7 @@ import {
   type TestApp,
   type TestUserFixture
 } from '../auth/test-support/harness.js';
+import { loadAgencyMe } from './service.js';
 
 // Issue #180 acceptance tests. Each `it` names the criterion it proves, and every permission
 // assertion is compared against `app_private.has_agency_permission` -- the same function RLS uses
@@ -68,6 +69,14 @@ const createAgency = async (name: string, ownerUserId: string | null, status: 'a
 
 const addAgencyMembership = async (agencyId: string, userId: string, roleId: string, status: 'active' | 'removed' = 'active'): Promise<void> => {
   await owner.knex('agency_memberships').insert({ agency_id: agencyId, user_id: userId, role_id: roleId, status });
+};
+
+const setAgencyStatus = async (agencyId: string, status: 'active' | 'suspended'): Promise<void> => {
+  await owner.knex('agencies').where({ id: agencyId }).update({ status });
+};
+
+const setMembershipStatus = async (agencyId: string, userId: string, status: 'active' | 'removed'): Promise<void> => {
+  await owner.knex('agency_memberships').where({ agency_id: agencyId, user_id: userId }).update({ status });
 };
 
 const createClient = async (agencyId: string, name: string): Promise<string> => {
@@ -186,6 +195,8 @@ describe('agencies module (issue #180)', () => {
     // A role-only implementation would return an empty list here.
     expect(response.body.permissions).toEqual(await catalogKeys());
     expect(response.body.isOwner).toBe(true);
+    // The `admin` fallback label belongs to the owner without a membership role, and to nobody else.
+    expect(response.body.role).toEqual({ key: 'admin', name: 'Admin' });
     await expectEquivalentToRls(user.id, agency, response.body);
   });
 
@@ -226,17 +237,44 @@ describe('agencies module (issue #180)', () => {
     const roleSourceAgency = await createAgency('Agency Me Foreign Role Source', null);
     const foreignRoleId = randomUUID();
     createdRoleIds.push(foreignRoleId);
-    await owner.knex('roles').insert({ id: foreignRoleId, agency_id: roleSourceAgency, key: 'custom', name: 'Custom', is_system: false });
-    await owner.knex('role_permissions').insert({ role_id: foreignRoleId, permission_key: 'cliente.operar' });
+    await owner.knex('roles').insert({ id: foreignRoleId, agency_id: roleSourceAgency, key: 'bigrole', name: 'Big Role', is_system: false });
+    await owner.knex('role_permissions').insert([
+      { role_id: foreignRoleId, permission_key: 'cliente.operar' },
+      { role_id: foreignRoleId, permission_key: 'colaborador.convidar' }
+    ]);
+    // The person belongs to BOTH agencies. That is what makes this scenario prove the role scope:
+    // `roles_select` (`agency_id is null or is_agency_member(agency_id)`) then shows the role, and
+    // only the `role.agency_id is null or role.agency_id = agency.id` filter keeps it out of the
+    // home agency's list. Without the membership in the source agency, RLS alone would hide the
+    // role and the filter would survive a mutation unnoticed (security review of PR #186).
+    await addAgencyMembership(roleSourceAgency, foreignUser.id, foreignRoleId);
     await addAgencyMembership(homeAgency, foreignUser.id, foreignRoleId);
     const foreignCookie = await loginCookie(foreignUser);
 
+    // Where the role is in scope, it grants its keys: the same session can see them in A.
+    const source = await getAgencyMe(foreignCookie, roleSourceAgency);
+    expect(source.status).toBe(200);
+    expect([...source.body.permissions].sort()).toEqual(['cliente.operar', 'colaborador.convidar']);
+    expect(source.body.role).toEqual({ key: 'bigrole', name: 'Big Role' });
+    await expectEquivalentToRls(foreignUser.id, roleSourceAgency, source.body);
+
     // The membership is active in `homeAgency`, so the guard lets the caller in; the role belongs
-    // to another agency, so -- exactly like has_agency_permission -- it grants nothing.
+    // to another agency, so -- exactly like has_agency_permission -- it grants nothing, and the
+    // label does not borrow "Admin".
     const foreign = await getAgencyMe(foreignCookie, homeAgency);
     expect(foreign.status).toBe(200);
     expect(foreign.body.permissions).toEqual([]);
+    expect(foreign.body.role).toEqual({ key: 'sem-papel', name: 'Sem papel' });
     await expectEquivalentToRls(foreignUser.id, homeAgency, foreign.body);
+
+    // The guard carries the same scope filter (tenancy/guards.ts), and `requirePermission` is what
+    // consumes it. The invitations list needs `colaborador.convidar`: it must pass in A and be
+    // denied in B, where the foreign role must not leak into `request.tenant.permissions`.
+    const sourceInvitations = await app.app.inject({ method: 'GET', url: `/agencies/${roleSourceAgency}/invitations`, headers: { ...origin, cookie: foreignCookie } });
+    expect(sourceInvitations.statusCode).toBe(200);
+    const homeInvitations = await app.app.inject({ method: 'GET', url: `/agencies/${homeAgency}/invitations`, headers: { ...origin, cookie: foreignCookie } });
+    expect(homeInvitations.statusCode).toBe(403);
+    expect(homeInvitations.json()).toMatchObject({ error: { code: 'FORBIDDEN' } });
   });
 
   it('#180: nonexistent, suspended, other person and removed membership all answer the same 404', async () => {
@@ -289,5 +327,35 @@ describe('agencies module (issue #180)', () => {
   it('#180: without a session the route answers 401', async () => {
     const response = await getAgencyMe(undefined, randomUUID());
     expect(response.status).toBe(401);
+  });
+
+  it('#180: loadAgencyMe itself repeats the access conditions, not only RLS and the guard', async () => {
+    // The route only calls this service after the guard, and RLS also hides a suspended agency or
+    // a removed membership from the application role -- so end to end, a mutation dropping
+    // `agency.status` or `membership.status` from the query survives. Running the same service on
+    // the migration owner (RLS bypassed, same `app.user_id` GUC) is what holds that repetition to
+    // its word: these are the conditions that would matter if a policy ever changed.
+    const asOwner = <TResult>(userId: string, work: (transaction: Parameters<Parameters<typeof owner.transaction>[0]>[0]) => Promise<TResult>): Promise<TResult> =>
+      owner.transaction(async (transaction) => {
+        await raw(transaction, "select set_config('app.user_id', ?, true)", [userId]);
+        return work(transaction);
+      });
+
+    const user = await makeUser('agency-me-direct');
+    const agency = await createAgency('Agency Me Direct', null);
+    await addAgencyMembership(agency, user.id, presetRoleIds.production);
+
+    const active = await asOwner(user.id, (transaction) => loadAgencyMe(transaction, agency));
+    expect(active).toBeDefined();
+    expect(active!.permissions).toEqual(await presetKeys('production'));
+
+    await setAgencyStatus(agency, 'suspended');
+    const suspended = await asOwner(user.id, (transaction) => loadAgencyMe(transaction, agency));
+    expect(suspended).toBeUndefined();
+
+    await setAgencyStatus(agency, 'active');
+    await setMembershipStatus(agency, user.id, 'removed');
+    const removed = await asOwner(user.id, (transaction) => loadAgencyMe(transaction, agency));
+    expect(removed).toBeUndefined();
   });
 });
