@@ -1,0 +1,317 @@
+import { randomUUID } from 'node:crypto';
+
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import {
+  buildTestApp,
+  createFakeEmailSender,
+  insertTestUser,
+  ownerClient,
+  TEST_APP_PUBLIC_URL,
+  type TestApp,
+  type TestUserFixture
+} from '../auth/test-support/harness.js';
+import type { DatabaseClient } from '@ageniza/database';
+
+const origin = { origin: TEST_APP_PUBLIC_URL };
+
+const SECTION_KEYS = ['branding', 'tone_of_voice', 'colors', 'positioning', 'archetype', 'personas', 'observations'];
+
+let owner: DatabaseClient;
+let app: TestApp;
+
+const agencyA = randomUUID();
+const agencyB = randomUUID();
+const createdUserIds: string[] = [];
+const createdAgencyIds = [agencyA, agencyB];
+const createdCustomRoleIds: string[] = [];
+
+let admin: TestUserFixture;
+let manager: TestUserFixture;
+let production: TestUserFixture;
+let viewer: TestUserFixture;
+let otherAdmin: TestUserFixture;
+
+let adminCookie: string;
+let managerCookie: string;
+let productionCookie: string;
+let viewerCookie: string;
+let otherAdminCookie: string;
+
+const sessionCookieHeader = (cookies: readonly { name: string; value: string }[]): string =>
+  cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
+
+const login = async (user: TestUserFixture): Promise<string> => {
+  const response = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email: user.email, password: user.password } });
+  expect(response.statusCode).toBe(200);
+  return sessionCookieHeader(response.cookies);
+};
+
+const makeUser = async (label: string): Promise<TestUserFixture> => {
+  const user = await insertTestUser(app.pool, app.auth, { emailLabel: label });
+  createdUserIds.push(user.id);
+  return user;
+};
+
+const createClient = async (agencyId: string, status: 'active' | 'archived' = 'active'): Promise<string> => {
+  const id = randomUUID();
+  await owner.knex('clients').insert({
+    id,
+    agency_id: agencyId,
+    name: `Brand client ${id}`,
+    status,
+    archived_at: status === 'archived' ? new Date() : null
+  });
+  return id;
+};
+
+const insertPersonaRow = async (clientId: string, status: 'active' | 'archived' = 'active'): Promise<string> => {
+  const id = randomUUID();
+  await owner.knex('client_personas').insert({ id, client_id: clientId, name: `Persona ${id}`, status });
+  return id;
+};
+
+interface InjectResponse {
+  readonly statusCode: number;
+  json<T = unknown>(): T;
+}
+
+const getStudy = async (cookie: string, agencyId: string, clientId: string): Promise<InjectResponse> =>
+  (await app.app.inject({ method: 'GET', url: `/agencies/${agencyId}/clients/${clientId}/brand-study`, headers: { ...origin, cookie } })) as unknown as InjectResponse;
+
+const putSection = async (cookie: string, agencyId: string, clientId: string, sectionKey: string, payload: Record<string, unknown>): Promise<InjectResponse> =>
+  (await app.app.inject({ method: 'PUT', url: `/agencies/${agencyId}/clients/${clientId}/brand-study/sections/${sectionKey}`, headers: { ...origin, cookie }, payload })) as unknown as InjectResponse;
+
+const postPersona = async (cookie: string, agencyId: string, clientId: string, payload: Record<string, unknown>): Promise<InjectResponse> =>
+  (await app.app.inject({ method: 'POST', url: `/agencies/${agencyId}/clients/${clientId}/personas`, headers: { ...origin, cookie }, payload })) as unknown as InjectResponse;
+
+const patchPersona = async (cookie: string, agencyId: string, clientId: string, personaId: string, payload: Record<string, unknown>): Promise<InjectResponse> =>
+  (await app.app.inject({ method: 'PATCH', url: `/agencies/${agencyId}/clients/${clientId}/personas/${personaId}`, headers: { ...origin, cookie }, payload })) as unknown as InjectResponse;
+
+const personaStatus = async (cookie: string, agencyId: string, clientId: string, personaId: string, action: 'archive' | 'unarchive'): Promise<InjectResponse> =>
+  (await app.app.inject({ method: 'POST', url: `/agencies/${agencyId}/clients/${clientId}/personas/${personaId}/${action}`, headers: { ...origin, cookie } })) as unknown as InjectResponse;
+
+describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
+  beforeAll(async () => {
+    owner = ownerClient();
+    app = await buildTestApp({ sender: createFakeEmailSender() });
+
+    admin = await makeUser('brand-admin');
+    manager = await makeUser('brand-manager');
+    production = await makeUser('brand-production');
+    viewer = await makeUser('brand-viewer');
+    otherAdmin = await makeUser('brand-other-admin');
+
+    const roles = await owner.knex('roles').whereNull('agency_id').whereIn('key', ['admin', 'account_manager', 'production']).select('id', 'key');
+    const roleId = (key: string): string => {
+      const role = roles.find((candidate) => candidate.key === key);
+      if (role === undefined) throw new Error(`Missing system role ${key}.`);
+      return role.id as string;
+    };
+
+    await owner.knex('agencies').insert([
+      { id: agencyA, name: 'Brand Agency A', owner_user_id: null },
+      { id: agencyB, name: 'Brand Agency B', owner_user_id: null }
+    ]);
+
+    const customRoleId = randomUUID();
+    createdCustomRoleIds.push(customRoleId);
+    await owner.knex('roles').insert({ id: customRoleId, agency_id: agencyA, key: `only-view-${customRoleId}`, name: 'Só visualizar', is_system: false });
+    await owner.knex('role_permissions').insert({ role_id: customRoleId, permission_key: 'cliente.visualizar' });
+
+    await owner.knex('agency_memberships').insert([
+      { agency_id: agencyA, user_id: admin.id, role_id: roleId('admin') },
+      { agency_id: agencyA, user_id: manager.id, role_id: roleId('account_manager') },
+      { agency_id: agencyA, user_id: production.id, role_id: roleId('production') },
+      { agency_id: agencyA, user_id: viewer.id, role_id: customRoleId },
+      { agency_id: agencyB, user_id: otherAdmin.id, role_id: roleId('admin') }
+    ]);
+
+    adminCookie = await login(admin);
+    managerCookie = await login(manager);
+    productionCookie = await login(production);
+    viewerCookie = await login(viewer);
+    otherAdminCookie = await login(otherAdmin);
+  });
+
+  afterAll(async () => {
+    const agencyIds = [...new Set(createdAgencyIds)];
+    const clientIds = await owner.knex('clients').whereIn('agency_id', agencyIds).pluck('id');
+    await owner.knex('client_thread_comments').whereIn('client_id', clientIds).delete();
+    await owner.knex('client_threads').whereIn('client_id', clientIds).delete();
+    await owner.knex('client_personas').whereIn('client_id', clientIds).delete();
+    await owner.knex('client_brand_sections').whereIn('client_id', clientIds).delete();
+    await owner.knex('client_memberships').whereIn('client_id', clientIds).delete();
+    await owner.knex('agency_memberships').whereIn('agency_id', agencyIds).delete();
+    await owner.knex('role_permissions').whereIn('role_id', createdCustomRoleIds).delete();
+    await owner.knex('roles').whereIn('id', createdCustomRoleIds).delete();
+    await owner.knex('clients').whereIn('id', clientIds).delete();
+    await owner.knex('agencies').whereIn('id', agencyIds).update({ owner_user_id: null });
+    await owner.knex('agencies').whereIn('id', agencyIds).delete();
+    await app.pool.query('delete from auth."user" where id = any($1::uuid[])', [createdUserIds]);
+    await app.close();
+    await owner.close();
+  });
+
+  it('returns the seven fixed sections and filled = 0 for an empty client', async () => {
+    const clientId = await createClient(agencyA);
+    const response = await getStudy(adminCookie, agencyA, clientId);
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ filled: number; sections: { key: string; body: unknown; colors: unknown; archetype: unknown; updatedBy: unknown; updatedAt: unknown }[]; personas: unknown[] }>();
+    expect(body.filled).toBe(0);
+    expect(body.sections.map((section) => section.key)).toEqual(SECTION_KEYS);
+    for (const section of body.sections) {
+      expect(section).toMatchObject({ body: null, colors: null, archetype: null, updatedBy: null, updatedAt: null });
+    }
+    expect(body.personas).toEqual([]);
+  });
+
+  it('rejects a body of another section, an unknown archetype and PUT on personas', async () => {
+    const clientId = await createClient(agencyA);
+    expect((await putSection(adminCookie, agencyA, clientId, 'tone_of_voice', { colors: [{ name: 'Branco', hex: '#FFFFFF' }] })).statusCode).toBe(400);
+    expect((await putSection(adminCookie, agencyA, clientId, 'branding', { archetype: 'caregiver' })).statusCode).toBe(400);
+    expect((await putSection(adminCookie, agencyA, clientId, 'archetype', { archetype: 'wizard' })).statusCode).toBe(400);
+    expect((await putSection(adminCookie, agencyA, clientId, 'personas', { body: 'x' })).statusCode).toBe(400);
+  });
+
+  it('rejects a malformed color hex', async () => {
+    const clientId = await createClient(agencyA);
+    expect((await putSection(adminCookie, agencyA, clientId, 'colors', { colors: [{ name: 'Branco', hex: '#FFF' }] })).statusCode).toBe(400);
+    expect((await putSection(adminCookie, agencyA, clientId, 'colors', { colors: [{ name: 'Branco', hex: '#FFFFFF' }] })).statusCode).toBe(200);
+  });
+
+  it('round-trips a section and the archetype as the English key', async () => {
+    const clientId = await createClient(agencyA);
+    const written = await putSection(adminCookie, agencyA, clientId, 'archetype', { archetype: 'caregiver' });
+    expect(written.statusCode).toBe(200);
+    expect(written.json()).toMatchObject({ key: 'archetype', archetype: 'caregiver' });
+
+    const study = await getStudy(adminCookie, agencyA, clientId);
+    const archetype = study.json<{ sections: { key: string; archetype: string | null }[] }>().sections.find((section) => section.key === 'archetype');
+    expect(archetype?.archetype).toBe('caregiver');
+
+    const text = await putSection(adminCookie, agencyA, clientId, 'tone_of_voice', { body: 'Próxima e acolhedora.' });
+    expect(text.statusCode).toBe(200);
+    expect((await getStudy(adminCookie, agencyA, clientId)).json<{ filled: number }>().filled).toBe(2);
+  });
+
+  it('counts an active persona in filled and stops counting it when archived', async () => {
+    const clientId = await createClient(agencyA);
+    await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'Marca' });
+    expect((await getStudy(adminCookie, agencyA, clientId)).json<{ filled: number }>().filled).toBe(1);
+
+    const created = await postPersona(adminCookie, agencyA, clientId, { name: 'Dona Maria' });
+    expect(created.statusCode).toBe(201);
+    const personaId = created.json<{ id: string; status: string }>().id;
+    expect(created.json<{ status: string }>().status).toBe('active');
+    expect((await getStudy(adminCookie, agencyA, clientId)).json<{ filled: number }>().filled).toBe(2);
+
+    expect((await personaStatus(adminCookie, agencyA, clientId, personaId, 'archive')).statusCode).toBe(200);
+    expect((await getStudy(adminCookie, agencyA, clientId)).json<{ filled: number }>().filled).toBe(1);
+
+    expect((await personaStatus(adminCookie, agencyA, clientId, personaId, 'unarchive')).statusCode).toBe(200);
+    expect((await getStudy(adminCookie, agencyA, clientId)).json<{ filled: number }>().filled).toBe(2);
+  });
+
+  it('keeps an archived persona in the agency GET and returns it on unarchive', async () => {
+    const clientId = await createClient(agencyA);
+    const personaId = await insertPersonaRow(clientId, 'active');
+    await personaStatus(adminCookie, agencyA, clientId, personaId, 'archive');
+
+    const archived = await getStudy(adminCookie, agencyA, clientId);
+    expect(archived.json<{ personas: { id: string; status: string }[] }>().personas).toContainEqual(
+      expect.objectContaining({ id: personaId, status: 'archived' })
+    );
+
+    const restored = await personaStatus(adminCookie, agencyA, clientId, personaId, 'unarchive');
+    expect(restored.json()).toMatchObject({ id: personaId, status: 'active' });
+  });
+
+  it('edits a persona and clears a field with null', async () => {
+    const clientId = await createClient(agencyA);
+    const created = await postPersona(adminCookie, agencyA, clientId, { name: 'Lucas', description: 'Jovem' });
+    const personaId = created.json<{ id: string }>().id;
+
+    const edited = await patchPersona(adminCookie, agencyA, clientId, personaId, { name: 'Lucas Silva', description: null });
+    expect(edited.statusCode).toBe(200);
+    expect(edited.json()).toMatchObject({ name: 'Lucas Silva', description: null });
+  });
+
+  it('lets account_manager write and production only read', async () => {
+    const clientId = await createClient(agencyA);
+    expect((await putSection(managerCookie, agencyA, clientId, 'branding', { body: 'Gestor' })).statusCode).toBe(200);
+    expect((await postPersona(managerCookie, agencyA, clientId, { name: 'Persona do gestor' })).statusCode).toBe(201);
+    const personaId = await insertPersonaRow(clientId);
+
+    expect((await getStudy(productionCookie, agencyA, clientId)).statusCode).toBe(200);
+    expect((await putSection(productionCookie, agencyA, clientId, 'branding', { body: 'x' })).statusCode).toBe(403);
+    expect((await postPersona(productionCookie, agencyA, clientId, { name: 'x' })).statusCode).toBe(403);
+    expect((await patchPersona(productionCookie, agencyA, clientId, personaId, { name: 'x' })).statusCode).toBe(403);
+    expect((await personaStatus(productionCookie, agencyA, clientId, personaId, 'archive')).statusCode).toBe(403);
+    expect((await personaStatus(productionCookie, agencyA, clientId, personaId, 'unarchive')).statusCode).toBe(403);
+  });
+
+  it('answers 409 on every write to an archived client, and still reads it', async () => {
+    const clientId = await createClient(agencyA, 'archived');
+    const personaId = await insertPersonaRow(clientId);
+
+    expect((await getStudy(adminCookie, agencyA, clientId)).statusCode).toBe(200);
+    expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'x' })).statusCode).toBe(409);
+    expect((await postPersona(adminCookie, agencyA, clientId, { name: 'x' })).statusCode).toBe(409);
+    expect((await patchPersona(adminCookie, agencyA, clientId, personaId, { name: 'x' })).statusCode).toBe(409);
+    expect((await personaStatus(adminCookie, agencyA, clientId, personaId, 'archive')).statusCode).toBe(409);
+    expect((await personaStatus(adminCookie, agencyA, clientId, personaId, 'unarchive')).statusCode).toBe(409);
+
+    await expect(owner.knex('client_brand_sections').where({ client_id: clientId }).select('section_key')).resolves.toEqual([]);
+  });
+
+  it('records the last writer in updatedBy', async () => {
+    const clientId = await createClient(agencyA);
+    const byManager = await putSection(managerCookie, agencyA, clientId, 'positioning', { body: 'Posição' });
+    expect(byManager.json()).toMatchObject({ updatedBy: { id: manager.id, name: manager.name } });
+
+    const byAdmin = await putSection(adminCookie, agencyA, clientId, 'positioning', { body: 'Posição revisada' });
+    expect(byAdmin.json()).toMatchObject({ updatedBy: { id: admin.id, name: admin.name } });
+
+    const persona = await postPersona(managerCookie, agencyA, clientId, { name: 'Com updatedBy' });
+    expect(persona.json()).toMatchObject({ updatedBy: { id: manager.id, name: manager.name } });
+  });
+
+  it('hides a persona of another client and another agency, and answers 404 for malformed ids', async () => {
+    const clientA1 = await createClient(agencyA);
+    const clientA2 = await createClient(agencyA);
+    const clientB = await createClient(agencyB);
+    const personaOfA2 = await insertPersonaRow(clientA2);
+    const personaOfB = await insertPersonaRow(clientB);
+
+    expect((await patchPersona(adminCookie, agencyA, clientA1, personaOfA2, { name: 'x' })).statusCode).toBe(404);
+    expect((await personaStatus(adminCookie, agencyA, clientA1, personaOfA2, 'archive')).statusCode).toBe(404);
+    expect((await patchPersona(adminCookie, agencyA, clientA1, personaOfB, { name: 'x' })).statusCode).toBe(404);
+    expect((await patchPersona(adminCookie, agencyA, clientA1, 'not-a-uuid', { name: 'x' })).statusCode).toBe(404);
+    expect((await getStudy(adminCookie, agencyA, 'not-a-uuid')).statusCode).toBe(404);
+    expect((await getStudy(adminCookie, agencyA, clientB)).statusCode).toBe(404);
+    // A member of agency B reaching agency A's route is the same 404 as everywhere.
+    expect((await getStudy(otherAdminCookie, agencyA, clientA1)).statusCode).toBe(404);
+  });
+
+  it('rejects extra fields (BOPLA) and control characters', async () => {
+    const clientId = await createClient(agencyA);
+    expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'x', colors: [] })).statusCode).toBe(400);
+    expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'Nul\u0000byte' })).statusCode).toBe(400);
+    expect((await postPersona(adminCookie, agencyA, clientId, { name: 'x', status: 'archived' })).statusCode).toBe(400);
+    expect((await postPersona(adminCookie, agencyA, clientId, { name: 'x', updatedBy: admin.id })).statusCode).toBe(400);
+    expect((await postPersona(adminCookie, agencyA, clientId, { name: 'Tab\tName' })).statusCode).toBe(400);
+    const personaId = await insertPersonaRow(clientId);
+    expect((await patchPersona(adminCookie, agencyA, clientId, personaId, { status: 'archived' })).statusCode).toBe(400);
+
+    const tooManyColors = Array.from({ length: 25 }, (_, index) => ({ name: `Cor ${index}`, hex: '#FFFFFF' }));
+    expect((await putSection(adminCookie, agencyA, clientId, 'colors', { colors: tooManyColors })).statusCode).toBe(400);
+  });
+
+  it('enforces BFLA with a one-permission custom role: reads, cannot write', async () => {
+    const clientId = await createClient(agencyA);
+    expect((await getStudy(viewerCookie, agencyA, clientId)).statusCode).toBe(200);
+    expect((await putSection(viewerCookie, agencyA, clientId, 'branding', { body: 'x' })).statusCode).toBe(403);
+    expect((await postPersona(viewerCookie, agencyA, clientId, { name: 'x' })).statusCode).toBe(403);
+  });
+});

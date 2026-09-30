@@ -115,3 +115,122 @@ export type UpdateClientRequest = z.infer<typeof UpdateClientRequestSchema>;
 export type Client = z.infer<typeof ClientSchema>;
 export type ClientSummary = z.infer<typeof ClientSummarySchema>;
 export type ClientDetailResponse = z.infer<typeof ClientDetailResponseSchema>;
+
+// --- Brand study (specs/clientes.md section 3) ----------------------------------------------
+
+/** The seven fixed sections. There is no route that creates a section. */
+export const BrandSectionKeySchema = z.enum([
+  'branding', 'tone_of_voice', 'colors', 'positioning', 'archetype', 'personas', 'observations'
+]);
+
+/** The six keys a `PUT` accepts; `personas` is the table below and is not writable as a section. */
+export const WritableBrandSectionKeySchema = z.enum([
+  'branding', 'tone_of_voice', 'colors', 'positioning', 'archetype', 'observations'
+]);
+
+/**
+ * The twelve archetypes: the key is the contract value, the label is what the database stores and
+ * the frontend shows. The English key is what a request sends and a response returns.
+ */
+export const ArchetypeSchema = z.enum([
+  'innocent', 'sage', 'explorer', 'outlaw', 'magician', 'hero',
+  'lover', 'jester', 'everyman', 'caregiver', 'ruler', 'creator'
+]);
+
+export const ARCHETYPE_LABELS: Readonly<Record<z.infer<typeof ArchetypeSchema>, string>> = Object.freeze({
+  innocent: 'Inocente',
+  sage: 'Sábio',
+  explorer: 'Explorador',
+  outlaw: 'Fora-da-lei',
+  magician: 'Mago',
+  hero: 'Herói',
+  lover: 'Amante',
+  jester: 'Bobo da corte',
+  everyman: 'Cara comum',
+  caregiver: 'Cuidador',
+  ruler: 'Governante',
+  creator: 'Criador'
+});
+
+export const BrandColorSchema = z.object({
+  name: boundedText(60),
+  hex: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'hex must be #RRGGBB')
+}).strict();
+
+/** Text sections: free text, control characters rejected, at most 20000 UTF-8 bytes. */
+export const BrandSectionTextSchema = boundedText(20000);
+
+/** `PUT` body, one shape per writable key. `strict()` rejects a field of another section. */
+export const BrandStudySectionUpdateRequestSchema = z.union([
+  z.object({ body: BrandSectionTextSchema }).strict(),
+  z.object({ colors: z.array(BrandColorSchema).max(24) }).strict(),
+  z.object({ archetype: ArchetypeSchema }).strict()
+]);
+
+/** Trimmed, non-empty, at most 120 UTF-8 bytes. */
+export const PersonaNameSchema = z.string()
+  .refine((value) => !hasControlCharacters(value), 'must not contain control characters')
+  .transform((value) => value.trim())
+  .pipe(z.string().min(1, 'must not be empty').refine((value) => utf8ByteLength(value) <= 120, 'must be at most 120 bytes'));
+
+export const CreatePersonaRequestSchema = z.object({
+  name: PersonaNameSchema,
+  description: boundedText(5000).nullable().optional(),
+  pains: boundedText(5000).nullable().optional(),
+  desires: boundedText(5000).nullable().optional(),
+  objections: boundedText(5000).nullable().optional()
+}).strict();
+
+export const UpdatePersonaRequestSchema = z.object({
+  name: PersonaNameSchema.optional(),
+  description: boundedText(5000).nullable().optional(),
+  pains: boundedText(5000).nullable().optional(),
+  desires: boundedText(5000).nullable().optional(),
+  objections: boundedText(5000).nullable().optional()
+}).strict();
+
+/** Who last saved a section or persona, resolved through the agency membership, never `auth."user"` alone. */
+export const BrandStudyUpdatedBySchema = z.object({
+  id: z.string().uuid(),
+  name: z.string()
+}).strict();
+
+/** One of the seven sections, always present in the response, filled or not. */
+export const BrandStudySectionSchema = z.object({
+  key: BrandSectionKeySchema,
+  body: z.string().nullable(),
+  colors: z.array(BrandColorSchema).nullable(),
+  archetype: ArchetypeSchema.nullable(),
+  updatedBy: BrandStudyUpdatedBySchema.nullable(),
+  updatedAt: z.string().nullable()
+}).strict();
+
+export const PersonaSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  description: z.string().nullable(),
+  pains: z.string().nullable(),
+  desires: z.string().nullable(),
+  objections: z.string().nullable(),
+  status: z.enum(['active', 'archived']),
+  updatedBy: BrandStudyUpdatedBySchema.nullable(),
+  updatedAt: z.string().nullable()
+}).strict();
+
+export const BrandStudyResponseSchema = z.object({
+  filled: z.number().int().min(0).max(7),
+  sections: z.array(BrandStudySectionSchema),
+  personas: z.array(PersonaSchema)
+}).strict();
+
+export type BrandSectionKey = z.infer<typeof BrandSectionKeySchema>;
+export type WritableBrandSectionKey = z.infer<typeof WritableBrandSectionKeySchema>;
+export type Archetype = z.infer<typeof ArchetypeSchema>;
+export type BrandColor = z.infer<typeof BrandColorSchema>;
+export type BrandStudySectionUpdate = z.infer<typeof BrandStudySectionUpdateRequestSchema>;
+export type BrandStudyUpdatedBy = z.infer<typeof BrandStudyUpdatedBySchema>;
+export type BrandStudySection = z.infer<typeof BrandStudySectionSchema>;
+export type Persona = z.infer<typeof PersonaSchema>;
+export type CreatePersonaRequest = z.infer<typeof CreatePersonaRequestSchema>;
+export type UpdatePersonaRequest = z.infer<typeof UpdatePersonaRequestSchema>;
+export type BrandStudyResponse = z.infer<typeof BrandStudyResponseSchema>;
