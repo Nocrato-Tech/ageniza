@@ -133,11 +133,18 @@ const combineSignals = (externalSignal: AbortSignal | undefined, timeoutMs: numb
 
 /** Fetch wrapper that validates every response and exposes only stable, public error details. */
 export class HttpClient {
+  private readonly fetchImplementation: typeof fetch;
+
   public constructor(
     private readonly baseUrl: string,
-    private readonly fetchImplementation: typeof fetch = fetch,
+    fetchImplementation: typeof fetch = globalThis.fetch.bind(globalThis),
     private readonly hooks: HttpClientHooks = {}
-  ) {}
+  ) {
+    // Chromium requires the native `fetch` to run with `globalThis` as its receiver; calling it as
+    // a method of this client (or with `this` undefined) throws "TypeError: Illegal invocation".
+    // Always invoke the received implementation with `globalThis`, whatever `this` the client has.
+    this.fetchImplementation = (input, init) => Reflect.apply(fetchImplementation, globalThis, [input, init]);
+  }
 
   // A 401 ends the session only while one is confirmed, and only when the request was sent inside
   // it: a visitor's 401 is ordinary, and a late 401 from a session already ended must not end the next.
