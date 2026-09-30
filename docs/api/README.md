@@ -696,6 +696,64 @@ Emite uma URL assinada de leitura.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 VARIANT_NOT_READY` · `409 VARIANT_PROCESSING_FAILED` · `500 INTERNAL_ERROR`
 
+### profile — Edição do próprio nome e da própria foto de perfil.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `PATCH` | `/me/profile` | Sessão | — | Altera o nome da própria pessoa |
+| `POST` | `/me/photo` | Sessão | — | Envia a própria foto de perfil |
+
+#### `PATCH /me/profile`
+
+Altera o nome da própria pessoa.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "name": "Novo Nome"
+}
+```
+
+**Resposta `200`** — Nome atualizado.
+
+```json
+{
+  "id": "55555555-5555-4555-8555-555555555555",
+  "name": "Novo Nome"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
+#### `POST /me/photo`
+
+Envia a própria foto de perfil.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "imageBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+}
+```
+
+**Resposta `200`** — Foto atualizada.
+
+```json
+{
+  "imageUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `413 PAYLOAD_TOO_LARGE` · `415 UNSUPPORTED_MEDIA_TYPE` · `500 INTERNAL_ERROR`
+
 ## Catálogo de códigos de erro
 
 | código | mensagem padrão |

@@ -36,7 +36,11 @@ import {
   PublicInvitationTokenPathParamsSchema,
   PutLastContextRequestSchema,
   RequestMediaUploadPartsRequestSchema,
-  RequestMediaUploadPartsResponseSchema
+  RequestMediaUploadPartsResponseSchema,
+  UpdateMyProfileRequestSchema,
+  UpdateMyProfileResponseSchema,
+  UploadMyPhotoRequestSchema,
+  UploadMyPhotoResponseSchema
 } from '@ageniza/contracts';
 
 /**
@@ -49,9 +53,9 @@ import {
  * schema at generation time; secret-shaped values are angle-bracket placeholders on purpose.
  */
 
-export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'media';
+export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'media' | 'profile';
 
-export type HttpMethod = 'get' | 'post' | 'put' | 'delete';
+export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
 export interface ApiErrorDoc {
   readonly status: number;
@@ -106,7 +110,8 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   invitations: 'Convite de colaborador e de pessoa do portal, aceite e administração dos pendentes.',
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
-  media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.'
+  media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.',
+  profile: 'Edição do próprio nome e da própria foto de perfil.'
 };
 
 export const ERROR_MESSAGES: Record<string, string> = {
@@ -761,6 +766,66 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
       { status: 409, code: 'VARIANT_NOT_READY' },
       { status: 409, code: 'VARIANT_PROCESSING_FAILED' }
+    ]
+  },
+
+  {
+    method: 'patch',
+    path: '/me/profile',
+    operationId: 'updateMyProfile',
+    module: 'profile',
+    summary: 'Altera o nome da própria pessoa',
+    description: [
+      'O alvo é sempre a pessoa da sessão: não há identificador de usuário no corpo, na query nem',
+      'na rota, e o corpo `.strict()` recusa qualquer campo a mais. O e-mail não é editável por',
+      'nenhuma rota deste módulo.'
+    ].join('\n'),
+    access: 'Sessão',
+    permission: null,
+    body: UpdateMyProfileRequestSchema,
+    requestExample: { name: 'Novo Nome' },
+    responses: [{
+      status: 200,
+      description: 'Nome atualizado.',
+      schema: UpdateMyProfileResponseSchema,
+      example: { id: userId, name: 'Novo Nome' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/me/photo',
+    operationId: 'uploadMyPhoto',
+    module: 'profile',
+    summary: 'Envia a própria foto de perfil',
+    description: [
+      'A imagem vai em base64 pelo servidor, que valida o tipo pelos bytes reais (nunca pelo rótulo',
+      'declarado) e o tamanho antes de gravar; a resposta traz a URL assinada. A foto vive no',
+      'armazenamento de identidade e nunca entra em quota de agência.'
+    ].join('\n'),
+    access: 'Sessão',
+    permission: null,
+    body: UploadMyPhotoRequestSchema,
+    requestExample: { imageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' },
+    responses: [{
+      status: 200,
+      description: 'Foto atualizada.',
+      schema: UploadMyPhotoResponseSchema,
+      example: { imageUrl: signedStorageUrl }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 415, code: 'UNSUPPORTED_MEDIA_TYPE' }
     ]
   }
 ];

@@ -8,4 +8,5 @@ export * from './jobs.js';
 export * from './media.js';
 export * from './pagination.js';
 export * from './params.js';
+export * from './profile.js';
 export * from './auth.js';

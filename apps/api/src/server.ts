@@ -18,6 +18,8 @@ import { countValidContexts } from './modules/contexts/service.js';
 import { createMediaJobDispatcher } from './modules/media/job-dispatcher.js';
 import type { MediaModuleDependencies } from './modules/media/routes.js';
 import { createMediaStorageClient } from './modules/media/storage-client.js';
+import { createIdentityStorageClient } from './modules/identity-storage/storage-client.js';
+import type { ProfileModuleDependencies } from './modules/profile/routes.js';
 
 /** Dedicated to Better Auth (and, since it shares the same `ageniza_app` role and connection
  * settings, to append-only audit writes); small on purpose on a shared VPS. */
@@ -78,6 +80,17 @@ export const startApi = async (): Promise<void> => {
     requirePermission,
     jobs: mediaJobDispatcher
   };
+  // Identity storage (issue #100) is separate from media: the profile photo (issue #101) is a
+  // global user's, never counted against any agency's quota.
+  const profileDependencies: ProfileModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
+    database,
+    auth,
+    identityStorage: createIdentityStorageClient(config.identityStorage),
+    config: {
+      maxImageBytes: config.identityStorage.maxImageBytes,
+      downloadUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds
+    }
+  };
 
   const readiness = createReadiness(false);
   const dependencyChecks: readonly HealthCheck[] = [
@@ -92,7 +105,8 @@ export const startApi = async (): Promise<void> => {
     invitations: invitationDependencies,
     contexts: contextDependencies,
     agencies: agencyDependencies,
-    media: mediaDependencies
+    media: mediaDependencies,
+    profile: profileDependencies
   });
 
   const shutdown = createShutdownManager();
