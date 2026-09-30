@@ -59,6 +59,13 @@ describe('seed:demo gate (issue #183)', () => {
     })).toThrow(/same host, port and database/);
   });
 
+  it('refuses a port override in the query string, which the driver honours', () => {
+    expect(() => allow({
+      DATABASE_URL: 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza',
+      MIGRATION_DATABASE_URL: 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza?port=5433'
+    })).toThrow(/same host, port and database/);
+  });
+
   it('refuses when only one URL is defined and the default points elsewhere', () => {
     // The gate receives resolved URLs; the default MIGRATION_DATABASE_URL points at `ageniza`, so
     // exporting only a different DATABASE_URL must fail instead of writing to two databases.

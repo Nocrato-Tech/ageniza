@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
 import { hashPassword } from 'better-auth/crypto';
+import { Client } from 'pg';
 
 import {
   assertLocalDatabaseUrl,
@@ -96,13 +97,21 @@ export const resolveSeedEnvironment = (env: Record<string, string | undefined>):
 
 const isProductionRuntime = (value: string | undefined): boolean => (value ?? '').trim().toLowerCase() === 'production';
 
-/** Host, port and database of a URL, so the two connections cannot silently target different DBs. */
+/**
+ * Host, port and database the driver would connect to, so the two connections cannot silently
+ * target different databases. Read from `connectionParameters`, the same parser
+ * `assertLocalDatabaseUrl` uses: `new URL` would miss a `?port=` (or `?dbname=`) override.
+ */
 const databaseIdentity = (connectionString: string): string => {
-  const parsed = new URL(connectionString);
-  const hostname = parsed.hostname.replace(/^\[/, '').replace(/\]$/, '').toLowerCase();
+  const parameters = (new Client(connectionString) as unknown as {
+    connectionParameters: { host?: unknown; port?: unknown; database?: unknown };
+  }).connectionParameters;
+  const hostname = (typeof parameters.host === 'string' ? parameters.host : '').replace(/^\[/, '').replace(/\]$/, '').toLowerCase();
   // The loopback spellings are the same server in practice; anything else compares literally.
   const host = hostname === 'localhost' || hostname === '::1' || hostname.startsWith('127.') ? 'loopback' : hostname;
-  return `${host}:${parsed.port === '' ? '5432' : parsed.port}${parsed.pathname}`;
+  const port = typeof parameters.port === 'number' ? parameters.port : 5432;
+  const database = typeof parameters.database === 'string' ? parameters.database : '';
+  return `${host}:${port}/${database}`;
 };
 
 /**

@@ -78,7 +78,7 @@ describe('agency operator CLI', () => {
 
   it('validates required settings without echoing a migration or SMTP secret', () => {
     const environment = loadAgencyCliEnvironment({
-      MIGRATION_DATABASE_URL: 'postgresql://postgres:owner-password@127.0.0.1:54322/ageniza',
+      MIGRATION_DATABASE_URL: 'postgresql://postgres:owner-password@postgres:5432/ageniza',
       SMTP_URL: 'smtps://smtp-user:smtp-password@smtp.example.com:465',
       EMAIL_FROM: 'Ageniza <no-reply@example.com>',
       APP_PUBLIC_URL: 'https://app.example.com/'
@@ -104,23 +104,23 @@ describe('agency operator CLI', () => {
     }
   });
 
-  it('refuses a non-loopback migration database, including a host override', () => {
+  it('accepts the production service host the deploy runbook uses', () => {
+    // `cli:agency` is the operation tool that creates agencies in production
+    // (docs/infra/production-deploy.md): the database host there is the Compose service `postgres`,
+    // not a loopback address. This test exists so the loopback gate is never applied here again.
     const base = {
       SMTP_URL: 'smtp://127.0.0.1:1025',
       EMAIL_FROM: 'Ageniza <no-reply@ageniza.local>',
       APP_PUBLIC_URL: 'http://127.0.0.1:5173'
     };
+    const environment = loadAgencyCliEnvironment({
+      ...base,
+      MIGRATION_DATABASE_URL: 'postgresql://postgres:postgres@postgres:5432/ageniza'
+    });
+    expect(environment.migrationDatabaseUrl).toBe('postgresql://postgres:postgres@postgres:5432/ageniza');
     expect(() => loadAgencyCliEnvironment({
       ...base,
       MIGRATION_DATABASE_URL: 'postgresql://postgres:postgres@db.example.com:5432/ageniza'
-    })).toThrow(/loopback/);
-    expect(() => loadAgencyCliEnvironment({
-      ...base,
-      MIGRATION_DATABASE_URL: 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza?host=nao-local.invalid'
-    })).toThrow(/loopback/);
-    expect(() => loadAgencyCliEnvironment({
-      ...base,
-      MIGRATION_DATABASE_URL: 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza'
     })).not.toThrow();
   });
 
@@ -199,7 +199,7 @@ describe('agency operator CLI', () => {
     const exitCode = await runAgencyCli({
       argv: ['create', '--name', 'Acme', '--owner-email', 'owner@example.com'],
       environment: {
-        MIGRATION_DATABASE_URL: 'postgresql://postgres:owner-password@127.0.0.1:54322/ageniza',
+        MIGRATION_DATABASE_URL: 'postgresql://postgres:owner-password@postgres:5432/ageniza',
         SMTP_URL: 'smtps://smtp-user:smtp-password@smtp.example.com:465',
         EMAIL_FROM: 'Ageniza <no-reply@example.com>',
         APP_PUBLIC_URL: 'https://app.example.com'

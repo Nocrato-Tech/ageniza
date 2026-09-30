@@ -147,4 +147,4 @@ Antes de abrir um PR, rode o conjunto inteiro. O CI roda exatamente isso.
 - **`pnpm storage:start` falha e o contêiner nunca fica saudável** — o script despeja o log do contêiner antes de propagar o erro. A causa costuma estar ali, não no script.
 - **Testes de integração com `ECONNREFUSED 127.0.0.1:54322`** — o PostgreSQL não está no ar. `pnpm db:start`.
 - **Consulta volta vazia sem erro** — quase sempre é contexto de usuário ausente na transação, e a RLS está fazendo o trabalho dela. Não é bug de SQL. Ver o [ADR 0011](adr/0011-self-hosted-postgres-and-better-auth.md).
-- **`cli:agency` reclama de configuração** — as quatro variáveis do comando acima são obrigatórias, e ele recusa qualquer `MIGRATION_DATABASE_URL` que não aponte para loopback.
+- **`cli:agency` reclama de configuração** — as quatro variáveis do comando acima são obrigatórias. O comando é a ferramenta de operação e aceita o banco que a operação indicar, inclusive o serviço `postgres` da rede interna no VPS; quem exige loopback é o `seed:demo`, que é só de desenvolvimento.
