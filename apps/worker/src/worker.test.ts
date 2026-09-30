@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createJobProcessor } from './jobs.js';
 import type { DurableQueue } from './queue.js';
 import { smokeJob } from './smoke-job.js';
-import { createWorkerRuntime, type CreateWorkerRuntimeOptions } from './worker.js';
+import { actorContextPurgeIntervalMs, createWorkerRuntime, type CreateWorkerRuntimeOptions } from './worker.js';
 
 const config: WorkerConfig = {
   service: 'worker',
@@ -245,6 +245,26 @@ describe('worker runtime', () => {
     expect(runtime.readiness.isReady()).toBe(true);
     await runtime.shutdown('SIGTERM');
     expect(order).toEqual(['database.check', 'queue.start', 'queue.stop', 'database.close']);
+  });
+
+  it('sweeps the actor context on an interval and stops sweeping after shutdown', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const client = createTestDatabase();
+      const { runtime } = createTestRuntime({ database: client, readinessCheck: async () => undefined });
+      await runtime.start();
+      expect(client.knex.raw).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(actorContextPurgeIntervalMs);
+      expect(client.knex.raw).toHaveBeenCalledWith('select app_private.purge_actor_context()');
+
+      await runtime.shutdown();
+      vi.mocked(client.knex.raw).mockClear();
+      await vi.advanceTimersByTimeAsync(actorContextPurgeIntervalMs);
+      expect(client.knex.raw).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not become ready when the durable queue cannot start', async () => {
