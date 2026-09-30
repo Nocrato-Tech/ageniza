@@ -1,17 +1,50 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { ApiErrorResponseSchema } from '@ageniza/contracts';
 import { loggableRoute } from './route.js';
 import { captureUnexpectedError, CORRELATION_ID_HEADER, HttpError } from '@ageniza/core';
 
-const payloadTooLargeCode = 'FST_ERR_CTP_BODY_TOO_LARGE';
+interface PublicErrorResponse {
+  statusCode: number;
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+/**
+ * Body-parser failures the client can provoke, answered with a fixed, safe response. Each Fastify
+ * error is matched by its exact `code`; a generic `statusCode < 500` shortcut is deliberately not
+ * used, so any parser error not listed here still fails as unexpected (logged and captured) rather
+ * than being silently downgraded. The parser's own `message` is never forwarded: it can echo a
+ * fragment of the body.
+ */
+const contentTypeErrorResponses: Readonly<Record<string, Omit<PublicErrorResponse, 'details'>>> = {
+  FST_ERR_CTP_EMPTY_JSON_BODY: { statusCode: 400, code: 'INVALID_BODY', message: 'O corpo da requisição é inválido.' },
+  FST_ERR_CTP_INVALID_JSON_BODY: { statusCode: 400, code: 'INVALID_BODY', message: 'O corpo da requisição é inválido.' },
+  FST_ERR_CTP_INVALID_CONTENT_LENGTH: { statusCode: 400, code: 'INVALID_BODY', message: 'O corpo da requisição é inválido.' },
+  FST_ERR_CTP_INVALID_MEDIA_TYPE: { statusCode: 415, code: 'UNSUPPORTED_MEDIA_TYPE', message: 'O tipo de conteúdo da requisição não é suportado.' },
+  FST_ERR_CTP_BODY_TOO_LARGE: { statusCode: 413, code: 'PAYLOAD_TOO_LARGE', message: 'Request payload is too large' }
+};
 
 const isRateLimitError = (error: unknown): error is { statusCode: number; code: string } =>
   typeof error === 'object' && error !== null &&
   'statusCode' in error && error.statusCode === 429 &&
   'code' in error && error.code === 'RATE_LIMITED';
 
-const publicError = (error: unknown): { statusCode: number; code: string; message: string; details?: Record<string, unknown> } => {
+/**
+ * A client that declares a body and closes the socket before sending it: Node reports
+ * `ECONNRESET` and marks the raw request aborted. Recognising that *state* (never a status code)
+ * keeps an arbitrary 4xx error from being downgraded in its place.
+ */
+const isClientAbort = (error: unknown, request: FastifyRequest): boolean =>
+  error instanceof Error && 'code' in error && error.code === 'ECONNRESET' && request.raw.readableAborted === true;
+
+const contentTypeErrorResponse = (error: unknown): PublicErrorResponse | undefined => {
+  if (!(error instanceof Error) || !('code' in error) || typeof error.code !== 'string') return undefined;
+  return contentTypeErrorResponses[error.code];
+};
+
+const publicError = (error: unknown, request: FastifyRequest): PublicErrorResponse => {
   if (error instanceof HttpError) {
     return {
       statusCode: error.statusCode,
@@ -23,9 +56,11 @@ const publicError = (error: unknown): { statusCode: number; code: string; messag
   if (isRateLimitError(error)) {
     return { statusCode: 429, code: 'RATE_LIMITED', message: 'Too many requests' };
   }
-  if (error instanceof Error && 'code' in error && error.code === payloadTooLargeCode) {
-    return { statusCode: 413, code: 'PAYLOAD_TOO_LARGE', message: 'Request payload is too large' };
+  if (isClientAbort(error, request)) {
+    return { statusCode: 400, code: 'REQUEST_ABORTED', message: 'A requisição foi interrompida pelo cliente.' };
   }
+  const parserError = contentTypeErrorResponse(error);
+  if (parserError !== undefined) return { ...parserError };
   return { statusCode: 500, code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' };
 };
 
@@ -40,7 +75,7 @@ export const registerErrorHandling = (app: FastifyInstance): void => {
   });
 
   app.setErrorHandler((error, request, reply) => {
-    const response = publicError(error);
+    const response = publicError(error, request);
     const logContext = { requestId: request.id, statusCode: response.statusCode, code: response.code };
     if (response.code === 'INTERNAL_ERROR') {
       // Do not attach raw errors to logs: exception messages and payload-derived errors can contain secrets.

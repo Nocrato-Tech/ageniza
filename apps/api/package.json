@@ -12,7 +12,7 @@
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests --exclude '**/*.integration.test.ts'",
-    "test:integration": "vitest run --config vitest.integration.config.ts src/modules/auth/auth.integration.test.ts src/modules/auth/auth-rate-limit.integration.test.ts src/modules/auth/auth-schema.integration.test.ts src/modules/auth/auth-logs.integration.test.ts src/modules/invitations/invitations.integration.test.ts src/modules/contexts/contexts.integration.test.ts src/modules/agencies/agencies.integration.test.ts src/modules/api-docs/api-docs.integration.test.ts src/modules/media/media.integration.test.ts src/modules/identity-storage/identity-storage.integration.test.ts src/cli/seed-demo.integration.test.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts src/modules/auth/auth.integration.test.ts src/modules/auth/auth-rate-limit.integration.test.ts src/modules/auth/auth-schema.integration.test.ts src/modules/auth/auth-logs.integration.test.ts src/modules/invitations/invitations.integration.test.ts src/modules/contexts/contexts.integration.test.ts src/modules/agencies/agencies.integration.test.ts src/modules/api-docs/api-docs.integration.test.ts src/modules/media/media.integration.test.ts src/modules/identity-storage/identity-storage.integration.test.ts src/plugins/infra/errors.integration.test.ts src/cli/seed-demo.integration.test.ts",
     "clean": "rimraf dist"
   },
   "dependencies": {
