@@ -407,6 +407,34 @@ describe('invitation HTTP module', () => {
     await expect(owner.knex('invitations').where({ email }).first('id')).resolves.toBeUndefined();
   });
 
+  it('rejects an extra field in the client invitation body (.strict())', async () => {
+    // The client-invite body is the route the #187 re-review mutated to `.passthrough()` and stayed
+    // green; this test is what turns that drift red in behavior, alongside the schema-identity
+    // check in `routeBody` and the harness response validation.
+    // A distinct source IP keeps this login and rejected invite out of the shared per-IP rate limit
+    // buckets the rest of the suite runs against (login and invitation are both per-IP).
+    const login = await app.app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      remoteAddress: '127.0.0.2',
+      headers: origin,
+      payload: { email: admin.email, password: admin.password }
+    });
+    expect(login.statusCode).toBe(200);
+
+    const email = `extra-field-client-${randomUUID()}@example.test`;
+    const response = await app.app.inject({
+      method: 'POST',
+      url: `/agencies/${agencyId}/clients/${clientId}/invitations`,
+      remoteAddress: '127.0.0.2',
+      headers: { ...origin, cookie: sessionCookieHeader(login.cookies) },
+      payload: { email, leakedRoleId: productionRoleId }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+    await expect(owner.knex('invitations').where({ email }).first('id')).resolves.toBeUndefined();
+  });
+
   it('denies the whole tenant while the agency is suspended and restores it untouched on reactivation', async () => {
     const suspendedOwner = await makeUser('invitation-suspend-owner');
     const suspendedMember = await makeUser('invitation-suspend-member');

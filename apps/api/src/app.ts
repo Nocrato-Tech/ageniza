@@ -1,4 +1,5 @@
 import Fastify, { LogController, type FastifyBaseLogger, type FastifyInstance, type FastifyServerOptions } from 'fastify';
+import type { ZodType } from 'zod';
 
 import type { ApiConfig } from '@ageniza/config/server';
 import { CORRELATION_ID_HEADER, createLogger, createReadiness, REQUEST_ID_HEADER, resolveRequestId, withLogContext, type CoreLogger, type HealthCheck, type Readiness } from '@ageniza/core';
@@ -13,6 +14,7 @@ import { registerErrorHandling } from './plugins/infra/errors.js';
 import { registerOriginProtection } from './plugins/infra/origin.js';
 import { registerRouteRateLimit } from './plugins/infra/rate-limit.js';
 import { loggableRoute } from './plugins/infra/route.js';
+import type { DocumentedRouteConfig } from './plugins/infra/route-metadata.js';
 import { registerSecurityHeaders } from './plugins/infra/security.js';
 import { registerSystemModule } from './modules/system/routes.js';
 
@@ -45,10 +47,11 @@ export interface ApiAppOptions {
     readonly config: Readonly<Record<string, unknown>>;
   }) => void;
   /**
-   * Test-only enforcement of the documented success status: when a route declares
-   * `config.responseStatus`, a non-error reply with any other status fails the request. The test
-   * harness turns it on so a handler whose status drifts from its own declaration cannot pass the
-   * suite; production never passes it.
+   * Test-only enforcement of the documented success contract: when a route declares
+   * `config.responseStatus`, a non-error reply with any other status fails the request; when it
+   * declares `config.schemas.response`, the serialized success payload is parsed with that exact
+   * schema, so a handler that sends a different shape fails too. The test harness turns it on;
+   * production never passes it.
    */
   enforceDocumentedStatus?: boolean;
 }
@@ -80,11 +83,24 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   }
   if (options.enforceDocumentedStatus === true) {
     app.addHook('onSend', async (request, reply, payload) => {
-      const declared = (request.routeOptions?.config as { responseStatus?: number } | undefined)?.responseStatus;
+      const config = request.routeOptions?.config as DocumentedRouteConfig | undefined;
+      const declared = config?.responseStatus;
       if (declared !== undefined && reply.statusCode < 400 && reply.statusCode !== declared) {
         // Fail the request instead of returning a status the route itself did not declare: the
         // documentation coverage test is what turns this into a red suite.
         throw new Error(`Route ${request.routeOptions?.url ?? request.url} replied ${reply.statusCode} but declares ${declared}.`);
+      }
+      // The serialized success payload is parsed with the exact schema the route declared. A handler
+      // that sends a different shape (a bypassed `routeResponse`, an extra field) fails here even
+      // when no behavior test inspects that field, closing issue #192's escape hatch.
+      const responseSchema = config?.schemas?.response as ZodType | undefined;
+      if (responseSchema !== undefined && reply.statusCode < 400 && payload !== undefined && payload !== null) {
+        const body = typeof payload === 'string'
+          ? (payload.length === 0 ? undefined : JSON.parse(payload))
+          : Buffer.isBuffer(payload)
+            ? JSON.parse(payload.toString('utf8'))
+            : payload;
+        if (body !== undefined) responseSchema.parse(body);
       }
       return payload;
     });

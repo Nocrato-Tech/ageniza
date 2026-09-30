@@ -7,7 +7,8 @@
  * status the handler replies with, and `schemas` are the exact contract objects the route
  * validates with -- identity, not a copy. `api-docs.integration.test.ts` compares all of them with
  * the catalog on `onRoute`, and the test harness fails any reply whose status differs from
- * `responseStatus`, so the catalog cannot drift from the route it documents.
+ * `responseStatus` or whose body does not parse with the declared `schemas.response`, so the
+ * catalog cannot drift from the route it documents.
  */
 export interface DocumentedRouteConfig {
   readonly permission: string | null;
