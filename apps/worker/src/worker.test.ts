@@ -267,6 +267,32 @@ describe('worker runtime', () => {
     }
   });
 
+  it('keeps sweeping after a purge failure without an unhandled rejection', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const client = createTestDatabase();
+      vi.mocked(client.knex.raw).mockRejectedValue(new Error('database unavailable'));
+      const { runtime } = createTestRuntime({ database: client, readinessCheck: async () => undefined });
+      await runtime.start();
+
+      await vi.advanceTimersByTimeAsync(actorContextPurgeIntervalMs);
+      await vi.advanceTimersByTimeAsync(actorContextPurgeIntervalMs);
+      expect(client.knex.raw).toHaveBeenCalledTimes(2);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+
+      await runtime.shutdown();
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+      vi.useRealTimers();
+    }
+  });
+
   it('does not become ready when the durable queue cannot start', async () => {
     const client = createTestDatabase();
     const queue: DurableQueue = {

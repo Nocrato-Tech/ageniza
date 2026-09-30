@@ -116,6 +116,13 @@ describe('transaction actor context (issue #166)', () => {
     expect(seen).toEqual([agencyA]);
   });
 
+  // The declared contract is 42501 with its own message, not the 23502 the NOT NULL column would
+  // raise on its own: without the check, the error a caller sees changes, and the contract with it.
+  it('refuses a null actor on bind_actor with 42501', async () => {
+    await expect(asUser(actorA, (transaction) => raw(transaction, 'select app_private.bind_actor(?::uuid)', [null])))
+      .rejects.toMatchObject({ code: '42501', message: expect.stringMatching(/actor user id is required/) });
+  });
+
   it('refuses a second bind in the same transaction with 42501', async () => {
     await expect(asUser(actorA, (transaction) => raw(transaction, 'select app_private.bind_actor(?::uuid)', [actorB])))
       .rejects.toMatchObject({ code: '42501', message: expect.stringMatching(/actor already bound/) });
