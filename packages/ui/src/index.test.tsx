@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { Button, ChoiceCard, Skeleton } from './index.js';
+import { Button, ChoiceCard, ConfirmDialog, Menu, MenuItem, MenuSeparator, Skeleton } from './index.js';
 
 afterEach(cleanup);
 
@@ -65,5 +65,66 @@ describe('Skeleton', () => {
     const skeleton = screen.getByTestId('skeleton');
     expect(skeleton.getAttribute('aria-hidden')).toBe('true');
     expect(skeleton.className.split(' ')).toContain('ui-skeleton');
+  });
+});
+
+describe('Menu', () => {
+  it('opens from the trigger and supports keyboard focus and Escape', () => {
+    render(
+      <Menu label='Account menu' trigger='Open account'>
+        <MenuItem>First action</MenuItem>
+        <MenuItem>Second action</MenuItem>
+      </Menu>
+    );
+
+    const trigger = screen.getByRole('button', { name: 'Open account' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    fireEvent.click(trigger);
+    const first = screen.getByRole('menuitem', { name: 'First action' });
+    const second = screen.getByRole('menuitem', { name: 'Second action' });
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(second);
+    fireEvent.keyDown(second, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('exposes a separated destructive menu action', () => {
+    render(
+      <Menu label='Menu' trigger='Open'>
+        <MenuItem>Normal</MenuItem>
+        <MenuSeparator />
+        <MenuItem variant='destructive'>Dangerous action</MenuItem>
+      </Menu>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    expect(screen.getByRole('separator')).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Dangerous action' }).className).toContain('ui-menu-item--destructive');
+  });
+});
+
+describe('ConfirmDialog', () => {
+  it('is modal, focuses cancel, and closes on Escape', () => {
+    const onCancel = vi.fn();
+    render(
+      <ConfirmDialog
+        open
+        title='End all sessions?'
+        description='You will need to sign in again.'
+        confirmLabel='End all sessions'
+        cancelLabel='Cancel'
+        onConfirm={vi.fn()}
+        onCancel={onCancel}
+      />
+    );
+
+    const dialog = screen.getByRole('dialog', { name: 'End all sessions?' });
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(onCancel).toHaveBeenCalledOnce();
   });
 });

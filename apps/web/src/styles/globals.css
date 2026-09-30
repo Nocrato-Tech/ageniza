@@ -388,10 +388,171 @@ input:focus-visible {
   height: 1.75rem;
 }
 
-/* Reserved for the account menu (#70); it never renders content on its own. */
-.agency-header__account {
-  min-width: 2.75rem;
+.protected-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.protected-header > a {
+  color: inherit;
+  font: var(--heading-md);
+  text-decoration: none;
+}
+
+.agency-header__context {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.agency-header__context-label {
+  color: var(--color-slate-300);
+  font: var(--label-sm);
+}
+
+.account-menu {
+  position: relative;
+}
+
+.account-menu__skeleton {
+  width: 8rem;
+  height: 2.75rem;
+}
+
+.account-menu__identity,
+.account-menu__context {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+}
+
+.account-menu__identity span,
+.account-menu__context-label {
+  color: var(--text-muted);
+  font: var(--body-md);
+}
+
+.account-menu__error {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: max-content;
+  max-width: min(24rem, calc(100vw - var(--space-8)));
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-danger);
+  font: var(--body-md);
+}
+
+.ui-menu {
+  position: relative;
+}
+
+.ui-menu__trigger {
   min-height: 2.75rem;
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  font: var(--label-md);
+  cursor: pointer;
+}
+
+.ui-menu__trigger:hover,
+.ui-menu__trigger:focus-visible {
+  background: var(--bg-hover);
+}
+
+.ui-menu__content {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 2;
+  display: grid;
+  min-width: 16rem;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.ui-menu-item {
+  display: block;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--body-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ui-menu-item:hover,
+.ui-menu-item:focus-visible {
+  background: var(--bg-hover);
+}
+
+.ui-menu-item--destructive {
+  color: var(--text-danger);
+}
+
+.ui-menu-item--destructive:hover,
+.ui-menu-item--destructive:focus-visible {
+  background: var(--action-danger-bg);
+  color: var(--action-danger-fg);
+}
+
+.ui-menu-separator {
+  height: 1px;
+  margin: var(--space-2) 0;
+  background: var(--border-subtle);
+}
+
+.ui-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: var(--bg-canvas);
+}
+
+.ui-dialog {
+  display: grid;
+  gap: var(--space-4);
+  width: min(100%, 32rem);
+  padding: var(--space-6);
+  border: 2px solid var(--action-danger-bg);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.ui-dialog h2,
+.ui-dialog p {
+  margin: 0;
+}
+
+.ui-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
 }
 
 .agency-layout {

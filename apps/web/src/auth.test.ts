@@ -21,11 +21,11 @@ describe('auth session store', () => {
   it('starts loading and becomes authenticated once the session answers', async () => {
     const store = createAuthSessionStore(clientAnswering(async () => activeSession()));
 
-    expect(store.getSnapshot()).toEqual({ status: 'loading', isAuthenticated: false });
+    expect(store.getSnapshot()).toEqual({ status: 'loading', isAuthenticated: false, user: null });
     store.subscribe(() => undefined);
     await settle();
 
-    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: true });
+    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: true, user: { id: '11111111-1111-4111-8111-111111111111', name: 'Person', email: 'person@example.com' } });
   });
 
   it('treats 401 as a visitor, not as a failure', async () => {
@@ -34,7 +34,7 @@ describe('auth session store', () => {
     store.subscribe(() => undefined);
     await settle();
 
-    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false });
+    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false, user: null });
   });
 
   it('leaves the page unauthenticated when the session cannot be reached', async () => {
@@ -43,7 +43,7 @@ describe('auth session store', () => {
     store.subscribe(() => undefined);
     await settle();
 
-    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false });
+    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false, user: null });
   });
 
   it('does not publish a resolution from a previous generation under Strict Mode replay', async () => {
@@ -56,7 +56,7 @@ describe('auth session store', () => {
     store.subscribe(() => undefined);
     await settle();
 
-    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false });
+    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false, user: null });
   });
 
   it('re-reads the session on refresh, so logging out is observed', async () => {
@@ -71,7 +71,7 @@ describe('auth session store', () => {
     answer = unauthenticated;
     await store.refresh();
 
-    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false });
+    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false, user: null });
     expect(listener).toHaveBeenCalled();
   });
 
@@ -83,7 +83,7 @@ describe('auth session store', () => {
     await settle();
     await store.refresh();
 
-    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false });
+    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false, user: null });
     expect(onSessionEnded).not.toHaveBeenCalled();
   });
 
@@ -127,6 +127,6 @@ describe('auth session store', () => {
     answerProbe(activeSession());
     await settle();
 
-    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false });
+    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false, user: null });
   });
 });
