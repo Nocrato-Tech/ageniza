@@ -2,6 +2,7 @@ import type { z } from 'zod';
 
 import {
   AgencyClientPathParamsSchema,
+  AgencyClientThreadPathParamsSchema,
   AgencyInvitationPathParamsSchema,
   AgencyMeResponseSchema,
   AgencyMediaAssetPathParamsSchema,
@@ -19,6 +20,9 @@ import {
   ClientSchema,
   CollaboratorInvitationRequestSchema,
   CreateClientRequestSchema,
+  CreateThreadCommentRequestSchema,
+  CreateThreadRequestSchema,
+  CreateThreadResponseSchema,
   CompleteMediaUploadRequestSchema,
   CompleteMediaUploadResponseSchema,
   ContextResolveQuerySchema,
@@ -40,6 +44,11 @@ import {
   PutLastContextRequestSchema,
   RequestMediaUploadPartsRequestSchema,
   RequestMediaUploadPartsResponseSchema,
+  ThreadCommentListResponseSchema,
+  ThreadCommentSchema,
+  ThreadListItemSchema,
+  ThreadListQuerySchema,
+  ThreadListResponseSchema,
   UpdateClientRequestSchema
 } from '@ageniza/contracts';
 
@@ -135,6 +144,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   INVALID_ROLE: 'O papel informado não é válido para esta agência.',
   CLIENT_NAME_IN_USE: 'Já existe um cliente ativo com este nome.',
   CLIENT_ARCHIVED: 'Cliente arquivado não pode ser editado.',
+  PERSONA_ARCHIVED: 'Persona arquivada não aceita escrita.',
   EMAIL_DELIVERY_FAILED: 'Não foi possível entregar o e-mail.',
   QUOTA_EXCEEDED: 'This agency has reached its storage quota.',
   UPLOAD_NOT_PENDING: 'This upload is not pending confirmation.',
@@ -185,6 +195,29 @@ const clientExample = {
   closingDate: null,
   archivedAt: null
 } as const;
+
+const threadId = '99999999-9999-4999-8999-999999999999';
+
+const threadExample = {
+  id: threadId,
+  subject: { sectionKey: 'branding' },
+  state: 'open',
+  openedBy: { name: 'Dono da Agência', side: 'agency' },
+  lastComment: { side: 'client', at: '2026-09-30T12:00:00.000Z', excerpt: 'A marca poderia ser mais acolhedora.' },
+  commentCount: 2,
+  resolvedBy: null,
+  resolvedAt: null
+} as const;
+
+const threadCommentExample = {
+  id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  body: 'Boa sugestão, vamos ajustar.',
+  side: 'agency',
+  author: { name: 'Dono da Agência', photoUrl: null },
+  createdAt: '2026-09-30T12:05:00.000Z'
+} as const;
+
+const paginationExample = { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 } as const;
 
 export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
   {
@@ -744,6 +777,150 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
       { status: 409, code: 'CLIENT_NAME_IN_USE' },
       { status: 409, code: 'CLIENT_ARCHIVED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/threads',
+    operationId: 'listThreads',
+    module: 'clients',
+    summary: 'Lista as conversas de um assunto',
+    description: [
+      'Assunto obrigatório: `sectionKey` **ou** `personaId`, exatamente um. `state=open|resolved`',
+      'filtra; sem ele, todas. Ordena pela última atividade. `state` é derivado de `resolved_at`',
+      'contra o último comentário.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.visualizar',
+    params: AgencyClientPathParamsSchema,
+    query: ThreadListQuerySchema,
+    requestExample: { sectionKey: 'branding', state: 'open', page: 1, pageSize: 20 },
+    responses: [{
+      status: 200,
+      description: 'Página de conversas.',
+      schema: ThreadListResponseSchema,
+      example: { data: [threadExample], meta: paginationExample }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/threads',
+    operationId: 'createThread',
+    module: 'clients',
+    summary: 'Abre uma conversa com o primeiro comentário',
+    description: [
+      'Corpo `{ subject: { sectionKey } | { personaId }, body }`. Cria a thread e o primeiro',
+      'comentário na mesma transação, com o lado `agency` definido pela rota -- o lado nunca vem do',
+      'corpo. Cliente arquivado responde 409; persona de outro cliente é 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.operar',
+    params: AgencyClientPathParamsSchema,
+    body: CreateThreadRequestSchema,
+    requestExample: { subject: { sectionKey: 'branding' }, body: 'Sugestão inicial.' },
+    responses: [{
+      status: 201,
+      description: 'Conversa criada com o primeiro comentário.',
+      schema: CreateThreadResponseSchema,
+      example: { thread: threadExample, comment: threadCommentExample }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'PERSONA_ARCHIVED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/threads/:threadId/comments',
+    operationId: 'listThreadComments',
+    module: 'clients',
+    summary: 'Lista os comentários de uma conversa',
+    description: 'Mais antigo primeiro. O nome e a foto do autor são lidos pelo vínculo do comentário, nunca por `auth.user` solto.',
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.visualizar',
+    params: AgencyClientThreadPathParamsSchema,
+    query: PaginationInputSchema,
+    requestExample: { page: 1, pageSize: 50 },
+    responses: [{
+      status: 200,
+      description: 'Página de comentários.',
+      schema: ThreadCommentListResponseSchema,
+      example: { data: [threadCommentExample], meta: { ...paginationExample, pageSize: 50 } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/threads/:threadId/comments',
+    operationId: 'createThreadComment',
+    module: 'clients',
+    summary: 'Comenta numa conversa',
+    description: [
+      'O lado `agency` é definido pela rota, nunca pelo corpo. Comentar numa conversa resolvida a',
+      'reabre, sem escrita na thread: o estado é derivado. Persona arquivada ou cliente arquivado',
+      'respondem 409.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.operar',
+    params: AgencyClientThreadPathParamsSchema,
+    body: CreateThreadCommentRequestSchema,
+    requestExample: { body: 'Comentário de acompanhamento.' },
+    responses: [{ status: 201, description: 'Comentário criado.', schema: ThreadCommentSchema, example: threadCommentExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'PERSONA_ARCHIVED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/threads/:threadId/resolve',
+    operationId: 'resolveThread',
+    module: 'clients',
+    summary: 'Resolve uma conversa',
+    description: 'Preenche `resolved_at` e `resolved_by`. Resolver uma conversa já resolvida é idempotente; não existe rota de reabrir.',
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.operar',
+    params: AgencyClientThreadPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'Conversa resolvida.',
+      schema: ThreadListItemSchema,
+      example: { ...threadExample, state: 'resolved', resolvedBy: { name: 'Dono da Agência' }, resolvedAt: '2026-09-30T12:10:00.000Z' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'PERSONA_ARCHIVED' }
     ]
   },
 

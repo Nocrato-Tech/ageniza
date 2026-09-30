@@ -12,9 +12,9 @@ import { AuthEmailSchema } from './auth.js';
  * UTF-16 units, because that is what the `clients` column checks enforce (`octet_length`).
  */
 // eslint-disable-next-line no-control-regex -- the control range is exactly what must be rejected.
-const hasControlCharacters = (value: string): boolean => /[\u0000-\u001f\u007f]/.test(value);
+export const hasControlCharacters = (value: string): boolean => /[\u0000-\u001f\u007f]/.test(value);
 
-const utf8ByteLength = (value: string): number => {
+export const utf8ByteLength = (value: string): number => {
   let bytes = 0;
   for (const character of value) {
     const codePoint = character.codePointAt(0) ?? 0;

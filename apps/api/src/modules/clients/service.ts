@@ -1,7 +1,7 @@
 import type { Client, ClientSummary, UpdateClientRequest } from '@ageniza/contracts';
 import { raw, type DatabaseClient, type SqlBinding } from '@ageniza/database';
 
-import { latestCommentSideSql, openThreadSql } from './thread-state.js';
+import { answeredByAgencySql, awaitingAgencySql } from './thread-state.js';
 
 export type ClientTransaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
 
@@ -152,14 +152,12 @@ export const loadClientSummary = async (transaction: ClientTransaction, clientId
       (
         select count(*) from public.client_threads thread
         where thread.client_id = ?::uuid
-          and ${openThreadSql('thread')}
-          and ${latestCommentSideSql('thread')} = 'client'
+          and ${awaitingAgencySql('thread')}
       ) as threads_awaiting_agency,
       (
         select count(*) from public.client_threads thread
         where thread.client_id = ?::uuid
-          and ${openThreadSql('thread')}
-          and ${latestCommentSideSql('thread')} = 'agency'
+          and ${answeredByAgencySql('thread')}
       ) as threads_answered_by_agency,
       (
         select count(*) from public.client_memberships membership

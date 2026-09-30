@@ -1,20 +1,47 @@
 import {
   AgencyClientPathParamsSchema,
+  AgencyClientThreadPathParamsSchema,
   AgencyPathParamsSchema,
   ClientDetailResponseSchema,
   ClientSchema,
   CreateClientRequestSchema,
-  UpdateClientRequestSchema
+  CreateThreadCommentRequestSchema,
+  CreateThreadRequestSchema,
+  CreateThreadResponseSchema,
+  PaginationInputSchema,
+  ThreadCommentListResponseSchema,
+  ThreadCommentSchema,
+  ThreadListItemSchema,
+  ThreadListQuerySchema,
+  ThreadListResponseSchema,
+  UpdateClientRequestSchema,
+  buildPaginationMetadata,
+  resolvePagination,
+  type ConversationSectionKey,
+  type ThreadSubject
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { z } from 'zod';
 
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
+import {
+  createThreadComment,
+  createThreadWithFirstComment,
+  loadPersonaSubject,
+  loadThreadComment,
+  loadThreadComments,
+  loadThreadItem,
+  loadThreads,
+  resolveThread,
+  threadCommentFromRow,
+  threadListItemFromRow
+} from './conversation.js';
 import {
   clientFromRow,
   createClient,
@@ -75,6 +102,38 @@ const clientIdFromRoute = (request: FastifyRequest): string => {
   const value = (request.params as { readonly clientId?: unknown }).clientId;
   if (typeof value !== 'string' || !uuidPattern.test(value)) throw clientNotFound();
   return value;
+};
+
+const threadNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Thread not found.' });
+
+const personaNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Persona not found.' });
+
+const personaArchived = (): HttpError => new HttpError({
+  statusCode: 409,
+  code: 'PERSONA_ARCHIVED',
+  message: 'Persona arquivada não aceita escrita.'
+});
+
+const threadSubjectRequired = (): HttpError => new HttpError({
+  statusCode: 400,
+  code: 'VALIDATION_ERROR',
+  message: 'Request validation failed',
+  details: { issues: [{ path: 'sectionKey', code: 'custom', message: 'Exactly one of sectionKey or personaId is required.' }] }
+});
+
+const routeQuery = <T>(schema: z.ZodType<T>, request: FastifyRequest): T => parseRequest(schema, request.query);
+
+/** A malformed `:threadId` is the same 404 as an absent one, never a 400. */
+const threadIdFromRoute = (request: FastifyRequest): string => {
+  const value = (request.params as { readonly threadId?: unknown }).threadId;
+  if (typeof value !== 'string' || !uuidPattern.test(value)) throw threadNotFound();
+  return value;
+};
+
+/** The list requires exactly one subject; both or neither is a 400, never a silent default. */
+const subjectFromQuery = (query: { readonly sectionKey?: ConversationSectionKey; readonly personaId?: string }): ThreadSubject => {
+  if ((query.sectionKey === undefined) === (query.personaId === undefined)) throw threadSubjectRequired();
+  return query.sectionKey !== undefined ? { sectionKey: query.sectionKey } : { personaId: query.personaId as string };
 };
 
 export const registerClientModule = (app: FastifyInstance, dependencies: ClientModuleDependencies): void => {
@@ -182,5 +241,185 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     if (outcome.kind === 'archived') throw clientArchived();
     const photoUrl = await signPhotoUrl(request, outcome.row.photo_key);
     return reply.send(parseResponse(updateDocs.schemas.response, clientFromRow(outcome.row, photoUrl)));
+  });
+
+  // --- Conversation (issue #128): agency side of the product's thread model -------------------
+
+  const THREADS_PAGE_SIZE = 20;
+  const COMMENTS_PAGE_SIZE = 50;
+
+  const threadListDocs = {
+    permission: 'cliente.visualizar',
+    responseStatus: 200,
+    schemas: { params: AgencyClientPathParamsSchema, query: ThreadListQuerySchema, response: ThreadListResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const createThreadDocs = {
+    permission: 'cliente.operar',
+    responseStatus: 201,
+    schemas: { params: AgencyClientPathParamsSchema, body: CreateThreadRequestSchema, response: CreateThreadResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const commentListDocs = {
+    permission: 'cliente.visualizar',
+    responseStatus: 200,
+    schemas: { params: AgencyClientThreadPathParamsSchema, query: PaginationInputSchema, response: ThreadCommentListResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const createCommentDocs = {
+    permission: 'cliente.operar',
+    responseStatus: 201,
+    schemas: { params: AgencyClientThreadPathParamsSchema, body: CreateThreadCommentRequestSchema, response: ThreadCommentSchema }
+  } satisfies DocumentedRouteConfig;
+  const resolveThreadDocs = {
+    permission: 'cliente.operar',
+    responseStatus: 200,
+    schemas: { params: AgencyClientThreadPathParamsSchema, response: ThreadListItemSchema }
+  } satisfies DocumentedRouteConfig;
+
+  app.get('/agencies/:agencyId/clients/:clientId/threads', authenticated(threadListDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = clientIdFromRoute(request);
+    const query = routeQuery(threadListDocs.schemas.query, request);
+    const subject = subjectFromQuery(query);
+    const pagination = resolvePagination(query, THREADS_PAGE_SIZE);
+
+    const result = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      const client = await loadClient(transaction, { agencyId: tenant.agencyId, clientId });
+      if (client === undefined) return undefined;
+      return loadThreads(transaction, {
+        agencyId: tenant.agencyId, clientId, subject, state: query.state,
+        pageSize: pagination.pageSize, offset: pagination.offset
+      });
+    });
+    if (result === undefined) throw clientNotFound();
+    return reply.send(parseResponse(threadListDocs.schemas.response, {
+      data: result.items.map(threadListItemFromRow),
+      meta: buildPaginationMetadata(pagination, result.totalItems)
+    }));
+  });
+
+  app.post('/agencies/:agencyId/clients/:clientId/threads', authenticated(createThreadDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = clientIdFromRoute(request);
+    const body = parseRequest(createThreadDocs.schemas.body, request.body);
+
+    const outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      const client = await loadClient(transaction, { agencyId: tenant.agencyId, clientId });
+      if (client === undefined) return { kind: 'not-found' } as const;
+      if (client.status === 'archived') return { kind: 'archived' } as const;
+      if ('personaId' in body.subject) {
+        const persona = await loadPersonaSubject(transaction, { agencyId: tenant.agencyId, clientId, personaId: body.subject.personaId });
+        if (persona === undefined) return { kind: 'subject-not-found' } as const;
+        if (persona.status === 'archived') return { kind: 'persona-archived' } as const;
+      }
+      // The side is this route being the agency route, never the body (specs/clientes.md §5, rule 10).
+      const created = await createThreadWithFirstComment(transaction, {
+        clientId, actorUserId: auth.userId, side: 'agency', subject: body.subject, body: body.body
+      });
+      if (created === undefined) return { kind: 'not-found' } as const;
+      const thread = await loadThreadItem(transaction, { agencyId: tenant.agencyId, clientId, threadId: created.threadId });
+      const comment = await loadThreadComment(transaction, { agencyId: tenant.agencyId, clientId, commentId: created.commentId });
+      if (thread === undefined || comment === undefined) return { kind: 'not-found' } as const;
+      return { kind: 'ok', thread, comment } as const;
+    });
+    if (outcome.kind === 'not-found') throw clientNotFound();
+    if (outcome.kind === 'archived') throw clientArchived();
+    if (outcome.kind === 'subject-not-found') throw personaNotFound();
+    if (outcome.kind === 'persona-archived') throw personaArchived();
+
+    const photoUrl = await signPhotoUrl(request, outcome.comment.author_image);
+    return reply.status(201).send(parseResponse(createThreadDocs.schemas.response, {
+      thread: threadListItemFromRow(outcome.thread),
+      comment: threadCommentFromRow(outcome.comment, photoUrl)
+    }));
+  });
+
+  app.get('/agencies/:agencyId/clients/:clientId/threads/:threadId/comments', authenticated(commentListDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = clientIdFromRoute(request);
+    const threadId = threadIdFromRoute(request);
+    const query = routeQuery(commentListDocs.schemas.query, request);
+    const pagination = resolvePagination(query, COMMENTS_PAGE_SIZE);
+
+    const result = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      const client = await loadClient(transaction, { agencyId: tenant.agencyId, clientId });
+      if (client === undefined) return undefined;
+      const thread = await loadThreadItem(transaction, { agencyId: tenant.agencyId, clientId, threadId });
+      if (thread === undefined) return undefined;
+      return loadThreadComments(transaction, {
+        agencyId: tenant.agencyId, clientId, threadId, pageSize: pagination.pageSize, offset: pagination.offset
+      });
+    });
+    if (result === undefined) throw threadNotFound();
+
+    const data = await Promise.all(result.items.map(async (row) => threadCommentFromRow(row, await signPhotoUrl(request, row.author_image))));
+    return reply.send(parseResponse(commentListDocs.schemas.response, {
+      data,
+      meta: buildPaginationMetadata(pagination, result.totalItems)
+    }));
+  });
+
+  app.post('/agencies/:agencyId/clients/:clientId/threads/:threadId/comments', authenticated(createCommentDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = clientIdFromRoute(request);
+    const threadId = threadIdFromRoute(request);
+    const body = parseRequest(createCommentDocs.schemas.body, request.body);
+
+    const outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      const client = await loadClient(transaction, { agencyId: tenant.agencyId, clientId });
+      if (client === undefined) return { kind: 'not-found' } as const;
+      if (client.status === 'archived') return { kind: 'archived' } as const;
+      const thread = await loadThreadItem(transaction, { agencyId: tenant.agencyId, clientId, threadId });
+      if (thread === undefined) return { kind: 'thread-not-found' } as const;
+      if (thread.persona_id !== null) {
+        const persona = await loadPersonaSubject(transaction, { agencyId: tenant.agencyId, clientId, personaId: thread.persona_id });
+        if (persona?.status === 'archived') return { kind: 'persona-archived' } as const;
+      }
+      const commentId = await createThreadComment(transaction, {
+        clientId, threadId, actorUserId: auth.userId, side: 'agency', body: body.body
+      });
+      if (commentId === undefined) return { kind: 'thread-not-found' } as const;
+      const comment = await loadThreadComment(transaction, { agencyId: tenant.agencyId, clientId, commentId });
+      if (comment === undefined) return { kind: 'thread-not-found' } as const;
+      return { kind: 'ok', comment } as const;
+    });
+    if (outcome.kind === 'not-found') throw clientNotFound();
+    if (outcome.kind === 'archived') throw clientArchived();
+    if (outcome.kind === 'thread-not-found') throw threadNotFound();
+    if (outcome.kind === 'persona-archived') throw personaArchived();
+
+    const photoUrl = await signPhotoUrl(request, outcome.comment.author_image);
+    return reply.status(201).send(parseResponse(createCommentDocs.schemas.response, threadCommentFromRow(outcome.comment, photoUrl)));
+  });
+
+  app.post('/agencies/:agencyId/clients/:clientId/threads/:threadId/resolve', authenticated(resolveThreadDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = clientIdFromRoute(request);
+    const threadId = threadIdFromRoute(request);
+
+    const outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      const client = await loadClient(transaction, { agencyId: tenant.agencyId, clientId });
+      if (client === undefined) return { kind: 'not-found' } as const;
+      if (client.status === 'archived') return { kind: 'archived' } as const;
+      const thread = await loadThreadItem(transaction, { agencyId: tenant.agencyId, clientId, threadId });
+      if (thread === undefined) return { kind: 'thread-not-found' } as const;
+      if (thread.persona_id !== null) {
+        const persona = await loadPersonaSubject(transaction, { agencyId: tenant.agencyId, clientId, personaId: thread.persona_id });
+        if (persona?.status === 'archived') return { kind: 'persona-archived' } as const;
+      }
+      // False means it was already resolved: idempotent, the thread is returned unchanged.
+      await resolveThread(transaction, { clientId, threadId, actorUserId: auth.userId });
+      const resolved = await loadThreadItem(transaction, { agencyId: tenant.agencyId, clientId, threadId });
+      if (resolved === undefined) return { kind: 'thread-not-found' } as const;
+      return { kind: 'ok', thread: resolved } as const;
+    });
+    if (outcome.kind === 'not-found') throw clientNotFound();
+    if (outcome.kind === 'archived') throw clientArchived();
+    if (outcome.kind === 'thread-not-found') throw threadNotFound();
+    if (outcome.kind === 'persona-archived') throw personaArchived();
+    return reply.send(parseResponse(resolveThreadDocs.schemas.response, threadListItemFromRow(outcome.thread)));
   });
 };

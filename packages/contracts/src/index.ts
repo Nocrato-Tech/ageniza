@@ -2,6 +2,7 @@ export * from './agencies.js';
 export * from './clients.js';
 export * from './common.js';
 export * from './contexts.js';
+export * from './conversations.js';
 export * from './errors.js';
 export * from './health.js';
 export * from './invitations.js';

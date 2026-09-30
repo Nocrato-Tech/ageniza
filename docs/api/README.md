@@ -567,6 +567,11 @@ Devolve as permissões efetivas do contexto de agência.
 | `POST` | `/agencies/:agencyId/clients` | Sessão + vínculo com a agência | `cliente.cadastrar` | Cadastra um cliente |
 | `GET` | `/agencies/:agencyId/clients/:clientId` | Sessão + vínculo com a agência | `cliente.visualizar` | Lê o detalhe do cliente com o resumo da aba Geral |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId` | Sessão + vínculo com a agência | `cliente.operar` | Edita o cadastro do cliente |
+| `GET` | `/agencies/:agencyId/clients/:clientId/threads` | Sessão + vínculo com a agência | `cliente.visualizar` | Lista as conversas de um assunto |
+| `POST` | `/agencies/:agencyId/clients/:clientId/threads` | Sessão + vínculo com a agência | `cliente.operar` | Abre uma conversa com o primeiro comentário |
+| `GET` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com a agência | `cliente.visualizar` | Lista os comentários de uma conversa |
+| `POST` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com a agência | `cliente.operar` | Comenta numa conversa |
+| `POST` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/resolve` | Sessão + vínculo com a agência | `cliente.operar` | Resolve uma conversa |
 
 #### `POST /agencies/:agencyId/clients`
 
@@ -680,6 +685,226 @@ Edita o cadastro do cliente.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CLIENT_NAME_IN_USE` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/threads`
+
+Lista as conversas de um assunto.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "sectionKey": "branding",
+  "state": "open",
+  "page": 1,
+  "pageSize": 20
+}
+```
+
+**Resposta `200`** — Página de conversas.
+
+```json
+{
+  "data": [
+    {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "subject": {
+        "sectionKey": "branding"
+      },
+      "state": "open",
+      "openedBy": {
+        "name": "Dono da Agência",
+        "side": "agency"
+      },
+      "lastComment": {
+        "side": "client",
+        "at": "2026-09-30T12:00:00.000Z",
+        "excerpt": "A marca poderia ser mais acolhedora."
+      },
+      "commentCount": 2,
+      "resolvedBy": null,
+      "resolvedAt": null
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 20,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/threads`
+
+Abre uma conversa com o primeiro comentário.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "subject": {
+    "sectionKey": "branding"
+  },
+  "body": "Sugestão inicial."
+}
+```
+
+**Resposta `201`** — Conversa criada com o primeiro comentário.
+
+```json
+{
+  "thread": {
+    "id": "99999999-9999-4999-8999-999999999999",
+    "subject": {
+      "sectionKey": "branding"
+    },
+    "state": "open",
+    "openedBy": {
+      "name": "Dono da Agência",
+      "side": "agency"
+    },
+    "lastComment": {
+      "side": "client",
+      "at": "2026-09-30T12:00:00.000Z",
+      "excerpt": "A marca poderia ser mais acolhedora."
+    },
+    "commentCount": 2,
+    "resolvedBy": null,
+    "resolvedAt": null
+  },
+  "comment": {
+    "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "body": "Boa sugestão, vamos ajustar.",
+    "side": "agency",
+    "author": {
+      "name": "Dono da Agência",
+      "photoUrl": null
+    },
+    "createdAt": "2026-09-30T12:05:00.000Z"
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/threads/:threadId/comments`
+
+Lista os comentários de uma conversa.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1,
+  "pageSize": 50
+}
+```
+
+**Resposta `200`** — Página de comentários.
+
+```json
+{
+  "data": [
+    {
+      "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "body": "Boa sugestão, vamos ajustar.",
+      "side": "agency",
+      "author": {
+        "name": "Dono da Agência",
+        "photoUrl": null
+      },
+      "createdAt": "2026-09-30T12:05:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 50,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/threads/:threadId/comments`
+
+Comenta numa conversa.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "body": "Comentário de acompanhamento."
+}
+```
+
+**Resposta `201`** — Comentário criado.
+
+```json
+{
+  "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "body": "Boa sugestão, vamos ajustar.",
+  "side": "agency",
+  "author": {
+    "name": "Dono da Agência",
+    "photoUrl": null
+  },
+  "createdAt": "2026-09-30T12:05:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/threads/:threadId/resolve`
+
+Resolve uma conversa.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Resposta `200`** — Conversa resolvida.
+
+```json
+{
+  "id": "99999999-9999-4999-8999-999999999999",
+  "subject": {
+    "sectionKey": "branding"
+  },
+  "state": "resolved",
+  "openedBy": {
+    "name": "Dono da Agência",
+    "side": "agency"
+  },
+  "lastComment": {
+    "side": "client",
+    "at": "2026-09-30T12:00:00.000Z",
+    "excerpt": "A marca poderia ser mais acolhedora."
+  },
+  "commentCount": 2,
+  "resolvedBy": {
+    "name": "Dono da Agência"
+  },
+  "resolvedAt": "2026-09-30T12:10:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_ARCHIVED` · `500 INTERNAL_ERROR`
 
 ### media — Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.
 
@@ -841,6 +1066,7 @@ Emite uma URL assinada de leitura.
 | `INVALID_ROLE` | O papel informado não é válido para esta agência. |
 | `CLIENT_NAME_IN_USE` | Já existe um cliente ativo com este nome. |
 | `CLIENT_ARCHIVED` | Cliente arquivado não pode ser editado. |
+| `PERSONA_ARCHIVED` | Persona arquivada não aceita escrita. |
 | `EMAIL_DELIVERY_FAILED` | Não foi possível entregar o e-mail. |
 | `QUOTA_EXCEEDED` | This agency has reached its storage quota. |
 | `UPLOAD_NOT_PENDING` | This upload is not pending confirmation. |

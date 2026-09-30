@@ -37,7 +37,29 @@ rotas de conversa devem importar, para a contagem não divergir entre telas.
 `photoUrl` é uma URL assinada do armazenamento de identidade, ou `null`. Chave ausente ou
 irrecusável vira `null` com `log.warn`, sem derrubar a resposta -- nunca uma chave crua.
 
+## Conversa (issue #128)
+
+O lado da agência do modelo de conversa do produto: `GET`/`POST .../threads`,
+`GET`/`POST .../threads/:threadId/comments` e `POST .../threads/:threadId/resolve`. Contratos em
+`packages/contracts/src/conversations.ts`.
+
+O serviço vive em `conversation.ts` e é **genérico no assunto**: recebe um `ThreadSubject` (uma
+seção ou uma persona) e não depende de qual é. É o mesmo serviço que o portal (#130) usa com
+`side = 'client'`, e Conteúdo acrescenta um `contentId` como terceiro assunto -- nunca uma segunda
+tabela de conversa.
+
+- **O estado é derivado**, nunca persistido: `openThreadSql`/`latestCommentSideSql` em
+  `thread-state.ts`. Comentar numa thread resolvida a reabre sem escrita na thread, e não existe
+  rota de reabrir.
+- **O lado nunca vem do corpo**: `opened_side`/`author_side` são escolhidos pela rota (a da agência
+  escreve `agency`), e a policy de RLS confere a credencial do lado.
+- **O autor é lido pelo comentário**: nome e foto vêm pelo vínculo de agência (`agency`) ou de
+  cliente (`client`), nunca de `auth."user"` por um id solto; sem vínculo, o autor é `null`.
+- Abrir, comentar e resolver num cliente arquivado respondem `409`; ler funciona. Persona de outro
+  cliente como assunto é o mesmo `404`.
+
 ## O que ficou de fora
 
 - Listagem (`#125`), foto (`#126`), arquivar/reativar e encerramento (`#131`).
-- O restante do módulo (estudo de marca, personas, conversas, acessos) e o portal do cliente.
+- O portal da conversa (`#130`) e o estudo de marca/personas e acessos.
+- Editar e apagar comentário: não existem, por contrato e por grant.

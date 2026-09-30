@@ -16,3 +16,11 @@ export const latestCommentSideSql = (threadAlias: string): string =>
 /** True while the thread is open: no resolution, or a resolution older than its latest comment. */
 export const openThreadSql = (threadAlias: string): string =>
   `(${threadAlias}.resolved_at is null or ${threadAlias}.resolved_at < (select max(comment.created_at) from public.client_thread_comments comment where comment.thread_id = ${threadAlias}.id))`;
+
+/** Open and last commented by the client: the thread is waiting for the agency to answer. */
+export const awaitingAgencySql = (threadAlias: string): string =>
+  `(${openThreadSql(threadAlias)} and ${latestCommentSideSql(threadAlias)} = 'client')`;
+
+/** Open and last commented by the agency: the thread already has the agency's answer. */
+export const answeredByAgencySql = (threadAlias: string): string =>
+  `(${openThreadSql(threadAlias)} and ${latestCommentSideSql(threadAlias)} = 'agency')`;
