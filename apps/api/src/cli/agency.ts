@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { z } from 'zod';
 
 import { createLogger } from '@ageniza/core';
-import { createDatabaseClient, raw, type SqlBinding } from '@ageniza/database';
+import { assertLocalDatabaseUrl, createDatabaseClient, raw, type SqlBinding } from '@ageniza/database';
 import { agencyActivationEmail, assertEmailAddress, createEmailSender, type EmailSender } from '@ageniza/email';
 
 const INVITATION_EXPIRY_MINUTES = 7 * 24 * 60;
@@ -357,6 +357,14 @@ export const loadAgencyCliEnvironment = (environment: Record<string, string | un
     throw configurationError(String(issue?.path[0] ?? 'configuration'), issue?.message ?? 'is invalid.');
   }
   assertProtocol(parsed.data.MIGRATION_DATABASE_URL, ['postgres:', 'postgresql:'], 'MIGRATION_DATABASE_URL');
+  // The CLI is local-only by decision (docs/local-environment.md): it creates real agencies and
+  // sends real invitations, so it refuses anything but a loopback database, checking the host the
+  // driver would actually connect to -- a `?host=` override or a socket path is refused too.
+  try {
+    assertLocalDatabaseUrl(parsed.data.MIGRATION_DATABASE_URL);
+  } catch {
+    throw configurationError('MIGRATION_DATABASE_URL', 'must point to a loopback host (127.0.0.1 or localhost).');
+  }
   assertProtocol(parsed.data.SMTP_URL, ['smtp:', 'smtps:'], 'SMTP_URL');
   try {
     assertEmailAddress('EMAIL_FROM', parsed.data.EMAIL_FROM);

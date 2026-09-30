@@ -78,7 +78,7 @@ describe('agency operator CLI', () => {
 
   it('validates required settings without echoing a migration or SMTP secret', () => {
     const environment = loadAgencyCliEnvironment({
-      MIGRATION_DATABASE_URL: 'postgresql://postgres:owner-password@postgres:5432/ageniza',
+      MIGRATION_DATABASE_URL: 'postgresql://postgres:owner-password@127.0.0.1:54322/ageniza',
       SMTP_URL: 'smtps://smtp-user:smtp-password@smtp.example.com:465',
       EMAIL_FROM: 'Ageniza <no-reply@example.com>',
       APP_PUBLIC_URL: 'https://app.example.com/'
@@ -102,6 +102,26 @@ describe('agency operator CLI', () => {
       expect(String(error)).not.toContain('owner-password');
       expect(String(error)).not.toContain('smtp-password');
     }
+  });
+
+  it('refuses a non-loopback migration database, including a host override', () => {
+    const base = {
+      SMTP_URL: 'smtp://127.0.0.1:1025',
+      EMAIL_FROM: 'Ageniza <no-reply@ageniza.local>',
+      APP_PUBLIC_URL: 'http://127.0.0.1:5173'
+    };
+    expect(() => loadAgencyCliEnvironment({
+      ...base,
+      MIGRATION_DATABASE_URL: 'postgresql://postgres:postgres@db.example.com:5432/ageniza'
+    })).toThrow(/loopback/);
+    expect(() => loadAgencyCliEnvironment({
+      ...base,
+      MIGRATION_DATABASE_URL: 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza?host=nao-local.invalid'
+    })).toThrow(/loopback/);
+    expect(() => loadAgencyCliEnvironment({
+      ...base,
+      MIGRATION_DATABASE_URL: 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza'
+    })).not.toThrow();
   });
 
   it('creates the agency and invitation in one transaction, audits both, and only mails the raw token', async () => {
@@ -179,7 +199,7 @@ describe('agency operator CLI', () => {
     const exitCode = await runAgencyCli({
       argv: ['create', '--name', 'Acme', '--owner-email', 'owner@example.com'],
       environment: {
-        MIGRATION_DATABASE_URL: 'postgresql://postgres:owner-password@postgres:5432/ageniza',
+        MIGRATION_DATABASE_URL: 'postgresql://postgres:owner-password@127.0.0.1:54322/ageniza',
         SMTP_URL: 'smtps://smtp-user:smtp-password@smtp.example.com:465',
         EMAIL_FROM: 'Ageniza <no-reply@example.com>',
         APP_PUBLIC_URL: 'https://app.example.com'
