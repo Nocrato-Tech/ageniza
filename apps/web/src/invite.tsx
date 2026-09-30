@@ -12,7 +12,8 @@ import { Button, FieldMessage, LiveStatus, Skeleton, TextInput } from '@ageniza/
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuthSession, useAuthSessionStore } from './auth.js';
-import { contextDestination, rememberContext } from './context-destination.js';
+import { apiPath } from './api-path.js';
+import { contextDestination, contextTarget, rememberContext } from './context-destination.js';
 import { useDocumentTitle } from './document-title.js';
 import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -47,7 +48,7 @@ export function InvitationPage() {
 
   const preview = useQuery({
     queryKey: ['invitation', token],
-    queryFn: () => httpClient.request({ path: `/invitations/${encodeURIComponent(token)}`, response: InvitationPreviewResponseSchema })
+    queryFn: () => httpClient.request({ path: apiPath('/invitations/:token', { token }), response: InvitationPreviewResponseSchema })
   });
 
   /** The acceptance succeeded; only the resolve is left, and it is repeatable on its own. */
@@ -58,7 +59,7 @@ export function InvitationPage() {
       const resolve = await httpClient.request({ path: '/me/contexts/resolve', response: ContextResolveResponseSchema });
       if (resolve.decision === 'none') { authStore.end(); queryClient.clear(); navigate('/sem-acesso', { replace: true }); return; }
       if (resolve.decision === 'enter') {
-        await rememberContext(httpClient, resolve.context);
+        await rememberContext(httpClient, contextTarget(resolve.context));
         navigate(contextDestination(resolve.context), { replace: true });
         return;
       }
@@ -79,7 +80,7 @@ export function InvitationPage() {
   };
 
   const accept = useMutation({
-    mutationFn: () => httpClient.request({ path: `/invitations/${encodeURIComponent(token)}/accept`, method: 'POST', response: InvitationAcceptResponseSchema }),
+    mutationFn: () => httpClient.request({ path: apiPath('/invitations/:token/accept', { token }), method: 'POST', response: InvitationAcceptResponseSchema }),
     onSuccess: () => routeAfterAccept(),
     onError: (error: unknown) => {
       if (error instanceof HttpClientError && error.status === 403 && error.code === 'INVITATION_ACCOUNT_MISMATCH') { setMismatch(true); return; }
@@ -90,7 +91,7 @@ export function InvitationPage() {
 
   const createAccount = useMutation({
     mutationFn: (body: { name: string; password: string; acceptTerms: true }) =>
-      httpClient.request({ path: `/invitations/${encodeURIComponent(token)}/accept-new-account`, method: 'POST', body, response: InvitationAcceptNewAccountResponseSchema }),
+      httpClient.request({ path: apiPath('/invitations/:token/accept-new-account', { token }), method: 'POST', body, response: InvitationAcceptNewAccountResponseSchema }),
     onSuccess: () => routeAfterAccept(),
     onError: (error: unknown) => {
       if (error instanceof HttpClientError && error.status === 410) { void preview.refetch(); return; }

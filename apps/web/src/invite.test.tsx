@@ -39,6 +39,7 @@ interface Scenario {
 const makeFetch = (scenario: Scenario = {}) => {
   const calls: string[] = [];
   const loginBodies: Array<Record<string, unknown>> = [];
+  const lastContextBodies: unknown[] = [];
   let serverLoggedIn = scenario.authenticated ?? false;
   const impl: typeof fetch = async (input, init) => {
     const url = String(input);
@@ -64,14 +65,18 @@ const makeFetch = (scenario: Scenario = {}) => {
       if (scenario.resolveError === true) return json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500);
       return json(scenario.resolve ?? { decision: 'enter', context: agencyA });
     }
-    if (url.endsWith('/me/last-context') && method === 'PUT') { calls.push('last-context'); return noContent(); }
+    if (url.endsWith('/me/last-context') && method === 'PUT') {
+      calls.push('last-context');
+      lastContextBodies.push(JSON.parse(String(init?.body)));
+      return noContent();
+    }
     if (url.endsWith(`/agencies/${AGENCY_A}/me`)) {
       return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] });
     }
     if (url.endsWith('/auth/logout')) { calls.push('logout'); serverLoggedIn = false; return noContent(); }
     throw new Error(`unexpected ${method} ${url}`);
   };
-  return { impl, calls, loginBodies };
+  return { impl, calls, loginBodies, lastContextBodies };
 };
 
 function Harness({ store }: { store: AuthSessionStore }) {
@@ -149,8 +154,8 @@ describe('InvitationPage (/convite/:token)', () => {
     expect(calls).not.toContain('create');
   });
 
-  it('creates the account, then accepts before resolving', async () => {
-    const { impl, calls } = makeFetch({ preview: () => json(previewBody(false)) });
+  it('creates the account, then accepts before resolving, and records the context it enters', async () => {
+    const { impl, calls, lastContextBodies } = makeFetch({ preview: () => json(previewBody(false)) });
     const { probe } = renderInvite(impl);
     await screen.findByRole('heading', { name: 'Você foi convidado' });
     fillNewAccount();
@@ -158,6 +163,7 @@ describe('InvitationPage (/convite/:token)', () => {
 
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
     expect(calls.indexOf('create')).toBeLessThan(calls.indexOf('resolve'));
+    expect(lastContextBodies).toEqual([{ type: 'agency', agencyId: AGENCY_A }]);
   });
 
   it('offers a resolve-only retry when the resolve fails after creating the account', async () => {
@@ -174,13 +180,14 @@ describe('InvitationPage (/convite/:token)', () => {
     expect(calls.filter((call) => call === 'resolve')).toHaveLength(1);
   });
 
-  it('accepts for an authenticated existing account, then resolves', async () => {
-    const { impl, calls } = makeFetch({ authenticated: true, preview: () => json(previewBody(true)) });
+  it('accepts for an authenticated existing account, then resolves, and records the context it enters', async () => {
+    const { impl, calls, lastContextBodies } = makeFetch({ authenticated: true, preview: () => json(previewBody(true)) });
     const { probe } = renderInvite(impl);
     await screen.findByRole('heading', { name: 'Você foi convidado' });
     fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
     expect(calls.indexOf('accept')).toBeLessThan(calls.indexOf('resolve'));
+    expect(lastContextBodies).toEqual([{ type: 'agency', agencyId: AGENCY_A }]);
   });
 
   it('sends an unauthenticated existing account to the login carrying the invite token', async () => {

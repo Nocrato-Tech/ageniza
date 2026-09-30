@@ -38,10 +38,40 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 
 const invalidRequest = (message: string): HttpClientError => new HttpClientError(message, { code: 'INVALID_REQUEST' });
 
-const resolveRelativePath = (baseUrl: string, path: string): URL => {
-  if (path.length === 0 || /^[a-z][a-z\d+.-]*:/i.test(path) || path.startsWith('//')) {
+/**
+ * The single barrier against a caller-built path escaping its intended route. `new URL` normalizes
+ * `..`, treats `#` as a fragment and `//` as a new authority, so a path assembled from a URL
+ * parameter (which React Router hands over already decoded) could otherwise turn the victim's
+ * session into a request to another API route. Every segment is checked as raw text and as decoded
+ * text, because `%2F`, `%2E%2E` and `%23` all reach the same place after the URL parser.
+ */
+const assertSafeRequestPath = (path: string): void => {
+  if (path.length === 0 || !path.startsWith('/') || path.startsWith('//') || /^[a-z][a-z\d+.-]*:/i.test(path)) {
     throw invalidRequest('Request paths must be relative to the configured API origin.');
   }
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f\\#]/.test(path)) {
+    throw invalidRequest('Request paths must not contain a fragment, a backslash or a control character.');
+  }
+  const queryIndex = path.indexOf('?');
+  const pathname = queryIndex === -1 ? path : path.slice(0, queryIndex);
+  const query = queryIndex === -1 ? '' : path.slice(queryIndex + 1);
+  if (query.includes('?')) throw invalidRequest('Request paths may declare at most one query string.');
+  for (const segment of pathname.slice(1).split('/')) {
+    if (segment.length === 0) throw invalidRequest('Request paths must not contain an empty segment.');
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(segment);
+    } catch {
+      throw invalidRequest('Request paths must be valid percent-encoding.');
+    }
+    if (decoded === '.' || decoded === '..') throw invalidRequest('Request paths must not contain a relative segment.');
+    if (/[/\\?#]/.test(decoded)) throw invalidRequest('Request path segments must not decode to a separator or a fragment.');
+  }
+};
+
+const resolveRelativePath = (baseUrl: string, path: string): URL => {
+  assertSafeRequestPath(path);
   let resolved: URL;
   try {
     resolved = new URL(path, baseUrl);
@@ -50,6 +80,11 @@ const resolveRelativePath = (baseUrl: string, path: string): URL => {
   }
   const base = new URL(baseUrl);
   if (resolved.origin !== base.origin) throw invalidRequest('Request paths must stay on the configured API origin.');
+  // The parser never sees a relative or empty segment (checked above), but the resolved pathname
+  // is re-checked so a future normalization cannot reintroduce one silently.
+  if (resolved.pathname.includes('//') || /(^|\/)\.\.?(\/|$)/.test(resolved.pathname)) {
+    throw invalidRequest('Request paths must not contain a relative segment.');
+  }
   return resolved;
 };
 

@@ -20,6 +20,10 @@ const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const unauthenticated = (): Response => json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication is required.' } }, 401);
 const agencyNotFound = (): Response => json({ error: { code: 'NOT_FOUND', message: 'Agency not found.' } }, 404);
+/** The real guard answers 400 for a malformed id (`tenancy/guards.ts`), not 404. */
+const invalidAgencyId = (): Response => json({ error: { code: 'VALIDATION_ERROR', message: 'Request validation failed' } }, 400);
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[]) => ({
   agencyId, agencyName, isOwner: true, role: { key: 'admin', name: 'Admin' }, permissions
@@ -39,10 +43,12 @@ const makeFetch = (scenario: Scenario = {}) => {
   const impl: typeof fetch = async (input, init) => {
     const url = String(input);
     if (url.endsWith('/auth/session')) return authenticated ? json(sessionBody) : unauthenticated();
-    const match = /\/agencies\/([0-9a-f-]+)\/me$/.exec(url);
+    const match = /\/agencies\/([^/?#]+)\/me$/.exec(url);
     if (match !== null) {
-      calls.push(`me:${match[1]}`);
-      const handler = me[match[1]!];
+      const agencyId = match[1]!;
+      calls.push(`me:${agencyId}`);
+      if (!uuidPattern.test(agencyId)) return invalidAgencyId();
+      const handler = me[agencyId];
       return handler === undefined ? agencyNotFound() : handler();
     }
     if (url.endsWith('/me/last-context') && init?.method === 'PUT') return new Response(null, { status: 204 });
@@ -145,6 +151,65 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
 
     expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Agência Um' })).toBeNull();
+  });
+
+  it('treats a malformed :agenciaId as a bad address, without issuing any request', async () => {
+    // The review's payload: the router decodes `%2F` and `%23`, so this used to become
+    // `GET /me/contexts/resolve` with the victim's session.
+    const traversal = makeFetch();
+    renderAgency(traversal.impl, '/agencia/..%2Fme%2Fcontexts%2Fresolve%23');
+    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(document.title).toBe('Page not found — Ageniza');
+    expect(traversal.calls).toEqual([]);
+
+    cleanup();
+    const malformed = makeFetch();
+    renderAgency(malformed.impl, '/agencia/nao-e-uuid');
+    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    // The fake would answer 400, like the API; no call proves the shell never asks.
+    expect(malformed.calls).toEqual([]);
+  });
+
+  it('shows nothing of the previous agency while the new one loads', async () => {
+    let releaseAgencyB: (() => void) | undefined;
+    const agencyBGate = new Promise<void>((resolve) => { releaseAgencyB = resolve; });
+    const impl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.endsWith('/auth/session')) return json(sessionBody);
+      if (url.endsWith(`/agencies/${AGENCY_A}/me`)) return json(agencyMe(AGENCY_A, 'Agência Um', ['colaborador.visualizar']));
+      if (url.endsWith(`/agencies/${AGENCY_B}/me`)) {
+        await agencyBGate;
+        return json(agencyMe(AGENCY_B, 'Agência Dois', ['cliente.visualizar']));
+      }
+      throw new Error(`unexpected ${url}`);
+    };
+    const { probe, container } = renderAgency(impl, `/agencia/${AGENCY_A}`);
+    await within(container).findByRole('link', { name: 'Agência Um' });
+
+    await navigate(probe, `/agencia/${AGENCY_B}/colaboradores`);
+
+    // While B is in flight: the shell skeleton, never A's name, menu or module, and never a false
+    // "não encontrado" for an agency that is loading. A shared cache key or `placeholderData: prev`
+    // brings A back here, and the mismatch check alone would turn that into a premature not-found.
+    expect(container.querySelector('.agency-header__skeleton')).not.toBeNull();
+    expect(within(container).queryByRole('link', { name: 'Agência Um' })).toBeNull();
+    expect(within(container).queryByRole('link', { name: 'Colaboradores' })).toBeNull();
+    expect(within(container).queryByRole('heading', { name: 'Colaboradores' })).toBeNull();
+    expect(within(container).queryByRole('heading', { name: 'Page not found' })).toBeNull();
+    expect(within(container).queryByRole('link', { name: 'Agência Dois' })).toBeNull();
+
+    releaseAgencyB?.();
+    await within(container).findByRole('link', { name: 'Agência Dois' });
+    expect(within(container).queryByRole('link', { name: 'Agência Um' })).toBeNull();
+  });
+
+  it('refuses an answer that belongs to another agency', async () => {
+    // Defense in depth: even if the API answered the wrong agency, nothing of it is shown.
+    const { impl } = makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_B, 'Agência Dois', ['cliente.visualizar'])) } });
+    renderAgency(impl, `/agencia/${AGENCY_A}`);
+
+    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Agência Dois' })).toBeNull();
   });
 
   it('never renders the area without a session: 401 keeps the session gate', async () => {

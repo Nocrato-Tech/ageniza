@@ -3,14 +3,24 @@ import { Link } from 'react-router-dom';
 import { LiveStatus } from '@ageniza/ui';
 
 import type { AuthSessionSnapshot } from './auth.js';
+import { useDocumentTitle } from './document-title.js';
 
 export function LoadingPage() {
   return <main className="page-status"><LiveStatus>Loading your workspace…</LiveStatus></main>;
 }
 
-/** The single "não encontrado" of the product: unknown address, no permission, or 404 from the API. */
-export function NotFoundPage() {
-  return <main className="page-status"><h1>Page not found</h1><p>The address does not match an Ageniza page.</p><Link to="/">Return home</Link></main>;
+/**
+ * The single "não encontrado" of the product: unknown address, no permission, or 404 from the API.
+ * `as="section"` is for the agency shell, which already renders the page `<main>`; a landmark must
+ * not be nested inside another one.
+ */
+export function NotFoundPage({ as: Landmark = 'main' }: { as?: 'main' | 'section' } = {}) {
+  useDocumentTitle('Page not found — Ageniza');
+  return <Landmark className="page-status" aria-labelledby="not-found-title">
+    <h1 id="not-found-title">Page not found</h1>
+    <p>The address does not match an Ageniza page.</p>
+    <Link to="/">Return home</Link>
+  </Landmark>;
 }
 
 /**

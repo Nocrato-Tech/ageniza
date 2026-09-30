@@ -10,7 +10,7 @@ import {
 import { Button, ChoiceCard, LiveStatus, Skeleton } from '@ageniza/ui';
 
 import { useAuthSessionStore } from './auth.js';
-import { contextDestination, rememberContext } from './context-destination.js';
+import { contextDestination, contextTarget, rememberContext } from './context-destination.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 
@@ -101,7 +101,7 @@ export function ContextSelectPage() {
   // `/portal/...`), never `/app`.
   useEffect(() => {
     if (enteredContext === null) return;
-    void rememberContext(httpClient, enteredContext);
+    void rememberContext(httpClient, contextTarget(enteredContext));
     queryClient.removeQueries({ queryKey: ['contexts'] });
     navigate(contextDestination(enteredContext), { replace: true });
   }, [enteredContext, httpClient, queryClient, navigate]);

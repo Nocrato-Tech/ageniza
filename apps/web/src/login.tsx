@@ -9,7 +9,7 @@ import { Button, FieldMessage, TextInput } from '@ageniza/ui';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { useAuthSession, useAuthSessionStore } from './auth.js';
-import { contextDestination, rememberContext } from './context-destination.js';
+import { contextDestination, contextTarget, rememberContext, targetFromDestination } from './context-destination.js';
 import { useDocumentTitle } from './document-title.js';
 import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -76,9 +76,13 @@ export function LoginPage() {
       await authStore.refresh();
       if (resolve.decision === 'enter') {
         // Entering a context records it as the last one; the destination carries the agency or
-        // client id, never `/app` (docs/business/decisions.md, 2026-09-29).
-        await rememberContext(httpClient, resolve.context);
-        navigate(destination ?? contextDestination(resolve.context), { replace: true });
+        // client id, never `/app` (docs/business/decisions.md, 2026-09-29). When a saved
+        // destination (#71) wins, the context recorded is the one of that destination, not the one
+        // `resolve` picked -- otherwise the next login would enter a context the person never used.
+        const target = destination ?? contextDestination(resolve.context);
+        const remembered = destination === null ? contextTarget(resolve.context) : targetFromDestination(destination);
+        if (remembered !== null) await rememberContext(httpClient, remembered);
+        navigate(target, { replace: true });
         return;
       }
       navigate(destination ?? '/contextos', { replace: true });

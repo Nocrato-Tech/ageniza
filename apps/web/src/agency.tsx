@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { AgencyMeResponseSchema, type AgencyMeResponse } from '@ageniza/contracts';
 import { Button, Skeleton } from '@ageniza/ui';
 
+import { apiPath } from './api-path.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { NotFoundPage } from './status-pages.js';
@@ -32,6 +33,21 @@ export const useCan = (permission: string): boolean => useAgencyContext().permis
 
 const isNotFound = (error: unknown): boolean => error instanceof HttpClientError && error.status === 404;
 
+/** Same shape the API guard accepts; a malformed id never becomes a request (security review #190). */
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** The API is reachable but did not answer; the screen offers the one action it can: repeat. */
+function AgencyUnavailable({ onRetry }: { onRetry: () => void }) {
+  useDocumentTitle('Não foi possível abrir a agência — Ageniza');
+  return <main className="page-status">
+    <div role="alert">
+      <h1>Não foi possível abrir a agência</h1>
+      <p>Tente de novo em instantes.</p>
+      <Button onClick={onRetry}>Tentar de novo</Button>
+    </div>
+  </main>;
+}
+
 function AgencyShellSkeleton() {
   return <div className="app-shell">
     <header className="agency-header"><Skeleton className="agency-header__skeleton" /></header>
@@ -58,25 +74,32 @@ export function AgencyAreaLayout() {
   const { agenciaId = '' } = useParams();
   const httpClient = useApiClient();
   const location = useLocation();
+  const validAgencyId = uuidPattern.test(agenciaId);
   const { data, error, refetch } = useQuery({
     queryKey: ['agency', agenciaId, 'me'],
-    queryFn: () => httpClient.request({ path: `/agencies/${agenciaId}/me`, response: AgencyMeResponseSchema })
+    queryFn: () => httpClient.request({ path: apiPath('/agencies/:agenciaId/me', { agenciaId }), response: AgencyMeResponseSchema }),
+    // A malformed id is a bad address, not a request: `apiPath` would refuse it anyway, and the
+    // API would answer 400. No request leaves the browser.
+    enabled: validAgencyId
   });
 
   // Revalidates on every navigation inside the area, so an agency suspended mid-use turns the very
   // next navigation into "não encontrado" instead of serving the cached shell. React Query dedupes
-  // this with the in-flight first fetch, so the initial load is still one request.
-  useEffect(() => { void refetch(); }, [location.pathname, refetch]);
+  // this with the in-flight first fetch, so the initial load is still one request. A malformed id
+  // never reaches this: `refetch` would bypass `enabled` and make the request the shell must not.
+  useEffect(() => {
+    if (!validAgencyId) return;
+    void refetch();
+  }, [location.pathname, refetch, validAgencyId]);
 
+  if (!validAgencyId) return <NotFoundPage as="section" />;
   if (error !== null) {
-    if (isNotFound(error)) return <NotFoundPage />;
-    return <main className="page-status" role="alert">
-      <h1>Não foi possível abrir a agência</h1>
-      <p>Tente de novo em instantes.</p>
-      <Button onClick={() => { void refetch(); }}>Tentar de novo</Button>
-    </main>;
+    if (isNotFound(error)) return <NotFoundPage as="section" />;
+    return <AgencyUnavailable onRetry={() => { void refetch(); }} />;
   }
   if (data === undefined) return <AgencyShellSkeleton />;
+  // Defense in depth: the answer must belong to the agency in the route, or it is not shown at all.
+  if (data.agencyId !== agenciaId) return <NotFoundPage as="section" />;
 
   return <AgencyAreaContext.Provider value={data}>
     <div className="app-shell">
@@ -100,7 +123,7 @@ export function AgencyAreaLayout() {
  */
 export function AgencyPermissionRoute({ permission, children }: { permission: string; children: ReactNode }) {
   const allowed = useCan(permission);
-  if (!allowed) return <NotFoundPage />;
+  if (!allowed) return <NotFoundPage as="section" />;
   return <>{children}</>;
 }
 

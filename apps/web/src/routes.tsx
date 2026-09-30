@@ -68,7 +68,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
           <AgencyModulePlaceholder title="Clientes" description="Esta área recebe a carteira, o estudo de marca e as conversas nas próximas entregas." />
         </AgencyPermissionRoute>
       } />
-      <Route path="*" element={<NotFoundPage />} />
+      <Route path="*" element={<NotFoundPage as="section" />} />
     </Route>
     <Route element={<ProtectedLayout session={session} />}>
       <Route path="portal/:clienteId" element={<PortalHomePage />} />

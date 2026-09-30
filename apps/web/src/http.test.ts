@@ -74,6 +74,39 @@ describe('HttpClient', () => {
     expect(calls).toBe(0);
   });
 
+  it('refuses a path that could escape its route, in any encoding (security review of PR #190)', async () => {
+    let calls = 0;
+    const client = clientWith(async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
+    });
+
+    for (const path of [
+      // The payloads the review used: React Router hands `:agenciaId` over already decoded, so
+      // `%2F` is a real `/` and `%23` a real `#` by the time the path is assembled.
+      '/agencies/..%2Fme%2Fcontexts%2Fresolve%23/me',
+      '/agencies/..%2F..%2Fclients%2F11111111-1111-4111-8111-111111111111%2Fsecret%3Fx=/me',
+      '/agencies/../me',
+      '/agencies/%2E%2E/me',
+      '/agencies/..',
+      '/agencies/.',
+      '/agencies//me',
+      '/agencies/a\\b/me',
+      '/agencies/a#b/me',
+      '/agencies/a/me?x=1?y=2',
+      '/agencies/%/me'
+    ]) {
+      await expect(client.request({ path, response: HealthResponseSchema }), path).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    }
+    expect(calls).toBe(0);
+
+    // The same shapes that are legitimate still work, query string included.
+    await expect(client.request({ path: '/agencies/11111111-1111-4111-8111-111111111111/me', response: HealthResponseSchema })).resolves.toEqual({ status: 'ok' });
+    await expect(client.request({ path: '/me/contexts/resolve?preferred=agency%3A11111111-1111-4111-8111-111111111111', response: HealthResponseSchema })).resolves.toEqual({ status: 'ok' });
+    await expect(client.request({ path: '/invitations/abc_DEF-123', response: HealthResponseSchema })).resolves.toEqual({ status: 'ok' });
+    expect(calls).toBe(3);
+  });
+
   describe('session end', () => {
     const rejection = (status: number, code: string) => new Response(JSON.stringify({
       error: { code, message: 'Rejected.' }

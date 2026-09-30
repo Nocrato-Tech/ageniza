@@ -9,7 +9,7 @@ import { Button, FieldMessage, TextInput } from '@ageniza/ui';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { useAuthSessionStore } from './auth.js';
-import { contextDestination, rememberContext } from './context-destination.js';
+import { contextDestination, contextTarget, rememberContext } from './context-destination.js';
 import { useDocumentTitle } from './document-title.js';
 import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -61,7 +61,7 @@ export function ResetPasswordPage() {
       const resolve = await httpClient.request({ path: '/me/contexts/resolve', response: ContextResolveResponseSchema });
       if (resolve.decision === 'none') { leaveToNoAccess(); return; }
       if (resolve.decision === 'enter') {
-        await rememberContext(httpClient, resolve.context);
+        await rememberContext(httpClient, contextTarget(resolve.context));
         navigate(contextDestination(resolve.context), { replace: true });
         return;
       }

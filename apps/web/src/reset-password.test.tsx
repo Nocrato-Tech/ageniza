@@ -32,6 +32,7 @@ const makeFetch = (scenario: Scenario) => {
   const calls = { reset: 0, resolve: 0, login: 0 };
   const resetBodies: ResetBody[] = [];
   const loginBodies: ResetBody[] = [];
+  const lastContextBodies: unknown[] = [];
   let serverLoggedIn = false;
   const impl: typeof fetch = async (input, init) => {
     const url = String(input);
@@ -54,13 +55,16 @@ const makeFetch = (scenario: Scenario) => {
     }
     // The login with the token returns to /convite/:token; this screen is out of scope here.
     if (url.includes('/invitations/')) return json({ error: { code: 'INVALID_LINK', message: 'x' } }, 410);
-    if (url.endsWith('/me/last-context') && init?.method === 'PUT') return new Response(null, { status: 204 });
+    if (url.endsWith('/me/last-context') && init?.method === 'PUT') {
+      lastContextBodies.push(JSON.parse(String(init?.body)));
+      return new Response(null, { status: 204 });
+    }
     if (url.endsWith(`/agencies/${AGENCY_A}/me`)) {
       return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] });
     }
     throw new Error(`unexpected ${url}`);
   };
-  return { impl, calls, resetBodies, loginBodies };
+  return { impl, calls, resetBodies, loginBodies, lastContextBodies };
 };
 
 function Harness({ store }: { store: AuthSessionStore }) {
@@ -129,12 +133,13 @@ describe('ResetPasswordPage (/senha/redefinir)', () => {
     expect(resetBodies).toEqual([{ token: 'reset-token', newPassword: 'a new correct password', inviteToken: 'invite-value' }]);
   });
 
-  it('authenticates and resolves when there is no invitation', async () => {
-    const { impl, calls } = makeFetch({ reset: () => json({ signedIn: true }) });
+  it('authenticates, resolves and records the context it enters when there is no invitation', async () => {
+    const { impl, calls, lastContextBodies } = makeFetch({ reset: () => json({ signedIn: true }) });
     const { probe } = renderReset(impl);
     submit('a new correct password');
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
     expect(calls.resolve).toBe(1);
+    expect(lastContextBodies).toEqual([{ type: 'agency', agencyId: AGENCY_A }]);
   });
 
   it('goes to /sem-acesso for NO_CONTEXT_ACCESS', async () => {

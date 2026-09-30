@@ -13,8 +13,10 @@ import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
 afterEach(cleanup);
 
 const AGENCY_A = '11111111-1111-4111-8111-111111111111';
+const AGENCY_B = '22222222-2222-4222-8222-222222222222';
 const agencyA = { type: 'agency', agencyId: AGENCY_A, agencyName: 'Agência Um', roleKey: 'admin', roleName: 'Admin', isOwner: true };
 const agencyMe = { agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] };
+const agencyMeB = { agencyId: AGENCY_B, agencyName: 'Agência Dois', isOwner: true, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] };
 const sessionBody = { user: { id: '11111111-1111-4111-8111-111111111111', name: 'Pessoa', email: 'pessoa@example.test' }, session: { expiresAt: '2026-01-01T00:00:00.000Z' } };
 
 const json = (body: unknown, status = 200): Response =>
@@ -44,6 +46,7 @@ const makeFetch = (scenario: Scenario = {}) => {
       return noContent();
     }
     if (url.endsWith(`/agencies/${AGENCY_A}/me`)) return json(agencyMe);
+    if (url.endsWith(`/agencies/${AGENCY_B}/me`)) return json(agencyMeB);
     if (url.endsWith('/auth/login')) {
       calls.login += 1;
       if (scenario.loginError !== undefined) return scenario.loginError;
@@ -193,6 +196,17 @@ describe('LoginPage (/entrar)', () => {
     const second = renderLogin(hostile.impl, { state: { sessionDestination: { path: '//evil.example', savedAt: Date.now() } } });
     submit('pessoa@example.test', 'a correct password');
     await waitFor(() => expect(second.probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+  });
+
+  it('records the context of a saved destination, not the one resolve picked', async () => {
+    const { impl, lastContextBodies } = makeFetch({ resolve: { decision: 'enter', context: agencyA } });
+    const { probe } = renderLogin(impl, { state: { sessionDestination: { path: `/agencia/${AGENCY_B}`, savedAt: Date.now() } } });
+    submit('pessoa@example.test', 'a correct password');
+
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_B}`));
+    // The destination wins over `enter`; recording the resolve context here would make the next
+    // login enter an agency the person never used.
+    expect(lastContextBodies).toEqual([{ type: 'agency', agencyId: AGENCY_B }]);
   });
 
   it('does not call resolve when the login carries an invite token, and goes to the invitation URL', async () => {
