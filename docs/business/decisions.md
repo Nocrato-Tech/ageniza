@@ -1097,3 +1097,15 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 **Consequência.** Duas abas com duas agências funcionam lado a lado sem interferência, e o link de qualquer tela carrega o contexto. As seções 7 de `specs/colaboradores.md` e `specs/clientes.md` passam a ser lidas com esse prefixo, e a #181 corrige o texto delas no mesmo PR. Trocar a agência na URL troca o contexto inteiro, inclusive o cache.
 
 **Origem.** Decidido pelo dono do produto em sessão, a partir da #181.
+
+---
+
+## 2026-09-30 — Limite de tamanho do nome no perfil próprio
+
+**Contexto.** A SPEC de colaboradores (`specs/colaboradores.md`, §§3, 5 e 6) exige que o nome do próprio perfil seja obrigatório, não vazio e com **limite de tamanho**, mas não fixa um número. A task #101 precisava de um valor para validar `PATCH /me/profile`.
+
+**Decisão.** O nome é aparado (trim) e aceito entre 1 e **120** caracteres. Nome vazio, só com espaços, tabulação ou NBSP é recusado. O e-mail não é editável por nenhuma rota do módulo de perfil.
+
+**Consequência.** 120 é folgado para um nome de exibição e não colide com nada existente. Se o dono do produto quiser outro número, é mudança de uma constante em `packages/contracts/src/profile.ts` e do teste correspondente — sem migration nem mudança de formato.
+
+**Origem.** Task #101. **Pendente de validação** — o número foi escolhido na implementação porque a SPEC não o define.
