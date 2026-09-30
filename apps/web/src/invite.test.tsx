@@ -87,13 +87,17 @@ function LocationProbe({ probe }: { probe: { pathname: string } }) {
   probe.pathname = useLocation().pathname;
   return null;
 }
+function SessionProbe({ store, probe }: { store: AuthSessionStore; probe: { sessionStatus: string } }) {
+  probe.sessionStatus = useAuthSession(store).status;
+  return null;
+}
 
 const renderInvite = (impl: typeof fetch) => {
   const sessionEnd = createSessionEndSignal();
   const client = new HttpClient('http://127.0.0.1:3001', impl, { onSessionEnded: sessionEnd.notify });
   const queryClient = createQueryClient();
   const store = createAuthSessionStore(client, { onSessionStarted: () => queryClient.clear() });
-  const probe = { pathname: '' };
+  const probe = { pathname: '', sessionStatus: '' };
   render(
     <AuthSessionProvider store={store}>
       <QueryClientProvider client={queryClient}>
@@ -101,13 +105,14 @@ const renderInvite = (impl: typeof fetch) => {
           <MemoryRouter initialEntries={['/convite/invite-token']}>
             <SessionEndRedirect signal={sessionEnd} authStore={store} />
             <LocationProbe probe={probe} />
+            <SessionProbe store={store} probe={probe} />
             <Harness store={store} />
           </MemoryRouter>
         </ApiClientProvider>
       </QueryClientProvider>
     </AuthSessionProvider>
   );
-  return { probe, store };
+  return { probe, store, queryClient };
 };
 
 const fillNewAccount = (): void => {
@@ -260,5 +265,74 @@ describe('InvitationPage (/convite/:token)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Criar conta e entrar' }));
 
     await screen.findByRole('button', { name: 'Aceitar convite' });
+  });
+
+  it('clears the previous account cache on accept, so no old context reaches /contextos', async () => {
+    // The previous session was authenticated, so `onSessionStarted` does not fire on refresh: only
+    // the explicit queryClient.clear() of the acceptance keeps account X's cache off /contextos.
+    const oldContext = { type: 'agency', agencyId: '22222222-2222-4222-8222-222222222222', agencyName: 'Agência ANTIGA', roleKey: 'admin', roleName: 'Admin', isOwner: true };
+    const newContext = { type: 'agency', agencyId: AGENCY_A, agencyName: 'Agência NOVA', roleKey: 'admin', roleName: 'Admin', isOwner: true };
+    const { impl, calls } = makeFetch({
+      authenticated: true,
+      preview: () => json(previewBody(true)),
+      resolve: { decision: 'select', contexts: [newContext], highlighted: null }
+    });
+    const { probe, queryClient } = renderInvite(impl);
+    await screen.findByRole('heading', { name: 'Você foi convidado' });
+    await waitFor(() => expect(probe.sessionStatus).toBe('ready'));
+    queryClient.setQueryData(['contexts', 'resolve', null], { decision: 'select', contexts: [oldContext], highlighted: null });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
+
+    await waitFor(() => expect(probe.pathname).toBe('/contextos'));
+    await screen.findByText('Agência NOVA');
+    expect(screen.queryByText('Agência ANTIGA')).toBeNull();
+    expect(calls.filter((call) => call === 'resolve')).toHaveLength(2);
+  });
+
+  it('clears the previous account cache when creating a new account, so no old context reaches /contextos', async () => {
+    const oldContext = { type: 'agency', agencyId: '22222222-2222-4222-8222-222222222222', agencyName: 'Agência ANTIGA', roleKey: 'admin', roleName: 'Admin', isOwner: true };
+    const newContext = { type: 'agency', agencyId: AGENCY_A, agencyName: 'Agência NOVA', roleKey: 'admin', roleName: 'Admin', isOwner: true };
+    const { impl, calls } = makeFetch({
+      authenticated: true,
+      preview: () => json(previewBody(false)),
+      resolve: { decision: 'select', contexts: [newContext], highlighted: null }
+    });
+    const { probe, queryClient } = renderInvite(impl);
+    await screen.findByRole('heading', { name: 'Você foi convidado' });
+    await waitFor(() => expect(probe.sessionStatus).toBe('ready'));
+    queryClient.setQueryData(['contexts', 'resolve', null], { decision: 'select', contexts: [oldContext], highlighted: null });
+
+    fillNewAccount();
+    fireEvent.click(screen.getByRole('button', { name: 'Criar conta e entrar' }));
+
+    await waitFor(() => expect(probe.pathname).toBe('/contextos'));
+    await screen.findByText('Agência NOVA');
+    expect(screen.queryByText('Agência ANTIGA')).toBeNull();
+    expect(calls.filter((call) => call === 'resolve')).toHaveLength(2);
+  });
+
+  it('moves to the invalid state when the accept answers 410, using the API error body', async () => {
+    // The API answers a revoked or already-used invitation with the contract's error body; the
+    // preview refetch that follows shows this screen's invalid state (SPEC section 7). The token is
+    // only invalid after the accept, so the preview keeps answering valid until that POST runs.
+    const invalid = (): Response => json({ error: { code: 'INVALID_LINK', message: 'Este link não é mais válido.' } }, 410);
+    let accepted = false;
+    const { impl } = makeFetch({
+      authenticated: true,
+      preview: () => accepted ? invalid() : json(previewBody(true)),
+      acceptError: invalid()
+    });
+    renderInvite(async (input, init) => {
+      if ((init?.method ?? 'GET') === 'POST' && String(input).endsWith('/accept')) accepted = true;
+      return impl(input, init);
+    });
+    await screen.findByRole('heading', { name: 'Você foi convidado' });
+    fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
+
+    await screen.findByRole('heading', { name: 'Este convite não é mais válido' });
+    expect(screen.getByText('Convites valem por 7 dias e só podem ser usados uma vez.')).toBeTruthy();
+    expect(screen.getByText('Peça um novo convite a quem administra a agência.')).toBeTruthy();
+    expect(screen.queryByText('pessoa@example.test')).toBeNull();
   });
 });
