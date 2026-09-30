@@ -1,4 +1,4 @@
-import { AgencyMeResponseSchema } from '@ageniza/contracts';
+import { AgencyMeResponseSchema, AgencyPathParamsSchema } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -33,7 +33,10 @@ export const registerAgencyModule = (app: FastifyInstance, dependencies: AgencyM
 
   // No extra permission: whoever `requireAgencyAccess` lets into the agency may know what they can
   // do in it. The response is a UX input, never an authorization source.
-  app.get('/agencies/:agencyId/me', { preHandler: [requireSession, dependencies.requireAgencyAccess] }, async (request, reply) => {
+  app.get('/agencies/:agencyId/me', {
+    preHandler: [requireSession, dependencies.requireAgencyAccess],
+    config: { permission: null, responseStatus: 200, schemas: { params: AgencyPathParamsSchema, response: AgencyMeResponseSchema } }
+  }, async (request, reply) => {
     const auth = requireAuth(request);
     const tenant = request.tenant;
     if (tenant === undefined) throw agencyNotFound();

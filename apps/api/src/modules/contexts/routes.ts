@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import {
+  ClientPathParamsSchema,
   ContextResolveQuerySchema,
   ContextResolveResponseSchema,
   MeContextsResponseSchema,
@@ -57,7 +58,10 @@ const endSessionForNoContext = async (auth: AuthInstance, request: FastifyReques
 export const registerContextModule = (app: FastifyInstance, dependencies: ContextModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
 
-  app.get('/me/contexts', { preHandler: requireSession }, async (request, reply) => {
+  app.get('/me/contexts', {
+    preHandler: requireSession,
+    config: { permission: null, responseStatus: 200, schemas: { response: MeContextsResponseSchema } }
+  }, async (request, reply) => {
     const auth = requireAuth(request);
     const { contexts } = await withAuthenticatedUserTransaction(
       dependencies.database,
@@ -67,7 +71,10 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
     return reply.send(parseResponse(MeContextsResponseSchema, { contexts }));
   });
 
-  app.get('/me/contexts/resolve', { preHandler: requireSession }, async (request, reply) => {
+  app.get('/me/contexts/resolve', {
+    preHandler: requireSession,
+    config: { permission: null, responseStatus: 200, schemas: { query: ContextResolveQuerySchema, response: ContextResolveResponseSchema } }
+  }, async (request, reply) => {
     const auth = requireAuth(request);
     const query = parseRequest(ContextResolveQuerySchema, request.query);
     const { contexts, lastUsedContext } = await withAuthenticatedUserTransaction(
@@ -101,7 +108,10 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
     return reply.send(parseResponse(ContextResolveResponseSchema, { decision: 'select', contexts, highlighted: null }));
   });
 
-  app.put('/me/last-context', { preHandler: requireSession }, async (request, reply) => {
+  app.put('/me/last-context', {
+    preHandler: requireSession,
+    config: { permission: null, responseStatus: 204, schemas: { body: PutLastContextRequestSchema } }
+  }, async (request, reply) => {
     const auth = requireAuth(request);
     const body = parseRequest(PutLastContextRequestSchema, request.body);
 
@@ -129,7 +139,10 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
     return reply.status(204).send();
   });
 
-  app.post('/clients/:clientId/onboarding/seen', { preHandler: [requireSession, dependencies.requireClientAccess] }, async (request, reply) => {
+  app.post('/clients/:clientId/onboarding/seen', {
+    preHandler: [requireSession, dependencies.requireClientAccess],
+    config: { permission: null, responseStatus: 204, schemas: { params: ClientPathParamsSchema } }
+  }, async (request, reply) => {
     const auth = requireAuth(request);
     const clientContext = request.clientContext;
     if (clientContext === undefined) throw contextNotFound();

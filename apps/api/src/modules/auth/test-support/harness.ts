@@ -138,6 +138,7 @@ export const buildTestConfig = (overrides: Partial<ApiConfig> = {}): ApiConfig =
   corsOrigins: [TEST_APP_PUBLIC_URL],
   bodyLimitBytes: 1_048_576,
   trustedProxyCidrs: [],
+  containerLocal: false,
   authTermsVersion: '2026-01-01',
   authPrivacyVersion: '2026-01-01',
   ...overrides
@@ -241,7 +242,19 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     invitationTokenLookup,
     countValidContexts: options.countValidContexts ?? ((userId: string) => countValidContexts(database, userId))
   };
-  const app = await buildApp({ config, logger, auth: authDependencies, invitations, contexts, agencies, media, onRoute: options.onRoute });
+  const app = await buildApp({
+    config,
+    logger,
+    auth: authDependencies,
+    invitations,
+    contexts,
+    agencies,
+    media,
+    onRoute: options.onRoute,
+    // A handler whose reply status drifts from its own `config.responseStatus` fails the request,
+    // so the documented status is enforced by the suites, not only by the catalog.
+    enforceDocumentedStatus: true
+  });
   if (options.registerExtraRoutes !== undefined) {
     const guards: TestGuardBuilders = {
       requireSession: createRequireSession({ auth }),

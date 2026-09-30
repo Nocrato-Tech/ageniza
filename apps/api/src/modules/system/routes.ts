@@ -16,10 +16,12 @@ export interface SystemModuleOptions {
 /** Process-level endpoints only. Domain modules belong beside this module, never under plugins. */
 export const registerSystemModule = (app: FastifyInstance, options: SystemModuleOptions): void => {
   app.get('/health', {
+    config: { permission: null, responseStatus: 200, schemas: { response: HealthResponseSchema } },
     preValidation: async (request) => { parseRequest(EmptyQuerySchema, request.query); }
   }, async () => parseResponse(HealthResponseSchema, { status: 'ok' }));
 
   app.get('/ready', {
+    config: { permission: null, responseStatus: 200, schemas: { response: HealthResponseSchema } },
     preValidation: async (request) => { parseRequest(EmptyQuerySchema, request.query); }
   }, async (request) => {
     if (!options.readiness.isReady()) {

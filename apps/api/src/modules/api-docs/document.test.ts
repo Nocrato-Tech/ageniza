@@ -65,6 +65,11 @@ describe('OpenAPI document (issue #182)', () => {
 
   it('keeps password- and token-shaped examples as placeholders, never values', () => {
     const findings: string[] = [];
+    // The request examples are not all in the OpenAPI document (some routes have no body), so the
+    // catalog itself is scanned too -- it is the source of docs/api/README.md, where those
+    // examples are rendered verbatim. Without this, a real password in a `requestExample` would
+    // reach the committed README with every test green (security review of PR #187).
+    collectSecretLikeExamples(DOCUMENTED_ROUTES, 'catalog', findings);
     collectSecretLikeExamples(buildOpenApiDocument(), 'openapi', findings);
     expect(findings).toEqual([]);
   });

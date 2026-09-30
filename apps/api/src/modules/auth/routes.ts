@@ -20,6 +20,7 @@ import { applyAuthCookies, toAuthHeaders, toPublicAuthError } from './bridge.js'
 import { AUTH_RATE_LIMITS } from './policy.js';
 import { createRequireSession } from './session-guard.js';
 import { normalizeRateLimitIp } from '../../plugins/infra/rate-limit-ip.js';
+import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
 import type { InvitationTokenLookup } from '../invitations/routes.js';
 
@@ -52,8 +53,13 @@ const noRateLimitHeaders = {
   }
 } as const;
 
-const perIpRateLimit = (limit: { readonly max: number; readonly windowMs: number }) => ({
-  config: { rateLimit: { max: limit.max, timeWindow: limit.windowMs, ...noRateLimitHeaders } }
+const perIpRateLimit = (limit: { readonly max: number; readonly windowMs: number }, docs: DocumentedRouteConfig) => ({
+  config: {
+    rateLimit: { max: limit.max, timeWindow: limit.windowMs, ...noRateLimitHeaders },
+    permission: docs.permission,
+    responseStatus: docs.responseStatus,
+    schemas: docs.schemas
+  }
 });
 
 const requireAuthenticatedUserId = (request: FastifyRequest): string => {
@@ -84,7 +90,11 @@ const noContextAccessError = {
 export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
 
-  app.post('/auth/login', perIpRateLimit(AUTH_RATE_LIMITS.login.ip), async (request, reply) => {
+  app.post('/auth/login', perIpRateLimit(AUTH_RATE_LIMITS.login.ip, {
+    permission: null,
+    responseStatus: 200,
+    schemas: { body: AuthLoginRequestSchema, response: AuthLoginResponseSchema }
+  }), async (request, reply) => {
     const body = parseRequest(AuthLoginRequestSchema, request.body);
     dependencies.limiter.consume('login', normalizeRateLimitIp(request.ip), body.email);
 
@@ -119,7 +129,10 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     });
   });
 
-  app.post('/auth/logout', { preHandler: requireSession }, async (request, reply) => {
+  app.post('/auth/logout', {
+    preHandler: requireSession,
+    config: { permission: null, responseStatus: 204, schemas: {} }
+  }, async (request, reply) => {
     try {
       const { headers } = await dependencies.auth.api.signOut({ headers: toAuthHeaders(request), returnHeaders: true });
       applyAuthCookies(reply, headers);
@@ -129,7 +142,10 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     return reply.status(204).send();
   });
 
-  app.post('/auth/logout-all', { preHandler: requireSession }, async (request, reply) => {
+  app.post('/auth/logout-all', {
+    preHandler: requireSession,
+    config: { permission: null, responseStatus: 204, schemas: {} }
+  }, async (request, reply) => {
     const userId = requireAuthenticatedUserId(request);
     try {
       await dependencies.auth.api.revokeSessions({ headers: toAuthHeaders(request) });
@@ -146,7 +162,10 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     return reply.status(204).send();
   });
 
-  app.get('/auth/session', { preHandler: requireSession }, async (request) => {
+  app.get('/auth/session', {
+    preHandler: requireSession,
+    config: { permission: null, responseStatus: 200, schemas: { response: AuthSessionResponseSchema } }
+  }, async (request) => {
     // The `requireSession` preHandler above already called Better Auth's `getSession` once
     // (with `returnHeaders: true`, so a renewed cookie was already applied to the reply, M1) and
     // populated `request.auth`; a second `getSession` call here would be redundant and would
@@ -158,7 +177,11 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     });
   });
 
-  app.post('/auth/password/forgot', perIpRateLimit(AUTH_RATE_LIMITS.forgot.ip), async (request, reply) => {
+  app.post('/auth/password/forgot', perIpRateLimit(AUTH_RATE_LIMITS.forgot.ip, {
+    permission: null,
+    responseStatus: 202,
+    schemas: { body: AuthPasswordForgotRequestSchema, response: AuthPasswordForgotResponseSchema }
+  }), async (request, reply) => {
     const body = parseRequest(AuthPasswordForgotRequestSchema, request.body);
     dependencies.limiter.consume('forgot', normalizeRateLimitIp(request.ip), body.email);
 
@@ -184,7 +207,11 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     return reply.status(202).send(parseResponse(AuthPasswordForgotResponseSchema, {}));
   });
 
-  app.post('/auth/password/reset', perIpRateLimit(AUTH_RATE_LIMITS.reset.ip), async (request, reply) => {
+  app.post('/auth/password/reset', perIpRateLimit(AUTH_RATE_LIMITS.reset.ip, {
+    permission: null,
+    responseStatus: 200,
+    schemas: { body: AuthPasswordResetRequestSchema, response: AuthPasswordResetResponseSchema }
+  }), async (request, reply) => {
     const body = parseRequest(AuthPasswordResetRequestSchema, request.body);
     // Looked up non-destructively (before `resetPassword` consumes the same verification row)
     // purely so a B10 recovery below has a user id to act on; a lookup failure never blocks the

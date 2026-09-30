@@ -36,9 +36,21 @@ export interface ApiAppOptions {
   /**
    * Test-only observer for every registered route, fired by Fastify's `onRoute` hook before
    * `app.ready()`. The API documentation test uses it to prove the OpenAPI document covers the
-   * real surface; production never passes it.
+   * real surface, including the documented permission, status and schema objects; production
+   * never passes it.
    */
-  onRoute?: (route: { readonly method: string; readonly url: string }) => void;
+  onRoute?: (route: {
+    readonly method: string;
+    readonly url: string;
+    readonly config: Readonly<Record<string, unknown>>;
+  }) => void;
+  /**
+   * Test-only enforcement of the documented success status: when a route declares
+   * `config.responseStatus`, a non-error reply with any other status fails the request. The test
+   * harness turns it on so a handler whose status drifts from its own declaration cannot pass the
+   * suite; production never passes it.
+   */
+  enforceDocumentedStatus?: boolean;
 }
 
 /** Builds the HTTP application without binding a port, enabling deterministic Fastify inject tests. */
@@ -62,7 +74,19 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
     const observeRoute = options.onRoute;
     app.addHook('onRoute', (routeOptions) => {
       const methods = Array.isArray(routeOptions.method) ? routeOptions.method : [routeOptions.method];
-      for (const method of methods) observeRoute({ method: method.toLowerCase(), url: routeOptions.url });
+      const config = (routeOptions.config ?? {}) as Readonly<Record<string, unknown>>;
+      for (const method of methods) observeRoute({ method: method.toLowerCase(), url: routeOptions.url, config });
+    });
+  }
+  if (options.enforceDocumentedStatus === true) {
+    app.addHook('onSend', async (request, reply, payload) => {
+      const declared = (request.routeOptions?.config as { responseStatus?: number } | undefined)?.responseStatus;
+      if (declared !== undefined && reply.statusCode < 400 && reply.statusCode !== declared) {
+        // Fail the request instead of returning a status the route itself did not declare: the
+        // documentation coverage test is what turns this into a red suite.
+        throw new Error(`Route ${request.routeOptions?.url ?? request.url} replied ${reply.statusCode} but declares ${declared}.`);
+      }
+      return payload;
     });
   }
   app.addHook('onRequest', (request, reply, done) => {
@@ -116,11 +140,20 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
     registerMediaModule(app, options.media);
   }
   // Development-only API reference (issue #182). The dynamic import keeps the viewer and the
-  // OpenAPI generator out of the production image, which prunes devDependencies; `APP_ENV=local`
-  // is the `pnpm dev` default and cannot point at a non-loopback database (config validation).
-  if (options.config.environment === 'local') {
-    const { registerApiDocsModule } = await import('./modules/api-docs/routes.js');
-    await registerApiDocsModule(app);
+  // OpenAPI generator out of the production image, which prunes devDependencies. `containerLocal`
+  // is the Docker Compose stack running that pruned image with `APP_ENV=local`: the viewer cannot
+  // work there, so the route is not registered. The try/catch is the second barrier for any other
+  // pruned runtime (a manual `--prod deploy` without the flag): `/docs` is optional tooling, so a
+  // missing viewer logs a warning instead of taking the API down.
+  if (options.config.environment === 'local' && !options.config.containerLocal) {
+    try {
+      const { registerApiDocsModule } = await import('./modules/api-docs/routes.js');
+      await registerApiDocsModule(app);
+    } catch (error) {
+      app.log.warn({
+        error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'API_DOCS_UNAVAILABLE' }
+      }, 'The interactive API documentation is not available in this runtime; continuing without /docs');
+    }
   }
   return app;
 };

@@ -133,7 +133,12 @@ export const buildOpenApiDocument = (): Record<string, unknown> => {
           ? undefined
           : {
               required: true,
-              content: { 'application/json': { schema: register(route.body, `${route.operationId}Request`) } }
+              content: {
+                'application/json': {
+                  schema: register(route.body, `${route.operationId}Request`),
+                  ...(route.requestExample === undefined ? {} : { example: route.requestExample })
+                }
+              }
             }
       },
       responses: responses as never

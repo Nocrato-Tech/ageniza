@@ -19,6 +19,7 @@ import type { z } from 'zod';
 
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
+import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
 import type { MediaJobDispatcher } from './job-dispatcher.js';
 import {
@@ -120,18 +121,26 @@ const uploadObjectKeyFor = (agencyId: string, assetId: string, extension: string
 export const registerMediaModule = (app: FastifyInstance, dependencies: MediaModuleDependencies): void => {
   const { database, storage, config } = dependencies;
   const requireSession = createRequireSession({ auth: dependencies.auth });
-  const guarded = (permission: string) => [requireSession, dependencies.requireAgencyAccess, dependencies.requirePermission(permission)];
-  const uploadUrlRoute = {
-    config: {
-      rateLimit: {
-        max: MEDIA_RATE_LIMITS.signedUrlIssuance.max,
-        timeWindow: MEDIA_RATE_LIMITS.signedUrlIssuance.windowMs,
-        addHeaders: false
-      }
+  const guarded = (
+    permission: string,
+    docs: Omit<DocumentedRouteConfig, 'permission'>,
+    extraConfig: Record<string, unknown> = {}
+  ) => ({
+    preHandler: [requireSession, dependencies.requireAgencyAccess, dependencies.requirePermission(permission)],
+    config: { permission, responseStatus: docs.responseStatus, schemas: docs.schemas, ...extraConfig }
+  });
+  const uploadUrlRateLimit = {
+    rateLimit: {
+      max: MEDIA_RATE_LIMITS.signedUrlIssuance.max,
+      timeWindow: MEDIA_RATE_LIMITS.signedUrlIssuance.windowMs,
+      addHeaders: false
     }
   };
 
-  app.post('/agencies/:agencyId/media/uploads', { preHandler: guarded('midia.enviar'), ...uploadUrlRoute }, async (request, reply) => {
+  app.post('/agencies/:agencyId/media/uploads', guarded('midia.enviar', {
+    responseStatus: 201,
+    schemas: { params: AgencyPathParamsSchema, body: CreateMediaUploadRequestSchema, response: CreateMediaUploadResponseSchema }
+  }, uploadUrlRateLimit), async (request, reply) => {
     const auth = requireAuth(request);
     const params = routeParams(AgencyPathParamsSchema, request);
     const body = parseRequest(CreateMediaUploadRequestSchema, request.body);
@@ -189,7 +198,10 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     }));
   });
 
-  app.post('/agencies/:agencyId/media/uploads/:assetId/parts', { preHandler: guarded('midia.enviar'), ...uploadUrlRoute }, async (request, reply) => {
+  app.post('/agencies/:agencyId/media/uploads/:assetId/parts', guarded('midia.enviar', {
+    responseStatus: 200,
+    schemas: { params: AgencyMediaAssetPathParamsSchema, body: RequestMediaUploadPartsRequestSchema, response: RequestMediaUploadPartsResponseSchema }
+  }, uploadUrlRateLimit), async (request, reply) => {
     const auth = requireAuth(request);
     const params = routeParams(AgencyMediaAssetPathParamsSchema, request);
     const body = parseRequest(RequestMediaUploadPartsRequestSchema, request.body);
@@ -218,7 +230,10 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     return reply.send(parseResponse(RequestMediaUploadPartsResponseSchema, { parts, expiresAt }));
   });
 
-  app.post('/agencies/:agencyId/media/uploads/:assetId/complete', { preHandler: guarded('midia.enviar') }, async (request, reply) => {
+  app.post('/agencies/:agencyId/media/uploads/:assetId/complete', guarded('midia.enviar', {
+    responseStatus: 200,
+    schemas: { params: AgencyMediaAssetPathParamsSchema, body: CompleteMediaUploadRequestSchema, response: CompleteMediaUploadResponseSchema }
+  }), async (request, reply) => {
     const auth = requireAuth(request);
     const params = routeParams(AgencyMediaAssetPathParamsSchema, request);
     const body = parseRequest(CompleteMediaUploadRequestSchema, request.body);
@@ -344,7 +359,10 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     }));
   });
 
-  app.get('/agencies/:agencyId/media/:assetId/download-url', { preHandler: guarded('midia.enviar') }, async (request, reply) => {
+  app.get('/agencies/:agencyId/media/:assetId/download-url', guarded('midia.enviar', {
+    responseStatus: 200,
+    schemas: { params: AgencyMediaAssetPathParamsSchema, query: MediaDownloadUrlQuerySchema, response: MediaDownloadUrlResponseSchema }
+  }), async (request, reply) => {
     const auth = requireAuth(request);
     const params = routeParams(AgencyMediaAssetPathParamsSchema, request);
     const query = parseRequest(MediaDownloadUrlQuerySchema, request.query);
