@@ -11,6 +11,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Pool } from 'pg';
 
 import { buildApp } from '../../../app.js';
+import type { AgencyModuleDependencies } from '../../agencies/routes.js';
 import { createAuthAuditRecorder, type AuthAuditRecorder } from '../audit.js';
 import { createAuthLimiter, type AuthLimiterOptions, type InMemoryAuthLimiter } from '../auth-limiter.js';
 import { createAuth, type AuthInstance } from '../better-auth.js';
@@ -214,6 +215,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   };
   const requireClientAccess = createRequireClientAccess({ database });
   const contexts: ContextModuleDependencies = { database, auth, requireClientAccess };
+  const agencies: AgencyModuleDependencies = { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }) };
   const ownedMediaJobDispatcher: MediaJobDispatcher | undefined = config.storage === undefined
     ? undefined
     : createMediaJobDispatcher({ connectionString: config.databaseUrl, logger: createLogger({ enabled: false }) });
@@ -237,7 +239,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     invitationTokenLookup,
     countValidContexts: options.countValidContexts ?? ((userId: string) => countValidContexts(database, userId))
   };
-  const app = await buildApp({ config, logger, auth: authDependencies, invitations, contexts, media });
+  const app = await buildApp({ config, logger, auth: authDependencies, invitations, contexts, agencies, media });
   if (options.registerExtraRoutes !== undefined) {
     const guards: TestGuardBuilders = {
       requireSession: createRequireSession({ auth }),

@@ -3,6 +3,7 @@ import Fastify, { LogController, type FastifyBaseLogger, type FastifyInstance, t
 import type { ApiConfig } from '@ageniza/config/server';
 import { CORRELATION_ID_HEADER, createLogger, createReadiness, REQUEST_ID_HEADER, resolveRequestId, withLogContext, type CoreLogger, type HealthCheck, type Readiness } from '@ageniza/core';
 
+import { registerAgencyModule, type AgencyModuleDependencies } from './modules/agencies/routes.js';
 import { registerAuthModule, type AuthModuleDependencies } from './modules/auth/routes.js';
 import { registerContextModule, type ContextModuleDependencies } from './modules/contexts/routes.js';
 import { createInvitationTokenLookup, registerInvitationModule, type InvitationModuleDependencies } from './modules/invitations/routes.js';
@@ -28,6 +29,8 @@ export interface ApiAppOptions {
   invitations?: InvitationModuleDependencies;
   /** Context dependencies are optional for lightweight health/app tests. */
   contexts?: ContextModuleDependencies;
+  /** Agency dependencies are optional for lightweight health/app tests. */
+  agencies?: AgencyModuleDependencies;
   /** Media dependencies are optional; undefined for tests that never touch object storage. */
   media?: MediaModuleDependencies;
 }
@@ -92,6 +95,9 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   }
   if (options.contexts !== undefined) {
     registerContextModule(app, options.contexts);
+  }
+  if (options.agencies !== undefined) {
+    registerAgencyModule(app, options.agencies);
   }
   if (options.media !== undefined) {
     registerMediaModule(app, options.media);

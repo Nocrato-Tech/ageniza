@@ -69,8 +69,18 @@ const fetchAgencyContexts = async (transaction: ContextTransaction): Promise<Con
       agency.id as agency_id,
       agency.name as agency_name,
       (agency.owner_user_id = app_private.current_user_id()) as is_owner,
-      coalesce(role.key, 'admin') as role_key,
-      coalesce(role.name, 'Admin') as role_name
+      -- The admin fallback is for the owner without an effective membership role; any other case
+      -- without a role gets a neutral label instead of borrowing "Admin" (issue #180 review).
+      case
+        when role.id is not null then role.key
+        when agency.owner_user_id = app_private.current_user_id() then 'admin'
+        else 'sem-papel'
+      end as role_key,
+      case
+        when role.id is not null then role.name
+        when agency.owner_user_id = app_private.current_user_id() then 'Admin'
+        else 'Sem papel'
+      end as role_name
     from public.agencies as agency
     left join public.agency_memberships as membership
       on membership.agency_id = agency.id

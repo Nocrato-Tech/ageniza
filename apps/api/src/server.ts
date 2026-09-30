@@ -6,6 +6,7 @@ import { createEmailSender } from '@ageniza/email';
 import { createDatabaseClient } from '@ageniza/database';
 
 import { buildApp } from './app.js';
+import type { AgencyModuleDependencies } from './modules/agencies/routes.js';
 import { createAuthAuditRecorder } from './modules/auth/audit.js';
 import { createAuthLimiter } from './modules/auth/auth-limiter.js';
 import { createAuth } from './modules/auth/better-auth.js';
@@ -59,6 +60,11 @@ export const startApi = async (): Promise<void> => {
     auth,
     requireClientAccess: createRequireClientAccess({ database })
   };
+  const agencyDependencies: AgencyModuleDependencies = {
+    database,
+    auth,
+    requireAgencyAccess: createRequireAgencyAccess({ database })
+  };
   // Storage is optional at config-load time (tests/tooling that never touch media may omit it),
   // but the API only starts the media module when it is actually configured.
   const mediaJobDispatcher = config.storage === undefined ? undefined : createMediaJobDispatcher({ connectionString: config.databaseUrl, logger });
@@ -85,6 +91,7 @@ export const startApi = async (): Promise<void> => {
     auth: { auth, limiter, auditRecorder, invitationTokenLookup, countValidContexts: (userId) => countValidContexts(database, userId) },
     invitations: invitationDependencies,
     contexts: contextDependencies,
+    agencies: agencyDependencies,
     media: mediaDependencies
   });
 
