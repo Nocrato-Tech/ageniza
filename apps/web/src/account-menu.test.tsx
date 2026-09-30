@@ -8,11 +8,13 @@ import { AuthSessionProvider, createAuthSessionStore } from './auth.js';
 import { AccountMenu } from './account-menu.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
+import { createSessionEndSignal, SessionEndRedirect, sessionDestination } from './session-end.js';
 
 afterEach(cleanup);
 
+const USER_ID = '11111111-1111-4111-8111-111111111111';
 const sessionBody = {
-  user: { id: '11111111-1111-4111-8111-111111111111', name: 'Pessoa', email: 'pessoa@example.test' },
+  user: { id: USER_ID, name: 'Pessoa', email: 'pessoa@example.test' },
   session: { expiresAt: '2026-01-01T00:00:00.000Z' }
 };
 
@@ -20,32 +22,43 @@ const json = (body: unknown, status = 200): Response => new Response(JSON.string
   status,
   headers: { 'content-type': 'application/json' }
 });
+const unauthenticated = (): Response => json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication is required.' } }, 401);
 
-function LocationProbe() {
+interface LocationCapture {
+  pathname: string;
+  state: unknown;
+}
+
+function LocationProbe({ probe }: { probe: LocationCapture }) {
   const location = useLocation();
+  probe.pathname = location.pathname;
+  probe.state = location.state;
   return <output data-testid='location'>{location.pathname}</output>;
 }
 
 function renderAccountMenu(fetchImplementation: typeof fetch) {
   const queryClient = createQueryClient();
   queryClient.setQueryData(['private-account-data'], { name: 'Private data' });
-  const client = new HttpClient('http://127.0.0.1:3001', fetchImplementation);
+  const signal = createSessionEndSignal();
+  const client = new HttpClient('http://127.0.0.1:3001', fetchImplementation, { onSessionEnded: signal.notify });
   const authStore = createAuthSessionStore(client);
+  const probe: LocationCapture = { pathname: '', state: null };
 
   render(
     <AuthSessionProvider store={authStore}>
       <QueryClientProvider client={queryClient}>
         <ApiClientProvider client={client}>
           <MemoryRouter initialEntries={['/agencia/11111111-1111-4111-8111-111111111111']}>
+            <SessionEndRedirect signal={signal} authStore={authStore} />
             <AccountMenu activeContext={'Agência Um'} />
-            <LocationProbe />
+            <LocationProbe probe={probe} />
           </MemoryRouter>
         </ApiClientProvider>
       </QueryClientProvider>
     </AuthSessionProvider>
   );
 
-  return { queryClient };
+  return { queryClient, store: authStore, probe };
 }
 
 describe('AccountMenu', () => {
@@ -61,9 +74,9 @@ describe('AccountMenu', () => {
     expect(screen.getByText('Agência Um')).toBeTruthy();
   });
 
-  it('posts logout, clears the previous account cache, and returns to login', async () => {
+  it('posts logout, clears the previous account cache, ends the local session, and returns to login', async () => {
     const calls: Array<{ path: string; method: string }> = [];
-    const { queryClient } = renderAccountMenu(async (input, init) => {
+    const { queryClient, store } = renderAccountMenu(async (input, init) => {
       const url = String(input);
       calls.push({ path: new URL(url).pathname, method: init?.method ?? 'GET' });
       if (url.endsWith('/auth/session')) return json(sessionBody);
@@ -75,6 +88,27 @@ describe('AccountMenu', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Sair' }));
     await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/entrar'));
     expect(calls).toContainEqual({ path: '/auth/logout', method: 'POST' });
+    expect(queryClient.getQueryData(['private-account-data'])).toBeUndefined();
+    // The local session has to end, not only the server one; otherwise the next screen still believes
+    // someone is signed in.
+    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false, user: null });
+  });
+
+  it('treats a 401 on logout as a completed sign-out and stores no destination', async () => {
+    const { queryClient, store, probe } = renderAccountMenu(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/auth/session')) return json(sessionBody);
+      if (url.endsWith('/auth/logout')) return unauthenticated();
+      throw new Error('unexpected ' + url);
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Sair' }));
+
+    await waitFor(() => expect(probe.pathname).toBe('/entrar'));
+    // The explicit sign-out must not leave the previous account's address for the next person.
+    expect(sessionDestination(probe.state)).toBeNull();
+    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false, user: null });
     expect(queryClient.getQueryData(['private-account-data'])).toBeUndefined();
   });
 
@@ -100,9 +134,9 @@ describe('AccountMenu', () => {
     expect(calls).toContain('POST /auth/logout-all');
   });
 
-  it('offers a retry when logout fails', async () => {
+  it('offers a retry when logout fails and keeps the cache and the session until it succeeds', async () => {
     let attempts = 0;
-    renderAccountMenu(async (input) => {
+    const { queryClient, store } = renderAccountMenu(async (input) => {
       const url = String(input);
       if (url.endsWith('/auth/session')) return json(sessionBody);
       if (url.endsWith('/auth/logout')) {
@@ -117,8 +151,34 @@ describe('AccountMenu', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Sair' }));
     expect((await screen.findByRole('alert')).textContent).toContain('Não foi possível sair. Tente de novo.');
+    // A failed sign-out must not drop the previous account's data or end the local session.
+    expect(queryClient.getQueryData(['private-account-data'])).toBeDefined();
+    expect(store.getSnapshot().isAuthenticated).toBe(true);
+
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
     await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/entrar'));
     expect(attempts).toBe(2);
+  });
+
+  it('renders a hostile name and e-mail as literal text, never as HTML', async () => {
+    // The e-mail field is a valid e-mail in the API contract, so the hostile value goes through the
+    // render path directly to prove both fields are escaped, not interpreted.
+    const hostile = '<img src=x onerror=alert(1)><script>window.__xss=1</script>';
+    const client = new HttpClient('http://127.0.0.1:3001', async () => new Response(null, { status: 401 }));
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <ApiClientProvider client={client}>
+          <MemoryRouter initialEntries={['/agencia/11111111-1111-4111-8111-111111111111']}>
+            <AccountMenu user={{ id: USER_ID, name: hostile, email: hostile }} />
+          </MemoryRouter>
+        </ApiClientProvider>
+      </QueryClientProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /img/ }));
+    const identity = screen.getByRole('group', { name: 'Conta' });
+    expect(identity.textContent).toContain(hostile);
+    expect(document.querySelector('img')).toBeNull();
+    expect(document.querySelector('script')).toBeNull();
   });
 });

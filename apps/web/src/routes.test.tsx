@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
+
+afterEach(cleanup);
 
 // `/app` now lands on the context resolver, which reads the session store; the 401 here is the
 // ordinary answer for a visitor and keeps the boundary test deterministic.
@@ -22,11 +24,20 @@ const renderRoute = (path: string, isAuthenticated: boolean) => render(
   </AuthSessionProvider>
 );
 
+/** Opens the account menu and asserts the person identity inside it, not only its trigger. */
+const expectAccountMenu = (): void => {
+  fireEvent.click(screen.getByRole('button', { name: /Pessoa/ }));
+  const menu = screen.getByRole('menu', { name: 'Menu da conta' });
+  expect(within(menu).getByText('Pessoa')).toBeTruthy();
+  expect(within(menu).getByText('pessoa@example.test')).toBeTruthy();
+};
+
 describe('route boundaries', () => {
   it('keeps protected workspace content out of an anonymous route', () => {
     renderRoute('/app', false);
     expect(screen.getByRole('heading', { name: 'Workspace unavailable' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Workspace' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Pessoa/ })).toBeNull();
   });
 
   it('sends /app to the resolve instead of rendering a workspace of its own', () => {
@@ -39,6 +50,24 @@ describe('route boundaries', () => {
 
   it('sends unknown paths to an accessible not-found boundary', () => {
     renderRoute('/missing', false);
+    expect(screen.getByRole('heading', { name: 'Page not found' })).toBeTruthy();
+  });
+
+  it('keeps the account menu with the person identity on the context resolver', async () => {
+    renderRoute('/contextos', true);
+    expectAccountMenu();
+    expect(screen.getByRole('heading', { name: 'Onde você quer entrar?' })).toBeTruthy();
+  });
+
+  it('keeps the account menu with the person identity on the client portal', async () => {
+    renderRoute('/portal/11111111-1111-4111-8111-111111111111', true);
+    expectAccountMenu();
+    expect(screen.getByRole('heading', { name: 'Portal do cliente' })).toBeTruthy();
+  });
+
+  it('keeps the account menu on the global not-found when there is a session', () => {
+    renderRoute('/rota-inexistente', true);
+    expectAccountMenu();
     expect(screen.getByRole('heading', { name: 'Page not found' })).toBeTruthy();
   });
 });

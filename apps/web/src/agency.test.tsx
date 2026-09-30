@@ -138,6 +138,16 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
     expect(calls).toContain(`me:${AGENCY_B}`);
     expect(screen.queryByRole('heading', { name: 'Workspace unavailable' })).toBeNull();
+    // The shell keeps the account menu: this is an authenticated screen with no other way out.
+    expect(await screen.findByRole('button', { name: /Pessoa/ })).toBeTruthy();
+  });
+
+  it('keeps the account menu when the agency cannot be opened', async () => {
+    const { impl } = makeFetch({ me: { [AGENCY_A]: () => json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500) } });
+    renderAgency(impl, `/agencia/${AGENCY_A}`);
+
+    expect(await screen.findByRole('heading', { name: 'Não foi possível abrir a agência' }, { timeout: 5000 })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /Pessoa/ })).toBeTruthy();
   });
 
   it('turns the next navigation into not-found when the agency is suspended mid-use', async () => {
@@ -163,11 +173,14 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
     expect(document.title).toBe('Page not found — Ageniza');
     expect(traversal.calls).toEqual([]);
+    // A bad address still shows the authenticated shell, so the person can leave.
+    expect(await screen.findByRole('button', { name: /Pessoa/ })).toBeTruthy();
 
     cleanup();
     const malformed = makeFetch();
     renderAgency(malformed.impl, '/agencia/nao-e-uuid');
     expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /Pessoa/ })).toBeTruthy();
     // The fake would answer 400, like the API; no call proves the shell never asks.
     expect(malformed.calls).toEqual([]);
   });
@@ -194,6 +207,8 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     // "não encontrado" for an agency that is loading. A shared cache key or `placeholderData: prev`
     // brings A back here, and the mismatch check alone would turn that into a premature not-found.
     expect(container.querySelector('.agency-header__skeleton')).not.toBeNull();
+    // The loading shell keeps the account menu too, so a slow or failing load never traps the person.
+    expect(within(container).getByRole('button', { name: /Pessoa/ })).toBeTruthy();
     expect(within(container).queryByRole('link', { name: 'Agência Um' })).toBeNull();
     expect(within(container).queryByRole('link', { name: 'Colaboradores' })).toBeNull();
     expect(within(container).queryByRole('heading', { name: 'Colaboradores' })).toBeNull();
