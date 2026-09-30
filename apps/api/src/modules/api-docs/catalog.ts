@@ -39,6 +39,7 @@ import {
   PendingInvitationListResponseSchema,
   PublicInvitationTokenPathParamsSchema,
   PutLastContextRequestSchema,
+  ReactivateCollaboratorRequestSchema,
   RequestMediaUploadPartsRequestSchema,
   RequestMediaUploadPartsResponseSchema
 } from '@ageniza/contracts';
@@ -654,8 +655,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Lista a equipe da agência',
     description: [
       'Paginada pelo contrato global de listagem, com busca por nome e e-mail e filtros por papel,',
-      'cargo e status (somente ativos). A lista é a mesma para todos os papéis; a foto vem como URL',
-      'assinada. O filtro de removidos chega com a guarda administrativa da #98.'
+      'cargo e status. A lista é a mesma para todos os papéis; a foto vem como URL assinada. Pedir',
+      '`status=removed` exige a permissão administrativa de remover ou reativar.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'colaborador.visualizar',
@@ -698,8 +699,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Devolve um colaborador da agência',
     description: [
       'Carrega o mesmo contrato do item da listagem, com URL própria para o link ser compartilhável.',
-      'Um vínculo de outra agência, inexistente, malformado ou removido devolve o mesmo 404, sem',
-      'revelar existência.'
+      'Um vínculo de outra agência, inexistente ou malformado devolve o mesmo 404. Um vínculo removido',
+      'é 404 para quem não tem a permissão administrativa de remover ou reativar.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'colaborador.visualizar',
@@ -715,6 +716,85 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
         photoUrl: signedStorageUrl,
         jobTitle: 'Gestora de contas',
         role: { key: 'account_manager', name: 'Gestor de conta' },
+        isOwner: false,
+        status: 'active',
+        joinedAt: '2026-03-12T12:00:00.000Z'
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Collaborator not found.' }
+    ]
+  },
+
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/collaborators/:membershipId/remove',
+    operationId: 'removeCollaborator',
+    module: 'collaborators',
+    summary: 'Remove um colaborador do quadro',
+    description: [
+      'O vínculo vai para `removed` e a linha permanece -- nenhuma rota apaga entidade de negócio.',
+      'O Owner não é removido e ninguém remove a si mesmo. Remover um vínculo já removido é',
+      'idempotente.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'colaborador.remover',
+    params: AgencyCollaboratorPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'O vínculo em `removed`.',
+      schema: CollaboratorSchema,
+      example: {
+        membershipId,
+        name: 'Camila Nogueira',
+        email: 'camila@exemplo.test',
+        photoUrl: signedStorageUrl,
+        jobTitle: 'Gestora de contas',
+        role: { key: 'account_manager', name: 'Gestor de conta' },
+        isOwner: false,
+        status: 'removed',
+        joinedAt: '2026-03-12T12:00:00.000Z'
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Collaborator not found.' }
+    ]
+  },
+
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/collaborators/:membershipId/reactivate',
+    operationId: 'reactivateCollaborator',
+    module: 'collaborators',
+    summary: 'Reativa um vínculo removido',
+    description: [
+      'O `role_id` é obrigatório: quem volta pode voltar em outra função, e herdar o papel antigo em',
+      'silêncio é o que a regra proíbe. Conceder `admin` exige a permissão de conceder admin (403 para',
+      'Admin, 200 para o Owner).'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'colaborador.alterar_papel',
+    params: AgencyCollaboratorPathParamsSchema,
+    body: ReactivateCollaboratorRequestSchema,
+    requestExample: { roleId },
+    responses: [{
+      status: 200,
+      description: 'O vínculo em `active`, no mesmo id.',
+      schema: CollaboratorSchema,
+      example: {
+        membershipId,
+        name: 'Camila Nogueira',
+        email: 'camila@exemplo.test',
+        photoUrl: signedStorageUrl,
+        jobTitle: 'Gestora de contas',
+        role: { key: 'production', name: 'Produção' },
         isOwner: false,
         status: 'active',
         joinedAt: '2026-03-12T12:00:00.000Z'

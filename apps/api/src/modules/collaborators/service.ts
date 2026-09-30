@@ -18,6 +18,7 @@ export interface CollaboratorListFilters {
 
 export interface CollaboratorRow {
   readonly membership_id: string;
+  readonly user_id: string;
   readonly name: string;
   readonly email: string;
   /** The identity storage key (`auth."user".image`), or null. The route turns it into a signed URL. */
@@ -45,6 +46,7 @@ const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, (c
 // same shape. `auth."user"` is reached only through the membership's `user_id`.
 const COLLABORATOR_COLUMNS = `
       membership.id as membership_id,
+      membership.user_id as user_id,
       member.name as name,
       member.email as email,
       member.image as photo_key,
@@ -120,15 +122,15 @@ export const listCollaborators = async (
 };
 
 /**
- * Reads one collaborator of one agency by membership id (issue #96). Scoped to the route's agency
- * exactly like the listing, so a membership that belongs to another agency is not a row here: the
- * caller gets the same 404 as for a nonexistent id, never a 403 that would reveal it exists.
+ * Reads one collaborator of one agency by membership id, whatever its status (issue #96, #98).
+ * Scoped to the route's agency exactly like the listing, so a membership that belongs to another
+ * agency is not a row here: the caller gets the same 404 as for a nonexistent id, never a 403 that
+ * would reveal it exists.
  *
- * Only `active` links are returned. `specs/colaboradores.md` §4 keeps `removed` links in the
- * database, and §5 rule 9 keeps them out of the listing by default; until the removal task (#98)
- * adds the administrative view of removed links, the detail treats them as not found too.
+ * The caller decides whether a `removed` row may be shown (`routes.ts`): the listing and the detail
+ * only reveal removed links to a caller holding the administrative permission.
  */
-export const getCollaborator = async (
+export const findCollaborator = async (
   transaction: CollaboratorTransaction,
   agencyId: string,
   membershipId: string
@@ -137,7 +139,38 @@ export const getCollaborator = async (
     select${COLLABORATOR_COLUMNS}${COLLABORATOR_FROM}
     where membership.agency_id = ?::uuid
       and membership.id = ?::uuid
-      and membership.status = 'active'
   `, [agencyId, membershipId]);
   return result.rows[0];
+};
+
+/** Removes a link: `status` becomes `removed`, the row stays. Only an `active` row is touched. */
+export const removeCollaborator = async (
+  transaction: CollaboratorTransaction,
+  agencyId: string,
+  membershipId: string
+): Promise<void> => {
+  await raw(transaction, `
+    update public.agency_memberships
+    set status = 'removed', updated_at = now()
+    where agency_id = ?::uuid and id = ?::uuid and status = 'active'
+  `, [agencyId, membershipId]);
+};
+
+/**
+ * Reactivates a removed link in place, with the role from the body -- never the previous one
+ * (`specs/autorizacao.md` rule 8). Only a `removed` row is touched. The membership update trigger
+ * validates the role scope and the admin-grant rule and raises 42501 when they fail; the route
+ * turns that into a 403.
+ */
+export const reactivateCollaborator = async (
+  transaction: CollaboratorTransaction,
+  agencyId: string,
+  membershipId: string,
+  roleId: string
+): Promise<void> => {
+  await raw(transaction, `
+    update public.agency_memberships
+    set role_id = ?::uuid, status = 'active', updated_at = now()
+    where agency_id = ?::uuid and id = ?::uuid and status = 'removed'
+  `, [roleId, agencyId, membershipId]);
 };

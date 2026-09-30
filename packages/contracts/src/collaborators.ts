@@ -40,16 +40,23 @@ export const CollaboratorSchema = z.object({
  * keeps the rule that a parameter the SPEC does not declare does not exist.
  *
  * `q`, `role` and `jobTitle` use `SearchTextSchema`, which rejects control characters (a NUL byte
- * would otherwise become a 500). `status` accepts only `active`: revealing `removed` requires an
- * administrative permission (SPEC §5, rule 9), and that value plus its guard arrive with the
- * removal task (#98/#105). Until then `?status=removed` is a 400, and the route always lists
- * active links.
+ * would otherwise become a 500). `status` accepts `active` and `removed`; the route refuses
+ * `removed` to a caller without the administrative permission the SPEC requires (rule 9).
  */
 export const CollaboratorListQuerySchema = PaginationInputSchema.extend({
   q: SearchTextSchema.optional(),
   role: SearchTextSchema.max(128).optional(),
   jobTitle: SearchTextSchema.max(256).optional(),
-  status: z.literal('active').optional()
+  status: z.enum(['active', 'removed']).optional()
+}).strict();
+
+/**
+ * Body of `POST /agencies/:agencyId/collaborators/:membershipId/reactivate`. The new role is
+ * mandatory: a removed link keeps its previous `role_id` in the database, and reusing it silently
+ * is exactly what `specs/autorizacao.md` rule 8 forbids.
+ */
+export const ReactivateCollaboratorRequestSchema = z.object({
+  roleId: z.string().uuid()
 }).strict();
 
 export const CollaboratorListResponseSchema = createPaginatedResponseSchema(CollaboratorSchema);
@@ -58,3 +65,4 @@ export type CollaboratorRole = z.infer<typeof CollaboratorRoleSchema>;
 export type Collaborator = z.infer<typeof CollaboratorSchema>;
 export type CollaboratorListQuery = z.infer<typeof CollaboratorListQuerySchema>;
 export type CollaboratorListResponse = z.infer<typeof CollaboratorListResponseSchema>;
+export type ReactivateCollaboratorRequest = z.infer<typeof ReactivateCollaboratorRequestSchema>;

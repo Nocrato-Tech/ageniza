@@ -4,6 +4,7 @@ import {
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
   CollaboratorSchema,
+  ReactivateCollaboratorRequestSchema,
   buildPaginationMetadata,
   resolvePagination,
   type Collaborator
@@ -17,7 +18,14 @@ import { createRequireSession } from '../auth/session-guard.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
-import { getCollaborator, listCollaborators, type CollaboratorRow } from './service.js';
+import {
+  findCollaborator,
+  listCollaborators,
+  reactivateCollaborator,
+  removeCollaborator,
+  type CollaboratorRow
+} from './service.js';
+import type { TenantContext } from '../tenancy/guards.js';
 
 export type CollaboratorPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
@@ -40,11 +48,30 @@ const unauthenticated = (): HttpError => new HttpError({ statusCode: 401, code: 
 
 const agencyNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Agency not found.' });
 
-// The one 404 the detail route returns: a membership of another agency, a nonexistent one, a
-// malformed one and a removed one are indistinguishable on purpose.
+// The one 404 the membership routes return: a link of another agency, a nonexistent one, a
+// malformed one and a hidden removed one are indistinguishable on purpose.
 const collaboratorNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Collaborator not found.' });
 
+const forbidden = (): HttpError => new HttpError({ statusCode: 403, code: 'FORBIDDEN', message: 'You do not have permission to perform this action.' });
+
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Who may see removed links: the Owner by ownership, or a member whose role can remove or
+ * reactivate (the two administrative keys of the module). Removing or reactivating a person
+ * requires finding them first. Decision of 2026-09-30, registered in `decisions.md` pending the
+ * product owner's validation.
+ */
+const canViewRemoved = (tenant: TenantContext): boolean =>
+  tenant.isOwner || tenant.permissions.has('colaborador.remover') || tenant.permissions.has('colaborador.alterar_papel');
+
+/**
+ * The membership trigger (`app_private.check_agency_membership_update`, migration #94) raises
+ * SQLSTATE 42501 for every value-dependent rule RLS cannot express -- the Owner's row, the
+ * admin-grant gate, the role scope. The route turns that into a 403 instead of a 500.
+ */
+const isInsufficientPrivilege = (error: unknown): boolean =>
+  typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === '42501';
 
 /**
  * Turns the stored identity key into a short-lived signed URL, or null when there is no photo. The
@@ -105,9 +132,29 @@ const collaboratorDetailDocs = {
   schemas: { params: AgencyCollaboratorPathParamsSchema, response: CollaboratorSchema }
 } satisfies DocumentedRouteConfig;
 
-/** Registers the collaborator routes of one agency: the listing (#95) and the detail (#96). */
+const collaboratorRemoveDocs = {
+  permission: 'colaborador.remover',
+  responseStatus: 200,
+  schemas: { params: AgencyCollaboratorPathParamsSchema, response: CollaboratorSchema }
+} satisfies DocumentedRouteConfig;
+
+const collaboratorReactivateDocs = {
+  permission: 'colaborador.alterar_papel',
+  responseStatus: 200,
+  schemas: { params: AgencyCollaboratorPathParamsSchema, body: ReactivateCollaboratorRequestSchema, response: CollaboratorSchema }
+} satisfies DocumentedRouteConfig;
+
+/** Registers the collaborator routes of one agency: listing (#95), detail (#96), remove/reactivate (#98). */
 export const registerCollaboratorModule = (app: FastifyInstance, dependencies: CollaboratorModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
+
+  const paramsFor = (request: FastifyRequest): { agencyId: string; membershipId: string } => {
+    const params = parseRequest(AgencyCollaboratorPathParamsSchema, request.params);
+    // The schema accepts any short string so a malformed id reaches the uniform 404 instead of a
+    // 400 that would say "this id is not a uuid", which a valid-but-foreign id cannot say.
+    if (!uuidPattern.test(params.membershipId)) throw collaboratorNotFound();
+    return params;
+  };
 
   app.get('/agencies/:agencyId/collaborators', {
     preHandler: [
@@ -123,6 +170,9 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     if (tenant === undefined) throw agencyNotFound();
 
     const query = parseRequest(collaboratorListDocs.schemas.query, request.query);
+    // Removed people are administrative data (SPEC §5, rule 9): only a caller who can remove or
+    // reactivate -- and thus needs to find them -- may ask for them.
+    if (query.status === 'removed' && !canViewRemoved(tenant)) throw forbidden();
     const pagination = resolvePagination(query, COLLABORATOR_DEFAULT_PAGE_SIZE);
 
     const page = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
@@ -153,17 +203,81 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     const tenant = request.tenant;
     if (tenant === undefined) throw agencyNotFound();
 
-    const params = parseRequest(collaboratorDetailDocs.schemas.params, request.params);
-    // The schema accepts any short string so a malformed id reaches this uniform 404 instead of a
-    // 400 that would say "this id is not a uuid", which a valid-but-foreign id cannot say.
-    if (!uuidPattern.test(params.membershipId)) throw collaboratorNotFound();
-
+    const params = paramsFor(request);
     const row = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
-      getCollaborator(transaction, tenant.agencyId, params.membershipId)
+      findCollaborator(transaction, tenant.agencyId, params.membershipId)
     );
-    // A membership of another agency, a nonexistent one and a removed one all reach here as "no
-    // row", and answer the same 404.
+    // A membership of another agency or a nonexistent one is not a row. A removed one is hidden
+    // from a caller without the administrative permission, the same 404.
     if (row === undefined) throw collaboratorNotFound();
+    if (row.status === 'removed' && !canViewRemoved(tenant)) throw collaboratorNotFound();
     return reply.send(parseResponse(collaboratorDetailDocs.schemas.response, await collaboratorFromRow(dependencies, row, request.log)));
+  });
+
+  app.post('/agencies/:agencyId/collaborators/:membershipId/remove', {
+    preHandler: [
+      requireSession,
+      dependencies.requireAgencyAccess,
+      dependencies.requirePermission(collaboratorRemoveDocs.permission)
+    ],
+    config: collaboratorRemoveDocs
+  }, async (request, reply) => {
+    const auth = request.auth;
+    if (auth === undefined) throw unauthenticated();
+    const tenant = request.tenant;
+    if (tenant === undefined) throw agencyNotFound();
+
+    const params = paramsFor(request);
+    const row = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      const current = await findCollaborator(transaction, tenant.agencyId, params.membershipId);
+      if (current === undefined) throw collaboratorNotFound();
+      // The Owner is an agency property, not a role: only a transfer flow, which does not exist,
+      // could remove them. Removing yourself is forbidden too (decisions.md, 2026-09-24).
+      if (current.is_owner || current.user_id === auth.userId) throw forbidden();
+      // Removing an already removed link is idempotent: the desired end state is already there.
+      if (current.status !== 'removed') {
+        try {
+          await removeCollaborator(transaction, tenant.agencyId, params.membershipId);
+        } catch (error) {
+          if (isInsufficientPrivilege(error)) throw forbidden();
+          throw error;
+        }
+      }
+      return findCollaborator(transaction, tenant.agencyId, params.membershipId);
+    });
+    if (row === undefined) throw collaboratorNotFound();
+    return reply.send(parseResponse(collaboratorRemoveDocs.schemas.response, await collaboratorFromRow(dependencies, row, request.log)));
+  });
+
+  app.post('/agencies/:agencyId/collaborators/:membershipId/reactivate', {
+    preHandler: [
+      requireSession,
+      dependencies.requireAgencyAccess,
+      dependencies.requirePermission(collaboratorReactivateDocs.permission)
+    ],
+    config: collaboratorReactivateDocs
+  }, async (request, reply) => {
+    const auth = request.auth;
+    if (auth === undefined) throw unauthenticated();
+    const tenant = request.tenant;
+    if (tenant === undefined) throw agencyNotFound();
+
+    const params = paramsFor(request);
+    const body = parseRequest(collaboratorReactivateDocs.schemas.body, request.body);
+    const row = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      const current = await findCollaborator(transaction, tenant.agencyId, params.membershipId);
+      // Only a removed link is reactivated; anything else is the same 404 as a foreign id.
+      if (current === undefined || current.status !== 'removed') throw collaboratorNotFound();
+      try {
+        await reactivateCollaborator(transaction, tenant.agencyId, params.membershipId, body.roleId);
+      } catch (error) {
+        // The update trigger rejects the admin role for an actor without `colaborador.atribuir_admin`.
+        if (isInsufficientPrivilege(error)) throw forbidden();
+        throw error;
+      }
+      return findCollaborator(transaction, tenant.agencyId, params.membershipId);
+    });
+    if (row === undefined) throw collaboratorNotFound();
+    return reply.send(parseResponse(collaboratorReactivateDocs.schemas.response, await collaboratorFromRow(dependencies, row, request.log)));
   });
 };

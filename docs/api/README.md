@@ -566,6 +566,8 @@ Devolve as permissões efetivas do contexto de agência.
 |---|---|---|---|---|
 | `GET` | `/agencies/:agencyId/collaborators` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista a equipe da agência |
 | `GET` | `/agencies/:agencyId/collaborators/:membershipId` | Sessão + vínculo com a agência | `colaborador.visualizar` | Devolve um colaborador da agência |
+| `POST` | `/agencies/:agencyId/collaborators/:membershipId/remove` | Sessão + vínculo com a agência | `colaborador.remover` | Remove um colaborador do quadro |
+| `POST` | `/agencies/:agencyId/collaborators/:membershipId/reactivate` | Sessão + vínculo com a agência | `colaborador.alterar_papel` | Reativa um vínculo removido |
 
 #### `GET /agencies/:agencyId/collaborators`
 
@@ -636,6 +638,70 @@ Devolve um colaborador da agência.
   "role": {
     "key": "account_manager",
     "name": "Gestor de conta"
+  },
+  "isOwner": false,
+  "status": "active",
+  "joinedAt": "2026-03-12T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/collaborators/:membershipId/remove`
+
+Remove um colaborador do quadro.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `colaborador.remover`.
+
+**Resposta `200`** — O vínculo em `removed`.
+
+```json
+{
+  "membershipId": "22222222-2222-4222-8222-222222222222",
+  "name": "Camila Nogueira",
+  "email": "camila@exemplo.test",
+  "photoUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+  "jobTitle": "Gestora de contas",
+  "role": {
+    "key": "account_manager",
+    "name": "Gestor de conta"
+  },
+  "isOwner": false,
+  "status": "removed",
+  "joinedAt": "2026-03-12T12:00:00.000Z"
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/collaborators/:membershipId/reactivate`
+
+Reativa um vínculo removido.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `colaborador.alterar_papel`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "roleId": "66666666-6666-4666-8666-666666666666"
+}
+```
+
+**Resposta `200`** — O vínculo em `active`, no mesmo id.
+
+```json
+{
+  "membershipId": "22222222-2222-4222-8222-222222222222",
+  "name": "Camila Nogueira",
+  "email": "camila@exemplo.test",
+  "photoUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+  "jobTitle": "Gestora de contas",
+  "role": {
+    "key": "production",
+    "name": "Produção"
   },
   "isOwner": false,
   "status": "active",

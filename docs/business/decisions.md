@@ -1097,3 +1097,17 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 **Consequência.** Duas abas com duas agências funcionam lado a lado sem interferência, e o link de qualquer tela carrega o contexto. As seções 7 de `specs/colaboradores.md` e `specs/clientes.md` passam a ser lidas com esse prefixo, e a #181 corrige o texto delas no mesmo PR. Trocar a agência na URL troca o contexto inteiro, inclusive o cache.
 
 **Origem.** Decidido pelo dono do produto em sessão, a partir da #181.
+
+---
+
+## 2026-09-30 — Quem vê vínculos removidos: quem pode remover ou reativar (pendente de validação)
+
+**Contexto.** A decisão de 2026-09-24 fixou que quem foi removido fica fora da listagem por padrão e só aparece por filtro explícito de status, "apenas para Admin e Owner". A #98 traz esse filtro, mas o critério "Admin e Owner" precisa de um dono no código: papéis personalizados existem desde a sessão 0, e uma agência pode montar um papel de administração de quadro sem usar o preset `admin`.
+
+**Decisão.** Vê vínculos `removed` quem tem `colaborador.remover` **ou** `colaborador.alterar_papel`, além do Owner por posse. O critério é a tarefa, não o nome do papel: quem pode remover ou reativar precisa encontrar a pessoa para fazê-lo. Sem nenhuma das duas permissões, `?status=removed` na listagem é 403, e o detalhe de um vínculo removido é 404.
+
+**Consequência.** Um papel personalizado só com `colaborador.remover` enxerga os removidos; o preset `account_manager`, que edita cargo (`colaborador.alterar_funcao`) mas não papel, não enxerga. É um desvio deliberado do texto "apenas para Admin e Owner" de 2026-09-24, que assumia os presets e não papéis personalizados.
+
+**Pendente de validação.** O dono do produto ainda não validou esta decisão; registrada a pedido do maestro na #98.
+
+**Origem.** Issue #98.

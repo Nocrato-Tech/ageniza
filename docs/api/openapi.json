@@ -1323,6 +1323,19 @@
         ],
         "additionalProperties": false
       },
+      "reactivateCollaboratorRequest": {
+        "type": "object",
+        "properties": {
+          "roleId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "roleId"
+        ],
+        "additionalProperties": false
+      },
       "createMediaUploadResponse": {
         "type": "object",
         "properties": {
@@ -3937,7 +3950,7 @@
       "get": {
         "operationId": "listCollaborators",
         "summary": "Lista a equipe da agência",
-        "description": "Paginada pelo contrato global de listagem, com busca por nome e e-mail e filtros por papel,\ncargo e status (somente ativos). A lista é a mesma para todos os papéis; a foto vem como URL\nassinada. O filtro de removidos chega com a guarda administrativa da #98.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.visualizar`.",
+        "description": "Paginada pelo contrato global de listagem, com busca por nome e e-mail e filtros por papel,\ncargo e status. A lista é a mesma para todos os papéis; a foto vem como URL assinada. Pedir\n`status=removed` exige a permissão administrativa de remover ou reativar.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.visualizar`.",
         "tags": [
           "collaborators"
         ],
@@ -4011,7 +4024,8 @@
             "schema": {
               "type": "string",
               "enum": [
-                "active"
+                "active",
+                "removed"
               ]
             },
             "required": false,
@@ -4156,7 +4170,7 @@
       "get": {
         "operationId": "getCollaborator",
         "summary": "Devolve um colaborador da agência",
-        "description": "Carrega o mesmo contrato do item da listagem, com URL própria para o link ser compartilhável.\nUm vínculo de outra agência, inexistente, malformado ou removido devolve o mesmo 404, sem\nrevelar existência.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.visualizar`.",
+        "description": "Carrega o mesmo contrato do item da listagem, com URL própria para o link ser compartilhável.\nUm vínculo de outra agência, inexistente ou malformado devolve o mesmo 404. Um vínculo removido\né 404 para quem não tem a permissão administrativa de remover ou reativar.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.visualizar`.",
         "tags": [
           "collaborators"
         ],
@@ -4199,6 +4213,306 @@
                   "role": {
                     "key": "account_manager",
                     "name": "Gestor de conta"
+                  },
+                  "isOwner": false,
+                  "status": "active",
+                  "joinedAt": "2026-03-12T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Collaborator not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Collaborator not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/collaborators/{membershipId}/remove": {
+      "post": {
+        "operationId": "removeCollaborator",
+        "summary": "Remove um colaborador do quadro",
+        "description": "O vínculo vai para `removed` e a linha permanece -- nenhuma rota apaga entidade de negócio.\nO Owner não é removido e ninguém remove a si mesmo. Remover um vínculo já removido é\nidempotente.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.remover`.",
+        "tags": [
+          "collaborators"
+        ],
+        "x-permission": "colaborador.remover",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true,
+            "name": "membershipId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "O vínculo em `removed`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getCollaboratorResponse"
+                },
+                "example": {
+                  "membershipId": "22222222-2222-4222-8222-222222222222",
+                  "name": "Camila Nogueira",
+                  "email": "camila@exemplo.test",
+                  "photoUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+                  "jobTitle": "Gestora de contas",
+                  "role": {
+                    "key": "account_manager",
+                    "name": "Gestor de conta"
+                  },
+                  "isOwner": false,
+                  "status": "removed",
+                  "joinedAt": "2026-03-12T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Collaborator not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Collaborator not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/collaborators/{membershipId}/reactivate": {
+      "post": {
+        "operationId": "reactivateCollaborator",
+        "summary": "Reativa um vínculo removido",
+        "description": "O `role_id` é obrigatório: quem volta pode voltar em outra função, e herdar o papel antigo em\nsilêncio é o que a regra proíbe. Conceder `admin` exige a permissão de conceder admin (403 para\nAdmin, 200 para o Owner).\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.alterar_papel`.",
+        "tags": [
+          "collaborators"
+        ],
+        "x-permission": "colaborador.alterar_papel",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true,
+            "name": "membershipId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/reactivateCollaboratorRequest"
+              },
+              "example": {
+                "roleId": "66666666-6666-4666-8666-666666666666"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "O vínculo em `active`, no mesmo id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getCollaboratorResponse"
+                },
+                "example": {
+                  "membershipId": "22222222-2222-4222-8222-222222222222",
+                  "name": "Camila Nogueira",
+                  "email": "camila@exemplo.test",
+                  "photoUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+                  "jobTitle": "Gestora de contas",
+                  "role": {
+                    "key": "production",
+                    "name": "Produção"
                   },
                   "isOwner": false,
                   "status": "active",

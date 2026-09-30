@@ -170,6 +170,34 @@ const getCollaboratorDetail = async (
   return { status: response.statusCode, body: response.json<CollaboratorJson & ApiErrorJson>() };
 };
 
+const postMembership = async (
+  path: 'remove' | 'reactivate',
+  cookie: string | undefined,
+  agencyId: string,
+  membershipId: string,
+  body?: Record<string, unknown>
+): Promise<{ status: number; body: CollaboratorJson & ApiErrorJson }> => {
+  const options = {
+    method: 'POST' as const,
+    url: `/agencies/${agencyId}/collaborators/${membershipId}/${path}`,
+    headers: cookie === undefined ? origin : { ...origin, cookie }
+  };
+  const response = body === undefined
+    ? await app.app.inject(options)
+    : await app.app.inject({ ...options, payload: body });
+  return { status: response.statusCode, body: response.json<CollaboratorJson & ApiErrorJson>() };
+};
+
+const removeCollaborator = (cookie: string | undefined, agencyId: string, membershipId: string) =>
+  postMembership('remove', cookie, agencyId, membershipId);
+
+const reactivateCollaborator = (cookie: string | undefined, agencyId: string, membershipId: string, roleId?: string) =>
+  postMembership('reactivate', cookie, agencyId, membershipId, roleId === undefined ? {} : { roleId });
+
+/** Reads the row straight from the database, to prove the final state and that it still exists. */
+const membershipRow = async (agencyId: string, membershipId: string): Promise<{ status: string; role_id: string } | undefined> =>
+  owner.knex('agency_memberships').where({ agency_id: agencyId, id: membershipId }).first('status', 'role_id');
+
 /** Inserts bare users (no credential account) in one statement -- the bulk pagination fixture. */
 const insertBareUsers = async (count: number, label: string): Promise<string[]> => {
   const ids = Array.from({ length: count }, () => randomUUID());
@@ -348,25 +376,18 @@ describe('collaborators module (issue #95)', () => {
     expect(names(searchAlphaOwn.body)).toEqual(['Ana Alfa']);
   });
 
-  it('#95: status=removed is refused for every role and removed links never appear by default', async () => {
+  it('#95: removed links stay out of the default listing for every role', async () => {
     const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Removed', 'removed', 'Owner Removed');
     const production = await addMember(agencyId, { name: 'Pessoa Produção', emailLabel: 'removed-production', roleId: presetRoleIds.production });
     const onlyVisualizar = await createCustomRole(agencyId, ['colaborador.visualizar']);
     const customRole = await addMember(agencyId, { name: 'Pessoa Papel Personalizado', emailLabel: 'removed-custom', roleId: onlyVisualizar });
     await addMember(agencyId, { name: 'Pessoa Removida', emailLabel: 'removed-gone', roleId: presetRoleIds.production, status: 'removed' });
 
-    // Owner, Produção and a custom role that only holds `colaborador.visualizar`: revealing removed
-    // links requires an administrative permission (SPEC §5, rule 9), so all three are refused until
-    // the removal task (#98) adds the value together with that guard.
     for (const user of [ownerUser, production, customRole]) {
       const cookie = await loginCookie(user);
       const defaultList = await getCollaborators(cookie, agencyId);
       expect(defaultList.status).toBe(200);
       expect(names(defaultList.body)).not.toContain('Pessoa Removida');
-
-      const refused = await getCollaborators(cookie, agencyId, { status: 'removed' });
-      expect(refused.status).toBe(400);
-      expect(refused.body.error.code).toBe('VALIDATION_ERROR');
 
       const active = await getCollaborators(cookie, agencyId, { status: 'active' });
       expect(active.status).toBe(200);
@@ -580,12 +601,20 @@ describe('collaborators module (issue #95)', () => {
     expect(JSON.stringify(foreign.body)).not.toContain('Pessoa Alvo');
   });
 
-  it('#96: a removed link is not revealed by the detail', async () => {
+  it('#96: the detail of a removed link needs the administrative permission', async () => {
     const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Detail Removed', 'detail-removed', 'Owner Detail Removed');
     const removed = await addMember(agencyId, { name: 'Pessoa Removida Detalhe', emailLabel: 'detail-removed-person', roleId: presetRoleIds.production, status: 'removed' });
-    const response = await getCollaboratorDetail(await loginCookie(ownerUser), agencyId, await membershipIdOf(agencyId, removed.id));
-    expect(response.status).toBe(404);
-    expect(response.body.error).toEqual({ code: 'NOT_FOUND', message: 'Collaborator not found.' });
+    const production = await addMember(agencyId, { name: 'Pessoa Produção Detalhe', emailLabel: 'detail-removed-production', roleId: presetRoleIds.production });
+    const membershipId = await membershipIdOf(agencyId, removed.id);
+
+    const asOwner = await getCollaboratorDetail(await loginCookie(ownerUser), agencyId, membershipId);
+    expect(asOwner.status).toBe(200);
+    expect(asOwner.body.status).toBe('removed');
+    expect(asOwner.body.membershipId).toBe(membershipId);
+
+    const asProduction = await getCollaboratorDetail(await loginCookie(production), agencyId, membershipId);
+    expect(asProduction.status).toBe(404);
+    expect(asProduction.body.error).toEqual({ code: 'NOT_FOUND', message: 'Collaborator not found.' });
   });
 
   it('#96: without colaborador.visualizar the detail answers 403', async () => {
@@ -607,5 +636,211 @@ describe('collaborators module (issue #95)', () => {
     const response = await getCollaboratorDetail(await loginCookie(outsider), agencyId, randomUUID());
     expect(response.status).toBe(404);
     expect(response.body.error).toEqual({ code: 'NOT_FOUND', message: 'Agency not found.' });
+  });
+
+  it('#98: an admin removes and reactivates the same link, and the row survives', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Manage', 'manage', 'Owner Manage');
+    const target = await addMember(agencyId, { name: 'Pessoa Gerenciada', emailLabel: 'manage-target', roleId: presetRoleIds.production, jobTitle: 'Editor' });
+    const membershipId = await membershipIdOf(agencyId, target.id);
+    const targetCookie = await loginCookie(target);
+
+    // Sanity: the target can reach the agency before removal.
+    expect((await getCollaborators(targetCookie, agencyId)).status).toBe(200);
+
+    const removed = await removeCollaborator(await loginCookie(ownerUser), agencyId, membershipId);
+    expect(removed.status).toBe(200);
+    expect(removed.body.membershipId).toBe(membershipId);
+    expect(removed.body.status).toBe('removed');
+    expect(Object.keys(removed.body).sort()).toEqual(
+      ['email', 'isOwner', 'jobTitle', 'joinedAt', 'membershipId', 'name', 'photoUrl', 'role', 'status'].sort()
+    );
+    expect(JSON.stringify(removed.body)).not.toMatch(/salar|remunera|salary|compensation/i);
+
+    // The row still exists, now removed.
+    expect((await membershipRow(agencyId, membershipId))?.status).toBe('removed');
+
+    // The person loses access on the very next request: the guard reads the membership live.
+    expect((await getCollaborators(targetCookie, agencyId)).status).toBe(404);
+
+    const ownerCookie = await loginCookie(ownerUser);
+    expect(names((await getCollaborators(ownerCookie, agencyId)).body)).not.toContain('Pessoa Gerenciada');
+    expect(names((await getCollaborators(ownerCookie, agencyId, { status: 'removed' })).body)).toContain('Pessoa Gerenciada');
+
+    // Reactivate in place, with a new role.
+    const reactivated = await reactivateCollaborator(ownerCookie, agencyId, membershipId, presetRoleIds.sales);
+    expect(reactivated.status).toBe(200);
+    expect(reactivated.body.membershipId).toBe(membershipId);
+    expect(reactivated.body.status).toBe('active');
+    expect(reactivated.body.role.key).toBe('sales');
+    expect(Object.keys(reactivated.body).sort()).toEqual(
+      ['email', 'isOwner', 'jobTitle', 'joinedAt', 'membershipId', 'name', 'photoUrl', 'role', 'status'].sort()
+    );
+    expect(await membershipRow(agencyId, membershipId)).toMatchObject({ status: 'active', role_id: presetRoleIds.sales });
+  });
+
+  it('#98: removing an already removed link is idempotent', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Idempotent', 'idempotent', 'Owner Idempotent');
+    const target = await addMember(agencyId, { name: 'Pessoa Idempotente', emailLabel: 'idempotent-target', roleId: presetRoleIds.production });
+    const membershipId = await membershipIdOf(agencyId, target.id);
+    const cookie = await loginCookie(ownerUser);
+
+    expect((await removeCollaborator(cookie, agencyId, membershipId)).status).toBe(200);
+    const second = await removeCollaborator(cookie, agencyId, membershipId);
+    expect(second.status).toBe(200);
+    expect(second.body.status).toBe('removed');
+    expect((await membershipRow(agencyId, membershipId))?.status).toBe('removed');
+  });
+
+  it('#98: the Owner is never removed', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Owner Safe', 'owner-safe', 'Owner Safe');
+    const admin = await addMember(agencyId, { name: 'Admin Safe', emailLabel: 'owner-safe-admin', roleId: presetRoleIds.admin });
+    const ownerMembershipId = await membershipIdOf(agencyId, ownerUser.id);
+
+    const response = await removeCollaborator(await loginCookie(admin), agencyId, ownerMembershipId);
+    expect(response.status).toBe(403);
+    expect((await membershipRow(agencyId, ownerMembershipId))?.status).toBe('active');
+  });
+
+  it('#98: nobody removes themselves', async () => {
+    const { agencyId } = await createAgencyWithOwner('Colab Self', 'self');
+    const removerRole = await createCustomRole(agencyId, ['colaborador.remover']);
+    const actor = await addMember(agencyId, { name: 'Pessoa Auto Remoção', emailLabel: 'self-actor', roleId: removerRole });
+    const ownMembershipId = await membershipIdOf(agencyId, actor.id);
+
+    const response = await removeCollaborator(await loginCookie(actor), agencyId, ownMembershipId);
+    expect(response.status).toBe(403);
+    expect((await membershipRow(agencyId, ownMembershipId))?.status).toBe('active');
+  });
+
+  it('#98: production, sales, finance and account_manager are refused by both routes', async () => {
+    const { agencyId } = await createAgencyWithOwner('Colab Presets 403', 'presets-403');
+    const removedTarget = await addMember(agencyId, { name: 'Alvo Removido 403', emailLabel: 'presets-403-removed', roleId: presetRoleIds.production, status: 'removed' });
+    const removedId = await membershipIdOf(agencyId, removedTarget.id);
+    const activeTarget = await addMember(agencyId, { name: 'Alvo Ativo 403', emailLabel: 'presets-403-active', roleId: presetRoleIds.production });
+    const activeId = await membershipIdOf(agencyId, activeTarget.id);
+
+    for (const preset of ['account_manager', 'production', 'sales', 'finance'] as const) {
+      const actor = await addMember(agencyId, { name: `Ator ${preset}`, emailLabel: `presets-403-${preset}`, roleId: presetRoleIds[preset] });
+      const cookie = await loginCookie(actor);
+      expect((await removeCollaborator(cookie, agencyId, activeId)).status, `remove as ${preset}`).toBe(403);
+      expect((await reactivateCollaborator(cookie, agencyId, removedId, presetRoleIds.production)).status, `reactivate as ${preset}`).toBe(403);
+    }
+    expect((await membershipRow(agencyId, activeId))?.status).toBe('active');
+    expect((await membershipRow(agencyId, removedId))?.status).toBe('removed');
+  });
+
+  it('#98: a custom role gates each route by exactly its permission', async () => {
+    const { agencyId } = await createAgencyWithOwner('Colab Custom', 'custom-perm');
+    const remover = await addMember(agencyId, { name: 'Ator Remover', emailLabel: 'custom-remover', roleId: await createCustomRole(agencyId, ['colaborador.remover']) });
+    const papel = await addMember(agencyId, { name: 'Ator Papel', emailLabel: 'custom-papel', roleId: await createCustomRole(agencyId, ['colaborador.alterar_papel']) });
+    const viewer = await addMember(agencyId, { name: 'Ator Ver', emailLabel: 'custom-viewer', roleId: await createCustomRole(agencyId, ['colaborador.visualizar']) });
+
+    const removeTarget = await addMember(agencyId, { name: 'Alvo Remover', emailLabel: 'custom-remove-target', roleId: presetRoleIds.production });
+    const removeTargetId = await membershipIdOf(agencyId, removeTarget.id);
+    const reactivateTarget = await addMember(agencyId, { name: 'Alvo Reativar', emailLabel: 'custom-react-target', roleId: presetRoleIds.production, status: 'removed' });
+    const reactivateTargetId = await membershipIdOf(agencyId, reactivateTarget.id);
+    const papelActive = await addMember(agencyId, { name: 'Alvo Ativo Papel', emailLabel: 'custom-papel-active', roleId: presetRoleIds.production });
+    const papelActiveId = await membershipIdOf(agencyId, papelActive.id);
+    const viewActive = await addMember(agencyId, { name: 'Alvo Ver Ativo', emailLabel: 'custom-view-active', roleId: presetRoleIds.production });
+    const viewActiveId = await membershipIdOf(agencyId, viewActive.id);
+    const viewRemoved = await addMember(agencyId, { name: 'Alvo Ver Removido', emailLabel: 'custom-view-removed', roleId: presetRoleIds.production, status: 'removed' });
+    const viewRemovedId = await membershipIdOf(agencyId, viewRemoved.id);
+
+    // Only remover: removes, cannot reactivate.
+    expect((await removeCollaborator(await loginCookie(remover), agencyId, removeTargetId)).status).toBe(200);
+    expect((await reactivateCollaborator(await loginCookie(remover), agencyId, reactivateTargetId, presetRoleIds.production)).status).toBe(403);
+
+    // Only alterar_papel: cannot remove, reactivates.
+    expect((await removeCollaborator(await loginCookie(papel), agencyId, papelActiveId)).status).toBe(403);
+    expect((await reactivateCollaborator(await loginCookie(papel), agencyId, reactivateTargetId, presetRoleIds.production)).status).toBe(200);
+
+    // Only visualizar: neither.
+    const viewerCookie = await loginCookie(viewer);
+    expect((await removeCollaborator(viewerCookie, agencyId, viewActiveId)).status).toBe(403);
+    expect((await reactivateCollaborator(viewerCookie, agencyId, viewRemovedId, presetRoleIds.production)).status).toBe(403);
+
+    expect((await membershipRow(agencyId, removeTargetId))?.status).toBe('removed');
+    expect((await membershipRow(agencyId, reactivateTargetId))?.status).toBe('active');
+    expect((await membershipRow(agencyId, papelActiveId))?.status).toBe('active');
+    expect((await membershipRow(agencyId, viewActiveId))?.status).toBe('active');
+    expect((await membershipRow(agencyId, viewRemovedId))?.status).toBe('removed');
+  });
+
+  it('#98: a link of another agency is the same 404 and stays untouched', async () => {
+    const alpha = await createAgencyWithOwner('Colab Manage BOLA A', 'manage-bola-a', 'Owner Manage A');
+    const beta = await createAgencyWithOwner('Colab Manage BOLA B', 'manage-bola-b', 'Owner Manage B');
+    const viewer = await addMember(alpha.agencyId, { name: 'Viewer Manage BOLA', emailLabel: 'manage-bola-viewer', roleId: presetRoleIds.admin });
+    await addAgencyMembership(beta.agencyId, viewer.id, presetRoleIds.admin);
+    const target = await addMember(alpha.agencyId, { name: 'Alvo Manage BOLA', emailLabel: 'manage-bola-target', roleId: presetRoleIds.production });
+    await addAgencyMembership(beta.agencyId, target.id, presetRoleIds.production);
+    const foreignMembershipId = await membershipIdOf(beta.agencyId, target.id);
+    const cookie = await loginCookie(viewer);
+
+    const foreign = await removeCollaborator(cookie, alpha.agencyId, foreignMembershipId);
+    const nonexistent = await removeCollaborator(cookie, alpha.agencyId, randomUUID());
+    const malformed = await removeCollaborator(cookie, alpha.agencyId, 'not-a-uuid');
+    expect(foreign.status).toBe(404);
+    expect(nonexistent.status).toBe(404);
+    expect(malformed.status).toBe(404);
+    expect(foreign.body.error).toEqual(nonexistent.body.error);
+    expect(malformed.body.error).toEqual(foreign.body.error);
+    expect(foreign.body.error).toEqual({ code: 'NOT_FOUND', message: 'Collaborator not found.' });
+    // The foreign link is untouched.
+    expect((await membershipRow(beta.agencyId, foreignMembershipId))?.status).toBe('active');
+  });
+
+  it('#98: reactivating without role_id is a validation error and nothing changes', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab No Role', 'no-role', 'Owner No Role');
+    const target = await addMember(agencyId, { name: 'Alvo Sem Papel', emailLabel: 'no-role-target', roleId: presetRoleIds.production, status: 'removed' });
+    const membershipId = await membershipIdOf(agencyId, target.id);
+
+    const response = await reactivateCollaborator(await loginCookie(ownerUser), agencyId, membershipId);
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    expect((await membershipRow(agencyId, membershipId))?.status).toBe('removed');
+  });
+
+  it('#98: reactivating with the admin role follows the admin-grant rule', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Admin Grant', 'admin-grant', 'Owner Admin Grant');
+    const admin = await addMember(agencyId, { name: 'Admin Grant', emailLabel: 'admin-grant-admin', roleId: presetRoleIds.admin });
+    const target = await addMember(agencyId, { name: 'Alvo Grant', emailLabel: 'admin-grant-target', roleId: presetRoleIds.production, status: 'removed' });
+    const membershipId = await membershipIdOf(agencyId, target.id);
+
+    const asAdmin = await reactivateCollaborator(await loginCookie(admin), agencyId, membershipId, presetRoleIds.admin);
+    expect(asAdmin.status).toBe(403);
+    expect((await membershipRow(agencyId, membershipId))?.status).toBe('removed');
+
+    const asOwner = await reactivateCollaborator(await loginCookie(ownerUser), agencyId, membershipId, presetRoleIds.admin);
+    expect(asOwner.status).toBe(200);
+    expect(asOwner.body.role.key).toBe('admin');
+    expect(await membershipRow(agencyId, membershipId)).toMatchObject({ status: 'active', role_id: presetRoleIds.admin });
+  });
+
+  it('#98: the removed filter needs the administrative permission', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Removed Filter', 'removed-filter', 'Owner Removed Filter');
+    await addMember(agencyId, { name: 'Removida Filtro', emailLabel: 'removed-filter-gone', roleId: presetRoleIds.production, status: 'removed' });
+    // The listing itself needs `colaborador.visualizar`; the two actors add one administrative key
+    // each, so the OR is what is being tested.
+    const remover = await addMember(agencyId, { name: 'Ator Filtro Remover', emailLabel: 'removed-filter-remover', roleId: await createCustomRole(agencyId, ['colaborador.visualizar', 'colaborador.remover']) });
+    const papel = await addMember(agencyId, { name: 'Ator Filtro Papel', emailLabel: 'removed-filter-papel', roleId: await createCustomRole(agencyId, ['colaborador.visualizar', 'colaborador.alterar_papel']) });
+    const viewer = await addMember(agencyId, { name: 'Ator Filtro Ver', emailLabel: 'removed-filter-viewer', roleId: await createCustomRole(agencyId, ['colaborador.visualizar']) });
+    const production = await addMember(agencyId, { name: 'Ator Filtro Produção', emailLabel: 'removed-filter-production', roleId: presetRoleIds.production });
+
+    // Owner and either administrative permission find the removed person.
+    for (const user of [ownerUser, remover, papel]) {
+      const response = await getCollaborators(await loginCookie(user), agencyId, { status: 'removed' });
+      expect(response.status, `removed filter as ${user.email}`).toBe(200);
+      expect(names(response.body)).toContain('Removida Filtro');
+    }
+    // Visualizar alone, and any preset, is refused; the default listing still works.
+    for (const user of [viewer, production]) {
+      const cookie = await loginCookie(user);
+      const refused = await getCollaborators(cookie, agencyId, { status: 'removed' });
+      expect(refused.status).toBe(403);
+      expect(refused.body.error.code).toBe('FORBIDDEN');
+      const active = await getCollaborators(cookie, agencyId);
+      expect(active.status).toBe(200);
+      expect(names(active.body)).not.toContain('Removida Filtro');
+    }
   });
 });
