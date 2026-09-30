@@ -65,6 +65,7 @@ A lista mínima, adaptada ao que o PR toca:
 - **BFLA**: cada papel contra cada rota de escrita. Teste com **papel personalizado de uma permissão só**, porque o Admin tem todas e esconde guarda com a permissão errada.
 - **BOPLA**: campo a mais no corpo (`.strict()`), campo sensível na resposta (hash, token, dado de outro).
 - Entrada hostil: tamanhos extremos, `page=1e20`, unicode, NBSP, tipos trocados, JSON profundo.
+- Corpo malformado, corpo declarado como JSON e vazio, ou `content-type` inesperado: esperam **400/415**, sem `log.error` nem evento no Sentry, e sem ecoar trecho do corpo na resposta.
 - Erro vira 500? Todo 500 provocável por entrada é achado.
 - Oráculo: a resposta ou o tempo revelam se um e-mail, uma conta ou um recurso existe?
 - Rate limit nas rotas de credencial e de envio de e-mail.
