@@ -106,6 +106,8 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     renderAgency(impl, `/agencia/${AGENCY_A}`);
 
     await screen.findByRole('link', { name: 'Agência Um' });
+    expect(screen.getByText('Contexto ativo')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Pessoa/ })).toBeTruthy();
     const nav = screen.getByRole('navigation', { name: 'Navegação da agência' });
     expect(within(nav).getByRole('link', { name: 'Início' })).toBeTruthy();
     expect(within(nav).getByRole('link', { name: 'Colaboradores' })).toBeTruthy();

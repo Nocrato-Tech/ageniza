@@ -16,7 +16,7 @@ const renderRoute = (path: string, isAuthenticated: boolean) => render(
   <AuthSessionProvider store={createAuthSessionStore(httpClient)}>
     <QueryClientProvider client={createQueryClient()}>
       <ApiClientProvider client={httpClient}><MemoryRouter initialEntries={[path]}>
-        <ApplicationRoutes session={{ status: 'ready', isAuthenticated }} />
+        <ApplicationRoutes session={{ status: 'ready', isAuthenticated, user: isAuthenticated ? { id: '11111111-1111-4111-8111-111111111111', name: 'Pessoa', email: 'pessoa@example.test' } : null }} />
       </MemoryRouter></ApiClientProvider>
     </QueryClientProvider>
   </AuthSessionProvider>

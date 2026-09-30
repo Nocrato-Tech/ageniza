@@ -2,6 +2,7 @@ import { Link, Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 
 import type { AuthSessionSnapshot } from './auth.js';
+import { AccountMenu } from './account-menu.js';
 import { AgencyAreaLayout, AgencyHomePage, AgencyModulePlaceholder, AgencyPermissionRoute } from './agency.js';
 import { LiveStatus } from '@ageniza/ui';
 import { ContextSelectPage } from './contexts.js';
@@ -19,63 +20,68 @@ import { ResetPasswordPage } from './reset-password.js';
 import { LoadingPage, NotFoundPage, SessionGate } from './status-pages.js';
 
 export function PublicLayout() {
-  return <div className="app-shell"><a className="skip-link" href="#main-content">Skip to content</a><header><Link to="/">Ageniza</Link></header><main id="main-content"><Outlet /></main></div>;
+  return <div className='app-shell'><a className='skip-link' href='#main-content'>Skip to content</a><header><Link to='/'>Ageniza</Link></header><main id='main-content'><Outlet /></main></div>;
 }
 
 export function ProtectedLayout({ session }: { session: AuthSessionSnapshot }) {
   return <SessionGate session={session}>
-    <div className="app-shell"><a className="skip-link" href="#main-content">Skip to content</a><header>Ageniza workspace</header><main id="main-content"><Outlet /></main></div>
+    <div className='app-shell'>
+      <a className='skip-link' href='#main-content'>Skip to content</a>
+      <header className='protected-header'>
+        <Link to='/'>Ageniza</Link>
+        <AccountMenu user={session.user} />
+      </header>
+      <main id='main-content'><Outlet /></main>
+    </div>
   </SessionGate>;
 }
 
-function PublicHome() { return <section><h1>Ageniza</h1><p>Agency operations, in one place.</p><Link to="/status">Service status</Link></section>; }
+function PublicHome() { return <section><h1>Ageniza</h1><p>Agency operations, in one place.</p><Link to='/status'>Service status</Link></section>; }
 function ServiceStatus() {
   const httpClient = useApiClient();
   const health = useQuery({ queryKey: ['health'], queryFn: () => getHealth(httpClient) });
   if (health.isPending) return <LoadingPage />;
-  if (health.isError) return <section><h1>Service status</h1><p role="alert">Status is temporarily unavailable.</p></section>;
+  if (health.isError) return <section><h1>Service status</h1><p role='alert'>Status is temporarily unavailable.</p></section>;
   return <section><h1>Service status</h1><LiveStatus>API is {health.data.status}.</LiveStatus></section>;
 }
 
 /**
  * Explicit public and protected route trees; protected content is never rendered until a session
- * exists. The agency area lives under `/agencia/:agenciaId/...` (docs/business/decisions.md,
- * 2026-09-29) and carries its own shell, because the agency name and the permission-built menu
- * depend on that context; `/app` is only a redirect into the resolve.
+ * exists. The agency area lives under /agencia/:agenciaId/... and carries its own shell, because
+ * the agency name and the permission-built menu depend on that context; /app is only a redirect.
  */
 export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot }) {
   return <Routes>
     <Route element={<PublicLayout />}>
       <Route index element={<PublicHome />} />
-      <Route path="status" element={<ServiceStatus />} />
-      <Route path="entrar" element={<LoginPage />} />
-      <Route path="sem-acesso" element={session.isAuthenticated ? <Navigate to="/app" replace /> : <NoAccessPage />} />
-      <Route path="senha/esquecida" element={session.isAuthenticated ? <Navigate to="/app" replace /> : <ForgotPasswordPage />} />
-      <Route path="senha/redefinir" element={<ResetPasswordPage />} />
-      <Route path="convite/:token" element={<InvitationPage />} />
-      <Route path="termos" element={<LegalDocumentPage document={termsOfUse} sibling={{ title: 'Política de Privacidade', to: '/privacidade' }} />} />
-      <Route path="privacidade" element={<LegalDocumentPage document={privacyPolicy} sibling={{ title: 'Termos de Uso', to: '/termos' }} />} />
+      <Route path='status' element={<ServiceStatus />} />
+      <Route path='entrar' element={<LoginPage />} />
+      <Route path='sem-acesso' element={session.isAuthenticated ? <Navigate to='/app' replace /> : <NoAccessPage />} />
+      <Route path='senha/esquecida' element={session.isAuthenticated ? <Navigate to='/app' replace /> : <ForgotPasswordPage />} />
+      <Route path='senha/redefinir' element={<ResetPasswordPage />} />
+      <Route path='convite/:token' element={<InvitationPage />} />
+      <Route path='termos' element={<LegalDocumentPage document={termsOfUse} sibling={{ title: 'Política de Privacidade', to: '/privacidade' }} />} />
+      <Route path='privacidade' element={<LegalDocumentPage document={privacyPolicy} sibling={{ title: 'Termos de Uso', to: '/termos' }} />} />
     </Route>
-    <Route path="agencia/:agenciaId" element={<SessionGate session={session}><AgencyAreaLayout /></SessionGate>}>
+    <Route path='agencia/:agenciaId' element={<SessionGate session={session}><AgencyAreaLayout /></SessionGate>}>
       <Route index element={<AgencyHomePage />} />
-      <Route path="colaboradores" element={
-        <AgencyPermissionRoute permission="colaborador.visualizar">
-          <AgencyModulePlaceholder title="Colaboradores" description="Esta área recebe a equipe, os papéis e os convites nas próximas entregas." />
+      <Route path='colaboradores' element={
+        <AgencyPermissionRoute permission='colaborador.visualizar'>
+          <AgencyModulePlaceholder title='Colaboradores' description='Esta área recebe a equipe, os papéis e os convites nas próximas entregas.' />
         </AgencyPermissionRoute>
       } />
-      <Route path="clientes" element={
-        <AgencyPermissionRoute permission="cliente.visualizar">
-          <AgencyModulePlaceholder title="Clientes" description="Esta área recebe a carteira, o estudo de marca e as conversas nas próximas entregas." />
+      <Route path='clientes' element={
+        <AgencyPermissionRoute permission='cliente.visualizar'>
+          <AgencyModulePlaceholder title='Clientes' description='Esta área recebe a carteira, o estudo de marca e as conversas nas próximas entregas.' />
         </AgencyPermissionRoute>
       } />
-      <Route path="*" element={<NotFoundPage as="section" />} />
+      <Route path='*' element={<NotFoundPage as='section' />} />
     </Route>
     <Route element={<ProtectedLayout session={session} />}>
-      <Route path="portal/:clienteId" element={<PortalHomePage />} />
-      <Route path="contextos" element={<ContextSelectPage />} />
-      {/* `/app` is not a destination anymore; the resolve decides where the person enters. */}
-      <Route path="app" element={<Navigate to="/contextos" replace />} />
+      <Route path='portal/:clienteId' element={<PortalHomePage />} />
+      <Route path='contextos' element={<ContextSelectPage />} />
+      <Route path='app' element={<Navigate to='/contextos' replace />} />
     </Route>
-    <Route path="*" element={<NotFoundPage />} />
+    <Route path='*' element={<NotFoundPage />} />
   </Routes>;
 }
