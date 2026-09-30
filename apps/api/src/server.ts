@@ -13,6 +13,8 @@ import { createAuth } from './modules/auth/better-auth.js';
 import { createEmailService } from './modules/auth/email-service.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from './modules/tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from './modules/invitations/routes.js';
+import type { ClientModuleDependencies } from './modules/clients/routes.js';
+import { createIdentityStorageClient } from './modules/identity-storage/storage-client.js';
 import type { ContextModuleDependencies } from './modules/contexts/routes.js';
 import { countValidContexts } from './modules/contexts/service.js';
 import { createMediaJobDispatcher } from './modules/media/job-dispatcher.js';
@@ -65,6 +67,14 @@ export const startApi = async (): Promise<void> => {
     auth,
     requireAgencyAccess: createRequireAgencyAccess({ database })
   };
+  const clientDependencies: ClientModuleDependencies = {
+    database,
+    auth,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    requirePermission,
+    identityStorage: config.identityStorage === undefined ? undefined : createIdentityStorageClient(config.identityStorage),
+    photoUrlExpirySeconds: config.identityStorage?.downloadUrlExpirySeconds ?? 300
+  };
   // Storage is optional at config-load time (tests/tooling that never touch media may omit it),
   // but the API only starts the media module when it is actually configured.
   const mediaJobDispatcher = config.storage === undefined ? undefined : createMediaJobDispatcher({ connectionString: config.databaseUrl, logger });
@@ -92,6 +102,7 @@ export const startApi = async (): Promise<void> => {
     invitations: invitationDependencies,
     contexts: contextDependencies,
     agencies: agencyDependencies,
+    clients: clientDependencies,
     media: mediaDependencies
   });
 
