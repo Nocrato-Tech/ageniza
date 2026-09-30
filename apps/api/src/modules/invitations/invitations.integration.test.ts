@@ -392,6 +392,21 @@ describe('invitation HTTP module', () => {
     expect(ownerInvite.statusCode).toBe(201);
   });
 
+  it('rejects an extra field in the collaborator invitation body (.strict())', async () => {
+    // The schema in `config.schemas.body` is the same object the handler parses: mutating it to
+    // `.passthrough()` breaks the documentation coverage test, and this test breaks the behaviour.
+    const email = `extra-field-${randomUUID()}@example.test`;
+    const response = await app.app.inject({
+      method: 'POST',
+      url: `/agencies/${agencyId}/invitations/collaborators`,
+      headers: { ...origin, cookie: await loginCookie(admin) },
+      payload: { email, roleId: productionRoleId, isAdmin: true }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+    await expect(owner.knex('invitations').where({ email }).first('id')).resolves.toBeUndefined();
+  });
+
   it('denies the whole tenant while the agency is suspended and restores it untouched on reactivation', async () => {
     const suspendedOwner = await makeUser('invitation-suspend-owner');
     const suspendedMember = await makeUser('invitation-suspend-member');

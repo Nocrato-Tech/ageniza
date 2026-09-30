@@ -567,32 +567,69 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     responseStatus: docs.responseStatus,
     schemas: docs.schemas
   });
-  const authenticated = (permission: string, docs: Omit<DocumentedRouteConfig, 'permission'>): { preHandler: InvitationPreHandler[]; config: object } => ({
-    preHandler: [requireSession, dependencies.requireAgencyAccess, dependencies.requirePermission(permission)],
-    config: { ...invitationRateLimit, permission, responseStatus: docs.responseStatus, schemas: docs.schemas }
+  const authenticated = (docs: DocumentedRouteConfig & { permission: string }): { preHandler: InvitationPreHandler[]; config: object } => ({
+    preHandler: [requireSession, dependencies.requireAgencyAccess, dependencies.requirePermission(docs.permission)],
+    config: { ...invitationRateLimit, permission: docs.permission, responseStatus: docs.responseStatus, schemas: docs.schemas }
   });
   const publicConfig = (docs: DocumentedRouteConfig) => ({ config: { ...publicRateLimit, ...docsConfig(docs) } });
 
-  app.get('/agencies/:agencyId/invitations', authenticated('colaborador.convidar', {
+  // Declared once per route: the same object is the route's documentation metadata and the source
+  // of the schemas the handler validates with, so a handler cannot drift from what is documented.
+  const listDocs = {
+    permission: 'colaborador.convidar',
     responseStatus: 200,
     schemas: { params: AgencyPathParamsSchema, query: PaginationInputSchema, response: PendingInvitationListResponseSchema }
-  }), async (request) => {
-    const params = routeParams(AgencyPathParamsSchema, request);
-    const query = routeQuery(PaginationInputSchema, request);
+  } satisfies DocumentedRouteConfig;
+  const collaboratorDocs = {
+    permission: 'colaborador.convidar',
+    responseStatus: 201,
+    schemas: { params: AgencyPathParamsSchema, body: CollaboratorInvitationRequestSchema, response: InvitationCreatedResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const clientInviteDocs = {
+    permission: 'cliente.convidar_usuario',
+    responseStatus: 201,
+    schemas: { params: AgencyClientPathParamsSchema, body: ClientInvitationRequestSchema, response: InvitationCreatedResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const resendDocs = {
+    permission: 'convite.reenviar',
+    responseStatus: 200,
+    schemas: { params: AgencyInvitationPathParamsSchema, response: InvitationCreatedResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const cancelDocs = {
+    permission: 'convite.cancelar',
+    responseStatus: 204,
+    schemas: { params: AgencyInvitationPathParamsSchema }
+  } satisfies DocumentedRouteConfig;
+  const previewDocs = {
+    permission: null,
+    responseStatus: 200,
+    schemas: { params: PublicInvitationTokenPathParamsSchema, response: InvitationPreviewResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const acceptNewAccountDocs = {
+    permission: null,
+    responseStatus: 201,
+    schemas: { params: PublicInvitationTokenPathParamsSchema, body: InvitationAcceptNewAccountRequestSchema, response: InvitationAcceptNewAccountResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const acceptDocs = {
+    permission: null,
+    responseStatus: 200,
+    schemas: { params: PublicInvitationTokenPathParamsSchema, response: InvitationAcceptResponseSchema }
+  } satisfies DocumentedRouteConfig;
+
+  app.get('/agencies/:agencyId/invitations', authenticated(listDocs), async (request) => {
+    const params = routeParams(listDocs.schemas.params, request);
+    const query = routeQuery(listDocs.schemas.query, request);
     const pagination = resolvePagination(query, PENDING_INVITATIONS_DEFAULT_PAGE_SIZE);
     const { items, totalItems } = await listPendingCollaboratorInvitations(dependencies, request, params.agencyId, pagination);
-    return parseResponse(PendingInvitationListResponseSchema, {
+    return parseResponse(listDocs.schemas.response, {
       data: items.map(pendingInvitationFromRow),
       meta: buildPaginationMetadata(pagination, totalItems)
     });
   });
 
-  app.post('/agencies/:agencyId/invitations/collaborators', authenticated('colaborador.convidar', {
-    responseStatus: 201,
-    schemas: { params: AgencyPathParamsSchema, body: CollaboratorInvitationRequestSchema, response: InvitationCreatedResponseSchema }
-  }), async (request, reply) => {
-    const params = routeParams(AgencyPathParamsSchema, request);
-    const body = parseRequest(CollaboratorInvitationRequestSchema, request.body);
+  app.post('/agencies/:agencyId/invitations/collaborators', authenticated(collaboratorDocs), async (request, reply) => {
+    const params = routeParams(collaboratorDocs.schemas.params, request);
+    const body = parseRequest(collaboratorDocs.schemas.body, request.body);
     const result = await createCollaboratorInvitation(dependencies, request, body.email, body.roleId, params.agencyId);
     try {
       await dependencies.emailService.sendCollaboratorInvitation({
@@ -604,15 +641,12 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     } catch {
       throw emailDeliveryFailed();
     }
-    return reply.status(201).send(parseResponse(InvitationCreatedResponseSchema, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
+    return reply.status(201).send(parseResponse(collaboratorDocs.schemas.response, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
   });
 
-  app.post('/agencies/:agencyId/clients/:clientId/invitations', authenticated('cliente.convidar_usuario', {
-    responseStatus: 201,
-    schemas: { params: AgencyClientPathParamsSchema, body: ClientInvitationRequestSchema, response: InvitationCreatedResponseSchema }
-  }), async (request, reply) => {
-    const params = routeParams(AgencyClientPathParamsSchema, request);
-    const body = parseRequest(ClientInvitationRequestSchema, request.body);
+  app.post('/agencies/:agencyId/clients/:clientId/invitations', authenticated(clientInviteDocs), async (request, reply) => {
+    const params = routeParams(clientInviteDocs.schemas.params, request);
+    const body = parseRequest(clientInviteDocs.schemas.body, request.body);
     const result = await createClientInvitation(dependencies, request, body.email, params.agencyId, params.clientId);
     try {
       await dependencies.emailService.sendClientInvitation({
@@ -625,14 +659,11 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     } catch {
       throw emailDeliveryFailed();
     }
-    return reply.status(201).send(parseResponse(InvitationCreatedResponseSchema, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
+    return reply.status(201).send(parseResponse(clientInviteDocs.schemas.response, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
   });
 
-  app.post('/agencies/:agencyId/invitations/:invitationId/resend', authenticated('convite.reenviar', {
-    responseStatus: 200,
-    schemas: { params: AgencyInvitationPathParamsSchema, response: InvitationCreatedResponseSchema }
-  }), async (request, reply) => {
-    const params = routeParams(AgencyInvitationPathParamsSchema, request);
+  app.post('/agencies/:agencyId/invitations/:invitationId/resend', authenticated(resendDocs), async (request, reply) => {
+    const params = routeParams(resendDocs.schemas.params, request);
     const result = await resendInvitation(dependencies, request, params.agencyId, params.invitationId);
     try {
       if (result.purpose === 'client_invite' && result.clientName !== null) {
@@ -654,29 +685,22 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     } catch {
       throw emailDeliveryFailed();
     }
-    return reply.send(parseResponse(InvitationCreatedResponseSchema, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
+    return reply.send(parseResponse(resendDocs.schemas.response, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
   });
 
-  app.delete('/agencies/:agencyId/invitations/:invitationId', authenticated('convite.cancelar', {
-    responseStatus: 204,
-    schemas: { params: AgencyInvitationPathParamsSchema }
-  }), async (request, reply) => {
-    const params = routeParams(AgencyInvitationPathParamsSchema, request);
+  app.delete('/agencies/:agencyId/invitations/:invitationId', authenticated(cancelDocs), async (request, reply) => {
+    const params = routeParams(cancelDocs.schemas.params, request);
     await cancelInvitation(dependencies, request, params.agencyId, params.invitationId);
     return reply.status(204).send();
   });
 
-  app.get('/invitations/:token', publicConfig({
-    permission: null,
-    responseStatus: 200,
-    schemas: { params: PublicInvitationTokenPathParamsSchema, response: InvitationPreviewResponseSchema }
-  }), async (request) => {
-    const { token } = routeParams(PublicInvitationTokenPathParamsSchema, request);
+  app.get('/invitations/:token', publicConfig(previewDocs), async (request) => {
+    const { token } = routeParams(previewDocs.schemas.params, request);
     const row = await lookupOrInvalid(lookup, token);
     const accountResult = await dependencies.database.transaction(async (transaction) =>
       raw<RawRows<{ exists: boolean }>>(transaction, 'select exists(select 1 from auth."user" where email = ?) as exists', [row.email])
     );
-    return parseResponse(InvitationPreviewResponseSchema, {
+    return parseResponse(previewDocs.schemas.response, {
       purpose: row.purpose,
       email: row.email,
       agency: { name: row.agencyName },
@@ -685,13 +709,9 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     });
   });
 
-  app.post('/invitations/:token/accept-new-account', publicConfig({
-    permission: null,
-    responseStatus: 201,
-    schemas: { params: PublicInvitationTokenPathParamsSchema, body: InvitationAcceptNewAccountRequestSchema, response: InvitationAcceptNewAccountResponseSchema }
-  }), async (request, reply) => {
-    const { token } = routeParams(PublicInvitationTokenPathParamsSchema, request);
-    const body = parseRequest(InvitationAcceptNewAccountRequestSchema, request.body);
+  app.post('/invitations/:token/accept-new-account', publicConfig(acceptNewAccountDocs), async (request, reply) => {
+    const { token } = routeParams(acceptNewAccountDocs.schemas.params, request);
+    const body = parseRequest(acceptNewAccountDocs.schemas.body, request.body);
     const invitation = await lookupOrInvalid(lookup, token);
     const existing = await dependencies.database.transaction(async (transaction) =>
       raw<RawRows<{ id: string }>>(transaction, 'select id from auth."user" where email = ? limit 1', [invitation.email])
@@ -733,25 +753,21 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
       // cannot establish that session; the credential account remains recoverable through login.
       throw new HttpError({ statusCode: 500, code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' });
     }
-    return reply.status(201).send(parseResponse(InvitationAcceptNewAccountResponseSchema, {
+    return reply.status(201).send(parseResponse(acceptNewAccountDocs.schemas.response, {
       status: 'accepted',
       context: { agencyId: invitation.agencyId, clientId: invitation.clientId }
     }));
   });
 
   app.post('/invitations/:token/accept', {
-    ...publicConfig({
-      permission: null,
-      responseStatus: 200,
-      schemas: { params: PublicInvitationTokenPathParamsSchema, response: InvitationAcceptResponseSchema }
-    }),
+    ...publicConfig(acceptDocs),
     preHandler: requireSession
   }, async (request, reply) => {
-    const { token } = routeParams(PublicInvitationTokenPathParamsSchema, request);
+    const { token } = routeParams(acceptDocs.schemas.params, request);
     if (request.auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
     const invitation = await lookupOrInvalid(lookup, token);
     if (invitation.email !== request.auth.user.email) throw accountMismatch();
     const result = await acceptInvitation(dependencies, request, token, false);
-    return reply.send(parseResponse(InvitationAcceptResponseSchema, result));
+    return reply.send(parseResponse(acceptDocs.schemas.response, result));
   });
 };

@@ -13,6 +13,7 @@ import { raw, withAuthenticatedUserTransaction, type DatabaseClient } from '@age
 import type { AuthInstance } from '../auth/better-auth.js';
 import { applyAuthCookies, toAuthHeaders } from '../auth/bridge.js';
 import { createRequireSession } from '../auth/session-guard.js';
+import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
 import { findPreferredContext, isValidAgencyContext, isValidClientContext, listValidContexts } from './service.js';
 
@@ -58,25 +59,42 @@ const endSessionForNoContext = async (auth: AuthInstance, request: FastifyReques
 export const registerContextModule = (app: FastifyInstance, dependencies: ContextModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
 
-  app.get('/me/contexts', {
-    preHandler: requireSession,
-    config: { permission: null, responseStatus: 200, schemas: { response: MeContextsResponseSchema } }
-  }, async (request, reply) => {
+  // Declared once per route: the same object is the documentation metadata and the source of the
+  // schemas the handler validates with.
+  const listDocs = {
+    permission: null,
+    responseStatus: 200,
+    schemas: { response: MeContextsResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const resolveDocs = {
+    permission: null,
+    responseStatus: 200,
+    schemas: { query: ContextResolveQuerySchema, response: ContextResolveResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const lastContextDocs = {
+    permission: null,
+    responseStatus: 204,
+    schemas: { body: PutLastContextRequestSchema }
+  } satisfies DocumentedRouteConfig;
+  const onboardingDocs = {
+    permission: null,
+    responseStatus: 204,
+    schemas: { params: ClientPathParamsSchema }
+  } satisfies DocumentedRouteConfig;
+
+  app.get('/me/contexts', { preHandler: requireSession, config: listDocs }, async (request, reply) => {
     const auth = requireAuth(request);
     const { contexts } = await withAuthenticatedUserTransaction(
       dependencies.database,
       auth.claims,
       (transaction) => listValidContexts(transaction)
     );
-    return reply.send(parseResponse(MeContextsResponseSchema, { contexts }));
+    return reply.send(parseResponse(listDocs.schemas.response, { contexts }));
   });
 
-  app.get('/me/contexts/resolve', {
-    preHandler: requireSession,
-    config: { permission: null, responseStatus: 200, schemas: { query: ContextResolveQuerySchema, response: ContextResolveResponseSchema } }
-  }, async (request, reply) => {
+  app.get('/me/contexts/resolve', { preHandler: requireSession, config: resolveDocs }, async (request, reply) => {
     const auth = requireAuth(request);
-    const query = parseRequest(ContextResolveQuerySchema, request.query);
+    const query = parseRequest(resolveDocs.schemas.query, request.query);
     const { contexts, lastUsedContext } = await withAuthenticatedUserTransaction(
       dependencies.database,
       auth.claims,
@@ -88,32 +106,29 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
     // their last context mid-use is signed out on the very next pass through `resolve`.
     if (contexts.length === 0) {
       await endSessionForNoContext(dependencies.auth, request, reply);
-      return reply.send(parseResponse(ContextResolveResponseSchema, { decision: 'none' }));
+      return reply.send(parseResponse(resolveDocs.schemas.response, { decision: 'none' }));
     }
     // Step 3: exactly one valid context.
     if (contexts.length === 1) {
-      return reply.send(parseResponse(ContextResolveResponseSchema, { decision: 'enter', context: contexts[0]! }));
+      return reply.send(parseResponse(resolveDocs.schemas.response, { decision: 'enter', context: contexts[0]! }));
     }
     // Step 4: an explicit, valid `preferred` context wins over the last-used preference. An
     // invalid/inaccessible `preferred` is ignored in silence and the algorithm falls through.
     const preferred = query.preferred === undefined ? undefined : findPreferredContext(contexts, query.preferred);
     if (preferred !== undefined) {
-      return reply.send(parseResponse(ContextResolveResponseSchema, { decision: 'select', contexts, highlighted: preferred }));
+      return reply.send(parseResponse(resolveDocs.schemas.response, { decision: 'select', contexts, highlighted: preferred }));
     }
     // Step 5: the last-used context, if still valid.
     if (lastUsedContext !== null) {
-      return reply.send(parseResponse(ContextResolveResponseSchema, { decision: 'enter', context: lastUsedContext }));
+      return reply.send(parseResponse(resolveDocs.schemas.response, { decision: 'enter', context: lastUsedContext }));
     }
     // Step 6: no signal to prefer any one context.
-    return reply.send(parseResponse(ContextResolveResponseSchema, { decision: 'select', contexts, highlighted: null }));
+    return reply.send(parseResponse(resolveDocs.schemas.response, { decision: 'select', contexts, highlighted: null }));
   });
 
-  app.put('/me/last-context', {
-    preHandler: requireSession,
-    config: { permission: null, responseStatus: 204, schemas: { body: PutLastContextRequestSchema } }
-  }, async (request, reply) => {
+  app.put('/me/last-context', { preHandler: requireSession, config: lastContextDocs }, async (request, reply) => {
     const auth = requireAuth(request);
-    const body = parseRequest(PutLastContextRequestSchema, request.body);
+    const body = parseRequest(lastContextDocs.schemas.body, request.body);
 
     await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
       const valid = body.type === 'agency'
@@ -141,7 +156,7 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
 
   app.post('/clients/:clientId/onboarding/seen', {
     preHandler: [requireSession, dependencies.requireClientAccess],
-    config: { permission: null, responseStatus: 204, schemas: { params: ClientPathParamsSchema } }
+    config: onboardingDocs
   }, async (request, reply) => {
     const auth = requireAuth(request);
     const clientContext = request.clientContext;

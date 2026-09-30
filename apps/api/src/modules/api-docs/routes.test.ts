@@ -43,6 +43,15 @@ describe('API reference route gating (issue #182)', () => {
     expect(csp).toContain("default-src 'none'");
     expect(reference.body).toContain(`nonce="${nonce}"`);
     expect(reference.body).toContain(`<meta property="csp-nonce" content="${nonce}" />`);
+    expect(reference.body).not.toContain('ageniza-docs-nonce-placeholder');
+
+    // CSP3 requires a unique nonce per response: two pages must not share one.
+    const second = await app.inject('/docs/');
+    const secondNonce = /script-src 'self' 'nonce-([^']+)'/.exec(String(second.headers['content-security-policy']))?.[1];
+    expect(secondNonce).toBeDefined();
+    expect(secondNonce).not.toBe(nonce);
+    expect(second.body).toContain(`nonce="${secondNonce}"`);
+    expect(second.body).not.toContain(`nonce="${nonce}"`);
 
     const redirect = await app.inject('/docs');
     expect(redirect.statusCode).toBe(301);
