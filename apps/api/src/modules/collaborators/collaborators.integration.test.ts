@@ -114,14 +114,22 @@ const addMember = async (
   return user;
 };
 
-/** Same as `addMember`, but with a caller-chosen membership id and no holder tracked. */
+/**
+ * Same as `addMember`, but with a caller-chosen membership id and a bare user row (no credential
+ * account): these members never sign in, so hashing a password just made the suite slower.
+ */
 const addMemberWithMembershipId = async (
   agencyId: string,
   input: { membershipId: string; name: string; emailLabel: string; roleId: string }
-): Promise<TestUserFixture> => {
-  const user = await makeUser(input.emailLabel, input.name);
-  await owner.knex('agency_memberships').insert({ id: input.membershipId, agency_id: agencyId, user_id: user.id, role_id: input.roleId, job_title: null, status: 'active' });
-  return user;
+): Promise<string> => {
+  const userId = randomUUID();
+  createdUserIds.push(userId);
+  await app.pool.query(
+    'insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, false)',
+    [userId, input.name, `${input.emailLabel}.${randomUUID().slice(0, 8)}@collab-integration.test`]
+  );
+  await owner.knex('agency_memberships').insert({ id: input.membershipId, agency_id: agencyId, user_id: userId, role_id: input.roleId, job_title: null, status: 'active' });
+  return userId;
 };
 
 const membershipIdOf = async (agencyId: string, userId: string): Promise<string> => {
