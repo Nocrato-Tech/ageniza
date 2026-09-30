@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { ApiErrorResponseSchema } from '@ageniza/contracts';
 import { loggableRoute } from './route.js';
@@ -31,12 +31,20 @@ const isRateLimitError = (error: unknown): error is { statusCode: number; code: 
   'statusCode' in error && error.statusCode === 429 &&
   'code' in error && error.code === 'RATE_LIMITED';
 
+/**
+ * A client that declares a body and closes the socket before sending it: Node reports
+ * `ECONNRESET` and marks the raw request aborted. Recognising that *state* (never a status code)
+ * keeps an arbitrary 4xx error from being downgraded in its place.
+ */
+const isClientAbort = (error: unknown, request: FastifyRequest): boolean =>
+  error instanceof Error && 'code' in error && error.code === 'ECONNRESET' && request.raw.readableAborted === true;
+
 const contentTypeErrorResponse = (error: unknown): PublicErrorResponse | undefined => {
   if (!(error instanceof Error) || !('code' in error) || typeof error.code !== 'string') return undefined;
   return contentTypeErrorResponses[error.code];
 };
 
-const publicError = (error: unknown): PublicErrorResponse => {
+const publicError = (error: unknown, request: FastifyRequest): PublicErrorResponse => {
   if (error instanceof HttpError) {
     return {
       statusCode: error.statusCode,
@@ -47,6 +55,9 @@ const publicError = (error: unknown): PublicErrorResponse => {
   }
   if (isRateLimitError(error)) {
     return { statusCode: 429, code: 'RATE_LIMITED', message: 'Too many requests' };
+  }
+  if (isClientAbort(error, request)) {
+    return { statusCode: 400, code: 'REQUEST_ABORTED', message: 'A requisição foi interrompida pelo cliente.' };
   }
   const parserError = contentTypeErrorResponse(error);
   if (parserError !== undefined) return { ...parserError };
@@ -64,7 +75,7 @@ export const registerErrorHandling = (app: FastifyInstance): void => {
   });
 
   app.setErrorHandler((error, request, reply) => {
-    const response = publicError(error);
+    const response = publicError(error, request);
     const logContext = { requestId: request.id, statusCode: response.statusCode, code: response.code };
     if (response.code === 'INTERNAL_ERROR') {
       // Do not attach raw errors to logs: exception messages and payload-derived errors can contain secrets.

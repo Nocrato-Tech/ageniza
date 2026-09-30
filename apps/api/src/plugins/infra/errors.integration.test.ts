@@ -1,3 +1,5 @@
+import { connect } from 'node:net';
+
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiErrorResponseSchema } from '@ageniza/contracts';
@@ -77,6 +79,44 @@ const publicRoutes: readonly { readonly method: 'POST'; readonly url: string }[]
 const cookieHeader = (cookies: readonly { name: string; value: string }[]): string =>
   cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
 
+const flushLogs = async (): Promise<void> => {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+};
+
+const waitUntil = async (predicate: () => boolean, timeoutMs = 4_000): Promise<void> => {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate() && Date.now() < deadline) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  }
+};
+
+/**
+ * Declares a body larger than what is actually sent and destroys the socket mid-body. `inject`
+ * cannot simulate this, so the request goes over a real TCP connection; the server should see the
+ * abort during parsing, before any route handler.
+ */
+const abortRequestBody = async (port: number, path: string): Promise<void> => {
+  await new Promise<void>((resolve) => {
+    const socket = connect({ host: '127.0.0.1', port }, () => {
+      socket.write(
+        `POST ${path} HTTP/1.1\r\n` +
+          `Host: 127.0.0.1:${port}\r\n` +
+          `Origin: ${TEST_APP_PUBLIC_URL}\r\n` +
+          'Content-Type: application/json\r\n' +
+          'Content-Length: 1000\r\n' +
+          'Connection: close\r\n' +
+          '\r\n' +
+          '{"email":'
+      );
+      setTimeout(() => {
+        socket.destroy();
+        resolve();
+      }, 100);
+    });
+    socket.on('error', () => resolve());
+  });
+};
+
 describe('malformed request bodies answer 400/415, never 500 (#191)', () => {
   const openApps: TestApp[] = [];
   let app: TestApp;
@@ -84,10 +124,7 @@ describe('malformed request bodies answer 400/415, never 500 (#191)', () => {
   let user: TestUserFixture;
   let cookie: string;
   let ownedAgencyId: string | undefined;
-
-  const flushLogs = async (): Promise<void> => {
-    await new Promise<void>((resolve) => setImmediate(resolve));
-  };
+  let serverPort: number;
 
   beforeEach(() => {
     mockedCaptureUnexpectedError.mockClear();
@@ -97,6 +134,9 @@ describe('malformed request bodies answer 400/415, never 500 (#191)', () => {
     logs = captureLogs();
     app = await buildTestApp({ logger: logs.logger });
     openApps.push(app);
+    // The abort case needs a real TCP connection: `inject` never aborts mid-body.
+    const address = await app.app.listen({ port: 0, host: '127.0.0.1' });
+    serverPort = Number(new URL(address).port);
 
     // A real, valid session for the one authenticated write route below. Body parsing runs before
     // the session guard, so the session is not what makes these cases pass -- it is what makes the
@@ -167,6 +207,82 @@ describe('malformed request bodies answer 400/415, never 500 (#191)', () => {
         });
         await assertAnswer(response, bodyCase, logOffset);
       });
+    }
+  });
+
+  // Review of #194, finding 1: an aborted body is `ECONNRESET` with the raw request aborted, and
+  // must not reach the 500 branch either. The log line names the dedicated code, so the assertion
+  // cannot pass by simply never handling the request.
+  it('answers 400 REQUEST_ABORTED for a body aborted mid-stream, with no error log and no Sentry event', async () => {
+    const logOffset = logs.lines().length;
+    await abortRequestBody(serverPort, '/auth/login');
+    await waitUntil(() => {
+      const requestLogs = logs.lines().slice(logOffset).join('\n');
+      return requestLogs.includes('"code":"REQUEST_ABORTED"') || requestLogs.includes('Request failed unexpectedly');
+    });
+    await flushLogs();
+
+    const requestLogs = logs.lines().slice(logOffset).join('\n');
+    expect(requestLogs).toContain('"code":"REQUEST_ABORTED"');
+    expect(requestLogs).toContain('"level":30');
+    expect(requestLogs).not.toContain('"level":50');
+    expect(requestLogs).not.toContain('Request failed unexpectedly');
+    expect(mockedCaptureUnexpectedError).not.toHaveBeenCalled();
+  });
+});
+
+// Review of #194, finding 2: an error that merely carries a 4xx `statusCode` is still unexpected
+// unless its exact code is mapped. This is also the guard that keeps the abort fix from widening to
+// any `ECONNRESET` without `readableAborted`.
+describe('errors outside the map are never downgraded by statusCode (#194 review)', () => {
+  it('answers 500 INTERNAL_ERROR and captures once for an unmapped 4xx error', async () => {
+    const logs = captureLogs();
+    const app = await buildTestApp({
+      logger: logs.logger,
+      registerExtraRoutes: (fastifyApp) => {
+        fastifyApp.get('/__test/unmapped-4xx', async () => {
+          throw Object.assign(new Error('unmapped 4xx must stay unexpected'), { statusCode: 400, code: 'FST_ERR_TEST_UNMAPPED' });
+        });
+      }
+    });
+    try {
+      mockedCaptureUnexpectedError.mockClear();
+      const response = await app.app.inject({ method: 'GET', url: '/__test/unmapped-4xx' });
+
+      expect(response.statusCode).toBe(500);
+      expect(ApiErrorResponseSchema.parse(response.json()).error.code).toBe('INTERNAL_ERROR');
+      expect(mockedCaptureUnexpectedError).toHaveBeenCalledTimes(1);
+
+      await flushLogs();
+      expect(logs.text()).toContain('"level":50');
+      expect(logs.text()).toContain('Request failed unexpectedly');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('answers 500 INTERNAL_ERROR for an ECONNRESET error whose request was not aborted', async () => {
+    const logs = captureLogs();
+    const app = await buildTestApp({
+      logger: logs.logger,
+      registerExtraRoutes: (fastifyApp) => {
+        fastifyApp.get('/__test/econnreset-not-aborted', async () => {
+          throw Object.assign(new Error('aborted'), { statusCode: 400, code: 'ECONNRESET' });
+        });
+      }
+    });
+    try {
+      mockedCaptureUnexpectedError.mockClear();
+      const response = await app.app.inject({ method: 'GET', url: '/__test/econnreset-not-aborted' });
+
+      expect(response.statusCode).toBe(500);
+      expect(ApiErrorResponseSchema.parse(response.json()).error.code).toBe('INTERNAL_ERROR');
+      expect(mockedCaptureUnexpectedError).toHaveBeenCalledTimes(1);
+
+      await flushLogs();
+      expect(logs.text()).toContain('"level":50');
+    } finally {
+      await app.close();
     }
   });
 });
