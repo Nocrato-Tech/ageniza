@@ -6,7 +6,7 @@ import { AuthLogoutAllResponseSchema, AuthLogoutResponseSchema, type AuthUser } 
 import { Button, ConfirmDialog, Menu, MenuItem, MenuSeparator, Skeleton } from '@ageniza/ui';
 
 import { useAuthSession, useOptionalAuthSessionStore, type AuthSessionStore } from './auth.js';
-import { useApiClient } from './http.js';
+import { HttpClientError, useApiClient } from './http.js';
 
 type LogoutAction = 'logout' | 'logout-all';
 
@@ -56,7 +56,16 @@ export function AccountMenu({ activeContext, user: userOverride }: AccountMenuPr
       queryClient.clear();
       authStore?.end();
       navigate('/entrar', { replace: true });
-    } catch {
+    } catch (error: unknown) {
+      // A session revoked elsewhere answers 401; the person asked to leave, so that is the outcome
+      // they wanted. Finish the sign-out without state, over the destination the session-ended
+      // redirect saved, so the next account is not sent back to the previous one's address.
+      if (error instanceof HttpClientError && error.status === 401) {
+        queryClient.clear();
+        authStore?.end();
+        navigate('/entrar', { replace: true });
+        return;
+      }
       setFailedAction(action);
       if (action === 'logout-all') setConfirmOpen(false);
     } finally {
