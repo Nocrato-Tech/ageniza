@@ -21,7 +21,7 @@ import {
 } from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
-import { profilePhotoBodyLimitBytes } from './policy.js';
+import { profilePhotoBodyLimitBytes, PROFILE_PHOTO_RATE_LIMIT } from './policy.js';
 import { loadOwnProfile, updateOwnImage, updateOwnName } from './service.js';
 
 export interface ProfileModuleConfig {
@@ -73,6 +73,17 @@ export const registerProfileModule = (app: FastifyInstance, dependencies: Profil
     responseStatus: 200,
     schemas: { body: UploadMyPhotoRequestSchema, response: UploadMyPhotoResponseSchema }
   } satisfies DocumentedRouteConfig;
+  // Keyed by the session user, not the IP: identity storage has no quota, so the ceiling must
+  // follow the account. `hook: 'preHandler'` puts it after `requireSession` (which the plugin
+  // appends to), so `request.auth` is populated when the key is read.
+  const photoRateLimit = {
+    rateLimit: {
+      max: PROFILE_PHOTO_RATE_LIMIT.max,
+      timeWindow: PROFILE_PHOTO_RATE_LIMIT.windowMs,
+      hook: 'preHandler' as const,
+      keyGenerator: (request: FastifyRequest) => request.auth?.userId ?? request.ip
+    }
+  };
 
   app.patch('/me/profile', { preHandler: requireSession, config: profileDocs }, async (request, reply) => {
     const auth = requireAuth(request);
@@ -91,7 +102,7 @@ export const registerProfileModule = (app: FastifyInstance, dependencies: Profil
     // Own limit, at least the configured image size plus base64/JSON overhead; the global body
     // limit is not raised for this route (issue #100's README).
     bodyLimit: profilePhotoBodyLimitBytes(dependencies.config.maxImageBytes),
-    config: photoDocs
+    config: { ...photoDocs, ...photoRateLimit }
   }, async (request, reply) => {
     const auth = requireAuth(request);
     const body = parseRequest(photoDocs.schemas.body, request.body);

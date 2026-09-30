@@ -7,3 +7,12 @@
  */
 export const profilePhotoBodyLimitBytes = (maxImageBytes: number): number =>
   Math.ceil(maxImageBytes / 3) * 4 + 256;
+
+/**
+ * Per-user ceiling for `POST /me/photo`, applied through the route-level `@fastify/rate-limit`
+ * (`plugins/infra/rate-limit.ts`) keyed by the session user id. Identity storage has no quota by
+ * decision, so without a ceiling a single account could grow the identity bucket without bound;
+ * this bounds uploads per person while still allowing a burst. The concurrency serialization in
+ * `service.ts` keeps each upload from leaking objects; this keeps the total count sane.
+ */
+export const PROFILE_PHOTO_RATE_LIMIT = { max: 30, windowMs: 60_000 } as const;

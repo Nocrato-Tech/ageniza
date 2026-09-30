@@ -1,20 +1,26 @@
 import { randomUUID } from 'node:crypto';
 
 import { DeleteObjectCommand, HeadObjectCommand, ListObjectsV2Command, NotFound, S3Client } from '@aws-sdk/client-s3';
+import Fastify from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { raw, withAuthenticatedUserTransaction, createVerifiedUserClaims } from '@ageniza/database';
 
 import {
   buildTestApp,
+  captureLogs,
   insertTestUser,
   ownerClient,
   TEST_APP_PUBLIC_URL,
   TEST_IDENTITY_STORAGE_CONFIG,
   TEST_STORAGE_CONFIG,
+  type CapturedLogs,
   type TestApp,
   type TestUserFixture
 } from '../auth/test-support/harness.js';
+import { createIdentityStorageClient } from '../identity-storage/storage-client.js';
+import { PROFILE_PHOTO_RATE_LIMIT } from './policy.js';
+import { registerProfileModule } from './routes.js';
 
 // Issue #101 acceptance tests. Runs against the real local database (`pnpm db:migrate`) and the
 // local LocalStack started by `pnpm storage:start`, as the identity-storage suite does.
@@ -39,6 +45,7 @@ interface ApiErrorJson {
 }
 
 let app: TestApp;
+let logs: CapturedLogs;
 const owner = ownerClient();
 
 const createdUserIds: string[] = [];
@@ -131,6 +138,10 @@ const listAvatarObjects = async (userId: string): Promise<string[]> => {
   return (response.Contents ?? []).map((object) => object.Key ?? '');
 };
 
+const flushLogs = async (): Promise<void> => {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+};
+
 const patchProfile = async (cookie: string | undefined, payload: unknown, url = '/me/profile'): Promise<{ status: number; body: ApiErrorJson & { id?: string; name?: string } }> => {
   const response = await app.app.inject({
     method: 'PATCH',
@@ -155,7 +166,8 @@ describe('profile module (issue #101)', () => {
   let presetRoleIds: Record<(typeof SYSTEM_PRESETS)[number], string>;
 
   beforeAll(async () => {
-    app = await buildTestApp();
+    logs = captureLogs();
+    app = await buildTestApp({ logger: logs.logger });
     const roles = await owner.knex('roles').whereNull('agency_id').whereIn('key', [...SYSTEM_PRESETS]).select('id', 'key');
     presetRoleIds = Object.fromEntries(roles.map((role) => [role.key, role.id])) as Record<(typeof SYSTEM_PRESETS)[number], string>;
   });
@@ -234,6 +246,35 @@ describe('profile module (issue #101)', () => {
     expect((await readUser(user.id)).name).toBe(before);
   });
 
+  it('#101: control, bidi and invisible characters in the name are rejected with 400 and no error log', async () => {
+    const user = await makeUserWithOwnAgency('profile-name-hostile');
+    const cookie = await loginCookie(user);
+    const before = (await readUser(user.id)).name;
+    const logOffset = logs.lines().length;
+
+    const hostile = [
+      'Ana\u0000Bia', // NUL: PostgreSQL rejects it (22021) if it ever reaches the database
+      'Ana\u0007Bia', // BEL
+      '\u001b[31mAna', // ESC
+      'Ana\u007fBia', // DEL
+      'Ana\u202eBia', // RLO: makes the badge read differently than the stored name
+      '\u200b', // zero-width space alone
+      '\u3164', // Hangul filler alone: a letter that renders as nothing
+      '!!!' // no letter or number at all
+    ];
+    for (const name of hostile) {
+      const response = await patchProfile(cookie, { name });
+      expect(response.status, `name ${JSON.stringify(name)}`).toBe(400);
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    }
+    expect((await readUser(user.id)).name).toBe(before);
+
+    await flushLogs();
+    const requestLogs = logs.lines().slice(logOffset).join('\n');
+    expect(requestLogs).not.toContain('"level":50');
+    expect(requestLogs).not.toContain('Request failed unexpectedly');
+  });
+
   it('#101: uploading a photo stores the reference on the user and returns a signed URL that serves the bytes', async () => {
     const user = await makeUserWithOwnAgency('profile-photo-happy');
     const cookie = await loginCookie(user);
@@ -245,6 +286,12 @@ describe('profile module (issue #101)', () => {
     const stored = (await readUser(user.id)).image;
     expect(stored).toMatch(new RegExp(`^users/${user.id}/avatar/[0-9a-f-]{36}\\.png$`));
     expect(await listAvatarObjects(user.id)).toEqual([stored]);
+
+    // The signed URL carries exactly the configured lifetime, not a hardcoded one.
+    const signed = new URL(response.body.imageUrl!);
+    expect(signed.searchParams.get('X-Amz-Expires')).toBe(String(TEST_IDENTITY_STORAGE_CONFIG.downloadUrlExpirySeconds));
+    expect(signed.searchParams.get('response-content-type')).toBe('image/png');
+    expect(signed.searchParams.get('response-content-disposition')).toBe('inline');
 
     // The signed URL serves the real bytes with a forced safe content type.
     const fetched = await fetch(response.body.imageUrl!);
@@ -347,6 +394,70 @@ describe('profile module (issue #101)', () => {
     });
     expect(rejected.statusCode).toBe(413);
     expect(rejected.json<ApiErrorJson>().error.code).toBe('PAYLOAD_TOO_LARGE');
+  });
+
+  it('#101: concurrent uploads from one session leave exactly one object behind', async () => {
+    const user = await makeUserWithOwnAgency('profile-photo-concurrent');
+    const cookie = await loginCookie(user);
+
+    // Without `select ... for update` in `loadOwnProfile`, each transaction reads the same
+    // "previous" key, all but one object ends up unreferenced, and this count grows with the burst.
+    const responses = await Promise.all(Array.from({ length: 20 }, () => postPhoto(cookie, { imageBase64: base64(png(64)) })));
+    for (const response of responses) expect(response.status).toBe(200);
+
+    const objects = await listAvatarObjects(user.id);
+    expect(objects).toHaveLength(1);
+    expect(objects[0]).toBe((await readUser(user.id)).image);
+  });
+
+  it('#101: photo uploads are rate limited per user', async () => {
+    const user = await makeUserWithOwnAgency('profile-photo-rate-limit');
+    const cookie = await loginCookie(user);
+
+    for (let index = 0; index < PROFILE_PHOTO_RATE_LIMIT.max; index += 1) {
+      const response = await postPhoto(cookie, { imageBase64: base64(png()) });
+      expect(response.status, `request ${index + 1}`).toBe(200);
+    }
+    const limited = await postPhoto(cookie, { imageBase64: base64(png()) });
+    expect(limited.status).toBe(429);
+    expect(limited.body.error.code).toBe('RATE_LIMITED');
+  });
+
+  it('#101: a failed reference commit deletes the object it just wrote', async () => {
+    const user = await makeUserWithOwnAgency('profile-photo-commit-fail');
+    const cookie = await loginCookie(user);
+
+    // The upload succeeds; the database write that would point at it fails. Without the route's
+    // cleanup, the new object survives with no committed reference -- a live orphan.
+    const failingDatabase = {
+      ...app.database,
+      transaction: async () => { throw new Error('simulated commit failure'); }
+    } as unknown as typeof app.database;
+
+    const failingApp = Fastify();
+    registerProfileModule(failingApp, {
+      database: failingDatabase,
+      auth: app.auth,
+      identityStorage: createIdentityStorageClient(TEST_IDENTITY_STORAGE_CONFIG),
+      config: {
+        maxImageBytes: TEST_IDENTITY_STORAGE_CONFIG.maxImageBytes,
+        downloadUrlExpirySeconds: TEST_IDENTITY_STORAGE_CONFIG.downloadUrlExpirySeconds
+      }
+    });
+    await failingApp.ready();
+    try {
+      const response = await failingApp.inject({
+        method: 'POST',
+        url: '/me/photo',
+        headers: { ...origin, cookie },
+        payload: { imageBase64: base64(png()) }
+      });
+      expect(response.statusCode).toBe(500);
+      expect(await listAvatarObjects(user.id)).toEqual([]);
+      expect((await readUser(user.id)).image).toBeNull();
+    } finally {
+      await failingApp.close();
+    }
   });
 
   it('#101: a userId in the body, the query or the path never becomes the target', async () => {

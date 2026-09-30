@@ -13,16 +13,22 @@ export interface OwnProfile {
 }
 
 /**
- * Reads the session user's own name and photo reference. `auth."user"` has no RLS -- the schema is
- * Better Auth's and the CI gate only enforces row level security on `public` -- so every statement
- * in this module targets the verified session user id and nothing else. There is no second barrier
- * in the database; the caller passing the session id is the whole of the isolation.
+ * Reads the session user's own name and photo reference, locking the row for the rest of the
+ * transaction (`for update`). `auth."user"` has no RLS -- the schema is Better Auth's and the CI
+ * gate only enforces row level security on `public` -- so every statement in this module targets
+ * the verified session user id and nothing else. There is no second barrier in the database; the
+ * caller passing the session id is the whole of the isolation.
+ *
+ * The lock is what serializes concurrent photo uploads for the same person: without it, several
+ * transactions read the same "previous" key, each commits its own, and every key but the last is
+ * orphaned in a storage that has no quota -- a leak born on success, not from a failed delete.
  */
 export const loadOwnProfile = async (transaction: ProfileTransaction, userId: string): Promise<OwnProfile | undefined> => {
   const result = await raw<RawRows<OwnProfile>>(transaction, `
     select id, name, image
     from auth."user"
     where id = ?::uuid
+    for update
   `, [userId]);
   return result.rows[0];
 };

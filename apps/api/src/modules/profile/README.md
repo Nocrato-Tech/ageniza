@@ -22,11 +22,13 @@ checks that account is unchanged.
 
 ## Name
 
-`PATCH /me/profile` trims the name, requires it to be non-empty and caps it at
-`PROFILE_NAME_MAX_LENGTH` (120). `specs/colaboradores.md` requires a limit but fixes no number, so
-120 is this module's choice, recorded in `docs/business/decisions.md` (2026-09-30, **pending
-validation**). The update runs as `update auth."user" set name = ?, "updatedAt" = now() where id =
-<session id>` -- the primary key, so it affects exactly one row.
+`PATCH /me/profile` validates the name with the shared `DisplayNameSchema`
+(`packages/contracts/src/display-name.ts`): it trims, caps at `DISPLAY_NAME_MAX_LENGTH` (120),
+rejects control, bidi-override and invisible characters, and requires at least one letter or
+number. `specs/colaboradores.md` requires a limit but fixes no number, so 120 is this module's
+choice, recorded in `docs/business/decisions.md` (2026-09-30, **pending validation**). The update
+runs as `update auth."user" set name = ?, "updatedAt" = now() where id = <session id>` -- the
+primary key, so it affects exactly one row.
 
 **E-mail is not editable by any route in this module.** A request that tries is rejected by
 `.strict()`, and the column is never written.
@@ -53,6 +55,13 @@ oversized body is refused by Fastify's parser before any handler buffers it -- t
   `Content-Type`/`Content-Disposition` regardless of what is stored.
 - **No agency quota.** The object lives in the identity bucket; nothing is written to
   `media_assets` or `agency_storage_quotas`.
+- **Concurrent uploads are serialized** by `select ... for update` on the user row
+  (`service.ts`'s `loadOwnProfile`): without the lock, several transactions read the same previous
+  key and all but one object is orphaned. The route also has a **per-user rate limit**
+  (`policy.ts`'s `PROFILE_PHOTO_RATE_LIMIT`), because identity storage has no quota and the ceiling
+  must follow the account.
+- **A failed reference commit deletes the object it just wrote** (the `catch` around the commit),
+  so a database failure cannot leave a live, unreferenced avatar.
 
 ## What this module does not do
 

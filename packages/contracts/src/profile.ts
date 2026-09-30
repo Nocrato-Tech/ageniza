@@ -1,24 +1,21 @@
 import { z } from 'zod';
 
-/**
- * Longest accepted display name. `specs/colaboradores.md` (§3, §5) requires a non-empty name with
- * a size limit but fixes no number; 120 is this module's choice, recorded in
- * `docs/business/decisions.md` (2026-09-30, pending validation).
- */
-export const PROFILE_NAME_MAX_LENGTH = 120;
+import { DisplayNameSchema, DISPLAY_NAME_MAX_LENGTH } from './display-name.js';
 
 /**
  * `PATCH /me/profile` body. `.strict()` is load-bearing here, not stylistic: `auth."user"` has no
  * RLS, so the target is always the verified session user and an extra field such as `userId` must
- * never reach a handler that could be tempted to read it.
+ * never reach a handler that could be tempted to read it. The name itself goes through the shared
+ * `DisplayNameSchema`, which rejects control/bidi/invisible characters before they can reach
+ * PostgreSQL (a NUL byte is a 22021 and would otherwise be a 500).
  */
 export const UpdateMyProfileRequestSchema = z.object({
-  name: z.string().trim().min(1).max(PROFILE_NAME_MAX_LENGTH)
+  name: DisplayNameSchema
 }).strict();
 
 export const UpdateMyProfileResponseSchema = z.object({
   id: z.string().uuid(),
-  name: z.string().trim().min(1).max(PROFILE_NAME_MAX_LENGTH)
+  name: z.string().trim().min(1).max(DISPLAY_NAME_MAX_LENGTH)
 }).strict();
 
 /**
