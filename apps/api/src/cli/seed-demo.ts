@@ -33,6 +33,10 @@ export const SEED_FLAG = '--i-know-this-is-local';
 const DEFAULT_DATABASE_URL = 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
 const DEFAULT_MIGRATION_DATABASE_URL = 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
 const DEFAULT_APP_PUBLIC_URL = 'http://127.0.0.1:5173';
+const DEFAULT_TERMS_VERSION = '2026-01-01';
+const DEFAULT_PRIVACY_VERSION = '2026-02-01';
+const DEFAULT_EMAIL_DOMAIN = 'demo.ageniza.test';
+const DEFAULT_NAMESPACE = 'ageniza-demo-seed-v1';
 const INVITATION_EXPIRY = "interval '7 days'";
 
 export class SeedDemoError extends Error {
@@ -43,6 +47,7 @@ export class SeedDemoError extends Error {
 }
 
 type SeedTransaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
+type SeedId = (key: string) => string;
 
 interface RawRows<TResult> {
   readonly rows: readonly TResult[];
@@ -65,8 +70,9 @@ export const demoId = (key: string): string => {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 };
 
-const demoTokenHash = (key: string): string => sha256(`ageniza-demo-seed-token-v1:${key}`);
-
+// Every invitation gets a random token hash: a deterministic one would collide with a row a
+// developer removed by hand (the `token_hash` unique constraint does not care about `used_at`),
+// and it would make the raw token a public string in this source file.
 const randomTokenHash = (): string => sha256(randomBytes(32).toString('base64url'));
 
 const randomPassword = (): string => randomBytes(15).toString('base64url');
@@ -75,17 +81,34 @@ export interface SeedDemoResolvedEnvironment {
   readonly databaseUrl: string;
   readonly migrationDatabaseUrl: string;
   readonly appPublicUrl: string;
+  /** Recorded as the accepted versions for every demo account, like the new-account route does. */
+  readonly termsVersion: string;
+  readonly privacyVersion: string;
 }
 
 export const resolveSeedEnvironment = (env: Record<string, string | undefined>): SeedDemoResolvedEnvironment => ({
   databaseUrl: env.DATABASE_URL ?? DEFAULT_DATABASE_URL,
   migrationDatabaseUrl: env.MIGRATION_DATABASE_URL ?? DEFAULT_MIGRATION_DATABASE_URL,
-  appPublicUrl: (env.APP_PUBLIC_URL ?? DEFAULT_APP_PUBLIC_URL).replace(/\/+$/, '')
+  appPublicUrl: (env.APP_PUBLIC_URL ?? DEFAULT_APP_PUBLIC_URL).replace(/\/+$/, ''),
+  termsVersion: env.AUTH_TERMS_VERSION ?? DEFAULT_TERMS_VERSION,
+  privacyVersion: env.AUTH_PRIVACY_VERSION ?? DEFAULT_PRIVACY_VERSION
 });
 
+const isProductionRuntime = (value: string | undefined): boolean => (value ?? '').trim().toLowerCase() === 'production';
+
+/** Host, port and database of a URL, so the two connections cannot silently target different DBs. */
+const databaseIdentity = (connectionString: string): string => {
+  const parsed = new URL(connectionString);
+  const hostname = parsed.hostname.replace(/^\[/, '').replace(/\]$/, '').toLowerCase();
+  // The loopback spellings are the same server in practice; anything else compares literally.
+  const host = hostname === 'localhost' || hostname === '::1' || hostname.startsWith('127.') ? 'loopback' : hostname;
+  return `${host}:${parsed.port === '' ? '5432' : parsed.port}${parsed.pathname}`;
+};
+
 /**
- * The gate that keeps the command local: an explicit flag, a non-production runtime and a
- * loopback database for both connections. Any failure aborts before the first write.
+ * The gate that keeps the command local: an explicit flag, a non-production runtime, a loopback
+ * database for both connections and both connections pointing at the same database. Any failure
+ * aborts before the first write -- and before any password is rotated.
  */
 export const assertSeedAllowed = (input: {
   readonly argv: readonly string[];
@@ -100,7 +123,7 @@ export const assertSeedAllowed = (input: {
   if (unknown.length > 0) {
     throw new SeedDemoError(`Unknown argument: ${unknown.join(' ')}. Usage: pnpm seed:demo ${SEED_FLAG}`);
   }
-  if (input.env.NODE_ENV === 'production' || input.env.APP_ENV === 'production') {
+  if (isProductionRuntime(input.env.NODE_ENV) || isProductionRuntime(input.env.APP_ENV)) {
     throw new SeedDemoError('Refusing to run with NODE_ENV/APP_ENV=production.');
   }
   try {
@@ -109,12 +132,16 @@ export const assertSeedAllowed = (input: {
   } catch {
     throw new SeedDemoError('Refusing to run: both DATABASE_URL and MIGRATION_DATABASE_URL must point at a loopback host (127.0.0.1 or localhost).');
   }
+  if (databaseIdentity(input.databaseUrl) !== databaseIdentity(input.migrationDatabaseUrl)) {
+    throw new SeedDemoError('Refusing to run: DATABASE_URL and MIGRATION_DATABASE_URL must point at the same host, port and database.');
+  }
 };
 
 interface DemoUserSpec {
   readonly key: string;
   readonly name: string;
-  readonly email: string;
+  /** Local part; the domain is a run option so an isolated run never touches real demo accounts. */
+  readonly emailLocal: string;
   readonly jobTitle: string;
   /** A system preset key, or `owner` for the agency owner. */
   readonly roleKey: string;
@@ -124,26 +151,26 @@ const MAIN_AGENCY = { key: 'agency:horizonte', name: 'Agência Horizonte' } as c
 const SECOND_AGENCY = { key: 'agency:ponte', name: 'Estúdio Ponte' } as const;
 
 const MAIN_USERS: readonly DemoUserSpec[] = [
-  { key: 'user:marina', name: 'Marina Duarte', email: 'dono@demo.ageniza.test', jobTitle: 'Diretora', roleKey: 'owner' },
-  { key: 'user:rafael', name: 'Rafael Lima', email: 'admin@demo.ageniza.test', jobTitle: 'Head de operações', roleKey: 'admin' },
-  { key: 'user:camila', name: 'Camila Nogueira', email: 'gestor@demo.ageniza.test', jobTitle: 'Gestora de contas', roleKey: 'account_manager' },
-  { key: 'user:bruno', name: 'Bruno Salles', email: 'producao@demo.ageniza.test', jobTitle: 'Diretor de arte', roleKey: 'production' },
-  { key: 'user:leticia', name: 'Letícia Prado', email: 'vendas@demo.ageniza.test', jobTitle: 'Executiva de vendas', roleKey: 'sales' },
-  { key: 'user:otavio', name: 'Otávio Reis', email: 'financeiro@demo.ageniza.test', jobTitle: 'Analista financeiro', roleKey: 'finance' }
+  { key: 'user:marina', name: 'Marina Duarte', emailLocal: 'dono', jobTitle: 'Diretora', roleKey: 'owner' },
+  { key: 'user:rafael', name: 'Rafael Lima', emailLocal: 'admin', jobTitle: 'Head de operações', roleKey: 'admin' },
+  { key: 'user:camila', name: 'Camila Nogueira', emailLocal: 'gestor', jobTitle: 'Gestora de contas', roleKey: 'account_manager' },
+  { key: 'user:bruno', name: 'Bruno Salles', emailLocal: 'producao', jobTitle: 'Diretor de arte', roleKey: 'production' },
+  { key: 'user:leticia', name: 'Letícia Prado', emailLocal: 'vendas', jobTitle: 'Executiva de vendas', roleKey: 'sales' },
+  { key: 'user:otavio', name: 'Otávio Reis', emailLocal: 'financeiro', jobTitle: 'Analista financeiro', roleKey: 'finance' }
 ];
 
 const SECOND_USERS: readonly DemoUserSpec[] = [
-  { key: 'user:helena', name: 'Helena Costa', email: 'dono.ponte@demo.ageniza.test', jobTitle: 'Sócia', roleKey: 'owner' },
-  { key: 'user:paulo', name: 'Paulo Menezes', email: 'producao.ponte@demo.ageniza.test', jobTitle: 'Designer', roleKey: 'production' }
+  { key: 'user:helena', name: 'Helena Costa', emailLocal: 'dono.ponte', jobTitle: 'Sócia', roleKey: 'owner' },
+  { key: 'user:paulo', name: 'Paulo Menezes', emailLocal: 'producao.ponte', jobTitle: 'Designer', roleKey: 'production' }
 ];
 
-const PORTAL_USER = { key: 'user:sofia', name: 'Sofia Andrade', email: 'portal@demo.ageniza.test' } as const;
+const PORTAL_USER = { key: 'user:sofia', name: 'Sofia Andrade', emailLocal: 'portal' } as const;
 
 // Pending invites carry a real role: `invitations_insert` (20260928000000) refuses a
 // collaborator invite whose role_id does not resolve to a role scoped to the agency.
 const PENDING_COLLABORATOR_INVITES = [
-  { email: 'pendente.um@demo.ageniza.test', roleKey: 'production' },
-  { email: 'pendente.dois@demo.ageniza.test', roleKey: 'sales' }
+  { emailLocal: 'pendente.um', roleKey: 'production' },
+  { emailLocal: 'pendente.dois', roleKey: 'sales' }
 ] as const;
 
 interface DemoSectionSpec {
@@ -385,6 +412,9 @@ const ensureUser = async (database: DatabaseClient, user: { id: string; name: st
     } else {
       await raw(transaction, 'update auth."account" set password = ?, "updatedAt" = now() where id = ?::uuid', [user.passwordHash, existing.rows[0].id]);
     }
+    // The password just rotated, so any session opened with the old one dies with it: the printed
+    // output is the only valid credential from now on (same effect a password reset has).
+    await raw(transaction, 'delete from auth."session" where "userId" = ?::uuid', [userId]);
     return userId;
   });
 };
@@ -445,9 +475,16 @@ const insertInvitation = async (
   ]);
 };
 
-const acceptInvitation = async (database: DatabaseClient, userId: string, tokenHash: string): Promise<void> => {
+interface SeedVersions {
+  readonly terms: string;
+  readonly privacy: string;
+}
+
+const acceptInvitation = async (database: DatabaseClient, userId: string, tokenHash: string, versions: SeedVersions): Promise<void> => {
   await withAuthenticatedUserTransaction(database, createVerifiedUserClaims({ userId }), async (transaction) => {
-    await raw(transaction, 'select * from app_private.accept_invitation(?, ?::uuid, null, null, false)', [tokenHash, userId]);
+    // Every seeded account is new, so the acceptance is recorded exactly like the real
+    // `accept-new-account` route does: both documents, with the configured versions.
+    await raw(transaction, 'select * from app_private.accept_invitation(?, ?::uuid, ?, ?, true)', [tokenHash, userId, versions.terms, versions.privacy]);
   });
 };
 
@@ -466,7 +503,7 @@ const ensureInvitationAccepted = async (input: {
   readonly roleId: string | null;
   readonly clientId: string | null;
   readonly inviteeUserId: string;
-  readonly tokenKey: string;
+  readonly versions: SeedVersions;
 }): Promise<void> => {
   const { database, agencyId, purpose, email, clientId, inviteeUserId } = input;
   const run = async (transaction: SeedTransaction): Promise<string> => {
@@ -475,7 +512,7 @@ const ensureInvitationAccepted = async (input: {
     if (pending !== undefined) {
       await raw(transaction, 'update public.invitations set revoked_at = now() where id = ?::uuid', [pending.id]);
     }
-    const tokenHash = demoTokenHash(input.tokenKey);
+    const tokenHash = randomTokenHash();
     await insertInvitation(transaction, {
       agencyId,
       purpose,
@@ -495,7 +532,7 @@ const ensureInvitationAccepted = async (input: {
     : await withAuthenticatedUserTransaction(database, createVerifiedUserClaims({ userId: input.inviterUserId }), (transaction) => run(transaction));
 
   try {
-    await acceptInvitation(database, inviteeUserId, tokenHash);
+    await acceptInvitation(database, inviteeUserId, tokenHash, input.versions);
   } catch (error) {
     throw new SeedDemoError(`Could not accept the ${purpose} invitation for ${email}: ${error instanceof Error ? error.message : 'unknown error'}`);
   }
@@ -532,7 +569,7 @@ const ensureAgencyOwner = async (input: {
   readonly ownerUserId: string;
   readonly agencyId: string;
   readonly email: string;
-  readonly tokenKey: string;
+  readonly versions: SeedVersions;
 }): Promise<void> => {
   // The migration owner reads the agency here: `agencies_select` deliberately hides it from the
   // application role before the caller has a membership.
@@ -552,7 +589,7 @@ const ensureAgencyOwner = async (input: {
     roleId: null,
     clientId: null,
     inviteeUserId: input.ownerUserId,
-    tokenKey: input.tokenKey
+    versions: input.versions
   });
 };
 
@@ -564,7 +601,7 @@ const ensurePresetMembership = async (input: {
   readonly agencyId: string;
   readonly email: string;
   readonly roleId: string;
-  readonly tokenKey: string;
+  readonly versions: SeedVersions;
 }): Promise<void> => {
   if (await activeAgencyMembershipExists(input.database, input.agencyId, input.inviteeUserId)) return;
   await ensureInvitationAccepted({
@@ -577,7 +614,7 @@ const ensurePresetMembership = async (input: {
     roleId: input.roleId,
     clientId: null,
     inviteeUserId: input.inviteeUserId,
-    tokenKey: input.tokenKey
+    versions: input.versions
   });
 };
 
@@ -589,7 +626,7 @@ const ensurePortalMembership = async (input: {
   readonly agencyId: string;
   readonly clientId: string;
   readonly email: string;
-  readonly tokenKey: string;
+  readonly versions: SeedVersions;
 }): Promise<void> => {
   if (await activeClientMembershipExists(input.database, input.clientId, input.inviteeUserId)) return;
   await ensureInvitationAccepted({
@@ -602,7 +639,27 @@ const ensurePortalMembership = async (input: {
     roleId: null,
     clientId: input.clientId,
     inviteeUserId: input.inviteeUserId,
-    tokenKey: input.tokenKey
+    versions: input.versions
+  });
+};
+
+/**
+ * Writes `agency_memberships.job_title` through the application path: the Owner holds
+ * `colaborador.alterar_funcao`, and the BEFORE UPDATE trigger is the one that checks it.
+ */
+const ensureJobTitle = async (input: {
+  readonly database: DatabaseClient;
+  readonly agencyId: string;
+  readonly actorUserId: string;
+  readonly targetUserId: string;
+  readonly jobTitle: string;
+}): Promise<void> => {
+  await withAuthenticatedUserTransaction(input.database, createVerifiedUserClaims({ userId: input.actorUserId }), async (transaction) => {
+    await raw(transaction, `
+      update public.agency_memberships
+      set job_title = ?, updated_at = now()
+      where agency_id = ?::uuid and user_id = ?::uuid
+    `, [input.jobTitle, input.agencyId, input.targetUserId]);
   });
 };
 
@@ -632,7 +689,7 @@ const ensurePendingCollaboratorInvitations = async (input: {
   });
 };
 
-const ensureClient = async (database: DatabaseClient, userId: string, agencyId: string, client: DemoClientSpec): Promise<void> => {
+const ensureClient = async (database: DatabaseClient, userId: string, agencyId: string, client: DemoClientSpec, idFor: SeedId): Promise<void> => {
   await withAuthenticatedUserTransaction(database, createVerifiedUserClaims({ userId }), async (transaction) => {
     // Insert and update are separate on purpose: `updated_by` is outside the INSERT grant and is
     // required to equal the caller on every UPDATE, so the upsert cannot be a single statement.
@@ -642,7 +699,7 @@ const ensureClient = async (database: DatabaseClient, userId: string, agencyId: 
       values (?::uuid, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict (id) do nothing
     `, [
-      demoId(client.key),
+      idFor(client.key),
       agencyId,
       client.name,
       client.registration?.legalName ?? null,
@@ -679,12 +736,12 @@ const ensureClient = async (database: DatabaseClient, userId: string, agencyId: 
       client.registration?.contactPhone ?? null,
       client.registration?.contactEmail ?? null,
       userId,
-      demoId(client.key)
+      idFor(client.key)
     ]);
   });
 };
 
-const ensureBrandStudy = async (database: DatabaseClient, userId: string, client: DemoClientSpec): Promise<void> => {
+const ensureBrandStudy = async (database: DatabaseClient, userId: string, client: DemoClientSpec, idFor: SeedId): Promise<void> => {
   await withAuthenticatedUserTransaction(database, createVerifiedUserClaims({ userId }), async (transaction) => {
     for (const section of client.sections ?? []) {
       await raw(transaction, `
@@ -697,7 +754,7 @@ const ensureBrandStudy = async (database: DatabaseClient, userId: string, client
           updated_by = excluded.updated_by,
           updated_at = now()
       `, [
-        demoId(client.key),
+        idFor(client.key),
         section.sectionKey,
         section.body ?? null,
         section.colors === undefined ? null : JSON.stringify(section.colors),
@@ -718,8 +775,8 @@ const ensureBrandStudy = async (database: DatabaseClient, userId: string, client
           updated_by = excluded.updated_by,
           updated_at = now()
       `, [
-        demoId(persona.key),
-        demoId(client.key),
+        idFor(persona.key),
+        idFor(client.key),
         persona.name,
         persona.description,
         persona.pains,
@@ -735,8 +792,9 @@ const ensureThreads = async (input: {
   readonly database: DatabaseClient;
   readonly userIdByKey: ReadonlyMap<string, string>;
   readonly client: DemoClientSpec;
+  readonly idFor: SeedId;
 }): Promise<void> => {
-  const { database, client, userIdByKey } = input;
+  const { database, client, userIdByKey, idFor } = input;
   for (const thread of client.threads ?? []) {
     const openedById = userIdByKey.get(thread.openedBy);
     if (openedById === undefined) throw new SeedDemoError(`Unknown thread author ${thread.openedBy}.`);
@@ -746,10 +804,10 @@ const ensureThreads = async (input: {
         values (?::uuid, ?::uuid, ?, ?::uuid, ?::uuid, ?)
         on conflict (id) do nothing
       `, [
-        demoId(thread.key),
-        demoId(client.key),
+        idFor(thread.key),
+        idFor(client.key),
         thread.sectionKey ?? null,
-        thread.personaKey === undefined ? null : demoId(thread.personaKey),
+        thread.personaKey === undefined ? null : idFor(thread.personaKey),
         openedById,
         thread.openedSide
       ]);
@@ -764,14 +822,14 @@ const ensureThreads = async (input: {
           insert into public.client_thread_comments (id, thread_id, client_id, author_user_id, author_side, body)
           values (?::uuid, ?::uuid, ?::uuid, ?::uuid, ?, ?)
           on conflict (id) do nothing
-        `, [demoId(comment.key), demoId(thread.key), demoId(client.key), authorId, comment.side, comment.body]);
+        `, [idFor(comment.key), idFor(thread.key), idFor(client.key), authorId, comment.side, comment.body]);
       });
     }
     if (thread.resolvedBy !== undefined) {
       const resolverId = userIdByKey.get(thread.resolvedBy);
       if (resolverId === undefined) throw new SeedDemoError(`Unknown resolver ${thread.resolvedBy}.`);
       await withAuthenticatedUserTransaction(database, createVerifiedUserClaims({ userId: resolverId }), async (transaction) => {
-        await raw(transaction, 'update public.client_threads set resolved_by = ?::uuid where id = ?::uuid', [resolverId, demoId(thread.key)]);
+        await raw(transaction, 'update public.client_threads set resolved_by = ?::uuid where id = ?::uuid', [resolverId, idFor(thread.key)]);
       });
     }
   }
@@ -790,6 +848,15 @@ export interface SeedDemoOptions {
   readonly env: Record<string, string | undefined>;
   readonly argv: readonly string[];
   readonly stdout?: { write(chunk: string): void };
+  /**
+   * Prefix for every derived identifier. The integration suite uses a random namespace so its
+   * run cannot touch the developer's demo dataset (and its cleanup cannot delete it).
+   */
+  readonly namespace?: string;
+  /** Domain for every demo email; same reason as `namespace`, and it keeps the unique emails apart. */
+  readonly emailDomain?: string;
+  /** Test seam: builds the two database clients. Defaults to the real client factory. */
+  readonly connect?: (options: { readonly connectionString: string }) => DatabaseClient;
 }
 
 /** Creates (or refreshes) the demo dataset. Throws `SeedDemoError` before writing when not local. */
@@ -802,8 +869,15 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
     migrationDatabaseUrl: environment.migrationDatabaseUrl
   });
 
-  const database = createDatabaseClient({ connectionString: environment.databaseUrl });
-  const owner = createDatabaseClient({ connectionString: environment.migrationDatabaseUrl });
+  const namespace = options.namespace ?? DEFAULT_NAMESPACE;
+  const emailDomain = options.emailDomain ?? DEFAULT_EMAIL_DOMAIN;
+  const idFor: SeedId = (key) => demoId(`${namespace}:${key}`);
+  const emailFor = (localPart: string): string => `${localPart}@${emailDomain}`;
+  const versions: SeedVersions = { terms: environment.termsVersion, privacy: environment.privacyVersion };
+  const connect = options.connect ?? createDatabaseClient;
+
+  const database = connect({ connectionString: environment.databaseUrl });
+  const owner = connect({ connectionString: environment.migrationDatabaseUrl });
   try {
     const roles = await loadSystemRoles(owner);
     const profiles: SeedDemoProfile[] = [];
@@ -821,17 +895,18 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
     };
 
     const ensureTeam = async (agency: { key: string; name: string }, users: readonly DemoUserSpec[]): Promise<Map<string, string>> => {
-      const agencyId = demoId(agency.key);
+      const agencyId = idFor(agency.key);
       agencyIds.push(agencyId);
       await ensureAgency(owner, { id: agencyId, name: agency.name });
 
       const userIdByKey = new Map<string, string>();
       for (const user of users) {
+        const email = emailFor(user.emailLocal);
         const userId = await ensureUser(database, {
-          id: demoId(user.key),
+          id: idFor(user.key),
           name: user.name,
-          email: user.email,
-          passwordHash: await hashPassword(passwordFor(user.email))
+          email,
+          passwordHash: await hashPassword(passwordFor(email))
         });
         userIdByKey.set(user.key, userId);
         userIds.push(userId);
@@ -845,13 +920,14 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
         ownerDatabase: owner,
         ownerUserId,
         agencyId,
-        email: ownerSpec.email,
-        tokenKey: `${agency.key}:activation`
+        email: emailFor(ownerSpec.emailLocal),
+        versions
       });
+      await ensureJobTitle({ database, agencyId, actorUserId: ownerUserId, targetUserId: ownerUserId, jobTitle: ownerSpec.jobTitle });
       profiles.push({
         label: 'Owner',
-        email: ownerSpec.email,
-        password: passwordFor(ownerSpec.email),
+        email: emailFor(ownerSpec.emailLocal),
+        password: passwordFor(emailFor(ownerSpec.emailLocal)),
         agencyId,
         clientId: null,
         url: `${environment.appPublicUrl}/agencia/${agencyId}`
@@ -861,20 +937,23 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
         if (user.roleKey === 'owner') continue;
         const roleId = roles.byKey.get(user.roleKey);
         if (roleId === undefined) throw new SeedDemoError(`Unknown system role ${user.roleKey}.`);
+        const email = emailFor(user.emailLocal);
+        const inviteeUserId = userIdByKey.get(user.key)!;
         await ensurePresetMembership({
           database,
           ownerDatabase: owner,
           inviterUserId: ownerUserId,
-          inviteeUserId: userIdByKey.get(user.key)!,
+          inviteeUserId,
           agencyId,
-          email: user.email,
+          email,
           roleId,
-          tokenKey: `${agency.key}:${user.key}`
+          versions
         });
+        await ensureJobTitle({ database, agencyId, actorUserId: ownerUserId, targetUserId: inviteeUserId, jobTitle: user.jobTitle });
         profiles.push({
           label: roleName(user.roleKey),
-          email: user.email,
-          password: passwordFor(user.email),
+          email,
+          password: passwordFor(email),
           agencyId,
           clientId: null,
           url: `${environment.appPublicUrl}/agencia/${agencyId}`
@@ -887,27 +966,28 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
     const mainOwnerId = mainUserIds.get('user:marina')!;
 
     // Portal person, created the same way a client invite is accepted.
+    const portalEmail = emailFor(PORTAL_USER.emailLocal);
     const portalUserId = await ensureUser(database, {
-      id: demoId(PORTAL_USER.key),
+      id: idFor(PORTAL_USER.key),
       name: PORTAL_USER.name,
-      email: PORTAL_USER.email,
-      passwordHash: await hashPassword(passwordFor(PORTAL_USER.email))
+      email: portalEmail,
+      passwordHash: await hashPassword(passwordFor(portalEmail))
     });
     userIds.push(portalUserId);
 
-    const mainAgencyId = demoId(MAIN_AGENCY.key);
+    const mainAgencyId = idFor(MAIN_AGENCY.key);
     const adminUserId = mainUserIds.get('user:rafael')!;
     const userIdByKey = new Map<string, string>([...mainUserIds, [PORTAL_USER.key, portalUserId]]);
 
     for (const client of MAIN_CLIENTS) {
-      clientIds.push(demoId(client.key));
-      await ensureClient(database, adminUserId, mainAgencyId, client);
-      await ensureBrandStudy(database, adminUserId, client);
+      clientIds.push(idFor(client.key));
+      await ensureClient(database, adminUserId, mainAgencyId, client, idFor);
+      await ensureBrandStudy(database, adminUserId, client, idFor);
     }
 
     const portalClient = MAIN_CLIENTS.find((client) => client.threads?.some((thread) => thread.openedSide === 'client'));
     if (portalClient === undefined) throw new SeedDemoError('The demo needs one client with a portal conversation.');
-    const portalClientId = demoId(portalClient.key);
+    const portalClientId = idFor(portalClient.key);
     // The portal membership comes before the threads: a client-side thread is only allowed for an
     // active vínculo, and the seed creates conversations through the same policy.
     await ensurePortalMembership({
@@ -917,17 +997,17 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
       inviteeUserId: portalUserId,
       agencyId: mainAgencyId,
       clientId: portalClientId,
-      email: PORTAL_USER.email,
-      tokenKey: `${portalClient.key}:${PORTAL_USER.key}`
+      email: portalEmail,
+      versions
     });
 
     for (const client of MAIN_CLIENTS) {
-      await ensureThreads({ database, userIdByKey, client });
+      await ensureThreads({ database, userIdByKey, client, idFor });
     }
     profiles.push({
       label: 'Portal',
-      email: PORTAL_USER.email,
-      password: passwordFor(PORTAL_USER.email),
+      email: portalEmail,
+      password: passwordFor(portalEmail),
       agencyId: null,
       clientId: portalClientId,
       url: `${environment.appPublicUrl}/portal/${portalClientId}`
@@ -940,20 +1020,20 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
       invites: PENDING_COLLABORATOR_INVITES.map((invite) => {
         const roleId = roles.byKey.get(invite.roleKey);
         if (roleId === undefined) throw new SeedDemoError(`Unknown system role ${invite.roleKey}.`);
-        return { email: invite.email, roleId };
+        return { email: emailFor(invite.emailLocal), roleId };
       })
     });
 
     const secondUserIds = await ensureTeam(SECOND_AGENCY, SECOND_USERS);
-    const secondAgencyId = demoId(SECOND_AGENCY.key);
+    const secondAgencyId = idFor(SECOND_AGENCY.key);
     // The owner creates the client: `cliente.cadastrar` belongs to admin/account_manager, and the
     // second agency is deliberately small (owner + production only), where only posse reaches it.
     const secondOwnerId = secondUserIds.get('user:helena')!;
-    clientIds.push(demoId(SECOND_CLIENT.key));
-    await ensureClient(database, secondOwnerId, secondAgencyId, SECOND_CLIENT);
-    await ensureBrandStudy(database, secondOwnerId, SECOND_CLIENT);
+    clientIds.push(idFor(SECOND_CLIENT.key));
+    await ensureClient(database, secondOwnerId, secondAgencyId, SECOND_CLIENT, idFor);
+    await ensureBrandStudy(database, secondOwnerId, SECOND_CLIENT, idFor);
 
-    const pendingInvitationEmails = PENDING_COLLABORATOR_INVITES.map((invite) => invite.email);
+    const pendingInvitationEmails = PENDING_COLLABORATOR_INVITES.map((invite) => emailFor(invite.emailLocal));
     const result: SeedDemoResult = {
       profiles,
       pendingInvitations: pendingInvitationEmails,

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -23,10 +25,29 @@ import { runSeedDemo, SEED_FLAG, type SeedDemoResult } from './seed-demo.js';
 const origin = { origin: TEST_APP_PUBLIC_URL };
 const silentStdout = { write: () => undefined };
 
+// Random namespace and email domain: the suite must never touch (nor delete) the demo dataset a
+// developer created with `pnpm seed:demo` in the same database (security review of PR #188).
+const namespace = `seed-test-${randomUUID().slice(0, 8)}`;
+const seedEnvironment = {
+  DATABASE_URL: APPLICATION_DATABASE_URL,
+  MIGRATION_DATABASE_URL: OWNER_DATABASE_URL,
+  AUTH_TERMS_VERSION: '2026-01-01',
+  AUTH_PRIVACY_VERSION: '2026-02-01'
+};
+const runOptions = {
+  env: seedEnvironment,
+  argv: [SEED_FLAG],
+  stdout: silentStdout,
+  namespace,
+  emailDomain: `${namespace}.demo.ageniza.test`
+} as const;
+
 let app: TestApp;
 let owner: DatabaseClient;
 let first: SeedDemoResult;
 let second: SeedDemoResult;
+/** The most recent run, since every run rotates every demo password. */
+let latest: SeedDemoResult;
 
 // Counts run through the migration owner: most of these tables are behind RLS, and an
 // unauthenticated application connection would count zero rows instead of the seed's.
@@ -109,9 +130,9 @@ describe('seed:demo (issue #183)', () => {
   beforeAll(async () => {
     owner = ownerClient();
     app = await buildTestApp();
-    const env = { DATABASE_URL: APPLICATION_DATABASE_URL, MIGRATION_DATABASE_URL: OWNER_DATABASE_URL };
-    first = await runSeedDemo({ env, argv: [SEED_FLAG], stdout: silentStdout });
-    second = await runSeedDemo({ env, argv: [SEED_FLAG], stdout: silentStdout });
+    first = await runSeedDemo(runOptions);
+    second = await runSeedDemo(runOptions);
+    latest = second;
   });
 
   afterAll(async () => {
@@ -130,6 +151,7 @@ describe('seed:demo (issue #183)', () => {
     await owner.knex('agencies').whereIn('id', agencyIds).delete();
     await owner.knex('user_context_preferences').whereIn('user_id', userIds).delete();
     await owner.knex('audit.events').whereIn('agency_id', agencyIds).delete();
+    await owner.knex('legal_acceptances').whereIn('user_id', userIds).delete();
     await app.pool.query('delete from auth."user" where id = any($1::uuid[])', [userIds]);
     await app.close();
     await owner.close();
@@ -159,12 +181,17 @@ describe('seed:demo (issue #183)', () => {
     expect(await count("select count(*)::text as total from public.invitations where agency_id = any(?::uuid[]) and used_at is null and revoked_at is null", [agencyIds])).toBe(2);
     // Every membership came through the database function the application uses, not a raw insert.
     expect(await count("select count(*)::text as total from audit.events where agency_id = any(?::uuid[]) and action = 'invitation.accepted'", [agencyIds])).toBe(9);
+    // Every seeded account accepted both documents, like the real new-account route records.
+    expect(await count("select count(*)::text as total from public.legal_acceptances where user_id = any(?::uuid[]) and document = 'terms' and version = '2026-01-01'", [userIds])).toBe(9);
+    expect(await count("select count(*)::text as total from public.legal_acceptances where user_id = any(?::uuid[]) and document = 'privacy' and version = '2026-02-01'", [userIds])).toBe(9);
+    // Job titles come through the application path too (the Owner holds colaborador.alterar_funcao).
+    expect(await count('select count(*)::text as total from public.agency_memberships where agency_id = any(?::uuid[]) and job_title is not null', [agencyIds])).toBe(8);
   });
 
   it('every printed profile signs in and sees only what its role allows', async () => {
     const catalog = await catalogKeys();
-    expect(second.profiles).toHaveLength(9);
-    for (const profile of second.profiles) {
+    expect(latest.profiles).toHaveLength(9);
+    for (const profile of latest.profiles) {
       const cookie = await loginCookie(profile.email, profile.password);
       const userId = await userIdFor(profile.email);
       const contexts = await contextsFor(cookie);
@@ -191,5 +218,33 @@ describe('seed:demo (issue #183)', () => {
         expectSamePermissions(verdicts, []);
       }
     }
+  });
+
+  it('rotating a demo password ends the previous session', async () => {
+    const profile = latest.profiles[0]!;
+    const staleCookie = await loginCookie(profile.email, profile.password);
+
+    latest = await runSeedDemo(runOptions);
+
+    const stale = await app.app.inject({ method: 'GET', url: '/me/contexts', headers: { ...origin, cookie: staleCookie } });
+    expect(stale.statusCode).toBe(401);
+    const refreshed = latest.profiles.find((candidate) => candidate.email === profile.email)!;
+    expect(refreshed.password).not.toBe(profile.password);
+    await loginCookie(refreshed.email, refreshed.password);
+  });
+
+  it('recreates a membership removed by hand instead of colliding on the invitation hash', async () => {
+    // The old deterministic token hash made this fail with a unique violation: the used invitation
+    // kept the same hash. Random hashes let the seed invite the person again, like a resend does.
+    const profile = latest.profiles.find((candidate) => candidate.email.startsWith('producao@'))!;
+    const userId = await userIdFor(profile.email);
+    await owner.knex('agency_memberships').where({ agency_id: profile.agencyId!, user_id: userId }).update({ status: 'removed' });
+
+    latest = await runSeedDemo(runOptions);
+
+    const membership = await owner.knex('agency_memberships').where({ agency_id: profile.agencyId!, user_id: userId }).first('status');
+    expect(membership?.status).toBe('active');
+    const refreshed = latest.profiles.find((candidate) => candidate.email === profile.email)!;
+    await loginCookie(refreshed.email, refreshed.password);
   });
 });

@@ -75,7 +75,7 @@ Para pular a criação manual e já ter um cenário realista no banco local:
 pnpm seed:demo --i-know-this-is-local
 ```
 
-O comando **se recusa a rodar fora do ambiente local**: exige a flag `--i-know-this-is-local`, recusa `NODE_ENV` ou `APP_ENV` igual a `production` e recusa qualquer banco que não seja loopback — nas duas conexões (`DATABASE_URL` e `MIGRATION_DATABASE_URL`).
+O comando **se recusa a rodar fora do ambiente local**: exige a flag `--i-know-this-is-local`, recusa `NODE_ENV` ou `APP_ENV` igual a `production` (sem diferenciar maiúsculas ou espaços), recusa banco que não seja loopback — nas duas conexões (`DATABASE_URL` e `MIGRATION_DATABASE_URL`), conferindo o host que o driver realmente usaria (um `?host=` ou caminho de socket é recusado) — e recusa quando as duas URLs apontam para bancos diferentes. Nada é escrito (nem uma senha é trocada) antes de o portão inteiro passar.
 
 O que ele cria, sempre no banco local:
 
@@ -85,9 +85,11 @@ O que ele cria, sempre no banco local:
 - 2 convites de colaborador pendentes;
 - a agência **Estúdio Ponte**, pequena, para demonstrar o isolamento entre agências.
 
-Rodar de novo **não duplica nem falha**: os identificadores derivam de chaves estáveis e cada escrita é um upsert ou um insert guardado. As contas, vínculos e convites passam pelos mesmos caminhos da aplicação (`app_private.accept_invitation`, RLS do papel `ageniza_app`), não por inserts que contornem regra.
+Rodar de novo **não duplica nem falha**: os identificadores derivam de chaves estáveis e cada escrita é um upsert ou um insert guardado. As contas são criadas como a rota de conta nova as cria (com o aceite de Termos e Privacidade gravado nas versões configuradas), e os vínculos e convites passam por `app_private.accept_invitation` e pela RLS do papel `ageniza_app`, nunca por inserts que contornem regra. Até o cargo (`job_title`) é gravado pelo caminho da aplicação.
 
-No fim o comando imprime o e-mail, a senha e a URL de entrada de cada perfil. **As senhas são geradas a cada execução e existem só nessa saída**; rodar de novo troca todas, e a saída mais recente é a que vale. `pnpm db:reset` apaga tudo.
+No fim o comando imprime o e-mail, a senha e a URL de entrada de cada perfil. **As senhas são geradas a cada execução e existem só nessa saída**; rodar de novo troca todas e encerra as sessões antigas dessas contas, e a saída mais recente é a que vale. `pnpm db:reset` apaga tudo.
+
+A suíte de integração que usa este comando (`seed-demo.integration.test.ts`) roda com um namespace e um domínio de e-mail próprios e limpa só o que criou: rodar `pnpm --filter @ageniza/api test:integration` depois do seed **não** apaga o cenário de demonstração.
 
 > Arquivar um cliente e agendar encerramento ainda ficam de fora: dependem das funções da #123, e o seed não escreve colunas que a aplicação não pode escrever.
 
