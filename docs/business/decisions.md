@@ -1134,4 +1134,4 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 - A alegação de imunidade a "any GUC trick" não pode continuar no código fora de migrations aplicadas.
 - A #97 fica liberada quando a #166 entrar.
 
-**Origem.** Issue #166; re-revisão de segurança do PR #159. Opção 1 escolhida pelo dono do produto em 2026-09-30. O desenho foi prototipado num banco descartável antes da implementação. **Pendente de validação do desenho pelo dono do produto.**
+**Origem.** Issue #166; re-revisão de segurança do PR #159. Opção 1 escolhida pelo dono do produto em 2026-09-30. O desenho foi prototipado num banco descartável antes da implementação. Desenho aprovado pelo dono do produto em 2026-09-30.
