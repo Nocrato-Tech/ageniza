@@ -1,11 +1,12 @@
 import { createContext, useContext, useSyncExternalStore, type ReactNode } from 'react';
 
-import { AuthSessionResponseSchema } from '@ageniza/contracts';
+import { AuthSessionResponseSchema, type AuthUser } from '@ageniza/contracts';
 import { HttpClientError, type HttpClient } from './http.js';
 
 export interface AuthSessionSnapshot {
   status: 'loading' | 'ready';
   isAuthenticated: boolean;
+  user: AuthUser | null;
 }
 
 export interface AuthSessionStore {
@@ -31,7 +32,7 @@ export interface AuthSessionStoreOptions {
 }
 
 export const createAuthSessionStore = (client: HttpClient, options: AuthSessionStoreOptions = {}): AuthSessionStore => {
-  let snapshot: AuthSessionSnapshot = { status: 'loading', isAuthenticated: false };
+  let snapshot: AuthSessionSnapshot = { status: 'loading', isAuthenticated: false, user: null };
   let initialized = false;
   // Guards against React Strict Mode replaying subscribe/unsubscribe: a resolution belonging to a
   // previous generation must never publish over the current one.
@@ -45,15 +46,15 @@ export const createAuthSessionStore = (client: HttpClient, options: AuthSessionS
 
   const load = async (activeGeneration: number): Promise<void> => {
     try {
-      await client.request({ path: '/auth/session', response: AuthSessionResponseSchema });
+      const response = await client.request({ path: '/auth/session', response: AuthSessionResponseSchema });
       if (generation !== activeGeneration) return;
       if (!snapshot.isAuthenticated) options.onSessionStarted?.();
       client.confirmSession();
-      publish({ status: 'ready', isAuthenticated: true });
+      publish({ status: 'ready', isAuthenticated: true, user: response.user });
     } catch (error: unknown) {
       // Only an authenticated answer proves a session; every other outcome -- 401, network, an
       // unparseable body -- leaves the page unauthenticated rather than guessing.
-      if (generation === activeGeneration) publish({ status: 'ready', isAuthenticated: false });
+      if (generation === activeGeneration) publish({ status: 'ready', isAuthenticated: false, user: null });
       if (!(error instanceof HttpClientError)) throw error;
     }
   };
@@ -83,7 +84,7 @@ export const createAuthSessionStore = (client: HttpClient, options: AuthSessionS
     refresh: async () => { await load(++generation); },
     end() {
       generation += 1;
-      publish({ status: 'ready', isAuthenticated: false });
+      publish({ status: 'ready', isAuthenticated: false, user: null });
     },
     dispose() { teardown(); listeners.clear(); }
   };
@@ -104,3 +105,5 @@ export const useAuthSessionStore = (): AuthSessionStore => {
   if (store === null) throw new Error('AuthSessionProvider is required.');
   return store;
 };
+
+export const useOptionalAuthSessionStore = (): AuthSessionStore | null => useContext(AuthSessionStoreContext);

@@ -18,7 +18,7 @@ const renderAt = (path: string, fetchImpl: typeof fetch = async () => new Respon
     <QueryClientProvider client={createQueryClient()}>
       <ApiClientProvider client={client}>
         <MemoryRouter initialEntries={[path]}>
-          <ApplicationRoutes session={{ status: 'ready', isAuthenticated: false }} />
+          <ApplicationRoutes session={{ status: 'ready', isAuthenticated: false, user: null }} />
         </MemoryRouter>
       </ApiClientProvider>
     </QueryClientProvider>

@@ -1,7 +1,9 @@
+import type { ReactNode } from 'react';
 import { Link, Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 
 import type { AuthSessionSnapshot } from './auth.js';
+import { AccountMenu } from './account-menu.js';
 import { AgencyAreaLayout, AgencyHomePage, AgencyModulePlaceholder, AgencyPermissionRoute } from './agency.js';
 import { LiveStatus } from '@ageniza/ui';
 import { ContextSelectPage } from './contexts.js';
@@ -22,9 +24,9 @@ export function PublicLayout() {
   return <div className="app-shell"><a className="skip-link" href="#main-content">Skip to content</a><header><Link to="/">Ageniza</Link></header><main id="main-content"><Outlet /></main></div>;
 }
 
-export function ProtectedLayout({ session }: { session: AuthSessionSnapshot }) {
+export function ProtectedLayout({ session, children }: { session: AuthSessionSnapshot; children?: ReactNode }) {
   return <SessionGate session={session}>
-    <div className="app-shell"><a className="skip-link" href="#main-content">Skip to content</a><header>Ageniza workspace</header><main id="main-content"><Outlet /></main></div>
+    <div className="app-shell"><a className="skip-link" href="#main-content">Skip to content</a><header className="protected-header"><Link to="/">Ageniza</Link><AccountMenu user={session.user} /></header><main id="main-content">{children ?? <Outlet />}</main></div>
   </SessionGate>;
 }
 
@@ -76,6 +78,8 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       {/* `/app` is not a destination anymore; the resolve decides where the person enters. */}
       <Route path="app" element={<Navigate to="/contextos" replace />} />
     </Route>
-    <Route path="*" element={<NotFoundPage />} />
+    <Route path="*" element={session.isAuthenticated
+      ? <ProtectedLayout session={session}><NotFoundPage as="section" /></ProtectedLayout>
+      : <NotFoundPage />} />
   </Routes>;
 }
