@@ -9,6 +9,7 @@ import { Button, FieldMessage, TextInput } from '@ageniza/ui';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { useAuthSession, useAuthSessionStore } from './auth.js';
+import { contextDestination, rememberContext } from './context-destination.js';
 import { useDocumentTitle } from './document-title.js';
 import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -73,7 +74,14 @@ export function LoginPage() {
       const resolve = await httpClient.request({ path: '/me/contexts/resolve', response: ContextResolveResponseSchema });
       if (resolve.decision === 'none') { leaveToNoAccess(); return; }
       await authStore.refresh();
-      navigate(destination ?? (resolve.decision === 'select' ? '/contextos' : '/app'), { replace: true });
+      if (resolve.decision === 'enter') {
+        // Entering a context records it as the last one; the destination carries the agency or
+        // client id, never `/app` (docs/business/decisions.md, 2026-09-29).
+        await rememberContext(httpClient, resolve.context);
+        navigate(destination ?? contextDestination(resolve.context), { replace: true });
+        return;
+      }
+      navigate(destination ?? '/contextos', { replace: true });
     } catch {
       setResolveError(RESOLVE_FAILED);
     } finally {

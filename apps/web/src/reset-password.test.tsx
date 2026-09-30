@@ -54,6 +54,10 @@ const makeFetch = (scenario: Scenario) => {
     }
     // The login with the token returns to /convite/:token; this screen is out of scope here.
     if (url.includes('/invitations/')) return json({ error: { code: 'INVALID_LINK', message: 'x' } }, 410);
+    if (url.endsWith('/me/last-context') && init?.method === 'PUT') return new Response(null, { status: 204 });
+    if (url.endsWith(`/agencies/${AGENCY_A}/me`)) {
+      return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] });
+    }
     throw new Error(`unexpected ${url}`);
   };
   return { impl, calls, resetBodies, loginBodies };
@@ -129,7 +133,7 @@ describe('ResetPasswordPage (/senha/redefinir)', () => {
     const { impl, calls } = makeFetch({ reset: () => json({ signedIn: true }) });
     const { probe } = renderReset(impl);
     submit('a new correct password');
-    await waitFor(() => expect(probe.pathname).toBe('/app'));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
     expect(calls.resolve).toBe(1);
   });
 
@@ -162,7 +166,7 @@ describe('ResetPasswordPage (/senha/redefinir)', () => {
     expect(alert.textContent).toContain('Sua senha foi alterada');
     expect(alert.textContent).not.toContain('Não foi possível salvar');
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
-    await waitFor(() => expect(probe.pathname).toBe('/app'));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
     expect(calls.reset).toBe(1);
     expect(calls.resolve).toBe(2);
   });

@@ -64,6 +64,10 @@ const makeFetch = (scenario: Scenario = {}) => {
       if (scenario.resolveError === true) return json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500);
       return json(scenario.resolve ?? { decision: 'enter', context: agencyA });
     }
+    if (url.endsWith('/me/last-context') && method === 'PUT') { calls.push('last-context'); return noContent(); }
+    if (url.endsWith(`/agencies/${AGENCY_A}/me`)) {
+      return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] });
+    }
     if (url.endsWith('/auth/logout')) { calls.push('logout'); serverLoggedIn = false; return noContent(); }
     throw new Error(`unexpected ${method} ${url}`);
   };
@@ -152,7 +156,7 @@ describe('InvitationPage (/convite/:token)', () => {
     fillNewAccount();
     fireEvent.click(screen.getByRole('button', { name: 'Criar conta e entrar' }));
 
-    await waitFor(() => expect(probe.pathname).toBe('/app'));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
     expect(calls.indexOf('create')).toBeLessThan(calls.indexOf('resolve'));
   });
 
@@ -175,7 +179,7 @@ describe('InvitationPage (/convite/:token)', () => {
     const { probe } = renderInvite(impl);
     await screen.findByRole('heading', { name: 'Você foi convidado' });
     fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
-    await waitFor(() => expect(probe.pathname).toBe('/app'));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
     expect(calls.indexOf('accept')).toBeLessThan(calls.indexOf('resolve'));
   });
 
@@ -227,7 +231,7 @@ describe('InvitationPage (/convite/:token)', () => {
     const { probe } = renderInvite(impl);
     await screen.findByRole('heading', { name: 'Você foi convidado' });
     fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
-    await waitFor(() => expect(probe.pathname).toBe('/app'));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
     expect(screen.queryByRole('alert')).toBeNull();
   });
 

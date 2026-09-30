@@ -14,6 +14,7 @@ afterEach(cleanup);
 
 const AGENCY_A = '11111111-1111-4111-8111-111111111111';
 const agencyA = { type: 'agency', agencyId: AGENCY_A, agencyName: 'Agência Um', roleKey: 'admin', roleName: 'Admin', isOwner: true };
+const agencyMe = { agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] };
 const sessionBody = { user: { id: '11111111-1111-4111-8111-111111111111', name: 'Pessoa', email: 'pessoa@example.test' }, session: { expiresAt: '2026-01-01T00:00:00.000Z' } };
 
 const json = (body: unknown, status = 200): Response =>
@@ -33,10 +34,16 @@ interface Scenario {
 const makeFetch = (scenario: Scenario = {}) => {
   const calls = { resolve: 0, login: 0, logout: 0, forgot: 0 };
   const forgotBodies: unknown[] = [];
+  const lastContextBodies: unknown[] = [];
   let serverLoggedIn = scenario.initiallyLoggedIn ?? false;
   const impl: typeof fetch = async (input, init) => {
     const url = String(input);
     if (url.endsWith('/auth/session')) return serverLoggedIn ? json(sessionBody) : unauthenticated();
+    if (url.endsWith('/me/last-context') && init?.method === 'PUT') {
+      lastContextBodies.push(JSON.parse(String(init.body)));
+      return noContent();
+    }
+    if (url.endsWith(`/agencies/${AGENCY_A}/me`)) return json(agencyMe);
     if (url.endsWith('/auth/login')) {
       calls.login += 1;
       if (scenario.loginError !== undefined) return scenario.loginError;
@@ -54,7 +61,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     if (url.endsWith('/auth/password/reset')) return noContent();
     throw new Error(`unexpected ${url}`);
   };
-  return { impl, calls, forgotBodies, isServerLoggedIn: () => serverLoggedIn };
+  return { impl, calls, forgotBodies, lastContextBodies, isServerLoggedIn: () => serverLoggedIn };
 };
 
 /** Mounts the real routes and a real session, wired as `app.tsx` does. */
@@ -145,11 +152,12 @@ describe('LoginPage (/entrar)', () => {
     expect(screen.queryByRole('heading', { name: 'Workspace' })).toBeNull();
   });
 
-  it('enters directly for a single context', async () => {
-    const { impl } = makeFetch({ resolve: { decision: 'enter', context: agencyA } });
+  it('enters directly for a single context, at its own address, recording it as the last one', async () => {
+    const { impl, lastContextBodies } = makeFetch({ resolve: { decision: 'enter', context: agencyA } });
     const { probe } = renderLogin(impl);
     submit('pessoa@example.test', 'a correct password');
-    await waitFor(() => expect(probe.pathname).toBe('/app'));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+    expect(lastContextBodies).toEqual([{ type: 'agency', agencyId: AGENCY_A }]);
   });
 
   it('shows a login failure message when the login itself fails', async () => {
@@ -168,7 +176,7 @@ describe('LoginPage (/entrar)', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('Não foi possível carregar seus contextos');
     expect(calls.login).toBe(1);
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
-    await waitFor(() => expect(probe.pathname).toBe('/app'));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
     // The retry ran the resolve again; it did not ask for the password.
     expect(calls.login).toBe(1);
     expect(calls.resolve).toBe(2);
@@ -184,7 +192,7 @@ describe('LoginPage (/entrar)', () => {
     const hostile = makeFetch({ resolve: { decision: 'enter', context: agencyA } });
     const second = renderLogin(hostile.impl, { state: { sessionDestination: { path: '//evil.example', savedAt: Date.now() } } });
     submit('pessoa@example.test', 'a correct password');
-    await waitFor(() => expect(second.probe.pathname).toBe('/app'));
+    await waitFor(() => expect(second.probe.pathname).toBe(`/agencia/${AGENCY_A}`));
   });
 
   it('does not call resolve when the login carries an invite token, and goes to the invitation URL', async () => {
@@ -238,6 +246,6 @@ describe('LoginPage (/entrar)', () => {
 
     await waitFor(() => expect((screen.getByRole('button', { name: 'Entrar' }) as HTMLButtonElement).disabled).toBe(true));
     release?.();
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Workspace' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Agência Um' })).toBeTruthy());
   });
 });

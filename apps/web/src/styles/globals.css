@@ -364,3 +364,113 @@ input:focus-visible {
   gap: var(--space-4);
   margin-top: var(--space-8);
 }
+
+/* Agency area shell: issue #181. Header, side navigation and content, all on tokens. */
+
+.agency-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) max(var(--space-6), calc((100vw - 72rem) / 2));
+  background: var(--color-ink-900);
+  color: var(--color-white);
+}
+
+.agency-header__name {
+  color: inherit;
+  font: var(--heading-md);
+  text-decoration: none;
+}
+
+.agency-header__skeleton {
+  width: 12rem;
+  height: 1.75rem;
+}
+
+/* Reserved for the account menu (#70); it never renders content on its own. */
+.agency-header__account {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+
+.agency-layout {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4) var(--space-12);
+}
+
+.agency-nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agency-nav a {
+  display: inline-block;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font: var(--label-md);
+  text-decoration: none;
+}
+
+.agency-nav a:hover {
+  background: var(--bg-hover);
+}
+
+.agency-nav a[aria-current='page'] {
+  background: var(--bg-hover);
+}
+
+.agency-content {
+  min-width: 0;
+}
+
+.agency-shortcuts {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-6) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agency-shortcut {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.agency-shortcut:hover,
+.agency-shortcut:focus-visible {
+  background: var(--bg-hover);
+}
+
+.agency-shortcut__label {
+  font: var(--body-lg);
+}
+
+.agency-shortcut__description {
+  color: var(--text-muted);
+  font: var(--body-md);
+}
+
+@media (min-width: 48rem) {
+  .agency-layout {
+    grid-template-columns: 16rem minmax(0, 1fr);
+  }
+
+  .agency-nav ul {
+    flex-direction: column;
+  }
+}

@@ -12,6 +12,7 @@ import { Button, FieldMessage, LiveStatus, Skeleton, TextInput } from '@ageniza/
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuthSession, useAuthSessionStore } from './auth.js';
+import { contextDestination, rememberContext } from './context-destination.js';
 import { useDocumentTitle } from './document-title.js';
 import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -56,7 +57,12 @@ export function InvitationPage() {
     try {
       const resolve = await httpClient.request({ path: '/me/contexts/resolve', response: ContextResolveResponseSchema });
       if (resolve.decision === 'none') { authStore.end(); queryClient.clear(); navigate('/sem-acesso', { replace: true }); return; }
-      navigate(resolve.decision === 'select' ? '/contextos' : '/app', { replace: true });
+      if (resolve.decision === 'enter') {
+        await rememberContext(httpClient, resolve.context);
+        navigate(contextDestination(resolve.context), { replace: true });
+        return;
+      }
+      navigate('/contextos', { replace: true });
     } catch {
       setResolveError(RESOLVE_FAILED);
     } finally {
