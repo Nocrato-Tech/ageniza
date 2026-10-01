@@ -107,6 +107,30 @@ describe('HttpClient', () => {
     expect(calls).toBe(3);
   });
 
+  it('calls the provided fetch with globalThis as `this`, never as a method of the client (#197)', async () => {
+    const receivers: unknown[] = [];
+    // Chromium's native fetch is a normal function that brand-checks `this`; an arrow could not
+    // observe it. A detached `window.fetch` called as a method of another object throws exactly
+    // this error, which the client used to swallow into NETWORK_ERROR.
+    function nativeLikeFetch(this: unknown): Promise<Response> {
+      receivers.push(this);
+      if (this !== globalThis) throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
+      return Promise.resolve(new Response(JSON.stringify({ status: 'ok' }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    }
+    const client = new HttpClient('http://127.0.0.1:3001', nativeLikeFetch);
+
+    await expect(client.request({ path: '/health', response: HealthResponseSchema })).resolves.toEqual({ status: 'ok' });
+    expect(receivers).toEqual([globalThis]);
+  });
+
+  it('maps a genuinely rejected fetch to NETWORK_ERROR (#197)', async () => {
+    const client = new HttpClient('http://127.0.0.1:3001', () => Promise.reject(new TypeError('Failed to fetch')));
+
+    await expect(client.request({ path: '/health', response: HealthResponseSchema })).rejects.toMatchObject({
+      code: 'NETWORK_ERROR'
+    } satisfies Partial<HttpClientError>);
+  });
+
   describe('session end', () => {
     const rejection = (status: number, code: string) => new Response(JSON.stringify({
       error: { code, message: 'Rejected.' }
