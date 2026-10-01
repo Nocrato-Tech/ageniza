@@ -10,12 +10,13 @@ import { registerContextModule, type ContextModuleDependencies } from './modules
 import { createInvitationTokenLookup, registerInvitationModule, type InvitationModuleDependencies } from './modules/invitations/routes.js';
 import { registerMediaModule, type MediaModuleDependencies } from './modules/media/routes.js';
 import { registerProfileModule, type ProfileModuleDependencies } from './modules/profile/routes.js';
+import { applyCorrelationHeaders } from './plugins/infra/correlation.js';
 import { registerCors } from './plugins/infra/cors.js';
 import { registerErrorHandling, sendErrorEnvelope } from './plugins/infra/errors.js';
 import { registerOriginProtection } from './plugins/infra/origin.js';
 import { registerRouteRateLimit } from './plugins/infra/rate-limit.js';
 import { loggableRoute } from './plugins/infra/route.js';
-import { registerSecurityHeaders } from './plugins/infra/security.js';
+import { applySecurityHeaders, registerSecurityHeaders } from './plugins/infra/security.js';
 import { registerSystemModule } from './modules/system/routes.js';
 
 export interface ApiAppOptions {
@@ -78,6 +79,10 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
     // body that echoes the path and skips `setErrorHandler`. The synthetic reply has no route error
     // handler to fall back on, so the envelope is written directly, by exact code.
     frameworkErrors: (error, request, reply) => {
+      // This synthetic reply skips every hook, so the correlation and security headers a normal
+      // response carries are applied here, from the same sources, before the envelope is written.
+      applyCorrelationHeaders(request, reply);
+      applySecurityHeaders(request, reply);
       sendErrorEnvelope(error, request, reply);
     }
   });
@@ -102,8 +107,7 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
     });
   }
   app.addHook('onRequest', (request, reply, done) => {
-    reply.header(REQUEST_ID_HEADER, request.id);
-    reply.header(CORRELATION_ID_HEADER, resolveRequestId(request.headers[CORRELATION_ID_HEADER] ?? request.id));
+    applyCorrelationHeaders(request, reply);
     done();
   });
   app.addHook('onResponse', (request, reply, done) => {
