@@ -1133,3 +1133,15 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 **Consequência.** 256 continua sendo o teto do fluxo de convite. Se o dono do produto quiser alinhar com os 120 do perfil, é mudança de uma constante (`INVITATION_NAME_MAX_LENGTH`) e do teste correspondente — sem migration nem mudança de formato.
 
 **Origem.** Issue #205. **Pendente de validação** — o número foi mantido da implementação anterior porque a SPEC não o define.
+
+---
+
+## 2026-10-01 — Rota própria para os cargos que existem na agência
+
+**Contexto.** `specs/colaboradores.md` (linha 190) diz que o filtro de cargo "lista os valores que existem naquela agência", mas nenhuma rota da seção 6 devolvia essa lista: a listagem paginada (#95) traz só uma página, e o formato dela é o que as próximas listagens vão copiar. A lacuna apareceu ao preparar a grade de crachás (#102).
+
+**Decisão.** Uma rota própria e mínima, `GET /agencies/:agencyId/collaborators/job-titles`, com as mesmas guardas da listagem (`requireAgencyAccess` + `requirePermission('colaborador.visualizar')`). A resposta é `{ data: string[] }` com os cargos **distintos** dos vínculos **ativos** da agência — aparados com `btrim`, sem nulos e sem vazios —, em ordem alfabética e no máximo 200 valores. A consulta parte de `agency_memberships` filtrada pela agência da rota. O formato da listagem paginada não muda.
+
+**Consequência.** O filtro de cargo da grade tem fonte própria, sem alterar o formato de resposta que outras rotas já usam. Rota aditiva: nenhuma migration, nenhuma policy nova, nenhum campo novo em contrato existente. Como é um caminho novo de leitura da agência, entra com a mesma barreira de escopo da listagem (a RLS mostra as agências do chamador, nunca uma só; o filtro de agência da consulta é a barreira que separa).
+
+**Origem.** Issue #218, decidida pelo maestro a partir da lacuna achada na #102. **Pendente de validação** pelo dono do produto.
