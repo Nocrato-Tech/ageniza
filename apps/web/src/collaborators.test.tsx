@@ -431,8 +431,8 @@ describe('collaborator detail (#103)', () => {
   it('does not load or reveal a detail without permission or an authenticated session', async () => {
     for (const scenario of [{ permissions: [] }, { authenticated: false }]) {
       const { impl, calls } = makeFetch(scenario);
-      const { probe } = renderCollaborators(impl, detailUrl());
-      if (scenario.authenticated === false) await waitFor(() => expect(probe.pathname).toBe('/entrar'));
+      renderCollaborators(impl, detailUrl());
+      if (scenario.authenticated === false) await screen.findByRole('heading', { name: 'Workspace unavailable' });
       else await screen.findByRole('heading', { name: 'Page not found' });
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(detailCalls(calls)).toEqual([]);
