@@ -1,13 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
 
 import { HealthResponseSchema } from '@ageniza/contracts';
 import { checkHealth, HttpError, type HealthCheck, type Readiness } from '@ageniza/core';
 
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
-
-const EmptyQuerySchema = z.object({}).strict();
+import { parseStrictEmptyQuery, routeResponse } from '../../plugins/infra/zod.js';
 
 // Declared once: the same object is the route's documentation metadata and the schema the handler
 // validates the response with.
@@ -26,12 +23,12 @@ export interface SystemModuleOptions {
 export const registerSystemModule = (app: FastifyInstance, options: SystemModuleOptions): void => {
   app.get('/health', {
     config: healthDocs,
-    preValidation: async (request) => { parseRequest(EmptyQuerySchema, request.query); }
-  }, async () => parseResponse(healthDocs.schemas.response, { status: 'ok' }));
+    preValidation: async (request) => { parseStrictEmptyQuery(request); }
+  }, async (request) => routeResponse(healthDocs, request, { status: 'ok' }));
 
   app.get('/ready', {
     config: healthDocs,
-    preValidation: async (request) => { parseRequest(EmptyQuerySchema, request.query); }
+    preValidation: async (request) => { parseStrictEmptyQuery(request); }
   }, async (request) => {
     if (!options.readiness.isReady()) {
       throw new HttpError({ statusCode: 503, code: 'NOT_READY', message: 'Service is not ready' });
@@ -41,6 +38,6 @@ export const registerSystemModule = (app: FastifyInstance, options: SystemModule
       request.log.warn({ requestId: request.id, failedChecks: report.checks.filter((check) => check.status === 'error').map((check) => check.name) }, 'Readiness dependency check failed');
       throw new HttpError({ statusCode: 503, code: 'NOT_READY', message: 'Service is not ready' });
     }
-    return parseResponse(healthDocs.schemas.response, { status: 'ok' });
+    return routeResponse(healthDocs, request, { status: 'ok' });
   });
 };
