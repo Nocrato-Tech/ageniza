@@ -39,5 +39,11 @@
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.24.0",
     "vitest": "^3.0.7"
+  },
+  "pnpm": {
+    "overrides": {
+      "fast-xml-parser": "^4.5.5",
+      "undici": "^7.29.1"
+    }
   }
 }
