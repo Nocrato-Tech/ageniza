@@ -118,6 +118,10 @@ export const buildOpenApiDocument = (): Record<string, unknown> => {
       };
     }
 
+    // A route that declares `z.undefined()` as its body accepts no body at all; OpenAPI has no way
+    // to express that as a request body, so it is documented as having none. The route still
+    // validates the body, which is what turns an unexpected one into a 400.
+    const hasRequestBody = route.body !== undefined && !(route.body instanceof z.ZodUndefined);
     registry.registerPath({
       method: route.method,
       path: toOpenApiPath(route.path),
@@ -129,13 +133,13 @@ export const buildOpenApiDocument = (): Record<string, unknown> => {
       request: {
         params: route.params,
         query: route.query,
-        body: route.body === undefined
+        body: !hasRequestBody
           ? undefined
           : {
               required: true,
               content: {
                 'application/json': {
-                  schema: register(route.body, `${route.operationId}Request`),
+                  schema: register(route.body!, `${route.operationId}Request`),
                   ...(route.requestExample === undefined ? {} : { example: route.requestExample })
                 }
               }

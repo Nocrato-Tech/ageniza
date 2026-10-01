@@ -35,6 +35,7 @@ import {
   HealthResponseSchema,
   InvitationAcceptNewAccountRequestSchema,
   InvitationAcceptNewAccountResponseSchema,
+  InvitationAcceptRequestSchema,
   InvitationAcceptResponseSchema,
   InvitationCreatedResponseSchema,
   InvitationPreviewResponseSchema,
@@ -551,6 +552,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     access: 'Sessão + token do convite',
     permission: null,
     params: PublicInvitationTokenPathParamsSchema,
+    body: InvitationAcceptRequestSchema,
     responses: [{
       status: 200,
       description: 'Convite aceito ou vínculo já existente.',
