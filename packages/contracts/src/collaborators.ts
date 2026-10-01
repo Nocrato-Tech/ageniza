@@ -54,7 +54,18 @@ export const CollaboratorListQuerySchema = PaginationInputSchema.extend({
 
 export const CollaboratorListResponseSchema = createPaginatedResponseSchema(CollaboratorSchema);
 
+/**
+ * Response of `GET /agencies/:agencyId/collaborators/job-titles` (issue #218): the distinct job
+ * titles that exist in one agency, for the job-title filter of the badge grid (#102). The listing
+ * cannot serve this because it returns a single page, and the SPEC forbids changing its shape
+ * (`specs/colaboradores.md` §6); the values are already trimmed, non-empty and unique.
+ */
+export const CollaboratorJobTitlesResponseSchema = z.object({
+  data: z.array(z.string().trim().min(1).max(256))
+}).strict();
+
 export type CollaboratorRole = z.infer<typeof CollaboratorRoleSchema>;
 export type Collaborator = z.infer<typeof CollaboratorSchema>;
 export type CollaboratorListQuery = z.infer<typeof CollaboratorListQuerySchema>;
 export type CollaboratorListResponse = z.infer<typeof CollaboratorListResponseSchema>;
+export type CollaboratorJobTitlesResponse = z.infer<typeof CollaboratorJobTitlesResponseSchema>;

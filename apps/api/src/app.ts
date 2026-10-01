@@ -9,8 +9,9 @@ import { registerCollaboratorModule, type CollaboratorModuleDependencies } from 
 import { registerContextModule, type ContextModuleDependencies } from './modules/contexts/routes.js';
 import { createInvitationTokenLookup, registerInvitationModule, type InvitationModuleDependencies } from './modules/invitations/routes.js';
 import { registerMediaModule, type MediaModuleDependencies } from './modules/media/routes.js';
+import { registerProfileModule, type ProfileModuleDependencies } from './modules/profile/routes.js';
 import { registerCors } from './plugins/infra/cors.js';
-import { registerErrorHandling } from './plugins/infra/errors.js';
+import { registerErrorHandling, sendErrorEnvelope } from './plugins/infra/errors.js';
 import { registerOriginProtection } from './plugins/infra/origin.js';
 import { registerRouteRateLimit } from './plugins/infra/rate-limit.js';
 import { loggableRoute } from './plugins/infra/route.js';
@@ -36,6 +37,8 @@ export interface ApiAppOptions {
   collaborators?: CollaboratorModuleDependencies;
   /** Media dependencies are optional; undefined for tests that never touch object storage. */
   media?: MediaModuleDependencies;
+  /** Profile dependencies are optional; undefined where identity storage is not configured. */
+  profile?: ProfileModuleDependencies;
   /**
    * Test-only observer for every registered route, fired by Fastify's `onRoute` hook before
    * `app.ready()`. The API documentation test uses it to prove the OpenAPI document covers the
@@ -70,7 +73,13 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
     trustProxy: options.trustProxy ?? (options.config.trustedProxyCidrs.length === 0 ? false : [...options.config.trustedProxyCidrs]),
     // Disable Fastify's unvalidated header shortcut; core validates before preserving client correlation IDs.
     requestIdHeader: false,
-    genReqId: (request) => resolveRequestId(request.headers[REQUEST_ID_HEADER])
+    genReqId: (request) => resolveRequestId(request.headers[REQUEST_ID_HEADER]),
+    // Fastify answers a router framework error (over-long path parameter, malformed URL) with a raw
+    // body that echoes the path and skips `setErrorHandler`. The synthetic reply has no route error
+    // handler to fall back on, so the envelope is written directly, by exact code.
+    frameworkErrors: (error, request, reply) => {
+      sendErrorEnvelope(error, request, reply);
+    }
   });
 
   if (options.onRoute !== undefined) {
@@ -144,6 +153,9 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   }
   if (options.media !== undefined) {
     registerMediaModule(app, options.media);
+  }
+  if (options.profile !== undefined) {
+    registerProfileModule(app, options.profile);
   }
   // Development-only API reference (issue #182). The dynamic import keeps the viewer and the
   // OpenAPI generator out of the production image, which prunes devDependencies. `containerLocal`

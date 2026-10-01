@@ -2,6 +2,7 @@ import type { z } from 'zod';
 
 import {
   AgencyClientPathParamsSchema,
+  AgencyCollaboratorPathParamsSchema,
   AgencyInvitationPathParamsSchema,
   AgencyMeResponseSchema,
   AgencyMediaAssetPathParamsSchema,
@@ -16,8 +17,10 @@ import {
   ClientInvitationRequestSchema,
   ClientPathParamsSchema,
   CollaboratorInvitationRequestSchema,
+  CollaboratorJobTitlesResponseSchema,
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
+  CollaboratorSchema,
   CompleteMediaUploadRequestSchema,
   CompleteMediaUploadResponseSchema,
   ContextResolveQuerySchema,
@@ -38,7 +41,11 @@ import {
   PublicInvitationTokenPathParamsSchema,
   PutLastContextRequestSchema,
   RequestMediaUploadPartsRequestSchema,
-  RequestMediaUploadPartsResponseSchema
+  RequestMediaUploadPartsResponseSchema,
+  UpdateMyProfileRequestSchema,
+  UpdateMyProfileResponseSchema,
+  UploadMyPhotoRequestSchema,
+  UploadMyPhotoResponseSchema
 } from '@ageniza/contracts';
 
 /**
@@ -51,9 +58,9 @@ import {
  * schema at generation time; secret-shaped values are angle-bracket placeholders on purpose.
  */
 
-export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'collaborators' | 'media';
+export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'collaborators' | 'media' | 'profile';
 
-export type HttpMethod = 'get' | 'post' | 'put' | 'delete';
+export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
 export interface ApiErrorDoc {
   readonly status: number;
@@ -109,7 +116,8 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
   collaborators: 'A equipe da agência: listagem com paginação, busca e filtros.',
-  media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.'
+  media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.',
+  profile: 'Edição do próprio nome e da própria foto de perfil.'
 };
 
 export const ERROR_MESSAGES: Record<string, string> = {
@@ -689,6 +697,74 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
   },
 
   {
+    method: 'get',
+    path: '/agencies/:agencyId/collaborators/:membershipId',
+    operationId: 'getCollaborator',
+    module: 'collaborators',
+    summary: 'Devolve um colaborador da agência',
+    description: [
+      'Carrega o mesmo contrato do item da listagem, com URL própria para o link ser compartilhável.',
+      'Um vínculo de outra agência, inexistente, malformado ou removido devolve o mesmo 404, sem',
+      'revelar existência.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'colaborador.visualizar',
+    params: AgencyCollaboratorPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'O colaborador pedido.',
+      schema: CollaboratorSchema,
+      example: {
+        membershipId,
+        name: 'Camila Nogueira',
+        email: 'camila@exemplo.test',
+        photoUrl: signedStorageUrl,
+        jobTitle: 'Gestora de contas',
+        role: { key: 'account_manager', name: 'Gestor de conta' },
+        isOwner: false,
+        status: 'active',
+        joinedAt: '2026-03-12T12:00:00.000Z'
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/collaborators/job-titles',
+    operationId: 'listCollaboratorJobTitles',
+    module: 'collaborators',
+    summary: 'Lista os cargos que existem na agência',
+    description: [
+      'Cargos distintos (depois de trim, sem nulos e sem vazios) dos vínculos ativos da agência, em',
+      'ordem alfabética e até 200 valores. Alimenta o filtro de cargo da grade; a listagem paginada',
+      'não serve porque devolve só uma página.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'colaborador.visualizar',
+    params: AgencyPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'Cargos existentes na agência.',
+      schema: CollaboratorJobTitlesResponseSchema,
+      example: { data: ['Editor de Vídeo', 'Gestora de contas', 'Designer'] }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+
+  {
     method: 'post',
     path: '/agencies/:agencyId/media/uploads',
     operationId: 'createMediaUpload',
@@ -809,6 +885,66 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
       { status: 409, code: 'VARIANT_NOT_READY' },
       { status: 409, code: 'VARIANT_PROCESSING_FAILED' }
+    ]
+  },
+
+  {
+    method: 'patch',
+    path: '/me/profile',
+    operationId: 'updateMyProfile',
+    module: 'profile',
+    summary: 'Altera o nome da própria pessoa',
+    description: [
+      'O alvo é sempre a pessoa da sessão: não há identificador de usuário no corpo, na query nem',
+      'na rota, e o corpo `.strict()` recusa qualquer campo a mais. O e-mail não é editável por',
+      'nenhuma rota deste módulo.'
+    ].join('\n'),
+    access: 'Sessão',
+    permission: null,
+    body: UpdateMyProfileRequestSchema,
+    requestExample: { name: 'Novo Nome' },
+    responses: [{
+      status: 200,
+      description: 'Nome atualizado.',
+      schema: UpdateMyProfileResponseSchema,
+      example: { id: userId, name: 'Novo Nome' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/me/photo',
+    operationId: 'uploadMyPhoto',
+    module: 'profile',
+    summary: 'Envia a própria foto de perfil',
+    description: [
+      'A imagem vai em base64 pelo servidor, que valida o tipo pelos bytes reais (nunca pelo rótulo',
+      'declarado) e o tamanho antes de gravar; a resposta traz a URL assinada. A foto vive no',
+      'armazenamento de identidade e nunca entra em quota de agência.'
+    ].join('\n'),
+    access: 'Sessão',
+    permission: null,
+    body: UploadMyPhotoRequestSchema,
+    requestExample: { imageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' },
+    responses: [{
+      status: 200,
+      description: 'Foto atualizada.',
+      schema: UploadMyPhotoResponseSchema,
+      example: { imageUrl: signedStorageUrl }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 415, code: 'UNSUPPORTED_MEDIA_TYPE' }
     ]
   }
 ];

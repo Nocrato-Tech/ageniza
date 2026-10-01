@@ -20,6 +20,15 @@ export const AgencyClientPathParamsSchema = z.object({
   clientId: z.string().uuid()
 }).strict();
 
+export const AgencyCollaboratorPathParamsSchema = z.object({
+  agencyId: z.string().uuid(),
+  // A plain string, not `.uuid()`: a malformed membership id must answer the same 404 as a
+  // nonexistent or other-agency one, never a 400 that would distinguish it. The route checks the
+  // UUID itself and turns a bad value into the same 404 (issue #96). 100 is Fastify's own
+  // `maxParamLength`, so every segment that reaches the handler passes this and is judged there.
+  membershipId: z.string().min(1).max(100)
+}).strict();
+
 export const AgencyMediaAssetPathParamsSchema = z.object({
   agencyId: z.string().uuid(),
   assetId: z.string().uuid()
@@ -33,5 +42,6 @@ export type AgencyPathParams = z.infer<typeof AgencyPathParamsSchema>;
 export type ClientPathParams = z.infer<typeof ClientPathParamsSchema>;
 export type AgencyInvitationPathParams = z.infer<typeof AgencyInvitationPathParamsSchema>;
 export type AgencyClientPathParams = z.infer<typeof AgencyClientPathParamsSchema>;
+export type AgencyCollaboratorPathParams = z.infer<typeof AgencyCollaboratorPathParamsSchema>;
 export type AgencyMediaAssetPathParams = z.infer<typeof AgencyMediaAssetPathParamsSchema>;
 export type PublicInvitationTokenPathParams = z.infer<typeof PublicInvitationTokenPathParamsSchema>;

@@ -13,27 +13,52 @@ export interface MenuProps {
   label: string;
   trigger: ReactNode;
   children: ReactNode;
+  /** Notifies the owner when the menu opens or closes, so it can load data or reset its panels. */
+  onOpenChange?: (open: boolean) => void;
+  /**
+   * Identifies the panel currently rendered inside the menu. When it changes, focus moves to the
+   * first item, so a submenu that replaces the menu content stays keyboard-usable.
+   */
+  activePanel?: string;
 }
 
 const menuItems = (menu: HTMLElement): HTMLElement[] =>
   Array.from(menu.querySelectorAll<HTMLElement>('[role=menuitem]:not([disabled]):not([aria-disabled=true])'));
 
-export function Menu({ label, trigger, children }: MenuProps) {
+export function Menu({ label, trigger, children, onOpenChange, activePanel }: MenuProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // The item the menu focused by itself; used to tell "the person has not moved" from "focus moved on".
+  const autoFocusedRef = useRef<HTMLElement | null>(null);
   const menuId = useId();
+
+  const focusFirst = (): void => {
+    const first = menuRef.current === null ? undefined : menuItems(menuRef.current)[0];
+    first?.focus();
+    autoFocusedRef.current = first ?? null;
+  };
 
   const close = (): void => {
     setOpen(false);
+    onOpenChange?.(false);
     triggerRef.current?.focus();
   };
 
   useEffect(() => {
-    if (!open) return;
-    const first = menuRef.current === null ? undefined : menuItems(menuRef.current)[0];
-    first?.focus();
-  }, [open]);
+    if (!open) {
+      autoFocusedRef.current = null;
+      return;
+    }
+    focusFirst();
+  }, [open, activePanel]);
+
+  // The first item can arrive after the menu opens (a list that loads in). Move focus onto it, but only
+  // while the person has not moved: once focus is elsewhere, the menu must not pull it back.
+  useEffect(() => {
+    if (!open || autoFocusedRef.current === null || document.activeElement !== autoFocusedRef.current) return;
+    focusFirst();
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -72,7 +97,11 @@ export function Menu({ label, trigger, children }: MenuProps) {
         aria-haspopup='menu'
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          const next = !open;
+          setOpen(next);
+          onOpenChange?.(next);
+        }}
       >
         {trigger}
       </button>

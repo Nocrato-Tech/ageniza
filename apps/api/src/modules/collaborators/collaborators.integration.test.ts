@@ -45,6 +45,10 @@ interface CollaboratorListJson {
   readonly meta: PaginationMetaJson;
 }
 
+interface CollaboratorJobTitlesJson {
+  readonly data: readonly string[];
+}
+
 interface ApiErrorJson {
   readonly error: { code: string; message: string };
 }
@@ -114,14 +118,22 @@ const addMember = async (
   return user;
 };
 
-/** Same as `addMember`, but with a caller-chosen membership id and no holder tracked. */
+/**
+ * Same as `addMember`, but with a caller-chosen membership id and a bare user row (no credential
+ * account): these members never sign in, so hashing a password just made the suite slower.
+ */
 const addMemberWithMembershipId = async (
   agencyId: string,
   input: { membershipId: string; name: string; emailLabel: string; roleId: string }
-): Promise<TestUserFixture> => {
-  const user = await makeUser(input.emailLabel, input.name);
-  await owner.knex('agency_memberships').insert({ id: input.membershipId, agency_id: agencyId, user_id: user.id, role_id: input.roleId, job_title: null, status: 'active' });
-  return user;
+): Promise<string> => {
+  const userId = randomUUID();
+  createdUserIds.push(userId);
+  await app.pool.query(
+    'insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, false)',
+    [userId, input.name, `${input.emailLabel}.${randomUUID().slice(0, 8)}@collab-integration.test`]
+  );
+  await owner.knex('agency_memberships').insert({ id: input.membershipId, agency_id: agencyId, user_id: userId, role_id: input.roleId, job_title: null, status: 'active' });
+  return userId;
 };
 
 const membershipIdOf = async (agencyId: string, userId: string): Promise<string> => {
@@ -156,6 +168,31 @@ const getCollaborators = async (
 };
 
 const names = (body: CollaboratorListJson): string[] => body.data.map((item) => item.name);
+
+const getCollaboratorDetail = async (
+  cookie: string | undefined,
+  agencyId: string,
+  membershipId: string
+): Promise<{ status: number; body: CollaboratorJson & ApiErrorJson }> => {
+  const response = await app.app.inject({
+    method: 'GET',
+    url: `/agencies/${agencyId}/collaborators/${membershipId}`,
+    headers: cookie === undefined ? origin : { ...origin, cookie }
+  });
+  return { status: response.statusCode, body: response.json<CollaboratorJson & ApiErrorJson>() };
+};
+
+const getJobTitles = async (
+  cookie: string | undefined,
+  agencyId: string
+): Promise<{ status: number; body: CollaboratorJobTitlesJson & ApiErrorJson }> => {
+  const response = await app.app.inject({
+    method: 'GET',
+    url: `/agencies/${agencyId}/collaborators/job-titles`,
+    headers: cookie === undefined ? origin : { ...origin, cookie }
+  });
+  return { status: response.statusCode, body: response.json<CollaboratorJobTitlesJson & ApiErrorJson>() };
+};
 
 /** Inserts bare users (no credential account) in one statement -- the bulk pagination fixture. */
 const insertBareUsers = async (count: number, label: string): Promise<string[]> => {
@@ -521,5 +558,177 @@ describe('collaborators module (issue #95)', () => {
     // The key carries a user id; the warning must never include it.
     expect(during).not.toContain(invalidKey);
     expect(during).not.toContain(withInvalidPhoto.id);
+  });
+
+  it('#96: the detail is exactly the listing item for one membership', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Detail', 'detail', 'Owner Detail');
+    const person = await addMember(agencyId, { name: 'Detalhe Pessoa', emailLabel: 'detail-person', roleId: presetRoleIds.production, jobTitle: 'Editor de Vídeo' });
+    const membershipId = await membershipIdOf(agencyId, person.id);
+    const cookie = await loginCookie(ownerUser);
+
+    const list = await getCollaborators(cookie, agencyId);
+    const fromList = list.body.data.find((item) => item.membershipId === membershipId);
+    const detail = await getCollaboratorDetail(cookie, agencyId, membershipId);
+    expect(detail.status).toBe(200);
+    expect(detail.body).toEqual(fromList);
+    expect(Object.keys(detail.body).sort()).toEqual(
+      ['email', 'isOwner', 'jobTitle', 'joinedAt', 'membershipId', 'name', 'photoUrl', 'role', 'status'].sort()
+    );
+    expect(JSON.stringify(detail.body)).not.toMatch(/salar|remunera|salary|compensation/i);
+  });
+
+  it('#96: a membership of another agency answers the same 404 and leaks no user data', async () => {
+    const alpha = await createAgencyWithOwner('Colab BOLA Alfa', 'bola-alpha', 'Owner BOLA Alfa');
+    const beta = await createAgencyWithOwner('Colab BOLA Beta', 'bola-beta', 'Owner BOLA Beta');
+    // The viewer belongs to BOTH agencies, so `agency_memberships_select` shows B's link and only
+    // the query's own agency filter can keep it out (issue #186 lesson).
+    const viewer = await addMember(alpha.agencyId, { name: 'Viewer BOLA', emailLabel: 'bola-viewer', roleId: presetRoleIds.admin });
+    await addAgencyMembership(beta.agencyId, viewer.id, presetRoleIds.admin);
+    const target = await addMember(alpha.agencyId, { name: 'Pessoa Alvo', emailLabel: 'bola-target', roleId: presetRoleIds.production });
+    await addAgencyMembership(beta.agencyId, target.id, presetRoleIds.production);
+    const foreignMembershipId = await membershipIdOf(beta.agencyId, target.id);
+    const cookie = await loginCookie(viewer);
+
+    const foreign = await getCollaboratorDetail(cookie, alpha.agencyId, foreignMembershipId);
+    const nonexistent = await getCollaboratorDetail(cookie, alpha.agencyId, randomUUID());
+    const malformed = await getCollaboratorDetail(cookie, alpha.agencyId, 'not-a-uuid');
+
+    expect(foreign.status).toBe(404);
+    expect(nonexistent.status).toBe(404);
+    expect(malformed.status).toBe(404);
+    expect(foreign.body.error).toEqual(nonexistent.body.error);
+    expect(malformed.body.error).toEqual(foreign.body.error);
+    expect(foreign.body.error).toEqual({ code: 'NOT_FOUND', message: 'Collaborator not found.' });
+    // The foreign link's owner is never disclosed through this route.
+    expect(JSON.stringify(foreign.body)).not.toContain(target.email);
+    expect(JSON.stringify(foreign.body)).not.toContain('Pessoa Alvo');
+  });
+
+  it('#96: a removed link is not revealed by the detail', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Detail Removed', 'detail-removed', 'Owner Detail Removed');
+    const removed = await addMember(agencyId, { name: 'Pessoa Removida Detalhe', emailLabel: 'detail-removed-person', roleId: presetRoleIds.production, status: 'removed' });
+    const response = await getCollaboratorDetail(await loginCookie(ownerUser), agencyId, await membershipIdOf(agencyId, removed.id));
+    expect(response.status).toBe(404);
+    expect(response.body.error).toEqual({ code: 'NOT_FOUND', message: 'Collaborator not found.' });
+  });
+
+  it('#96: without colaborador.visualizar the detail answers 403', async () => {
+    const { agencyId } = await createAgencyWithOwner('Colab Detail Authz', 'detail-authz');
+    const person = await addMember(agencyId, { name: 'Pessoa Detalhe Authz', emailLabel: 'detail-authz-person', roleId: presetRoleIds.production });
+    const deniedRole = await createCustomRole(agencyId, ['cliente.visualizar']);
+    const denied = await addMember(agencyId, { name: 'Pessoa Negada Detalhe', emailLabel: 'detail-authz-denied', roleId: deniedRole });
+
+    const response = await getCollaboratorDetail(await loginCookie(denied), agencyId, await membershipIdOf(agencyId, person.id));
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('#96: a caller without access to the agency gets the agency 404', async () => {
+    const { agencyId } = await createAgencyWithOwner('Colab Detail No Access', 'detail-no-access');
+    const other = await createAgencyWithOwner('Colab Detail No Access Other', 'detail-no-access-other');
+    const outsider = await addMember(other.agencyId, { name: 'Outsider Detalhe', emailLabel: 'detail-outsider', roleId: presetRoleIds.admin });
+
+    const response = await getCollaboratorDetail(await loginCookie(outsider), agencyId, randomUUID());
+    expect(response.status).toBe(404);
+    expect(response.body.error).toEqual({ code: 'NOT_FOUND', message: 'Agency not found.' });
+  });
+
+  describe('job titles of the agency (issue #218)', () => {
+    it('returns only the route agency titles for a viewer linked to both', async () => {
+      const alpha = await createAgencyWithOwner('Cargos Alfa', 'jobs-alpha', 'Owner Cargos Alfa');
+      const beta = await createAgencyWithOwner('Cargos Beta', 'jobs-beta', 'Owner Cargos Beta');
+      // The same person belongs to BOTH agencies: `agency_memberships_select` shows both, so only
+      // the query's own agency filter separates them (issue #186 lesson).
+      const viewer = await addMember(alpha.agencyId, { name: 'Viewer Cargos', emailLabel: 'jobs-viewer', roleId: presetRoleIds.admin, jobTitle: 'Gestora de contas' });
+      await addAgencyMembership(beta.agencyId, viewer.id, presetRoleIds.admin, 'Diretor de arte');
+      await addMember(alpha.agencyId, { name: 'Ana Alfa Cargos', emailLabel: 'jobs-ana', roleId: presetRoleIds.production, jobTitle: 'Editor de Vídeo' });
+      await addMember(beta.agencyId, { name: 'Zeca Beta Cargos', emailLabel: 'jobs-zeca', roleId: presetRoleIds.production, jobTitle: 'Redator' });
+      const cookie = await loginCookie(viewer);
+
+      const alphaTitles = await getJobTitles(cookie, alpha.agencyId);
+      expect(alphaTitles.status).toBe(200);
+      expect(alphaTitles.body.data).toEqual(['Editor de Vídeo', 'Gestora de contas']);
+
+      const betaTitles = await getJobTitles(cookie, beta.agencyId);
+      expect(betaTitles.status).toBe(200);
+      expect(betaTitles.body.data).toEqual(['Diretor de arte', 'Redator']);
+    });
+
+    it('never counts a removed link', async () => {
+      const { agencyId, ownerUser } = await createAgencyWithOwner('Cargos Removidos', 'jobs-removed', 'Owner Cargos Removidos');
+      await addMember(agencyId, { name: 'Ativo Cargo', emailLabel: 'jobs-active', roleId: presetRoleIds.production, jobTitle: 'Cargo Ativo' });
+      await addMember(agencyId, { name: 'Removido Cargo', emailLabel: 'jobs-removed-person', roleId: presetRoleIds.production, jobTitle: 'Cargo Removido', status: 'removed' });
+
+      const response = await getJobTitles(await loginCookie(ownerUser), agencyId);
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual(['Cargo Ativo']);
+      expect(response.body.data).not.toContain('Cargo Removido');
+    });
+
+    it('collapses duplicates and surrounding spaces, dropping blanks and nulls', async () => {
+      const { agencyId, ownerUser } = await createAgencyWithOwner('Cargos Duplicados', 'jobs-dupes', 'Owner Cargos Duplicados');
+      await addMember(agencyId, { name: 'Pessoa Um', emailLabel: 'jobs-dup-1', roleId: presetRoleIds.production, jobTitle: 'Editor de Vídeo' });
+      await addMember(agencyId, { name: 'Pessoa Dois', emailLabel: 'jobs-dup-2', roleId: presetRoleIds.production, jobTitle: '  Editor de Vídeo  ' });
+      await addMember(agencyId, { name: 'Pessoa Três', emailLabel: 'jobs-dup-3', roleId: presetRoleIds.production, jobTitle: 'Designer' });
+      await addMember(agencyId, { name: 'Pessoa Quatro', emailLabel: 'jobs-dup-4', roleId: presetRoleIds.production, jobTitle: '   ' });
+      await addMember(agencyId, { name: 'Pessoa Cinco', emailLabel: 'jobs-dup-5', roleId: presetRoleIds.production, jobTitle: null });
+
+      const response = await getJobTitles(await loginCookie(ownerUser), agencyId);
+      expect(response.status).toBe(200);
+      // Trimmed duplicates fold into one, the blank and the null are absent, and the order is A-Z.
+      expect(response.body.data).toEqual(['Designer', 'Editor de Vídeo']);
+    });
+
+    it('caps the list at 200 values, alphabetically', async () => {
+      const { agencyId, ownerUser } = await createAgencyWithOwner('Cargos Cap', 'jobs-cap', 'Owner Cargos Cap');
+      const bare = await insertBareUsers(205, 'jobs-cap');
+      await owner.knex('agency_memberships').insert(bare.map((userId, index) => ({
+        agency_id: agencyId, user_id: userId, role_id: presetRoleIds.production, job_title: `Cargo ${String(index + 1).padStart(3, '0')}`
+      })));
+
+      const response = await getJobTitles(await loginCookie(ownerUser), agencyId);
+      expect(response.status).toBe(200);
+      expect(response.body.data).toHaveLength(200);
+      expect(response.body.data[0]).toBe('Cargo 001');
+      expect(response.body.data[199]).toBe('Cargo 200');
+    });
+
+    it('refuses a member without colaborador.visualizar with 403, and an outsider with the agency 404', async () => {
+      const { agencyId } = await createAgencyWithOwner('Cargos Authz', 'jobs-authz');
+      const visualizadorRole = await createCustomRole(agencyId, ['colaborador.visualizar']);
+      const deniedRole = await createCustomRole(agencyId, ['cliente.visualizar']);
+      const allowed = await addMember(agencyId, { name: 'Permitida Cargos', emailLabel: 'jobs-authz-allowed', roleId: visualizadorRole });
+      const denied = await addMember(agencyId, { name: 'Negada Cargos', emailLabel: 'jobs-authz-denied', roleId: deniedRole });
+
+      const allowedResponse = await getJobTitles(await loginCookie(allowed), agencyId);
+      expect(allowedResponse.status).toBe(200);
+      expect(allowedResponse.body).toEqual({ data: [] });
+
+      const deniedResponse = await getJobTitles(await loginCookie(denied), agencyId);
+      expect(deniedResponse.status).toBe(403);
+      expect(deniedResponse.body.error.code).toBe('FORBIDDEN');
+
+      const { agencyId: otherAgencyId } = await createAgencyWithOwner('Cargos Authz Other', 'jobs-authz-other');
+      const outsider = await addMember(otherAgencyId, { name: 'De Fora Cargos', emailLabel: 'jobs-authz-outsider', roleId: presetRoleIds.admin });
+      const outsiderCookie = await loginCookie(outsider);
+
+      const noAccess = await getJobTitles(outsiderCookie, agencyId);
+      const nonexistent = await getJobTitles(outsiderCookie, randomUUID());
+      expect(noAccess.status).toBe(404);
+      expect(nonexistent.status).toBe(404);
+      expect(noAccess.body.error).toEqual(nonexistent.body.error);
+      expect(noAccess.body.error).toEqual({ code: 'NOT_FOUND', message: 'Agency not found.' });
+
+      const unauthenticated = await getJobTitles(undefined, agencyId);
+      expect(unauthenticated.status).toBe(401);
+    });
+
+    it('is matched as the literal path, never as a membership id', async () => {
+      const { agencyId, ownerUser } = await createAgencyWithOwner('Cargos Order', 'jobs-order', 'Owner Cargos Order');
+      // The detail route answers 404 "Collaborator not found." for a non-UUID membership id; a 200
+      // here proves the literal route won the match even though it is a sibling of that param route.
+      const response = await getJobTitles(await loginCookie(ownerUser), agencyId);
+      expect(response.status).toBe(200);
+    });
   });
 });
