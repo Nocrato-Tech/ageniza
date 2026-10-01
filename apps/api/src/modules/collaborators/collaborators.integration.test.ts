@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { CollaboratorJobTitlesResponseSchema } from '@ageniza/contracts';
+
 import {
   buildTestApp,
   captureLogs,
@@ -655,30 +657,48 @@ describe('collaborators module (issue #95)', () => {
     expect(response.body.error).toEqual({ code: 'NOT_FOUND', message: 'Agency not found.' });
   });
 
-  // Issue #225. The response schema trims and bounds job_title, and the column used to accept any
-  // text: one row with only a tab, only a NBSP or over 256 characters made every read of the agency
-  // a 500. The CHECK added in the migration means those shapes can no longer be written, so the
-  // listing and the detail keep answering 200.
-  it('#225: a job title that used to 500 the reads can no longer be written', async () => {
+  // Issue #225. The response schema trims and bounds job_title in UTF-16 units with JavaScript's
+  // whitespace set, and the column used to accept any text: one row with only a tab, only a NBSP,
+  // only U+FEFF or over 256 units made every read of the agency a 500. The DB now stores the
+  // normalized form and refuses the rest, so the reads keep answering 200 and agree with the contract.
+  it('#225: the forms that used to 500 the reads are refused or normalized, like the contract', async () => {
     const { agencyId, ownerUser } = await createAgencyWithOwner('Cargos CHECK', 'jobs-check', 'Owner Cargos CHECK');
-    const bare = await insertBareUsers(3, 'jobs-check');
-    const hostile = ['\t', String.fromCharCode(160), 'a'.repeat(257)];
+    const bare = await insertBareUsers(5, 'jobs-check');
+    const emoji129 = '😀'.repeat(129);
+    const padded = `A${' '.repeat(300)}B`;
+    const zwnbsp = '\uFEFF';
 
-    for (const [index, jobTitle] of hostile.entries()) {
-      await expect(
-        owner.knex('agency_memberships').insert({
-          agency_id: agencyId,
-          user_id: bare[index]!,
-          role_id: presetRoleIds.production,
-          job_title: jobTitle,
-          status: 'active'
-        })
-      ).rejects.toThrow(/agency_memberships_job_title_format/);
-    }
+    // The contract itself rejects the over-limit forms the old CHECK accepted.
+    expect(CollaboratorJobTitlesResponseSchema.safeParse({ data: [emoji129] }).success).toBe(false);
+    expect(CollaboratorJobTitlesResponseSchema.safeParse({ data: [padded] }).success).toBe(false);
+
+    const insert = (index: number, jobTitle: string) => owner.knex('agency_memberships').insert({
+      agency_id: agencyId, user_id: bare[index]!, role_id: presetRoleIds.production, job_title: jobTitle, status: 'active'
+    });
+    const storedTitle = async (index: number): Promise<string | null> => {
+      const row = await owner.knex('agency_memberships').where({ agency_id: agencyId, user_id: bare[index]! }).first('job_title');
+      return (row?.job_title as string | null | undefined) ?? null;
+    };
+
+    // Refused: 129 emoji (258 UTF-16 units), A + 300 spaces + B and 257 ASCII -- no valid stored form.
+    await expect(insert(0, emoji129)).rejects.toThrow(/agency_memberships_job_title_format/);
+    await expect(insert(1, padded)).rejects.toThrow(/agency_memberships_job_title_format/);
+    await expect(insert(2, 'a'.repeat(257))).rejects.toThrow(/agency_memberships_job_title_format/);
+
+    // Normalized: a tab and U+FEFF are whitespace for the contract's trim, so the stored value is
+    // null, which the nullable schema accepts -- the read can no longer 500 on them.
+    await insert(3, '\t');
+    await insert(4, zwnbsp);
+    expect(await storedTitle(3)).toBeNull();
+    expect(await storedTitle(4)).toBeNull();
 
     const cookie = await loginCookie(ownerUser);
     const listing = await getCollaborators(cookie, agencyId);
     expect(listing.status).toBe(200);
+    const titles = await getJobTitles(cookie, agencyId);
+    expect(titles.status).toBe(200);
+    // Everything the DB accepts is valid for the contract, so no read can 500 on it.
+    expect(CollaboratorJobTitlesResponseSchema.safeParse({ data: titles.body.data }).success).toBe(true);
     const detail = await getCollaboratorDetail(cookie, agencyId, await membershipIdOf(agencyId, ownerUser.id));
     expect(detail.status).toBe(200);
   });
