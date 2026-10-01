@@ -1157,3 +1157,15 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 **Consequência.** O filtro de cargo da grade tem fonte própria, sem alterar o formato de resposta que outras rotas já usam. Rota aditiva: nenhuma migration, nenhuma policy nova, nenhum campo novo em contrato existente. Como é um caminho novo de leitura da agência, entra com a mesma barreira de escopo da listagem (a RLS mostra as agências do chamador, nunca uma só; o filtro de agência da consulta é a barreira que separa).
 
 **Origem.** Issue #218, decidida pelo maestro a partir da lacuna achada na #102. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-01 — CHECK no cargo do vínculo, com backfill pequeno e explícito
+
+**Contexto.** `agency_memberships.job_title` é `text` sem restrição, enquanto o schema de resposta da listagem (#95), do detalhe (#96) e da rota de cargos (#218) exige um valor aparado de 1 a **256 unidades UTF-16**, contando como whitespace de borda o conjunto do `String.prototype.trim` do JavaScript (que inclui NBSP **e** U+FEFF, entre outros). Um único cargo fora desse formato derruba com **500** a leitura da agência inteira. Hoje só o `seed:demo` grava cargo; a #97 vai passar a gravar. Achado da revisão do PR #220 e da revisão do PR #232.
+
+**Decisão.** Mudança **estrutural, de backfill pequeno**, na migration `20261001000000_job_title_format`: a forma armazenada passa a ser o valor aparado pelas mesmas regras do contrato (trigger `BEFORE INSERT OR UPDATE` chama `app_private.normalize_job_title`), e o `CHECK` exige 1 a 256 **unidades UTF-16** (`app_private.utf16_length`), não pontos de código. Antes do `CHECK`, o backfill trata o legado: espaços-só viram `null` e um legado que ainda passe de 256 unidades UTF-16 também vira `null`, com a contagem registrada em log da migration — **não há truncamento silencioso**. `specs/colaboradores.md` não muda de formato. Alcance: uma tabela, uma coluna.
+
+**Consequência.** O dado lido nunca é inválido para o contrato, em nenhuma rota presente ou futura. O preço é a perda explícita do legado acima de 256, registrada e contada. **Pendente de validação** do dono do produto: a escolha de descartar (em vez de truncar) um cargo legado acima do limite.
+
+**Origem.** Issue #225, achados da revisão do PR #220 (#218) e da revisão do PR #232. **Pendente de validação** do dono do produto.
