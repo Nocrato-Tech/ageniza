@@ -260,6 +260,10 @@ describe('profile module (issue #101)', () => {
       'Ana\u202eBia', // RLO: makes the badge read differently than the stored name
       '\u200b', // zero-width space alone
       '\u3164', // Hangul filler alone: a letter that renders as nothing
+      '\u200c', // ZWNJ alone
+      '\u200d', // ZWJ alone
+      '\u200cAna', // joiner at the start
+      'Ana\u200d', // joiner at the end
       '!!!' // no letter or number at all
     ];
     for (const name of hostile) {
@@ -273,6 +277,19 @@ describe('profile module (issue #101)', () => {
     const requestLogs = logs.lines().slice(logOffset).join('\n');
     expect(requestLogs).not.toContain('"level":50');
     expect(requestLogs).not.toContain('Request failed unexpectedly');
+  });
+
+  it('#101: a zero-width joiner between letters is accepted and preserved', async () => {
+    const user = await makeUserWithOwnAgency('profile-name-joiner');
+    const cookie = await loginCookie(user);
+
+    // ZWNJ/ZWJ are legitimate between letters (Persian names, some Indic sequences) and never
+    // reorder text; only a joiner next to a non-letter is rejected.
+    for (const name of ['می\u200Cرود', 'क\u200Dष']) {
+      const response = await patchProfile(cookie, { name });
+      expect(response.status, `name ${JSON.stringify(name)}`).toBe(200);
+      expect((await readUser(user.id)).name).toBe(name);
+    }
   });
 
   it('#101: uploading a photo stores the reference on the user and returns a signed URL that serves the bytes', async () => {
