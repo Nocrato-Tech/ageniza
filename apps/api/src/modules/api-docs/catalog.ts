@@ -19,6 +19,7 @@ import {
   CollaboratorDetailQuerySchema,
   CollaboratorInvitationRequestSchema,
   CollaboratorJobTitlesQuerySchema,
+  CollaboratorJobTitlesResponseSchema,
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
   CollaboratorSchema,
