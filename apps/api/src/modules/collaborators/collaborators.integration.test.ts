@@ -740,12 +740,14 @@ describe('collaborators module (issue #95)', () => {
       await addMember(agencyId, { name: 'Pessoa Um', emailLabel: 'jobs-dup-1', roleId: presetRoleIds.production, jobTitle: 'Editor de Vídeo' });
       await addMember(agencyId, { name: 'Pessoa Dois', emailLabel: 'jobs-dup-2', roleId: presetRoleIds.production, jobTitle: '  Editor de Vídeo  ' });
       await addMember(agencyId, { name: 'Pessoa Três', emailLabel: 'jobs-dup-3', roleId: presetRoleIds.production, jobTitle: 'Designer' });
-      await expect(addMember(agencyId, { name: 'Pessoa Quatro', emailLabel: 'jobs-dup-4', roleId: presetRoleIds.production, jobTitle: '   ' })).rejects.toThrow(/agency_memberships_job_title_format/);
+      // Issue #225: the trigger stores a blanks-only title as null, which the listing drops like any
+      // null; the value never reaches the job-titles output.
+      await addMember(agencyId, { name: 'Pessoa Quatro', emailLabel: 'jobs-dup-4', roleId: presetRoleIds.production, jobTitle: '   ' });
       await addMember(agencyId, { name: 'Pessoa Cinco', emailLabel: 'jobs-dup-5', roleId: presetRoleIds.production, jobTitle: null });
 
       const response = await getJobTitles(await loginCookie(ownerUser), agencyId);
       expect(response.status).toBe(200);
-      // The CHECK refuses blanks; trimmed duplicates fold into one and nulls stay absent.
+      // Trimmed duplicates fold into one and blanks/nulls stay absent.
       expect(response.body.data).toEqual(['Designer', 'Editor de Vídeo']);
     });
 
