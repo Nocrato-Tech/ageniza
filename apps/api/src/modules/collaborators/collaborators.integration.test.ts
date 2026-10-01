@@ -616,4 +616,32 @@ describe('collaborators module (issue #95)', () => {
     expect(response.status).toBe(404);
     expect(response.body.error).toEqual({ code: 'NOT_FOUND', message: 'Agency not found.' });
   });
+
+  // Issue #225. The response schema trims and bounds job_title, and the column used to accept any
+  // text: one row with only a tab, only a NBSP or over 256 characters made every read of the agency
+  // a 500. The CHECK added in the migration means those shapes can no longer be written, so the
+  // listing and the detail keep answering 200.
+  it('#225: a job title that used to 500 the reads can no longer be written', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Cargos CHECK', 'jobs-check', 'Owner Cargos CHECK');
+    const bare = await insertBareUsers(3, 'jobs-check');
+    const hostile = ['\t', String.fromCharCode(160), 'a'.repeat(257)];
+
+    for (const [index, jobTitle] of hostile.entries()) {
+      await expect(
+        owner.knex('agency_memberships').insert({
+          agency_id: agencyId,
+          user_id: bare[index]!,
+          role_id: presetRoleIds.production,
+          job_title: jobTitle,
+          status: 'active'
+        })
+      ).rejects.toThrow(/agency_memberships_job_title_format/);
+    }
+
+    const cookie = await loginCookie(ownerUser);
+    const listing = await getCollaborators(cookie, agencyId);
+    expect(listing.status).toBe(200);
+    const detail = await getCollaboratorDetail(cookie, agencyId, await membershipIdOf(agencyId, ownerUser.id));
+    expect(detail.status).toBe(200);
+  });
 });
