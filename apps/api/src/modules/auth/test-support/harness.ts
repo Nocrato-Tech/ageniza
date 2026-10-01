@@ -20,6 +20,7 @@ import { createAuth, type AuthInstance } from '../better-auth.js';
 import { createEmailService, type EmailService } from '../email-service.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../../tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from '../../invitations/routes.js';
+import type { ClientModuleDependencies } from '../../clients/routes.js';
 import type { ContextModuleDependencies } from '../../contexts/routes.js';
 import { countValidContexts } from '../../contexts/service.js';
 import { createRequireSession } from '../session-guard.js';
@@ -224,6 +225,16 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   const requireClientAccess = createRequireClientAccess({ database });
   const contexts: ContextModuleDependencies = { database, auth, requireClientAccess };
   const agencies: AgencyModuleDependencies = { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }) };
+  const clients: ClientModuleDependencies = config.identityStorage === undefined
+    ? { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }), requirePermission, photoUrlExpirySeconds: 300 }
+    : {
+        database,
+        auth,
+        requireAgencyAccess: createRequireAgencyAccess({ database }),
+        requirePermission,
+        identityStorage: createIdentityStorageClient(config.identityStorage),
+        photoUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds
+      };
   const collaborators: CollaboratorModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
     database,
     auth,
@@ -271,6 +282,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     invitations,
     contexts,
     agencies,
+    clients,
     collaborators,
     media,
     profile,
