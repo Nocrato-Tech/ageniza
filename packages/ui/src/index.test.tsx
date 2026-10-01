@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { Button, ChoiceCard, ConfirmDialog, Menu, MenuItem, MenuSeparator, Skeleton } from './index.js';
+import { Avatar, BadgeCard, Button, ChoiceCard, ConfirmDialog, Menu, MenuItem, MenuSeparator, Pagination, Select, Skeleton } from './index.js';
 
 afterEach(cleanup);
 
@@ -200,5 +200,88 @@ describe('ConfirmDialog', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
     fireEvent.keyDown(dialog, { key: 'Escape' });
     expect(onCancel).toHaveBeenCalledOnce();
+  });
+});
+
+describe('Avatar', () => {
+  it('shows the initials of the first and last name when there is no photo', () => {
+    const { container } = render(<Avatar name="Mário Costa" />);
+    expect(screen.getByText('MC')).toBeTruthy();
+    expect(container.querySelector('img')).toBeNull();
+  });
+
+  it('uses one letter for a single name', () => {
+    render(<Avatar name="Ana" />);
+    expect(screen.getByText('A')).toBeTruthy();
+  });
+
+  it('shows the photo instead of the initials when a photo URL exists', () => {
+    const { container } = render(<Avatar name="Júlia Reis" photoUrl="https://example.test/photo.png" />);
+    const photo = container.querySelector('img.ui-avatar__photo');
+    expect(photo?.getAttribute('src')).toBe('https://example.test/photo.png');
+    expect(screen.queryByText('JR')).toBeNull();
+  });
+});
+
+describe('BadgeCard', () => {
+  it('shows name, job title and role', () => {
+    const { container } = render(<BadgeCard name="Ana Prado" photoUrl={null} jobTitle="Editora" role="Produção" />);
+    expect(screen.getByText('Ana Prado')).toBeTruthy();
+    expect(screen.getByText('Editora')).toBeTruthy();
+    expect(screen.getByText('Produção')).toBeTruthy();
+    expect(container.querySelector('.ui-badge-card__job')).not.toBeNull();
+  });
+
+  it('omits the job title line when there is none', () => {
+    const { container } = render(<BadgeCard name="Mário Costa" photoUrl={null} jobTitle={null} role="Gestor de conta" />);
+    expect(container.querySelector('.ui-badge-card__job')).toBeNull();
+    expect(screen.getByText('Gestor de conta')).toBeTruthy();
+  });
+});
+
+describe('Select', () => {
+  it('renders a labelled native select and reports changes', () => {
+    const onChange = vi.fn();
+    render(<Select
+      label='Papel'
+      value='production'
+      options={[{ value: 'production', label: 'Produção' }, { value: 'admin', label: 'Admin' }]}
+      onChange={onChange}
+      placeholder='Todos os papéis'
+    />);
+
+    const select = screen.getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement;
+    expect(select.value).toBe('production');
+    expect(screen.getByRole('option', { name: 'Todos os papéis' })).toBeTruthy();
+    fireEvent.change(select, { target: { value: 'admin' } });
+    expect(onChange).toHaveBeenCalledWith('admin');
+  });
+});
+
+describe('Pagination', () => {
+  it('marks the current page, shows the count and reports navigation', () => {
+    const onPageChange = vi.fn();
+    render(<Pagination page={2} totalPages={3} onPageChange={onPageChange} summary="24 de 61 pessoas" />);
+
+    expect(screen.getByRole('button', { name: 'Página 2' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByText('24 de 61 pessoas')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Página 3' }));
+    expect(onPageChange).toHaveBeenCalledWith(3);
+    fireEvent.click(screen.getByRole('button', { name: 'Página anterior' }));
+    expect(onPageChange).toHaveBeenCalledWith(1);
+  });
+
+  it('collapses a long range with gaps and disables the step at the first page', () => {
+    render(<Pagination page={1} totalPages={20} onPageChange={vi.fn()} />);
+
+    expect((screen.getByRole('button', { name: 'Página anterior' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Página 1' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('button', { name: 'Página 20' })).toBeTruthy();
+    expect(document.querySelectorAll('.ui-pagination__gap').length).toBeGreaterThan(0);
+  });
+
+  it('renders nothing when there is a single page and no count', () => {
+    const { container } = render(<Pagination page={1} totalPages={1} onPageChange={vi.fn()} />);
+    expect(container.querySelector('.ui-pagination')).toBeNull();
   });
 });
