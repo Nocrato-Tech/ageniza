@@ -29,7 +29,15 @@ export function Menu({ label, trigger, children, onOpenChange, activePanel }: Me
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // The item the menu focused by itself; used to tell "the person has not moved" from "focus moved on".
+  const autoFocusedRef = useRef<HTMLElement | null>(null);
   const menuId = useId();
+
+  const focusFirst = (): void => {
+    const first = menuRef.current === null ? undefined : menuItems(menuRef.current)[0];
+    first?.focus();
+    autoFocusedRef.current = first ?? null;
+  };
 
   const close = (): void => {
     setOpen(false);
@@ -38,10 +46,19 @@ export function Menu({ label, trigger, children, onOpenChange, activePanel }: Me
   };
 
   useEffect(() => {
-    if (!open) return;
-    const first = menuRef.current === null ? undefined : menuItems(menuRef.current)[0];
-    first?.focus();
+    if (!open) {
+      autoFocusedRef.current = null;
+      return;
+    }
+    focusFirst();
   }, [open, activePanel]);
+
+  // The first item can arrive after the menu opens (a list that loads in). Move focus onto it, but only
+  // while the person has not moved: once focus is elsewhere, the menu must not pull it back.
+  useEffect(() => {
+    if (!open || autoFocusedRef.current === null || document.activeElement !== autoFocusedRef.current) return;
+    focusFirst();
+  });
 
   useEffect(() => {
     if (!open) return;

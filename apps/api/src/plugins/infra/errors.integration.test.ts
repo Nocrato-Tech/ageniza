@@ -290,6 +290,91 @@ describe('errors outside the map are never downgraded by statusCode (#194 review
   });
 });
 
+// Issue #217 (security review of #96): a path segment over Fastify's `maxParamLength` of 100 threw
+// FST_ERR_MAX_PARAM_LENGTH, which escaped as the framework's raw 414 body and echoed the path. The
+// code is now mapped like the parser errors: fixed envelope, no path, info log, no Sentry.
+describe('an over-long path parameter answers 414 inside the envelope (#217)', () => {
+  const openApps: TestApp[] = [];
+  let app: TestApp;
+  let logs: CapturedLogs;
+  let user: TestUserFixture;
+  let cookie: string;
+  let ownedAgencyId: string | undefined;
+
+  const overlong = 'x'.repeat(101);
+
+  beforeAll(async () => {
+    logs = captureLogs();
+    app = await buildTestApp({ logger: logs.logger });
+    openApps.push(app);
+
+    user = await insertTestUser(app.pool, app.auth, { emailLabel: 'param-length' });
+    ownedAgencyId = await grantOwnedAgencyContext(user.id);
+    const login = await app.app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      headers: origin,
+      payload: { email: user.email, password: user.password }
+    });
+    expect(login.statusCode).toBe(200);
+    cookie = cookieHeader(login.cookies);
+  });
+
+  afterAll(async () => {
+    if (ownedAgencyId !== undefined) await cleanupOwnedAgencyContext(ownedAgencyId);
+    if (user !== undefined) await cleanupTestUser(app.pool, user.id);
+    await Promise.all(openApps.splice(0).map((opened) => opened.close()));
+  });
+
+  const assertOverlong = async (response: { readonly statusCode: number; readonly body: string; json(): unknown }): Promise<void> => {
+    expect(response.statusCode).toBe(414);
+    const parsed = ApiErrorResponseSchema.parse(response.json());
+    expect(parsed.error.code).toBe('URI_TOO_LONG');
+    expect(parsed.error.message).toBe('O caminho da requisição é longo demais.');
+    // Neither the path nor the framework's raw code is echoed back.
+    expect(response.body).not.toContain(overlong);
+    expect(response.body).not.toContain('FST_ERR_MAX_PARAM_LENGTH');
+
+    expect(mockedCaptureUnexpectedError).not.toHaveBeenCalled();
+    await flushLogs();
+    const requestLogs = logs.lines().slice(logOffset).join('\n');
+    expect(requestLogs).toContain('"code":"URI_TOO_LONG"');
+    expect(requestLogs).toContain('"level":30');
+    expect(requestLogs).not.toContain('"level":50');
+    expect(requestLogs).not.toContain('Request failed unexpectedly');
+  };
+
+  let logOffset = 0;
+  beforeEach(() => {
+    mockedCaptureUnexpectedError.mockClear();
+    logOffset = logs.lines().length;
+  });
+
+  it('answers 414 for a public route', async () => {
+    const response = await app.app.inject({ method: 'GET', url: `/invitations/${overlong}`, headers: origin });
+    await assertOverlong(response);
+  });
+
+  it('answers 414 for an authenticated route', async () => {
+    const response = await app.app.inject({ method: 'GET', url: `/agencies/${overlong}/me`, headers: { ...origin, cookie } });
+    await assertOverlong(response);
+  });
+
+  // The same router hook carries FST_ERR_BAD_URL; mapping it is what keeps a malformed URL a 400
+  // envelope instead of an unexpected 500 once `frameworkErrors` feeds this path.
+  it('answers a malformed URL component as a 400 envelope, not a 500', async () => {
+    const offset = logs.lines().length;
+    const response = await app.app.inject({ method: 'GET', url: '/invitations/%ZZ', headers: origin });
+    expect(response.statusCode).toBe(400);
+    expect(ApiErrorResponseSchema.parse(response.json()).error.code).toBe('INVALID_URL');
+    expect(response.body).not.toContain('%ZZ');
+    expect(mockedCaptureUnexpectedError).not.toHaveBeenCalled();
+    await flushLogs();
+    const requestLogs = logs.lines().slice(offset).join('\n');
+    expect(requestLogs).not.toContain('"level":50');
+  });
+});
+
 // Issue #195: `raw.readableAborted` is true whenever a client leaves, even on a bodyless GET, so the
 // body abort must be recognised by the body stream's own error. These tests use a real port and a raw
 // socket, because `inject` cannot make a client leave in the middle of a request.

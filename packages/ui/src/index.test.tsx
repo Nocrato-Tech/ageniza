@@ -138,6 +138,46 @@ describe('Menu', () => {
     );
     expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Back' }));
   });
+
+  it('moves focus to a first item that arrives after opening, while the person has not moved', () => {
+    const { rerender } = render(
+      <Menu label='Menu' trigger='Open' activePanel='root'>
+        <MenuItem key='sair'>Sair</MenuItem>
+      </Menu>
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Sair' }));
+
+    // Keys keep the focused button in the DOM while a new first item is inserted before it.
+    rerender(
+      <Menu label='Menu' trigger='Open' activePanel='root'>
+        <MenuItem key='trocar'>Trocar</MenuItem>
+        <MenuItem key='sair'>Sair</MenuItem>
+      </Menu>
+    );
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Trocar' }));
+  });
+
+  it('does not pull focus back to the first item when the person has already moved', () => {
+    const { rerender } = render(
+      <Menu label='Menu' trigger='Open' activePanel='root'>
+        <MenuItem key='sair'>Sair</MenuItem>
+        <MenuItem key='outra'>Outra</MenuItem>
+      </Menu>
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Sair' }), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Outra' }));
+
+    rerender(
+      <Menu label='Menu' trigger='Open' activePanel='root'>
+        <MenuItem key='trocar'>Trocar</MenuItem>
+        <MenuItem key='sair'>Sair</MenuItem>
+        <MenuItem key='outra'>Outra</MenuItem>
+      </Menu>
+    );
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Outra' }));
+  });
 });
 
 describe('ConfirmDialog', () => {
