@@ -1133,3 +1133,15 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 **Consequência.** 256 continua sendo o teto do fluxo de convite. Se o dono do produto quiser alinhar com os 120 do perfil, é mudança de uma constante (`INVITATION_NAME_MAX_LENGTH`) e do teste correspondente — sem migration nem mudança de formato.
 
 **Origem.** Issue #205. **Pendente de validação** — o número foi mantido da implementação anterior porque a SPEC não o define.
+
+---
+
+## 2026-10-01 — CHECK no cargo do vínculo, com backfill pequeno
+
+**Contexto.** `agency_memberships.job_title` é `text` sem restrição, enquanto o schema de resposta da listagem (#95), do detalhe (#96) e da rota de cargos (#218) exige `trim`, mínimo 1 e máximo 256. Um único cargo fora do formato — só tab, só NBSP, ou mais de 256 caracteres — faz o `parseResponse` falhar e derruba com **500** a leitura da agência inteira. Hoje só o `seed:demo` grava cargo; a #97 vai passar a gravar. Achado da revisão do PR #220.
+
+**Decisão.** Esta é uma mudança **estrutural, de backfill pequeno**, na migration `20261001000000_job_title_format`: as linhas existentes são normalizadas primeiro (NBSP vira espaço, cada corrida de espaço colapsa para um, `btrim`, e o resultado vazio vira `null`) e só então a coluna recebe um `CHECK` — nulo, ou 1 a 256 caracteres depois da normalização. A expressão de normalização fica em `app_private.normalize_job_title(text)`, usada pelo backfill e pelo `CHECK`, e a escrita da #97 deve normalizar com a mesma. Alcance: uma tabela (`agency_memberships`), uma coluna, sem mudança de contrato.
+
+**Consequência.** O dado inválido deixa de existir, em vez de cada leitura precisar se defender. Um cargo que era válido é mantido (aparado); um cargo que era só espaço vira `null`. Nenhuma rota precisou de guarda nova; `specs/colaboradores.md` não muda de formato.
+
+**Origem.** Issue #225, achado da revisão do PR #220 (#218). **Pendente de validação** do dono do produto.
