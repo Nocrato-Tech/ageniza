@@ -14,9 +14,14 @@ import {
   AuthPasswordResetRequestSchema,
   AuthPasswordResetResponseSchema,
   AuthSessionResponseSchema,
+  ClientDetailResponseSchema,
   ClientInvitationRequestSchema,
   ClientPathParamsSchema,
+  ClientSchema,
+  CollaboratorDetailQuerySchema,
   CollaboratorInvitationRequestSchema,
+  CollaboratorJobTitlesQuerySchema,
+  CollaboratorJobTitlesResponseSchema,
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
   CollaboratorSchema,
@@ -24,11 +29,13 @@ import {
   CompleteMediaUploadResponseSchema,
   ContextResolveQuerySchema,
   ContextResolveResponseSchema,
+  CreateClientRequestSchema,
   CreateMediaUploadRequestSchema,
   CreateMediaUploadResponseSchema,
   HealthResponseSchema,
   InvitationAcceptNewAccountRequestSchema,
   InvitationAcceptNewAccountResponseSchema,
+  InvitationAcceptRequestSchema,
   InvitationAcceptResponseSchema,
   InvitationCreatedResponseSchema,
   InvitationPreviewResponseSchema,
@@ -41,6 +48,7 @@ import {
   PutLastContextRequestSchema,
   RequestMediaUploadPartsRequestSchema,
   RequestMediaUploadPartsResponseSchema,
+  UpdateClientRequestSchema,
   UpdateMyProfileRequestSchema,
   UpdateMyProfileResponseSchema,
   UploadMyPhotoRequestSchema,
@@ -57,7 +65,7 @@ import {
  * schema at generation time; secret-shaped values are angle-bracket placeholders on purpose.
  */
 
-export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'collaborators' | 'media' | 'profile';
+export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'collaborators' | 'media' | 'profile';
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
@@ -114,6 +122,7 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   invitations: 'Convite de colaborador e de pessoa do portal, aceite e administração dos pendentes.',
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
+  clients: 'Cadastro do cliente da agência: criar, ler o detalhe com o resumo e editar.',
   collaborators: 'A equipe da agência: listagem com paginação, busca e filtros.',
   media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.',
   profile: 'Edição do próprio nome e da própria foto de perfil.'
@@ -138,6 +147,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   INVITATION_NOT_PENDING: 'O convite não está pendente.',
   MEMBERSHIP_EXISTS: 'Este endereço já possui o vínculo solicitado.',
   INVALID_ROLE: 'O papel informado não é válido para esta agência.',
+  CLIENT_NAME_IN_USE: 'Já existe um cliente ativo com este nome.',
+  CLIENT_ARCHIVED: 'Cliente arquivado não pode ser editado.',
   EMAIL_DELIVERY_FAILED: 'Não foi possível entregar o e-mail.',
   QUOTA_EXCEEDED: 'This agency has reached its storage quota.',
   UPLOAD_NOT_PENDING: 'This upload is not pending confirmation.',
@@ -160,6 +171,7 @@ const invitationId = '33333333-3333-4333-8333-333333333333';
 const assetId = '44444444-4444-4444-8444-444444444444';
 const userId = '55555555-5555-4555-8555-555555555555';
 const roleId = '66666666-6666-4666-8666-666666666666';
+const clientId = '77777777-7777-4777-8777-777777777777';
 
 const agencyContextExample = {
   type: 'agency',
@@ -171,6 +183,23 @@ const agencyContextExample = {
 } as const;
 
 const signedStorageUrl = 'https://storage.exemplo.test/arquivo.png?assinatura=ficticia';
+
+const clientExample = {
+  id: clientId,
+  name: 'Padaria Central',
+  status: 'active',
+  photoUrl: null,
+  legalName: 'Padaria Central Ltda',
+  taxId: '12345678000190',
+  segment: 'Alimentação',
+  website: 'https://padariacentral.exemplo.test',
+  instagramHandle: 'padariacentral',
+  contactName: 'Maria Souza',
+  contactPhone: '+55 11 90000-0000',
+  contactEmail: 'maria@padariacentral.exemplo.test',
+  closingDate: null,
+  archivedAt: null
+} as const;
 
 export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
   {
@@ -523,6 +552,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     access: 'Sessão + token do convite',
     permission: null,
     params: PublicInvitationTokenPathParamsSchema,
+    body: InvitationAcceptRequestSchema,
     responses: [{
       status: 200,
       description: 'Convite aceito ou vínculo já existente.',
@@ -709,6 +739,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     access: 'Sessão + vínculo com a agência',
     permission: 'colaborador.visualizar',
     params: AgencyCollaboratorPathParamsSchema,
+    query: CollaboratorDetailQuerySchema,
     responses: [{
       status: 200,
       description: 'O colaborador pedido.',
@@ -730,7 +761,119 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
-      { status: 404, code: 'NOT_FOUND', message: 'Collaborator not found.' }
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/collaborators/job-titles',
+    operationId: 'listCollaboratorJobTitles',
+    module: 'collaborators',
+    summary: 'Lista os cargos que existem na agência',
+    description: [
+      'Cargos distintos (depois de trim, sem nulos e sem vazios) dos vínculos ativos da agência, em',
+      'ordem alfabética e até 200 valores. Alimenta o filtro de cargo da grade; a listagem paginada',
+      'não serve porque devolve só uma página.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'colaborador.visualizar',
+    params: AgencyPathParamsSchema,
+    query: CollaboratorJobTitlesQuerySchema,
+    responses: [{
+      status: 200,
+      description: 'Cargos existentes na agência.',
+      schema: CollaboratorJobTitlesResponseSchema,
+      example: { data: ['Editor de Vídeo', 'Gestora de contas', 'Designer'] }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients',
+    operationId: 'createClient',
+    module: 'clients',
+    summary: 'Cadastra um cliente',
+    description: 'Só o nome. Nome já ativo na agência, mesmo com outra caixa ou espaços, responde 409 pela violação do índice único.',
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.cadastrar',
+    params: AgencyPathParamsSchema,
+    body: CreateClientRequestSchema,
+    requestExample: { name: 'Padaria Central' },
+    responses: [{ status: 201, description: 'Cliente criado.', schema: ClientSchema, example: clientExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'CLIENT_NAME_IN_USE' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId',
+    operationId: 'getClient',
+    module: 'clients',
+    summary: 'Lê o detalhe do cliente com o resumo da aba Geral',
+    description: [
+      'Cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404. O resumo',
+      'conta o estudo preenchido (0 a 7, com personas só quando ativas) e as conversas aguardando',
+      'resposta, pela mesma definição que a listagem e o portal usam.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.visualizar',
+    params: AgencyClientPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'Detalhe do cliente.',
+      schema: ClientDetailResponseSchema,
+      example: {
+        ...clientExample,
+        summary: { brandStudyFilled: 3, threadsAwaitingAgency: 1, threadsAnsweredByAgency: 2, activePortalMembers: 3 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'patch',
+    path: '/agencies/:agencyId/clients/:clientId',
+    operationId: 'updateClient',
+    module: 'clients',
+    summary: 'Edita o cadastro do cliente',
+    description: [
+      'Aceita qualquer subconjunto dos campos de cadastro; `null` limpa um campo. Cliente arquivado',
+      'responde 409 e nada muda; nome em uso entre os ativos responde 409 pelo índice único.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.operar',
+    params: AgencyClientPathParamsSchema,
+    body: UpdateClientRequestSchema,
+    requestExample: { taxId: '12.345.678/0001-90', instagramHandle: '@padariacentral' },
+    responses: [{ status: 200, description: 'Cliente atualizado.', schema: ClientSchema, example: clientExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'CLIENT_NAME_IN_USE' },
+      { status: 409, code: 'CLIENT_ARCHIVED' }
     ]
   },
 

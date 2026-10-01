@@ -281,8 +281,9 @@ describe('invitation HTTP module', () => {
       createdUserIds.push((await owner.knex('auth.user').where({ email: hostileEmail }).first('id'))!.id as string);
 
       // Legitimate names in other scripts -- including a Persian name with a real ZWNJ between
-      // letters -- are accepted and stored exactly as sent.
-      const legitimateNames = ['José da Silva', '李雷', 'علي بن أبي طالب', 'Zoë', 'می\u200Cرود'];
+      // letters, a Devanagari conjunct (virama + ZWJ) and an emoji family between letters -- are
+      // accepted and stored exactly as sent.
+      const legitimateNames = ['José da Silva', '李雷', 'علي بن أبي طالب', 'Zoë', 'می\u200Cرود', 'क\u094D\u200Dष', 'A\uD83D\uDC68\u200D\uD83D\uDC69B'];
       for (const name of legitimateNames) {
         const agency = await createAgency('Invitation name legit agency', null);
         const email = `legit-name-${randomUUID()}@example.test`;
@@ -306,12 +307,12 @@ describe('invitation HTTP module', () => {
     } finally {
       await logApp.close();
     }
-  });
+  }, 20_000);
 
-  it('does not touch the stored name when an existing account accepts an invitation', async () => {
+  it('rejects a non-empty body on accept with 400 and changes nothing', async () => {
     // The existing-account accept (`POST /invitations/:token/accept`) takes no name: the person
-    // already has one. The rule only applies to new writes, so this must leave the name as it was,
-    // even if the body tries to smuggle one in.
+    // already has one. The route schema is a body-less request, so an unexpected body is a 400 --
+    // and the name already stored must not change, nor the invitation be consumed.
     const existing = await makeUser('invitation-name-existing');
     const homeAgency = await createAgency('Invitation name existing home', existing.id);
     expect(homeAgency).toBeDefined();
@@ -320,15 +321,23 @@ describe('invitation HTTP module', () => {
     const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email: existing.email, password: existing.password } });
     const cookie = sessionCookieHeader(login.cookies);
 
-    const accepted = await app.app.inject({
+    const rejected = await app.app.inject({
       method: 'POST',
       url: `/invitations/${invitation.token}/accept`,
       headers: { ...origin, cookie },
       payload: { name: 'Ana\u0000Bia' }
     });
-    expect(accepted.statusCode).toBe(200);
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+
     const after = await owner.knex('auth.user').where({ id: existing.id }).first('name');
     expect(after?.name).toBe(before?.name);
+    const pending = await owner.knex('invitations').where({ id: invitation.invitationId }).first('used_at');
+    expect(pending?.used_at).toBeNull();
+
+    // The body-less accept, which is the real contract, still works.
+    const accepted = await app.app.inject({ method: 'POST', url: `/invitations/${invitation.token}/accept`, headers: { ...origin, cookie } });
+    expect(accepted.statusCode).toBe(200);
   });
 
   it('revokes the previous token on resend and rejects repeated cancellation', async () => {

@@ -14,7 +14,8 @@ export const DISPLAY_NAME_MAX_LENGTH = 120;
  *   (U+202A-U+202E, U+2066-U+2069), the zero-width space, the word joiner and the BOM, so a name
  *   cannot render as something other than what is stored ("Ana RLO admin" showing as "Ana nimda").
  *   ZWNJ (U+200C) and ZWJ (U+200D) are exempt here and checked separately below: they are
- *   legitimate in Persian names and in emoji sequences, and they never reorder text.
+ *   legitimate in Persian names, in Indic virama sequences and in emoji families, and they never
+ *   reorder text.
  * - `\p{Zl}`/`\p{Zp}` line and paragraph separators -- they break a single-line name.
  * - The Hangul fillers (U+115F, U+1160, U+3164, U+FFA0): unlike the format characters above they
  *   are category `Lo` (letters), so they would slip past both the category check and a "has a
@@ -23,11 +24,12 @@ export const DISPLAY_NAME_MAX_LENGTH = 120;
 const FORBIDDEN_NAME_CHARACTERS = /[\p{Cc}\p{Zl}\p{Zp}\u115F\u1160\u3164\uFFA0]|(?![\u200C\u200D])\p{Cf}/u;
 
 /**
- * The two joiners are only meaningful, and only accepted, between two letters. A joiner at the
- * start, at the end or next to a non-letter is still an invisible character that can make a name
- * look empty or drift from what is stored.
+ * The two joiners are only meaningful, and only accepted, between characters a joiner legitimately
+ * binds: letters, combining marks (an Indic virama precedes the ZWJ in a conjunct) and pictographs
+ * (an emoji family). A joiner at the start, at the end or next to anything else is still an
+ * invisible character that can make a name look empty or drift from what is stored.
  */
-const JOINER_OUTSIDE_LETTERS = /(?<!\p{L})[\u200C\u200D]|[\u200C\u200D](?!\p{L})/u;
+const JOINER_OUTSIDE_NAME_CHARACTERS = /(?<![\p{L}\p{M}\p{Extended_Pictographic}])[\u200C\u200D]|[\u200C\u200D](?![\p{L}\p{M}\p{Extended_Pictographic}])/u;
 
 /** A name made only of punctuation, symbols or emoji is visually a blank badge. */
 const NAME_HAS_LETTER_OR_NUMBER = /[\p{L}\p{N}]/u;
@@ -43,7 +45,7 @@ export const createDisplayNameSchema = (maxLength: number = DISPLAY_NAME_MAX_LEN
   .min(1)
   .max(maxLength)
   .refine((value) => !FORBIDDEN_NAME_CHARACTERS.test(value), 'must not contain control, bidi or invisible characters')
-  .refine((value) => !JOINER_OUTSIDE_LETTERS.test(value), 'a zero-width joiner is only allowed between letters')
+  .refine((value) => !JOINER_OUTSIDE_NAME_CHARACTERS.test(value), 'a zero-width joiner is only allowed between letters, combining marks or pictographs')
   .refine((value) => NAME_HAS_LETTER_OR_NUMBER.test(value), 'must contain at least one letter or number');
 
 /** A person's display name, shared by every contract that accepts one. */

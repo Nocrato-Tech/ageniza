@@ -5,13 +5,14 @@ import { CORRELATION_ID_HEADER, createLogger, createReadiness, REQUEST_ID_HEADER
 
 import { registerAgencyModule, type AgencyModuleDependencies } from './modules/agencies/routes.js';
 import { registerAuthModule, type AuthModuleDependencies } from './modules/auth/routes.js';
+import { registerClientModule, type ClientModuleDependencies } from './modules/clients/routes.js';
 import { registerCollaboratorModule, type CollaboratorModuleDependencies } from './modules/collaborators/routes.js';
 import { registerContextModule, type ContextModuleDependencies } from './modules/contexts/routes.js';
 import { createInvitationTokenLookup, registerInvitationModule, type InvitationModuleDependencies } from './modules/invitations/routes.js';
 import { registerMediaModule, type MediaModuleDependencies } from './modules/media/routes.js';
 import { registerProfileModule, type ProfileModuleDependencies } from './modules/profile/routes.js';
 import { registerCors } from './plugins/infra/cors.js';
-import { registerErrorHandling } from './plugins/infra/errors.js';
+import { registerErrorHandling, sendErrorEnvelope } from './plugins/infra/errors.js';
 import { registerOriginProtection } from './plugins/infra/origin.js';
 import { registerRouteRateLimit } from './plugins/infra/rate-limit.js';
 import { loggableRoute } from './plugins/infra/route.js';
@@ -33,6 +34,8 @@ export interface ApiAppOptions {
   contexts?: ContextModuleDependencies;
   /** Agency dependencies are optional for lightweight health/app tests. */
   agencies?: AgencyModuleDependencies;
+  /** Client dependencies are optional; undefined for tests that never touch the clients module. */
+  clients?: ClientModuleDependencies;
   /** Collaborator dependencies need identity storage; optional for lightweight health/app tests. */
   collaborators?: CollaboratorModuleDependencies;
   /** Media dependencies are optional; undefined for tests that never touch object storage. */
@@ -73,7 +76,13 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
     trustProxy: options.trustProxy ?? (options.config.trustedProxyCidrs.length === 0 ? false : [...options.config.trustedProxyCidrs]),
     // Disable Fastify's unvalidated header shortcut; core validates before preserving client correlation IDs.
     requestIdHeader: false,
-    genReqId: (request) => resolveRequestId(request.headers[REQUEST_ID_HEADER])
+    genReqId: (request) => resolveRequestId(request.headers[REQUEST_ID_HEADER]),
+    // Fastify answers a router framework error (over-long path parameter, malformed URL) with a raw
+    // body that echoes the path and skips `setErrorHandler`. The synthetic reply has no route error
+    // handler to fall back on, so the envelope is written directly, by exact code.
+    frameworkErrors: (error, request, reply) => {
+      sendErrorEnvelope(error, request, reply);
+    }
   });
 
   if (options.onRoute !== undefined) {
@@ -141,6 +150,9 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   }
   if (options.agencies !== undefined) {
     registerAgencyModule(app, options.agencies);
+  }
+  if (options.clients !== undefined) {
+    registerClientModule(app, options.clients);
   }
   if (options.collaborators !== undefined) {
     registerCollaboratorModule(app, options.collaborators);

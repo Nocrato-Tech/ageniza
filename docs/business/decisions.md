@@ -1124,6 +1124,18 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 
 ---
 
+## 2026-10-01 — Reabrir a thread do cliente é explícito, não consequência da ordem de `now()`
+
+**Contexto.** Achado 1 da revisão de segurança do PR #206 (#124). O `created_at` do comentário e o `resolved_at` da thread usam `now()`, que é o início da transação, não o commit. Um comentário do portal cuja transação começa antes de a agência resolver a thread e confirma depois fica com data anterior ao `resolved_at`; a definição derivada de `thread-state.ts` ("aberta = `resolved_at` anterior ao último comentário") então considera a thread resolvida, e a pergunta nova sai de "aguardando a agência". `thread-state.ts` é a definição única que a listagem (#125), o portal (#129) e as rotas de conversa (#128, #130) reusam.
+
+**Decisão.** A reabertura é **explícita**: um `CONSTRAINT TRIGGER` `AFTER INSERT` em `client_thread_comments`, `DEFERRABLE INITIALLY DEFERRED`, limpa `resolved_at` e `resolved_by` da thread quando o comentário é do lado `client`. Por rodar no commit, vale a ordem de commit — o comentário que confirma depois de uma resolução reabre a thread, independente de quando cada transação começou. O trigger trava a linha da thread (`select … for update`) antes de ler, e a resolução é um `UPDATE` de `client_threads` que trava a mesma linha, então comentário e resolução serializam. É `security definer` porque a pessoa do portal não tem `cliente.operar`; é de escopo único — só limpa os dois carimbos da thread daquele comentário — e nenhum grant novo nem policy afrouxada. `thread-state.ts` não muda de forma.
+
+**Consequência.** A definição derivada deixa de depender da ordem de `now()`; a corrida deixa de perder a pergunta do cliente. O trigger é aditivo e não toca nenhuma tabela, grant ou policy existente.
+
+**Origem.** Issue #212, achado 1 da revisão de segurança do PR #206. Migration `20260930000300_thread_reopen_on_client_comment.mjs`.
+
+---
+
 ## 2026-09-30 — Limite de tamanho do nome no aceite de convite
 
 **Contexto.** A revisão de segurança do PR #200 (#101) achou que o nome do aceite de convite (`packages/contracts/src/invitations.ts`) aceitava até 256 caracteres sem as proteções do `DisplayNameSchema`. A issue #205 aplica o schema compartilhado, mas ele fixa o limite em 120, e a SPEC de autenticação (`specs/auth.md`) define a senha mínima desse fluxo e **não** define limite de nome.
@@ -1136,12 +1148,24 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 
 ---
 
-## 2026-10-01 — CHECK no cargo do vínculo, com backfill pequeno
+## 2026-10-01 — Rota própria para os cargos que existem na agência
 
-**Contexto.** `agency_memberships.job_title` é `text` sem restrição, enquanto o schema de resposta da listagem (#95), do detalhe (#96) e da rota de cargos (#218) exige `trim`, mínimo 1 e máximo 256. Um único cargo fora do formato — só tab, só NBSP, ou mais de 256 caracteres — faz o `parseResponse` falhar e derruba com **500** a leitura da agência inteira. Hoje só o `seed:demo` grava cargo; a #97 vai passar a gravar. Achado da revisão do PR #220.
+**Contexto.** `specs/colaboradores.md` (linha 190) diz que o filtro de cargo "lista os valores que existem naquela agência", mas nenhuma rota da seção 6 devolvia essa lista: a listagem paginada (#95) traz só uma página, e o formato dela é o que as próximas listagens vão copiar. A lacuna apareceu ao preparar a grade de crachás (#102).
 
-**Decisão.** Esta é uma mudança **estrutural, de backfill pequeno**, na migration `20261001000000_job_title_format`: as linhas existentes são normalizadas primeiro (NBSP vira espaço, cada corrida de espaço colapsa para um, `btrim`, e o resultado vazio vira `null`) e só então a coluna recebe um `CHECK` — nulo, ou 1 a 256 caracteres depois da normalização. A expressão de normalização fica em `app_private.normalize_job_title(text)`, usada pelo backfill e pelo `CHECK`, e a escrita da #97 deve normalizar com a mesma. Alcance: uma tabela (`agency_memberships`), uma coluna, sem mudança de contrato.
+**Decisão.** Uma rota própria e mínima, `GET /agencies/:agencyId/collaborators/job-titles`, com as mesmas guardas da listagem (`requireAgencyAccess` + `requirePermission('colaborador.visualizar')`). A resposta é `{ data: string[] }` com os cargos **distintos** dos vínculos **ativos** da agência — aparados com `btrim`, sem nulos e sem vazios —, em ordem alfabética e no máximo 200 valores. A consulta parte de `agency_memberships` filtrada pela agência da rota. O formato da listagem paginada não muda.
 
-**Consequência.** O dado inválido deixa de existir, em vez de cada leitura precisar se defender. Um cargo que era válido é mantido (aparado); um cargo que era só espaço vira `null`. Nenhuma rota precisou de guarda nova; `specs/colaboradores.md` não muda de formato.
+**Consequência.** O filtro de cargo da grade tem fonte própria, sem alterar o formato de resposta que outras rotas já usam. Rota aditiva: nenhuma migration, nenhuma policy nova, nenhum campo novo em contrato existente. Como é um caminho novo de leitura da agência, entra com a mesma barreira de escopo da listagem (a RLS mostra as agências do chamador, nunca uma só; o filtro de agência da consulta é a barreira que separa).
 
-**Origem.** Issue #225, achado da revisão do PR #220 (#218). **Pendente de validação** do dono do produto.
+**Origem.** Issue #218, decidida pelo maestro a partir da lacuna achada na #102. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-01 — CHECK no cargo do vínculo, com backfill pequeno e explícito
+
+**Contexto.** `agency_memberships.job_title` é `text` sem restrição, enquanto o schema de resposta da listagem (#95), do detalhe (#96) e da rota de cargos (#218) exige um valor aparado de 1 a **256 unidades UTF-16**, contando como whitespace de borda o conjunto do `String.prototype.trim` do JavaScript (que inclui NBSP **e** U+FEFF, entre outros). Um único cargo fora desse formato derruba com **500** a leitura da agência inteira. Hoje só o `seed:demo` grava cargo; a #97 vai passar a gravar. Achado da revisão do PR #220 e da revisão do PR #232.
+
+**Decisão.** Mudança **estrutural, de backfill pequeno**, na migration `20261001000000_job_title_format`: a forma armazenada passa a ser o valor aparado pelas mesmas regras do contrato (trigger `BEFORE INSERT OR UPDATE` chama `app_private.normalize_job_title`), e o `CHECK` exige 1 a 256 **unidades UTF-16** (`app_private.utf16_length`), não pontos de código. Antes do `CHECK`, o backfill trata o legado: espaços-só viram `null` e um legado que ainda passe de 256 unidades UTF-16 também vira `null`, com a contagem registrada em log da migration — **não há truncamento silencioso**. `specs/colaboradores.md` não muda de formato. Alcance: uma tabela, uma coluna.
+
+**Consequência.** O dado lido nunca é inválido para o contrato, em nenhuma rota presente ou futura. O preço é a perda explícita do legado acima de 256, registrada e contada. **Pendente de validação** do dono do produto: a escolha de descartar (em vez de truncar) um cargo legado acima do limite.
+
+**Origem.** Issue #225, achados da revisão do PR #220 (#218) e da revisão do PR #232. **Pendente de validação** do dono do produto.

@@ -1,6 +1,9 @@
 import {
   AgencyCollaboratorPathParamsSchema,
   AgencyPathParamsSchema,
+  CollaboratorDetailQuerySchema,
+  CollaboratorJobTitlesQuerySchema,
+  CollaboratorJobTitlesResponseSchema,
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
   CollaboratorSchema,
@@ -17,7 +20,7 @@ import { createRequireSession } from '../auth/session-guard.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
-import { getCollaborator, listCollaborators, type CollaboratorRow } from './service.js';
+import { getCollaborator, listAgencyJobTitles, listCollaborators, type CollaboratorRow } from './service.js';
 
 export type CollaboratorPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
@@ -97,15 +100,27 @@ const collaboratorListDocs = {
   schemas: { params: AgencyPathParamsSchema, query: CollaboratorListQuerySchema, response: CollaboratorListResponseSchema }
 } satisfies DocumentedRouteConfig;
 
+// The job-title filter of the grid (#102) needs the values that exist in the agency, and the
+// listing only returns one page. Its own minimal route, same guard and permission as the listing.
+const collaboratorJobTitlesDocs = {
+  permission: 'colaborador.visualizar',
+  responseStatus: 200,
+  schemas: { params: AgencyPathParamsSchema, query: CollaboratorJobTitlesQuerySchema, response: CollaboratorJobTitlesResponseSchema }
+} satisfies DocumentedRouteConfig;
+
 // The detail returns the very same item schema the list uses, so the modal and the badge cannot
 // drift. Its own URL makes a person shareable without paging to find them (issue #96).
 const collaboratorDetailDocs = {
   permission: 'colaborador.visualizar',
   responseStatus: 200,
-  schemas: { params: AgencyCollaboratorPathParamsSchema, response: CollaboratorSchema }
+  schemas: {
+    params: AgencyCollaboratorPathParamsSchema,
+    query: CollaboratorDetailQuerySchema,
+    response: CollaboratorSchema
+  }
 } satisfies DocumentedRouteConfig;
 
-/** Registers the collaborator routes of one agency: the listing (#95) and the detail (#96). */
+/** Registers the collaborator routes of one agency: the listing (#95), job titles (#218) and the detail (#96). */
 export const registerCollaboratorModule = (app: FastifyInstance, dependencies: CollaboratorModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
 
@@ -140,6 +155,30 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     }));
   });
 
+  // Registered before `/collaborators/:membershipId`: the literal `job-titles` must never be read
+  // as a membership id, which the detail would then refuse as a malformed one (issue #218).
+  app.get('/agencies/:agencyId/collaborators/job-titles', {
+    preHandler: [
+      requireSession,
+      dependencies.requireAgencyAccess,
+      dependencies.requirePermission(collaboratorJobTitlesDocs.permission)
+    ],
+    config: collaboratorJobTitlesDocs
+  }, async (request, reply) => {
+    const auth = request.auth;
+    if (auth === undefined) throw unauthenticated();
+    const tenant = request.tenant;
+    if (tenant === undefined) throw agencyNotFound();
+
+    // The route declares no query parameter: an undeclared one (`?x=1`) is a 400, like the listing.
+    parseRequest(collaboratorJobTitlesDocs.schemas.query, request.query);
+    const jobTitles = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
+      listAgencyJobTitles(transaction, tenant.agencyId)
+    );
+
+    return reply.send(parseResponse(collaboratorJobTitlesDocs.schemas.response, { data: jobTitles }));
+  });
+
   app.get('/agencies/:agencyId/collaborators/:membershipId', {
     preHandler: [
       requireSession,
@@ -154,6 +193,8 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     if (tenant === undefined) throw agencyNotFound();
 
     const params = parseRequest(collaboratorDetailDocs.schemas.params, request.params);
+    // The detail declares no query parameter: an undeclared one (`?x=1`) is a 400, like the listing.
+    parseRequest(collaboratorDetailDocs.schemas.query, request.query);
     // The schema accepts any short string so a malformed id reaches this uniform 404 instead of a
     // 400 that would say "this id is not a uuid", which a valid-but-foreign id cannot say.
     if (!uuidPattern.test(params.membershipId)) throw collaboratorNotFound();
