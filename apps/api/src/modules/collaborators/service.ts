@@ -119,6 +119,36 @@ export const listCollaborators = async (
   return { items: itemsResult.rows, totalItems };
 };
 
+// The job-title filter of the badge grid (#102) needs the values that exist in the agency, not one
+// page of them. The cap keeps a pathological agency from returning an unbounded array.
+const JOB_TITLE_LIMIT = 200;
+
+/**
+ * Distinct job titles of one agency's **active** links (issue #218), for the grid's filter. The
+ * listing (#95) cannot serve it: it returns a single page, and the SPEC forbids changing its shape.
+ *
+ * The query starts from `agency_memberships` scoped to the route's agency: the RLS only guarantees
+ * the caller sees agencies they belong to, never that the query landed on one, so a person linked
+ * to two agencies would otherwise see both (issue #186 lesson). Values are trimmed, blanks and
+ * nulls dropped, de-duplicated and ordered alphabetically; `removed` links do not contribute.
+ */
+export const listAgencyJobTitles = async (
+  transaction: CollaboratorTransaction,
+  agencyId: string
+): Promise<string[]> => {
+  const result = await raw<RawRows<{ job_title: string }>>(transaction, `
+    select distinct btrim(membership.job_title) as job_title
+    from public.agency_memberships as membership
+    where membership.agency_id = ?::uuid
+      and membership.status = 'active'
+      and membership.job_title is not null
+      and btrim(membership.job_title) <> ''
+    order by job_title asc
+    limit ?
+  `, [agencyId, JOB_TITLE_LIMIT]);
+  return result.rows.map((row) => row.job_title);
+};
+
 /**
  * Reads one collaborator of one agency by membership id (issue #96). Scoped to the route's agency
  * exactly like the listing, so a membership that belongs to another agency is not a row here: the

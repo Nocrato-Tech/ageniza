@@ -18,6 +18,7 @@ import {
   ClientPathParamsSchema,
   CollaboratorDetailQuerySchema,
   CollaboratorInvitationRequestSchema,
+  CollaboratorJobTitlesQuerySchema,
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
   CollaboratorSchema,
@@ -732,7 +733,37 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
-      { status: 404, code: 'NOT_FOUND', message: 'Collaborator not found.' }
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/collaborators/job-titles',
+    operationId: 'listCollaboratorJobTitles',
+    module: 'collaborators',
+    summary: 'Lista os cargos que existem na agência',
+    description: [
+      'Cargos distintos (depois de trim, sem nulos e sem vazios) dos vínculos ativos da agência, em',
+      'ordem alfabética e até 200 valores. Alimenta o filtro de cargo da grade; a listagem paginada',
+      'não serve porque devolve só uma página.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'colaborador.visualizar',
+    params: AgencyPathParamsSchema,
+    query: CollaboratorJobTitlesQuerySchema,
+    responses: [{
+      status: 200,
+      description: 'Cargos existentes na agência.',
+      schema: CollaboratorJobTitlesResponseSchema,
+      example: { data: ['Editor de Vídeo', 'Gestora de contas', 'Designer'] }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
     ]
   },
 

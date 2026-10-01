@@ -566,6 +566,7 @@ Devolve as permissões efetivas do contexto de agência.
 |---|---|---|---|---|
 | `GET` | `/agencies/:agencyId/collaborators` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista a equipe da agência |
 | `GET` | `/agencies/:agencyId/collaborators/:membershipId` | Sessão + vínculo com a agência | `colaborador.visualizar` | Devolve um colaborador da agência |
+| `GET` | `/agencies/:agencyId/collaborators/job-titles` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista os cargos que existem na agência |
 
 #### `GET /agencies/:agencyId/collaborators`
 
@@ -640,6 +641,27 @@ Devolve um colaborador da agência.
   "isOwner": false,
   "status": "active",
   "joinedAt": "2026-03-12T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/collaborators/job-titles`
+
+Lista os cargos que existem na agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `colaborador.visualizar`.
+
+**Resposta `200`** — Cargos existentes na agência.
+
+```json
+{
+  "data": [
+    "Editor de Vídeo",
+    "Gestora de contas",
+    "Designer"
+  ]
 }
 ```
 
