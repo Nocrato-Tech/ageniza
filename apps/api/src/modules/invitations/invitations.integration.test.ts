@@ -248,6 +248,89 @@ describe('invitation HTTP module', () => {
     expect(legal).toHaveLength(2);
   });
 
+  it('validates the invited name on accept-new-account: hostile names are 400 without an error log, international names succeed', async () => {
+    const logs = captureLogs();
+    const logSender = createFakeEmailSender();
+    const logApp = await buildTestApp({ logger: logs.logger, sender: logSender });
+    try {
+      const hostileAgency = await createAgency('Invitation name hostile agency', null);
+      const hostileEmail = `hostile-name-${randomUUID()}@example.test`;
+      const hostile = await insertInvitation({ agencyId: hostileAgency, purpose: 'agency_activation', roleId: null, clientId: null, email: hostileEmail });
+      const logOffset = logs.lines().length;
+
+      const hostileNames = ['Ana\u0000Bia', 'Ana\u0007Bia', '\u001b[31mAna', 'Ana\u007fBia', 'Ana\u202eBia', '\u200b', '\u3164', '\u200c', '\u200d'];
+      for (const name of hostileNames) {
+        const response = await logApp.app.inject({
+          method: 'POST',
+          url: `/invitations/${hostile.token}/accept-new-account`,
+          headers: origin,
+          payload: { name, password: 'a secure activation password', acceptTerms: true }
+        });
+        expect(response.statusCode, `name ${JSON.stringify(name)}`).toBe(400);
+        expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+      }
+
+      // Validation failed before the token was consumed, so the invitation still works.
+      const recovered = await logApp.app.inject({
+        method: 'POST',
+        url: `/invitations/${hostile.token}/accept-new-account`,
+        headers: origin,
+        payload: { name: 'Recovered Name', password: 'a secure activation password', acceptTerms: true }
+      });
+      expect(recovered.statusCode).toBe(201);
+      createdUserIds.push((await owner.knex('auth.user').where({ email: hostileEmail }).first('id'))!.id as string);
+
+      // Legitimate names in other scripts -- including a Persian name with a real ZWNJ between
+      // letters -- are accepted and stored exactly as sent.
+      const legitimateNames = ['José da Silva', '李雷', 'علي بن أبي طالب', 'Zoë', 'می\u200Cرود'];
+      for (const name of legitimateNames) {
+        const agency = await createAgency('Invitation name legit agency', null);
+        const email = `legit-name-${randomUUID()}@example.test`;
+        const invitation = await insertInvitation({ agencyId: agency, purpose: 'agency_activation', roleId: null, clientId: null, email });
+        const response = await logApp.app.inject({
+          method: 'POST',
+          url: `/invitations/${invitation.token}/accept-new-account`,
+          headers: origin,
+          payload: { name, password: 'a secure activation password', acceptTerms: true }
+        });
+        expect(response.statusCode, `name ${JSON.stringify(name)}`).toBe(201);
+        const row = await owner.knex('auth.user').where({ email }).first('id', 'name');
+        expect(row?.name).toBe(name);
+        createdUserIds.push(row!.id as string);
+      }
+
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const requestLogs = logs.lines().slice(logOffset).join('\n');
+      expect(requestLogs).not.toContain('"level":50');
+      expect(requestLogs).not.toContain('Request failed unexpectedly');
+    } finally {
+      await logApp.close();
+    }
+  });
+
+  it('does not touch the stored name when an existing account accepts an invitation', async () => {
+    // The existing-account accept (`POST /invitations/:token/accept`) takes no name: the person
+    // already has one. The rule only applies to new writes, so this must leave the name as it was,
+    // even if the body tries to smuggle one in.
+    const existing = await makeUser('invitation-name-existing');
+    const homeAgency = await createAgency('Invitation name existing home', existing.id);
+    expect(homeAgency).toBeDefined();
+    const before = await owner.knex('auth.user').where({ id: existing.id }).first('name');
+    const invitation = await insertInvitation({ agencyId, email: existing.email, roleId: productionRoleId });
+    const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email: existing.email, password: existing.password } });
+    const cookie = sessionCookieHeader(login.cookies);
+
+    const accepted = await app.app.inject({
+      method: 'POST',
+      url: `/invitations/${invitation.token}/accept`,
+      headers: { ...origin, cookie },
+      payload: { name: 'Ana\u0000Bia' }
+    });
+    expect(accepted.statusCode).toBe(200);
+    const after = await owner.knex('auth.user').where({ id: existing.id }).first('name');
+    expect(after?.name).toBe(before?.name);
+  });
+
   it('revokes the previous token on resend and rejects repeated cancellation', async () => {
     const adminLogin = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email: admin.email, password: admin.password } });
     const adminCookie = sessionCookieHeader(adminLogin.cookies);

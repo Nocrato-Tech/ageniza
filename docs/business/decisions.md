@@ -1100,6 +1100,18 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 
 ---
 
+## 2026-09-30 — Limite de tamanho do nome no perfil próprio
+
+**Contexto.** A SPEC de colaboradores (`specs/colaboradores.md`, §§3, 5 e 6) exige que o nome do próprio perfil seja obrigatório, não vazio e com **limite de tamanho**, mas não fixa um número. A task #101 precisava de um valor para validar `PATCH /me/profile`.
+
+**Decisão.** O nome é aparado (trim) e aceito entre 1 e **120** caracteres. Nome vazio, só com espaços, tabulação ou NBSP é recusado. O e-mail não é editável por nenhuma rota do módulo de perfil.
+
+**Consequência.** 120 é folgado para um nome de exibição e não colide com nada existente. Se o dono do produto quiser outro número, é mudança de uma constante em `packages/contracts/src/profile.ts` e do teste correspondente — sem migration nem mudança de formato.
+
+**Origem.** Task #101. **Pendente de validação** — o número foi escolhido na implementação porque a SPEC não o define.
+
+---
+
 ## 2026-09-30 — O menu de conta encerra a sessão e não troca o contexto
 
 **Contexto.** A issue #70 leva para a interface as ações de sessão que já existem na API e exige o menu em toda tela autenticada. A troca de contexto tem fluxo próprio na issue #78 e não deve ser antecipada pelo menu desta issue.
@@ -1109,3 +1121,39 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 **Consequência.** O menu não oferece seletor nem inventa uma regra para escolher contexto. A ação de encerrar todas as sessões fica separada e com tratamento visual destrutivo, para distinguir o alcance da ação antes da confirmação.
 
 **Origem.** Decidido pelo dono do produto na especificação da issue #70 e confirmado durante sua implementação.
+
+---
+
+## 2026-10-01 — Reabrir a thread do cliente é explícito, não consequência da ordem de `now()`
+
+**Contexto.** Achado 1 da revisão de segurança do PR #206 (#124). O `created_at` do comentário e o `resolved_at` da thread usam `now()`, que é o início da transação, não o commit. Um comentário do portal cuja transação começa antes de a agência resolver a thread e confirma depois fica com data anterior ao `resolved_at`; a definição derivada de `thread-state.ts` ("aberta = `resolved_at` anterior ao último comentário") então considera a thread resolvida, e a pergunta nova sai de "aguardando a agência". `thread-state.ts` é a definição única que a listagem (#125), o portal (#129) e as rotas de conversa (#128, #130) reusam.
+
+**Decisão.** A reabertura é **explícita**: um `CONSTRAINT TRIGGER` `AFTER INSERT` em `client_thread_comments`, `DEFERRABLE INITIALLY DEFERRED`, limpa `resolved_at` e `resolved_by` da thread quando o comentário é do lado `client`. Por rodar no commit, vale a ordem de commit — o comentário que confirma depois de uma resolução reabre a thread, independente de quando cada transação começou. O trigger trava a linha da thread (`select … for update`) antes de ler, e a resolução é um `UPDATE` de `client_threads` que trava a mesma linha, então comentário e resolução serializam. É `security definer` porque a pessoa do portal não tem `cliente.operar`; é de escopo único — só limpa os dois carimbos da thread daquele comentário — e nenhum grant novo nem policy afrouxada. `thread-state.ts` não muda de forma.
+
+**Consequência.** A definição derivada deixa de depender da ordem de `now()`; a corrida deixa de perder a pergunta do cliente. O trigger é aditivo e não toca nenhuma tabela, grant ou policy existente.
+
+**Origem.** Issue #212, achado 1 da revisão de segurança do PR #206. Migration `20260930000300_thread_reopen_on_client_comment.mjs`.
+
+---
+
+## 2026-09-30 — Limite de tamanho do nome no aceite de convite
+
+**Contexto.** A revisão de segurança do PR #200 (#101) achou que o nome do aceite de convite (`packages/contracts/src/invitations.ts`) aceitava até 256 caracteres sem as proteções do `DisplayNameSchema`. A issue #205 aplica o schema compartilhado, mas ele fixa o limite em 120, e a SPEC de autenticação (`specs/auth.md`) define a senha mínima desse fluxo e **não** define limite de nome.
+
+**Decisão.** O aceite de convite mantém o limite de **256** caracteres para o nome, agora com as mesmas regras do perfil (sem controles, sem overrides bidi, sem invisíveis, exigindo ao menos uma letra ou número). O schema compartilhado passa a ser uma fábrica (`createDisplayNameSchema(maxLength)`) para que cada fluxo declare o próprio limite sem duplicar as regras.
+
+**Consequência.** 256 continua sendo o teto do fluxo de convite. Se o dono do produto quiser alinhar com os 120 do perfil, é mudança de uma constante (`INVITATION_NAME_MAX_LENGTH`) e do teste correspondente — sem migration nem mudança de formato.
+
+**Origem.** Issue #205. **Pendente de validação** — o número foi mantido da implementação anterior porque a SPEC não o define.
+
+---
+
+## 2026-10-01 — Rota própria para os cargos que existem na agência
+
+**Contexto.** `specs/colaboradores.md` (linha 190) diz que o filtro de cargo "lista os valores que existem naquela agência", mas nenhuma rota da seção 6 devolvia essa lista: a listagem paginada (#95) traz só uma página, e o formato dela é o que as próximas listagens vão copiar. A lacuna apareceu ao preparar a grade de crachás (#102).
+
+**Decisão.** Uma rota própria e mínima, `GET /agencies/:agencyId/collaborators/job-titles`, com as mesmas guardas da listagem (`requireAgencyAccess` + `requirePermission('colaborador.visualizar')`). A resposta é `{ data: string[] }` com os cargos **distintos** dos vínculos **ativos** da agência — aparados com `btrim`, sem nulos e sem vazios —, em ordem alfabética e no máximo 200 valores. A consulta parte de `agency_memberships` filtrada pela agência da rota. O formato da listagem paginada não muda.
+
+**Consequência.** O filtro de cargo da grade tem fonte própria, sem alterar o formato de resposta que outras rotas já usam. Rota aditiva: nenhuma migration, nenhuma policy nova, nenhum campo novo em contrato existente. Como é um caminho novo de leitura da agência, entra com a mesma barreira de escopo da listagem (a RLS mostra as agências do chamador, nunca uma só; o filtro de agência da consulta é a barreira que separa).
+
+**Origem.** Issue #218, decidida pelo maestro a partir da lacuna achada na #102. **Pendente de validação** pelo dono do produto.

@@ -11,19 +11,9 @@ import { Button, ChoiceCard, LiveStatus, Skeleton } from '@ageniza/ui';
 
 import { useAuthSessionStore } from './auth.js';
 import { contextDestination, contextTarget, rememberContext } from './context-destination.js';
+import { contextDescription, contextKey, contextTitle } from './context-labels.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
-
-const contextKey = (context: Context): string =>
-  context.type === 'agency' ? `agency:${context.agencyId}` : `client:${context.clientId}`;
-
-const contextTitle = (context: Context): string =>
-  context.type === 'agency' ? context.agencyName : context.clientName;
-
-// The two kinds are different products, so the distinction is the item's second line (specs/auth.md
-// section 7): role for an agency, owning agency for a client portal.
-const contextDescription = (context: Context): string =>
-  context.type === 'agency' ? `Área da agência · ${context.roleName}` : `Portal do cliente · ${context.agencyName}`;
 
 /** `agency:<uuid>` or `client:<uuid>`, the shape `resolve` accepts for `preferred` (UUIDs, either case). */
 const PREFERRED_PATTERN = /^(?:agency|client):[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[1-8][0-9A-Fa-f]{3}-[89abAB][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$/;

@@ -560,6 +560,234 @@ Devolve as permissões efetivas do contexto de agência.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
+### clients — Cadastro do cliente da agência: criar, ler o detalhe com o resumo e editar.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `POST` | `/agencies/:agencyId/clients` | Sessão + vínculo com a agência | `cliente.cadastrar` | Cadastra um cliente |
+| `GET` | `/agencies/:agencyId/clients/:clientId` | Sessão + vínculo com a agência | `cliente.visualizar` | Lê o detalhe do cliente com o resumo da aba Geral |
+| `PATCH` | `/agencies/:agencyId/clients/:clientId` | Sessão + vínculo com a agência | `cliente.operar` | Edita o cadastro do cliente |
+
+#### `POST /agencies/:agencyId/clients`
+
+Cadastra um cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.cadastrar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "name": "Padaria Central"
+}
+```
+
+**Resposta `201`** — Cliente criado.
+
+```json
+{
+  "id": "77777777-7777-4777-8777-777777777777",
+  "name": "Padaria Central",
+  "status": "active",
+  "photoUrl": null,
+  "legalName": "Padaria Central Ltda",
+  "taxId": "12345678000190",
+  "segment": "Alimentação",
+  "website": "https://padariacentral.exemplo.test",
+  "instagramHandle": "padariacentral",
+  "contactName": "Maria Souza",
+  "contactPhone": "+55 11 90000-0000",
+  "contactEmail": "maria@padariacentral.exemplo.test",
+  "closingDate": null,
+  "archivedAt": null
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_NAME_IN_USE` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId`
+
+Lê o detalhe do cliente com o resumo da aba Geral.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.visualizar`.
+
+**Resposta `200`** — Detalhe do cliente.
+
+```json
+{
+  "id": "77777777-7777-4777-8777-777777777777",
+  "name": "Padaria Central",
+  "status": "active",
+  "photoUrl": null,
+  "legalName": "Padaria Central Ltda",
+  "taxId": "12345678000190",
+  "segment": "Alimentação",
+  "website": "https://padariacentral.exemplo.test",
+  "instagramHandle": "padariacentral",
+  "contactName": "Maria Souza",
+  "contactPhone": "+55 11 90000-0000",
+  "contactEmail": "maria@padariacentral.exemplo.test",
+  "closingDate": null,
+  "archivedAt": null,
+  "summary": {
+    "brandStudyFilled": 3,
+    "threadsAwaitingAgency": 1,
+    "threadsAnsweredByAgency": 2,
+    "activePortalMembers": 3
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `PATCH /agencies/:agencyId/clients/:clientId`
+
+Edita o cadastro do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "taxId": "12.345.678/0001-90",
+  "instagramHandle": "@padariacentral"
+}
+```
+
+**Resposta `200`** — Cliente atualizado.
+
+```json
+{
+  "id": "77777777-7777-4777-8777-777777777777",
+  "name": "Padaria Central",
+  "status": "active",
+  "photoUrl": null,
+  "legalName": "Padaria Central Ltda",
+  "taxId": "12345678000190",
+  "segment": "Alimentação",
+  "website": "https://padariacentral.exemplo.test",
+  "instagramHandle": "padariacentral",
+  "contactName": "Maria Souza",
+  "contactPhone": "+55 11 90000-0000",
+  "contactEmail": "maria@padariacentral.exemplo.test",
+  "closingDate": null,
+  "archivedAt": null
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CLIENT_NAME_IN_USE` · `500 INTERNAL_ERROR`
+
+### collaborators — A equipe da agência: listagem com paginação, busca e filtros.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `GET` | `/agencies/:agencyId/collaborators` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista a equipe da agência |
+| `GET` | `/agencies/:agencyId/collaborators/:membershipId` | Sessão + vínculo com a agência | `colaborador.visualizar` | Devolve um colaborador da agência |
+| `GET` | `/agencies/:agencyId/collaborators/job-titles` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista os cargos que existem na agência |
+
+#### `GET /agencies/:agencyId/collaborators`
+
+Lista a equipe da agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `colaborador.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1,
+  "pageSize": 24,
+  "q": "camila",
+  "role": "account_manager",
+  "status": "active"
+}
+```
+
+**Resposta `200`** — Página da equipe.
+
+```json
+{
+  "data": [
+    {
+      "membershipId": "22222222-2222-4222-8222-222222222222",
+      "name": "Camila Nogueira",
+      "email": "camila@exemplo.test",
+      "photoUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+      "jobTitle": "Gestora de contas",
+      "role": {
+        "key": "account_manager",
+        "name": "Gestor de conta"
+      },
+      "isOwner": false,
+      "status": "active",
+      "joinedAt": "2026-03-12T12:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 24,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/collaborators/:membershipId`
+
+Devolve um colaborador da agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `colaborador.visualizar`.
+
+**Resposta `200`** — O colaborador pedido.
+
+```json
+{
+  "membershipId": "22222222-2222-4222-8222-222222222222",
+  "name": "Camila Nogueira",
+  "email": "camila@exemplo.test",
+  "photoUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+  "jobTitle": "Gestora de contas",
+  "role": {
+    "key": "account_manager",
+    "name": "Gestor de conta"
+  },
+  "isOwner": false,
+  "status": "active",
+  "joinedAt": "2026-03-12T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/collaborators/job-titles`
+
+Lista os cargos que existem na agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `colaborador.visualizar`.
+
+**Resposta `200`** — Cargos existentes na agência.
+
+```json
+{
+  "data": [
+    "Editor de Vídeo",
+    "Gestora de contas",
+    "Designer"
+  ]
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
 ### media — Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.
 
 | método | rota | acesso | permissão | o que faz |
@@ -696,6 +924,64 @@ Emite uma URL assinada de leitura.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 VARIANT_NOT_READY` · `409 VARIANT_PROCESSING_FAILED` · `500 INTERNAL_ERROR`
 
+### profile — Edição do próprio nome e da própria foto de perfil.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `PATCH` | `/me/profile` | Sessão | — | Altera o nome da própria pessoa |
+| `POST` | `/me/photo` | Sessão | — | Envia a própria foto de perfil |
+
+#### `PATCH /me/profile`
+
+Altera o nome da própria pessoa.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "name": "Novo Nome"
+}
+```
+
+**Resposta `200`** — Nome atualizado.
+
+```json
+{
+  "id": "55555555-5555-4555-8555-555555555555",
+  "name": "Novo Nome"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
+#### `POST /me/photo`
+
+Envia a própria foto de perfil.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "imageBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+}
+```
+
+**Resposta `200`** — Foto atualizada.
+
+```json
+{
+  "imageUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `413 PAYLOAD_TOO_LARGE` · `415 UNSUPPORTED_MEDIA_TYPE` · `500 INTERNAL_ERROR`
+
 ## Catálogo de códigos de erro
 
 | código | mensagem padrão |
@@ -718,6 +1004,8 @@ Emite uma URL assinada de leitura.
 | `INVITATION_NOT_PENDING` | O convite não está pendente. |
 | `MEMBERSHIP_EXISTS` | Este endereço já possui o vínculo solicitado. |
 | `INVALID_ROLE` | O papel informado não é válido para esta agência. |
+| `CLIENT_NAME_IN_USE` | Já existe um cliente ativo com este nome. |
+| `CLIENT_ARCHIVED` | Cliente arquivado não pode ser editado. |
 | `EMAIL_DELIVERY_FAILED` | Não foi possível entregar o e-mail. |
 | `QUOTA_EXCEEDED` | This agency has reached its storage quota. |
 | `UPLOAD_NOT_PENDING` | This upload is not pending confirmation. |

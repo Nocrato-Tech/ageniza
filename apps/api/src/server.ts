@@ -13,11 +13,15 @@ import { createAuth } from './modules/auth/better-auth.js';
 import { createEmailService } from './modules/auth/email-service.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from './modules/tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from './modules/invitations/routes.js';
+import type { ClientModuleDependencies } from './modules/clients/routes.js';
+import { createIdentityStorageClient } from './modules/identity-storage/storage-client.js';
 import type { ContextModuleDependencies } from './modules/contexts/routes.js';
 import { countValidContexts } from './modules/contexts/service.js';
+import type { CollaboratorModuleDependencies } from './modules/collaborators/routes.js';
 import { createMediaJobDispatcher } from './modules/media/job-dispatcher.js';
 import type { MediaModuleDependencies } from './modules/media/routes.js';
 import { createMediaStorageClient } from './modules/media/storage-client.js';
+import type { ProfileModuleDependencies } from './modules/profile/routes.js';
 
 /** Dedicated to Better Auth (and, since it shares the same `ageniza_app` role and connection
  * settings, to append-only audit writes); small on purpose on a shared VPS. */
@@ -65,6 +69,24 @@ export const startApi = async (): Promise<void> => {
     auth,
     requireAgencyAccess: createRequireAgencyAccess({ database })
   };
+  const clientDependencies: ClientModuleDependencies = {
+    database,
+    auth,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    requirePermission,
+    identityStorage: config.identityStorage === undefined ? undefined : createIdentityStorageClient(config.identityStorage),
+    photoUrlExpirySeconds: config.identityStorage?.downloadUrlExpirySeconds ?? 300
+  };
+  // The collaborator listing signs the user's avatar, so it needs identity storage; like media,
+  // the module is only registered when that storage is configured (production always configures it).
+  const collaboratorDependencies: CollaboratorModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
+    database,
+    auth,
+    identityStorage: createIdentityStorageClient(config.identityStorage),
+    identityDownloadUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    requirePermission
+  };
   // Storage is optional at config-load time (tests/tooling that never touch media may omit it),
   // but the API only starts the media module when it is actually configured.
   const mediaJobDispatcher = config.storage === undefined ? undefined : createMediaJobDispatcher({ connectionString: config.databaseUrl, logger });
@@ -77,6 +99,17 @@ export const startApi = async (): Promise<void> => {
     requireAgencyAccess: createRequireAgencyAccess({ database }),
     requirePermission,
     jobs: mediaJobDispatcher
+  };
+  // Identity storage (issue #100) is separate from media: the profile photo (issue #101) is a
+  // global user's, never counted against any agency's quota.
+  const profileDependencies: ProfileModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
+    database,
+    auth,
+    identityStorage: createIdentityStorageClient(config.identityStorage),
+    config: {
+      maxImageBytes: config.identityStorage.maxImageBytes,
+      downloadUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds
+    }
   };
 
   const readiness = createReadiness(false);
@@ -92,7 +125,10 @@ export const startApi = async (): Promise<void> => {
     invitations: invitationDependencies,
     contexts: contextDependencies,
     agencies: agencyDependencies,
-    media: mediaDependencies
+    clients: clientDependencies,
+    collaborators: collaboratorDependencies,
+    media: mediaDependencies,
+    profile: profileDependencies
   });
 
   const shutdown = createShutdownManager();
