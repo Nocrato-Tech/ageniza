@@ -18,7 +18,9 @@ import {
   ClientInvitationRequestSchema,
   ClientPathParamsSchema,
   ClientSchema,
+  CollaboratorDetailQuerySchema,
   CollaboratorInvitationRequestSchema,
+  CollaboratorJobTitlesQuerySchema,
   CollaboratorJobTitlesResponseSchema,
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
@@ -33,6 +35,7 @@ import {
   HealthResponseSchema,
   InvitationAcceptNewAccountRequestSchema,
   InvitationAcceptNewAccountResponseSchema,
+  InvitationAcceptRequestSchema,
   InvitationAcceptResponseSchema,
   InvitationCreatedResponseSchema,
   InvitationPreviewResponseSchema,
@@ -549,6 +552,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     access: 'Sessão + token do convite',
     permission: null,
     params: PublicInvitationTokenPathParamsSchema,
+    body: InvitationAcceptRequestSchema,
     responses: [{
       status: 200,
       description: 'Convite aceito ou vínculo já existente.',
@@ -735,6 +739,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     access: 'Sessão + vínculo com a agência',
     permission: 'colaborador.visualizar',
     params: AgencyCollaboratorPathParamsSchema,
+    query: CollaboratorDetailQuerySchema,
     responses: [{
       status: 200,
       description: 'O colaborador pedido.',
@@ -774,6 +779,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     access: 'Sessão + vínculo com a agência',
     permission: 'colaborador.visualizar',
     params: AgencyPathParamsSchema,
+    query: CollaboratorJobTitlesQuerySchema,
     responses: [{
       status: 200,
       description: 'Cargos existentes na agência.',
