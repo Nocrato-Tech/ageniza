@@ -333,11 +333,12 @@ describe('agencies module (issue #180)', () => {
     // The route only calls this service after the guard, and RLS also hides a suspended agency or
     // a removed membership from the application role -- so end to end, a mutation dropping
     // `agency.status` or `membership.status` from the query survives. Running the same service on
-    // the migration owner (RLS bypassed, same `app.user_id` GUC) is what holds that repetition to
-    // its word: these are the conditions that would matter if a policy ever changed.
+    // the migration owner (RLS bypassed) is what holds that repetition to its word: these are the
+    // conditions that would matter if a policy ever changed. The actor still has to be bound in
+    // the transaction, because `loadAgencyMe` reads it through `app_private.current_user_id()`.
     const asOwner = <TResult>(userId: string, work: (transaction: Parameters<Parameters<typeof owner.transaction>[0]>[0]) => Promise<TResult>): Promise<TResult> =>
       owner.transaction(async (transaction) => {
-        await raw(transaction, "select set_config('app.user_id', ?, true)", [userId]);
+        await raw(transaction, 'select app_private.bind_actor(?::uuid)', [userId]);
         return work(transaction);
       });
 
