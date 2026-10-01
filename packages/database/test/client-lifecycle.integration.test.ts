@@ -29,6 +29,7 @@ const adminA = randomUUID();
 const managerA = randomUUID();
 const singleA = randomUUID();
 const dualA = randomUUID();
+const adminB = randomUUID();
 const portalA1 = randomUUID();
 const portalA2 = randomUUID();
 const removedPortal = randomUUID();
@@ -59,7 +60,7 @@ const invA2 = randomUUID();
 const invA1Used = randomUUID();
 const invDue = randomUUID();
 
-const allUsers = [ownerA, adminA, managerA, singleA, dualA, portalA1, portalA2, removedPortal, portalArchived, portalB];
+const allUsers = [ownerA, adminA, managerA, singleA, dualA, adminB, portalA1, portalA2, removedPortal, portalArchived, portalB];
 const allAgencies = [agencyA, agencyB];
 const allClients = [
   clientA1, clientA2, clientA3, clientA4, clientArchived, clientB,
@@ -182,7 +183,8 @@ beforeAll(async () => {
       { agency_id: agencyA, user_id: managerA, role_id: roleIds.account_manager },
       { agency_id: agencyA, user_id: singleA, role_id: singleRoleId },
       { agency_id: agencyA, user_id: dualA, role_id: roleIds.admin },
-      { agency_id: agencyB, user_id: dualA, role_id: roleIds.production }
+      { agency_id: agencyB, user_id: dualA, role_id: roleIds.production },
+      { agency_id: agencyB, user_id: adminB, role_id: roleIds.admin }
     ]);
 
     await transaction('clients').insert([
@@ -623,5 +625,93 @@ describe('CLIENT lifecycle functions (#123)', () => {
 
     await getOwner().knex('audit.events').where({ target_id: client }).delete();
     await deleteClient(client);
+  });
+
+  it('refuses a portal invite whose client belongs to another agency, and writes no row', async () => {
+    const inviteId = randomUUID();
+    await expect(
+      asUser(adminA, (transaction) => transaction('invitations').insert({
+        id: inviteId, agency_id: agencyA, purpose: 'client_invite', client_id: clientB,
+        email: `cross-agency-${inviteId}@example.test`, token_hash: `hash-${inviteId}`, expires_at: new Date(Date.now() + 86_400_000)
+      }))
+    ).rejects.toThrow(/row-level security/);
+    expect(await getOwner().knex('invitations').where({ id: inviteId }).select('id')).toEqual([]);
+  });
+
+  it('checks permission before locking, so an unauthorized caller never waits on the row lock', async () => {
+    const client = await createClient({ agencyId: agencyA });
+
+    let reachedLock!: () => void;
+    const lockAcquired = new Promise<void>((resolve) => { reachedLock = resolve; });
+    let releaseLock!: () => void;
+    const lockMayFinish = new Promise<void>((resolve) => { releaseLock = resolve; });
+
+    // A concurrent transaction holds the client row lock for the whole test.
+    // The concurrent transaction needs a user context too: without `app.user_id`, RLS hides the row
+    // and the FOR UPDATE would lock nothing.
+    const locker = getApplication().transaction(async (transaction) => {
+      await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+      await raw(transaction, 'select id from public.clients where id = ?::uuid for update', [client]);
+      reachedLock();
+      await lockMayFinish;
+    });
+    await lockAcquired;
+
+    try {
+      // adminB belongs to agency B only, so it has no permission on A's client. The function must
+      // answer A0020 without ever touching the locked row; a 250ms lock_timeout makes a lock-first
+      // implementation fail as 55P03 instead.
+      await expect(getApplication().transaction(async (transaction) => {
+        await raw(transaction, "select set_config('app.user_id', ?, true)", [adminB]);
+        await raw(transaction, "set local lock_timeout = '250ms'", []);
+        await raw(transaction, 'select app_private.archive_client(?)', [client]);
+      })).rejects.toMatchObject({ code: 'A0020' });
+      expect((await clientState(client)).status).toBe('active');
+    } finally {
+      releaseLock();
+      await locker;
+      await deleteClient(client);
+    }
+  });
+
+  it('translates the concurrent reactivation of two same-named clients into A0021, never a raw 23505', async () => {
+    const name = `Corrida reativação ${randomUUID()}`;
+    const firstClient = await createClient({ agencyId: agencyA, name, status: 'archived' });
+    const secondClient = await createClient({ agencyId: agencyA, name, status: 'archived' });
+
+    let firstUpdated!: () => void;
+    const firstCommitted = new Promise<void>((resolve) => { firstUpdated = resolve; });
+    let releaseFirst!: () => void;
+    const firstMayFinish = new Promise<void>((resolve) => { releaseFirst = resolve; });
+
+    // The first reactivation holds its uncommitted index entry while the second runs.
+    const first = getApplication().transaction(async (transaction) => {
+      await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+      await raw(transaction, 'select app_private.reactivate_client(?)', [firstClient]);
+      firstUpdated();
+      await firstMayFinish;
+    });
+    await firstCommitted;
+
+    const second = getApplication().transaction(async (transaction) => {
+      await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+      await raw(transaction, 'select app_private.reactivate_client(?)', [secondClient]);
+    });
+
+    // Let the second reach its UPDATE and block on the first's uncommitted unique-index entry.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    releaseFirst();
+
+    const [firstResult, secondResult] = await Promise.allSettled([first, second]);
+    expect(firstResult.status).toBe('fulfilled');
+    expect(secondResult.status).toBe('rejected');
+    expect((secondResult as PromiseRejectedResult).reason).toMatchObject({ code: 'A0021' });
+
+    const states = await Promise.all([clientState(firstClient), clientState(secondClient)]);
+    expect(states.filter((state) => state.status === 'active')).toHaveLength(1);
+
+    await getOwner().knex('audit.events').whereIn('target_id', [firstClient, secondClient]).delete();
+    await deleteClient(firstClient);
+    await deleteClient(secondClient);
   });
 });

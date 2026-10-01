@@ -34,19 +34,22 @@ export async function up(knex) {
     set search_path = ''
     as $function$
     declare
+      v_agency_id uuid;
       v_client public.clients%rowtype;
     begin
-      select *
-      into v_client
-      from public.clients
-      where id = p_client_id
-      for update;
-
+      -- Read the agency and check the permission BEFORE locking: an unauthorized caller must not
+      -- wait on, or acquire, another tenant's row lock. Only then lock and re-read the state.
+      select agency_id into v_agency_id from public.clients where id = p_client_id;
       if not found then
         raise exception using errcode = 'A0020', message = 'Client not found.';
       end if;
 
-      if not app_private.has_agency_permission(v_client.agency_id, 'cliente.arquivar') then
+      if not app_private.has_agency_permission(v_agency_id, 'cliente.arquivar') then
+        raise exception using errcode = 'A0020', message = 'Client not found.';
+      end if;
+
+      select * into v_client from public.clients where id = p_client_id for update;
+      if not found then
         raise exception using errcode = 'A0020', message = 'Client not found.';
       end if;
 
@@ -143,19 +146,21 @@ export async function up(knex) {
     set search_path = ''
     as $function$
     declare
+      v_agency_id uuid;
       v_client public.clients%rowtype;
     begin
-      select *
-      into v_client
-      from public.clients
-      where id = p_client_id
-      for update;
-
+      -- Permission before the lock, same reasoning as archive_client.
+      select agency_id into v_agency_id from public.clients where id = p_client_id;
       if not found then
         raise exception using errcode = 'A0020', message = 'Client not found.';
       end if;
 
-      if not app_private.has_agency_permission(v_client.agency_id, 'cliente.arquivar') then
+      if not app_private.has_agency_permission(v_agency_id, 'cliente.arquivar') then
+        raise exception using errcode = 'A0020', message = 'Client not found.';
+      end if;
+
+      select * into v_client from public.clients where id = p_client_id for update;
+      if not found then
         raise exception using errcode = 'A0020', message = 'Client not found.';
       end if;
 
@@ -179,11 +184,19 @@ export async function up(knex) {
         raise exception using errcode = 'A0021', message = 'An active client already uses this name.';
       end if;
 
-      update public.clients
-      set status = 'active',
-          archived_at = null,
-          updated_at = pg_catalog.now()
-      where id = v_client.id;
+      -- Two concurrent reactivations of two archived clients with the same name can both pass the
+      -- pre-check above; the loser hits clients_active_name_unique as a raw 23505. Translate it to
+      -- the same A0021 the pre-check raises, so the API (#131) never sees an untranslated conflict.
+      begin
+        update public.clients
+        set status = 'active',
+            archived_at = null,
+            updated_at = pg_catalog.now()
+        where id = v_client.id;
+      exception
+        when unique_violation then
+          raise exception using errcode = 'A0021', message = 'An active client already uses this name.';
+      end;
 
       -- Revoked invitations are not restored: the SPEC says reactivating does not restore them (rule 15).
       insert into audit.events (action, actor_user_id, agency_id, target_type, target_id)
@@ -204,20 +217,22 @@ export async function up(knex) {
     set search_path = ''
     as $function$
     declare
+      v_agency_id uuid;
       v_client public.clients%rowtype;
       v_today date := (pg_catalog.now() at time zone 'America/Sao_Paulo')::date;
     begin
-      select *
-      into v_client
-      from public.clients
-      where id = p_client_id
-      for update;
-
+      -- Permission before the lock, same reasoning as archive_client.
+      select agency_id into v_agency_id from public.clients where id = p_client_id;
       if not found then
         raise exception using errcode = 'A0020', message = 'Client not found.';
       end if;
 
-      if not app_private.has_agency_permission(v_client.agency_id, 'cliente.arquivar') then
+      if not app_private.has_agency_permission(v_agency_id, 'cliente.arquivar') then
+        raise exception using errcode = 'A0020', message = 'Client not found.';
+      end if;
+
+      select * into v_client from public.clients where id = p_client_id for update;
+      if not found then
         raise exception using errcode = 'A0020', message = 'Client not found.';
       end if;
 
@@ -258,6 +273,8 @@ export async function up(knex) {
     set search_path = ''
     as $function$
     declare
+      v_client_id uuid;
+      v_agency_id uuid;
       v_membership public.client_memberships%rowtype;
       v_client public.clients%rowtype;
     begin
@@ -265,30 +282,32 @@ export async function up(knex) {
         raise exception using errcode = 'A0023', message = 'Membership status must be active or removed.';
       end if;
 
-      select *
-      into v_membership
-      from public.client_memberships
-      where id = p_membership_id
-      for update;
-
+      -- Resolve the target and its agency WITHOUT a lock, check the permission, and only then lock
+      -- -- an unauthorized caller must never wait on another tenant's row.
+      select client_id into v_client_id from public.client_memberships where id = p_membership_id;
       if not found then
         raise exception using errcode = 'A0020', message = 'Client not found.';
       end if;
 
-      -- Locking the client too keeps a concurrent archive from slipping between the active check and
-      -- the write. Lock order (membership, then client) matches everywhere; archive locks only the
-      -- client, so there is no cycle.
-      select *
-      into v_client
-      from public.clients
-      where id = v_membership.client_id
-      for update;
-
+      select agency_id into v_agency_id from public.clients where id = v_client_id;
       if not found then
         raise exception using errcode = 'A0020', message = 'Client not found.';
       end if;
 
-      if not app_private.has_agency_permission(v_client.agency_id, 'cliente.remover_usuario') then
+      if not app_private.has_agency_permission(v_agency_id, 'cliente.remover_usuario') then
+        raise exception using errcode = 'A0020', message = 'Client not found.';
+      end if;
+
+      -- Lock order (membership, then client) matches everywhere; archive locks only the client, so
+      -- there is no cycle. Locking the client keeps a concurrent archive from slipping between the
+      -- active check and the write.
+      select * into v_membership from public.client_memberships where id = p_membership_id for update;
+      if not found then
+        raise exception using errcode = 'A0020', message = 'Client not found.';
+      end if;
+
+      select * into v_client from public.clients where id = v_membership.client_id for update;
+      if not found then
         raise exception using errcode = 'A0020', message = 'Client not found.';
       end if;
 
@@ -340,7 +359,10 @@ export async function up(knex) {
         or (purpose = 'client_invite' and (
           app_private.has_agency_permission(agency_id, 'cliente.convidar_usuario')
           or app_private.has_agency_permission(agency_id, 'convite.reenviar')
-        ) and app_private.client_is_active(client_id))
+        ) and app_private.client_is_active(client_id)
+          -- The invited client must belong to the invitation's agency: the permission is evaluated
+          -- on agency_id, and nothing else ties client_id to it. This is the shape Conteúdo copies.
+          and app_private.client_agency_id(client_id) = agency_id)
       );
   `);
 }
