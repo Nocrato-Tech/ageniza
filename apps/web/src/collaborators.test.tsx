@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
@@ -13,19 +16,22 @@ import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
 afterEach(cleanup);
 
 const AGENCY_A = '11111111-1111-4111-8111-111111111111';
+const AGENCY_B = '22222222-2222-4222-8222-222222222222';
 const sessionBody = { user: { id: '11111111-1111-4111-8111-111111111111', name: 'Pessoa', email: 'pessoa@example.test' }, session: { expiresAt: '2026-01-01T00:00:00.000Z' } };
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const unauthenticated = (): Response => json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication is required.' } }, 401);
 
-const agencyMe = (permissions: readonly string[]) => ({
-  agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: false, role: { key: 'admin', name: 'Admin' }, permissions
+const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[]) => ({
+  agencyId, agencyName, isOwner: false, role: { key: 'admin', name: 'Admin' }, permissions
 });
+const agencyDisplayName = (agencyId: string): string => agencyId === AGENCY_B ? 'Agência Dois' : 'Agência Um';
 
 const anaPrado = { membershipId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'Ana Prado', email: 'ana@example.test', photoUrl: null, jobTitle: 'Editora', role: { key: 'production', name: 'Produção' }, isOwner: false, status: 'active', joinedAt: '2026-03-12T12:00:00.000Z' };
 const marioCosta = { membershipId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'Mário Costa', email: 'mario@example.test', photoUrl: null, jobTitle: 'Copywriter', role: { key: 'production', name: 'Produção' }, isOwner: false, status: 'active', joinedAt: '2026-03-13T12:00:00.000Z' };
 const juliaReis = { membershipId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', name: 'Júlia Reis', email: 'julia@example.test', photoUrl: 'https://storage.test/julia.png', jobTitle: 'Social Media', role: { key: 'account_manager', name: 'Gestor de conta' }, isOwner: false, status: 'active', joinedAt: '2026-03-14T12:00:00.000Z' };
+const biancaSouza = { membershipId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Bianca Souza', email: 'bianca@example.test', photoUrl: null, jobTitle: 'Redatora', role: { key: 'production', name: 'Produção' }, isOwner: false, status: 'active', joinedAt: '2026-03-15T12:00:00.000Z' };
 
 const meta = (page: number, totalItems: number, totalPages: number) => ({ page, pageSize: 24, totalItems, totalPages });
 const listResponse = (data: readonly unknown[], page = 1) => json({ data, meta: meta(page, data.length, data.length === 0 ? 0 : 1) });
@@ -33,28 +39,30 @@ const listResponse = (data: readonly unknown[], page = 1) => json({ data, meta: 
 interface Scenario {
   readonly authenticated?: boolean;
   readonly permissions?: readonly string[];
-  readonly collaborators?: (query: URLSearchParams) => Response | Promise<Response>;
+  readonly collaborators?: (query: URLSearchParams, agencyId: string) => Response | Promise<Response>;
   readonly jobTitles?: () => Response | Promise<Response>;
 }
 
 /** Behaves like the real API: 401 without a session, the listing and the job-titles contract shapes. */
 const makeFetch = (scenario: Scenario = {}) => {
   const calls: string[] = [];
+  const requests: string[] = [];
   const authenticated = scenario.authenticated ?? true;
   const permissions = scenario.permissions ?? ['colaborador.visualizar', 'colaborador.convidar'];
   const impl: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     const path = url.pathname;
     calls.push(`${init?.method ?? 'GET'} ${path}${url.search}`);
+    requests.push(String(input));
     if (path.endsWith('/auth/session')) return authenticated ? json(sessionBody) : unauthenticated();
-    if (/\/agencies\/[^/]+\/me$/.test(path)) return json(agencyMe(permissions));
+    const me = /\/agencies\/([^/]+)\/me$/.exec(path);
+    if (me !== null) return json(agencyMe(me[1]!, agencyDisplayName(me[1]!), permissions));
     if (path.endsWith('/collaborators/job-titles')) return scenario.jobTitles?.() ?? json({ data: ['Editora', 'Copywriter'] });
-    if (/\/agencies\/[^/]+\/collaborators$/.test(path)) {
-      return scenario.collaborators?.(url.searchParams) ?? listResponse([anaPrado, marioCosta, juliaReis]);
-    }
+    const list = /\/agencies\/([^/]+)\/collaborators$/.exec(path);
+    if (list !== null) return scenario.collaborators?.(url.searchParams, list[1]!) ?? listResponse([anaPrado, marioCosta, juliaReis]);
     throw new Error(`unexpected ${init?.method ?? 'GET'} ${url}`);
   };
-  return { impl, calls };
+  return { impl, calls, requests };
 };
 
 function Harness({ store }: { store: AuthSessionStore }) {
@@ -65,12 +73,14 @@ function Harness({ store }: { store: AuthSessionStore }) {
 interface SearchProbeTarget {
   pathname: string;
   search: string;
+  navigate: (to: string) => void;
 }
 
 function SearchProbe({ probe }: { probe: SearchProbeTarget }) {
   const location = useLocation();
   probe.pathname = location.pathname;
   probe.search = location.search;
+  probe.navigate = useNavigate();
   return null;
 }
 
@@ -79,7 +89,7 @@ const renderCollaborators = (impl: typeof fetch, entry = `/agencia/${AGENCY_A}/c
   const client = new HttpClient('http://127.0.0.1:3001', impl, { onSessionEnded: sessionEnd.notify });
   const queryClient = createQueryClient();
   const store = createAuthSessionStore(client);
-  const probe: SearchProbeTarget = { pathname: '', search: '' };
+  const probe: SearchProbeTarget = { pathname: '', search: '', navigate: () => undefined };
   const rendered = render(
     <AuthSessionProvider store={store}>
       <QueryClientProvider client={queryClient}>
@@ -152,7 +162,11 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
   it('reads the filters from the URL, sends them to the server, and writes them back', async () => {
     const queries: string[] = [];
     const { impl } = makeFetch({
-      collaborators: (query) => { queries.push(query.toString()); return listResponse([anaPrado]); }
+      collaborators: (query) => {
+        queries.push(query.toString());
+        // Three pages, so the requested page 2 is valid and the #229 redirect does not interfere.
+        return json({ data: [anaPrado], meta: meta(Number(query.get('page') ?? '1'), 60, 3) });
+      }
     });
     const { probe } = renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?q=ana&role=production&jobTitle=Editora&page=2`);
 
@@ -229,5 +243,82 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
     await waitFor(() => expect(container.querySelector('.collaborators__grid')).not.toBeNull());
     expect(screen.queryByText(/Nenhuma pessoa encontrada/)).toBeNull();
     expect(screen.queryByText(/Nenhum colaborador/)).toBeNull();
+  });
+
+  it('returns to the last valid page when the URL points past the end (#229)', async () => {
+    const { impl } = makeFetch({
+      collaborators: (query) => {
+        const page = Number(query.get('page') ?? '1');
+        // "Vendas" has seven people: one page. Page 2 exists in the URL but not on the server.
+        return page > 1 ? json({ data: [], meta: meta(2, 7, 1) }) : json({ data: [anaPrado], meta: meta(1, 7, 1) });
+      }
+    });
+    const { probe } = renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?role=sales&page=2`);
+
+    // The out-of-range page must not read as "nobody found": it goes back to page 1 and shows them.
+    await screen.findByText('Ana Prado');
+    await waitFor(() => expect(probe.search).not.toContain('page='));
+    expect(screen.queryByText(/Nenhuma pessoa encontrada/)).toBeNull();
+  });
+
+  // Review of #223, M1: without encoding, a `q` with `&role=admin`, `#` or `/` would smuggle or cut
+  // parameters. The value must travel as one encoded segment.
+  it('encodes the search value so it cannot smuggle another parameter (#223 review M1)', async () => {
+    const hostile = 'a&role=admin#x/../';
+    const { impl, requests } = makeFetch({ collaborators: () => listResponse([anaPrado]) });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?q=${encodeURIComponent(hostile)}`);
+
+    await screen.findByText('Ana Prado');
+    const listRequest = requests.find((url) => url.includes('/collaborators?'));
+    expect(listRequest).toBeDefined();
+    const requested = new URL(listRequest!);
+    expect(requested.searchParams.get('q')).toBe(hostile);
+    expect(requested.searchParams.get('role')).toBeNull();
+    expect(requested.searchParams.get('pageSize')).toBe('24');
+  });
+
+  // Review of #223, M2: the same QueryClient serves both agencies. The cache key carries the agency
+  // id, so navigating directly to B never renders A's cached people.
+  it('never shows one agency\'s people under another with the same cache (#223 review M2)', async () => {
+    const { impl } = makeFetch({
+      collaborators: (_query, agencyId) => listResponse(agencyId === AGENCY_B ? [biancaSouza] : [anaPrado])
+    });
+    const { container, probe } = renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores`);
+
+    await within(container).findByText('Ana Prado');
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/colaboradores`); });
+
+    await within(container).findByText('Bianca Souza');
+    expect(within(container).queryByText('Ana Prado')).toBeNull();
+  });
+});
+
+// Issue #228: the grid must close in 3 and 4 columns. The shell's `.agency-content` is 840px at its
+// widest (72rem minus the 16rem nav, the gap and the padding), so the badge minimum has to let four
+// columns fit. jsdom has no layout, so the test reads the real CSS value and applies the same math
+// `repeat(auto-fill, minmax(..., 1fr))` does.
+describe('collaborators grid columns (#228)', () => {
+  const globalsCss = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
+
+  const gridMinRem = (): number => {
+    const match = /\.collaborators__grid\s*\{[^}]*minmax\(([\d.]+)rem,\s*1fr\)/.exec(globalsCss);
+    if (match === null) throw new Error('The collaborators grid min width was not found in globals.css.');
+    return Number(match[1]);
+  };
+
+  const columnsFor = (availableWidthPx: number, minRem: number, gapRem = 1, rootFontSizePx = 16): number => {
+    const minPx = minRem * rootFontSizePx;
+    const gapPx = gapRem * rootFontSizePx;
+    return Math.max(1, Math.floor((availableWidthPx + gapPx) / (minPx + gapPx)));
+  };
+
+  it('fits four columns in the 840px content area and three in a narrower one', () => {
+    const minRem = gridMinRem();
+    expect(columnsFor(840, minRem)).toBe(4);
+    expect(columnsFor(700, minRem)).toBe(3);
+  });
+
+  it('keeps the gap on the spacing scale', () => {
+    expect(globalsCss).toMatch(/\.collaborators__grid\s*\{[^}]*gap:\s*var\(--space-4\)/);
   });
 });
