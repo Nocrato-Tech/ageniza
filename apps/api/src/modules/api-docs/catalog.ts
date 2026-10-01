@@ -18,7 +18,9 @@ import {
   ClientInvitationRequestSchema,
   ClientPathParamsSchema,
   ClientSchema,
+  CollaboratorDetailQuerySchema,
   CollaboratorInvitationRequestSchema,
+  CollaboratorJobTitlesQuerySchema,
   CollaboratorJobTitlesResponseSchema,
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
@@ -735,6 +737,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     access: 'Sessão + vínculo com a agência',
     permission: 'colaborador.visualizar',
     params: AgencyCollaboratorPathParamsSchema,
+    query: CollaboratorDetailQuerySchema,
     responses: [{
       status: 200,
       description: 'O colaborador pedido.',
@@ -774,6 +777,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     access: 'Sessão + vínculo com a agência',
     permission: 'colaborador.visualizar',
     params: AgencyPathParamsSchema,
+    query: CollaboratorJobTitlesQuerySchema,
     responses: [{
       status: 200,
       description: 'Cargos existentes na agência.',
