@@ -12,7 +12,7 @@ import { createInvitationTokenLookup, registerInvitationModule, type InvitationM
 import { registerMediaModule, type MediaModuleDependencies } from './modules/media/routes.js';
 import { registerProfileModule, type ProfileModuleDependencies } from './modules/profile/routes.js';
 import { registerCors } from './plugins/infra/cors.js';
-import { registerErrorHandling } from './plugins/infra/errors.js';
+import { registerErrorHandling, sendErrorEnvelope } from './plugins/infra/errors.js';
 import { registerOriginProtection } from './plugins/infra/origin.js';
 import { registerRouteRateLimit } from './plugins/infra/rate-limit.js';
 import { loggableRoute } from './plugins/infra/route.js';
@@ -76,7 +76,13 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
     trustProxy: options.trustProxy ?? (options.config.trustedProxyCidrs.length === 0 ? false : [...options.config.trustedProxyCidrs]),
     // Disable Fastify's unvalidated header shortcut; core validates before preserving client correlation IDs.
     requestIdHeader: false,
-    genReqId: (request) => resolveRequestId(request.headers[REQUEST_ID_HEADER])
+    genReqId: (request) => resolveRequestId(request.headers[REQUEST_ID_HEADER]),
+    // Fastify answers a router framework error (over-long path parameter, malformed URL) with a raw
+    // body that echoes the path and skips `setErrorHandler`. The synthetic reply has no route error
+    // handler to fall back on, so the envelope is written directly, by exact code.
+    frameworkErrors: (error, request, reply) => {
+      sendErrorEnvelope(error, request, reply);
+    }
   });
 
   if (options.onRoute !== undefined) {

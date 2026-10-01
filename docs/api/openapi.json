@@ -1331,6 +1331,23 @@
         ],
         "additionalProperties": false
       },
+      "listCollaboratorJobTitlesResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "additionalProperties": false
+      },
       "createClientResponse": {
         "type": "object",
         "properties": {
@@ -4639,7 +4656,7 @@
             }
           },
           "404": {
-            "description": "NOT_FOUND: Collaborator not found.",
+            "description": "NOT_FOUND: Agency not found.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4648,7 +4665,143 @@
                 "example": {
                   "error": {
                     "code": "NOT_FOUND",
-                    "message": "Collaborator not found."
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/collaborators/job-titles": {
+      "get": {
+        "operationId": "listCollaboratorJobTitles",
+        "summary": "Lista os cargos que existem na agência",
+        "description": "Cargos distintos (depois de trim, sem nulos e sem vazios) dos vínculos ativos da agência, em\nordem alfabética e até 200 valores. Alimenta o filtro de cargo da grade; a listagem paginada\nnão serve porque devolve só uma página.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.visualizar`.",
+        "tags": [
+          "collaborators"
+        ],
+        "x-permission": "colaborador.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cargos existentes na agência.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listCollaboratorJobTitlesResponse"
+                },
+                "example": {
+                  "data": [
+                    "Editor de Vídeo",
+                    "Gestora de contas",
+                    "Designer"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
