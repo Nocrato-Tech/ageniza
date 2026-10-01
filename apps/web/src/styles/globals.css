@@ -464,7 +464,9 @@ input:focus-visible {
 
 .collaborators__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  /* 12rem lets four columns fit the 840px `.agency-content` at the shell's widest:
+     4 × 12rem + 3 × var(--space-4) = 51rem = 816px ≤ 840px (issue #228). */
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
   gap: var(--space-4);
   margin: 0;
   padding: 0;
