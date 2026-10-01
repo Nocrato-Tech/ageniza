@@ -6,6 +6,7 @@ import type { AuthSessionSnapshot } from './auth.js';
 import { AccountMenu } from './account-menu.js';
 import { AgencyAreaLayout, AgencyHomePage, AgencyModulePlaceholder, AgencyPermissionRoute } from './agency.js';
 import { LiveStatus } from '@ageniza/ui';
+import { CollaboratorsPage } from './collaborators.js';
 import { ContextSelectPage } from './contexts.js';
 import { ForgotPasswordPage } from './forgot-password.js';
 import { getHealth } from './health.js';
@@ -62,7 +63,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route index element={<AgencyHomePage />} />
       <Route path="colaboradores" element={
         <AgencyPermissionRoute permission="colaborador.visualizar">
-          <AgencyModulePlaceholder title="Colaboradores" description="Esta área recebe a equipe, os papéis e os convites nas próximas entregas." />
+          <CollaboratorsPage />
         </AgencyPermissionRoute>
       } />
       <Route path="clientes" element={
