@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { ApiErrorResponseSchema } from '@ageniza/contracts';
 import { loggableRoute } from './route.js';
@@ -32,21 +32,25 @@ const isRateLimitError = (error: unknown): error is { statusCode: number; code: 
   'code' in error && error.code === 'RATE_LIMITED';
 
 /**
- * A client that declares a body and closes the socket before sending it: Fastify's body parser
- * hands over the exact error the request stream emitted, Node's `Error('aborted')` with
- * `code === 'ECONNRESET'`. Match that error, not the request state: `raw.readableAborted` is also
- * true when a client leaves during a bodyless request, so using it alone (issue #195) would hide a
- * genuine upstream `ECONNRESET` (pg, S3, SMTP) behind a 400 and keep it out of Sentry.
+ * A client that declares a body and closes the socket before sending it. Both signs are required:
+ *
+ * - the shape of the error the request stream emitted, Node's `Error('aborted')` with
+ *   `code === 'ECONNRESET'`. The error alone is not enough: a truncated **upstream** response (pg,
+ *   S3/R2, SMTP) is the very same error, with the client still connected (issue #211).
+ * - `raw.readableAborted === true`, the request itself was aborted. The state alone is not enough
+ *   either: it stays true whenever a client leaves during a bodyless request, which would hide a
+ *   genuine upstream `ECONNRESET` behind a 400 and keep it out of Sentry (issue #195).
  */
-const isAbortedBody = (error: unknown): boolean =>
-  error instanceof Error && 'code' in error && error.code === 'ECONNRESET' && error.message === 'aborted';
+const isAbortedBody = (error: unknown, request: FastifyRequest): boolean =>
+  error instanceof Error && 'code' in error && error.code === 'ECONNRESET' && error.message === 'aborted' &&
+  request.raw.readableAborted === true;
 
 const contentTypeErrorResponse = (error: unknown): PublicErrorResponse | undefined => {
   if (!(error instanceof Error) || !('code' in error) || typeof error.code !== 'string') return undefined;
   return contentTypeErrorResponses[error.code];
 };
 
-const publicError = (error: unknown): PublicErrorResponse => {
+const publicError = (error: unknown, request: FastifyRequest): PublicErrorResponse => {
   if (error instanceof HttpError) {
     return {
       statusCode: error.statusCode,
@@ -58,7 +62,7 @@ const publicError = (error: unknown): PublicErrorResponse => {
   if (isRateLimitError(error)) {
     return { statusCode: 429, code: 'RATE_LIMITED', message: 'Too many requests' };
   }
-  if (isAbortedBody(error)) {
+  if (isAbortedBody(error, request)) {
     return { statusCode: 400, code: 'REQUEST_ABORTED', message: 'A requisição foi interrompida pelo cliente.' };
   }
   const parserError = contentTypeErrorResponse(error);
@@ -77,7 +81,7 @@ export const registerErrorHandling = (app: FastifyInstance): void => {
   });
 
   app.setErrorHandler((error, request, reply) => {
-    const response = publicError(error);
+    const response = publicError(error, request);
     const logContext = { requestId: request.id, statusCode: response.statusCode, code: response.code };
     if (response.code === 'INTERNAL_ERROR') {
       // Do not attach raw errors to logs: exception messages and payload-derived errors can contain secrets.
