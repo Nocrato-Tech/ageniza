@@ -561,6 +561,28 @@ describe('collaborators module (issue #95)', () => {
     expect(JSON.stringify(detail.body)).not.toMatch(/salar|remunera|salary|compensation/i);
   });
 
+  it('#226: the detail rejects an unknown query parameter, like the listing', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Detail Query', 'detail-query', 'Owner Detail Query');
+    const person = await addMember(agencyId, { name: 'Pessoa Query', emailLabel: 'detail-query-person', roleId: presetRoleIds.production });
+    const membershipId = await membershipIdOf(agencyId, person.id);
+    const cookie = await loginCookie(ownerUser);
+
+    const accepted = await app.app.inject({
+      method: 'GET',
+      url: `/agencies/${agencyId}/collaborators/${membershipId}`,
+      headers: { ...origin, cookie }
+    });
+    expect(accepted.statusCode).toBe(200);
+
+    const rejected = await app.app.inject({
+      method: 'GET',
+      url: `/agencies/${agencyId}/collaborators/${membershipId}?x=1`,
+      headers: { ...origin, cookie }
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json<{ error: { code: string } }>().error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('#96: a membership of another agency answers the same 404 and leaks no user data', async () => {
     const alpha = await createAgencyWithOwner('Colab BOLA Alfa', 'bola-alpha', 'Owner BOLA Alfa');
     const beta = await createAgencyWithOwner('Colab BOLA Beta', 'bola-beta', 'Owner BOLA Beta');

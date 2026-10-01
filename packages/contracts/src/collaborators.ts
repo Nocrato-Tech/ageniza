@@ -54,7 +54,15 @@ export const CollaboratorListQuerySchema = PaginationInputSchema.extend({
 
 export const CollaboratorListResponseSchema = createPaginatedResponseSchema(CollaboratorSchema);
 
+/**
+ * Query of `GET /agencies/:agencyId/collaborators/:membershipId` (issue #226). The detail declares
+ * no query parameter, and an empty `.strict()` object is what makes an undeclared one (`?x=1`) a
+ * 400, exactly like the listing: a parameter the SPEC does not declare does not exist.
+ */
+export const CollaboratorDetailQuerySchema = z.object({}).strict();
+
 export type CollaboratorRole = z.infer<typeof CollaboratorRoleSchema>;
 export type Collaborator = z.infer<typeof CollaboratorSchema>;
 export type CollaboratorListQuery = z.infer<typeof CollaboratorListQuerySchema>;
 export type CollaboratorListResponse = z.infer<typeof CollaboratorListResponseSchema>;
+export type CollaboratorDetailQuery = z.infer<typeof CollaboratorDetailQuerySchema>;

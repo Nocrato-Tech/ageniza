@@ -16,6 +16,7 @@ import {
   AuthSessionResponseSchema,
   ClientInvitationRequestSchema,
   ClientPathParamsSchema,
+  CollaboratorDetailQuerySchema,
   CollaboratorInvitationRequestSchema,
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
@@ -709,6 +710,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     access: 'Sessão + vínculo com a agência',
     permission: 'colaborador.visualizar',
     params: AgencyCollaboratorPathParamsSchema,
+    query: CollaboratorDetailQuerySchema,
     responses: [{
       status: 200,
       description: 'O colaborador pedido.',

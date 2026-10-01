@@ -1,6 +1,7 @@
 import {
   AgencyCollaboratorPathParamsSchema,
   AgencyPathParamsSchema,
+  CollaboratorDetailQuerySchema,
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
   CollaboratorSchema,
@@ -102,7 +103,11 @@ const collaboratorListDocs = {
 const collaboratorDetailDocs = {
   permission: 'colaborador.visualizar',
   responseStatus: 200,
-  schemas: { params: AgencyCollaboratorPathParamsSchema, response: CollaboratorSchema }
+  schemas: {
+    params: AgencyCollaboratorPathParamsSchema,
+    query: CollaboratorDetailQuerySchema,
+    response: CollaboratorSchema
+  }
 } satisfies DocumentedRouteConfig;
 
 /** Registers the collaborator routes of one agency: the listing (#95) and the detail (#96). */
@@ -154,6 +159,8 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     if (tenant === undefined) throw agencyNotFound();
 
     const params = parseRequest(collaboratorDetailDocs.schemas.params, request.params);
+    // The detail declares no query parameter: an undeclared one (`?x=1`) is a 400, like the listing.
+    parseRequest(collaboratorDetailDocs.schemas.query, request.query);
     // The schema accepts any short string so a malformed id reaches this uniform 404 instead of a
     // 400 that would say "this id is not a uuid", which a valid-but-foreign id cannot say.
     if (!uuidPattern.test(params.membershipId)) throw collaboratorNotFound();
