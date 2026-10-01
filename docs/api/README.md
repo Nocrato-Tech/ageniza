@@ -681,6 +681,62 @@ Edita o cadastro do cliente.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CLIENT_NAME_IN_USE` · `500 INTERNAL_ERROR`
 
+### collaborators — A equipe da agência: listagem com paginação, busca e filtros.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `GET` | `/agencies/:agencyId/collaborators` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista a equipe da agência |
+
+#### `GET /agencies/:agencyId/collaborators`
+
+Lista a equipe da agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `colaborador.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1,
+  "pageSize": 24,
+  "q": "camila",
+  "role": "account_manager",
+  "status": "active"
+}
+```
+
+**Resposta `200`** — Página da equipe.
+
+```json
+{
+  "data": [
+    {
+      "membershipId": "22222222-2222-4222-8222-222222222222",
+      "name": "Camila Nogueira",
+      "email": "camila@exemplo.test",
+      "photoUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+      "jobTitle": "Gestora de contas",
+      "role": {
+        "key": "account_manager",
+        "name": "Gestor de conta"
+      },
+      "isOwner": false,
+      "status": "active",
+      "joinedAt": "2026-03-12T12:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 24,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
 ### media — Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.
 
 | método | rota | acesso | permissão | o que faz |

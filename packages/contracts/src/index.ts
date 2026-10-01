@@ -1,5 +1,6 @@
 export * from './agencies.js';
 export * from './clients.js';
+export * from './collaborators.js';
 export * from './common.js';
 export * from './contexts.js';
 export * from './errors.js';
@@ -9,4 +10,5 @@ export * from './jobs.js';
 export * from './media.js';
 export * from './pagination.js';
 export * from './params.js';
+export * from './search.js';
 export * from './auth.js';
