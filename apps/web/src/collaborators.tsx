@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
@@ -102,9 +103,24 @@ export function CollaboratorsPage() {
     setSearchParams(next, { replace: true });
   };
 
+  // Issue #229: a filter can shrink the total while the URL still points at a page that no longer
+  // exists. The server's `totalPages` is authoritative, so move to the last valid page (or the
+  // first) and keep the URL coherent, instead of showing "nenhuma pessoa" as if the team were gone.
+  useEffect(() => {
+    if (collaborators.data === undefined) return;
+    const lastPage = Math.max(1, collaborators.data.meta.totalPages);
+    if (page <= lastPage) return;
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (lastPage <= 1) next.delete('page'); else next.set('page', String(lastPage));
+      return next;
+    }, { replace: true });
+  }, [collaborators.data, page, setSearchParams]);
+
   if (collaborators.isError && isNotVisible(collaborators.error)) return <NotFoundPage as="section" />;
 
   const hasFilters = search !== '' || role !== '' || jobTitle !== '';
+  const outOfRange = collaborators.data !== undefined && page > Math.max(1, collaborators.data.meta.totalPages);
   const jobTitleOptions = (jobTitles.data?.data ?? []).map((value) => ({ value, label: value }));
 
   return (
@@ -147,7 +163,7 @@ export function CollaboratorsPage() {
           <p>Não foi possível carregar a equipe. Tente de novo.</p>
           <Button onClick={() => { void collaborators.refetch(); }}>Tentar de novo</Button>
         </div>
-      ) : <>
+      ) : outOfRange ? null : <>
         {collaborators.data.data.length === 0 && hasFilters ? (
           <div className="collaborators__empty">
             <p>{search !== '' ? `Nenhuma pessoa encontrada para "${search}"` : 'Nenhuma pessoa encontrada com esses filtros.'}</p>
