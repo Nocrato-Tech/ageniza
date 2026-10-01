@@ -2,7 +2,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore } from './auth.js';
 import { AccountMenu } from './account-menu.js';
@@ -320,5 +320,92 @@ describe('AccountMenu', () => {
     fireEvent.keyDown(screen.getByRole('menuitem', { name: /Trocar de contexto/ }), { key: 'Escape' });
     expect(screen.queryByRole('menu')).toBeNull();
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it('focuses the context switcher when the list arrives after the menu opens', async () => {
+    let release: (() => void) | undefined;
+    const pending = new Promise<Response>((resolve) => { release = () => resolve(json({ contexts: [agencyA, agencyB] })); });
+    renderAccountMenu(async (input) => {
+      if (String(input).endsWith('/auth/session')) return json(sessionBody);
+      throw new Error('unexpected ' + String(input));
+    }, { contexts: () => pending });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
+    // Before the list resolves the only item is Sair; the menu focuses it for now.
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Sair' }));
+
+    await act(async () => { release?.(); });
+    const switcher = await screen.findByRole('menuitem', { name: /Trocar de contexto/ });
+    // When the real first item arrives, the menu must move focus onto it.
+    await waitFor(() => expect(document.activeElement).toBe(switcher));
+  });
+
+  it('does not pull focus back to the first item when the person has already moved', async () => {
+    let release: (() => void) | undefined;
+    const pending = new Promise<Response>((resolve) => { release = () => resolve(json({ contexts: [agencyA, agencyB] })); });
+    renderAccountMenu(async (input) => {
+      if (String(input).endsWith('/auth/session')) return json(sessionBody);
+      throw new Error('unexpected ' + String(input));
+    }, { contexts: () => pending });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Sair' }), { key: 'ArrowDown' });
+    const moved = screen.getByRole('menuitem', { name: 'Sair de todas as sessões' });
+    expect(document.activeElement).toBe(moved);
+
+    await act(async () => { release?.(); });
+    await screen.findByRole('menuitem', { name: /Trocar de contexto/ });
+    expect(document.activeElement).toBe(moved);
+  });
+
+  it('renders a hostile context name as literal text, never as HTML', async () => {
+    const hostile = '<img src=x onerror=alert(1)>';
+    renderAccountMenu(async (input) => {
+      if (String(input).endsWith('/auth/session')) return json(sessionBody);
+      throw new Error('unexpected ' + String(input));
+    }, { contexts: () => json({ contexts: [{ ...agencyA, agencyName: hostile }, agencyB] }) });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Trocar de contexto/ }));
+
+    const menu = screen.getByRole('menu', { name: 'Menu da conta' });
+    expect(menu.textContent).toContain(hostile);
+    expect(menu.querySelector('img')).toBeNull();
+    expect(document.querySelector('img')).toBeNull();
+  });
+
+  it('does not end the local session when switching context', async () => {
+    const { store, probe } = renderAccountMenu(async (input) => {
+      if (String(input).endsWith('/auth/session')) return json(sessionBody);
+      if (String(input).endsWith('/me/last-context')) return new Response(null, { status: 204 });
+      throw new Error('unexpected ' + String(input));
+    });
+    const end = vi.spyOn(store, 'end');
+
+    fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Trocar de contexto/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Agência Dois/ }));
+
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_B}`));
+    // Switching context is not signing out: the local session stays.
+    expect(end).not.toHaveBeenCalled();
+    expect(store.getSnapshot().isAuthenticated).toBe(true);
+  });
+
+  it('does not navigate when the last-context write is refused', async () => {
+    const { probe } = renderAccountMenu(async (input) => {
+      if (String(input).endsWith('/auth/session')) return json(sessionBody);
+      if (String(input).endsWith('/me/last-context')) return json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500);
+      throw new Error('unexpected ' + String(input));
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Trocar de contexto/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Agência Dois/ }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Não foi possível trocar de contexto.');
+    // The write failed, so the person stays where they were.
+    expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`);
   });
 });

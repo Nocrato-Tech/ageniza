@@ -37,6 +37,10 @@
     {
       "name": "media",
       "description": "Upload direto ao armazenamento, confirmação e URLs assinadas de mídia."
+    },
+    {
+      "name": "profile",
+      "description": "Edição do próprio nome e da própria foto de perfil."
     }
   ],
   "components": {
@@ -1248,6 +1252,85 @@
         ],
         "additionalProperties": false
       },
+      "getCollaboratorResponse": {
+        "type": "object",
+        "properties": {
+          "membershipId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "format": "email"
+          },
+          "photoUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "jobTitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "role": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "key",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "isOwner": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "removed"
+            ]
+          },
+          "joinedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "membershipId",
+          "name",
+          "email",
+          "photoUrl",
+          "jobTitle",
+          "role",
+          "isOwner",
+          "status",
+          "joinedAt"
+        ],
+        "additionalProperties": false
+      },
       "createClientResponse": {
         "type": "object",
         "properties": {
@@ -1795,6 +1878,67 @@
         "required": [
           "url",
           "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "updateMyProfileResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "updateMyProfileRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "uploadMyPhotoResponse": {
+        "type": "object",
+        "properties": {
+          "imageUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "imageUrl"
+        ],
+        "additionalProperties": false
+      },
+      "uploadMyPhotoRequest": {
+        "type": "object",
+        "properties": {
+          "imageBase64": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 13981080,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+          }
+        },
+        "required": [
+          "imageBase64"
         ],
         "additionalProperties": false
       }
@@ -4382,6 +4526,159 @@
         }
       }
     },
+    "/agencies/{agencyId}/collaborators/{membershipId}": {
+      "get": {
+        "operationId": "getCollaborator",
+        "summary": "Devolve um colaborador da agência",
+        "description": "Carrega o mesmo contrato do item da listagem, com URL própria para o link ser compartilhável.\nUm vínculo de outra agência, inexistente, malformado ou removido devolve o mesmo 404, sem\nrevelar existência.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.visualizar`.",
+        "tags": [
+          "collaborators"
+        ],
+        "x-permission": "colaborador.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true,
+            "name": "membershipId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "O colaborador pedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getCollaboratorResponse"
+                },
+                "example": {
+                  "membershipId": "22222222-2222-4222-8222-222222222222",
+                  "name": "Camila Nogueira",
+                  "email": "camila@exemplo.test",
+                  "photoUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+                  "jobTitle": "Gestora de contas",
+                  "role": {
+                    "key": "account_manager",
+                    "name": "Gestor de conta"
+                  },
+                  "isOwner": false,
+                  "status": "active",
+                  "joinedAt": "2026-03-12T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Collaborator not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Collaborator not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/{agencyId}/clients": {
       "post": {
         "operationId": "createClient",
@@ -5680,6 +5977,294 @@
                   "error": {
                     "code": "VARIANT_NOT_READY",
                     "message": "This variant has not been generated yet."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/profile": {
+      "patch": {
+        "operationId": "updateMyProfile",
+        "summary": "Altera o nome da própria pessoa",
+        "description": "O alvo é sempre a pessoa da sessão: não há identificador de usuário no corpo, na query nem\nna rota, e o corpo `.strict()` recusa qualquer campo a mais. O e-mail não é editável por\nnenhuma rota deste módulo.\n\nAcesso: Sessão.",
+        "tags": [
+          "profile"
+        ],
+        "x-permission": null,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/updateMyProfileRequest"
+              },
+              "example": {
+                "name": "Novo Nome"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Nome atualizado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/updateMyProfileResponse"
+                },
+                "example": {
+                  "id": "55555555-5555-4555-8555-555555555555",
+                  "name": "Novo Nome"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Request payload is too large"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/photo": {
+      "post": {
+        "operationId": "uploadMyPhoto",
+        "summary": "Envia a própria foto de perfil",
+        "description": "A imagem vai em base64 pelo servidor, que valida o tipo pelos bytes reais (nunca pelo rótulo\ndeclarado) e o tamanho antes de gravar; a resposta traz a URL assinada. A foto vive no\narmazenamento de identidade e nunca entra em quota de agência.\n\nAcesso: Sessão.",
+        "tags": [
+          "profile"
+        ],
+        "x-permission": null,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/uploadMyPhotoRequest"
+              },
+              "example": {
+                "imageBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Foto atualizada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uploadMyPhotoResponse"
+                },
+                "example": {
+                  "imageUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Request payload is too large"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "UNSUPPORTED_MEDIA_TYPE: This content type is not accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNSUPPORTED_MEDIA_TYPE",
+                    "message": "This content type is not accepted."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"

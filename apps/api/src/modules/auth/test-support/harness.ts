@@ -27,6 +27,7 @@ import { createRequireSession } from '../session-guard.js';
 import { createMediaJobDispatcher, type MediaJobDispatcher } from '../../media/job-dispatcher.js';
 import type { MediaModuleDependencies } from '../../media/routes.js';
 import { createMediaStorageClient } from '../../media/storage-client.js';
+import type { ProfileModuleDependencies } from '../../profile/routes.js';
 
 /** Runs only against the migrated local database (`pnpm db:migrate`), as the application role. */
 export const APPLICATION_DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
@@ -258,6 +259,15 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     requirePermission,
     jobs: mediaJobs
   };
+  const profile: ProfileModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
+    database,
+    auth,
+    identityStorage: createIdentityStorageClient(config.identityStorage),
+    config: {
+      maxImageBytes: config.identityStorage.maxImageBytes,
+      downloadUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds
+    }
+  };
   const authDependencies = {
     auth,
     limiter,
@@ -275,6 +285,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     clients,
     collaborators,
     media,
+    profile,
     onRoute: options.onRoute,
     // A handler whose reply status drifts from its own `config.responseStatus` fails the request,
     // so the documented status is enforced by the suites, not only by the catalog.

@@ -1,4 +1,5 @@
-import { connect } from 'node:net';
+import { createServer, get as httpGet, type Server } from 'node:http';
+import { connect, type AddressInfo } from 'node:net';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -365,6 +366,122 @@ describe('a client that left does not hide a real failure (#195)', () => {
     expect(mockedCaptureUnexpectedError).toHaveBeenCalledTimes(1);
     expect(requestLogs).toContain('"code":"INTERNAL_ERROR"');
     expect(requestLogs).toContain('"level":50');
+    expect(requestLogs).not.toContain('"code":"REQUEST_ABORTED"');
+  });
+});
+
+// Issue #211: with the shape of the error alone, a truncated **upstream** response -- the very same
+// `Error('aborted')` with `ECONNRESET` Node raises for a body abort -- became a 400 for a client that
+// was still connected, hiding a real failure from Sentry. The abort now needs both signs, and these
+// tests exercise the two ways a single signal lies.
+describe('a body abort needs the error shape and the aborted request (#211)', () => {
+  const openApps: TestApp[] = [];
+  let app: TestApp;
+  let logs: CapturedLogs;
+  let port: number;
+  let upstream: Server;
+  let upstreamPort: number;
+
+  /** Reads an upstream body that promises more bytes than it sends, like a cut S3/R2 or HTTP reply. */
+  const readTrimmedUpstream = (targetPort: number): Promise<string> => new Promise((resolve, reject) => {
+    const request = httpGet({ host: '127.0.0.1', port: targetPort, path: '/body' }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on('data', (chunk: Buffer) => chunks.push(chunk));
+      response.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+      response.on('error', reject);
+    });
+    request.on('error', reject);
+  });
+
+  beforeAll(async () => {
+    upstream = createServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json', 'content-length': '1000' });
+      response.write('partial');
+      setImmediate(() => response.socket?.destroy());
+    });
+    await new Promise<void>((resolve) => { upstream.listen(0, '127.0.0.1', () => resolve()); });
+    upstreamPort = (upstream.address() as AddressInfo).port;
+
+    logs = captureLogs();
+    app = await buildTestApp({
+      logger: logs.logger,
+      registerExtraRoutes: (fastifyApp) => {
+        // Client still connected; the abort belongs to the upstream, not to the request.
+        fastifyApp.get('/__test/trimmed-upstream', async () => readTrimmedUpstream(upstreamPort));
+        // The exact message, but no `ECONNRESET` code: not the body abort.
+        fastifyApp.get('/__test/aborted-without-code', async () => { throw new Error('aborted'); });
+        fastifyApp.get('/__test/aborted-without-code-after-leave', async () => {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          throw new Error('aborted');
+        });
+      }
+    });
+    openApps.push(app);
+    const address = await app.app.listen({ port: 0, host: '127.0.0.1' });
+    port = Number(new URL(address).port);
+  });
+
+  afterAll(async () => {
+    await Promise.all(openApps.splice(0).map((opened) => opened.close()));
+    await new Promise<void>((resolve) => { upstream.close(() => resolve()); });
+  });
+
+  beforeEach(() => {
+    mockedCaptureUnexpectedError.mockClear();
+  });
+
+  const abandonGet = async (path: string): Promise<void> => {
+    await new Promise<void>((resolve) => {
+      const socket = connect({ host: '127.0.0.1', port }, () => {
+        socket.write(`GET ${path} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n\r\n`);
+        setTimeout(() => {
+          socket.destroy();
+          resolve();
+        }, 50);
+      });
+      socket.on('error', () => resolve());
+    });
+  };
+
+  const logsAfterHandling = async (offset: number): Promise<string> => {
+    await waitUntil(() => {
+      const text = logs.lines().slice(offset).join('\n');
+      return mockedCaptureUnexpectedError.mock.calls.length > 0 || text.includes('"code":"REQUEST_ABORTED"');
+    });
+    await flushLogs();
+    return logs.lines().slice(offset).join('\n');
+  };
+
+  it('answers 500 and reaches Sentry when an upstream response is cut with the client connected', async () => {
+    const offset = logs.lines().length;
+    const response = await app.app.inject({ method: 'GET', url: '/__test/trimmed-upstream' });
+    await flushLogs();
+
+    expect(response.statusCode).toBe(500);
+    expect(ApiErrorResponseSchema.parse(response.json()).error.code).toBe('INTERNAL_ERROR');
+    expect(mockedCaptureUnexpectedError).toHaveBeenCalledTimes(1);
+    expect(logs.lines().slice(offset).join('\n')).toContain('"level":50');
+    expect(logs.lines().slice(offset).join('\n')).not.toContain('"code":"REQUEST_ABORTED"');
+  });
+
+  it('answers 500 for an Error("aborted") that carries no ECONNRESET code', async () => {
+    const offset = logs.lines().length;
+    const response = await app.app.inject({ method: 'GET', url: '/__test/aborted-without-code' });
+    await flushLogs();
+
+    expect(response.statusCode).toBe(500);
+    expect(ApiErrorResponseSchema.parse(response.json()).error.code).toBe('INTERNAL_ERROR');
+    expect(mockedCaptureUnexpectedError).toHaveBeenCalledTimes(1);
+    expect(logs.lines().slice(offset).join('\n')).toContain('"level":50');
+  });
+
+  it('answers 500 for an Error("aborted") without a code after the client left', async () => {
+    const offset = logs.lines().length;
+    await abandonGet('/__test/aborted-without-code-after-leave');
+    const requestLogs = await logsAfterHandling(offset);
+
+    expect(mockedCaptureUnexpectedError).toHaveBeenCalledTimes(1);
+    expect(requestLogs).toContain('"code":"INTERNAL_ERROR"');
     expect(requestLogs).not.toContain('"code":"REQUEST_ABORTED"');
   });
 });
