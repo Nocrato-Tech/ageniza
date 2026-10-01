@@ -4,8 +4,8 @@ import { resolve } from 'node:path';
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { MemoryRouter, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
@@ -14,6 +14,19 @@ import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
 
 afterEach(cleanup);
+
+const dialogDescriptors = ['showModal', 'close'].map((name) => [name, Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, name)] as const);
+beforeAll(() => {
+  // jsdom has no top layer; these stubs only model opening and closing.
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value(this: HTMLDialogElement) { this.open = true; } });
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value(this: HTMLDialogElement) { this.open = false; } });
+});
+afterAll(() => {
+  for (const [name, descriptor] of dialogDescriptors) {
+    if (descriptor === undefined) Reflect.deleteProperty(HTMLDialogElement.prototype, name);
+    else Object.defineProperty(HTMLDialogElement.prototype, name, descriptor);
+  }
+});
 
 const AGENCY_A = '11111111-1111-4111-8111-111111111111';
 const AGENCY_B = '22222222-2222-4222-8222-222222222222';
@@ -41,6 +54,7 @@ interface Scenario {
   readonly permissions?: readonly string[];
   readonly collaborators?: (query: URLSearchParams, agencyId: string) => Response | Promise<Response>;
   readonly jobTitles?: () => Response | Promise<Response>;
+  readonly detail?: (membershipId: string, agencyId: string) => Response | Promise<Response>;
 }
 
 /** Behaves like the real API: 401 without a session, the listing and the job-titles contract shapes. */
@@ -55,9 +69,18 @@ const makeFetch = (scenario: Scenario = {}) => {
     calls.push(`${init?.method ?? 'GET'} ${path}${url.search}`);
     requests.push(String(input));
     if (path.endsWith('/auth/session')) return authenticated ? json(sessionBody) : unauthenticated();
+    if (!authenticated) return unauthenticated();
     const me = /\/agencies\/([^/]+)\/me$/.exec(path);
     if (me !== null) return json(agencyMe(me[1]!, agencyDisplayName(me[1]!), permissions));
     if (path.endsWith('/collaborators/job-titles')) return scenario.jobTitles?.() ?? json({ data: ['Editora', 'Copywriter'] });
+    const detail = /\/agencies\/([^/]+)\/collaborators\/([^/]+)$/.exec(path);
+    if (detail !== null) {
+      if (!permissions.includes('colaborador.visualizar')) return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
+      const person = [anaPrado, marioCosta, juliaReis].find((item) => item.membershipId === detail[2]);
+      return scenario.detail?.(detail[2]!, detail[1]!) ?? (person === undefined
+        ? json({ error: { code: 'NOT_FOUND', message: 'Not found' } }, 404)
+        : json(person));
+    }
     const list = /\/agencies\/([^/]+)\/collaborators$/.exec(path);
     if (list !== null) return scenario.collaborators?.(url.searchParams, list[1]!) ?? listResponse([anaPrado, marioCosta, juliaReis]);
     throw new Error(`unexpected ${init?.method ?? 'GET'} ${url}`);
@@ -73,7 +96,7 @@ function Harness({ store }: { store: AuthSessionStore }) {
 interface SearchProbeTarget {
   pathname: string;
   search: string;
-  navigate: (to: string) => void;
+  navigate: NavigateFunction;
 }
 
 function SearchProbe({ probe }: { probe: SearchProbeTarget }) {
@@ -290,6 +313,179 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
 
     await within(container).findByText('Bianca Souza');
     expect(within(container).queryByText('Ana Prado')).toBeNull();
+  });
+});
+
+describe('collaborator detail (#103)', () => {
+  const listUrl = `/agencia/${AGENCY_A}/colaboradores`;
+  const detailUrl = (id = anaPrado.membershipId) => `${listUrl}?colaborador=${encodeURIComponent(id)}`;
+  const detailCalls = (calls: string[]) => calls.filter((call) => /\/collaborators\/(?!job-titles)/.test(call));
+
+  it('opens the selected badge with its own API detail and disabled future tabs', async () => {
+    const { impl, calls } = makeFetch();
+    const { probe } = renderCollaborators(impl);
+    fireEvent.click(await screen.findByRole('link', { name: 'Ver detalhes de Mário Costa' }));
+
+    const modal = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    expect(probe.search).toContain(`colaborador=${marioCosta.membershipId}`);
+    expect(detailCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/collaborators/${marioCosta.membershipId}`]);
+    expect(within(modal).getAllByText('mario@example.test')).toHaveLength(2);
+    expect(within(modal).getByText('13/03/2026')).toBeTruthy();
+    expect(within(modal).getByText('A troca de e-mail é feita pela operação.')).toBeTruthy();
+    expect(within(modal).getByRole('tab', { name: 'Detalhes' }).getAttribute('aria-selected')).toBe('true');
+    for (const name of ['Performance', 'Entregas']) expect(within(modal).getByRole('tab', { name }).hasAttribute('disabled')).toBe(true);
+    expect(within(modal).getAllByText('Disponível quando o módulo de Tarefas existir.')).toHaveLength(2);
+    expect(within(modal).queryByRole('textbox')).toBeNull();
+    expect(modal.textContent).not.toMatch(/salário|remuneração|salvar|remover/i);
+  });
+
+  it('preserves page and all filters when closing, going back, and going forward', async () => {
+    const { impl } = makeFetch({ collaborators: () => json({ data: [anaPrado], meta: meta(2, 60, 3) }) });
+    const original = '?q=ana&role=production&jobTitle=Editora&page=2';
+    const { probe } = renderCollaborators(impl, listUrl + original);
+    const badge = await screen.findByRole('link', { name: 'Ver detalhes de Ana Prado' });
+    badge.focus();
+    fireEvent.click(badge);
+    await screen.findByRole('dialog', { name: 'Ana Prado' });
+    await act(async () => { await probe.navigate(-1); });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(probe.search).toBe(original);
+    expect(document.activeElement).toBe(badge);
+    await act(async () => { await probe.navigate(1); });
+    await screen.findByRole('dialog', { name: 'Ana Prado' });
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar detalhe do colaborador' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(probe.search).toBe(original);
+  });
+
+  it('opens a copied URL without list history and closes into that filtered list', async () => {
+    const { impl } = makeFetch();
+    const { probe } = renderCollaborators(impl, detailUrl() + '&role=production');
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    fireEvent(modal, new Event('cancel', { bubbles: false, cancelable: true }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(probe.pathname).toBe(listUrl);
+    expect(probe.search).toBe('?role=production');
+  });
+
+  it('only closes on a gesture that both starts and ends outside the modal', async () => {
+    const { impl } = makeFetch();
+    renderCollaborators(impl, detailUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    vi.spyOn(modal, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, 400, 400));
+    const pointerDown = (x: number) => fireEvent(modal, new MouseEvent('pointerdown', { bubbles: true, clientX: x, clientY: x }));
+    pointerDown(150);
+    fireEvent.click(modal, { clientX: 150, clientY: 150 });
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    pointerDown(150);
+    fireEvent.click(modal, { clientX: 5, clientY: 5 });
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    pointerDown(5);
+    fireEvent.click(modal, { clientX: 5, clientY: 5 });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('shows skeletons inside the modal while its request is pending', async () => {
+    let finish: (value: Response) => void = () => undefined;
+    const response = new Promise<Response>((resolve) => { finish = resolve; });
+    const { impl } = makeFetch({ detail: () => response });
+    renderCollaborators(impl, detailUrl());
+    const modal = await screen.findByRole('dialog');
+    expect(await within(modal).findByText('Carregando colaborador…')).toBeTruthy();
+    expect(modal.querySelectorAll('.ui-skeleton')).toHaveLength(2);
+    await act(async () => { finish(json(anaPrado)); });
+    await screen.findByRole('dialog', { name: 'Ana Prado' });
+  });
+
+  it('keeps an error inside the modal and retries without closing it', async () => {
+    let attempts = 0;
+    const { impl } = makeFetch({ detail: () => ++attempts <= 2
+      ? json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, 500)
+      : json(anaPrado) });
+    renderCollaborators(impl, detailUrl());
+    const modal = await screen.findByRole('dialog');
+    await within(modal).findByRole('alert', undefined, { timeout: 5000 });
+    expect(modal.textContent).not.toContain('private diagnostic');
+    fireEvent.click(within(modal).getByRole('button', { name: 'Tentar de novo' }));
+    expect(await screen.findByRole('dialog', { name: 'Ana Prado' })).toBe(modal);
+  });
+
+  it.each([403, 404])('renders %i as the same not-found state, with a return to the list', async (status) => {
+    const { impl } = makeFetch({ detail: () => json({ error: { code: status === 403 ? 'FORBIDDEN' : 'NOT_FOUND', message: 'sensitive detail' } }, status) });
+    const { probe } = renderCollaborators(impl, detailUrl());
+    const modal = await screen.findByRole('dialog');
+    await within(modal).findByText('Colaborador não encontrado.');
+    expect(within(modal).queryByRole('tablist')).toBeNull();
+    expect(modal.textContent).not.toContain('sensitive detail');
+    fireEvent.click(within(modal).getByRole('button', { name: 'Voltar à lista' }));
+    expect(probe.search).toBe('');
+  });
+
+  it.each(['', '../me', '..%2Fme', 'not-a-uuid', 'x?role=admin#fragment'])('refuses a malformed membership id (%s) without a detail request', async (id) => {
+    const { impl, calls } = makeFetch();
+    renderCollaborators(impl, detailUrl(id));
+    await screen.findByText('Colaborador não encontrado.');
+    expect(detailCalls(calls)).toEqual([]);
+  });
+
+  it('does not load or reveal a detail without permission or an authenticated session', async () => {
+    for (const scenario of [{ permissions: [] }, { authenticated: false }]) {
+      const { impl, calls } = makeFetch(scenario);
+      const { probe } = renderCollaborators(impl, detailUrl());
+      if (scenario.authenticated === false) await waitFor(() => expect(probe.pathname).toBe('/entrar'));
+      else await screen.findByRole('heading', { name: 'Page not found' });
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(detailCalls(calls)).toEqual([]);
+      cleanup();
+    }
+  });
+
+  it('does not render another membership returned by a mismatched response', async () => {
+    const { impl } = makeFetch({ detail: () => json(marioCosta) });
+    renderCollaborators(impl, detailUrl());
+    const modal = await screen.findByRole('dialog');
+    await within(modal).findByRole('alert');
+    expect(modal.textContent).not.toContain('Mário');
+  });
+
+  it('never reuses a cached detail across agencies, even with the same membership id in the URL', async () => {
+    let finish: (value: Response) => void = () => undefined;
+    const delayed = new Promise<Response>((resolve) => { finish = resolve; });
+    const { impl, calls } = makeFetch({ detail: (_id, agencyId) => agencyId === AGENCY_A ? json(anaPrado) : delayed });
+    const { probe } = renderCollaborators(impl, detailUrl());
+    await screen.findByRole('dialog', { name: 'Ana Prado' });
+    await act(async () => { await probe.navigate(`/agencia/${AGENCY_B}/colaboradores?colaborador=${anaPrado.membershipId}`); });
+    const modal = await screen.findByRole('dialog', { name: 'Detalhe do colaborador' });
+    expect(modal.textContent).not.toContain(anaPrado.email);
+    await act(async () => { finish(json({ error: { code: 'NOT_FOUND', message: 'Not found' } }, 404)); });
+    await within(modal).findByText('Colaborador não encontrado.');
+    expect(detailCalls(calls)).toContain(`GET /agencies/${AGENCY_B}/collaborators/${anaPrado.membershipId}`);
+  });
+
+  it('keeps loaded details during revalidation, but hides them when access is refused', async () => {
+    let finish: (value: Response) => void = () => undefined;
+    const delayed = new Promise<Response>((resolve) => { finish = resolve; });
+    let requests = 0;
+    const { impl } = makeFetch({ detail: () => ++requests === 1 ? json(anaPrado) : delayed });
+    const { queryClient } = renderCollaborators(impl, detailUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    act(() => { void queryClient.invalidateQueries({ queryKey: ['agency', AGENCY_A, 'collaborators', 'detail'] }); });
+    await waitFor(() => expect(requests).toBe(2));
+    expect(modal.querySelector('.ui-skeleton')).toBeNull();
+    expect(within(modal).getByRole('tab', { name: 'Detalhes' })).toBeTruthy();
+    await act(async () => { finish(json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403)); });
+    await within(modal).findByText('Colaborador não encontrado.');
+    expect(modal.textContent).not.toContain(anaPrado.email);
+    expect(within(modal).queryByRole('tablist')).toBeNull();
+  });
+
+  it('renders untrusted identity fields as text', async () => {
+    const hostile = '<img src=x onerror=alert(1)>';
+    const { impl } = makeFetch({ detail: () => json({ ...anaPrado, name: hostile, jobTitle: hostile }) });
+    renderCollaborators(impl, detailUrl());
+    const modal = await screen.findByRole('dialog', { name: hostile });
+    expect(modal.querySelector('img')).toBeNull();
+    expect(modal.querySelector('[onerror]')).toBeNull();
   });
 });
 

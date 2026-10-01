@@ -2,6 +2,7 @@ import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type InputH
 export { Avatar, avatarInitials, type AvatarProps, type AvatarSize } from './avatar.js';
 export { BadgeCard, type BadgeCardProps } from './badge-card.js';
 export { ConfirmDialog, Menu, MenuItem, MenuSeparator } from './menu.js';
+export { Modal, type ModalProps } from './modal.js';
 export { Pagination, paginationItems, type PaginationProps } from './pagination.js';
 export { Select, type SelectOption, type SelectProps } from './select.js';
 
