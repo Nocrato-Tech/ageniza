@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 
 import { CollaboratorListResponseSchema } from '@ageniza/contracts';
@@ -8,6 +8,7 @@ import { BadgeCard, Button, Pagination, Select, Skeleton, TextInput } from '@age
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
+import { CollaboratorDetailDialog } from './collaborator-detail.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { NotFoundPage } from './status-pages.js';
@@ -67,6 +68,17 @@ export function CollaboratorsPage() {
   const agency = useAgencyContext();
   const canInvite = useCan('colaborador.convidar');
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const membershipId = searchParams.get('colaborador');
+  const listParams = new URLSearchParams(searchParams);
+  listParams.delete('colaborador');
+  const listUrl = `${location.pathname}${listParams.size === 0 ? '' : `?${listParams}`}`;
+  const closeDetail = (): void => {
+    const state = z.object({ collaboratorListUrl: z.string() }).safeParse(location.state);
+    if (state.success && state.data.collaboratorListUrl === listUrl) void navigate(-1);
+    else setSearchParams(listParams, { replace: true, state: null });
+  };
   useDocumentTitle('Colaboradores — Ageniza');
 
   const q = searchParams.get('q') ?? '';
@@ -175,12 +187,19 @@ export function CollaboratorsPage() {
           <ul className="collaborators__grid">
             {collaborators.data.data.map((collaborator) => (
               <li key={collaborator.membershipId}>
-                <BadgeCard
-                  name={collaborator.name}
-                  photoUrl={collaborator.photoUrl}
-                  jobTitle={collaborator.jobTitle}
-                  role={collaborator.role.name}
-                />
+                <Link
+                  className="collaborators__badge-link"
+                  to={{ search: `?${new URLSearchParams([...listParams, ['colaborador', collaborator.membershipId]])}` }}
+                  state={{ collaboratorListUrl: listUrl }}
+                  aria-label={`Ver detalhes de ${collaborator.name}`}
+                >
+                  <BadgeCard
+                    name={collaborator.name}
+                    photoUrl={collaborator.photoUrl}
+                    jobTitle={collaborator.jobTitle}
+                    role={collaborator.role.name}
+                  />
+                </Link>
               </li>
             ))}
           </ul>
@@ -192,6 +211,7 @@ export function CollaboratorsPage() {
           summary={`${collaborators.data.data.length} de ${collaborators.data.meta.totalItems} pessoas`}
         />
       </>}
+      {membershipId !== null && <CollaboratorDetailDialog key={agency.agencyId + membershipId} membershipId={membershipId} onClose={closeDetail} />}
     </section>
   );
 }
