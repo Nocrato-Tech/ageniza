@@ -735,17 +735,17 @@ describe('collaborators module (issue #95)', () => {
       expect(response.body.data).not.toContain('Cargo Removido');
     });
 
-    it('collapses duplicates and surrounding spaces, dropping blanks and nulls', async () => {
+    it('collapses duplicates and surrounding spaces, rejects blanks and drops nulls', async () => {
       const { agencyId, ownerUser } = await createAgencyWithOwner('Cargos Duplicados', 'jobs-dupes', 'Owner Cargos Duplicados');
       await addMember(agencyId, { name: 'Pessoa Um', emailLabel: 'jobs-dup-1', roleId: presetRoleIds.production, jobTitle: 'Editor de Vídeo' });
       await addMember(agencyId, { name: 'Pessoa Dois', emailLabel: 'jobs-dup-2', roleId: presetRoleIds.production, jobTitle: '  Editor de Vídeo  ' });
       await addMember(agencyId, { name: 'Pessoa Três', emailLabel: 'jobs-dup-3', roleId: presetRoleIds.production, jobTitle: 'Designer' });
-      await addMember(agencyId, { name: 'Pessoa Quatro', emailLabel: 'jobs-dup-4', roleId: presetRoleIds.production, jobTitle: '   ' });
+      await expect(addMember(agencyId, { name: 'Pessoa Quatro', emailLabel: 'jobs-dup-4', roleId: presetRoleIds.production, jobTitle: '   ' })).rejects.toThrow(/agency_memberships_job_title_format/);
       await addMember(agencyId, { name: 'Pessoa Cinco', emailLabel: 'jobs-dup-5', roleId: presetRoleIds.production, jobTitle: null });
 
       const response = await getJobTitles(await loginCookie(ownerUser), agencyId);
       expect(response.status).toBe(200);
-      // Trimmed duplicates fold into one, the blank and the null are absent, and the order is A-Z.
+      // The CHECK refuses blanks; trimmed duplicates fold into one and nulls stay absent.
       expect(response.body.data).toEqual(['Designer', 'Editor de Vídeo']);
     });
 
