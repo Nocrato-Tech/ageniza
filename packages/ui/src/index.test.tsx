@@ -104,6 +104,40 @@ describe('Menu', () => {
     expect(screen.getByRole('separator')).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: 'Dangerous action' }).className).toContain('ui-menu-item--destructive');
   });
+
+  it('reports open and close through onOpenChange', () => {
+    const onOpenChange = vi.fn();
+    render(
+      <Menu label='Menu' trigger='Open' onOpenChange={onOpenChange}>
+        <MenuItem>Only action</MenuItem>
+      </Menu>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Only action' }), { key: 'Escape' });
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('moves focus to the first item when the active panel changes', () => {
+    const { rerender } = render(
+      <Menu label='Menu' trigger='Open' activePanel='root'>
+        <MenuItem>Root action</MenuItem>
+      </Menu>
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Root action' }));
+
+    // The first child changes type, so React drops the focused button instead of reusing it; only the
+    // panel change can move focus back onto the new first item.
+    rerender(
+      <Menu label='Menu' trigger='Open' activePanel='switch'>
+        <MenuSeparator />
+        <MenuItem>Back</MenuItem>
+      </Menu>
+    );
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Back' }));
+  });
 });
 
 describe('ConfirmDialog', () => {

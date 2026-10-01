@@ -13,12 +13,19 @@ export interface MenuProps {
   label: string;
   trigger: ReactNode;
   children: ReactNode;
+  /** Notifies the owner when the menu opens or closes, so it can load data or reset its panels. */
+  onOpenChange?: (open: boolean) => void;
+  /**
+   * Identifies the panel currently rendered inside the menu. When it changes, focus moves to the
+   * first item, so a submenu that replaces the menu content stays keyboard-usable.
+   */
+  activePanel?: string;
 }
 
 const menuItems = (menu: HTMLElement): HTMLElement[] =>
   Array.from(menu.querySelectorAll<HTMLElement>('[role=menuitem]:not([disabled]):not([aria-disabled=true])'));
 
-export function Menu({ label, trigger, children }: MenuProps) {
+export function Menu({ label, trigger, children, onOpenChange, activePanel }: MenuProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -26,6 +33,7 @@ export function Menu({ label, trigger, children }: MenuProps) {
 
   const close = (): void => {
     setOpen(false);
+    onOpenChange?.(false);
     triggerRef.current?.focus();
   };
 
@@ -33,7 +41,7 @@ export function Menu({ label, trigger, children }: MenuProps) {
     if (!open) return;
     const first = menuRef.current === null ? undefined : menuItems(menuRef.current)[0];
     first?.focus();
-  }, [open]);
+  }, [open, activePanel]);
 
   useEffect(() => {
     if (!open) return;
@@ -72,7 +80,11 @@ export function Menu({ label, trigger, children }: MenuProps) {
         aria-haspopup='menu'
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          const next = !open;
+          setOpen(next);
+          onOpenChange?.(next);
+        }}
       >
         {trigger}
       </button>
