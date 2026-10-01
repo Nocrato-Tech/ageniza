@@ -1157,3 +1157,34 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 **Consequência.** O filtro de cargo da grade tem fonte própria, sem alterar o formato de resposta que outras rotas já usam. Rota aditiva: nenhuma migration, nenhuma policy nova, nenhum campo novo em contrato existente. Como é um caminho novo de leitura da agência, entra com a mesma barreira de escopo da listagem (a RLS mostra as agências do chamador, nunca uma só; o filtro de agência da consulta é a barreira que separa).
 
 **Origem.** Issue #218, decidida pelo maestro a partir da lacuna achada na #102. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-01 — Conteúdo: a entrevista abre antes do merge de #123 e #128
+
+**Contexto.** A ordem de módulos decidida em 2026-09-24 é Colaboradores, Clientes, Conteúdo, Tarefas, Financeiro básico, Dashboard. A regra de orquestração exigia #122, #123 e #128 mergeadas antes da entrevista de Conteúdo, e #123 (funções de ciclo de vida do cliente) e #128 (conversa do lado da agência) estavam prontas em branch, esperando revisão. Tarefas foi cogitada para ir antes e descartada: tarefa nasce ligada a conteúdo, e o bloco 0 de Conteúdo já registra "tarefas por conteúdo".
+
+**Decisão.** A **entrevista** de Conteúdo abre agora. A **implementação** de Conteúdo continua dependendo de #122, #123 e #128 mergeadas, porque reaproveita o molde da função de escopo único (#123) e a conversa com `content_id` (#128).
+
+**Consequência.** A entrevista parte dos desenhos já decididos de #123 e #128, não do código mergeado. Se a revisão deles mudar a forma, a SPEC de Conteúdo é ajustada antes do recorte.
+
+**Origem.** Decidido pelo dono do produto em sessão, em 2026-10-01.
+
+---
+
+## 2026-10-01 — Conteúdo: propósito e fronteiras do MVP
+
+**Contexto.** Bloco 1 da entrevista de Conteúdo. A integração com a Meta está fora do MVP (2026-09-26), então a plataforma não publica em rede social.
+
+**Decisão.**
+- **Publicação é manual no MVP.** O cliente aprova e o conteúdo passa a **pronto para publicação**; a agência publica por fora e marca **publicado**, com a data real. O relatório interno ("entregue, atrasado, o que foi feito no mês") se apoia nesse registro.
+- **A aprovação é do cliente, no portal.** Existe também o registro de **aprovado fora da plataforma** pela agência, com quem marcou e quando, para o cliente que aprova por outro canal. O dono considera que ele quebra o fluxo ideal, e as condições em que ele é permitido são decididas nos blocos de autorização e de regras.
+- **Instagram no MVP**: post de imagem, carrossel e reels no simulador do feed; **vídeo longo** e **VSL** entram no calendário e na aprovação, fora da grade do feed. Outras plataformas ficam como roadmap.
+- **Tarefas nascem aqui, sempre ligadas a um conteúdo** (responsável, prazo, conclusão, percentual do conteúdo calculado). O módulo Tarefas, depois, é a visão macro: kanban por cliente e as tarefas vinculadas a conteúdos. Conteúdo é a gestão rápida, micro.
+- **Conteúdo preenche tudo o que Clientes reservou**: a aba Conteúdos do detalhe do cliente, os indicadores do card (pendente, em revisão, atrasado), o atraso como primeiro critério da carteira, e no portal o Calendário e o espaço "conteúdos a aprovar" do Início.
+- **E-mail ao cliente** quando houver conteúdo pronto para revisão e quando um conteúdo for publicado. O fluxo de notificação se expande depois.
+- **Fora do MVP**: publicação automática, métricas, vários destinos, versões e histórico de alterações do post, banco de legendas e hashtags, aprovação em várias etapas.
+
+**Consequência.** O gatilho da notificação registrado em Clientes ("Conteúdo fechar o fluxo de aprovação") dispara aqui, na forma mínima de e-mail. **Stories** ficam com fluxo próprio — roteiro do dia, que o cliente grava —, separado do fluxo de feed; se entra no MVP é decidido na rodada seguinte desta entrevista.
+
+**Origem.** Decidido pelo dono do produto em sessão (entrevista do módulo Conteúdo), em 2026-10-01.
