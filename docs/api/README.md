@@ -565,6 +565,7 @@ Devolve as permissões efetivas do contexto de agência.
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
 | `GET` | `/agencies/:agencyId/collaborators` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista a equipe da agência |
+| `GET` | `/agencies/:agencyId/collaborators/:membershipId` | Sessão + vínculo com a agência | `colaborador.visualizar` | Devolve um colaborador da agência |
 
 #### `GET /agencies/:agencyId/collaborators`
 
@@ -611,6 +612,34 @@ Lista a equipe da agência.
     "totalItems": 1,
     "totalPages": 1
   }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/collaborators/:membershipId`
+
+Devolve um colaborador da agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `colaborador.visualizar`.
+
+**Resposta `200`** — O colaborador pedido.
+
+```json
+{
+  "membershipId": "22222222-2222-4222-8222-222222222222",
+  "name": "Camila Nogueira",
+  "email": "camila@exemplo.test",
+  "photoUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+  "jobTitle": "Gestora de contas",
+  "role": {
+    "key": "account_manager",
+    "name": "Gestor de conta"
+  },
+  "isOwner": false,
+  "status": "active",
+  "joinedAt": "2026-03-12T12:00:00.000Z"
 }
 ```
 

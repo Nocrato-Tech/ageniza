@@ -41,6 +41,30 @@ export interface CollaboratorPage {
  */
 const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, (character) => `\\${character}`);
 
+// The columns of one collaborator, shared by the listing and the detail so both always return the
+// same shape. `auth."user"` is reached only through the membership's `user_id`.
+const COLLABORATOR_COLUMNS = `
+      membership.id as membership_id,
+      member.name as name,
+      member.email as email,
+      member.image as photo_key,
+      membership.job_title as job_title,
+      role.key as role_key,
+      role.name as role_name,
+      app_private.is_agency_owner(membership.agency_id, membership.user_id) as is_owner,
+      membership.status as status,
+      membership.created_at as created_at`;
+
+// `auth."user"` has no RLS, so every query starts from `agency_memberships` and joins the user by
+// the link's `user_id`. The role join repeats the scope `app_private.has_agency_permission`
+// applies (`role.agency_id is null or role.agency_id = membership.agency_id`).
+const COLLABORATOR_FROM = `
+    from public.agency_memberships as membership
+    join auth."user" as member on member.id = membership.user_id
+    join public.roles as role
+      on role.id = membership.role_id
+     and (role.agency_id is null or role.agency_id = membership.agency_id)`;
+
 /**
  * Lists the team of one agency, starting from `public.agency_memberships` filtered by the route's
  * agency and reaching `auth."user"` only through the link's `user_id` (`specs/colaboradores.md`
@@ -48,9 +72,8 @@ const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, (c
  * name before filtering the agency -- would leak other agencies' people, and the response would
  * still look correct.
  *
- * The role join repeats the scope `app_private.has_agency_permission` applies
- * (`role.agency_id is null or role.agency_id = membership.agency_id`). Ordering is always by name
- * ascending with a membership-id tie-break, so a page boundary is stable across calls.
+ * Ordering is always by name ascending with a membership-id tie-break, so a page boundary is
+ * stable across calls.
  *
  * Runs inside the authenticated transaction the route already opened: `agency_memberships_select`
  * only shows the agency's links to a caller who is a member of it.
@@ -79,35 +102,42 @@ export const listCollaborators = async (
   }
 
   const where = conditions.join('\n    and ');
-  const from = `
-    from public.agency_memberships as membership
-    join auth."user" as member on member.id = membership.user_id
-    join public.roles as role
-      on role.id = membership.role_id
-     and (role.agency_id is null or role.agency_id = membership.agency_id)`;
 
   const countResult = await raw<RawRows<{ total: string | number }>>(transaction, `
-    select count(*) as total${from}
+    select count(*) as total${COLLABORATOR_FROM}
     where ${where}
   `, bindings);
   const totalItems = Number(countResult.rows[0]?.total ?? 0);
 
   const itemsResult = await raw<RawRows<CollaboratorRow>>(transaction, `
-    select
-      membership.id as membership_id,
-      member.name as name,
-      member.email as email,
-      member.image as photo_key,
-      membership.job_title as job_title,
-      role.key as role_key,
-      role.name as role_name,
-      app_private.is_agency_owner(membership.agency_id, membership.user_id) as is_owner,
-      membership.status as status,
-      membership.created_at as created_at${from}
+    select${COLLABORATOR_COLUMNS}${COLLABORATOR_FROM}
     where ${where}
     order by member.name asc, membership.id asc
     limit ? offset ?
   `, [...bindings, pagination.pageSize, pagination.offset]);
 
   return { items: itemsResult.rows, totalItems };
+};
+
+/**
+ * Reads one collaborator of one agency by membership id (issue #96). Scoped to the route's agency
+ * exactly like the listing, so a membership that belongs to another agency is not a row here: the
+ * caller gets the same 404 as for a nonexistent id, never a 403 that would reveal it exists.
+ *
+ * Only `active` links are returned. `specs/colaboradores.md` §4 keeps `removed` links in the
+ * database, and §5 rule 9 keeps them out of the listing by default; until the removal task (#98)
+ * adds the administrative view of removed links, the detail treats them as not found too.
+ */
+export const getCollaborator = async (
+  transaction: CollaboratorTransaction,
+  agencyId: string,
+  membershipId: string
+): Promise<CollaboratorRow | undefined> => {
+  const result = await raw<RawRows<CollaboratorRow>>(transaction, `
+    select${COLLABORATOR_COLUMNS}${COLLABORATOR_FROM}
+    where membership.agency_id = ?::uuid
+      and membership.id = ?::uuid
+      and membership.status = 'active'
+  `, [agencyId, membershipId]);
+  return result.rows[0];
 };
