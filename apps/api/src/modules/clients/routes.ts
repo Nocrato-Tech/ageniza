@@ -1,10 +1,20 @@
 import {
   AgencyClientPathParamsSchema,
+  AgencyClientPersonaPathParamsSchema,
+  AgencyClientSectionPathParamsSchema,
   AgencyPathParamsSchema,
+  BrandStudyResponseSchema,
+  BrandStudySectionSchema,
+  BrandStudySectionUpdateRequestSchema,
   ClientDetailResponseSchema,
   ClientSchema,
   CreateClientRequestSchema,
-  UpdateClientRequestSchema
+  CreatePersonaRequestSchema,
+  PersonaSchema,
+  UpdateClientRequestSchema,
+  UpdatePersonaRequestSchema,
+  type BrandStudySectionUpdate,
+  type WritableBrandSectionKey
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
@@ -16,12 +26,24 @@ import type { IdentityStorageClient } from '../identity-storage/storage-client.j
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeResponse } from '../../plugins/infra/zod.js';
 import {
+  brandSectionFromRow,
+  brandStudyFromRows,
   clientFromRow,
   createClient,
+  createPersona,
   isActiveClientNameConflict,
+  isRowLevelSecurityViolation,
+  loadBrandSection,
+  loadBrandSections,
   loadClient,
   loadClientSummary,
-  updateClient
+  loadPersona,
+  loadPersonas,
+  personaFromRow,
+  setPersonaStatus,
+  updateClient,
+  updatePersona,
+  upsertBrandSection
 } from './service.js';
 
 export type ClientPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
@@ -75,6 +97,47 @@ const clientIdFromRoute = (request: FastifyRequest): string => {
   const value = (request.params as { readonly clientId?: unknown }).clientId;
   if (typeof value !== 'string' || !uuidPattern.test(value)) throw clientNotFound();
   return value;
+};
+
+const personaNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Persona not found.' });
+
+const sectionNotWritable = (): HttpError => new HttpError({
+  statusCode: 400,
+  code: 'VALIDATION_ERROR',
+  message: 'Request validation failed',
+  details: { issues: [{ path: 'sectionKey', code: 'invalid_enum_value', message: 'sectionKey must be one of the six writable sections.' }] }
+});
+
+const sectionShapeMismatch = (): HttpError => new HttpError({
+  statusCode: 400,
+  code: 'VALIDATION_ERROR',
+  message: 'Request validation failed',
+  details: { issues: [{ path: 'body', code: 'invalid_union', message: 'The body must match the section key.' }] }
+});
+
+const WRITABLE_SECTION_KEYS: ReadonlySet<string> = new Set(['branding', 'tone_of_voice', 'colors', 'positioning', 'archetype', 'observations']);
+const TEXT_SECTION_KEYS: ReadonlySet<string> = new Set(['branding', 'tone_of_voice', 'positioning', 'observations']);
+
+/** `personas` is a fixed section but not writable as one; anything else is not a section. Both are 400. */
+const sectionKeyFromRoute = (request: FastifyRequest): WritableBrandSectionKey => {
+  const value = (request.params as { readonly sectionKey?: unknown }).sectionKey;
+  if (typeof value !== 'string' || !WRITABLE_SECTION_KEYS.has(value)) throw sectionNotWritable();
+  return value as WritableBrandSectionKey;
+};
+
+/** A malformed `:personaId` is the same 404 as an absent one, never a 400. */
+const personaIdFromRoute = (request: FastifyRequest): string => {
+  const value = (request.params as { readonly personaId?: unknown }).personaId;
+  if (typeof value !== 'string' || !uuidPattern.test(value)) throw personaNotFound();
+  return value;
+};
+
+/** The body shape must match the section key: text, colors or archetype, never another's. */
+const assertSectionShape = (sectionKey: WritableBrandSectionKey, body: BrandStudySectionUpdate): void => {
+  const matches = TEXT_SECTION_KEYS.has(sectionKey)
+    ? 'body' in body
+    : sectionKey === 'colors' ? 'colors' in body : 'archetype' in body;
+  if (!matches) throw sectionShapeMismatch();
 };
 
 export const registerClientModule = (app: FastifyInstance, dependencies: ClientModuleDependencies): void => {
@@ -183,4 +246,164 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     const photoUrl = await signPhotoUrl(request, outcome.row.photo_key);
     return reply.send(routeResponse(updateDocs, request, clientFromRow(outcome.row, photoUrl)));
   });
+
+  const brandStudyDocs = {
+    permission: 'cliente.visualizar',
+    responseStatus: 200,
+    schemas: { params: AgencyClientPathParamsSchema, response: BrandStudyResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const sectionDocs = {
+    permission: 'cliente.operar',
+    responseStatus: 200,
+    schemas: { params: AgencyClientSectionPathParamsSchema, body: BrandStudySectionUpdateRequestSchema, response: BrandStudySectionSchema }
+  } satisfies DocumentedRouteConfig;
+  const createPersonaDocs = {
+    permission: 'cliente.operar',
+    responseStatus: 201,
+    schemas: { params: AgencyClientPathParamsSchema, body: CreatePersonaRequestSchema, response: PersonaSchema }
+  } satisfies DocumentedRouteConfig;
+  const updatePersonaDocs = {
+    permission: 'cliente.operar',
+    responseStatus: 200,
+    schemas: { params: AgencyClientPersonaPathParamsSchema, body: UpdatePersonaRequestSchema, response: PersonaSchema }
+  } satisfies DocumentedRouteConfig;
+  const personaStatusDocs = {
+    permission: 'cliente.operar',
+    responseStatus: 200,
+    schemas: { params: AgencyClientPersonaPathParamsSchema, response: PersonaSchema }
+  } satisfies DocumentedRouteConfig;
+
+  app.get('/agencies/:agencyId/clients/:clientId/brand-study', authenticated(brandStudyDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = clientIdFromRoute(request);
+
+    const result = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      const client = await loadClient(transaction, { agencyId: tenant.agencyId, clientId });
+      if (client === undefined) return undefined;
+      // The detail summary already computes `filled`; reusing it keeps the two from diverging.
+      const summary = await loadClientSummary(transaction, clientId);
+      const sections = await loadBrandSections(transaction, { agencyId: tenant.agencyId, clientId });
+      const personas = await loadPersonas(transaction, { agencyId: tenant.agencyId, clientId });
+      return brandStudyFromRows(summary.brandStudyFilled, sections, personas);
+    });
+    if (result === undefined) throw clientNotFound();
+    return reply.send(routeResponse(brandStudyDocs, request, result));
+  });
+
+  app.put('/agencies/:agencyId/clients/:clientId/brand-study/sections/:sectionKey', authenticated(sectionDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = clientIdFromRoute(request);
+    const sectionKey = sectionKeyFromRoute(request);
+    const body = routeBody(sectionDocs, request);
+    assertSectionShape(sectionKey, body);
+
+    const outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      const client = await loadClient(transaction, { agencyId: tenant.agencyId, clientId });
+      if (client === undefined) return { kind: 'not-found' } as const;
+      if (client.status === 'archived') return { kind: 'archived' } as const;
+      let written: boolean;
+      try {
+        written = await upsertBrandSection(transaction, { clientId, sectionKey, actorUserId: auth.userId, value: body });
+      } catch (error) {
+        if (isRowLevelSecurityViolation(error)) return { kind: 'archived' } as const;
+        throw error;
+      }
+      if (!written) return { kind: 'archived' } as const;
+      const row = await loadBrandSection(transaction, { agencyId: tenant.agencyId, clientId, sectionKey });
+      if (row === undefined) return { kind: 'not-found' } as const;
+      return { kind: 'ok', section: brandSectionFromRow(row, sectionKey) } as const;
+    });
+    if (outcome.kind === 'not-found') throw clientNotFound();
+    if (outcome.kind === 'archived') throw clientArchived();
+    return reply.send(routeResponse(sectionDocs, request, outcome.section));
+  });
+
+  app.post('/agencies/:agencyId/clients/:clientId/personas', authenticated(createPersonaDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = clientIdFromRoute(request);
+    const body = routeBody(createPersonaDocs, request);
+
+    const outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      const client = await loadClient(transaction, { agencyId: tenant.agencyId, clientId });
+      if (client === undefined) return { kind: 'not-found' } as const;
+      if (client.status === 'archived') return { kind: 'archived' } as const;
+      let personaId: string | undefined;
+      try {
+        personaId = await createPersona(transaction, { clientId, actorUserId: auth.userId, body });
+      } catch (error) {
+        if (isRowLevelSecurityViolation(error)) return { kind: 'archived' } as const;
+        throw error;
+      }
+      if (personaId === undefined) return { kind: 'not-found' } as const;
+      const persona = await loadPersona(transaction, { agencyId: tenant.agencyId, clientId, personaId });
+      if (persona === undefined) return { kind: 'not-found' } as const;
+      return { kind: 'ok', persona: personaFromRow(persona) } as const;
+    });
+    if (outcome.kind === 'not-found') throw clientNotFound();
+    if (outcome.kind === 'archived') throw clientArchived();
+    return reply.status(201).send(routeResponse(createPersonaDocs, request, outcome.persona));
+  });
+
+  app.patch('/agencies/:agencyId/clients/:clientId/personas/:personaId', authenticated(updatePersonaDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = clientIdFromRoute(request);
+    const personaId = personaIdFromRoute(request);
+    const body = routeBody(updatePersonaDocs, request);
+
+    const outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      const client = await loadClient(transaction, { agencyId: tenant.agencyId, clientId });
+      if (client === undefined) return { kind: 'not-found' } as const;
+      if (client.status === 'archived') return { kind: 'archived' } as const;
+      let updated: boolean;
+      try {
+        updated = await updatePersona(transaction, { clientId, personaId, actorUserId: auth.userId, changes: body });
+      } catch (error) {
+        if (isRowLevelSecurityViolation(error)) return { kind: 'archived' } as const;
+        throw error;
+      }
+      if (!updated) return { kind: 'persona-not-found' } as const;
+      const persona = await loadPersona(transaction, { agencyId: tenant.agencyId, clientId, personaId });
+      if (persona === undefined) return { kind: 'persona-not-found' } as const;
+      return { kind: 'ok', persona: personaFromRow(persona) } as const;
+    });
+    if (outcome.kind === 'not-found') throw clientNotFound();
+    if (outcome.kind === 'archived') throw clientArchived();
+    if (outcome.kind === 'persona-not-found') throw personaNotFound();
+    return reply.send(routeResponse(updatePersonaDocs, request, outcome.persona));
+  });
+
+  const personaStatusHandler = (status: 'active' | 'archived') => async (request: FastifyRequest, reply: FastifyReply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = clientIdFromRoute(request);
+    const personaId = personaIdFromRoute(request);
+
+    const outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      const client = await loadClient(transaction, { agencyId: tenant.agencyId, clientId });
+      if (client === undefined) return { kind: 'not-found' } as const;
+      if (client.status === 'archived') return { kind: 'archived' } as const;
+      let updated: boolean;
+      try {
+        updated = await setPersonaStatus(transaction, { clientId, personaId, actorUserId: auth.userId, status });
+      } catch (error) {
+        if (isRowLevelSecurityViolation(error)) return { kind: 'archived' } as const;
+        throw error;
+      }
+      if (!updated) return { kind: 'persona-not-found' } as const;
+      const persona = await loadPersona(transaction, { agencyId: tenant.agencyId, clientId, personaId });
+      if (persona === undefined) return { kind: 'persona-not-found' } as const;
+      return { kind: 'ok', persona: personaFromRow(persona) } as const;
+    });
+    if (outcome.kind === 'not-found') throw clientNotFound();
+    if (outcome.kind === 'archived') throw clientArchived();
+    if (outcome.kind === 'persona-not-found') throw personaNotFound();
+    return reply.send(routeResponse(personaStatusDocs, request, outcome.persona));
+  };
+
+  app.post('/agencies/:agencyId/clients/:clientId/personas/:personaId/archive', authenticated(personaStatusDocs), personaStatusHandler('archived'));
+  app.post('/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive', authenticated(personaStatusDocs), personaStatusHandler('active'));
 };
