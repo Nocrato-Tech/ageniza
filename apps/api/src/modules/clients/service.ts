@@ -1,4 +1,21 @@
-import type { Client, ClientSummary, UpdateClientRequest } from '@ageniza/contracts';
+import { randomUUID } from 'node:crypto';
+
+import {
+  ARCHETYPE_LABELS,
+  type Archetype,
+  type BrandColor,
+  type BrandSectionKey,
+  type BrandStudyResponse,
+  type BrandStudySection,
+  type BrandStudySectionUpdate,
+  type Client,
+  type ClientSummary,
+  type CreatePersonaRequest,
+  type Persona,
+  type UpdateClientRequest,
+  type UpdatePersonaRequest,
+  type WritableBrandSectionKey
+} from '@ageniza/contracts';
 import { raw, type DatabaseClient, type SqlBinding } from '@ageniza/database';
 
 import { latestCommentSideSql, openThreadSql } from './thread-state.js';
@@ -221,6 +238,272 @@ export const loadClientSummary = async (transaction: ClientTransaction, clientId
     activePortalMembers: Number(row.active_portal_members)
   };
 };
+
+// --- Brand study and personas (specs/clientes.md section 3) ---------------------------------
+
+/** The seven sections, always returned in this order. */
+export const BRAND_SECTION_KEYS: readonly BrandSectionKey[] = [
+  'branding', 'tone_of_voice', 'colors', 'positioning', 'archetype', 'personas', 'observations'
+];
+
+const ARCHETYPE_KEY_BY_LABEL = new Map<string, Archetype>(
+  Object.entries(ARCHETYPE_LABELS).map(([key, label]) => [label, key as Archetype])
+);
+
+export const archetypeLabel = (key: Archetype): string => ARCHETYPE_LABELS[key];
+
+/**
+ * The name of the user who last saved a row, resolved only through the agency tie -- an active
+ * membership or ownership of the client's agency. `auth."user"` has no RLS, so reading it
+ * unconstrained would expose a name from another tenant; a removed membership is not a tie
+ * anymore, so the name resolves to NULL once the person leaves the agency.
+ */
+const updaterNameSql = (userIdExpression: string, agencyIdExpression: string): string => `
+  (select "user".name from auth."user" "user"
+   where "user".id = ${userIdExpression}
+     and (
+       exists (select 1 from public.agency_memberships membership
+               where membership.agency_id = ${agencyIdExpression} and membership.user_id = ${userIdExpression}
+                 and membership.status = 'active')
+       or exists (select 1 from public.agencies agency
+                  where agency.id = ${agencyIdExpression} and agency.owner_user_id = ${userIdExpression})
+     ))`;
+
+export interface BrandSectionRow {
+  readonly section_key: BrandSectionKey;
+  readonly body: string | null;
+  readonly colors: unknown;
+  readonly archetype: string | null;
+  readonly updated_by: string | null;
+  readonly updated_by_name: string | null;
+  readonly updated_at: Date;
+}
+
+export interface PersonaRow {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly pains: string | null;
+  readonly desires: string | null;
+  readonly objections: string | null;
+  readonly status: 'active' | 'archived';
+  readonly updated_by: string | null;
+  readonly updated_by_name: string | null;
+  readonly updated_at: Date;
+}
+
+const BRAND_SECTION_COLUMNS = `
+  section.section_key, section.body, section.colors, section.archetype, section.updated_by,
+  ${updaterNameSql('section.updated_by', 'client.agency_id')} as updated_by_name, section.updated_at
+`;
+
+const PERSONA_COLUMNS = `
+  persona.id, persona.name, persona.description, persona.pains, persona.desires, persona.objections,
+  persona.status, persona.updated_by,
+  ${updaterNameSql('persona.updated_by', 'client.agency_id')} as updated_by_name, persona.updated_at
+`;
+
+/** True only for a row-level-security rejection; used to translate a concurrent archive into 409. */
+export const isRowLevelSecurityViolation = (error: unknown): boolean =>
+  typeof error === 'object' && error !== null && (error as { code?: unknown }).code === '42501';
+
+export const loadBrandSections = async (
+  transaction: ClientTransaction,
+  input: { readonly agencyId: string; readonly clientId: string }
+): Promise<BrandSectionRow[]> => {
+  const result = await raw<RawRows<BrandSectionRow>>(transaction, `
+    select ${BRAND_SECTION_COLUMNS}
+    from public.client_brand_sections section
+    join public.clients client on client.id = section.client_id
+    where section.client_id = ?::uuid and client.agency_id = ?::uuid
+  `, [input.clientId, input.agencyId]);
+  return [...result.rows];
+};
+
+export const loadBrandSection = async (
+  transaction: ClientTransaction,
+  input: { readonly agencyId: string; readonly clientId: string; readonly sectionKey: BrandSectionKey }
+): Promise<BrandSectionRow | undefined> => {
+  const result = await raw<RawRows<BrandSectionRow>>(transaction, `
+    select ${BRAND_SECTION_COLUMNS}
+    from public.client_brand_sections section
+    join public.clients client on client.id = section.client_id
+    where section.client_id = ?::uuid and section.section_key = ? and client.agency_id = ?::uuid
+  `, [input.clientId, input.sectionKey, input.agencyId]);
+  return result.rows[0];
+};
+
+/**
+ * Upsert one section. The shape is fixed by the key (the route rejects a body of another section
+ * before this runs); `updated_by` is always the session user, which the RLS `WITH CHECK` also
+ * enforces. False means the write matched nothing (the client was archived concurrently).
+ */
+export const upsertBrandSection = async (
+  transaction: ClientTransaction,
+  input: {
+    readonly clientId: string;
+    readonly sectionKey: WritableBrandSectionKey;
+    readonly actorUserId: string;
+    readonly value: BrandStudySectionUpdate;
+  }
+): Promise<boolean> => {
+  let column: string;
+  let valueExpression: string;
+  let bind: SqlBinding;
+  if ('body' in input.value) {
+    column = 'body'; valueExpression = '?'; bind = input.value.body;
+  } else if ('colors' in input.value) {
+    column = 'colors'; valueExpression = '?::jsonb'; bind = JSON.stringify(input.value.colors);
+  } else {
+    column = 'archetype'; valueExpression = '?'; bind = archetypeLabel(input.value.archetype);
+  }
+  const result = await raw<RawRows<{ section_key: string }>>(transaction, `
+    insert into public.client_brand_sections (client_id, section_key, ${column}, updated_by)
+    values (?::uuid, ?, ${valueExpression}, ?::uuid)
+    on conflict (client_id, section_key) do update
+      set ${column} = excluded.${column}, updated_by = excluded.updated_by, updated_at = now()
+    returning section_key
+  `, [input.clientId, input.sectionKey, bind, input.actorUserId]);
+  return result.rows[0] !== undefined;
+};
+
+export const loadPersonas = async (
+  transaction: ClientTransaction,
+  input: { readonly agencyId: string; readonly clientId: string }
+): Promise<PersonaRow[]> => {
+  const result = await raw<RawRows<PersonaRow>>(transaction, `
+    select ${PERSONA_COLUMNS}
+    from public.client_personas persona
+    join public.clients client on client.id = persona.client_id
+    where persona.client_id = ?::uuid and client.agency_id = ?::uuid
+    order by persona.created_at asc, persona.id asc
+  `, [input.clientId, input.agencyId]);
+  return [...result.rows];
+};
+
+export const loadPersona = async (
+  transaction: ClientTransaction,
+  input: { readonly agencyId: string; readonly clientId: string; readonly personaId: string }
+): Promise<PersonaRow | undefined> => {
+  const result = await raw<RawRows<PersonaRow>>(transaction, `
+    select ${PERSONA_COLUMNS}
+    from public.client_personas persona
+    join public.clients client on client.id = persona.client_id
+    where persona.id = ?::uuid and persona.client_id = ?::uuid and client.agency_id = ?::uuid
+  `, [input.personaId, input.clientId, input.agencyId]);
+  return result.rows[0];
+};
+
+export const createPersona = async (
+  transaction: ClientTransaction,
+  input: { readonly clientId: string; readonly actorUserId: string; readonly body: CreatePersonaRequest }
+): Promise<string | undefined> => {
+  const result = await raw<RawRows<{ id: string }>>(transaction, `
+    insert into public.client_personas (id, client_id, name, description, pains, desires, objections, updated_by)
+    values (?::uuid, ?::uuid, ?, ?, ?, ?, ?, ?::uuid)
+    returning id
+  `, [
+    randomUUID(), input.clientId, input.body.name,
+    input.body.description ?? null, input.body.pains ?? null, input.body.desires ?? null, input.body.objections ?? null,
+    input.actorUserId
+  ]);
+  return result.rows[0]?.id;
+};
+
+const PERSONA_UPDATABLE_COLUMNS: ReadonlyArray<readonly [keyof UpdatePersonaRequest, string]> = [
+  ['name', 'name'],
+  ['description', 'description'],
+  ['pains', 'pains'],
+  ['desires', 'desires'],
+  ['objections', 'objections']
+];
+
+/** A persona PATCH; false means the persona does not belong to this client (or is not there). */
+export const updatePersona = async (
+  transaction: ClientTransaction,
+  input: {
+    readonly clientId: string;
+    readonly personaId: string;
+    readonly actorUserId: string;
+    readonly changes: UpdatePersonaRequest;
+  }
+): Promise<boolean> => {
+  const assignments = ['updated_by = ?::uuid', 'updated_at = now()'];
+  const bindings: SqlBinding[] = [input.actorUserId];
+  for (const [field, column] of PERSONA_UPDATABLE_COLUMNS) {
+    const value = input.changes[field];
+    if (value !== undefined) {
+      assignments.push(`${column} = ?`);
+      bindings.push(value);
+    }
+  }
+  bindings.push(input.personaId, input.clientId);
+  const result = await raw<RawRows<{ id: string }>>(transaction, `
+    update public.client_personas
+    set ${assignments.join(', ')}
+    where id = ?::uuid and client_id = ?::uuid
+    returning id
+  `, bindings);
+  return result.rows[0] !== undefined;
+};
+
+/** Archive/unarchive; `status` is in the column UPDATE grant, `updated_by` is pinned by the RLS check. */
+export const setPersonaStatus = async (
+  transaction: ClientTransaction,
+  input: {
+    readonly clientId: string;
+    readonly personaId: string;
+    readonly actorUserId: string;
+    readonly status: 'active' | 'archived';
+  }
+): Promise<boolean> => {
+  const result = await raw<RawRows<{ id: string }>>(transaction, `
+    update public.client_personas
+    set status = ?, updated_by = ?::uuid, updated_at = now()
+    where id = ?::uuid and client_id = ?::uuid
+    returning id
+  `, [input.status, input.actorUserId, input.personaId, input.clientId]);
+  return result.rows[0] !== undefined;
+};
+
+const updatedByFromRow = (row: { readonly updated_by: string | null; readonly updated_by_name: string | null }): BrandStudySection['updatedBy'] =>
+  row.updated_by === null || row.updated_by_name === null ? null : { id: row.updated_by, name: row.updated_by_name };
+
+export const brandSectionFromRow = (row: BrandSectionRow | undefined, key: BrandSectionKey): BrandStudySection => {
+  if (row === undefined) {
+    return { key, body: null, colors: null, archetype: null, updatedBy: null, updatedAt: null };
+  }
+  return {
+    key,
+    body: row.body,
+    colors: (row.colors as BrandColor[] | null) ?? null,
+    archetype: row.archetype === null ? null : ARCHETYPE_KEY_BY_LABEL.get(row.archetype) ?? null,
+    updatedBy: updatedByFromRow(row),
+    updatedAt: new Date(row.updated_at).toISOString()
+  };
+};
+
+export const personaFromRow = (row: PersonaRow): Persona => ({
+  id: row.id,
+  name: row.name,
+  description: row.description,
+  pains: row.pains,
+  desires: row.desires,
+  objections: row.objections,
+  status: row.status,
+  updatedBy: updatedByFromRow(row),
+  updatedAt: new Date(row.updated_at).toISOString()
+});
+
+export const brandStudyFromRows = (
+  filled: number,
+  sectionRows: readonly BrandSectionRow[],
+  personaRows: readonly PersonaRow[]
+): BrandStudyResponse => ({
+  filled,
+  sections: BRAND_SECTION_KEYS.map((key) => brandSectionFromRow(sectionRows.find((row) => row.section_key === key), key)),
+  personas: personaRows.map(personaFromRow)
+});
 
 /** Maps a row to the HTTP contract; `photoUrl` is already signed (or null) by the caller. */
 export const clientFromRow = (row: ClientRow, photoUrl: string | null): Client => ({

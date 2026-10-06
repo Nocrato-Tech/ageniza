@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { WritableBrandSectionKeySchema } from './clients.js';
+
 /**
  * Path parameter schemas shared by routes and the generated OpenAPI document. They live in
  * `@ageniza/contracts` so the route that validates and the documentation that describes it can
@@ -34,6 +36,20 @@ export const AgencyMediaAssetPathParamsSchema = z.object({
   assetId: z.string().uuid()
 }).strict();
 
+// The writable keys are the enum so the generated OpenAPI lists the six values; `personas` is a
+// fixed section but not writable, and the route still answers its own 400 for it.
+export const AgencyClientSectionPathParamsSchema = z.object({
+  agencyId: z.string().uuid(),
+  clientId: z.string().uuid(),
+  sectionKey: WritableBrandSectionKeySchema
+}).strict();
+
+export const AgencyClientPersonaPathParamsSchema = z.object({
+  agencyId: z.string().uuid(),
+  clientId: z.string().uuid(),
+  personaId: z.string().uuid()
+}).strict();
+
 export const PublicInvitationTokenPathParamsSchema = z.object({
   token: z.string().min(1).max(2_048)
 }).strict();
@@ -44,4 +60,6 @@ export type AgencyInvitationPathParams = z.infer<typeof AgencyInvitationPathPara
 export type AgencyClientPathParams = z.infer<typeof AgencyClientPathParamsSchema>;
 export type AgencyCollaboratorPathParams = z.infer<typeof AgencyCollaboratorPathParamsSchema>;
 export type AgencyMediaAssetPathParams = z.infer<typeof AgencyMediaAssetPathParamsSchema>;
+export type AgencyClientSectionPathParams = z.infer<typeof AgencyClientSectionPathParamsSchema>;
+export type AgencyClientPersonaPathParams = z.infer<typeof AgencyClientPersonaPathParamsSchema>;
 export type PublicInvitationTokenPathParams = z.infer<typeof PublicInvitationTokenPathParamsSchema>;

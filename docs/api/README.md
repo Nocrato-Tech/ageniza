@@ -569,6 +569,12 @@ Devolve as permissões efetivas do contexto de agência.
 | `PATCH` | `/agencies/:agencyId/clients/:clientId` | Sessão + vínculo com a agência | `cliente.operar` | Edita o cadastro do cliente |
 | `PUT` | `/agencies/:agencyId/clients/:clientId/photo` | Sessão + vínculo com a agência | `cliente.operar` | Envia a foto do cliente |
 | `DELETE` | `/agencies/:agencyId/clients/:clientId/photo` | Sessão + vínculo com a agência | `cliente.operar` | Remove a foto do cliente |
+| `GET` | `/agencies/:agencyId/clients/:clientId/brand-study` | Sessão + vínculo com a agência | `cliente.visualizar` | Lê o estudo de marca com as sete seções e as personas |
+| `PUT` | `/agencies/:agencyId/clients/:clientId/brand-study/sections/:sectionKey` | Sessão + vínculo com a agência | `cliente.operar` | Grava uma seção do estudo de marca (upsert) |
+| `POST` | `/agencies/:agencyId/clients/:clientId/personas` | Sessão + vínculo com a agência | `cliente.operar` | Cria uma persona do cliente |
+| `PATCH` | `/agencies/:agencyId/clients/:clientId/personas/:personaId` | Sessão + vínculo com a agência | `cliente.operar` | Edita uma persona |
+| `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/archive` | Sessão + vínculo com a agência | `cliente.operar` | Arquiva uma persona |
+| `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive` | Sessão + vínculo com a agência | `cliente.operar` | Desarquiva uma persona |
 
 #### `POST /agencies/:agencyId/clients`
 
@@ -716,6 +722,276 @@ Remove a foto do cliente.
 - Permissão: `cliente.operar`.
 
 **Resposta `204`** — Foto removida.
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/brand-study`
+
+Lê o estudo de marca com as sete seções e as personas.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.visualizar`.
+
+**Resposta `200`** — Estudo de marca.
+
+```json
+{
+  "filled": 3,
+  "sections": [
+    {
+      "key": "branding",
+      "body": "Marca acolhedora.",
+      "colors": null,
+      "archetype": null,
+      "updatedBy": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "name": "Dono da Agência"
+      },
+      "updatedAt": "2026-09-30T12:00:00.000Z"
+    },
+    {
+      "key": "tone_of_voice",
+      "body": null,
+      "colors": null,
+      "archetype": null,
+      "updatedBy": null,
+      "updatedAt": null
+    },
+    {
+      "key": "colors",
+      "body": null,
+      "colors": [
+        {
+          "name": "Vinho",
+          "hex": "#7A1F2B"
+        }
+      ],
+      "archetype": null,
+      "updatedBy": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "name": "Dono da Agência"
+      },
+      "updatedAt": "2026-09-30T12:00:00.000Z"
+    },
+    {
+      "key": "positioning",
+      "body": null,
+      "colors": null,
+      "archetype": null,
+      "updatedBy": null,
+      "updatedAt": null
+    },
+    {
+      "key": "archetype",
+      "body": null,
+      "colors": null,
+      "archetype": "caregiver",
+      "updatedBy": null,
+      "updatedAt": null
+    },
+    {
+      "key": "personas",
+      "body": null,
+      "colors": null,
+      "archetype": null,
+      "updatedBy": null,
+      "updatedAt": null
+    },
+    {
+      "key": "observations",
+      "body": null,
+      "colors": null,
+      "archetype": null,
+      "updatedBy": null,
+      "updatedAt": null
+    }
+  ],
+  "personas": [
+    {
+      "id": "88888888-8888-4888-8888-888888888888",
+      "name": "Dona Maria",
+      "description": "Dona de casa, 58 anos.",
+      "pains": "Pouco tempo para pesquisar.",
+      "desires": "Reconhecimento da comunidade.",
+      "objections": "Preço acima do esperado.",
+      "status": "active",
+      "updatedBy": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "name": "Dono da Agência"
+      },
+      "updatedAt": "2026-09-30T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `PUT /agencies/:agencyId/clients/:clientId/brand-study/sections/:sectionKey`
+
+Grava uma seção do estudo de marca (upsert).
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "body": "Marca acolhedora."
+}
+```
+
+**Resposta `200`** — Seção gravada.
+
+```json
+{
+  "key": "colors",
+  "body": null,
+  "colors": [
+    {
+      "name": "Vinho",
+      "hex": "#7A1F2B"
+    }
+  ],
+  "archetype": null,
+  "updatedBy": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "name": "Dono da Agência"
+  },
+  "updatedAt": "2026-09-30T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/personas`
+
+Cria uma persona do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "name": "Dona Maria",
+  "description": "Dona de casa, 58 anos."
+}
+```
+
+**Resposta `201`** — Persona criada.
+
+```json
+{
+  "id": "88888888-8888-4888-8888-888888888888",
+  "name": "Dona Maria",
+  "description": "Dona de casa, 58 anos.",
+  "pains": "Pouco tempo para pesquisar.",
+  "desires": "Reconhecimento da comunidade.",
+  "objections": "Preço acima do esperado.",
+  "status": "active",
+  "updatedBy": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "name": "Dono da Agência"
+  },
+  "updatedAt": "2026-09-30T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `PATCH /agencies/:agencyId/clients/:clientId/personas/:personaId`
+
+Edita uma persona.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "name": "Dona Maria",
+  "desires": "Reconhecimento da comunidade."
+}
+```
+
+**Resposta `200`** — Persona atualizada.
+
+```json
+{
+  "id": "88888888-8888-4888-8888-888888888888",
+  "name": "Dona Maria",
+  "description": "Dona de casa, 58 anos.",
+  "pains": "Pouco tempo para pesquisar.",
+  "desires": "Reconhecimento da comunidade.",
+  "objections": "Preço acima do esperado.",
+  "status": "active",
+  "updatedBy": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "name": "Dono da Agência"
+  },
+  "updatedAt": "2026-09-30T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/personas/:personaId/archive`
+
+Arquiva uma persona.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Resposta `200`** — Persona arquivada.
+
+```json
+{
+  "id": "88888888-8888-4888-8888-888888888888",
+  "name": "Dona Maria",
+  "description": "Dona de casa, 58 anos.",
+  "pains": "Pouco tempo para pesquisar.",
+  "desires": "Reconhecimento da comunidade.",
+  "objections": "Preço acima do esperado.",
+  "status": "archived",
+  "updatedBy": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "name": "Dono da Agência"
+  },
+  "updatedAt": "2026-09-30T12:00:00.000Z"
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive`
+
+Desarquiva uma persona.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Resposta `200`** — Persona reativada.
+
+```json
+{
+  "id": "88888888-8888-4888-8888-888888888888",
+  "name": "Dona Maria",
+  "description": "Dona de casa, 58 anos.",
+  "pains": "Pouco tempo para pesquisar.",
+  "desires": "Reconhecimento da comunidade.",
+  "objections": "Preço acima do esperado.",
+  "status": "active",
+  "updatedBy": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "name": "Dono da Agência"
+  },
+  "updatedAt": "2026-09-30T12:00:00.000Z"
+}
+```
 
 **Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
 

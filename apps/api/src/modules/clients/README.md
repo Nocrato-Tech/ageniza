@@ -1,8 +1,8 @@
-# Módulo `clients` (issue #124)
+# Módulo `clients` (issues #124, #126 e #127)
 
-Cadastrar, ler e editar o cliente da agência. As três rotas básicas do módulo, sob
-`requireSession` e `requireAgencyAccess`, com a permissão nomeada que a policy de RLS da tabela
-também exige:
+Cadastrar, ler e editar o cliente da agência, mais o estudo de marca e as personas. Todas as
+rotas sob `requireSession` e `requireAgencyAccess`, com a permissão nomeada que a policy de RLS
+da tabela também exige:
 
 | método | rota | permissão |
 |---|---|---|
@@ -11,6 +11,12 @@ também exige:
 | `PATCH` | `/agencies/:agencyId/clients/:clientId` | `cliente.operar` |
 | `PUT` | `/agencies/:agencyId/clients/:clientId/photo` | `cliente.operar` |
 | `DELETE` | `/agencies/:agencyId/clients/:clientId/photo` | `cliente.operar` |
+| `GET` | `/agencies/:agencyId/clients/:clientId/brand-study` | `cliente.visualizar` |
+| `PUT` | `/agencies/:agencyId/clients/:clientId/brand-study/sections/:sectionKey` | `cliente.operar` |
+| `POST` | `/agencies/:agencyId/clients/:clientId/personas` | `cliente.operar` |
+| `PATCH` | `/agencies/:agencyId/clients/:clientId/personas/:personaId` | `cliente.operar` |
+| `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/archive` | `cliente.operar` |
+| `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive` | `cliente.operar` |
 
 O `POST` aceita só `{ name }`. O `PATCH` aceita qualquer subconjunto dos campos de cadastro da
 seção 3 da SPEC, e `null` limpa um campo. Contratos em `packages/contracts/src/clients.ts`.
@@ -68,9 +74,28 @@ armazenamento de identidade, nunca em `media_assets`, e **não entra em quota de
 - As leituras (detalhe, resposta do `PATCH`) assinam a referência com a mesma validade; o bucket
   nunca é público.
 
+## Estudo de marca e personas (#127)
+
+As **sete seções são fixas** e o `GET` sempre devolve todas, preenchidas ou não (seção 3 da SPEC);
+não existe rota de criar seção. O `PUT` é um *upsert* cujo corpo depende da chave — texto para
+`branding`, `tone_of_voice`, `positioning` e `observations`, até 24 `{ name, hex }` para `colors`,
+um dos doze arquétipos para `archetype`; `personas` não aceita `PUT` (400). O arquétipo viaja em
+inglês no contrato e é gravado com o rótulo em português, como o banco exige.
+
+- Texto de seção é aparado, não pode ficar vazio (só espaços é 400) e limita a 20.000 bytes UTF-8,
+  o mesmo teto da coluna.
+- `updatedBy` é resolvido **pelo vínculo com a agência** (membro ou posse), nunca por
+  `auth."user"` solto; a RLS ainda fixa `updated_by` no usuário da sessão no `INSERT` e no `UPDATE`.
+- O `filled` (0 a 7) vem da mesma consulta do resumo do detalhe: `personas` conta quando há ao menos
+  uma ativa, e o portal verá só as ativas — a agência vê as arquivadas também.
+- Persona de outro cliente — da mesma agência ou não — é o mesmo `404`, e todo `:personaId`
+  malformado também; o `PATCH`/`archive`/`unarchive` filtram por `client_id`.
+- Cliente arquivado responde `409` em toda escrita, inclusive quando o arquivamento acontece entre
+  a leitura e o `INSERT`/`UPDATE` (a violação de RLS `42501` vira o mesmo 409).
+
 ## O que ficou de fora
 
 - Listagem (`#125`), arquivar/reativar e encerramento (`#131`).
 - A foto na listagem e no portal (`#125`, `#129`): as rotas ainda não existem; ao nascerem devem assinar
   `photo_key` do mesmo jeito que o detalhe.
-- O restante do módulo (estudo de marca, personas, conversas, acessos) e o portal do cliente.
+- Conversas em thread, acessos ao portal e o portal do cliente.
