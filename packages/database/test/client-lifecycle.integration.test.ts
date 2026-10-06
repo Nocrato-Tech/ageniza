@@ -904,8 +904,8 @@ describe('CLIENT lifecycle functions (#123)', () => {
 
       const locker = getApplication().transaction(async (transaction) => {
         await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
-        const locked = await raw<Rows<{ id: string }>>(transaction, 'select id from public.clients where id = ?::uuid for update', [client]);
-        expect(locked.rows).toHaveLength(1);
+        const lockedRow = await raw<Rows<{ id: string }>>(transaction, 'select id from public.clients where id = ?::uuid for update', [client]);
+        expect(lockedRow.rows).toHaveLength(1);
         locked();
         await lockMayEnd;
       });
