@@ -961,7 +961,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     description: [
       'O corpo depende da chave: texto para `branding`, `tone_of_voice`, `positioning` e',
       '`observations`; até 24 `{ name, hex }` (`hex` `#RRGGBB`) para `colors`; uma das doze chaves',
-      'para `archetype`. `personas` não aceita `PUT` e responde 400. Cliente arquivado responde 409.'
+      'para `archetype`. O texto é aparado, não pode ficar vazio e limita a 20.000 bytes; `personas`',
+      'não aceita `PUT` e responde 400. Cliente arquivado responde 409.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.operar',

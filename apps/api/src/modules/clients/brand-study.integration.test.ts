@@ -30,12 +30,14 @@ let admin: TestUserFixture;
 let manager: TestUserFixture;
 let production: TestUserFixture;
 let viewer: TestUserFixture;
+let operator: TestUserFixture;
 let otherAdmin: TestUserFixture;
 
 let adminCookie: string;
 let managerCookie: string;
 let productionCookie: string;
 let viewerCookie: string;
+let operatorCookie: string;
 let otherAdminCookie: string;
 
 const sessionCookieHeader = (cookies: readonly { name: string; value: string }[]): string =>
@@ -100,6 +102,7 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     manager = await makeUser('brand-manager');
     production = await makeUser('brand-production');
     viewer = await makeUser('brand-viewer');
+    operator = await makeUser('brand-operator');
     otherAdmin = await makeUser('brand-other-admin');
 
     const roles = await owner.knex('roles').whereNull('agency_id').whereIn('key', ['admin', 'account_manager', 'production']).select('id', 'key');
@@ -114,16 +117,22 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
       { id: agencyB, name: 'Brand Agency B', owner_user_id: null }
     ]);
 
-    const customRoleId = randomUUID();
-    createdCustomRoleIds.push(customRoleId);
-    await owner.knex('roles').insert({ id: customRoleId, agency_id: agencyA, key: `only-view-${customRoleId}`, name: 'Só visualizar', is_system: false });
-    await owner.knex('role_permissions').insert({ role_id: customRoleId, permission_key: 'cliente.visualizar' });
+    const viewOnlyRoleId = randomUUID();
+    createdCustomRoleIds.push(viewOnlyRoleId);
+    await owner.knex('roles').insert({ id: viewOnlyRoleId, agency_id: agencyA, key: `only-view-${viewOnlyRoleId}`, name: 'Só visualizar', is_system: false });
+    await owner.knex('role_permissions').insert({ role_id: viewOnlyRoleId, permission_key: 'cliente.visualizar' });
+
+    const operateOnlyRoleId = randomUUID();
+    createdCustomRoleIds.push(operateOnlyRoleId);
+    await owner.knex('roles').insert({ id: operateOnlyRoleId, agency_id: agencyA, key: `only-operate-${operateOnlyRoleId}`, name: 'Só operar', is_system: false });
+    await owner.knex('role_permissions').insert({ role_id: operateOnlyRoleId, permission_key: 'cliente.operar' });
 
     await owner.knex('agency_memberships').insert([
       { agency_id: agencyA, user_id: admin.id, role_id: roleId('admin') },
       { agency_id: agencyA, user_id: manager.id, role_id: roleId('account_manager') },
       { agency_id: agencyA, user_id: production.id, role_id: roleId('production') },
-      { agency_id: agencyA, user_id: viewer.id, role_id: customRoleId },
+      { agency_id: agencyA, user_id: viewer.id, role_id: viewOnlyRoleId },
+      { agency_id: agencyA, user_id: operator.id, role_id: operateOnlyRoleId },
       { agency_id: agencyB, user_id: otherAdmin.id, role_id: roleId('admin') }
     ]);
 
@@ -131,6 +140,7 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     managerCookie = await login(manager);
     productionCookie = await login(production);
     viewerCookie = await login(viewer);
+    operatorCookie = await login(operator);
     otherAdminCookie = await login(otherAdmin);
   });
 
@@ -277,21 +287,38 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     expect(persona.json()).toMatchObject({ updatedBy: { id: manager.id, name: manager.name } });
   });
 
-  it('hides a persona of another client and another agency, and answers 404 for malformed ids', async () => {
+  it('answers 404 for a client of another agency on every read and write', async () => {
+    const clientA = await createClient(agencyA);
+    const clientB = await createClient(agencyB);
+    const personaOfA = await insertPersonaRow(clientA);
+
+    expect((await getStudy(adminCookie, agencyA, clientB)).statusCode).toBe(404);
+    expect((await putSection(adminCookie, agencyA, clientB, 'branding', { body: 'x' })).statusCode).toBe(404);
+    expect((await postPersona(adminCookie, agencyA, clientB, { name: 'x' })).statusCode).toBe(404);
+    expect((await patchPersona(adminCookie, agencyA, clientB, personaOfA, { name: 'x' })).statusCode).toBe(404);
+    expect((await personaStatus(adminCookie, agencyA, clientB, personaOfA, 'archive')).statusCode).toBe(404);
+    expect((await personaStatus(adminCookie, agencyA, clientB, personaOfA, 'unarchive')).statusCode).toBe(404);
+    // A member of agency B reaching agency A's route is the same 404 as everywhere.
+    expect((await getStudy(otherAdminCookie, agencyA, clientA)).statusCode).toBe(404);
+  });
+
+  it('answers 404 for a persona of another client, same agency or not, and for malformed ids', async () => {
     const clientA1 = await createClient(agencyA);
     const clientA2 = await createClient(agencyA);
     const clientB = await createClient(agencyB);
     const personaOfA2 = await insertPersonaRow(clientA2);
     const personaOfB = await insertPersonaRow(clientB);
 
-    expect((await patchPersona(adminCookie, agencyA, clientA1, personaOfA2, { name: 'x' })).statusCode).toBe(404);
-    expect((await personaStatus(adminCookie, agencyA, clientA1, personaOfA2, 'archive')).statusCode).toBe(404);
-    expect((await patchPersona(adminCookie, agencyA, clientA1, personaOfB, { name: 'x' })).statusCode).toBe(404);
+    for (const personaId of [personaOfA2, personaOfB]) {
+      expect((await patchPersona(adminCookie, agencyA, clientA1, personaId, { name: 'x' })).statusCode).toBe(404);
+      expect((await personaStatus(adminCookie, agencyA, clientA1, personaId, 'archive')).statusCode).toBe(404);
+      expect((await personaStatus(adminCookie, agencyA, clientA1, personaId, 'unarchive')).statusCode).toBe(404);
+    }
     expect((await patchPersona(adminCookie, agencyA, clientA1, 'not-a-uuid', { name: 'x' })).statusCode).toBe(404);
+    expect((await personaStatus(adminCookie, agencyA, clientA1, 'not-a-uuid', 'archive')).statusCode).toBe(404);
     expect((await getStudy(adminCookie, agencyA, 'not-a-uuid')).statusCode).toBe(404);
-    expect((await getStudy(adminCookie, agencyA, clientB)).statusCode).toBe(404);
-    // A member of agency B reaching agency A's route is the same 404 as everywhere.
-    expect((await getStudy(otherAdminCookie, agencyA, clientA1)).statusCode).toBe(404);
+    expect((await putSection(adminCookie, agencyA, 'not-a-uuid', 'branding', { body: 'x' })).statusCode).toBe(404);
+    expect((await postPersona(adminCookie, agencyA, 'not-a-uuid', { name: 'x' })).statusCode).toBe(404);
   });
 
   it('rejects extra fields (BOPLA) and control characters', async () => {
@@ -308,10 +335,47 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     expect((await putSection(adminCookie, agencyA, clientId, 'colors', { colors: tooManyColors })).statusCode).toBe(400);
   });
 
-  it('enforces BFLA with a one-permission custom role: reads, cannot write', async () => {
+  it('rejects giant text in UTF-8 bytes and whitespace-only text', async () => {
     const clientId = await createClient(agencyA);
+
+    expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'a'.repeat(20001) })).statusCode).toBe(400);
+    expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'é'.repeat(10001) })).statusCode).toBe(400);
+    expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'a'.repeat(20000) })).statusCode).toBe(200);
+    expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: '   ' })).statusCode).toBe(400);
+    expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: '\u00a0\u00a0' })).statusCode).toBe(400);
+    const padded = await putSection(adminCookie, agencyA, clientId, 'observations', { body: '  Observação  ' });
+    expect(padded.json()).toMatchObject({ body: 'Observação' });
+
+    expect((await postPersona(adminCookie, agencyA, clientId, { name: 'n'.repeat(121) })).statusCode).toBe(400);
+    expect((await postPersona(adminCookie, agencyA, clientId, { name: 'é'.repeat(61) })).statusCode).toBe(400);
+    expect((await postPersona(adminCookie, agencyA, clientId, { name: 'n'.repeat(120) })).statusCode).toBe(201);
+    expect((await postPersona(adminCookie, agencyA, clientId, { name: '   ' })).statusCode).toBe(400);
+    expect((await postPersona(adminCookie, agencyA, clientId, { name: 'Válida', description: 'd'.repeat(5001) })).statusCode).toBe(400);
+    expect((await putSection(adminCookie, agencyA, clientId, 'colors', { colors: [{ name: 'n'.repeat(61), hex: '#FFFFFF' }] })).statusCode).toBe(400);
+  });
+
+  it('enforces BFLA with a one-permission custom role: visualizar reads, every write 403', async () => {
+    const clientId = await createClient(agencyA);
+    const personaId = await insertPersonaRow(clientId);
+
     expect((await getStudy(viewerCookie, agencyA, clientId)).statusCode).toBe(200);
     expect((await putSection(viewerCookie, agencyA, clientId, 'branding', { body: 'x' })).statusCode).toBe(403);
     expect((await postPersona(viewerCookie, agencyA, clientId, { name: 'x' })).statusCode).toBe(403);
+    expect((await patchPersona(viewerCookie, agencyA, clientId, personaId, { name: 'x' })).statusCode).toBe(403);
+    expect((await personaStatus(viewerCookie, agencyA, clientId, personaId, 'archive')).statusCode).toBe(403);
+    expect((await personaStatus(viewerCookie, agencyA, clientId, personaId, 'unarchive')).statusCode).toBe(403);
+  });
+
+  it('enforces BFLA with a one-permission custom role: operar writes, the read is 403', async () => {
+    const clientId = await createClient(agencyA);
+
+    expect((await getStudy(operatorCookie, agencyA, clientId)).statusCode).toBe(403);
+    expect((await putSection(operatorCookie, agencyA, clientId, 'branding', { body: 'Operador' })).statusCode).toBe(200);
+    const created = await postPersona(operatorCookie, agencyA, clientId, { name: 'Persona do operador' });
+    expect(created.statusCode).toBe(201);
+    const personaId = created.json<{ id: string }>().id;
+    expect((await patchPersona(operatorCookie, agencyA, clientId, personaId, { name: 'Editada' })).statusCode).toBe(200);
+    expect((await personaStatus(operatorCookie, agencyA, clientId, personaId, 'archive')).statusCode).toBe(200);
+    expect((await personaStatus(operatorCookie, agencyA, clientId, personaId, 'unarchive')).statusCode).toBe(200);
   });
 });

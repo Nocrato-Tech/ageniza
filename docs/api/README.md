@@ -957,6 +957,113 @@ Desarquiva uma persona.
 
 **Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
 
+### collaborators — A equipe da agência: listagem com paginação, busca e filtros.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `GET` | `/agencies/:agencyId/collaborators` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista a equipe da agência |
+| `GET` | `/agencies/:agencyId/collaborators/:membershipId` | Sessão + vínculo com a agência | `colaborador.visualizar` | Devolve um colaborador da agência |
+| `GET` | `/agencies/:agencyId/collaborators/job-titles` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista os cargos que existem na agência |
+
+#### `GET /agencies/:agencyId/collaborators`
+
+Lista a equipe da agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `colaborador.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1,
+  "pageSize": 24,
+  "q": "camila",
+  "role": "account_manager",
+  "status": "active"
+}
+```
+
+**Resposta `200`** — Página da equipe.
+
+```json
+{
+  "data": [
+    {
+      "membershipId": "22222222-2222-4222-8222-222222222222",
+      "name": "Camila Nogueira",
+      "email": "camila@exemplo.test",
+      "photoUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+      "jobTitle": "Gestora de contas",
+      "role": {
+        "key": "account_manager",
+        "name": "Gestor de conta"
+      },
+      "isOwner": false,
+      "status": "active",
+      "joinedAt": "2026-03-12T12:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 24,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/collaborators/:membershipId`
+
+Devolve um colaborador da agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `colaborador.visualizar`.
+
+**Resposta `200`** — O colaborador pedido.
+
+```json
+{
+  "membershipId": "22222222-2222-4222-8222-222222222222",
+  "name": "Camila Nogueira",
+  "email": "camila@exemplo.test",
+  "photoUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+  "jobTitle": "Gestora de contas",
+  "role": {
+    "key": "account_manager",
+    "name": "Gestor de conta"
+  },
+  "isOwner": false,
+  "status": "active",
+  "joinedAt": "2026-03-12T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/collaborators/job-titles`
+
+Lista os cargos que existem na agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `colaborador.visualizar`.
+
+**Resposta `200`** — Cargos existentes na agência.
+
+```json
+{
+  "data": [
+    "Editor de Vídeo",
+    "Gestora de contas",
+    "Designer"
+  ]
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
 ### media — Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.
 
 | método | rota | acesso | permissão | o que faz |
@@ -1092,6 +1199,64 @@ Emite uma URL assinada de leitura.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 VARIANT_NOT_READY` · `409 VARIANT_PROCESSING_FAILED` · `500 INTERNAL_ERROR`
+
+### profile — Edição do próprio nome e da própria foto de perfil.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `PATCH` | `/me/profile` | Sessão | — | Altera o nome da própria pessoa |
+| `POST` | `/me/photo` | Sessão | — | Envia a própria foto de perfil |
+
+#### `PATCH /me/profile`
+
+Altera o nome da própria pessoa.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "name": "Novo Nome"
+}
+```
+
+**Resposta `200`** — Nome atualizado.
+
+```json
+{
+  "id": "55555555-5555-4555-8555-555555555555",
+  "name": "Novo Nome"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
+#### `POST /me/photo`
+
+Envia a própria foto de perfil.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "imageBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+}
+```
+
+**Resposta `200`** — Foto atualizada.
+
+```json
+{
+  "imageUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `413 PAYLOAD_TOO_LARGE` · `415 UNSUPPORTED_MEDIA_TYPE` · `500 INTERNAL_ERROR`
 
 ## Catálogo de códigos de erro
 

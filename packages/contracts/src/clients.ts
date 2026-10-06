@@ -157,8 +157,14 @@ export const BrandColorSchema = z.object({
   hex: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'hex must be #RRGGBB')
 }).strict();
 
-/** Text sections: free text, control characters rejected, at most 20000 UTF-8 bytes. */
-export const BrandSectionTextSchema = boundedText(20000);
+/**
+ * Text sections: trimmed, non-empty, control characters rejected, at most 20000 UTF-8 bytes.
+ * Whitespace-only is rejected because `filled` counts only `btrim(body) <> ''`.
+ */
+export const BrandSectionTextSchema = z.string()
+  .refine((value) => !hasControlCharacters(value), 'must not contain control characters')
+  .transform((value) => value.trim())
+  .pipe(z.string().min(1, 'must not be empty').refine((value) => utf8ByteLength(value) <= 20000, 'must be at most 20000 bytes'));
 
 /** `PUT` body, one shape per writable key. `strict()` rejects a field of another section. */
 export const BrandStudySectionUpdateRequestSchema = z.union([

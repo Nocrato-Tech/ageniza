@@ -6111,7 +6111,7 @@
       "put": {
         "operationId": "updateBrandStudySection",
         "summary": "Grava uma seção do estudo de marca (upsert)",
-        "description": "O corpo depende da chave: texto para `branding`, `tone_of_voice`, `positioning` e\n`observations`; até 24 `{ name, hex }` (`hex` `#RRGGBB`) para `colors`; uma das doze chaves\npara `archetype`. `personas` não aceita `PUT` e responde 400. Cliente arquivado responde 409.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "description": "O corpo depende da chave: texto para `branding`, `tone_of_voice`, `positioning` e\n`observations`; até 24 `{ name, hex }` (`hex` `#RRGGBB`) para `colors`; uma das doze chaves\npara `archetype`. O texto é aparado, não pode ficar vazio e limita a 20.000 bytes; `personas`\nnão aceita `PUT` e responde 400. Cliente arquivado responde 409.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
         "tags": [
           "clients"
         ],
