@@ -1435,3 +1435,23 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 **Alcance que não foi tocado.** As outras tabelas filhas do cliente citadas na regra 6 (seções, personas, threads, comentários) têm a mesma forma de risco (provado por execução para `client_personas`: uma persona inserida enquanto o arquivamento ainda não confirmou sobrevive, com o cliente `archived`; seções, threads e comentários não foram sondados) e **não** são alteradas aqui: pertencem a outras tasks do módulo, e mexer nelas dentro deste PR seria mudança em tabela de outro módulo. Fica registrado como débito para o maestro abrir.
 
 **Origem.** Re-revisão do PR #202, achado Alta de 2026-10-01. Issue #123.
+
+---
+
+## 2026-10-06 — ESTRUTURAL: o estado do convite só anda para frente, e quem garante é o banco
+
+**Contexto.** A re-revisão de segurança do PR #202 (Vigia) provou, fora do diff dele e já em `develop`, que um papel com **só** `convite.cancelar` executa `update invitations set revoked_at = null`: a policy `invitations_update` confere a permissão e o *grant* `UPDATE(revoked_at)` deixa a coluna, e nada confere a **direção** da mudança. O caminho completo foi executado: convite de **admin** revogado, des-revogado, aceito com o link original, e um vínculo admin nasce sem ninguém ter `colaborador.atribuir_admin`. O mesmo vale para o convite de portal que o arquivamento revoga (regra 15 de `specs/clientes.md`): ele volta a pendente. `accept_invitation` confia na linha: quem decide quem pode virar admin é a criação do convite, e uma criação revogada tem de continuar morta.
+
+**Decisão.** Uma trigger `BEFORE UPDATE` em `public.invitations`, `security invoker`, que **só governa `ageniza_app`** (`current_user <> 'ageniza_app'` devolve a linha, o mesmo padrão da trigger de `agency_memberships`): `revoked_at` e `used_at`, uma vez preenchidos, **não mudam de valor** nem voltam a `null`. Escrever o mesmo valor não é mudança. A transição `null` → preenchido continua livre, e por isso cancelar, reenviar (revoga e cria outro) e aceitar (que roda como dono, dentro de `accept_invitation`) seguem funcionando. A comparação é por trigger e não por `WITH CHECK`, como pedem as Lições de `docs/security-review.md`: um subselect na `WITH CHECK` lê um valor antigo que a concorrência torna velho. `used_at` não é gravável por `ageniza_app` hoje; a trigger o cobre assim mesmo, para que um *grant* futuro não reabra o buraco. Não se criou *grant* nem se mexeu em policy: a policy decide **quem pode mexer**, a trigger decide **para onde a linha pode ir**.
+
+**Consequência.** Migration nova (`20261006000200_invitation_state_forward_only.mjs`); nenhuma migration aplicada foi editada, e a trigger é de outro evento (`UPDATE`) que a de `INSERT` que o PR #202 acrescenta à mesma tabela. Nenhum fluxo legítimo muda: a API só revoga convite pendente, sob `for update`. Uma revogação feita por engano **não se desfaz**: cria-se outro convite. Quem precisar mexer na linha por operação o faz como dono do esquema, fora do papel da aplicação.
+
+**Auditoria das demais colunas de estado** (pedida pela issue; só registro, nenhuma foi alterada aqui):
+- `clients.status`, `archived_at`, `closing_date` e `client_memberships.status`: fora do *grant* de `UPDATE`, só mudam pelas funções da #123. Sem achado.
+- `agency_memberships.status`: a trigger existente exige `colaborador.remover` e `colaborador.alterar_papel` para ir e voltar. Reativar é intencional. Sem achado.
+- `client_threads.resolved_at`/`resolved_by`: a trigger carimba e o teste da #122 prova que não há "desresolver". Sem achado.
+- `client_personas.status` (`active` ↔ `archived`), `client_memberships.onboarding_seen_at`: reversíveis por desenho. Sem achado.
+- `agencies`, `agency_storage_quotas`, `legal_acceptances`, `roles`, `role_permissions`, `permissions`: o *grant* de `UPDATE` cobre todas as colunas, mas **não existe policy de `UPDATE`**, e com RLS forçada a escrita é negada. É defesa de uma camada só: se alguém criar uma policy de `UPDATE` nessas tabelas, herda um *grant* largo. Registrado como débito.
+- **`media_assets`: achado, executado.** Um papel com **só** `midia.enviar` faz `update media_assets set status = 'confirmed', rejected_reason = null` numa mídia `rejected` (1 linha afetada, num banco isolado, com a transação desfeita). A policy exige só a permissão, o *grant* cobre `status`, `confirmed_*`, `rejected_reason` e as chaves de objeto, e não há trigger. As chaves ficam presas à agência por `CHECK`, então não há troca entre tenants, mas a rejeição por conteúdo se desfaz. **Não** corrigido neste PR (módulo de mídia, outra superfície): precisa de issue própria.
+
+**Origem.** Issue #290, revisão de segurança do PR #202 (Vigia), 2026-10-06.
