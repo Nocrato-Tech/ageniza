@@ -1458,3 +1458,15 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 **Consequência.** O `PATCH` passa a responder `400` para razão social fora da regra, e a edição do cadastro é o caminho para corrigir um valor antigo. Não há backfill.
 
 **Origem.** Issues #213 e #299. **Pendente de validação pelo dono do produto.**
+
+---
+
+## 2026-10-06 — O `decisions.md` mescla por union no git local
+
+**Contexto.** Quase todo merge de develop em PR conflita em `docs/business/decisions.md`, porque cada PR acrescenta uma entrada nova no fim do arquivo. Resolver à mão é repetitivo e sem valor — a resolução é sempre "manter os dois lados". Pedido do dono do produto: o que é repetitivo vira mecanismo.
+
+**Decisão.** Entrada nova em `.gitattributes`: `docs/business/decisions.md merge=union`. Num merge local (`git merge origin/develop`), o driver nativo de union junta as linhas dos dois lados sem conflito. O botão do GitHub não roda merge drivers e continua acusando conflito; por isso o fluxo documentado no CONTRIBUTING é trazer o develop localmente e conferir que só houve adições (`git diff --numstat origin/develop -- docs/business/decisions.md`) e que a ordem cronológica ficou certa.
+
+**Consequência.** Merges locais de develop param de conflitar com entradas novas de decisão; a ordem das entradas pode precisar de ajuste manual após o union, porque o driver junta os dois blocos sem reordenar.
+
+**Origem.** Decidido pelo dono do produto em sessão, em 2026-10-06.
