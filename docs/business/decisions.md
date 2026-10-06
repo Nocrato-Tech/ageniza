@@ -1438,6 +1438,18 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 
 ---
 
+## 2026-10-06 — Quem lê a lista de papéis atribuíveis (`GET /agencies/:agencyId/roles`)
+
+**Contexto.** O convite de colaborador (#107), a troca de papel (#97) e a reativação (#98) recebem `roleId` (uuid), mas os papéis de sistema são semeados com `gen_random_uuid()` e nenhuma rota em develop devolvia papel com id. A SPEC de colaboradores (`specs/colaboradores.md` §7) já pressupõe a lista — "Admin só aparece na lista de papéis para o Owner" —, mas não diz **quem** pode ler a lista, nem o catálogo tem uma permissão própria para isso.
+
+**Decisão.** A rota `GET /agencies/:agencyId/roles` é lida por quem tem `colaborador.convidar` **ou** `colaborador.alterar_papel` (as duas permissões dos fluxos que a lista alimenta), e pelo Owner, por posse. Sem nenhuma das duas, 403. O papel Admin só aparece na resposta para o Owner — a interface esconder é conveniência, e as barreiras de convite e de troca de papel continuam recusando quem montar a requisição na mão.
+
+**Consequência.** A lista expõe `{ id, key, name }` dos papéis de sistema e dos papéis da própria agência, na mesma ordem determinística por `key`. É a única rota que entrega ids de papel ao front, e desbloqueia a #107; a #97 e a #98 passam a ter a mesma fonte. O `x-permission` desta rota passa a admitir uma lista (ou) no OpenAPI, e a avaliação de autorização ganha a forma "alguma das permissões" apenas aqui — as guardas existentes não mudam.
+
+**Origem.** Issue #287, decidida pelo maestro a partir da lacuna achada na #107. **Pendente de validação** pelo dono do produto.
+
+---
+
 ## 2026-10-06 — ESTRUTURAL: o estado do convite só anda para frente, e quem garante é o banco
 
 **Contexto.** A re-revisão de segurança do PR #202 (Vigia) provou, fora do diff dele e já em `develop`, que um papel com **só** `convite.cancelar` executa `update invitations set revoked_at = null`: a policy `invitations_update` confere a permissão e o *grant* `UPDATE(revoked_at)` deixa a coluna, e nada confere a **direção** da mudança. O caminho completo foi executado: convite de **admin** revogado, des-revogado, aceito com o link original, e um vínculo admin nasce sem ninguém ter `colaborador.atribuir_admin`. O mesmo vale para o convite de portal que o arquivamento revoga (regra 15 de `specs/clientes.md`): ele volta a pendente. `accept_invitation` confia na linha: quem decide quem pode virar admin é a criação do convite, e uma criação revogada tem de continuar morta.
@@ -1455,3 +1467,27 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 - **`media_assets`: achado, executado.** Um papel com **só** `midia.enviar` faz `update media_assets set status = 'confirmed', rejected_reason = null` numa mídia `rejected` (1 linha afetada, num banco isolado, com a transação desfeita). A policy exige só a permissão, o *grant* cobre `status`, `confirmed_*`, `rejected_reason` e as chaves de objeto, e não há trigger. As chaves ficam presas à agência por `CHECK`, então não há troca entre tenants, mas a rejeição por conteúdo se desfaz. **Não** corrigido neste PR (módulo de mídia, outra superfície): precisa de issue própria.
 
 **Origem.** Issue #290, revisão de segurança do PR #202 (Vigia), 2026-10-06.
+
+---
+
+## 2026-10-06 — Checklist obrigatório antes de abrir ou atualizar um PR
+
+**Contexto.** As revisões de código e de segurança repetem os mesmos achados entre implementadores de vários modelos: teste que continua verde sem a regra que deveria proteger, cenário que a RLS escondeu a falta do filtro, mudança de contrato que mescla limpo e quebra em runtime, aceite do tipo "não acontece" sem checagem automatizada.
+
+**Decisão.** Antes de abrir ou atualizar um PR, o implementador passa por `docs/implementation-checklist.md`, e o corpo do PR lista a mutação que prova cada item de aceite. Cada item do checklist nasceu de um achado real de revisão, com os PRs de origem citados ao lado.
+
+**Consequência.** Um teste que continua verde sem a regra que deveria proteger vira achado de revisão e, se voltar a se repetir, entra para o checklist. O checklist não substitui `docs/security-review.md` nem as notas do projeto — só lista o que mais se repete.
+
+**Origem.** Pedido do dono do produto, em 2026-10-06.
+
+---
+
+## 2026-10-06 — Razão social do cliente segue a regra de nome de exibição
+
+**Contexto.** A #213 fez o nome do cliente e os campos de contato usarem a regra compartilhada de nome de exibição (#200); a SPEC (`specs/clientes.md`, seção 3) chama `legal_name` só de "razão social", texto livre, e não fixa essa regra para o campo.
+
+**Decisão.** A razão social segue a mesma regra: recusa caracteres de controle, invisíveis de formato e overrides bidi, exige ao menos uma letra ou número, texto em branco vira `null` e o teto é em bytes (256). É exibida na tela; sem a regra, um caractere invisível ou bidi forja um nome.
+
+**Consequência.** O `PATCH` passa a responder `400` para razão social fora da regra, e a edição do cadastro é o caminho para corrigir um valor antigo. Não há backfill.
+
+**Origem.** Issues #213 e #299. **Pendente de validação pelo dono do produto.**

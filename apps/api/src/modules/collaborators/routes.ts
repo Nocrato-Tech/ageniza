@@ -1,6 +1,8 @@
 import {
-  AgencyCollaboratorPathParamsSchema,
   AgencyPathParamsSchema,
+  AgencyRolesQuerySchema,
+  AgencyRolesResponseSchema,
+  AgencyCollaboratorPathParamsSchema,
   CollaboratorDetailQuerySchema,
   CollaboratorJobTitlesQuerySchema,
   CollaboratorJobTitlesResponseSchema,
@@ -20,7 +22,8 @@ import { createRequireSession } from '../auth/session-guard.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
-import { getCollaborator, listAgencyJobTitles, listCollaborators, type CollaboratorRow } from './service.js';
+import { COLLABORATOR_ROLES_READ_PERMISSIONS } from './permissions.js';
+import { getCollaborator, listAgencyJobTitles, listAgencyRoles, listCollaborators, type CollaboratorRow } from './service.js';
 
 export type CollaboratorPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
@@ -33,6 +36,7 @@ export interface CollaboratorModuleDependencies {
   /** Injected from `tenancy` so this module never duplicates agency-access guard SQL. */
   readonly requireAgencyAccess: CollaboratorPreHandler;
   readonly requirePermission: (key: string) => CollaboratorPreHandler;
+  readonly requireAnyPermission: (keys: readonly string[]) => CollaboratorPreHandler;
 }
 
 // specs/colaboradores.md §6: 24 per page. The route declares only the default; `resolvePagination`
@@ -120,6 +124,19 @@ const collaboratorDetailDocs = {
   }
 } satisfies DocumentedRouteConfig;
 
+// The assignable roles of the agency (issue #287) serve the invite (#107), the role PATCH (#97)
+// and the reactivation (#98): all three resolve the role by its uuid, and this is the only place
+// the ids are exposed. Either of the two permissions is enough to read the list; the metadata
+// says both, so the docs and the `x-permission` extension tell the truth (review of #293,
+// finding 3; decisions.md, 2026-10-06, pending validation). The tuple lives in `permissions.ts`
+// (a leaf), and the guard below demands exactly `agencyRolesDocs.permission` -- the same object
+// the route registers and the catalog documents, so a wider guard cannot hide behind the docs.
+const agencyRolesDocs = {
+  permission: COLLABORATOR_ROLES_READ_PERMISSIONS,
+  responseStatus: 200,
+  schemas: { params: AgencyPathParamsSchema, query: AgencyRolesQuerySchema, response: AgencyRolesResponseSchema }
+} satisfies DocumentedRouteConfig;
+
 /** Registers the collaborator routes of one agency: the listing (#95), job titles (#218) and the detail (#96). */
 export const registerCollaboratorModule = (app: FastifyInstance, dependencies: CollaboratorModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
@@ -177,6 +194,28 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     );
 
     return reply.send(routeResponse(collaboratorJobTitlesDocs, request, { data: jobTitles }));
+  });
+
+  app.get('/agencies/:agencyId/roles', {
+    preHandler: [
+      requireSession,
+      dependencies.requireAgencyAccess,
+      dependencies.requireAnyPermission(agencyRolesDocs.permission)
+    ],
+    config: agencyRolesDocs
+  }, async (request, reply) => {
+    const auth = request.auth;
+    if (auth === undefined) throw unauthenticated();
+    const tenant = request.tenant;
+    if (tenant === undefined) throw agencyNotFound();
+
+    // No query parameter exists on this route; an undeclared one (`?x=1`) is a 400.
+    routeQuery(agencyRolesDocs, request);
+    const roles = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
+      listAgencyRoles(transaction, tenant.agencyId, tenant.isOwner)
+    );
+
+    return reply.send(routeResponse(agencyRolesDocs, request, { data: roles }));
   });
 
   app.get('/agencies/:agencyId/collaborators/:membershipId', {

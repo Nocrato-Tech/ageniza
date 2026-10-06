@@ -1011,6 +1011,7 @@ Desarquiva uma persona.
 | `GET` | `/agencies/:agencyId/collaborators` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista a equipe da agência |
 | `GET` | `/agencies/:agencyId/collaborators/:membershipId` | Sessão + vínculo com a agência | `colaborador.visualizar` | Devolve um colaborador da agência |
 | `GET` | `/agencies/:agencyId/collaborators/job-titles` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista os cargos que existem na agência |
+| `GET` | `/agencies/:agencyId/roles` | Sessão + vínculo com a agência | `colaborador.convidar` ou `colaborador.alterar_papel` | Lista os papéis atribuíveis na agência |
 
 #### `GET /agencies/:agencyId/collaborators`
 
@@ -1105,6 +1106,34 @@ Lista os cargos que existem na agência.
     "Editor de Vídeo",
     "Gestora de contas",
     "Designer"
+  ]
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/roles`
+
+Lista os papéis atribuíveis na agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `colaborador.convidar` ou `colaborador.alterar_papel`.
+
+**Resposta `200`** — Papéis atribuíveis na agência.
+
+```json
+{
+  "data": [
+    {
+      "id": "66666666-6666-4666-8666-666666666666",
+      "key": "admin",
+      "name": "Admin"
+    },
+    {
+      "id": "66666666-6666-4666-8666-666666666667",
+      "key": "account_manager",
+      "name": "Gestor de conta"
+    }
   ]
 }
 ```

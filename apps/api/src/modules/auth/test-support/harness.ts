@@ -18,7 +18,7 @@ import { createAuthAuditRecorder, type AuthAuditRecorder } from '../audit.js';
 import { createAuthLimiter, type AuthLimiterOptions, type InMemoryAuthLimiter } from '../auth-limiter.js';
 import { createAuth, type AuthInstance } from '../better-auth.js';
 import { createEmailService, type EmailService } from '../email-service.js';
-import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../../tenancy/guards.js';
+import { createRequireAgencyAccess, createRequireClientAccess, requireAnyPermission, requirePermission } from '../../tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from '../../invitations/routes.js';
 import type { ClientModuleDependencies } from '../../clients/routes.js';
 import type { ContextModuleDependencies } from '../../contexts/routes.js';
@@ -241,7 +241,8 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     identityStorage: createIdentityStorageClient(config.identityStorage),
     identityDownloadUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds,
     requireAgencyAccess: createRequireAgencyAccess({ database }),
-    requirePermission
+    requirePermission,
+    requireAnyPermission
   };
   const ownedMediaJobDispatcher: MediaJobDispatcher | undefined = config.storage === undefined
     ? undefined

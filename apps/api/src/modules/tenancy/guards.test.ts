@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { DatabaseClient } from '@ageniza/database';
 import { createVerifiedUserClaims } from '@ageniza/database';
 
-import { createRequireAgencyAccess, requirePermission } from './guards.js';
+import { createRequireAgencyAccess, requireAnyPermission, requirePermission } from './guards.js';
 
 const userId = '11111111-1111-4111-8111-111111111111';
 const agencyId = '22222222-2222-4222-8222-222222222222';
@@ -102,5 +102,19 @@ describe('tenant guards', () => {
       statusCode: 403,
       code: 'FORBIDDEN'
     });
+  });
+
+  it('requires any one of the listed permissions, and keeps the owner pass by ownership', async () => {
+    for (const permissions of [new Set(['colaborador.convidar']), new Set(['colaborador.alterar_papel'])]) {
+      const request = { tenant: { agencyId, isOwner: false, roleKey: 'custom', permissions } };
+      await expect(requireAnyPermission(['colaborador.convidar', 'colaborador.alterar_papel'])(request as never)).resolves.toBeUndefined();
+    }
+    const none = { tenant: { agencyId, isOwner: false, roleKey: 'custom', permissions: new Set<string>(['colaborador.visualizar']) } };
+    await expect(requireAnyPermission(['colaborador.convidar', 'colaborador.alterar_papel'])(none as never)).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'FORBIDDEN'
+    });
+    const owner = { tenant: { agencyId, isOwner: true, roleKey: 'admin', permissions: new Set<string>() } };
+    await expect(requireAnyPermission(['colaborador.convidar', 'colaborador.alterar_papel'])(owner as never)).resolves.toBeUndefined();
   });
 });
