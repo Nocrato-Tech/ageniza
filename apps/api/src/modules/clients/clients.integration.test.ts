@@ -433,11 +433,13 @@ describe('CLIENTS HTTP module (#124)', () => {
     await expect(clientRow(clientId)).resolves.toMatchObject({ legal_name: null, segment: null, contact_name: null, contact_phone: null });
   });
 
-  it('caps name, legalName, segment and contactPhone in UTF-8 bytes, not characters', async () => {
+  it('caps name, legalName, contactName, segment and contactPhone in UTF-8 bytes, not characters', async () => {
     const clientId = await createClient({ agencyId: agencyA, name: `Bytes ${randomUUID()}` });
     // 129 two-byte characters: 129 UTF-16 units, inside the 256-character cap, but 258 bytes.
+    expect((await postClient(adminCookie, agencyA, { name: 'é'.repeat(129) })).statusCode).toBe(400);
     expect((await patchClient(adminCookie, agencyA, clientId, { name: 'é'.repeat(129) })).statusCode).toBe(400);
     expect((await patchClient(adminCookie, agencyA, clientId, { legalName: 'é'.repeat(129) })).statusCode).toBe(400);
+    expect((await patchClient(adminCookie, agencyA, clientId, { contactName: 'é'.repeat(129) })).statusCode).toBe(400);
     // 17 two-byte characters: 34 bytes, over the 32-byte phone cap.
     expect((await patchClient(adminCookie, agencyA, clientId, { contactPhone: 'é'.repeat(17) })).statusCode).toBe(400);
     // 61 two-byte characters: 122 bytes, over the 120-byte segment cap.
