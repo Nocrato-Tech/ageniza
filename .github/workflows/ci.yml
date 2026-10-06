@@ -115,6 +115,10 @@ jobs:
         run: pnpm test
       - name: Run repository script tests
         run: pnpm test:scripts
+      # The .pnpmfile.cjs hook keeps the vitest chain out of `pnpm deploy --prod` (issue #281);
+      # this fails if a regenerated lockfile or a new dependency brings it back.
+      - name: Verify the API production closure
+        run: node scripts/ci/verify-api-production-closure.mjs
       - name: Run root build gate
         env:
           VITE_API_BASE_URL: http://127.0.0.1:3001

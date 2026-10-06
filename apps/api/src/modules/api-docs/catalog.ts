@@ -3,6 +3,8 @@ import type { z } from 'zod';
 import { COLLABORATOR_ROLES_READ_PERMISSIONS } from '../collaborators/routes.js';
 import {
   AgencyClientPathParamsSchema,
+  AgencyClientPersonaPathParamsSchema,
+  AgencyClientSectionPathParamsSchema,
   AgencyCollaboratorPathParamsSchema,
   AgencyInvitationPathParamsSchema,
   AgencyMeResponseSchema,
@@ -17,6 +19,9 @@ import {
   AuthPasswordResetRequestSchema,
   AuthPasswordResetResponseSchema,
   AuthSessionResponseSchema,
+  BrandStudyResponseSchema,
+  BrandStudySectionSchema,
+  BrandStudySectionUpdateRequestSchema,
   ClientDetailResponseSchema,
   ClientInvitationRequestSchema,
   ClientPathParamsSchema,
@@ -34,6 +39,7 @@ import {
   ContextResolveResponseSchema,
   CreateClientRequestSchema,
   CreateMediaUploadRequestSchema,
+  CreatePersonaRequestSchema,
   CreateMediaUploadResponseSchema,
   HealthResponseSchema,
   InvitationAcceptNewAccountRequestSchema,
@@ -47,6 +53,7 @@ import {
   MediaDownloadUrlResponseSchema,
   PaginationInputSchema,
   PendingInvitationListResponseSchema,
+  PersonaSchema,
   PublicInvitationTokenPathParamsSchema,
   PutLastContextRequestSchema,
   RequestMediaUploadPartsRequestSchema,
@@ -54,6 +61,7 @@ import {
   UpdateClientRequestSchema,
   UpdateMyProfileRequestSchema,
   UpdateMyProfileResponseSchema,
+  UpdatePersonaRequestSchema,
   UploadMyPhotoRequestSchema,
   UploadMyPhotoResponseSchema
 } from '@ageniza/contracts';
@@ -186,6 +194,7 @@ const assetId = '44444444-4444-4444-8444-444444444444';
 const userId = '55555555-5555-4555-8555-555555555555';
 const roleId = '66666666-6666-4666-8666-666666666666';
 const clientId = '77777777-7777-4777-8777-777777777777';
+const personaId = '88888888-8888-4888-8888-888888888888';
 
 const agencyContextExample = {
   type: 'agency',
@@ -213,6 +222,50 @@ const clientExample = {
   contactEmail: 'maria@padariacentral.exemplo.test',
   closingDate: null,
   archivedAt: null
+} as const;
+
+const personaExample = {
+  id: personaId,
+  name: 'Dona Maria',
+  description: 'Dona de casa, 58 anos.',
+  pains: 'Pouco tempo para pesquisar.',
+  desires: 'Reconhecimento da comunidade.',
+  objections: 'Preço acima do esperado.',
+  status: 'active',
+  updatedBy: { id: userId, name: 'Dono da Agência' },
+  updatedAt: '2026-09-30T12:00:00.000Z'
+} as const;
+
+const brandSectionExample = {
+  key: 'colors',
+  body: null,
+  colors: [{ name: 'Vinho', hex: '#7A1F2B' }],
+  archetype: null,
+  updatedBy: { id: userId, name: 'Dono da Agência' },
+  updatedAt: '2026-09-30T12:00:00.000Z'
+} as const;
+
+const emptyBrandSection = (key: string) => ({
+  key,
+  body: null,
+  colors: null,
+  archetype: null,
+  updatedBy: null,
+  updatedAt: null
+});
+
+const brandStudyExample = {
+  filled: 3,
+  sections: [
+    { key: 'branding', body: 'Marca acolhedora.', colors: null, archetype: null, updatedBy: { id: userId, name: 'Dono da Agência' }, updatedAt: '2026-09-30T12:00:00.000Z' },
+    emptyBrandSection('tone_of_voice'),
+    brandSectionExample,
+    emptyBrandSection('positioning'),
+    { key: 'archetype', body: null, colors: null, archetype: 'caregiver', updatedBy: null, updatedAt: null },
+    emptyBrandSection('personas'),
+    emptyBrandSection('observations')
+  ],
+  personas: [personaExample]
 } as const;
 
 export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
@@ -922,6 +975,143 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
       { status: 409, code: 'CLIENT_NAME_IN_USE' },
+      { status: 409, code: 'CLIENT_ARCHIVED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/brand-study',
+    operationId: 'getBrandStudy',
+    module: 'clients',
+    summary: 'Lê o estudo de marca com as sete seções e as personas',
+    description: [
+      'As sete seções são fixas e sempre vêm, preenchidas ou não; `filled` (0 a 7) conta as seções',
+      'com conteúdo e `personas` quando há ao menos uma persona ativa. A agência vê personas',
+      'arquivadas também.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.visualizar',
+    params: AgencyClientPathParamsSchema,
+    responses: [{ status: 200, description: 'Estudo de marca.', schema: BrandStudyResponseSchema, example: brandStudyExample }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'put',
+    path: '/agencies/:agencyId/clients/:clientId/brand-study/sections/:sectionKey',
+    operationId: 'updateBrandStudySection',
+    module: 'clients',
+    summary: 'Grava uma seção do estudo de marca (upsert)',
+    description: [
+      'O corpo depende da chave: texto para `branding`, `tone_of_voice`, `positioning` e',
+      '`observations`; até 24 `{ name, hex }` (`hex` `#RRGGBB`) para `colors`; uma das doze chaves',
+      'para `archetype`. O texto é aparado, não pode ficar vazio e limita a 20.000 bytes; `personas`',
+      'não aceita `PUT` e responde 400. Cliente arquivado responde 409.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.operar',
+    params: AgencyClientSectionPathParamsSchema,
+    body: BrandStudySectionUpdateRequestSchema,
+    requestExample: { body: 'Marca acolhedora.' },
+    responses: [{ status: 200, description: 'Seção gravada.', schema: BrandStudySectionSchema, example: brandSectionExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/personas',
+    operationId: 'createPersona',
+    module: 'clients',
+    summary: 'Cria uma persona do cliente',
+    description: 'A persona nasce ativa; `updated_by` é o usuário da sessão. Cliente arquivado responde 409.',
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.operar',
+    params: AgencyClientPathParamsSchema,
+    body: CreatePersonaRequestSchema,
+    requestExample: { name: 'Dona Maria', description: 'Dona de casa, 58 anos.' },
+    responses: [{ status: 201, description: 'Persona criada.', schema: PersonaSchema, example: personaExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' }
+    ]
+  },
+  {
+    method: 'patch',
+    path: '/agencies/:agencyId/clients/:clientId/personas/:personaId',
+    operationId: 'updatePersona',
+    module: 'clients',
+    summary: 'Edita uma persona',
+    description: 'Aceita um subconjunto dos campos; `null` limpa. Persona de outro cliente é o mesmo 404.',
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.operar',
+    params: AgencyClientPersonaPathParamsSchema,
+    body: UpdatePersonaRequestSchema,
+    requestExample: { name: 'Dona Maria', desires: 'Reconhecimento da comunidade.' },
+    responses: [{ status: 200, description: 'Persona atualizada.', schema: PersonaSchema, example: personaExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Persona not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/personas/:personaId/archive',
+    operationId: 'archivePersona',
+    module: 'clients',
+    summary: 'Arquiva uma persona',
+    description: 'A persona sai do portal e as conversas dela ficam somente leitura; o histórico continua na agência.',
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.operar',
+    params: AgencyClientPersonaPathParamsSchema,
+    responses: [{ status: 200, description: 'Persona arquivada.', schema: PersonaSchema, example: { ...personaExample, status: 'archived' } }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Persona not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive',
+    operationId: 'unarchivePersona',
+    module: 'clients',
+    summary: 'Desarquiva uma persona',
+    description: 'A persona volta a aparecer no portal.',
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.operar',
+    params: AgencyClientPersonaPathParamsSchema,
+    responses: [{ status: 200, description: 'Persona reativada.', schema: PersonaSchema, example: personaExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Persona not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' }
     ]
   },
