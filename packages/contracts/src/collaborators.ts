@@ -55,6 +55,20 @@ export const CollaboratorListQuerySchema = PaginationInputSchema.extend({
 export const CollaboratorListResponseSchema = createPaginatedResponseSchema(CollaboratorSchema);
 
 /**
+ * Query of `GET /agencies/:agencyId/collaborators/:membershipId` (issue #226). The detail declares
+ * no query parameter, and an empty `.strict()` object is what makes an undeclared one (`?x=1`) a
+ * 400, exactly like the listing: a parameter the SPEC does not declare does not exist.
+ */
+export const CollaboratorDetailQuerySchema = z.object({}).strict();
+
+/**
+ * Query of `GET /agencies/:agencyId/collaborators/job-titles` (issue #226, route of #218). The
+ * route declares no query parameter either, and the same empty `.strict()` object makes an
+ * undeclared one a 400.
+ */
+export const CollaboratorJobTitlesQuerySchema = z.object({}).strict();
+
+/**
  * Response of `GET /agencies/:agencyId/collaborators/job-titles` (issue #218): the distinct job
  * titles that exist in one agency, for the job-title filter of the badge grid (#102). The listing
  * cannot serve this because it returns a single page, and the SPEC forbids changing its shape
@@ -68,4 +82,6 @@ export type CollaboratorRole = z.infer<typeof CollaboratorRoleSchema>;
 export type Collaborator = z.infer<typeof CollaboratorSchema>;
 export type CollaboratorListQuery = z.infer<typeof CollaboratorListQuerySchema>;
 export type CollaboratorListResponse = z.infer<typeof CollaboratorListResponseSchema>;
+export type CollaboratorDetailQuery = z.infer<typeof CollaboratorDetailQuerySchema>;
+export type CollaboratorJobTitlesQuery = z.infer<typeof CollaboratorJobTitlesQuerySchema>;
 export type CollaboratorJobTitlesResponse = z.infer<typeof CollaboratorJobTitlesResponseSchema>;

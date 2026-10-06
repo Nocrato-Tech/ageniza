@@ -1,6 +1,8 @@
 import {
   AgencyCollaboratorPathParamsSchema,
   AgencyPathParamsSchema,
+  CollaboratorDetailQuerySchema,
+  CollaboratorJobTitlesQuerySchema,
   CollaboratorJobTitlesResponseSchema,
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
@@ -103,7 +105,7 @@ const collaboratorListDocs = {
 const collaboratorJobTitlesDocs = {
   permission: 'colaborador.visualizar',
   responseStatus: 200,
-  schemas: { params: AgencyPathParamsSchema, response: CollaboratorJobTitlesResponseSchema }
+  schemas: { params: AgencyPathParamsSchema, query: CollaboratorJobTitlesQuerySchema, response: CollaboratorJobTitlesResponseSchema }
 } satisfies DocumentedRouteConfig;
 
 // The detail returns the very same item schema the list uses, so the modal and the badge cannot
@@ -111,7 +113,11 @@ const collaboratorJobTitlesDocs = {
 const collaboratorDetailDocs = {
   permission: 'colaborador.visualizar',
   responseStatus: 200,
-  schemas: { params: AgencyCollaboratorPathParamsSchema, response: CollaboratorSchema }
+  schemas: {
+    params: AgencyCollaboratorPathParamsSchema,
+    query: CollaboratorDetailQuerySchema,
+    response: CollaboratorSchema
+  }
 } satisfies DocumentedRouteConfig;
 
 /** Registers the collaborator routes of one agency: the listing (#95), job titles (#218) and the detail (#96). */
@@ -164,6 +170,8 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     const tenant = request.tenant;
     if (tenant === undefined) throw agencyNotFound();
 
+    // The route declares no query parameter: an undeclared one (`?x=1`) is a 400, like the listing.
+    parseRequest(collaboratorJobTitlesDocs.schemas.query, request.query);
     const jobTitles = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
       listAgencyJobTitles(transaction, tenant.agencyId)
     );
@@ -185,6 +193,8 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     if (tenant === undefined) throw agencyNotFound();
 
     const params = parseRequest(collaboratorDetailDocs.schemas.params, request.params);
+    // The detail declares no query parameter: an undeclared one (`?x=1`) is a 400, like the listing.
+    parseRequest(collaboratorDetailDocs.schemas.query, request.query);
     // The schema accepts any short string so a malformed id reaches this uniform 404 instead of a
     // 400 that would say "this id is not a uuid", which a valid-but-foreign id cannot say.
     if (!uuidPattern.test(params.membershipId)) throw collaboratorNotFound();
