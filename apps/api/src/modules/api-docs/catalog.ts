@@ -51,6 +51,8 @@ import {
   UpdateClientRequestSchema,
   UpdateMyProfileRequestSchema,
   UpdateMyProfileResponseSchema,
+  UploadClientPhotoRequestSchema,
+  UploadClientPhotoResponseSchema,
   UploadMyPhotoRequestSchema,
   UploadMyPhotoResponseSchema
 } from '@ageniza/contracts';
@@ -122,7 +124,7 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   invitations: 'Convite de colaborador e de pessoa do portal, aceite e administração dos pendentes.',
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
-  clients: 'Cadastro do cliente da agência: criar, ler o detalhe com o resumo e editar.',
+  clients: 'Cadastro do cliente da agência: criar, ler o detalhe com o resumo, editar e trocar a foto.',
   collaborators: 'A equipe da agência: listagem com paginação, busca e filtros.',
   media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.',
   profile: 'Edição do próprio nome e da própria foto de perfil.'
@@ -873,6 +875,62 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
       { status: 409, code: 'CLIENT_NAME_IN_USE' },
+      { status: 409, code: 'CLIENT_ARCHIVED' }
+    ]
+  },
+  {
+    method: 'put',
+    path: '/agencies/:agencyId/clients/:clientId/photo',
+    operationId: 'uploadClientPhoto',
+    module: 'clients',
+    summary: 'Envia a foto do cliente',
+    description: [
+      'A imagem vai em base64 pelo servidor, que valida o tipo pelos bytes reais (nunca pelo rótulo',
+      'declarado) e o tamanho antes de gravar; a resposta traz a URL assinada. A foto anterior é',
+      'removida. A foto vive no armazenamento de identidade e nunca entra em quota de agência.',
+      'Cliente arquivado responde 409 e nada é gravado.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.operar',
+    params: AgencyClientPathParamsSchema,
+    body: UploadClientPhotoRequestSchema,
+    requestExample: { imageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' },
+    responses: [{
+      status: 200,
+      description: 'Foto atualizada.',
+      schema: UploadClientPhotoResponseSchema,
+      example: { photoUrl: signedStorageUrl }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 415, code: 'UNSUPPORTED_MEDIA_TYPE' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'delete',
+    path: '/agencies/:agencyId/clients/:clientId/photo',
+    operationId: 'deleteClientPhoto',
+    module: 'clients',
+    summary: 'Remove a foto do cliente',
+    description: 'Apaga o objeto e limpa a referência; sem foto, continua 204. Cliente arquivado responde 409.',
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.operar',
+    params: AgencyClientPathParamsSchema,
+    responses: [{ status: 204, description: 'Foto removida.' }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' }
     ]
   },

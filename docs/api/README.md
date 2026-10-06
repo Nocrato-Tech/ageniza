@@ -560,13 +560,15 @@ Devolve as permissões efetivas do contexto de agência.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
-### clients — Cadastro do cliente da agência: criar, ler o detalhe com o resumo e editar.
+### clients — Cadastro do cliente da agência: criar, ler o detalhe com o resumo, editar e trocar a foto.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
 | `POST` | `/agencies/:agencyId/clients` | Sessão + vínculo com a agência | `cliente.cadastrar` | Cadastra um cliente |
 | `GET` | `/agencies/:agencyId/clients/:clientId` | Sessão + vínculo com a agência | `cliente.visualizar` | Lê o detalhe do cliente com o resumo da aba Geral |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId` | Sessão + vínculo com a agência | `cliente.operar` | Edita o cadastro do cliente |
+| `PUT` | `/agencies/:agencyId/clients/:clientId/photo` | Sessão + vínculo com a agência | `cliente.operar` | Envia a foto do cliente |
+| `DELETE` | `/agencies/:agencyId/clients/:clientId/photo` | Sessão + vínculo com a agência | `cliente.operar` | Remove a foto do cliente |
 
 #### `POST /agencies/:agencyId/clients`
 
@@ -680,6 +682,42 @@ Edita o cadastro do cliente.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CLIENT_NAME_IN_USE` · `500 INTERNAL_ERROR`
+
+#### `PUT /agencies/:agencyId/clients/:clientId/photo`
+
+Envia a foto do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "imageBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+}
+```
+
+**Resposta `200`** — Foto atualizada.
+
+```json
+{
+  "photoUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `413 PAYLOAD_TOO_LARGE` · `415 UNSUPPORTED_MEDIA_TYPE` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `DELETE /agencies/:agencyId/clients/:clientId/photo`
+
+Remove a foto do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Resposta `204`** — Foto removida.
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
 
 ### collaborators — A equipe da agência: listagem com paginação, busca e filtros.
 
