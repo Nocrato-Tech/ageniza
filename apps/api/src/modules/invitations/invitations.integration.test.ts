@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   buildTestApp,
@@ -11,7 +11,7 @@ import {
   type TestUserFixture
 } from '../auth/test-support/harness.js';
 import { createInvitationToken } from './tokens.js';
-import type { DatabaseClient } from '@ageniza/database';
+import { raw, type DatabaseClient } from '@ageniza/database';
 import { randomUUID } from 'node:crypto';
 
 const origin = { origin: TEST_APP_PUBLIC_URL };
@@ -88,6 +88,22 @@ const invitationTokenFromLatestEmail = (emailSender = sender): string => {
   const token = text.match(/\/convite\/([^\s]+)/)?.[1];
   if (token === undefined) throw new Error('The invitation email did not contain a token.');
   return token;
+};
+
+/** Waits until some backend is blocked waiting for a relation lock, so a race is sequenced by the
+ * lock, not by a sleep. Used by the listing test that pins the count and the page to one snapshot. */
+const waitForRelationLockWait = async (database: DatabaseClient, relation: string): Promise<void> => {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    const result = await raw<{ rows: Array<{ waiting: number }> }>(database.knex, `
+      select count(*)::int as waiting
+      from pg_catalog.pg_locks locks
+      join pg_catalog.pg_class relation on relation.oid = locks.relation
+      where relation.relname = ? and not locks.granted
+    `, [relation]);
+    if ((result.rows[0]?.waiting ?? 0) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`No backend ever waited on the ${relation} lock.`);
 };
 
 describe('invitation HTTP module', () => {
@@ -383,6 +399,41 @@ describe('invitation HTTP module', () => {
     });
     expect(repeated.statusCode).toBe(409);
     expect(repeated.json()).toMatchObject({ error: { code: 'INVITATION_NOT_PENDING' } });
+  });
+
+  it('decides "still pending" with the database clock, not the application clock', async () => {
+    const clockOwner = await makeUser('invitations-clock-owner');
+    const clockAgencyId = await createAgency('Invitations clock agency', clockOwner.id);
+    const cookie = await loginCookie(clockOwner);
+    const expiresAt = new Date(Date.now() + 10 * 60_000);
+    const resendable = await insertInvitation({ agencyId: clockAgencyId, email: `clock-resend-${randomUUID()}@example.test`, expiresAt });
+    const cancelable = await insertInvitation({ agencyId: clockAgencyId, email: `clock-cancel-${randomUUID()}@example.test`, expiresAt });
+
+    // The application clock jumps past `expires_at` while the database clock stays put. The
+    // listing and `app_private.accept_invitation` already decide this by the server clock, so
+    // resend and cancel must too: the database still sees both invitations as pending (issue #165).
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(Date.now() + 20 * 60_000));
+    try {
+      const resent = await app.app.inject({
+        method: 'POST',
+        url: `/agencies/${clockAgencyId}/invitations/${resendable.invitationId}/resend`,
+        headers: { ...origin, cookie }
+      });
+      expect(resent.statusCode).toBe(200);
+
+      const cancelled = await app.app.inject({
+        method: 'DELETE',
+        url: `/agencies/${clockAgencyId}/invitations/${cancelable.invitationId}`,
+        headers: { ...origin, cookie }
+      });
+      expect(cancelled.statusCode).toBe(204);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const revoked = await owner.knex('invitations').where({ id: cancelable.invitationId }).first('revoked_at');
+    expect(revoked?.revoked_at).not.toBeNull();
   });
 
   it.each([
@@ -798,6 +849,54 @@ describe('invitation HTTP module', () => {
       expect(secondIds).toEqual([later.invitationId]);
       expect(new Set([...firstIds, ...secondIds]).size).toBe(3);
     });
+
+    it('serves the counter and the page from one snapshot when an invitation is revoked mid-request', async () => {
+      const raceOwner = await makeUser('invitations-pending-race-owner');
+      const raceAgencyId = await createAgency('Pending invitations race agency', raceOwner.id);
+      const cookie = await loginCookie(raceOwner);
+      const pending = await insertInvitation({ agencyId: raceAgencyId, email: `race-${randomUUID()}@example.test` });
+
+      // The guard reads `agencies`, whose RLS policy pulls `clients`, so a clients lock held from
+      // the start would freeze the request before the count. Two locks sequence instead:
+      // `invitations` pauses the handler's first statement, and `clients` is taken right after the
+      // guard returns (proved by the first wait) to pause the page. By then a separate count has
+      // already answered from its own snapshot; the revocation then commits while the page waits.
+      // A count read before it would report one, while the list shows none (issue #165).
+      const holdInvitations = await owner.knex.transaction();
+      await holdInvitations.raw('lock table public.invitations in access exclusive mode');
+      let invitationsReleased = false;
+      try {
+        const responsePromise = app.app.inject({
+          method: 'GET',
+          url: `/agencies/${raceAgencyId}/invitations`,
+          headers: { ...origin, cookie }
+        });
+        await waitForRelationLockWait(owner, 'invitations');
+
+        const holdClients = await owner.knex.transaction();
+        let clientsReleased = false;
+        try {
+          await holdClients.raw('lock table public.clients in access exclusive mode');
+          await holdInvitations.commit();
+          invitationsReleased = true;
+          await waitForRelationLockWait(owner, 'clients');
+
+          await owner.knex('invitations').where({ id: pending.invitationId }).update({ revoked_at: new Date() });
+          await holdClients.commit();
+          clientsReleased = true;
+
+          const response = await responsePromise;
+          expect(response.statusCode).toBe(200);
+          const body = response.json<{ data: Array<{ id: string }>; meta: { totalItems: number; totalPages: number } }>();
+          expect(body.data).toEqual([]);
+          expect(body.meta).toMatchObject({ totalItems: 0, totalPages: 0 });
+        } finally {
+          if (!clientsReleased) await holdClients.rollback();
+        }
+      } finally {
+        if (!invitationsReleased) await holdInvitations.rollback();
+      }
+    }, 20_000);
 
     it('returns 200 for a role with only colaborador.convidar, and 403 for one with only cliente.convidar_usuario, convite.reenviar, or convite.cancelar', async () => {
       const scopedOwner = await makeUser('invitations-pending-scoped-owner');
