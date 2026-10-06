@@ -16,8 +16,8 @@
  *
  * Structural, small backfill (decisions.md, 2026-10-01). The backfill runs before the CHECK: a
  * legacy value that is only whitespace, or that is still longer than 256 UTF-16 units after the
- * trim, becomes null -- explicitly, counted, and logged by `app_private.backfill_job_title`; the
- * migration never truncates silently. The choice is pending validation by the product owner.
+ * trim, becomes null -- explicitly, counted, and logged by this migration's `up()`; the migration
+ * never truncates silently. The choice is pending validation by the product owner.
  */
 export async function up(knex) {
   await knex.raw(`
@@ -77,7 +77,6 @@ export async function up(knex) {
     end;
     $function$;
     revoke all on function app_private.set_job_title() from public;
-    grant execute on function app_private.set_job_title() to ageniza_app;
 
     drop trigger if exists agency_memberships_job_title_normalize on public.agency_memberships;
     create trigger agency_memberships_job_title_normalize
@@ -117,16 +116,16 @@ export async function up(knex) {
          and job_title is distinct from app_private.normalize_job_title(job_title);
       get diagnostics v_normalized = row_count;
 
-      raise notice 'job_title backfill: % whitespace-only and % over-256 rows became null; % rows normalized',
-        v_whitespace, v_over_limit, v_normalized;
       return query select v_whitespace, v_over_limit, v_normalized;
     end;
     $function$;
     revoke all on function app_private.backfill_job_title() from public;
-    grant execute on function app_private.backfill_job_title() to ageniza_app;
-
-    select * from app_private.backfill_job_title();
   `);
+
+  // The server's default log_min_messages drops the NOTICE a plpgsql function would raise, so the
+  // migration prints the returned counts itself; a deploy that drops legacy rows must leave a record.
+  const backfill = await knex.raw('select * from app_private.backfill_job_title()');
+  console.log(`job_title backfill: ${JSON.stringify(backfill.rows[0])}`);
 
   await knex.raw(`
     -- Null, or the canonical stored form of 1 to 256 UTF-16 units. The length is measured in UTF-16

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import knex from 'knex';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createLocalTestDatabaseClient, type DatabaseClient } from '../src/index.js';
 
@@ -158,7 +158,17 @@ describe('upgrade of a real legacy job_title (issue #225)', () => {
 
         // Re-apply the migration over the legacy data (the record is removed so knex runs it again).
         await upgrade('knex_migrations').where({ name: MIGRATION_NAME }).delete();
-        await upgrade.migrate.latest({ directory: migrationsDir, loadExtensions: ['.mjs'] });
+        // The upgrade must leave a record of what the backfill dropped, not just change the rows.
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+        let backfillLog = '';
+        try {
+          await upgrade.migrate.latest({ directory: migrationsDir, loadExtensions: ['.mjs'] });
+        } finally {
+          backfillLog = logSpy.mock.calls.map((call) => call.map(String).join(' ')).join('\n');
+          logSpy.mockRestore();
+        }
+        expect(backfillLog).toContain('"whitespace_nulled":1');
+        expect(backfillLog).toContain('"over_limit_nulled":1');
 
         const rows = await upgrade('agency_memberships').where({ agency_id: upgradeAgencyId }).select('user_id', 'job_title');
         const byUser = new Map(rows.map((row) => [row.user_id as string, row.job_title as string | null]));
