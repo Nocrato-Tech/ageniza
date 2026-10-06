@@ -19,7 +19,7 @@ const renderAt = (path: string, options: { authenticated?: boolean; store?: Auth
       <QueryClientProvider client={createQueryClient()}>
         <ApiClientProvider client={client}>
           <MemoryRouter initialEntries={[path]}>
-            <ApplicationRoutes session={{ status: 'ready', isAuthenticated: options.authenticated ?? false }} />
+            <ApplicationRoutes session={{ status: 'ready', isAuthenticated: options.authenticated ?? false, user: null }} />
           </MemoryRouter>
         </ApiClientProvider>
       </QueryClientProvider>

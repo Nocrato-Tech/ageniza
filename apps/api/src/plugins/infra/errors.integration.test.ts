@@ -1,4 +1,5 @@
-import { connect } from 'node:net';
+import { createServer, get as httpGet, type Server } from 'node:http';
+import { connect, type AddressInfo } from 'node:net';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -232,8 +233,8 @@ describe('malformed request bodies answer 400/415, never 500 (#191)', () => {
 });
 
 // Review of #194, finding 2: an error that merely carries a 4xx `statusCode` is still unexpected
-// unless its exact code is mapped. This is also the guard that keeps the abort fix from widening to
-// any `ECONNRESET` without `readableAborted`.
+// unless its exact code is mapped. The second case also guards that a body abort is recognised by
+// the body stream's own error, not by any `ECONNRESET` (issue #195).
 describe('errors outside the map are never downgraded by statusCode (#194 review)', () => {
   it('answers 500 INTERNAL_ERROR and captures once for an unmapped 4xx error', async () => {
     const logs = captureLogs();
@@ -261,19 +262,21 @@ describe('errors outside the map are never downgraded by statusCode (#194 review
     }
   });
 
-  it('answers 500 INTERNAL_ERROR for an ECONNRESET error whose request was not aborted', async () => {
+  it('answers 500 INTERNAL_ERROR for an upstream ECONNRESET, which is not a body abort', async () => {
     const logs = captureLogs();
     const app = await buildTestApp({
       logger: logs.logger,
       registerExtraRoutes: (fastifyApp) => {
-        fastifyApp.get('/__test/econnreset-not-aborted', async () => {
-          throw Object.assign(new Error('aborted'), { statusCode: 400, code: 'ECONNRESET' });
+        fastifyApp.get('/__test/upstream-econnreset', async () => {
+          // An upstream reset (pg, S3, SMTP) reads `read ECONNRESET`; only Node's own body-abort is
+          // the exact `Error('aborted')` with `code === 'ECONNRESET'` (issue #195).
+          throw Object.assign(new Error('read ECONNRESET'), { statusCode: 400, code: 'ECONNRESET' });
         });
       }
     });
     try {
       mockedCaptureUnexpectedError.mockClear();
-      const response = await app.app.inject({ method: 'GET', url: '/__test/econnreset-not-aborted' });
+      const response = await app.app.inject({ method: 'GET', url: '/__test/upstream-econnreset' });
 
       expect(response.statusCode).toBe(500);
       expect(ApiErrorResponseSchema.parse(response.json()).error.code).toBe('INTERNAL_ERROR');
@@ -284,5 +287,286 @@ describe('errors outside the map are never downgraded by statusCode (#194 review
     } finally {
       await app.close();
     }
+  });
+});
+
+// Issue #217 (security review of #96): a path segment over Fastify's `maxParamLength` of 100 threw
+// FST_ERR_MAX_PARAM_LENGTH, which escaped as the framework's raw 414 body and echoed the path. The
+// code is now mapped like the parser errors: fixed envelope, no path, info log, no Sentry.
+describe('an over-long path parameter answers 414 inside the envelope (#217)', () => {
+  const openApps: TestApp[] = [];
+  let app: TestApp;
+  let logs: CapturedLogs;
+  let user: TestUserFixture;
+  let cookie: string;
+  let ownedAgencyId: string | undefined;
+
+  const overlong = 'x'.repeat(101);
+
+  beforeAll(async () => {
+    logs = captureLogs();
+    app = await buildTestApp({ logger: logs.logger });
+    openApps.push(app);
+
+    user = await insertTestUser(app.pool, app.auth, { emailLabel: 'param-length' });
+    ownedAgencyId = await grantOwnedAgencyContext(user.id);
+    const login = await app.app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      headers: origin,
+      payload: { email: user.email, password: user.password }
+    });
+    expect(login.statusCode).toBe(200);
+    cookie = cookieHeader(login.cookies);
+  });
+
+  afterAll(async () => {
+    if (ownedAgencyId !== undefined) await cleanupOwnedAgencyContext(ownedAgencyId);
+    if (user !== undefined) await cleanupTestUser(app.pool, user.id);
+    await Promise.all(openApps.splice(0).map((opened) => opened.close()));
+  });
+
+  const assertOverlong = async (response: { readonly statusCode: number; readonly body: string; json(): unknown }): Promise<void> => {
+    expect(response.statusCode).toBe(414);
+    const parsed = ApiErrorResponseSchema.parse(response.json());
+    expect(parsed.error.code).toBe('URI_TOO_LONG');
+    expect(parsed.error.message).toBe('O caminho da requisição é longo demais.');
+    // Neither the path nor the framework's raw code is echoed back.
+    expect(response.body).not.toContain(overlong);
+    expect(response.body).not.toContain('FST_ERR_MAX_PARAM_LENGTH');
+
+    expect(mockedCaptureUnexpectedError).not.toHaveBeenCalled();
+    await flushLogs();
+    const requestLogs = logs.lines().slice(logOffset).join('\n');
+    expect(requestLogs).toContain('"code":"URI_TOO_LONG"');
+    expect(requestLogs).toContain('"level":30');
+    expect(requestLogs).not.toContain('"level":50');
+    expect(requestLogs).not.toContain('Request failed unexpectedly');
+  };
+
+  let logOffset = 0;
+  beforeEach(() => {
+    mockedCaptureUnexpectedError.mockClear();
+    logOffset = logs.lines().length;
+  });
+
+  it('answers 414 for a public route', async () => {
+    const response = await app.app.inject({ method: 'GET', url: `/invitations/${overlong}`, headers: origin });
+    await assertOverlong(response);
+  });
+
+  it('answers 414 for an authenticated route', async () => {
+    const response = await app.app.inject({ method: 'GET', url: `/agencies/${overlong}/me`, headers: { ...origin, cookie } });
+    await assertOverlong(response);
+  });
+
+  // The same router hook carries FST_ERR_BAD_URL; mapping it is what keeps a malformed URL a 400
+  // envelope instead of an unexpected 500 once `frameworkErrors` feeds this path.
+  it('answers a malformed URL component as a 400 envelope, not a 500', async () => {
+    const offset = logs.lines().length;
+    const response = await app.app.inject({ method: 'GET', url: '/invitations/%ZZ', headers: origin });
+    expect(response.statusCode).toBe(400);
+    expect(ApiErrorResponseSchema.parse(response.json()).error.code).toBe('INVALID_URL');
+    expect(response.body).not.toContain('%ZZ');
+    expect(mockedCaptureUnexpectedError).not.toHaveBeenCalled();
+    await flushLogs();
+    const requestLogs = logs.lines().slice(offset).join('\n');
+    expect(requestLogs).not.toContain('"level":50');
+  });
+});
+
+// Issue #195: `raw.readableAborted` is true whenever a client leaves, even on a bodyless GET, so the
+// body abort must be recognised by the body stream's own error. These tests use a real port and a raw
+// socket, because `inject` cannot make a client leave in the middle of a request.
+describe('a client that left does not hide a real failure (#195)', () => {
+  const openApps: TestApp[] = [];
+  let app: TestApp;
+  let logs: CapturedLogs;
+  let port: number;
+
+  beforeAll(async () => {
+    logs = captureLogs();
+    app = await buildTestApp({
+      logger: logs.logger,
+      registerExtraRoutes: (fastifyApp) => {
+        fastifyApp.get('/__test/upstream-econnreset-after-leave', async () => {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          throw Object.assign(new Error('read ECONNRESET'), { statusCode: 400, code: 'ECONNRESET' });
+        });
+        fastifyApp.get('/__test/generic-failure-after-leave', async () => {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          throw new Error('boom');
+        });
+      }
+    });
+    openApps.push(app);
+    const address = await app.app.listen({ port: 0, host: '127.0.0.1' });
+    port = Number(new URL(address).port);
+  });
+
+  afterAll(async () => {
+    await Promise.all(openApps.splice(0).map((opened) => opened.close()));
+  });
+
+  const abandonGet = async (path: string): Promise<void> => {
+    await new Promise<void>((resolve) => {
+      const socket = connect({ host: '127.0.0.1', port }, () => {
+        socket.write(`GET ${path} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n\r\n`);
+        setTimeout(() => {
+          socket.destroy();
+          resolve();
+        }, 50);
+      });
+      socket.on('error', () => resolve());
+    });
+  };
+
+  const logsAfterHandling = async (offset: number): Promise<string> => {
+    await waitUntil(() => {
+      const text = logs.lines().slice(offset).join('\n');
+      return mockedCaptureUnexpectedError.mock.calls.length > 0 || text.includes('"code":"REQUEST_ABORTED"');
+    });
+    await flushLogs();
+    return logs.lines().slice(offset).join('\n');
+  };
+
+  it('keeps an upstream ECONNRESET after the client left on the 500 + Sentry path', async () => {
+    mockedCaptureUnexpectedError.mockClear();
+    const offset = logs.lines().length;
+    await abandonGet('/__test/upstream-econnreset-after-leave');
+    const requestLogs = await logsAfterHandling(offset);
+
+    expect(mockedCaptureUnexpectedError).toHaveBeenCalledTimes(1);
+    expect(requestLogs).toContain('"code":"INTERNAL_ERROR"');
+    expect(requestLogs).toContain('"level":50');
+    expect(requestLogs).not.toContain('"code":"REQUEST_ABORTED"');
+  });
+
+  it('keeps a generic handler failure after the client left on the 500 + Sentry path', async () => {
+    mockedCaptureUnexpectedError.mockClear();
+    const offset = logs.lines().length;
+    await abandonGet('/__test/generic-failure-after-leave');
+    const requestLogs = await logsAfterHandling(offset);
+
+    expect(mockedCaptureUnexpectedError).toHaveBeenCalledTimes(1);
+    expect(requestLogs).toContain('"code":"INTERNAL_ERROR"');
+    expect(requestLogs).toContain('"level":50');
+    expect(requestLogs).not.toContain('"code":"REQUEST_ABORTED"');
+  });
+});
+
+// Issue #211: with the shape of the error alone, a truncated **upstream** response -- the very same
+// `Error('aborted')` with `ECONNRESET` Node raises for a body abort -- became a 400 for a client that
+// was still connected, hiding a real failure from Sentry. The abort now needs both signs, and these
+// tests exercise the two ways a single signal lies.
+describe('a body abort needs the error shape and the aborted request (#211)', () => {
+  const openApps: TestApp[] = [];
+  let app: TestApp;
+  let logs: CapturedLogs;
+  let port: number;
+  let upstream: Server;
+  let upstreamPort: number;
+
+  /** Reads an upstream body that promises more bytes than it sends, like a cut S3/R2 or HTTP reply. */
+  const readTrimmedUpstream = (targetPort: number): Promise<string> => new Promise((resolve, reject) => {
+    const request = httpGet({ host: '127.0.0.1', port: targetPort, path: '/body' }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on('data', (chunk: Buffer) => chunks.push(chunk));
+      response.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+      response.on('error', reject);
+    });
+    request.on('error', reject);
+  });
+
+  beforeAll(async () => {
+    upstream = createServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json', 'content-length': '1000' });
+      response.write('partial');
+      setImmediate(() => response.socket?.destroy());
+    });
+    await new Promise<void>((resolve) => { upstream.listen(0, '127.0.0.1', () => resolve()); });
+    upstreamPort = (upstream.address() as AddressInfo).port;
+
+    logs = captureLogs();
+    app = await buildTestApp({
+      logger: logs.logger,
+      registerExtraRoutes: (fastifyApp) => {
+        // Client still connected; the abort belongs to the upstream, not to the request.
+        fastifyApp.get('/__test/trimmed-upstream', async () => readTrimmedUpstream(upstreamPort));
+        // The exact message, but no `ECONNRESET` code: not the body abort.
+        fastifyApp.get('/__test/aborted-without-code', async () => { throw new Error('aborted'); });
+        fastifyApp.get('/__test/aborted-without-code-after-leave', async () => {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          throw new Error('aborted');
+        });
+      }
+    });
+    openApps.push(app);
+    const address = await app.app.listen({ port: 0, host: '127.0.0.1' });
+    port = Number(new URL(address).port);
+  });
+
+  afterAll(async () => {
+    await Promise.all(openApps.splice(0).map((opened) => opened.close()));
+    await new Promise<void>((resolve) => { upstream.close(() => resolve()); });
+  });
+
+  beforeEach(() => {
+    mockedCaptureUnexpectedError.mockClear();
+  });
+
+  const abandonGet = async (path: string): Promise<void> => {
+    await new Promise<void>((resolve) => {
+      const socket = connect({ host: '127.0.0.1', port }, () => {
+        socket.write(`GET ${path} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n\r\n`);
+        setTimeout(() => {
+          socket.destroy();
+          resolve();
+        }, 50);
+      });
+      socket.on('error', () => resolve());
+    });
+  };
+
+  const logsAfterHandling = async (offset: number): Promise<string> => {
+    await waitUntil(() => {
+      const text = logs.lines().slice(offset).join('\n');
+      return mockedCaptureUnexpectedError.mock.calls.length > 0 || text.includes('"code":"REQUEST_ABORTED"');
+    });
+    await flushLogs();
+    return logs.lines().slice(offset).join('\n');
+  };
+
+  it('answers 500 and reaches Sentry when an upstream response is cut with the client connected', async () => {
+    const offset = logs.lines().length;
+    const response = await app.app.inject({ method: 'GET', url: '/__test/trimmed-upstream' });
+    await flushLogs();
+
+    expect(response.statusCode).toBe(500);
+    expect(ApiErrorResponseSchema.parse(response.json()).error.code).toBe('INTERNAL_ERROR');
+    expect(mockedCaptureUnexpectedError).toHaveBeenCalledTimes(1);
+    expect(logs.lines().slice(offset).join('\n')).toContain('"level":50');
+    expect(logs.lines().slice(offset).join('\n')).not.toContain('"code":"REQUEST_ABORTED"');
+  });
+
+  it('answers 500 for an Error("aborted") that carries no ECONNRESET code', async () => {
+    const offset = logs.lines().length;
+    const response = await app.app.inject({ method: 'GET', url: '/__test/aborted-without-code' });
+    await flushLogs();
+
+    expect(response.statusCode).toBe(500);
+    expect(ApiErrorResponseSchema.parse(response.json()).error.code).toBe('INTERNAL_ERROR');
+    expect(mockedCaptureUnexpectedError).toHaveBeenCalledTimes(1);
+    expect(logs.lines().slice(offset).join('\n')).toContain('"level":50');
+  });
+
+  it('answers 500 for an Error("aborted") without a code after the client left', async () => {
+    const offset = logs.lines().length;
+    await abandonGet('/__test/aborted-without-code-after-leave');
+    const requestLogs = await logsAfterHandling(offset);
+
+    expect(mockedCaptureUnexpectedError).toHaveBeenCalledTimes(1);
+    expect(requestLogs).toContain('"code":"INTERNAL_ERROR"');
+    expect(requestLogs).not.toContain('"code":"REQUEST_ABORTED"');
   });
 });

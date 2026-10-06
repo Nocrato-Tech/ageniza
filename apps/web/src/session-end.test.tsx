@@ -89,7 +89,7 @@ describe('401 as the end of the session', () => {
     expect(screen.getByRole('heading', { name: 'Entrar' })).toBeTruthy();
     expect(screen.queryByText('Old Client')).toBeNull();
     expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
-    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false });
+    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: false, user: null });
   });
 
   it('brings the person back to exactly the route they were on once authenticated again', async () => {
@@ -164,7 +164,7 @@ describe('401 as the end of the session', () => {
 
     await act(async () => { late[1]?.(unauthenticated()); await second; });
     expect(currentLocation).toBe('/app/clientes');
-    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: true });
+    expect(store.getSnapshot()).toEqual({ status: 'ready', isAuthenticated: true, user: { id: '11111111-1111-4111-8111-111111111111', name: 'Person', email: 'person@example.com' } });
     expect(screen.getByText('Current client')).toBeTruthy();
   });
 

@@ -106,6 +106,8 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     renderAgency(impl, `/agencia/${AGENCY_A}`);
 
     await screen.findByRole('link', { name: 'Agência Um' });
+    expect(screen.getByText('Contexto ativo')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Pessoa/ })).toBeTruthy();
     const nav = screen.getByRole('navigation', { name: 'Navegação da agência' });
     expect(within(nav).getByRole('link', { name: 'Início' })).toBeTruthy();
     expect(within(nav).getByRole('link', { name: 'Colaboradores' })).toBeTruthy();
@@ -136,6 +138,16 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
     expect(calls).toContain(`me:${AGENCY_B}`);
     expect(screen.queryByRole('heading', { name: 'Workspace unavailable' })).toBeNull();
+    // The shell keeps the account menu: this is an authenticated screen with no other way out.
+    expect(await screen.findByRole('button', { name: /Pessoa/ })).toBeTruthy();
+  });
+
+  it('keeps the account menu when the agency cannot be opened', async () => {
+    const { impl } = makeFetch({ me: { [AGENCY_A]: () => json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500) } });
+    renderAgency(impl, `/agencia/${AGENCY_A}`);
+
+    expect(await screen.findByRole('heading', { name: 'Não foi possível abrir a agência' }, { timeout: 5000 })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /Pessoa/ })).toBeTruthy();
   });
 
   it('turns the next navigation into not-found when the agency is suspended mid-use', async () => {
@@ -161,11 +173,14 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
     expect(document.title).toBe('Page not found — Ageniza');
     expect(traversal.calls).toEqual([]);
+    // A bad address still shows the authenticated shell, so the person can leave.
+    expect(await screen.findByRole('button', { name: /Pessoa/ })).toBeTruthy();
 
     cleanup();
     const malformed = makeFetch();
     renderAgency(malformed.impl, '/agencia/nao-e-uuid');
     expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /Pessoa/ })).toBeTruthy();
     // The fake would answer 400, like the API; no call proves the shell never asks.
     expect(malformed.calls).toEqual([]);
   });
@@ -192,6 +207,8 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     // "não encontrado" for an agency that is loading. A shared cache key or `placeholderData: prev`
     // brings A back here, and the mismatch check alone would turn that into a premature not-found.
     expect(container.querySelector('.agency-header__skeleton')).not.toBeNull();
+    // The loading shell keeps the account menu too, so a slow or failing load never traps the person.
+    expect(within(container).getByRole('button', { name: /Pessoa/ })).toBeTruthy();
     expect(within(container).queryByRole('link', { name: 'Agência Um' })).toBeNull();
     expect(within(container).queryByRole('link', { name: 'Colaboradores' })).toBeNull();
     expect(within(container).queryByRole('heading', { name: 'Colaboradores' })).toBeNull();
@@ -252,5 +269,90 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     expect(within(tabA.container).queryByRole('link', { name: 'Agência Um' })).toBeNull();
     expect(within(tabA.container).queryByRole('link', { name: 'Colaboradores' })).toBeNull();
     expect(within(tabA.container).getByRole('link', { name: 'Clientes' })).toBeTruthy();
+  });
+});
+
+// Issue #193, from the re-review of #190: the corrections in `agency.tsx` and `routes.tsx` had no
+// test, so `role="alert"` back on the `<main>` and a `<main>` nested inside the shell both passed.
+// Every state of the shell must expose exactly one main landmark, never nested, and never with the
+// alert role (which would announce the whole page to a screen reader).
+describe('agency shell landmarks (#193)', () => {
+  const expectSingleMain = (container: HTMLElement): void => {
+    expect(container.querySelectorAll('main')).toHaveLength(1);
+    expect(container.querySelectorAll('main main')).toHaveLength(0);
+    expect(Array.from(container.querySelectorAll('main')).some((main) => main.getAttribute('role') === 'alert')).toBe(false);
+  };
+
+  it('exposes exactly one main in the loaded shell', async () => {
+    const { impl } = makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_A, 'Agência Um', ['colaborador.visualizar', 'cliente.visualizar'])) } });
+    const { container } = renderAgency(impl, `/agencia/${AGENCY_A}`);
+
+    await screen.findByRole('link', { name: 'Agência Um' });
+    expectSingleMain(container);
+  });
+
+  it('keeps one main when a module is not permitted (not-found inside the shell)', async () => {
+    const { impl } = makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_A, 'Agência Um', ['cliente.visualizar'])) } });
+    const { probe, container } = renderAgency(impl, `/agencia/${AGENCY_A}`);
+    await screen.findByRole('link', { name: 'Agência Um' });
+
+    await navigate(probe, `/agencia/${AGENCY_A}/colaboradores`);
+    await screen.findByRole('heading', { name: 'Page not found' });
+    expectSingleMain(container);
+  });
+
+  it('keeps one main for an unknown path inside the area (route `*`)', async () => {
+    const { impl } = makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_A, 'Agência Um', ['colaborador.visualizar'])) } });
+    const { probe, container } = renderAgency(impl, `/agencia/${AGENCY_A}`);
+    await screen.findByRole('link', { name: 'Agência Um' });
+
+    await navigate(probe, `/agencia/${AGENCY_A}/caminho-inexistente`);
+    await screen.findByRole('heading', { name: 'Page not found' });
+    expectSingleMain(container);
+  });
+
+  it('keeps one main for an agency out of reach', async () => {
+    const { impl } = makeFetch();
+    const { container } = renderAgency(impl, `/agencia/${AGENCY_B}`);
+
+    await screen.findByRole('heading', { name: 'Page not found' });
+    expectSingleMain(container);
+  });
+
+  it('keeps one main for a malformed id, without any request', async () => {
+    const { impl, calls } = makeFetch();
+    const { container } = renderAgency(impl, '/agencia/nao-e-uuid');
+
+    await screen.findByRole('heading', { name: 'Page not found' });
+    expectSingleMain(container);
+    expect(calls).toEqual([]);
+  });
+
+  it('keeps one main when the answer belongs to another agency', async () => {
+    const { impl } = makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_B, 'Agência Dois', ['cliente.visualizar'])) } });
+    const { container } = renderAgency(impl, `/agencia/${AGENCY_A}`);
+
+    await screen.findByRole('heading', { name: 'Page not found' });
+    expectSingleMain(container);
+  });
+
+  it('keeps the alert role off the main when the agency cannot be opened', async () => {
+    const { impl } = makeFetch({ me: { [AGENCY_A]: () => json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500) } });
+    const { container } = renderAgency(impl, `/agencia/${AGENCY_A}`);
+
+    // A 500 is retried once before the error screen replaces the skeleton.
+    await screen.findByRole('heading', { name: 'Não foi possível abrir a agência' }, { timeout: 5000 });
+    expectSingleMain(container);
+    // The alert lives on an inner element, so the landmark itself is not announced as the alert.
+    expect(container.querySelector('main [role="alert"]')).not.toBeNull();
+  });
+
+  it('keeps one main for an unknown top-level address with a session', async () => {
+    const { impl } = makeFetch();
+    const { container } = renderAgency(impl, '/rota-inexistente');
+
+    await screen.findByRole('heading', { name: 'Page not found' });
+    await waitFor(() => expect(container.querySelectorAll('main')).toHaveLength(1));
+    expectSingleMain(container);
   });
 });

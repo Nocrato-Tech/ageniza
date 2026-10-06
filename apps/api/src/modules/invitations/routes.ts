@@ -8,6 +8,7 @@ import {
   CollaboratorInvitationRequestSchema,
   InvitationAcceptNewAccountRequestSchema,
   InvitationAcceptNewAccountResponseSchema,
+  InvitationAcceptRequestSchema,
   InvitationAcceptResponseSchema,
   InvitationCreatedResponseSchema,
   InvitationPreviewResponseSchema,
@@ -613,7 +614,7 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
   const acceptDocs = {
     permission: null,
     responseStatus: 200,
-    schemas: { params: PublicInvitationTokenPathParamsSchema, response: InvitationAcceptResponseSchema }
+    schemas: { params: PublicInvitationTokenPathParamsSchema, body: InvitationAcceptRequestSchema, response: InvitationAcceptResponseSchema }
   } satisfies DocumentedRouteConfig;
 
   app.get('/agencies/:agencyId/invitations', authenticated(listDocs), async (request) => {
@@ -764,6 +765,9 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     preHandler: requireSession
   }, async (request, reply) => {
     const { token } = routeParams(acceptDocs.schemas.params, request);
+    // The contract is a body-less request: validate it so an unexpected body is a 400 instead of
+    // being silently ignored.
+    parseRequest(acceptDocs.schemas.body, request.body);
     if (request.auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
     const invitation = await lookupOrInvalid(lookup, token);
     if (invitation.email !== request.auth.user.email) throw accountMismatch();
