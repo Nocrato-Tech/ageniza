@@ -262,8 +262,8 @@ describe('invitation state only moves forward (#290)', () => {
     const rollback = new Error('rollback');
     await expect(getOwner().transaction(async (transaction) => {
       await raw(transaction, 'grant update (used_at) on public.invitations to ageniza_app', []);
+      await raw(transaction, 'select app_private.bind_actor(?::uuid)', [convidarUser]);
       await raw(transaction, 'set local role ageniza_app', []);
-      await raw(transaction, "select set_config('app.user_id', ?, true)", [convidarUser]);
       let refused: unknown;
       for (const next of [null, new Date()]) {
         try {
