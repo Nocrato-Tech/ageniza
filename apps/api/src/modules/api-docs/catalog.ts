@@ -956,9 +956,9 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Edita o cadastro do cliente',
     description: [
       'Aceita qualquer subconjunto dos campos de cadastro, mas exige ao menos um: corpo vazio é 400.',
-      '`null` limpa um campo e texto em branco vira `null`; nome e contatos seguem a mesma regra do',
-      'nome de exibição. Cliente arquivado responde 409 e nada muda; nome em uso entre os ativos',
-      'responde 409 pelo índice único.'
+      '`null` limpa um campo e texto em branco vira `null`; nome, razão social e contatos seguem a',
+      'mesma regra do nome de exibição. Cliente arquivado responde 409 e nada muda; nome em uso entre',
+      'os ativos responde 409 pelo índice único.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.operar',
