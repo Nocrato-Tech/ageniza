@@ -1,11 +1,12 @@
-# Módulo `clients` (issue #124)
+# Módulo `clients` (issues #124 e #125)
 
-Cadastrar, ler e editar o cliente da agência. As três rotas básicas do módulo, sob
+Cadastrar, ler, editar e listar os clientes da agência. As rotas do módulo ficam sob
 `requireSession` e `requireAgencyAccess`, com a permissão nomeada que a policy de RLS da tabela
 também exige:
 
 | método | rota | permissão |
 |---|---|---|
+| `GET` | `/agencies/:agencyId/clients` | `cliente.visualizar` |
 | `POST` | `/agencies/:agencyId/clients` | `cliente.cadastrar` |
 | `GET` | `/agencies/:agencyId/clients/:clientId` | `cliente.visualizar` |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId` | `cliente.operar` |
@@ -37,7 +38,26 @@ rotas de conversa devem importar, para a contagem não divergir entre telas.
 `photoUrl` é uma URL assinada do armazenamento de identidade, ou `null`. Chave ausente ou
 irrecusável vira `null` com `log.warn`, sem derrubar a resposta -- nunca uma chave crua.
 
+## Carteira (#125)
+
+`GET /agencies/:agencyId/clients` devolve `{ data, meta }` com o contrato de paginação global
+(`packages/contracts/src/pagination.ts`): 20 por página por padrão, teto de 100 que **limita** sem
+recusar, e `page` gigante que vira 400 em vez de 500. A query é estrita: parâmetro que a SPEC não
+declara é 400.
+
+- **Ordem.** `sort=attention` (padrão): cliente com ao menos uma thread aguardando a agência vem
+  primeiro, depois nome ascendente (sem diferenciar maiúsculas nem acento), com `id` como desempate
+  para a paginação ser estável. `sort=name:asc` é só o nome.
+- **Busca.** `search` casa com nome, razão social e `instagram_handle`, sem diferenciar maiúsculas
+  nem acento, e escapa `%` e `_` para a busca ser literal. O banco não tem `unaccent`; o `translate`
+  em `service.ts` faz o folding dos dois lados, coluna e termo, pela mesma expressão.
+- **`threadsAwaitingAgency`** sai da definição única de `thread-state.ts`, numa subconsulta por
+  cliente que o índice `client_thread_comments (thread_id, created_at)` da #122 atende.
+- **`pendingInvitations`** conta só convite de portal pendente (`client_invite`, não usado, não
+  revogado, não expirado) e **só é computado** para quem tem `cliente.convidar_usuario`; para os
+  demais o campo é **omitido**, nunca zero.
+
 ## O que ficou de fora
 
-- Listagem (`#125`), foto (`#126`), arquivar/reativar e encerramento (`#131`).
+- Foto (`#126`), arquivar/reativar e encerramento (`#131`).
 - O restante do módulo (estudo de marca, personas, conversas, acessos) e o portal do cliente.
