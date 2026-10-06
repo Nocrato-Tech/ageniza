@@ -1,11 +1,12 @@
-# Módulo `clients` (issues #124, #126 e #127)
+# Módulo `clients` (issues #124, #125, #126 e #127)
 
-Cadastrar, ler e editar o cliente da agência, mais o estudo de marca e as personas. Todas as
-rotas sob `requireSession` e `requireAgencyAccess`, com a permissão nomeada que a policy de RLS
-da tabela também exige:
+Cadastrar, ler, editar e listar os clientes da agência, mais o estudo de marca e as personas.
+Todas as rotas sob `requireSession` e `requireAgencyAccess`, com a permissão nomeada que a policy
+de RLS da tabela também exige:
 
 | método | rota | permissão |
 |---|---|---|
+| `GET` | `/agencies/:agencyId/clients` | `cliente.visualizar` |
 | `POST` | `/agencies/:agencyId/clients` | `cliente.cadastrar` |
 | `GET` | `/agencies/:agencyId/clients/:clientId` | `cliente.visualizar` |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId` | `cliente.operar` |
@@ -44,6 +45,30 @@ rotas de conversa devem importar, para a contagem não divergir entre telas.
 
 `photoUrl` é uma URL assinada do armazenamento de identidade, ou `null`. Chave ausente ou
 irrecusável vira `null` com `log.warn`, sem derrubar a resposta -- nunca uma chave crua.
+
+## Carteira (#125)
+
+`GET /agencies/:agencyId/clients` devolve `{ data, meta }` com o contrato de paginação global
+(`packages/contracts/src/pagination.ts`): 20 por página por padrão, teto de 100 que **limita** sem
+recusar, e `page` gigante que vira 400 em vez de 500. A query é estrita: parâmetro que a SPEC não
+declara é 400.
+
+- **Ordem.** `sort=attention` (padrão): cliente com ao menos uma thread aguardando a agência vem
+  primeiro, depois nome ascendente (sem diferenciar maiúsculas nem acento), com `id` como desempate
+  para a paginação ser estável. `sort=name:asc` é só o nome.
+- **Busca.** `search` casa com nome, razão social e `instagram_handle`, sem diferenciar maiúsculas
+  nem acento: `normalize(..., NFD)` decompõe, um `regexp_replace` tira as marcas U+0300–U+036F e o
+  `lower()` final é ASCII, então a dobra cobre maiúsculas e entrada NFD e não depende do locale do
+  banco. `%` e `_` são escapados para a busca ser literal, e um `@` inicial, que a caixa de busca
+  sugere, é descartado na comparação com o handle, que é gravado sem ele. O banco não tem
+  `unaccent`; a expressão em `service.ts` é a mesma dos dois lados, coluna e termo.
+- **`threadsAwaitingAgency`** sai da definição única de `thread-state.ts`, numa subconsulta por
+  cliente que o índice `client_thread_comments (thread_id, created_at)` da #122 atende.
+- **`pendingInvitations`** conta só convite de portal pendente (`client_invite`, não usado, não
+  revogado, não expirado) numa CTE materializada, agrupada por `client_id` e filtrada pela agência:
+  a contagem acontece **uma vez por página**, não uma subconsulta correlacionada por cliente, e o
+  custo não cresce com os convites das outras agências. **Só é computada** para quem tem
+  `cliente.convidar_usuario`; para os demais o campo é **omitido**, nunca zero.
 
 ## Foto (issue #126)
 
@@ -95,7 +120,7 @@ inglês no contrato e é gravado com o rótulo em português, como o banco exige
 
 ## O que ficou de fora
 
-- Listagem (`#125`), arquivar/reativar e encerramento (`#131`).
-- A foto na listagem e no portal (`#125`, `#129`): as rotas ainda não existem; ao nascerem devem assinar
-  `photo_key` do mesmo jeito que o detalhe.
+- Arquivar/reativar e encerramento (`#131`).
+- A foto no portal (`#129`): a rota ainda não existe; ao nascer, deve assinar `photo_key` do mesmo
+  jeito que o detalhe e a listagem.
 - Conversas em thread, acessos ao portal e o portal do cliente.

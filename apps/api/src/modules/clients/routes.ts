@@ -9,6 +9,8 @@ import {
   BrandStudySectionSchema,
   BrandStudySectionUpdateRequestSchema,
   ClientDetailResponseSchema,
+  ClientListQuerySchema,
+  ClientListResponseSchema,
   ClientSchema,
   CreateClientRequestSchema,
   CreatePersonaRequestSchema,
@@ -17,7 +19,10 @@ import {
   UpdatePersonaRequestSchema,
   UploadClientPhotoRequestSchema,
   UploadClientPhotoResponseSchema,
+  buildPaginationMetadata,
+  resolvePagination,
   type BrandStudySectionUpdate,
+  type ClientListItem,
   type WritableBrandSectionKey
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
@@ -34,7 +39,7 @@ import {
   type UploadedIdentityImage
 } from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { routeBody, routeResponse } from '../../plugins/infra/zod.js';
+import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { CLIENT_PHOTO_RATE_LIMIT, clientPhotoBodyLimitBytes } from './policy.js';
 import {
   brandSectionFromRow,
@@ -44,6 +49,7 @@ import {
   createPersona,
   isActiveClientNameConflict,
   isRowLevelSecurityViolation,
+  listClients,
   loadBrandSection,
   loadBrandSections,
   loadClient,
@@ -77,6 +83,10 @@ export interface ClientModuleDependencies {
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// specs/clientes.md §6: 20 per page. The route declares only the default; `resolvePagination`
+// owns the global ceiling (100) and the offset.
+const CLIENT_DEFAULT_PAGE_SIZE = 20;
 
 const unauthenticated = (): HttpError => new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
 
@@ -182,6 +192,11 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
 
   // Declared once per route: the same object is the documentation metadata and the source of the
   // schemas the handler validates with, so a handler cannot drift from what is documented.
+  const listDocs = {
+    permission: 'cliente.visualizar',
+    responseStatus: 200,
+    schemas: { params: AgencyPathParamsSchema, query: ClientListQuerySchema, response: ClientListResponseSchema }
+  } satisfies DocumentedRouteConfig;
   const createDocs = {
     permission: 'cliente.cadastrar',
     responseStatus: 201,
@@ -207,6 +222,41 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     responseStatus: 200,
     schemas: { params: AgencyClientPathParamsSchema, body: UpdateClientRequestSchema, response: ClientSchema }
   } satisfies DocumentedRouteConfig;
+
+  app.get('/agencies/:agencyId/clients', authenticated(listDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = request.tenant;
+    if (tenant === undefined) throw clientNotFound();
+    const query = routeQuery(listDocs, request);
+    const pagination = resolvePagination(query, CLIENT_DEFAULT_PAGE_SIZE);
+
+    const page = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
+      listClients(transaction, tenant.agencyId, {
+        status: query.status ?? 'active',
+        search: query.search,
+        sort: query.sort ?? 'attention',
+        includePendingInvitations: tenant.isOwner || tenant.permissions.has('cliente.convidar_usuario')
+      }, pagination));
+
+    const data = await Promise.all(page.items.map(async (row): Promise<ClientListItem> => {
+      const item: ClientListItem = {
+        id: row.id,
+        name: row.name,
+        photoUrl: await signPhotoUrl(request, row.photo_key),
+        instagramHandle: row.instagram_handle,
+        status: row.status,
+        closingDate: row.closing_date,
+        threadsAwaitingAgency: Number(row.threads_awaiting_agency)
+      };
+      // Omitted, not zeroed, for a caller without `cliente.convidar_usuario` (issue #125).
+      return row.pending_invitations === null ? item : { ...item, pendingInvitations: Number(row.pending_invitations) };
+    }));
+
+    return reply.send(routeResponse(listDocs, request, {
+      data,
+      meta: buildPaginationMetadata(pagination, page.totalItems)
+    }));
+  });
 
   app.post('/agencies/:agencyId/clients', authenticated(createDocs), async (request, reply) => {
     const auth = requireAuth(request);
@@ -437,115 +487,116 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
   app.post('/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive', authenticated(personaStatusDocs), personaStatusHandler('active'));
 
   const identityStorage = dependencies.identityStorage;
-  if (identityStorage === undefined) return;
-  const maxImageBytes = dependencies.photoMaxImageBytes;
-  if (maxImageBytes === undefined) throw new Error('photoMaxImageBytes is required when identity storage is configured.');
+  if (identityStorage !== undefined) {
+    const maxImageBytes = dependencies.photoMaxImageBytes;
+    if (maxImageBytes === undefined) throw new Error('photoMaxImageBytes is required when identity storage is configured.');
 
-  /** Why a photo write found no active client to lock: the one 404 for absent/other-agency, or the archived 409. */
-  const photoTargetRefused = async (transaction: ClientTransaction, agencyId: string, clientId: string): Promise<HttpError> =>
-    await loadClient(transaction, { agencyId, clientId }) === undefined ? clientNotFound() : clientArchived();
+    /** Why a photo write found no active client to lock: the one 404 for absent/other-agency, or the archived 409. */
+    const photoTargetRefused = async (transaction: ClientTransaction, agencyId: string, clientId: string): Promise<HttpError> =>
+      await loadClient(transaction, { agencyId, clientId }) === undefined ? clientNotFound() : clientArchived();
 
-  // An object is only ever deleted when its key still lies inside this client's own directory: the
-  // reference is data in a table, and a key naming someone else's object must not become a delete
-  // primitive.
-  const deleteOwnObject = async (
-    request: FastifyRequest,
-    key: string | null,
-    scope: { readonly agencyId: string; readonly clientId: string },
-    code: string
-  ): Promise<void> => {
-    if (key === null) return;
-    if (!isClientAvatarKey(key, scope.agencyId, scope.clientId)) {
-      request.log.warn({ error: { name: 'ForeignPhotoKey', code } }, 'Refused to delete a client photo key outside the client directory');
-      return;
-    }
-    await identityStorage.deleteObject({ key }).catch((cleanupError: unknown) => {
-      request.log.warn({
-        error: { name: cleanupError instanceof Error ? cleanupError.name : 'UnknownError', code }
-      }, 'Failed to remove a client photo object that is no longer referenced');
-    });
-  };
-
-  // Keyed by the session user, not the IP: identity storage has no quota, so the ceiling follows
-  // the account. `hook: 'preHandler'` runs after the guards, so `request.auth` is populated.
-  const photoRateLimit = {
-    rateLimit: {
-      max: CLIENT_PHOTO_RATE_LIMIT.max,
-      timeWindow: CLIENT_PHOTO_RATE_LIMIT.windowMs,
-      hook: 'preHandler' as const,
-      keyGenerator: (request: FastifyRequest) => request.auth?.userId ?? request.ip
-    }
-  };
-
-  const photoRoute = authenticated(photoDocs);
-  app.put('/agencies/:agencyId/clients/:clientId/photo', {
-    ...photoRoute,
-    // Own limit, sized for base64/JSON overhead; the global body limit is not raised for this route.
-    bodyLimit: clientPhotoBodyLimitBytes(maxImageBytes),
-    config: { ...photoRoute.config, ...photoRateLimit }
-  }, async (request, reply) => {
-    const auth = requireAuth(request);
-    const tenant = requireTenant(request);
-    const clientId = clientIdFromRoute(request);
-    const body = routeBody(photoDocs, request);
-    const scope = { agencyId: tenant.agencyId, clientId };
-
-    // Refuse an absent or archived client before anything is written to the bucket.
-    const target = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) => loadClient(transaction, scope));
-    if (target === undefined) throw clientNotFound();
-    if (target.status === 'archived') throw clientArchived();
-
-    let uploaded: UploadedIdentityImage;
-    try {
-      uploaded = await identityStorage.uploadIdentityImage({
-        keyPrefix: buildClientAvatarKeyPrefix(tenant.agencyId, clientId, randomUUID()),
-        body: Buffer.from(body.imageBase64, 'base64')
+    // An object is only ever deleted when its key still lies inside this client's own directory: the
+    // reference is data in a table, and a key naming someone else's object must not become a delete
+    // primitive.
+    const deleteOwnObject = async (
+      request: FastifyRequest,
+      key: string | null,
+      scope: { readonly agencyId: string; readonly clientId: string },
+      code: string
+    ): Promise<void> => {
+      if (key === null) return;
+      if (!isClientAvatarKey(key, scope.agencyId, scope.clientId)) {
+        request.log.warn({ error: { name: 'ForeignPhotoKey', code } }, 'Refused to delete a client photo key outside the client directory');
+        return;
+      }
+      await identityStorage.deleteObject({ key }).catch((cleanupError: unknown) => {
+        request.log.warn({
+          error: { name: cleanupError instanceof Error ? cleanupError.name : 'UnknownError', code }
+        }, 'Failed to remove a client photo object that is no longer referenced');
       });
-    } catch (error) {
-      if (error instanceof IdentityImageTooLargeError) throw imageTooLarge();
-      if (error instanceof IdentityImageTypeRejectedError) throw imageTypeRejected();
-      throw error;
-    }
+    };
 
-    // Commit the new key first, reading the previous one under the row lock (issue #100's protocol).
-    let outcome: { readonly previousKey: string | null } | { readonly refused: HttpError };
-    try {
-      outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+    // Keyed by the session user, not the IP: identity storage has no quota, so the ceiling follows
+    // the account. `hook: 'preHandler'` runs after the guards, so `request.auth` is populated.
+    const photoRateLimit = {
+      rateLimit: {
+        max: CLIENT_PHOTO_RATE_LIMIT.max,
+        timeWindow: CLIENT_PHOTO_RATE_LIMIT.windowMs,
+        hook: 'preHandler' as const,
+        keyGenerator: (request: FastifyRequest) => request.auth?.userId ?? request.ip
+      }
+    };
+
+    const photoRoute = authenticated(photoDocs);
+    app.put('/agencies/:agencyId/clients/:clientId/photo', {
+      ...photoRoute,
+      // Own limit, sized for base64/JSON overhead; the global body limit is not raised for this route.
+      bodyLimit: clientPhotoBodyLimitBytes(maxImageBytes),
+      config: { ...photoRoute.config, ...photoRateLimit }
+    }, async (request, reply) => {
+      const auth = requireAuth(request);
+      const tenant = requireTenant(request);
+      const clientId = clientIdFromRoute(request);
+      const body = routeBody(photoDocs, request);
+      const scope = { agencyId: tenant.agencyId, clientId };
+
+      // Refuse an absent or archived client before anything is written to the bucket.
+      const target = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) => loadClient(transaction, scope));
+      if (target === undefined) throw clientNotFound();
+      if (target.status === 'archived') throw clientArchived();
+
+      let uploaded: UploadedIdentityImage;
+      try {
+        uploaded = await identityStorage.uploadIdentityImage({
+          keyPrefix: buildClientAvatarKeyPrefix(tenant.agencyId, clientId, randomUUID()),
+          body: Buffer.from(body.imageBase64, 'base64')
+        });
+      } catch (error) {
+        if (error instanceof IdentityImageTooLargeError) throw imageTooLarge();
+        if (error instanceof IdentityImageTypeRejectedError) throw imageTypeRejected();
+        throw error;
+      }
+
+      // Commit the new key first, reading the previous one under the row lock (issue #100's protocol).
+      let outcome: { readonly previousKey: string | null } | { readonly refused: HttpError };
+      try {
+        outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+          const locked = await lockActiveClientPhoto(transaction, scope);
+          if (locked === undefined) return { refused: await photoTargetRefused(transaction, tenant.agencyId, clientId) };
+          await setClientPhotoKey(transaction, { ...scope, actorUserId: auth.userId, photoKey: uploaded.key });
+          return { previousKey: locked.photoKey };
+        });
+      } catch (error) {
+        await deleteOwnObject(request, uploaded.key, scope, 'CLIENT_PHOTO_CLEANUP_FAILED');
+        throw error;
+      }
+      if ('refused' in outcome) {
+        // The client was archived (or vanished) between the pre-check and the commit.
+        await deleteOwnObject(request, uploaded.key, scope, 'CLIENT_PHOTO_CLEANUP_FAILED');
+        throw outcome.refused;
+      }
+
+      await deleteOwnObject(request, outcome.previousKey, scope, 'CLIENT_PHOTO_PREVIOUS_CLEANUP_FAILED');
+      const photoUrl = await identityStorage.presignGetObject({ key: uploaded.key, expiresInSeconds: dependencies.photoUrlExpirySeconds });
+      return reply.send(routeResponse(photoDocs, request, { photoUrl }));
+    });
+
+    app.delete('/agencies/:agencyId/clients/:clientId/photo', authenticated(photoDeleteDocs), async (request, reply) => {
+      const auth = requireAuth(request);
+      const tenant = requireTenant(request);
+      const clientId = clientIdFromRoute(request);
+      const scope = { agencyId: tenant.agencyId, clientId };
+
+      const outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
         const locked = await lockActiveClientPhoto(transaction, scope);
-        if (locked === undefined) return { refused: await photoTargetRefused(transaction, tenant.agencyId, clientId) };
-        await setClientPhotoKey(transaction, { ...scope, actorUserId: auth.userId, photoKey: uploaded.key });
+        if (locked === undefined) throw await photoTargetRefused(transaction, tenant.agencyId, clientId);
+        if (locked.photoKey !== null) await setClientPhotoKey(transaction, { ...scope, actorUserId: auth.userId, photoKey: null });
         return { previousKey: locked.photoKey };
       });
-    } catch (error) {
-      await deleteOwnObject(request, uploaded.key, scope, 'CLIENT_PHOTO_CLEANUP_FAILED');
-      throw error;
-    }
-    if ('refused' in outcome) {
-      // The client was archived (or vanished) between the pre-check and the commit.
-      await deleteOwnObject(request, uploaded.key, scope, 'CLIENT_PHOTO_CLEANUP_FAILED');
-      throw outcome.refused;
-    }
 
-    await deleteOwnObject(request, outcome.previousKey, scope, 'CLIENT_PHOTO_PREVIOUS_CLEANUP_FAILED');
-    const photoUrl = await identityStorage.presignGetObject({ key: uploaded.key, expiresInSeconds: dependencies.photoUrlExpirySeconds });
-    return reply.send(routeResponse(photoDocs, request, { photoUrl }));
-  });
-
-  app.delete('/agencies/:agencyId/clients/:clientId/photo', authenticated(photoDeleteDocs), async (request, reply) => {
-    const auth = requireAuth(request);
-    const tenant = requireTenant(request);
-    const clientId = clientIdFromRoute(request);
-    const scope = { agencyId: tenant.agencyId, clientId };
-
-    const outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
-      const locked = await lockActiveClientPhoto(transaction, scope);
-      if (locked === undefined) throw await photoTargetRefused(transaction, tenant.agencyId, clientId);
-      if (locked.photoKey !== null) await setClientPhotoKey(transaction, { ...scope, actorUserId: auth.userId, photoKey: null });
-      return { previousKey: locked.photoKey };
+      await deleteOwnObject(request, outcome.previousKey, scope, 'CLIENT_PHOTO_PREVIOUS_CLEANUP_FAILED');
+      return reply.status(204).send();
     });
-
-    await deleteOwnObject(request, outcome.previousKey, scope, 'CLIENT_PHOTO_PREVIOUS_CLEANUP_FAILED');
-    return reply.status(204).send();
-  });
+  }
 
 };
