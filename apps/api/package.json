@@ -28,6 +28,7 @@
     "@fastify/rate-limit": "^10.3.0",
     "better-auth": "1.7.5",
     "fastify": "^5.2.1",
+    "helmet": "^8.3.0",
     "kysely": "0.29.6",
     "pg": "8.16.3",
     "pg-boss": "12.30.0",
