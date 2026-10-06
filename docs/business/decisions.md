@@ -1157,3 +1157,15 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 **Consequência.** O filtro de cargo da grade tem fonte própria, sem alterar o formato de resposta que outras rotas já usam. Rota aditiva: nenhuma migration, nenhuma policy nova, nenhum campo novo em contrato existente. Como é um caminho novo de leitura da agência, entra com a mesma barreira de escopo da listagem (a RLS mostra as agências do chamador, nunca uma só; o filtro de agência da consulta é a barreira que separa).
 
 **Origem.** Issue #218, decidida pelo maestro a partir da lacuna achada na #102. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-06 — Teto e trim do texto das seções do estudo de marca
+
+**Contexto.** A #127 implementa as rotas do estudo de marca. A SPEC (`specs/clientes.md`, seção 3) define as seções como "texto livre" e **não** fixa limite nem regra de vazio para `client_brand_sections.body`. A coluna existe desde a #122 com `octet_length(body) <= 20000`, e o preenchimento (`filled`) já ignora texto só com espaços (`btrim`). Sem validação na rota, um texto multibyte acima do teto da coluna viraria 500, e só espaços gravaria uma linha que nenhuma leitura conta como conteúdo.
+
+**Decisão.** O texto das seções é aparado (trim), recusado quando fica vazio (só espaços, inclusive NBSP) e limitado a **20.000 bytes UTF-8** — o mesmo `octet_length` da coluna. O limite é medido em bytes, não em caracteres, porque é assim que o banco mede. O `PUT` devolve o texto já aparado.
+
+**Consequência.** O teto acompanha a coluna por construção: mudar um exige mudar o outro. Se o dono do produto quiser outro número, é mudança de uma constante (`BrandSectionTextSchema`, em `packages/contracts/src/clients.ts`) e do teste correspondente — sem migration nem mudança de formato.
+
+**Origem.** Issue #127. **Pendente de validação pelo dono do produto** — a SPEC não define teto nem regra de vazio para o texto das seções.
