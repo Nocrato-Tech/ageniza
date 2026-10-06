@@ -1100,6 +1100,18 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 
 ---
 
+## 2026-09-30 — A #123 implementa a estrutural de arquivar cliente e substitui `invitations_insert`
+
+**Contexto.** A decisão de 2026-09-26 ("ESTRUTURAL: arquivar cliente é uma função `security definer` de escopo único, usada pelo job e pela rota") deixou a implementação para a issue #123, e a de 2026-09-18 ("O processamento de vídeo não contorna o RLS") é a regra a que aquela abre exceção. A #123 também tem de substituir a policy `invitations_insert` que o PR #159 deixou, porque ela aceita convite de portal para cliente arquivado, contra a regra 6 da SPEC.
+
+**Decisão.** Nenhuma decisão nova: esta entrada registra a implementação da estrutural já decidida, na forma estreita que ela fixou — cada função faz uma coisa só, confere a agência e a permissão **dentro** da função quando há usuário (o job não tem usuário e só arquiva o que já venceu), com `search_path` fixo e todo objeto qualificado por schema. As cinco funções são `app_private.archive_client`, `archive_due_clients`, `reactivate_client`, `set_client_closing_date` e `set_client_membership_status`, e os erros estáveis (A0020..A0023) ficam documentados na migration para a API #131 traduzir.
+
+**Consequência.** `invitations_insert` passa a exigir `app_private.client_is_active(client_id)` para `purpose = 'client_invite'`, mantendo a regra de admin do convite de colaborador do #159. `clients.status`, `clients.archived_at`, `clients.closing_date` e `client_memberships.status` continuam fora do *grant* de `UPDATE` de `ageniza_app`: a única forma de mudá-los é por estas funções. Isso cumpre a regra 12 e a 13 da SPEC e é o modelo que a publicação agendada de Conteúdo deve copiar.
+
+**Origem.** Issue #123; migration `20261006000300_client_lifecycle_functions.mjs`.
+
+---
+
 ## 2026-09-30 — O ator de cada transação é gravado uma vez pelo banco, e não pelo GUC `app.user_id`
 
 **Contexto.** A entrada de 2026-09-29 ("O SQL do papel de runtime (ageniza_app) é confiável") aceitou provisoriamente que o `app.user_id` é forjável por `ageniza_app` e deixou o endurecimento real para a #166, que precisa entrar antes da #97. O ataque provado na re-revisão do PR #159: dentro de uma transação já autenticada como Gestor de conta, um `set_config('app.user_id', <Owner>, true)` no meio da instrução faz toda a autorização passar a responder como o Owner, e o Gestor concede `admin`. Qualquer caminho que injete um fragmento de SQL numa transação autenticada, por exemplo uma injeção de SQL numa rota futura, herda essa escalada no produto inteiro. Todas as funções `security definer` e todas as policies leem o ator por `app_private.current_user_id()`, que hoje só lê o GUC. **É mudança estrutural:** muda como a autorização é avaliada em todos os módulos.
@@ -1407,6 +1419,25 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 
 ---
 
+## 2026-10-06 — ESTRUTURAL: convite de portal e arquivamento do mesmo cliente se serializam por trava de linha
+
+**Contexto.** A re-revisão de segurança do PR #202 (#123) executou, com duas transações reais, o cenário em que um convite de portal sobrevive ao arquivamento do cliente. T1 arquiva e mantém o commit pendente; T2 insere o convite, a policy `invitations_insert` ainda enxerga o cliente `active` (a visão de T2 não inclui a escrita não confirmada de T1) e o `INSERT` espera pela chave estrangeira. Quando T1 confirma, o `INSERT` conclui: o cliente fica `archived` com um convite pendente, contra as regras 6 e 15 da SPEC de clientes. A policy não resolve sozinha: ela avalia o estado de uma visão que o commit concorrente já tornou velha, e `archive_client` não enxerga uma linha que ainda não existe.
+
+**Decisão.** Uma trigger `AFTER INSERT` por linha em `public.invitations`, para `purpose = 'client_invite'`, chama uma função `security definer` de escopo único que trava o cliente com `FOR SHARE` e relê `status` **depois** da espera. Se o cliente deixou de estar `active`, levanta `A0020` e a linha não existe. Duas escolhas fixam a forma:
+
+- A trava vem **depois** da autorização. A `WITH CHECK` da policy roda antes dos gatilhos `AFTER`, então quem não tem a permissão (ou aponta para cliente de outra agência) é recusado pela policy sem nunca esperar por trava de outro tenant; a mesma regra que a #202 já aplicou às cinco funções. Uma trigger `BEFORE` travaria antes da policy, e por isso foi descartada.
+- `FOR SHARE`, não `FOR KEY SHARE`: ela conflita com o `FOR UPDATE` de `archive_client` e `archive_due_clients` e também com qualquer escrita futura na linha do cliente, em vez de depender de qual função a toma. A trigger recebe nome que a ordena **antes** da trigger da chave estrangeira (`RI_ConstraintTrigger_*`, e as `AFTER` disparam em ordem de nome), para que a trava e a releitura sejam dela e não dependam da espera da chave estrangeira. A função é `security definer` porque a trava de linha exige passar também pelas policies de `UPDATE` de `clients`, que quem só convida não tem; invocada como `ageniza_app`, ela não travaria nada e recusaria convite legítimo.
+
+A ordem inversa já estava correta e fica coberta por teste: se o convite é inserido primeiro, o `FOR UPDATE` do arquivamento espera por ele e o `UPDATE` seguinte (visão nova, em `READ COMMITTED`) o revoga.
+
+**Consequência.** Nenhuma tabela é alterada: uma função e uma trigger novas, numa migration nova (`20261006000400_client_invitation_archive_serialization.mjs`), sem editar a que a #123 já introduziu. O arquivamento passa a convidar a corrida só por um caminho já arbitrado pelo banco, e toda escrita futura que "pendura" uma linha num cliente (conteúdo agendado, por exemplo) deve copiar este formato: a policy decide quem pode, a trava com releitura decide se ainda pode.
+
+**Alcance que não foi tocado.** As outras tabelas filhas do cliente citadas na regra 6 (seções, personas, threads, comentários) têm a mesma forma de risco (provado por execução para `client_personas`: uma persona inserida enquanto o arquivamento ainda não confirmou sobrevive, com o cliente `archived`; seções, threads e comentários não foram sondados) e **não** são alteradas aqui: pertencem a outras tasks do módulo, e mexer nelas dentro deste PR seria mudança em tabela de outro módulo. Fica registrado como débito para o maestro abrir.
+
+**Origem.** Re-revisão do PR #202, achado Alta de 2026-10-01. Issue #123.
+
+---
+
 ## 2026-10-06 — Quem lê a lista de papéis atribuíveis (`GET /agencies/:agencyId/roles`)
 
 **Contexto.** O convite de colaborador (#107), a troca de papel (#97) e a reativação (#98) recebem `roleId` (uuid), mas os papéis de sistema são semeados com `gen_random_uuid()` e nenhuma rota em develop devolvia papel com id. A SPEC de colaboradores (`specs/colaboradores.md` §7) já pressupõe a lista — "Admin só aparece na lista de papéis para o Owner" —, mas não diz **quem** pode ler a lista, nem o catálogo tem uma permissão própria para isso.
@@ -1416,6 +1447,8 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 **Consequência.** A lista expõe `{ id, key, name }` dos papéis de sistema e dos papéis da própria agência, na mesma ordem determinística por `key`. É a única rota que entrega ids de papel ao front, e desbloqueia a #107; a #97 e a #98 passam a ter a mesma fonte. O `x-permission` desta rota passa a admitir uma lista (ou) no OpenAPI, e a avaliação de autorização ganha a forma "alguma das permissões" apenas aqui — as guardas existentes não mudam.
 
 **Origem.** Issue #287, decidida pelo maestro a partir da lacuna achada na #107. **Pendente de validação** pelo dono do produto.
+
+---
 
 ## 2026-10-06 — ESTRUTURAL: o estado do convite só anda para frente, e quem garante é o banco
 
