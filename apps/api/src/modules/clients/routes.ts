@@ -19,7 +19,7 @@ import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { routeBody, routeResponse } from '../../plugins/infra/zod.js';
+import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import {
   clientFromRow,
   createClient,
@@ -135,7 +135,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     const auth = requireAuth(request);
     const tenant = request.tenant;
     if (tenant === undefined) throw clientNotFound();
-    const query = parseRequest(listDocs.schemas.query, request.query);
+    const query = routeQuery(listDocs, request);
     const pagination = resolvePagination(query, CLIENT_DEFAULT_PAGE_SIZE);
 
     const page = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
@@ -160,7 +160,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       return row.pending_invitations === null ? item : { ...item, pendingInvitations: Number(row.pending_invitations) };
     }));
 
-    return reply.send(parseResponse(listDocs.schemas.response, {
+    return reply.send(routeResponse(listDocs, request, {
       data,
       meta: buildPaginationMetadata(pagination, page.totalItems)
     }));
