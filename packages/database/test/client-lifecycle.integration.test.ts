@@ -611,7 +611,7 @@ describe('CLIENT lifecycle functions (#123)', () => {
     const archiveMayFinish = new Promise<void>((resolve) => { releaseArchive = resolve; });
 
     const archive = getApplication().transaction(async (transaction) => {
-      await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+      await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
       await raw(transaction, 'select app_private.archive_client(?)', [client]);
       archiveReachedLock();
       await archiveMayFinish;
@@ -619,7 +619,7 @@ describe('CLIENT lifecycle functions (#123)', () => {
     await lockAcquired;
 
     const reactivate = getApplication().transaction(async (transaction) => {
-      await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+      await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
       await raw(transaction, 'select app_private.reactivate_client(?)', [client]);
     });
 
@@ -656,10 +656,10 @@ describe('CLIENT lifecycle functions (#123)', () => {
     const lockMayFinish = new Promise<void>((resolve) => { releaseLock = resolve; });
 
     // A concurrent transaction holds the client row lock for the whole test.
-    // The concurrent transaction needs a user context too: without `app.user_id`, RLS hides the row
+    // The concurrent transaction needs a user context too: without a bound actor, RLS hides the row
     // and the FOR UPDATE would lock nothing.
     const locker = getApplication().transaction(async (transaction) => {
-      await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+      await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
       await raw(transaction, 'select id from public.clients where id = ?::uuid for update', [client]);
       reachedLock();
       await lockMayFinish;
@@ -671,7 +671,7 @@ describe('CLIENT lifecycle functions (#123)', () => {
       // answer A0020 without ever touching the locked row; a 250ms lock_timeout makes a lock-first
       // implementation fail as 55P03 instead.
       await expect(getApplication().transaction(async (transaction) => {
-        await raw(transaction, "select set_config('app.user_id', ?, true)", [adminB]);
+        await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminB]);
         await raw(transaction, "set local lock_timeout = '250ms'", []);
         await raw(transaction, 'select app_private.archive_client(?)', [client]);
       })).rejects.toMatchObject({ code: 'A0020' });
@@ -695,7 +695,7 @@ describe('CLIENT lifecycle functions (#123)', () => {
 
     // The first reactivation holds its uncommitted index entry while the second runs.
     const first = getApplication().transaction(async (transaction) => {
-      await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+      await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
       await raw(transaction, 'select app_private.reactivate_client(?)', [firstClient]);
       firstUpdated();
       await firstMayFinish;
@@ -703,7 +703,7 @@ describe('CLIENT lifecycle functions (#123)', () => {
     await firstCommitted;
 
     const second = getApplication().transaction(async (transaction) => {
-      await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+      await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
       await raw(transaction, 'select app_private.reactivate_client(?)', [secondClient]);
     });
 
@@ -769,7 +769,7 @@ describe('CLIENT lifecycle functions (#123)', () => {
 
       // T1 archives and holds the transaction open: the row lock and the new status are uncommitted.
       const archive = getApplication().transaction(async (transaction) => {
-        await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+        await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
         await raw(transaction, 'select app_private.archive_client(?)', [client]);
         archived();
         await archiveMayCommit;
@@ -779,7 +779,7 @@ describe('CLIENT lifecycle functions (#123)', () => {
       // T2 still sees the client as active, so the policy lets the row in and the insert then waits
       // on the reference to the client that T1 holds locked.
       const invite = getApplication().transaction(async (transaction) => {
-        await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+        await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
         await insertPortalInvite(transaction, client, inviteId);
       });
       const inviteOutcome = invite.then(() => 'inserted' as const, (error: unknown) => error);
@@ -812,7 +812,7 @@ describe('CLIENT lifecycle functions (#123)', () => {
       const inviteMayCommit = new Promise<void>((resolve) => { commitInvite = resolve; });
 
       const invite = getApplication().transaction(async (transaction) => {
-        await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+        await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
         await insertPortalInvite(transaction, client, inviteId);
         inserted();
         await inviteMayCommit;
@@ -820,7 +820,7 @@ describe('CLIENT lifecycle functions (#123)', () => {
       await insertDone;
 
       const archive = getApplication().transaction(async (transaction) => {
-        await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+        await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
         await raw(transaction, 'select app_private.archive_client(?)', [client]);
       });
       const archiveOutcome = archive.then(() => 'archived' as const, (error: unknown) => error);
@@ -864,7 +864,7 @@ describe('CLIENT lifecycle functions (#123)', () => {
       const lockMayEnd = new Promise<void>((resolve) => { release = resolve; });
 
       const locker = getApplication().transaction(async (transaction) => {
-        await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+        await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
         await raw(transaction, 'select id from public.clients where id = ?::uuid for update', [client]);
         locked();
         await lockMayEnd;
@@ -877,7 +877,7 @@ describe('CLIENT lifecycle functions (#123)', () => {
           // Neither holds cliente.convidar_usuario or convite.reenviar: the policy must refuse before
           // the insert reaches the locked reference, or lock_timeout would surface as 55P03.
           await expect(getApplication().transaction(async (transaction) => {
-            await raw(transaction, "select set_config('app.user_id', ?, true)", [actor]);
+            await raw(transaction, 'select app_private.bind_actor(?::uuid)', [actor]);
             await raw(transaction, "set local lock_timeout = '250ms'", []);
             await insertPortalInvite(transaction, client, inviteId);
           })).rejects.toThrow(/row-level security/);
