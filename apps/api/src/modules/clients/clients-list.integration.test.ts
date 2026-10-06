@@ -46,6 +46,9 @@ interface ClientListJson {
   readonly meta: PaginationMetaJson;
 }
 
+/** The exact item key set for a member without `cliente.convidar_usuario` (the badge adds one). */
+const ITEM_KEYS = ['closingDate', 'id', 'instagramHandle', 'name', 'photoUrl', 'status', 'threadsAwaitingAgency'];
+
 interface ApiErrorJson {
   readonly error: { code: string; message: string };
 }
@@ -284,6 +287,10 @@ describe('clients listing (issue #125)', () => {
       expect(response.body.meta.totalItems).toBe(3);
       expect(ids(response.body).sort()).toEqual([...clientsInA].sort());
       expect(ids(response.body)).not.toContain(clientInB);
+      // The exact item shape: Admin's preset carries `cliente.convidar_usuario`, so only its items
+      // gain `pendingInvitations`; the other four presets never see the key.
+      const keys = Object.keys(response.body.data[0]!).sort();
+      expect(keys).toEqual(member === admin ? [...ITEM_KEYS, 'pendingInvitations'].sort() : ITEM_KEYS);
     }
 
     const dualCookie = await loginCookie(dual);
@@ -354,6 +361,39 @@ describe('clients listing (issue #125)', () => {
     }
   });
 
+  it('#125: attention keeps awaiting clients ahead across the page boundary, without loss or repetition', async () => {
+    const { agencyId, admin, cookie } = await createAgencyWithAdmin('attention-pages');
+    const portal = await insertBareUser('attention-pages-portal');
+
+    // 60 clients; the two awaiting ones sit at positions 2 and 21 by name, so without the triage
+    // the second would fall on page 2. The triage pulls both to the front of page 1 and the exact
+    // expected order below proves pages 1+2 are contiguous and disjoint.
+    const allNames = Array.from({ length: 60 }, (_, index) => `Cli Page ${String(index + 1).padStart(3, '0')}`);
+    const awaitingNames = new Set(['Cli Page 002', 'Cli Page 021']);
+    for (const name of awaitingNames) {
+      const clientId = await createClient({ agencyId, name });
+      const thread = await addThread(clientId, admin.id);
+      await addComment({ threadId: thread, clientId, authorUserId: portal, side: 'client', createdAt: new Date('2026-01-01T10:00:00.000Z') });
+    }
+    const bulk = allNames.filter((name) => !awaitingNames.has(name)).map((name) => ({
+      id: randomUUID(),
+      agency_id: agencyId,
+      name
+    }));
+    await owner.knex('clients').insert(bulk);
+
+    const first = await getClients(cookie, agencyId);
+    const second = await getClients(cookie, agencyId, { page: 2 });
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(first.body.data).toHaveLength(20);
+    expect(second.body.data).toHaveLength(20);
+    const expected = [...allNames.filter((name) => awaitingNames.has(name)), ...allNames.filter((name) => !awaitingNames.has(name))].slice(0, 40);
+    expect([...names(first.body), ...names(second.body)]).toEqual(expected);
+    expect(first.body.data.slice(0, 2).map((item) => item.threadsAwaitingAgency)).toEqual([1, 1]);
+    expect(second.body.data.map((item) => item.threadsAwaitingAgency)).toEqual(new Array(20).fill(0));
+  });
+
   it('#125: attention puts an awaiting thread first, then name ascending; name:asc ignores the triage', async () => {
     const { agencyId, admin, cookie } = await createAgencyWithAdmin('order');
     const portal = await insertBareUser('order-portal');
@@ -364,6 +404,7 @@ describe('clients listing (issue #125)', () => {
     const gama = await createClient({ agencyId, name: 'Gama Resolvida' });
     const delta = await createClient({ agencyId, name: 'Delta Reaberta' });
     const hotel = await createClient({ agencyId, name: 'Hotel Respondida' });
+    const icaro = await createClient({ agencyId, name: 'Icaro Resolvida' });
 
     // Zeta: open thread whose last comment is the client's -> awaiting the agency.
     const zetaThread = await addThread(zeta, admin.id);
@@ -380,6 +421,14 @@ describe('clients listing (issue #125)', () => {
     await addComment({ threadId: gamaThread, clientId: gama, authorUserId: admin.id, side: 'agency', createdAt: new Date('2026-01-01T10:00:00.000Z') });
     await owner.knex('client_threads').where({ id: gamaThread }).update({ resolved_at: new Date('2026-01-01T11:00:00.000Z') });
 
+    // Icaro: the client commented LAST and the agency resolved AFTER that comment -> closed by
+    // `openThreadSql` alone, since the latest-comment side alone would count it (SPEC "resolvida
+    // não conta"). This is the only case that isolates the open-thread filter.
+    const icaroThread = await addThread(icaro, admin.id);
+    await addComment({ threadId: icaroThread, clientId: icaro, authorUserId: admin.id, side: 'agency', createdAt: new Date('2026-01-01T10:00:00.000Z') });
+    await addComment({ threadId: icaroThread, clientId: icaro, authorUserId: portal, side: 'client', createdAt: new Date('2026-01-01T11:00:00.000Z') });
+    await owner.knex('client_threads').where({ id: icaroThread }).update({ resolved_at: new Date('2026-01-01T12:00:00.000Z') });
+
     // Delta: resolved, then the client commented after -> reopened, awaiting again.
     const deltaThread = await addThread(delta, admin.id);
     await addComment({ threadId: deltaThread, clientId: delta, authorUserId: admin.id, side: 'agency', createdAt: new Date('2026-01-01T10:00:00.000Z') });
@@ -395,9 +444,10 @@ describe('clients listing (issue #125)', () => {
       'Alfa Sem Thread',
       'Beta Sem Thread',
       'Gama Resolvida',
-      'Hotel Respondida'
+      'Hotel Respondida',
+      'Icaro Resolvida'
     ]);
-    expect(attention.body.data.map((item) => item.threadsAwaitingAgency)).toEqual([1, 1, 0, 0, 0, 0]);
+    expect(attention.body.data.map((item) => item.threadsAwaitingAgency)).toEqual([1, 1, 0, 0, 0, 0, 0]);
 
     const byName = await getClients(cookie, agencyId, { sort: 'name:asc' });
     expect(byName.status).toBe(200);
@@ -407,6 +457,7 @@ describe('clients listing (issue #125)', () => {
       'Delta Reaberta',
       'Gama Resolvida',
       'Hotel Respondida',
+      'Icaro Resolvida',
       'Zeta Com Thread'
     ]);
   });
@@ -504,6 +555,12 @@ describe('clients listing (issue #125)', () => {
     const handleWithAt = await getClients(cookie, agencyId, { search: '@padariacentral' });
     expect(ids(handleWithAt.body)).toEqual([byHandle]);
 
+    // A lone `@` is not a handle search: the guard keeps it on the one-character term, so it
+    // never becomes a wildcard matching every client with a handle.
+    const loneAt = await getClients(cookie, agencyId, { search: '@' });
+    expect(loneAt.body.meta.totalItems).toBe(0);
+    expect(loneAt.body.data).toHaveLength(0);
+
     // The term is folded too: no accent in the search still finds the accented name.
     const unaccentedTerm = await getClients(cookie, agencyId, { search: 'joao cafe' });
     expect(ids(unaccentedTerm.body)).toEqual([accented]);
@@ -557,6 +614,14 @@ describe('clients listing (issue #125)', () => {
 
     const defaultList = await getClients(cookie, agencyId);
     expect(ids(defaultList.body).sort()).toEqual([...active].sort());
+
+    // The status filter composes with search: the term still applies inside the archived scope.
+    const archivedSearch = await getClients(cookie, agencyId, { status: 'archived', search: 'Arquivado' });
+    expect(archivedSearch.status).toBe(200);
+    expect(archivedSearch.body.meta.totalItems).toBe(2);
+    expect(ids(archivedSearch.body).sort()).toEqual([...archived].sort());
+    const archivedSearchActive = await getClients(cookie, agencyId, { status: 'archived', search: 'Ativo' });
+    expect(archivedSearchActive.body.meta.totalItems).toBe(0);
   });
 
   it('#125: pendingInvitations appears only with cliente.convidar_usuario, omitted instead of zeroed', async () => {
@@ -584,6 +649,19 @@ describe('clients listing (issue #125)', () => {
     // the others below.
     expect(adminWithout?.pendingInvitations).toBe(0);
     expect(Object.prototype.hasOwnProperty.call(adminWithout, 'pendingInvitations')).toBe(true);
+
+    // The Owner with no membership at all still sees the badge: `tenant.isOwner` opens the count
+    // without any role, and `has_agency_permission` grants ownership alone.
+    const owner = await makeUser('invites-owner', 'Dona Sem Papel');
+    const ownedAgencyId = await createAgency('Agency invites-owner', owner.id);
+    const ownedWithPending = await createClient({ agencyId: ownedAgencyId, name: 'Com Convite do Dono' });
+    const ownedWithoutPending = await createClient({ agencyId: ownedAgencyId, name: 'Sem Convite do Dono' });
+    await addInvitation({ agencyId: ownedAgencyId, clientId: ownedWithPending, invitedByUserId: owner.id });
+    const ownerList = await getClients(await loginCookie(owner), ownedAgencyId);
+    expect(ownerList.status).toBe(200);
+    expect(ownerList.body.data.find((item) => item.id === ownedWithPending)?.pendingInvitations).toBe(1);
+    expect(ownerList.body.data.find((item) => item.id === ownedWithoutPending)?.pendingInvitations).toBe(0);
+    expect(ownerList.body.data.every((item) => Object.prototype.hasOwnProperty.call(item, 'pendingInvitations'))).toBe(true);
 
     for (const user of [manager, viewer]) {
       const list = await getClients(await loginCookie(user), agencyId);
