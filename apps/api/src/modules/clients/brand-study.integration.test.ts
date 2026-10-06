@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import Fastify from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -12,6 +13,8 @@ import {
   type TestUserFixture
 } from '../auth/test-support/harness.js';
 import type { DatabaseClient } from '@ageniza/database';
+import { createRequireAgencyAccess, requirePermission } from '../tenancy/guards.js';
+import { registerClientModule } from './routes.js';
 
 const origin = { origin: TEST_APP_PUBLIC_URL };
 
@@ -281,6 +284,54 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     await expect(owner.knex('client_brand_sections').where({ client_id: clientId }).select('section_key')).resolves.toEqual([]);
   });
 
+  it('answers 409, never 500, when an archive races the write (RLS violation)', async () => {
+    const clientId = await createClient(agencyA);
+
+    // The route checks the client's status and only then writes. If the archive commits in
+    // between, the INSERT hits the RLS `WITH CHECK` and Postgres raises 42501; the route has to
+    // translate that into the same 409 an already-archived client gets, never let it become 500.
+    const racingDatabase = {
+      ...app.database,
+      transaction: (work: Parameters<DatabaseClient['transaction']>[0]) =>
+        app.database.transaction((transaction) => {
+          const racing = new Proxy(transaction, {
+            get(target, property, receiver) {
+              if (property === 'raw') {
+                return (statement: string, bindings?: readonly unknown[]) =>
+                  statement.includes('insert into public.client_brand_sections')
+                    ? Promise.reject(Object.assign(new Error('new row violates row-level security policy'), { code: '42501' }))
+                    : target.raw(statement, bindings as never);
+              }
+              return Reflect.get(target, property, receiver);
+            }
+          });
+          return work(racing as typeof transaction);
+        })
+    } as DatabaseClient;
+
+    const racingApp = Fastify();
+    registerClientModule(racingApp, {
+      database: racingDatabase,
+      auth: app.auth,
+      requireAgencyAccess: createRequireAgencyAccess({ database: app.database }),
+      requirePermission,
+      photoUrlExpirySeconds: 300
+    });
+    await racingApp.ready();
+    try {
+      const response = await racingApp.inject({
+        method: 'PUT',
+        url: `/agencies/${agencyA}/clients/${clientId}/brand-study/sections/branding`,
+        headers: { ...origin, cookie: adminCookie },
+        payload: { body: 'Corrida' }
+      });
+      expect(response.statusCode).toBe(409);
+    } finally {
+      await racingApp.close();
+    }
+    await expect(owner.knex('client_brand_sections').where({ client_id: clientId }).select('section_key')).resolves.toEqual([]);
+  });
+
   it('records the last writer in updatedBy', async () => {
     const clientId = await createClient(agencyA);
     const byManager = await putSection(managerCookie, agencyA, clientId, 'positioning', { body: 'Posição' });
@@ -291,6 +342,25 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
 
     const persona = await postPersona(managerCookie, agencyA, clientId, { name: 'Com updatedBy' });
     expect(persona.json()).toMatchObject({ updatedBy: { id: manager.id, name: manager.name } });
+  });
+
+  it('resolves updatedBy only through an active tie: a removed member reads as null', async () => {
+    const clientId = await createClient(agencyA);
+    const writer = await makeUser('brand-removed-writer');
+    const managerRole = await owner.knex('roles').whereNull('agency_id').where({ key: 'account_manager' }).first('id');
+    await owner.knex('agency_memberships').insert({ agency_id: agencyA, user_id: writer.id, role_id: managerRole?.id });
+    const writerCookie = await login(writer);
+
+    const written = await putSection(writerCookie, agencyA, clientId, 'branding', { body: 'Escrito antes de sair' });
+    expect(written.json()).toMatchObject({ updatedBy: { id: writer.id, name: writer.name } });
+
+    // The row keeps pointing at the writer, but a removed membership is no longer a tie: reading
+    // the name would expose someone the agency no longer employs.
+    await owner.knex('agency_memberships').where({ agency_id: agencyA, user_id: writer.id }).update({ status: 'removed' });
+
+    const study = await getStudy(adminCookie, agencyA, clientId);
+    const section = study.json<{ sections: { key: string; updatedBy: unknown }[] }>().sections.find((candidate) => candidate.key === 'branding');
+    expect(section?.updatedBy).toBeNull();
   });
 
   it('answers 404 for a client of another agency on every read and write', async () => {
@@ -316,9 +386,17 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     const personaOfB = await insertPersonaRow(clientB);
 
     for (const personaId of [personaOfA2, personaOfB]) {
-      expect((await patchPersona(adminCookie, agencyA, clientA1, personaId, { name: 'x' })).statusCode).toBe(404);
+      const before = await owner.knex('client_personas').where({ id: personaId }).first('name', 'status', 'updated_at');
+      expect((await patchPersona(adminCookie, agencyA, clientA1, personaId, { name: 'Renomeada' })).statusCode).toBe(404);
       expect((await personaStatus(adminCookie, agencyA, clientA1, personaId, 'archive')).statusCode).toBe(404);
       expect((await personaStatus(adminCookie, agencyA, clientA1, personaId, 'unarchive')).statusCode).toBe(404);
+
+      // The 404 alone would also come back after a write that reached the wrong persona: the row
+      // itself has to be intact. Without `client_id` in the WHERE, the same-agency persona (A2)
+      // is renamed and archived even though the response says 404.
+      const after = await owner.knex('client_personas').where({ id: personaId }).first('name', 'status', 'updated_at');
+      expect(after).toMatchObject({ name: before?.name, status: before?.status });
+      expect(new Date(after?.updated_at as Date).getTime()).toBe(new Date(before?.updated_at as Date).getTime());
     }
     expect((await patchPersona(adminCookie, agencyA, clientA1, 'not-a-uuid', { name: 'x' })).statusCode).toBe(404);
     expect((await personaStatus(adminCookie, agencyA, clientA1, 'not-a-uuid', 'archive')).statusCode).toBe(404);

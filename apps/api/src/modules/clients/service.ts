@@ -207,16 +207,18 @@ const ARCHETYPE_KEY_BY_LABEL = new Map<string, Archetype>(
 export const archetypeLabel = (key: Archetype): string => ARCHETYPE_LABELS[key];
 
 /**
- * The name of the user who last saved a row, resolved only through the agency tie -- a membership
- * or ownership of the client's agency. `auth."user"` has no RLS, so reading it unconstrained would
- * expose a name from another tenant; this subquery returns NULL when the user is not tied here.
+ * The name of the user who last saved a row, resolved only through the agency tie -- an active
+ * membership or ownership of the client's agency. `auth."user"` has no RLS, so reading it
+ * unconstrained would expose a name from another tenant; a removed membership is not a tie
+ * anymore, so the name resolves to NULL once the person leaves the agency.
  */
 const updaterNameSql = (userIdExpression: string, agencyIdExpression: string): string => `
   (select "user".name from auth."user" "user"
    where "user".id = ${userIdExpression}
      and (
        exists (select 1 from public.agency_memberships membership
-               where membership.agency_id = ${agencyIdExpression} and membership.user_id = ${userIdExpression})
+               where membership.agency_id = ${agencyIdExpression} and membership.user_id = ${userIdExpression}
+                 and membership.status = 'active')
        or exists (select 1 from public.agencies agency
                   where agency.id = ${agencyIdExpression} and agency.owner_user_id = ${userIdExpression})
      ))`;
