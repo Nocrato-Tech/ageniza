@@ -8,6 +8,7 @@ import {
   CollaboratorInvitationRequestSchema,
   InvitationAcceptNewAccountRequestSchema,
   InvitationAcceptNewAccountResponseSchema,
+  InvitationAcceptRequestSchema,
   InvitationAcceptResponseSchema,
   InvitationCreatedResponseSchema,
   InvitationPreviewResponseSchema,
@@ -26,7 +27,6 @@ import {
   type InvitationToken
 } from './tokens.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { z } from 'zod';
 
 import type { AuthAuditRecorder } from '../auth/audit.js';
 import type { AuthInstance } from '../auth/better-auth.js';
@@ -35,7 +35,7 @@ import { createRequireSession } from '../auth/session-guard.js';
 import type { EmailService } from '../auth/email-service.js';
 import { AUTH_RATE_LIMITS } from '../auth/policy.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
+import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 
 /** The small public port used by auth/password routes to validate invitation continuation. */
 export interface InvitationTokenLookup {
@@ -83,9 +83,7 @@ interface InvitationRow {
   readonly client_id: string | null;
   readonly client_name: string | null;
   readonly role_id: string | null;
-  readonly expires_at: string | Date;
-  readonly used_at: string | Date | null;
-  readonly revoked_at: string | Date | null;
+  readonly is_pending: boolean;
 }
 
 interface InvitationLookupRow {
@@ -176,9 +174,6 @@ const lockPendingInvitationSlot = async (
   ]);
 };
 
-const routeParams = <T>(schema: z.ZodType<T>, request: FastifyRequest): T => parseRequest(schema, request.params);
-const routeQuery = <T>(schema: z.ZodType<T>, request: FastifyRequest): T => parseRequest(schema, request.query);
-
 // specs/colaboradores.md §6, "Convites pendentes": 24 per page, created_at ascending. The route
 // only declares this default and the order; `resolvePagination` owns the ceiling and the offset.
 const PENDING_INVITATIONS_DEFAULT_PAGE_SIZE = 24;
@@ -192,7 +187,16 @@ interface PendingInvitationRow {
   readonly client_name: string | null;
   readonly created_at: string | Date;
   readonly expires_at: string | Date;
+  readonly total: string | number;
 }
+
+// Shared by the page query and its empty-page count fallback so the two filters cannot drift.
+const PENDING_COLLABORATOR_INVITATION_FILTER = `
+        invitation.agency_id = ?::uuid
+        and invitation.purpose = 'collaborator_invite'
+        and invitation.used_at is null
+        and invitation.revoked_at is null
+        and invitation.expires_at > now()`;
 
 interface PendingInvitationPage {
   readonly items: readonly PendingInvitationRow[];
@@ -382,10 +386,12 @@ const resendInvitation = async (
   if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
   const token = tokenForInsert(dependencies.config.appPublicUrl);
   return withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+    // Pendingness is a database-clock decision, like the listing and `app_private.accept_invitation`
+    // (issue #165): the application clock can drift from the server's.
     const currentResult = await raw<RawRows<InvitationRow>>(transaction, `
       select invitation.id, invitation.purpose, invitation.email, invitation.agency_id, agency.name as agency_name,
              invitation.client_id, client.name as client_name, invitation.role_id,
-             invitation.expires_at, invitation.used_at, invitation.revoked_at
+             (invitation.used_at is null and invitation.revoked_at is null and invitation.expires_at > now()) as is_pending
       from public.invitations invitation
       join public.agencies agency on agency.id = invitation.agency_id
       left join public.clients client on client.id = invitation.client_id
@@ -394,7 +400,7 @@ const resendInvitation = async (
     `, [invitationId, agencyId]);
     const current = currentResult.rows[0];
     if (current === undefined || current.purpose === 'agency_activation') throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Invitation not found.' });
-    if (current.used_at !== null || current.revoked_at !== null || new Date(current.expires_at).getTime() <= Date.now()) throw invitationNotPending();
+    if (!current.is_pending) throw invitationNotPending();
 
     await lockPendingInvitationSlot(transaction, agencyId, current.purpose, current.email, current.client_id);
     const revoked = await raw<RawRows<{ id: string }>>(transaction, `
@@ -433,15 +439,17 @@ const cancelInvitation = async (
   const auth = request.auth;
   if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
   await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
-    const currentResult = await raw<RawRows<Pick<InvitationRow, 'id' | 'purpose' | 'used_at' | 'revoked_at' | 'expires_at'>>>(transaction, `
-      select id, purpose, used_at, revoked_at, expires_at
+    // Same database-clock rule as the resend check above (issue #165).
+    const currentResult = await raw<RawRows<Pick<InvitationRow, 'id' | 'purpose' | 'is_pending'>>>(transaction, `
+      select id, purpose,
+             (used_at is null and revoked_at is null and expires_at > now()) as is_pending
       from public.invitations
       where id = ?::uuid and agency_id = ?::uuid
       for update
     `, [invitationId, agencyId]);
     const current = currentResult.rows[0];
     if (current === undefined || current.purpose === 'agency_activation') throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Invitation not found.' });
-    if (current.used_at !== null || current.revoked_at !== null || new Date(current.expires_at).getTime() <= Date.now()) throw invitationNotPending();
+    if (!current.is_pending) throw invitationNotPending();
     const revoked = await raw<RawRows<{ id: string }>>(transaction, `
       update public.invitations set revoked_at = now() where id = ?::uuid returning id
     `, [invitationId]);
@@ -499,17 +507,9 @@ const listPendingCollaboratorInvitations = async (
   const auth = request.auth;
   if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
   return withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
-    const countResult = await raw<RawRows<{ total: string | number }>>(transaction, `
-      select count(*) as total
-      from public.invitations invitation
-      where invitation.agency_id = ?::uuid
-        and invitation.purpose = 'collaborator_invite'
-        and invitation.used_at is null
-        and invitation.revoked_at is null
-        and invitation.expires_at > now()
-    `, [agencyId]);
-    const totalItems = Number(countResult.rows[0]?.total ?? 0);
-
+    // `count(*) over ()` rides the page query's own snapshot, so the counter and the list cannot
+    // describe two different states of the table (issue #165). The separate count only runs when
+    // the page is empty, where `totalItems` is allowed to exceed the empty `data` anyway.
     const itemsResult = await raw<RawRows<PendingInvitationRow>>(transaction, `
       select
         invitation.id,
@@ -519,20 +519,25 @@ const listPendingCollaboratorInvitations = async (
         role.name as role_name,
         client.name as client_name,
         invitation.created_at,
-        invitation.expires_at
+        invitation.expires_at,
+        count(*) over () as total
       from public.invitations invitation
       left join public.roles role on role.id = invitation.role_id
       left join public.clients client on client.id = invitation.client_id
-      where invitation.agency_id = ?::uuid
-        and invitation.purpose = 'collaborator_invite'
-        and invitation.used_at is null
-        and invitation.revoked_at is null
-        and invitation.expires_at > now()
+      where ${PENDING_COLLABORATOR_INVITATION_FILTER}
       order by invitation.created_at asc, invitation.id asc
       limit ? offset ?
     `, [agencyId, pagination.pageSize, pagination.offset]);
+    if (itemsResult.rows.length > 0) {
+      return { items: itemsResult.rows, totalItems: Number(itemsResult.rows[0]?.total ?? 0) };
+    }
 
-    return { items: itemsResult.rows, totalItems };
+    const countResult = await raw<RawRows<{ total: string | number }>>(transaction, `
+      select count(*) as total
+      from public.invitations invitation
+      where ${PENDING_COLLABORATOR_INVITATION_FILTER}
+    `, [agencyId]);
+    return { items: itemsResult.rows, totalItems: Number(countResult.rows[0]?.total ?? 0) };
   });
 };
 
@@ -613,23 +618,23 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
   const acceptDocs = {
     permission: null,
     responseStatus: 200,
-    schemas: { params: PublicInvitationTokenPathParamsSchema, response: InvitationAcceptResponseSchema }
+    schemas: { params: PublicInvitationTokenPathParamsSchema, body: InvitationAcceptRequestSchema, response: InvitationAcceptResponseSchema }
   } satisfies DocumentedRouteConfig;
 
   app.get('/agencies/:agencyId/invitations', authenticated(listDocs), async (request) => {
-    const params = routeParams(listDocs.schemas.params, request);
-    const query = routeQuery(listDocs.schemas.query, request);
+    const params = routeParams(listDocs, request);
+    const query = routeQuery(listDocs, request);
     const pagination = resolvePagination(query, PENDING_INVITATIONS_DEFAULT_PAGE_SIZE);
     const { items, totalItems } = await listPendingCollaboratorInvitations(dependencies, request, params.agencyId, pagination);
-    return parseResponse(listDocs.schemas.response, {
+    return routeResponse(listDocs, request, {
       data: items.map(pendingInvitationFromRow),
       meta: buildPaginationMetadata(pagination, totalItems)
     });
   });
 
   app.post('/agencies/:agencyId/invitations/collaborators', authenticated(collaboratorDocs), async (request, reply) => {
-    const params = routeParams(collaboratorDocs.schemas.params, request);
-    const body = parseRequest(collaboratorDocs.schemas.body, request.body);
+    const params = routeParams(collaboratorDocs, request);
+    const body = routeBody(collaboratorDocs, request);
     const result = await createCollaboratorInvitation(dependencies, request, body.email, body.roleId, params.agencyId);
     try {
       await dependencies.emailService.sendCollaboratorInvitation({
@@ -641,12 +646,12 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     } catch {
       throw emailDeliveryFailed();
     }
-    return reply.status(201).send(parseResponse(collaboratorDocs.schemas.response, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
+    return reply.status(201).send(routeResponse(collaboratorDocs, request, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
   });
 
   app.post('/agencies/:agencyId/clients/:clientId/invitations', authenticated(clientInviteDocs), async (request, reply) => {
-    const params = routeParams(clientInviteDocs.schemas.params, request);
-    const body = parseRequest(clientInviteDocs.schemas.body, request.body);
+    const params = routeParams(clientInviteDocs, request);
+    const body = routeBody(clientInviteDocs, request);
     const result = await createClientInvitation(dependencies, request, body.email, params.agencyId, params.clientId);
     try {
       await dependencies.emailService.sendClientInvitation({
@@ -659,11 +664,11 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     } catch {
       throw emailDeliveryFailed();
     }
-    return reply.status(201).send(parseResponse(clientInviteDocs.schemas.response, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
+    return reply.status(201).send(routeResponse(clientInviteDocs, request, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
   });
 
   app.post('/agencies/:agencyId/invitations/:invitationId/resend', authenticated(resendDocs), async (request, reply) => {
-    const params = routeParams(resendDocs.schemas.params, request);
+    const params = routeParams(resendDocs, request);
     const result = await resendInvitation(dependencies, request, params.agencyId, params.invitationId);
     try {
       if (result.purpose === 'client_invite' && result.clientName !== null) {
@@ -685,22 +690,22 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     } catch {
       throw emailDeliveryFailed();
     }
-    return reply.send(parseResponse(resendDocs.schemas.response, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
+    return reply.send(routeResponse(resendDocs, request, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
   });
 
   app.delete('/agencies/:agencyId/invitations/:invitationId', authenticated(cancelDocs), async (request, reply) => {
-    const params = routeParams(cancelDocs.schemas.params, request);
+    const params = routeParams(cancelDocs, request);
     await cancelInvitation(dependencies, request, params.agencyId, params.invitationId);
     return reply.status(204).send();
   });
 
   app.get('/invitations/:token', publicConfig(previewDocs), async (request) => {
-    const { token } = routeParams(previewDocs.schemas.params, request);
+    const { token } = routeParams(previewDocs, request);
     const row = await lookupOrInvalid(lookup, token);
     const accountResult = await dependencies.database.transaction(async (transaction) =>
       raw<RawRows<{ exists: boolean }>>(transaction, 'select exists(select 1 from auth."user" where email = ?) as exists', [row.email])
     );
-    return parseResponse(previewDocs.schemas.response, {
+    return routeResponse(previewDocs, request, {
       purpose: row.purpose,
       email: row.email,
       agency: { name: row.agencyName },
@@ -710,8 +715,8 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
   });
 
   app.post('/invitations/:token/accept-new-account', publicConfig(acceptNewAccountDocs), async (request, reply) => {
-    const { token } = routeParams(acceptNewAccountDocs.schemas.params, request);
-    const body = parseRequest(acceptNewAccountDocs.schemas.body, request.body);
+    const { token } = routeParams(acceptNewAccountDocs, request);
+    const body = routeBody(acceptNewAccountDocs, request);
     const invitation = await lookupOrInvalid(lookup, token);
     const existing = await dependencies.database.transaction(async (transaction) =>
       raw<RawRows<{ id: string }>>(transaction, 'select id from auth."user" where email = ? limit 1', [invitation.email])
@@ -753,7 +758,7 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
       // cannot establish that session; the credential account remains recoverable through login.
       throw new HttpError({ statusCode: 500, code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' });
     }
-    return reply.status(201).send(parseResponse(acceptNewAccountDocs.schemas.response, {
+    return reply.status(201).send(routeResponse(acceptNewAccountDocs, request, {
       status: 'accepted',
       context: { agencyId: invitation.agencyId, clientId: invitation.clientId }
     }));
@@ -763,11 +768,12 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     ...publicConfig(acceptDocs),
     preHandler: requireSession
   }, async (request, reply) => {
-    const { token } = routeParams(acceptDocs.schemas.params, request);
+    const { token } = routeParams(acceptDocs, request);
+    routeBody(acceptDocs, request);
     if (request.auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
     const invitation = await lookupOrInvalid(lookup, token);
     if (invitation.email !== request.auth.user.email) throw accountMismatch();
     const result = await acceptInvitation(dependencies, request, token, false);
-    return reply.send(parseResponse(acceptDocs.schemas.response, result));
+    return reply.send(routeResponse(acceptDocs, request, result));
   });
 };

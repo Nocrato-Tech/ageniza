@@ -560,12 +560,410 @@ Devolve as permissões efetivas do contexto de agência.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
+### clients — Cadastro do cliente da agência: criar, ler o detalhe com o resumo e editar.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `POST` | `/agencies/:agencyId/clients` | Sessão + vínculo com a agência | `cliente.cadastrar` | Cadastra um cliente |
+| `GET` | `/agencies/:agencyId/clients/:clientId` | Sessão + vínculo com a agência | `cliente.visualizar` | Lê o detalhe do cliente com o resumo da aba Geral |
+| `PATCH` | `/agencies/:agencyId/clients/:clientId` | Sessão + vínculo com a agência | `cliente.operar` | Edita o cadastro do cliente |
+| `GET` | `/agencies/:agencyId/clients/:clientId/brand-study` | Sessão + vínculo com a agência | `cliente.visualizar` | Lê o estudo de marca com as sete seções e as personas |
+| `PUT` | `/agencies/:agencyId/clients/:clientId/brand-study/sections/:sectionKey` | Sessão + vínculo com a agência | `cliente.operar` | Grava uma seção do estudo de marca (upsert) |
+| `POST` | `/agencies/:agencyId/clients/:clientId/personas` | Sessão + vínculo com a agência | `cliente.operar` | Cria uma persona do cliente |
+| `PATCH` | `/agencies/:agencyId/clients/:clientId/personas/:personaId` | Sessão + vínculo com a agência | `cliente.operar` | Edita uma persona |
+| `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/archive` | Sessão + vínculo com a agência | `cliente.operar` | Arquiva uma persona |
+| `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive` | Sessão + vínculo com a agência | `cliente.operar` | Desarquiva uma persona |
+
+#### `POST /agencies/:agencyId/clients`
+
+Cadastra um cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.cadastrar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "name": "Padaria Central"
+}
+```
+
+**Resposta `201`** — Cliente criado.
+
+```json
+{
+  "id": "77777777-7777-4777-8777-777777777777",
+  "name": "Padaria Central",
+  "status": "active",
+  "photoUrl": null,
+  "legalName": "Padaria Central Ltda",
+  "taxId": "12345678000190",
+  "segment": "Alimentação",
+  "website": "https://padariacentral.exemplo.test",
+  "instagramHandle": "padariacentral",
+  "contactName": "Maria Souza",
+  "contactPhone": "+55 11 90000-0000",
+  "contactEmail": "maria@padariacentral.exemplo.test",
+  "closingDate": null,
+  "archivedAt": null
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_NAME_IN_USE` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId`
+
+Lê o detalhe do cliente com o resumo da aba Geral.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.visualizar`.
+
+**Resposta `200`** — Detalhe do cliente.
+
+```json
+{
+  "id": "77777777-7777-4777-8777-777777777777",
+  "name": "Padaria Central",
+  "status": "active",
+  "photoUrl": null,
+  "legalName": "Padaria Central Ltda",
+  "taxId": "12345678000190",
+  "segment": "Alimentação",
+  "website": "https://padariacentral.exemplo.test",
+  "instagramHandle": "padariacentral",
+  "contactName": "Maria Souza",
+  "contactPhone": "+55 11 90000-0000",
+  "contactEmail": "maria@padariacentral.exemplo.test",
+  "closingDate": null,
+  "archivedAt": null,
+  "summary": {
+    "brandStudyFilled": 3,
+    "threadsAwaitingAgency": 1,
+    "threadsAnsweredByAgency": 2,
+    "activePortalMembers": 3
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `PATCH /agencies/:agencyId/clients/:clientId`
+
+Edita o cadastro do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "taxId": "12.345.678/0001-90",
+  "instagramHandle": "@padariacentral"
+}
+```
+
+**Resposta `200`** — Cliente atualizado.
+
+```json
+{
+  "id": "77777777-7777-4777-8777-777777777777",
+  "name": "Padaria Central",
+  "status": "active",
+  "photoUrl": null,
+  "legalName": "Padaria Central Ltda",
+  "taxId": "12345678000190",
+  "segment": "Alimentação",
+  "website": "https://padariacentral.exemplo.test",
+  "instagramHandle": "padariacentral",
+  "contactName": "Maria Souza",
+  "contactPhone": "+55 11 90000-0000",
+  "contactEmail": "maria@padariacentral.exemplo.test",
+  "closingDate": null,
+  "archivedAt": null
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CLIENT_NAME_IN_USE` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/brand-study`
+
+Lê o estudo de marca com as sete seções e as personas.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.visualizar`.
+
+**Resposta `200`** — Estudo de marca.
+
+```json
+{
+  "filled": 3,
+  "sections": [
+    {
+      "key": "branding",
+      "body": "Marca acolhedora.",
+      "colors": null,
+      "archetype": null,
+      "updatedBy": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "name": "Dono da Agência"
+      },
+      "updatedAt": "2026-09-30T12:00:00.000Z"
+    },
+    {
+      "key": "tone_of_voice",
+      "body": null,
+      "colors": null,
+      "archetype": null,
+      "updatedBy": null,
+      "updatedAt": null
+    },
+    {
+      "key": "colors",
+      "body": null,
+      "colors": [
+        {
+          "name": "Vinho",
+          "hex": "#7A1F2B"
+        }
+      ],
+      "archetype": null,
+      "updatedBy": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "name": "Dono da Agência"
+      },
+      "updatedAt": "2026-09-30T12:00:00.000Z"
+    },
+    {
+      "key": "positioning",
+      "body": null,
+      "colors": null,
+      "archetype": null,
+      "updatedBy": null,
+      "updatedAt": null
+    },
+    {
+      "key": "archetype",
+      "body": null,
+      "colors": null,
+      "archetype": "caregiver",
+      "updatedBy": null,
+      "updatedAt": null
+    },
+    {
+      "key": "personas",
+      "body": null,
+      "colors": null,
+      "archetype": null,
+      "updatedBy": null,
+      "updatedAt": null
+    },
+    {
+      "key": "observations",
+      "body": null,
+      "colors": null,
+      "archetype": null,
+      "updatedBy": null,
+      "updatedAt": null
+    }
+  ],
+  "personas": [
+    {
+      "id": "88888888-8888-4888-8888-888888888888",
+      "name": "Dona Maria",
+      "description": "Dona de casa, 58 anos.",
+      "pains": "Pouco tempo para pesquisar.",
+      "desires": "Reconhecimento da comunidade.",
+      "objections": "Preço acima do esperado.",
+      "status": "active",
+      "updatedBy": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "name": "Dono da Agência"
+      },
+      "updatedAt": "2026-09-30T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `PUT /agencies/:agencyId/clients/:clientId/brand-study/sections/:sectionKey`
+
+Grava uma seção do estudo de marca (upsert).
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "body": "Marca acolhedora."
+}
+```
+
+**Resposta `200`** — Seção gravada.
+
+```json
+{
+  "key": "colors",
+  "body": null,
+  "colors": [
+    {
+      "name": "Vinho",
+      "hex": "#7A1F2B"
+    }
+  ],
+  "archetype": null,
+  "updatedBy": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "name": "Dono da Agência"
+  },
+  "updatedAt": "2026-09-30T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/personas`
+
+Cria uma persona do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "name": "Dona Maria",
+  "description": "Dona de casa, 58 anos."
+}
+```
+
+**Resposta `201`** — Persona criada.
+
+```json
+{
+  "id": "88888888-8888-4888-8888-888888888888",
+  "name": "Dona Maria",
+  "description": "Dona de casa, 58 anos.",
+  "pains": "Pouco tempo para pesquisar.",
+  "desires": "Reconhecimento da comunidade.",
+  "objections": "Preço acima do esperado.",
+  "status": "active",
+  "updatedBy": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "name": "Dono da Agência"
+  },
+  "updatedAt": "2026-09-30T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `PATCH /agencies/:agencyId/clients/:clientId/personas/:personaId`
+
+Edita uma persona.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "name": "Dona Maria",
+  "desires": "Reconhecimento da comunidade."
+}
+```
+
+**Resposta `200`** — Persona atualizada.
+
+```json
+{
+  "id": "88888888-8888-4888-8888-888888888888",
+  "name": "Dona Maria",
+  "description": "Dona de casa, 58 anos.",
+  "pains": "Pouco tempo para pesquisar.",
+  "desires": "Reconhecimento da comunidade.",
+  "objections": "Preço acima do esperado.",
+  "status": "active",
+  "updatedBy": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "name": "Dono da Agência"
+  },
+  "updatedAt": "2026-09-30T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/personas/:personaId/archive`
+
+Arquiva uma persona.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Resposta `200`** — Persona arquivada.
+
+```json
+{
+  "id": "88888888-8888-4888-8888-888888888888",
+  "name": "Dona Maria",
+  "description": "Dona de casa, 58 anos.",
+  "pains": "Pouco tempo para pesquisar.",
+  "desires": "Reconhecimento da comunidade.",
+  "objections": "Preço acima do esperado.",
+  "status": "archived",
+  "updatedBy": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "name": "Dono da Agência"
+  },
+  "updatedAt": "2026-09-30T12:00:00.000Z"
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive`
+
+Desarquiva uma persona.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Resposta `200`** — Persona reativada.
+
+```json
+{
+  "id": "88888888-8888-4888-8888-888888888888",
+  "name": "Dona Maria",
+  "description": "Dona de casa, 58 anos.",
+  "pains": "Pouco tempo para pesquisar.",
+  "desires": "Reconhecimento da comunidade.",
+  "objections": "Preço acima do esperado.",
+  "status": "active",
+  "updatedBy": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "name": "Dono da Agência"
+  },
+  "updatedAt": "2026-09-30T12:00:00.000Z"
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+
 ### collaborators — A equipe da agência: listagem com paginação, busca e filtros.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
 | `GET` | `/agencies/:agencyId/collaborators` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista a equipe da agência |
 | `GET` | `/agencies/:agencyId/collaborators/:membershipId` | Sessão + vínculo com a agência | `colaborador.visualizar` | Devolve um colaborador da agência |
+| `GET` | `/agencies/:agencyId/collaborators/job-titles` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista os cargos que existem na agência |
 
 #### `GET /agencies/:agencyId/collaborators`
 
@@ -640,6 +1038,27 @@ Devolve um colaborador da agência.
   "isOwner": false,
   "status": "active",
   "joinedAt": "2026-03-12T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/collaborators/job-titles`
+
+Lista os cargos que existem na agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `colaborador.visualizar`.
+
+**Resposta `200`** — Cargos existentes na agência.
+
+```json
+{
+  "data": [
+    "Editor de Vídeo",
+    "Gestora de contas",
+    "Designer"
+  ]
 }
 ```
 
@@ -861,6 +1280,8 @@ Envia a própria foto de perfil.
 | `INVITATION_NOT_PENDING` | O convite não está pendente. |
 | `MEMBERSHIP_EXISTS` | Este endereço já possui o vínculo solicitado. |
 | `INVALID_ROLE` | O papel informado não é válido para esta agência. |
+| `CLIENT_NAME_IN_USE` | Já existe um cliente ativo com este nome. |
+| `CLIENT_ARCHIVED` | Cliente arquivado não pode ser editado. |
 | `EMAIL_DELIVERY_FAILED` | Não foi possível entregar o e-mail. |
 | `QUOTA_EXCEEDED` | This agency has reached its storage quota. |
 | `UPLOAD_NOT_PENDING` | This upload is not pending confirmation. |

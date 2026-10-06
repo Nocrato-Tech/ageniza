@@ -279,13 +279,14 @@ describe('profile module (issue #101)', () => {
     expect(requestLogs).not.toContain('Request failed unexpectedly');
   });
 
-  it('#101: a zero-width joiner between letters is accepted and preserved', async () => {
+  it('#101: a zero-width joiner between letters, combining marks or pictographs is accepted and preserved', async () => {
     const user = await makeUserWithOwnAgency('profile-name-joiner');
     const cookie = await loginCookie(user);
 
-    // ZWNJ/ZWJ are legitimate between letters (Persian names, some Indic sequences) and never
-    // reorder text; only a joiner next to a non-letter is rejected.
-    for (const name of ['می\u200Cرود', 'क\u200Dष']) {
+    // ZWNJ/ZWJ are legitimate between letters (Persian names), after a combining mark (the virama
+    // in a Devanagari conjunct) and between pictographs (an emoji family); they never reorder text.
+    // A joiner next to anything else stays rejected (see the hostile list above).
+    for (const name of ['می\u200Cرود', 'क\u094D\u200Dष', 'A\uD83D\uDC68\u200D\uD83D\uDC69B']) {
       const response = await patchProfile(cookie, { name });
       expect(response.status, `name ${JSON.stringify(name)}`).toBe(200);
       expect((await readUser(user.id)).name).toBe(name);

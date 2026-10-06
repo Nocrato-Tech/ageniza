@@ -268,6 +268,367 @@ input:focus-visible {
   background: var(--bg-hover);
 }
 
+/* Avatar, BadgeCard, Select and Pagination: docs/design-system.md section 13 */
+.ui-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.ui-avatar--sm {
+  width: 2rem;
+  height: 2rem;
+}
+
+.ui-avatar--md {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.ui-avatar--lg {
+  width: 4rem;
+  height: 4rem;
+}
+
+.ui-avatar__photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ui-avatar__initials {
+  font: var(--label-md);
+}
+
+.ui-avatar--lg .ui-avatar__initials {
+  font: var(--heading-md);
+}
+
+.ui-badge-card {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.ui-badge-card .ui-avatar {
+  margin-bottom: var(--space-2);
+}
+
+.ui-badge-card__name {
+  margin: 0;
+  font: var(--label-md);
+  overflow-wrap: anywhere;
+}
+
+.ui-badge-card__job {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.ui-badge-card__role {
+  margin: 0;
+  color: var(--text-muted);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.ui-badge-card__skeleton {
+  height: 11rem;
+}
+
+.ui-field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.ui-field__label {
+  color: var(--text-secondary);
+  font: var(--label-sm);
+}
+
+.ui-select {
+  min-height: 2.75rem;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--body-md);
+}
+
+.ui-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ui-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ui-pagination__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.ui-pagination__step,
+.ui-pagination__page {
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--label-md);
+  cursor: pointer;
+}
+
+.ui-pagination__step:hover:not(:disabled),
+.ui-pagination__page:hover:not([aria-current='page']),
+.ui-pagination__step:focus-visible,
+.ui-pagination__page:focus-visible {
+  background: var(--bg-hover);
+}
+
+.ui-pagination__page[aria-current='page'] {
+  border-color: var(--focus-ring);
+  color: var(--text-link);
+}
+
+.ui-pagination__step:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ui-pagination__gap {
+  padding: 0 var(--space-1);
+  color: var(--text-muted);
+}
+
+.ui-pagination__summary {
+  margin: 0;
+  color: var(--text-muted);
+  font: var(--body-md);
+}
+
+/* Team grid: specs/colaboradores.md section 7. */
+.collaborators {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.collaborators__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.collaborators__header h1 {
+  margin: 0;
+}
+
+.collaborators__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+}
+
+.collaborators__filters > .ui-text-input {
+  flex: 1 1 16rem;
+}
+
+.collaborators__filters > .ui-field {
+  flex: 0 1 12rem;
+}
+
+.collaborators__grid {
+  display: grid;
+  /* 12rem lets four columns fit the 840px `.agency-content` at the shell's widest:
+     4 × 12rem + 3 × var(--space-4) = 51rem = 816px ≤ 840px (issue #228). */
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.collaborators__grid > li {
+  display: grid;
+}
+
+.collaborators__badge-link {
+  display: grid;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.collaborators__badge-link:hover .ui-badge-card {
+  background: var(--bg-hover);
+}
+
+.ui-modal {
+  width: min(calc(100% - var(--space-8)), 40rem);
+  max-height: calc(100dvh - var(--space-8));
+  margin: auto;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.ui-modal::backdrop {
+  background: color-mix(in srgb, var(--bg-canvas) 75%, transparent);
+}
+
+.ui-modal[open] {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.ui-modal__heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.ui-modal__heading h2 {
+  min-width: 0;
+  margin: 0;
+  font: var(--heading-md);
+}
+
+.collaborator-detail__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.collaborator-detail__identity p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.collaborator-detail__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: var(--space-3);
+  padding-block: var(--space-4);
+  border-block: 1px solid var(--border-default);
+}
+
+.collaborator-detail__tab {
+  flex: 1 1 10rem;
+}
+
+.collaborator-detail__fields,
+.collaborator-detail__status {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.collaborator-detail__fields dt {
+  color: var(--text-secondary);
+  font: var(--label-md);
+}
+
+.collaborator-detail__fields dd {
+  margin: 0 0 var(--space-3);
+}
+
+.collaborator-detail__status p {
+  margin: 0;
+}
+
+/* Self profile (specs/colaboradores.md section 7): the same modal, editable only for its own person. */
+.collaborator-detail__photo {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: var(--space-2);
+}
+
+/* Driven by the visible "Trocar foto" button; kept in the DOM for its file picker and accept
+   filter, but visually hidden so it never draws a second control. */
+.collaborator-detail__photo-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.collaborator-detail__photo-progress {
+  width: 100%;
+  accent-color: var(--action-primary-bg);
+}
+
+.collaborator-detail__self {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.collaborator-detail__self p {
+  margin: 0;
+}
+
+.collaborator-detail__identity .collaborator-detail__self-name {
+  color: var(--text-primary);
+  font: var(--heading-md);
+}
+
+.self-profile {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.self-profile__readonly {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.self-profile__readonly p {
+  margin: 0;
+}
+
+.collaborators__empty,
+.collaborators__error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  padding: var(--space-6) 0;
+}
+
+.collaborators__error {
+  color: var(--text-danger);
+}
+
 /* Auth form layout: specs/auth.md section 7, the centred single column the auth screens share. */
 .form-panel {
   display: grid;

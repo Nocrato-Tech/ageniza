@@ -27,6 +27,10 @@
       "description": "Dados do contexto de agência, incluindo as permissões efetivas."
     },
     {
+      "name": "clients",
+      "description": "Cadastro do cliente da agência: criar, ler o detalhe com o resumo e editar."
+    },
+    {
       "name": "collaborators",
       "description": "A equipe da agência: listagem com paginação, busca e filtros."
     },
@@ -1325,6 +1329,855 @@
           "status",
           "joinedAt"
         ],
+        "additionalProperties": false
+      },
+      "listCollaboratorJobTitlesResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "createClientResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived"
+            ]
+          },
+          "photoUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "legalName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taxId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "segment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "website": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "instagramHandle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactPhone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactEmail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "closingDate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "archivedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "photoUrl",
+          "legalName",
+          "taxId",
+          "segment",
+          "website",
+          "instagramHandle",
+          "contactName",
+          "contactPhone",
+          "contactEmail",
+          "closingDate",
+          "archivedAt"
+        ],
+        "additionalProperties": false
+      },
+      "createClientRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "getClientResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived"
+            ]
+          },
+          "photoUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "legalName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taxId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "segment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "website": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "instagramHandle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactPhone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactEmail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "closingDate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "archivedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "brandStudyFilled": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 7
+              },
+              "threadsAwaitingAgency": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "threadsAnsweredByAgency": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "activePortalMembers": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "brandStudyFilled",
+              "threadsAwaitingAgency",
+              "threadsAnsweredByAgency",
+              "activePortalMembers"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "photoUrl",
+          "legalName",
+          "taxId",
+          "segment",
+          "website",
+          "instagramHandle",
+          "contactName",
+          "contactPhone",
+          "contactEmail",
+          "closingDate",
+          "archivedAt",
+          "summary"
+        ],
+        "additionalProperties": false
+      },
+      "updateClientRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taxId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "segment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "website": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "instagramHandle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactPhone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactEmail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 320,
+            "format": "email"
+          }
+        },
+        "additionalProperties": false
+      },
+      "getBrandStudyResponse": {
+        "type": "object",
+        "properties": {
+          "filled": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "enum": [
+                    "branding",
+                    "tone_of_voice",
+                    "colors",
+                    "positioning",
+                    "archetype",
+                    "personas",
+                    "observations"
+                  ]
+                },
+                "body": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "colors": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "hex": {
+                        "type": "string",
+                        "pattern": "^#[0-9A-Fa-f]{6}$"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "hex"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "archetype": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "innocent",
+                    "sage",
+                    "explorer",
+                    "outlaw",
+                    "magician",
+                    "hero",
+                    "lover",
+                    "jester",
+                    "everyman",
+                    "caregiver",
+                    "ruler",
+                    "creator"
+                  ]
+                },
+                "updatedBy": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                "updatedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "body",
+                "colors",
+                "archetype",
+                "updatedBy",
+                "updatedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "personas": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "pains": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "desires": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "objections": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "archived"
+                  ]
+                },
+                "updatedBy": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                "updatedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "description",
+                "pains",
+                "desires",
+                "objections",
+                "status",
+                "updatedBy",
+                "updatedAt"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "filled",
+          "sections",
+          "personas"
+        ],
+        "additionalProperties": false
+      },
+      "updateBrandStudySectionResponse": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "branding",
+              "tone_of_voice",
+              "colors",
+              "positioning",
+              "archetype",
+              "personas",
+              "observations"
+            ]
+          },
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "colors": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "hex": {
+                  "type": "string",
+                  "pattern": "^#[0-9A-Fa-f]{6}$"
+                }
+              },
+              "required": [
+                "name",
+                "hex"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "archetype": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "innocent",
+              "sage",
+              "explorer",
+              "outlaw",
+              "magician",
+              "hero",
+              "lover",
+              "jester",
+              "everyman",
+              "caregiver",
+              "ruler",
+              "creator"
+            ]
+          },
+          "updatedBy": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "body",
+          "colors",
+          "archetype",
+          "updatedBy",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "updateBrandStudySectionRequest": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "body": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "body"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "colors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "hex": {
+                      "type": "string",
+                      "pattern": "^#[0-9A-Fa-f]{6}$"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "hex"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 24
+              }
+            },
+            "required": [
+              "colors"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "archetype": {
+                "type": "string",
+                "enum": [
+                  "innocent",
+                  "sage",
+                  "explorer",
+                  "outlaw",
+                  "magician",
+                  "hero",
+                  "lover",
+                  "jester",
+                  "everyman",
+                  "caregiver",
+                  "ruler",
+                  "creator"
+                ]
+              }
+            },
+            "required": [
+              "archetype"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "createPersonaResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pains": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "desires": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "objections": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived"
+            ]
+          },
+          "updatedBy": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "pains",
+          "desires",
+          "objections",
+          "status",
+          "updatedBy",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "createPersonaRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pains": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "desires": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "objections": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "updatePersonaRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pains": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "desires": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "objections": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "additionalProperties": false
       },
       "createMediaUploadResponse": {
@@ -4330,7 +5183,7 @@
             }
           },
           "404": {
-            "description": "NOT_FOUND: Collaborator not found.",
+            "description": "NOT_FOUND: Agency not found.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4339,7 +5192,1794 @@
                 "example": {
                   "error": {
                     "code": "NOT_FOUND",
-                    "message": "Collaborator not found."
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/collaborators/job-titles": {
+      "get": {
+        "operationId": "listCollaboratorJobTitles",
+        "summary": "Lista os cargos que existem na agência",
+        "description": "Cargos distintos (depois de trim, sem nulos e sem vazios) dos vínculos ativos da agência, em\nordem alfabética e até 200 valores. Alimenta o filtro de cargo da grade; a listagem paginada\nnão serve porque devolve só uma página.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.visualizar`.",
+        "tags": [
+          "collaborators"
+        ],
+        "x-permission": "colaborador.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cargos existentes na agência.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listCollaboratorJobTitlesResponse"
+                },
+                "example": {
+                  "data": [
+                    "Editor de Vídeo",
+                    "Gestora de contas",
+                    "Designer"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients": {
+      "post": {
+        "operationId": "createClient",
+        "summary": "Cadastra um cliente",
+        "description": "Só o nome. Nome já ativo na agência, mesmo com outra caixa ou espaços, responde 409 pela violação do índice único.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.cadastrar`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.cadastrar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/createClientRequest"
+              },
+              "example": {
+                "name": "Padaria Central"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Cliente criado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createClientResponse"
+                },
+                "example": {
+                  "id": "77777777-7777-4777-8777-777777777777",
+                  "name": "Padaria Central",
+                  "status": "active",
+                  "photoUrl": null,
+                  "legalName": "Padaria Central Ltda",
+                  "taxId": "12345678000190",
+                  "segment": "Alimentação",
+                  "website": "https://padariacentral.exemplo.test",
+                  "instagramHandle": "padariacentral",
+                  "contactName": "Maria Souza",
+                  "contactPhone": "+55 11 90000-0000",
+                  "contactEmail": "maria@padariacentral.exemplo.test",
+                  "closingDate": null,
+                  "archivedAt": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_NAME_IN_USE: Já existe um cliente ativo com este nome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_NAME_IN_USE",
+                    "message": "Já existe um cliente ativo com este nome."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}": {
+      "get": {
+        "operationId": "getClient",
+        "summary": "Lê o detalhe do cliente com o resumo da aba Geral",
+        "description": "Cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404. O resumo\nconta o estudo preenchido (0 a 7, com personas só quando ativas) e as conversas aguardando\nresposta, pela mesma definição que a listagem e o portal usam.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detalhe do cliente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getClientResponse"
+                },
+                "example": {
+                  "id": "77777777-7777-4777-8777-777777777777",
+                  "name": "Padaria Central",
+                  "status": "active",
+                  "photoUrl": null,
+                  "legalName": "Padaria Central Ltda",
+                  "taxId": "12345678000190",
+                  "segment": "Alimentação",
+                  "website": "https://padariacentral.exemplo.test",
+                  "instagramHandle": "padariacentral",
+                  "contactName": "Maria Souza",
+                  "contactPhone": "+55 11 90000-0000",
+                  "contactEmail": "maria@padariacentral.exemplo.test",
+                  "closingDate": null,
+                  "archivedAt": null,
+                  "summary": {
+                    "brandStudyFilled": 3,
+                    "threadsAwaitingAgency": 1,
+                    "threadsAnsweredByAgency": 2,
+                    "activePortalMembers": 3
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateClient",
+        "summary": "Edita o cadastro do cliente",
+        "description": "Aceita qualquer subconjunto dos campos de cadastro; `null` limpa um campo. Cliente arquivado\nresponde 409 e nada muda; nome em uso entre os ativos responde 409 pelo índice único.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/updateClientRequest"
+              },
+              "example": {
+                "taxId": "12.345.678/0001-90",
+                "instagramHandle": "@padariacentral"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cliente atualizado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createClientResponse"
+                },
+                "example": {
+                  "id": "77777777-7777-4777-8777-777777777777",
+                  "name": "Padaria Central",
+                  "status": "active",
+                  "photoUrl": null,
+                  "legalName": "Padaria Central Ltda",
+                  "taxId": "12345678000190",
+                  "segment": "Alimentação",
+                  "website": "https://padariacentral.exemplo.test",
+                  "instagramHandle": "padariacentral",
+                  "contactName": "Maria Souza",
+                  "contactPhone": "+55 11 90000-0000",
+                  "contactEmail": "maria@padariacentral.exemplo.test",
+                  "closingDate": null,
+                  "archivedAt": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_NAME_IN_USE: Já existe um cliente ativo com este nome. | CLIENT_ARCHIVED: Cliente arquivado não pode ser editado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_NAME_IN_USE",
+                    "message": "Já existe um cliente ativo com este nome."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/brand-study": {
+      "get": {
+        "operationId": "getBrandStudy",
+        "summary": "Lê o estudo de marca com as sete seções e as personas",
+        "description": "As sete seções são fixas e sempre vêm, preenchidas ou não; `filled` (0 a 7) conta as seções\ncom conteúdo e `personas` quando há ao menos uma persona ativa. A agência vê personas\narquivadas também.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estudo de marca.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getBrandStudyResponse"
+                },
+                "example": {
+                  "filled": 3,
+                  "sections": [
+                    {
+                      "key": "branding",
+                      "body": "Marca acolhedora.",
+                      "colors": null,
+                      "archetype": null,
+                      "updatedBy": {
+                        "id": "55555555-5555-4555-8555-555555555555",
+                        "name": "Dono da Agência"
+                      },
+                      "updatedAt": "2026-09-30T12:00:00.000Z"
+                    },
+                    {
+                      "key": "tone_of_voice",
+                      "body": null,
+                      "colors": null,
+                      "archetype": null,
+                      "updatedBy": null,
+                      "updatedAt": null
+                    },
+                    {
+                      "key": "colors",
+                      "body": null,
+                      "colors": [
+                        {
+                          "name": "Vinho",
+                          "hex": "#7A1F2B"
+                        }
+                      ],
+                      "archetype": null,
+                      "updatedBy": {
+                        "id": "55555555-5555-4555-8555-555555555555",
+                        "name": "Dono da Agência"
+                      },
+                      "updatedAt": "2026-09-30T12:00:00.000Z"
+                    },
+                    {
+                      "key": "positioning",
+                      "body": null,
+                      "colors": null,
+                      "archetype": null,
+                      "updatedBy": null,
+                      "updatedAt": null
+                    },
+                    {
+                      "key": "archetype",
+                      "body": null,
+                      "colors": null,
+                      "archetype": "caregiver",
+                      "updatedBy": null,
+                      "updatedAt": null
+                    },
+                    {
+                      "key": "personas",
+                      "body": null,
+                      "colors": null,
+                      "archetype": null,
+                      "updatedBy": null,
+                      "updatedAt": null
+                    },
+                    {
+                      "key": "observations",
+                      "body": null,
+                      "colors": null,
+                      "archetype": null,
+                      "updatedBy": null,
+                      "updatedAt": null
+                    }
+                  ],
+                  "personas": [
+                    {
+                      "id": "88888888-8888-4888-8888-888888888888",
+                      "name": "Dona Maria",
+                      "description": "Dona de casa, 58 anos.",
+                      "pains": "Pouco tempo para pesquisar.",
+                      "desires": "Reconhecimento da comunidade.",
+                      "objections": "Preço acima do esperado.",
+                      "status": "active",
+                      "updatedBy": {
+                        "id": "55555555-5555-4555-8555-555555555555",
+                        "name": "Dono da Agência"
+                      },
+                      "updatedAt": "2026-09-30T12:00:00.000Z"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/brand-study/sections/{sectionKey}": {
+      "put": {
+        "operationId": "updateBrandStudySection",
+        "summary": "Grava uma seção do estudo de marca (upsert)",
+        "description": "O corpo depende da chave: texto para `branding`, `tone_of_voice`, `positioning` e\n`observations`; até 24 `{ name, hex }` (`hex` `#RRGGBB`) para `colors`; uma das doze chaves\npara `archetype`. O texto é aparado, não pode ficar vazio e limita a 20.000 bytes; `personas`\nnão aceita `PUT` e responde 400. Cliente arquivado responde 409.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "branding",
+                "tone_of_voice",
+                "colors",
+                "positioning",
+                "archetype",
+                "observations"
+              ]
+            },
+            "required": true,
+            "name": "sectionKey",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/updateBrandStudySectionRequest"
+              },
+              "example": {
+                "body": "Marca acolhedora."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Seção gravada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/updateBrandStudySectionResponse"
+                },
+                "example": {
+                  "key": "colors",
+                  "body": null,
+                  "colors": [
+                    {
+                      "name": "Vinho",
+                      "hex": "#7A1F2B"
+                    }
+                  ],
+                  "archetype": null,
+                  "updatedBy": {
+                    "id": "55555555-5555-4555-8555-555555555555",
+                    "name": "Dono da Agência"
+                  },
+                  "updatedAt": "2026-09-30T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/personas": {
+      "post": {
+        "operationId": "createPersona",
+        "summary": "Cria uma persona do cliente",
+        "description": "A persona nasce ativa; `updated_by` é o usuário da sessão. Cliente arquivado responde 409.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/createPersonaRequest"
+              },
+              "example": {
+                "name": "Dona Maria",
+                "description": "Dona de casa, 58 anos."
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Persona criada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createPersonaResponse"
+                },
+                "example": {
+                  "id": "88888888-8888-4888-8888-888888888888",
+                  "name": "Dona Maria",
+                  "description": "Dona de casa, 58 anos.",
+                  "pains": "Pouco tempo para pesquisar.",
+                  "desires": "Reconhecimento da comunidade.",
+                  "objections": "Preço acima do esperado.",
+                  "status": "active",
+                  "updatedBy": {
+                    "id": "55555555-5555-4555-8555-555555555555",
+                    "name": "Dono da Agência"
+                  },
+                  "updatedAt": "2026-09-30T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/personas/{personaId}": {
+      "patch": {
+        "operationId": "updatePersona",
+        "summary": "Edita uma persona",
+        "description": "Aceita um subconjunto dos campos; `null` limpa. Persona de outro cliente é o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "personaId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/updatePersonaRequest"
+              },
+              "example": {
+                "name": "Dona Maria",
+                "desires": "Reconhecimento da comunidade."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Persona atualizada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createPersonaResponse"
+                },
+                "example": {
+                  "id": "88888888-8888-4888-8888-888888888888",
+                  "name": "Dona Maria",
+                  "description": "Dona de casa, 58 anos.",
+                  "pains": "Pouco tempo para pesquisar.",
+                  "desires": "Reconhecimento da comunidade.",
+                  "objections": "Preço acima do esperado.",
+                  "status": "active",
+                  "updatedBy": {
+                    "id": "55555555-5555-4555-8555-555555555555",
+                    "name": "Dono da Agência"
+                  },
+                  "updatedAt": "2026-09-30T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Persona not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Persona not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/personas/{personaId}/archive": {
+      "post": {
+        "operationId": "archivePersona",
+        "summary": "Arquiva uma persona",
+        "description": "A persona sai do portal e as conversas dela ficam somente leitura; o histórico continua na agência.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "personaId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persona arquivada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createPersonaResponse"
+                },
+                "example": {
+                  "id": "88888888-8888-4888-8888-888888888888",
+                  "name": "Dona Maria",
+                  "description": "Dona de casa, 58 anos.",
+                  "pains": "Pouco tempo para pesquisar.",
+                  "desires": "Reconhecimento da comunidade.",
+                  "objections": "Preço acima do esperado.",
+                  "status": "archived",
+                  "updatedBy": {
+                    "id": "55555555-5555-4555-8555-555555555555",
+                    "name": "Dono da Agência"
+                  },
+                  "updatedAt": "2026-09-30T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Persona not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Persona not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/personas/{personaId}/unarchive": {
+      "post": {
+        "operationId": "unarchivePersona",
+        "summary": "Desarquiva uma persona",
+        "description": "A persona volta a aparecer no portal.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "personaId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persona reativada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createPersonaResponse"
+                },
+                "example": {
+                  "id": "88888888-8888-4888-8888-888888888888",
+                  "name": "Dona Maria",
+                  "description": "Dona de casa, 58 anos.",
+                  "pains": "Pouco tempo para pesquisar.",
+                  "desires": "Reconhecimento da comunidade.",
+                  "objections": "Preço acima do esperado.",
+                  "status": "active",
+                  "updatedBy": {
+                    "id": "55555555-5555-4555-8555-555555555555",
+                    "name": "Dono da Agência"
+                  },
+                  "updatedAt": "2026-09-30T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Persona not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Persona not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"

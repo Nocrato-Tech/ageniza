@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { CollaboratorJobTitlesResponseSchema } from '@ageniza/contracts';
+
 import {
   buildTestApp,
   captureLogs,
@@ -43,6 +45,10 @@ interface PaginationMetaJson {
 interface CollaboratorListJson {
   readonly data: readonly CollaboratorJson[];
   readonly meta: PaginationMetaJson;
+}
+
+interface CollaboratorJobTitlesJson {
+  readonly data: readonly string[];
 }
 
 interface ApiErrorJson {
@@ -176,6 +182,18 @@ const getCollaboratorDetail = async (
     headers: cookie === undefined ? origin : { ...origin, cookie }
   });
   return { status: response.statusCode, body: response.json<CollaboratorJson & ApiErrorJson>() };
+};
+
+const getJobTitles = async (
+  cookie: string | undefined,
+  agencyId: string
+): Promise<{ status: number; body: CollaboratorJobTitlesJson & ApiErrorJson }> => {
+  const response = await app.app.inject({
+    method: 'GET',
+    url: `/agencies/${agencyId}/collaborators/job-titles`,
+    headers: cookie === undefined ? origin : { ...origin, cookie }
+  });
+  return { status: response.statusCode, body: response.json<CollaboratorJobTitlesJson & ApiErrorJson>() };
 };
 
 /** Inserts bare users (no credential account) in one statement -- the bulk pagination fixture. */
@@ -561,6 +579,28 @@ describe('collaborators module (issue #95)', () => {
     expect(JSON.stringify(detail.body)).not.toMatch(/salar|remunera|salary|compensation/i);
   });
 
+  it('#226: the detail rejects an unknown query parameter, like the listing', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Detail Query', 'detail-query', 'Owner Detail Query');
+    const person = await addMember(agencyId, { name: 'Pessoa Query', emailLabel: 'detail-query-person', roleId: presetRoleIds.production });
+    const membershipId = await membershipIdOf(agencyId, person.id);
+    const cookie = await loginCookie(ownerUser);
+
+    const accepted = await app.app.inject({
+      method: 'GET',
+      url: `/agencies/${agencyId}/collaborators/${membershipId}`,
+      headers: { ...origin, cookie }
+    });
+    expect(accepted.statusCode).toBe(200);
+
+    const rejected = await app.app.inject({
+      method: 'GET',
+      url: `/agencies/${agencyId}/collaborators/${membershipId}?x=1`,
+      headers: { ...origin, cookie }
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json<{ error: { code: string } }>().error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('#96: a membership of another agency answers the same 404 and leaks no user data', async () => {
     const alpha = await createAgencyWithOwner('Colab BOLA Alfa', 'bola-alpha', 'Owner BOLA Alfa');
     const beta = await createAgencyWithOwner('Colab BOLA Beta', 'bola-beta', 'Owner BOLA Beta');
@@ -615,5 +655,172 @@ describe('collaborators module (issue #95)', () => {
     const response = await getCollaboratorDetail(await loginCookie(outsider), agencyId, randomUUID());
     expect(response.status).toBe(404);
     expect(response.body.error).toEqual({ code: 'NOT_FOUND', message: 'Agency not found.' });
+  });
+
+  // Issue #225. The response schema trims and bounds job_title in UTF-16 units with JavaScript's
+  // whitespace set, and the column used to accept any text: one row with only a tab, only a NBSP,
+  // only U+FEFF or over 256 units made every read of the agency a 500. The DB now stores the
+  // normalized form and refuses the rest, so the reads keep answering 200 and agree with the contract.
+  it('#225: the forms that used to 500 the reads are refused or normalized, like the contract', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Cargos CHECK', 'jobs-check', 'Owner Cargos CHECK');
+    const bare = await insertBareUsers(5, 'jobs-check');
+    const emoji129 = '😀'.repeat(129);
+    const padded = `A${' '.repeat(300)}B`;
+    const zwnbsp = '\uFEFF';
+
+    // The contract itself rejects the over-limit forms the old CHECK accepted.
+    expect(CollaboratorJobTitlesResponseSchema.safeParse({ data: [emoji129] }).success).toBe(false);
+    expect(CollaboratorJobTitlesResponseSchema.safeParse({ data: [padded] }).success).toBe(false);
+
+    const insert = (index: number, jobTitle: string) => owner.knex('agency_memberships').insert({
+      agency_id: agencyId, user_id: bare[index]!, role_id: presetRoleIds.production, job_title: jobTitle, status: 'active'
+    });
+    const storedTitle = async (index: number): Promise<string | null> => {
+      const row = await owner.knex('agency_memberships').where({ agency_id: agencyId, user_id: bare[index]! }).first('job_title');
+      return (row?.job_title as string | null | undefined) ?? null;
+    };
+
+    // Refused: 129 emoji (258 UTF-16 units), A + 300 spaces + B and 257 ASCII -- no valid stored form.
+    await expect(insert(0, emoji129)).rejects.toThrow(/agency_memberships_job_title_format/);
+    await expect(insert(1, padded)).rejects.toThrow(/agency_memberships_job_title_format/);
+    await expect(insert(2, 'a'.repeat(257))).rejects.toThrow(/agency_memberships_job_title_format/);
+
+    // Normalized: a tab and U+FEFF are whitespace for the contract's trim, so the stored value is
+    // null, which the nullable schema accepts -- the read can no longer 500 on them.
+    await insert(3, '\t');
+    await insert(4, zwnbsp);
+    expect(await storedTitle(3)).toBeNull();
+    expect(await storedTitle(4)).toBeNull();
+
+    const cookie = await loginCookie(ownerUser);
+    const listing = await getCollaborators(cookie, agencyId);
+    expect(listing.status).toBe(200);
+    const titles = await getJobTitles(cookie, agencyId);
+    expect(titles.status).toBe(200);
+    // Everything the DB accepts is valid for the contract, so no read can 500 on it.
+    expect(CollaboratorJobTitlesResponseSchema.safeParse({ data: titles.body.data }).success).toBe(true);
+    const detail = await getCollaboratorDetail(cookie, agencyId, await membershipIdOf(agencyId, ownerUser.id));
+    expect(detail.status).toBe(200);
+  });
+
+  describe('job titles of the agency (issue #218)', () => {
+    it('returns only the route agency titles for a viewer linked to both', async () => {
+      const alpha = await createAgencyWithOwner('Cargos Alfa', 'jobs-alpha', 'Owner Cargos Alfa');
+      const beta = await createAgencyWithOwner('Cargos Beta', 'jobs-beta', 'Owner Cargos Beta');
+      // The same person belongs to BOTH agencies: `agency_memberships_select` shows both, so only
+      // the query's own agency filter separates them (issue #186 lesson).
+      const viewer = await addMember(alpha.agencyId, { name: 'Viewer Cargos', emailLabel: 'jobs-viewer', roleId: presetRoleIds.admin, jobTitle: 'Gestora de contas' });
+      await addAgencyMembership(beta.agencyId, viewer.id, presetRoleIds.admin, 'Diretor de arte');
+      await addMember(alpha.agencyId, { name: 'Ana Alfa Cargos', emailLabel: 'jobs-ana', roleId: presetRoleIds.production, jobTitle: 'Editor de Vídeo' });
+      await addMember(beta.agencyId, { name: 'Zeca Beta Cargos', emailLabel: 'jobs-zeca', roleId: presetRoleIds.production, jobTitle: 'Redator' });
+      const cookie = await loginCookie(viewer);
+
+      const alphaTitles = await getJobTitles(cookie, alpha.agencyId);
+      expect(alphaTitles.status).toBe(200);
+      expect(alphaTitles.body.data).toEqual(['Editor de Vídeo', 'Gestora de contas']);
+
+      const betaTitles = await getJobTitles(cookie, beta.agencyId);
+      expect(betaTitles.status).toBe(200);
+      expect(betaTitles.body.data).toEqual(['Diretor de arte', 'Redator']);
+    });
+
+    it('never counts a removed link', async () => {
+      const { agencyId, ownerUser } = await createAgencyWithOwner('Cargos Removidos', 'jobs-removed', 'Owner Cargos Removidos');
+      await addMember(agencyId, { name: 'Ativo Cargo', emailLabel: 'jobs-active', roleId: presetRoleIds.production, jobTitle: 'Cargo Ativo' });
+      await addMember(agencyId, { name: 'Removido Cargo', emailLabel: 'jobs-removed-person', roleId: presetRoleIds.production, jobTitle: 'Cargo Removido', status: 'removed' });
+
+      const response = await getJobTitles(await loginCookie(ownerUser), agencyId);
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual(['Cargo Ativo']);
+      expect(response.body.data).not.toContain('Cargo Removido');
+    });
+
+    it('collapses duplicates and surrounding spaces, rejects blanks and drops nulls', async () => {
+      const { agencyId, ownerUser } = await createAgencyWithOwner('Cargos Duplicados', 'jobs-dupes', 'Owner Cargos Duplicados');
+      await addMember(agencyId, { name: 'Pessoa Um', emailLabel: 'jobs-dup-1', roleId: presetRoleIds.production, jobTitle: 'Editor de Vídeo' });
+      await addMember(agencyId, { name: 'Pessoa Dois', emailLabel: 'jobs-dup-2', roleId: presetRoleIds.production, jobTitle: '  Editor de Vídeo  ' });
+      await addMember(agencyId, { name: 'Pessoa Três', emailLabel: 'jobs-dup-3', roleId: presetRoleIds.production, jobTitle: 'Designer' });
+      // Issue #225: the trigger stores a blanks-only title as null, which the listing drops like any
+      // null; the value never reaches the job-titles output.
+      await addMember(agencyId, { name: 'Pessoa Quatro', emailLabel: 'jobs-dup-4', roleId: presetRoleIds.production, jobTitle: '   ' });
+      await addMember(agencyId, { name: 'Pessoa Cinco', emailLabel: 'jobs-dup-5', roleId: presetRoleIds.production, jobTitle: null });
+
+      const response = await getJobTitles(await loginCookie(ownerUser), agencyId);
+      expect(response.status).toBe(200);
+      // Trimmed duplicates fold into one and blanks/nulls stay absent.
+      expect(response.body.data).toEqual(['Designer', 'Editor de Vídeo']);
+    });
+
+    it('caps the list at 200 values, alphabetically', async () => {
+      const { agencyId, ownerUser } = await createAgencyWithOwner('Cargos Cap', 'jobs-cap', 'Owner Cargos Cap');
+      const bare = await insertBareUsers(205, 'jobs-cap');
+      await owner.knex('agency_memberships').insert(bare.map((userId, index) => ({
+        agency_id: agencyId, user_id: userId, role_id: presetRoleIds.production, job_title: `Cargo ${String(index + 1).padStart(3, '0')}`
+      })));
+
+      const response = await getJobTitles(await loginCookie(ownerUser), agencyId);
+      expect(response.status).toBe(200);
+      expect(response.body.data).toHaveLength(200);
+      expect(response.body.data[0]).toBe('Cargo 001');
+      expect(response.body.data[199]).toBe('Cargo 200');
+    });
+
+    it('refuses a member without colaborador.visualizar with 403, and an outsider with the agency 404', async () => {
+      const { agencyId } = await createAgencyWithOwner('Cargos Authz', 'jobs-authz');
+      const visualizadorRole = await createCustomRole(agencyId, ['colaborador.visualizar']);
+      const deniedRole = await createCustomRole(agencyId, ['cliente.visualizar']);
+      const allowed = await addMember(agencyId, { name: 'Permitida Cargos', emailLabel: 'jobs-authz-allowed', roleId: visualizadorRole });
+      const denied = await addMember(agencyId, { name: 'Negada Cargos', emailLabel: 'jobs-authz-denied', roleId: deniedRole });
+
+      const allowedResponse = await getJobTitles(await loginCookie(allowed), agencyId);
+      expect(allowedResponse.status).toBe(200);
+      expect(allowedResponse.body).toEqual({ data: [] });
+
+      const deniedResponse = await getJobTitles(await loginCookie(denied), agencyId);
+      expect(deniedResponse.status).toBe(403);
+      expect(deniedResponse.body.error.code).toBe('FORBIDDEN');
+
+      const { agencyId: otherAgencyId } = await createAgencyWithOwner('Cargos Authz Other', 'jobs-authz-other');
+      const outsider = await addMember(otherAgencyId, { name: 'De Fora Cargos', emailLabel: 'jobs-authz-outsider', roleId: presetRoleIds.admin });
+      const outsiderCookie = await loginCookie(outsider);
+
+      const noAccess = await getJobTitles(outsiderCookie, agencyId);
+      const nonexistent = await getJobTitles(outsiderCookie, randomUUID());
+      expect(noAccess.status).toBe(404);
+      expect(nonexistent.status).toBe(404);
+      expect(noAccess.body.error).toEqual(nonexistent.body.error);
+      expect(noAccess.body.error).toEqual({ code: 'NOT_FOUND', message: 'Agency not found.' });
+
+      const unauthenticated = await getJobTitles(undefined, agencyId);
+      expect(unauthenticated.status).toBe(401);
+    });
+
+    it('is matched as the literal path, never as a membership id', async () => {
+      const { agencyId, ownerUser } = await createAgencyWithOwner('Cargos Order', 'jobs-order', 'Owner Cargos Order');
+      // The detail route answers 404 "Collaborator not found." for a non-UUID membership id; a 200
+      // here proves the literal route won the match even though it is a sibling of that param route.
+      const response = await getJobTitles(await loginCookie(ownerUser), agencyId);
+      expect(response.status).toBe(200);
+    });
+
+    it('#226: rejects an unknown query parameter, like the detail and the listing', async () => {
+      const { agencyId, ownerUser } = await createAgencyWithOwner('Cargos Query', 'jobs-query', 'Owner Cargos Query');
+      const cookie = await loginCookie(ownerUser);
+
+      const accepted = await app.app.inject({
+        method: 'GET',
+        url: `/agencies/${agencyId}/collaborators/job-titles`,
+        headers: { ...origin, cookie }
+      });
+      expect(accepted.statusCode).toBe(200);
+
+      const rejected = await app.app.inject({
+        method: 'GET',
+        url: `/agencies/${agencyId}/collaborators/job-titles?x=1`,
+        headers: { ...origin, cookie }
+      });
+      expect(rejected.statusCode).toBe(400);
+      expect(rejected.json<{ error: { code: string } }>().error.code).toBe('VALIDATION_ERROR');
+    });
   });
 });
