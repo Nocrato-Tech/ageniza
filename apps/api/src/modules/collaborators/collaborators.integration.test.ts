@@ -49,6 +49,16 @@ interface CollaboratorJobTitlesJson {
   readonly data: readonly string[];
 }
 
+interface AgencyRoleJson {
+  readonly id: string;
+  readonly key: string;
+  readonly name: string;
+}
+
+interface AgencyRolesJson {
+  readonly data: readonly AgencyRoleJson[];
+}
+
 interface ApiErrorJson {
   readonly error: { code: string; message: string };
 }
@@ -192,6 +202,18 @@ const getJobTitles = async (
     headers: cookie === undefined ? origin : { ...origin, cookie }
   });
   return { status: response.statusCode, body: response.json<CollaboratorJobTitlesJson & ApiErrorJson>() };
+};
+
+const getRoles = async (
+  cookie: string | undefined,
+  agencyId: string
+): Promise<{ status: number; body: AgencyRolesJson & ApiErrorJson }> => {
+  const response = await app.app.inject({
+    method: 'GET',
+    url: `/agencies/${agencyId}/roles`,
+    headers: cookie === undefined ? origin : { ...origin, cookie }
+  });
+  return { status: response.statusCode, body: response.json<AgencyRolesJson & ApiErrorJson>() };
 };
 
 /** Inserts bare users (no credential account) in one statement -- the bulk pagination fixture. */
@@ -767,6 +789,113 @@ describe('collaborators module (issue #95)', () => {
       const rejected = await app.app.inject({
         method: 'GET',
         url: `/agencies/${agencyId}/collaborators/job-titles?x=1`,
+        headers: { ...origin, cookie }
+      });
+      expect(rejected.statusCode).toBe(400);
+      expect(rejected.json<{ error: { code: string } }>().error.code).toBe('VALIDATION_ERROR');
+    });
+  });
+
+  describe('assignable roles of the agency (issue #287)', () => {
+    // `listAgencyRoles` orders by `key` ascending in the database's own collation; for these
+    // ASCII keys that is plain byte order.
+    const systemPresets = (withAdmin: boolean): AgencyRoleJson[] => {
+      const presets: AgencyRoleJson[] = [
+        { id: presetRoleIds.account_manager, key: 'account_manager', name: 'Gestor de conta' },
+        { id: presetRoleIds.finance, key: 'finance', name: 'Financeiro' },
+        { id: presetRoleIds.production, key: 'production', name: 'Produção' },
+        { id: presetRoleIds.sales, key: 'sales', name: 'Vendas' }
+      ];
+      if (withAdmin) presets.unshift({ id: presetRoleIds.admin, key: 'admin', name: 'Admin' });
+      return presets;
+    };
+
+    it('returns every assignable role with its id for the Owner, admin included, ordered by key', async () => {
+      const { agencyId, ownerUser } = await createAgencyWithOwner('Papéis Owner', 'roles-owner');
+      const customRoleId = await createCustomRole(agencyId, ['colaborador.convidar']);
+      await owner.knex('roles').update({ name: 'Papel da casa' }).where({ id: customRoleId });
+
+      const response = await getRoles(await loginCookie(ownerUser), agencyId);
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual([
+        ...systemPresets(true),
+        { id: customRoleId, key: `custom-${customRoleId.slice(0, 8)}`, name: 'Papel da casa' }
+      ].sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    });
+
+    it('hides the admin role from everyone but the Owner, even an admin-preset member', async () => {
+      const { agencyId } = await createAgencyWithOwner('Papéis Admin', 'roles-admin');
+      const adminMember = await addMember(agencyId, { name: 'Pessoa Admin Papéis', emailLabel: 'roles-admin-member', roleId: presetRoleIds.admin });
+
+      const response = await getRoles(await loginCookie(adminMember), agencyId);
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual(systemPresets(false));
+      expect(response.body.data.map((role) => role.id)).not.toContain(presetRoleIds.admin);
+    });
+
+    it('accepts a custom role with only colaborador.convidar, and one with only colaborador.alterar_papel', async () => {
+      const { agencyId } = await createAgencyWithOwner('Papéis Perms', 'roles-perms');
+      const convidarRoleId = await createCustomRole(agencyId, ['colaborador.convidar']);
+      const alterarPapelRoleId = await createCustomRole(agencyId, ['colaborador.alterar_papel']);
+      const convidarMember = await addMember(agencyId, { name: 'Convidante Papéis', emailLabel: 'roles-perms-convidar', roleId: convidarRoleId });
+      const alterarPapelMember = await addMember(agencyId, { name: 'Alterador Papéis', emailLabel: 'roles-perms-alterar', roleId: alterarPapelRoleId });
+
+      for (const member of [convidarMember, alterarPapelMember]) {
+        const response = await getRoles(await loginCookie(member), agencyId);
+        expect(response.status).toBe(200);
+        const keys = response.body.data.map((role) => role.key);
+        const ids = response.body.data.map((role) => role.id);
+        for (const preset of ['account_manager', 'finance', 'production', 'sales']) expect(keys).toContain(preset);
+        expect(keys).not.toContain('admin');
+        // The agency's own custom roles are assignable, so they appear with their ids too.
+        expect(ids).toEqual(expect.arrayContaining([convidarRoleId, alterarPapelRoleId]));
+        for (const role of response.body.data) {
+          expect(role).toEqual({ id: expect.any(String), key: expect.any(String), name: expect.any(String) });
+        }
+      }
+    });
+
+    it('refuses a member with neither permission with 403', async () => {
+      const { agencyId } = await createAgencyWithOwner('Papéis Negados', 'roles-denied');
+      const noPermissionRoleId = await createCustomRole(agencyId, []);
+      const member = await addMember(agencyId, { name: 'Sem Permissão Papéis', emailLabel: 'roles-denied-member', roleId: noPermissionRoleId });
+
+      const response = await getRoles(await loginCookie(member), agencyId);
+      expect(response.status).toBe(403);
+      expect(response.body.error.code).toBe('FORBIDDEN');
+    });
+
+    it('never reveals roles of an agency the caller does not belong to, nor a nonexistent one', async () => {
+      const { agencyId } = await createAgencyWithOwner('Papéis Escopo', 'roles-scope');
+      const { agencyId: otherAgencyId } = await createAgencyWithOwner('Papéis Outra', 'roles-scope-other');
+      await createCustomRole(otherAgencyId, ['colaborador.alterar_papel']);
+      const outsider = await addMember(otherAgencyId, { name: 'De Fora Papéis', emailLabel: 'roles-scope-outsider', roleId: presetRoleIds.admin });
+
+      const noAccess = await getRoles(await loginCookie(outsider), agencyId);
+      const nonexistent = await getRoles(await loginCookie(outsider), randomUUID());
+      expect(noAccess.status).toBe(404);
+      expect(nonexistent.status).toBe(404);
+      expect(noAccess.body.error).toEqual(nonexistent.body.error);
+      expect(noAccess.body.error).toEqual({ code: 'NOT_FOUND', message: 'Agency not found.' });
+
+      const unauthenticated = await getRoles(undefined, agencyId);
+      expect(unauthenticated.status).toBe(401);
+    });
+
+    it('#226: rejects an unknown query parameter, and accepts only the strict shape', async () => {
+      const { agencyId, ownerUser } = await createAgencyWithOwner('Papéis Query', 'roles-query');
+      const cookie = await loginCookie(ownerUser);
+
+      const accepted = await app.app.inject({
+        method: 'GET',
+        url: `/agencies/${agencyId}/roles`,
+        headers: { ...origin, cookie }
+      });
+      expect(accepted.statusCode).toBe(200);
+
+      const rejected = await app.app.inject({
+        method: 'GET',
+        url: `/agencies/${agencyId}/roles?x=1`,
         headers: { ...origin, cookie }
       });
       expect(rejected.statusCode).toBe(400);

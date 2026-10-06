@@ -78,6 +78,29 @@ export const CollaboratorJobTitlesResponseSchema = z.object({
   data: z.array(z.string().trim().min(1).max(256))
 }).strict();
 
+/**
+ * One role of `GET /agencies/:agencyId/roles` (issue #287): a system preset or one of the agency's
+ * own custom roles, with the `id` the invitation (#107), the role PATCH (#97) and the reactivation
+ * (#98) routes require. The screens order and filter the list themselves; the API only hides
+ * `admin` from callers who are not the Owner, because only ownership grants it.
+ */
+export const AgencyRoleSchema = z.object({
+  id: z.string().uuid(),
+  key: z.string().trim().min(1).max(128),
+  name: z.string().trim().min(1).max(256)
+}).strict();
+
+/**
+ * Query of `GET /agencies/:agencyId/roles`. Like the detail and the job titles, the route declares
+ * no query parameter, and the empty `.strict()` object makes an undeclared one (`?x=1`) a 400.
+ */
+export const AgencyRolesQuerySchema = z.object({}).strict();
+
+/** Response of `GET /agencies/:agencyId/roles`: the plain list, never paginated. */
+export const AgencyRolesResponseSchema = z.object({
+  data: z.array(AgencyRoleSchema)
+}).strict();
+
 export type CollaboratorRole = z.infer<typeof CollaboratorRoleSchema>;
 export type Collaborator = z.infer<typeof CollaboratorSchema>;
 export type CollaboratorListQuery = z.infer<typeof CollaboratorListQuerySchema>;
@@ -85,3 +108,6 @@ export type CollaboratorListResponse = z.infer<typeof CollaboratorListResponseSc
 export type CollaboratorDetailQuery = z.infer<typeof CollaboratorDetailQuerySchema>;
 export type CollaboratorJobTitlesQuery = z.infer<typeof CollaboratorJobTitlesQuerySchema>;
 export type CollaboratorJobTitlesResponse = z.infer<typeof CollaboratorJobTitlesResponseSchema>;
+export type AgencyRole = z.infer<typeof AgencyRoleSchema>;
+export type AgencyRolesQuery = z.infer<typeof AgencyRolesQuerySchema>;
+export type AgencyRolesResponse = z.infer<typeof AgencyRolesResponseSchema>;

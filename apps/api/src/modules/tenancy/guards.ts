@@ -156,6 +156,18 @@ export const requirePermission = (key: string) =>
   };
 
 /**
+ * Builds a preHandler for **any** of the named permissions after `requireAgencyAccess` populated
+ * the context (issue #287): reading the assignable roles serves both the invite flow
+ * (`colaborador.convidar`) and the role change/reactivation flows (`colaborador.alterar_papel`),
+ * and either one is enough. The Owner keeps passing by ownership, exactly like `requirePermission`.
+ */
+export const requireAnyPermission = (keys: readonly string[]) =>
+  async (request: FastifyRequest): Promise<void> => {
+    const tenant = request.tenant;
+    if (tenant === undefined || (!tenant.isOwner && !keys.some((key) => tenant.permissions.has(key)))) throw forbidden();
+  };
+
+/**
  * Builds the client-portal preHandler (AUTH-20C). Requires `requireSession` to have already
  * populated `request.auth`. A client context is valid only when the caller has an *active client
  * membership* for `:clientId`, the client is `active`, and its agency is `active` -- an agency

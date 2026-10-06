@@ -171,3 +171,44 @@ export const getCollaborator = async (
   `, [agencyId, membershipId]);
   return result.rows[0];
 };
+
+export interface AgencyRoleRow {
+  readonly id: string;
+  readonly key: string;
+  readonly name: string;
+}
+
+/**
+ * Roles the caller may assign in one agency (issue #287): the system presets plus the agency's own
+ * custom roles -- the exact scope the invitation insert, the membership-update trigger and the
+ * reactivation all accept (`role.agency_id is null or role.agency_id = <agency>`), so the list can
+ * never suggest a role the database would refuse.
+ *
+ * The `admin` preset is only assigned by the Owner (`specs/colaboradores.md` §2 and §7); adapting
+ * the query to the caller's ownership keeps the hiding server-side, where the invite/PATCH
+ * barriers also live, instead of trusting the screen to filter. Ordering is by `key` so the same
+ * agency always answers the same sequence.
+ *
+ * The RLS `roles_select` already limits this read to system roles plus roles of agencies the
+ * caller belongs to; the agency filter is the second barrier that pins the query to the route's
+ * agency, exactly like the listing's (issue #186 lesson).
+ */
+export const listAgencyRoles = async (
+  transaction: CollaboratorTransaction,
+  agencyId: string,
+  includeAdmin: boolean
+): Promise<readonly AgencyRoleRow[]> => {
+  const conditions = ['(role.agency_id is null or role.agency_id = ?::uuid)'];
+  const bindings: SqlBinding[] = [agencyId];
+  if (!includeAdmin) {
+    conditions.push('not (role.key = \'admin\' and (role.agency_id is null or role.agency_id = ?::uuid))');
+    bindings.push(agencyId);
+  }
+  const result = await raw<RawRows<AgencyRoleRow>>(transaction, `
+    select role.id, role.key, role.name
+    from public.roles as role
+    where ${conditions.join('\n  and ')}
+    order by role.key asc
+  `, bindings);
+  return result.rows;
+};

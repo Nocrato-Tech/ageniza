@@ -7,6 +7,8 @@ import {
   AgencyMeResponseSchema,
   AgencyMediaAssetPathParamsSchema,
   AgencyPathParamsSchema,
+  AgencyRolesQuerySchema,
+  AgencyRolesResponseSchema,
   AuthLoginRequestSchema,
   AuthLoginResponseSchema,
   AuthPasswordForgotRequestSchema,
@@ -785,6 +787,41 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       description: 'Cargos existentes na agência.',
       schema: CollaboratorJobTitlesResponseSchema,
       example: { data: ['Editor de Vídeo', 'Gestora de contas', 'Designer'] }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/roles',
+    operationId: 'listAgencyRoles',
+    module: 'collaborators',
+    summary: 'Lista os papéis atribuíveis na agência',
+    description: [
+      'Papéis de sistema e papéis próprios da agência, com o id que o convite, a troca de papel e a',
+      'reativação exigem -- a única rota em que esses ids aparecem. O papel Admin só aparece para o',
+      'Owner. A leitura aceita `colaborador.convidar` ou `colaborador.alterar_papel`.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'colaborador.convidar',
+    params: AgencyPathParamsSchema,
+    query: AgencyRolesQuerySchema,
+    responses: [{
+      status: 200,
+      description: 'Papéis atribuíveis na agência.',
+      schema: AgencyRolesResponseSchema,
+      example: {
+        data: [
+          { id: roleId, key: 'admin', name: 'Admin' },
+          { id: '66666666-6666-4666-8666-666666666667', key: 'account_manager', name: 'Gestor de conta' }
+        ]
+      }
     }],
     errors: [
       COMMON_ERRORS.internal,
