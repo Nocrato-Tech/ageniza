@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import Fastify from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -95,6 +95,49 @@ const patchPersona = async (cookie: string, agencyId: string, clientId: string, 
 
 const personaStatus = async (cookie: string, agencyId: string, clientId: string, personaId: string, action: 'archive' | 'unarchive'): Promise<InjectResponse> =>
   (await app.app.inject({ method: 'POST', url: `/agencies/${agencyId}/clients/${clientId}/personas/${personaId}/${action}`, headers: { ...origin, cookie } })) as unknown as InjectResponse;
+
+/**
+ * An app whose transaction rejects any write starting with `failingStatement` with the 42501
+ * Postgres raises when a row-level security policy refuses a row. It puts the archive race inside
+ * the window between the route's `loadClient` and its write, where the real conflict lives: the
+ * route's own status guard has already passed, so only the `catch` can turn the error into 409.
+ */
+const withRacingApp = async <T>(
+  failingStatement: string,
+  run: (racingApp: FastifyInstance) => Promise<T>
+): Promise<T> => {
+  const racingApp = Fastify();
+  registerClientModule(racingApp, {
+    database: {
+      ...app.database,
+      transaction: (work: Parameters<DatabaseClient['transaction']>[0]) =>
+        app.database.transaction((transaction) => {
+          const racing = new Proxy(transaction, {
+            get(target, property, receiver) {
+              if (property === 'raw') {
+                return (statement: string, bindings?: readonly unknown[]) =>
+                  statement.trim().startsWith(failingStatement)
+                    ? Promise.reject(Object.assign(new Error('new row violates row-level security policy'), { code: '42501' }))
+                    : target.raw(statement, bindings as never);
+              }
+              return Reflect.get(target, property, receiver);
+            }
+          });
+          return work(racing as typeof transaction);
+        })
+    } as DatabaseClient,
+    auth: app.auth,
+    requireAgencyAccess: createRequireAgencyAccess({ database: app.database }),
+    requirePermission,
+    photoUrlExpirySeconds: 300
+  });
+  await racingApp.ready();
+  try {
+    return await run(racingApp);
+  } finally {
+    await racingApp.close();
+  }
+};
 
 describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
   beforeAll(async () => {
@@ -284,41 +327,13 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     await expect(owner.knex('client_brand_sections').where({ client_id: clientId }).select('section_key')).resolves.toEqual([]);
   });
 
-  it('answers 409, never 500, when an archive races the write (RLS violation)', async () => {
+  it('answers 409, never 500, when an archive races the section write (RLS violation)', async () => {
     const clientId = await createClient(agencyA);
 
     // The route checks the client's status and only then writes. If the archive commits in
     // between, the INSERT hits the RLS `WITH CHECK` and Postgres raises 42501; the route has to
     // translate that into the same 409 an already-archived client gets, never let it become 500.
-    const racingDatabase = {
-      ...app.database,
-      transaction: (work: Parameters<DatabaseClient['transaction']>[0]) =>
-        app.database.transaction((transaction) => {
-          const racing = new Proxy(transaction, {
-            get(target, property, receiver) {
-              if (property === 'raw') {
-                return (statement: string, bindings?: readonly unknown[]) =>
-                  statement.includes('insert into public.client_brand_sections')
-                    ? Promise.reject(Object.assign(new Error('new row violates row-level security policy'), { code: '42501' }))
-                    : target.raw(statement, bindings as never);
-              }
-              return Reflect.get(target, property, receiver);
-            }
-          });
-          return work(racing as typeof transaction);
-        })
-    } as DatabaseClient;
-
-    const racingApp = Fastify();
-    registerClientModule(racingApp, {
-      database: racingDatabase,
-      auth: app.auth,
-      requireAgencyAccess: createRequireAgencyAccess({ database: app.database }),
-      requirePermission,
-      photoUrlExpirySeconds: 300
-    });
-    await racingApp.ready();
-    try {
+    await withRacingApp('insert into public.client_brand_sections', async (racingApp) => {
       const response = await racingApp.inject({
         method: 'PUT',
         url: `/agencies/${agencyA}/clients/${clientId}/brand-study/sections/branding`,
@@ -326,10 +341,68 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
         payload: { body: 'Corrida' }
       });
       expect(response.statusCode).toBe(409);
-    } finally {
-      await racingApp.close();
-    }
+    });
     await expect(owner.knex('client_brand_sections').where({ client_id: clientId }).select('section_key')).resolves.toEqual([]);
+  });
+
+  it.each([
+    {
+      label: 'POST persona',
+      failingStatement: 'insert into public.client_personas',
+      initialStatus: null,
+      method: 'POST' as const,
+      path: (clientId: string) => `/agencies/${agencyA}/clients/${clientId}/personas`,
+      payload: { name: 'Corrida' }
+    },
+    {
+      label: 'PATCH persona',
+      failingStatement: 'update public.client_personas',
+      initialStatus: 'active' as const,
+      method: 'PATCH' as const,
+      path: (clientId: string, personaId: string) => `/agencies/${agencyA}/clients/${clientId}/personas/${personaId}`,
+      payload: { name: 'Corrida' }
+    },
+    {
+      label: 'archive persona',
+      failingStatement: 'update public.client_personas',
+      initialStatus: 'active' as const,
+      method: 'POST' as const,
+      path: (clientId: string, personaId: string) => `/agencies/${agencyA}/clients/${clientId}/personas/${personaId}/archive`,
+      payload: undefined
+    },
+    {
+      label: 'unarchive persona',
+      failingStatement: 'update public.client_personas',
+      initialStatus: 'archived' as const,
+      method: 'POST' as const,
+      path: (clientId: string, personaId: string) => `/agencies/${agencyA}/clients/${clientId}/personas/${personaId}/unarchive`,
+      payload: undefined
+    }
+  ])('answers 409, never 500, when an archive races $label (RLS violation)', async (testCase) => {
+    const clientId = await createClient(agencyA);
+    const personaId = testCase.initialStatus === null ? '' : await insertPersonaRow(clientId, testCase.initialStatus);
+    const before = testCase.initialStatus === null
+      ? undefined
+      : await owner.knex('client_personas').where({ id: personaId }).first('name', 'status', 'updated_at');
+
+    await withRacingApp(testCase.failingStatement, async (racingApp) => {
+      const response = await racingApp.inject({
+        method: testCase.method,
+        url: testCase.path(clientId, personaId),
+        headers: { ...origin, cookie: adminCookie },
+        payload: testCase.payload
+      });
+      expect(response.statusCode).toBe(409);
+    });
+
+    if (before === undefined) {
+      await expect(owner.knex('client_personas').where({ client_id: clientId }).select('id')).resolves.toEqual([]);
+      return;
+    }
+    // The 409 alone would also come back from a write that happened: the row itself has to be intact.
+    const after = await owner.knex('client_personas').where({ id: personaId }).first('name', 'status', 'updated_at');
+    expect(after).toMatchObject({ name: before.name, status: before.status });
+    expect(new Date(after?.updated_at as Date).getTime()).toBe(new Date(before.updated_at as Date).getTime());
   });
 
   it('records the last writer in updatedBy', async () => {
