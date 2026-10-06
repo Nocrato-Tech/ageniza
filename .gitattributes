@@ -1,2 +1,6 @@
 .githooks/* text eol=lf
 *.sh text eol=lf
+# Every PR appends a dated entry at the end; the union driver makes a local merge keep both sides'
+# additions instead of conflicting. The GitHub merge button ignores merge drivers, so develop must
+# be brought with `git merge origin/develop` locally (CONTRIBUTING.md).
+docs/business/decisions.md merge=union
