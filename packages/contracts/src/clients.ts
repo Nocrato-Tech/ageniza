@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 import { AuthEmailSchema } from './auth.js';
+import { createPaginatedResponseSchema, PaginationInputSchema } from './pagination.js';
+import { SearchTextSchema } from './search.js';
 
 /**
  * Client (specs/clientes.md section 3). `name` is the only required field and the only one a POST
@@ -121,12 +123,56 @@ export const ClientDetailResponseSchema = z.object({
   summary: ClientSummarySchema
 }).strict();
 
+/** Ordering of the client listing (SPEC §6): triage first, or plain name ascending. */
+export const ClientListSortSchema = z.enum(['attention', 'name:asc']);
+
+/**
+ * Query of `GET /agencies/:agencyId/clients` (issue #125). `PaginationInputSchema` owns
+ * `page`/`pageSize` (route default of 20, global ceiling of 100 that limits rather than refuses,
+ * and the `page` overflow guard); this schema adds only the named filters the SPEC declares.
+ * `.strict()` keeps the rule that a parameter the SPEC does not declare does not exist, so an
+ * unknown one is a 400 and never silently ignored.
+ *
+ * `search` uses `SearchTextSchema`, which trims, refuses control characters and caps the length;
+ * the accent/case-insensitive matching over name, razão social and @ is the service's job.
+ */
+export const ClientListQuerySchema = PaginationInputSchema.extend({
+  search: SearchTextSchema.optional(),
+  status: ClientStatusSchema.optional(),
+  sort: ClientListSortSchema.optional()
+}).strict();
+
+/**
+ * One item of the client listing (SPEC §6): the card's fields plus the triage signal. Only the
+ * eight fields the listing promises; the full registration stays on the detail route.
+ *
+ * `pendingInvitations` is **omitted**, never zeroed, for a caller without
+ * `cliente.convidar_usuario`: zero would be a lie the interface would show (issues #125/#134).
+ */
+export const ClientListItemSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  photoUrl: z.string().nullable(),
+  instagramHandle: z.string().nullable(),
+  status: ClientStatusSchema,
+  closingDate: z.string().nullable(),
+  threadsAwaitingAgency: z.number().int().nonnegative(),
+  pendingInvitations: z.number().int().nonnegative().optional()
+}).strict();
+
+export const ClientListResponseSchema = createPaginatedResponseSchema(ClientListItemSchema);
+
 export type ClientStatus = z.infer<typeof ClientStatusSchema>;
 export type CreateClientRequest = z.infer<typeof CreateClientRequestSchema>;
 export type UpdateClientRequest = z.infer<typeof UpdateClientRequestSchema>;
 export type Client = z.infer<typeof ClientSchema>;
 export type ClientSummary = z.infer<typeof ClientSummarySchema>;
 export type ClientDetailResponse = z.infer<typeof ClientDetailResponseSchema>;
+export type ClientListSort = z.infer<typeof ClientListSortSchema>;
+export type ClientListQuery = z.infer<typeof ClientListQuerySchema>;
+export type ClientListItem = z.infer<typeof ClientListItemSchema>;
+export type ClientListResponse = z.infer<typeof ClientListResponseSchema>;
+
 
 // --- Brand study (specs/clientes.md section 3) ----------------------------------------------
 

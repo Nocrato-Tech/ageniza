@@ -954,6 +954,60 @@ describe('collaborators module (issue #95)', () => {
       expect(response.body.error.code).toBe('FORBIDDEN');
     });
 
+    it('refuses a member with a sole permission outside the accepted pair, and only that one', async () => {
+      const { agencyId } = await createAgencyWithOwner('Papéis 403', 'roles-403');
+      const visualizarRoleId = await createCustomRole(agencyId, ['colaborador.visualizar']);
+      const cancelarRoleId = await createCustomRole(agencyId, ['convite.cancelar']);
+      const visualizarMember = await addMember(agencyId, { name: 'Só Visualiza Papéis', emailLabel: 'roles-403-visualizar', roleId: visualizarRoleId });
+      const cancelarMember = await addMember(agencyId, { name: 'Só Cancela Papéis', emailLabel: 'roles-403-cancelar', roleId: cancelarRoleId });
+
+      // One permission outside `convidar`/`alterar_papel` must not open the list: the accepted pair
+      // is fixed over HTTP, so a guard widened to, say, `colaborador.visualizar` turns this red
+      // (review of #293, Lupa, blocker; issue #308).
+      for (const member of [visualizarMember, cancelarMember]) {
+        const response = await getRoles(await loginCookie(member), agencyId);
+        expect(response.status).toBe(403);
+        expect(response.body.error.code).toBe('FORBIDDEN');
+      }
+    });
+
+    it('orders by byte value, not the database collation', async () => {
+      const { agencyId, ownerUser } = await createAgencyWithOwner('Papéis Colação', 'roles-collation');
+      const betaId = randomUUID();
+      const alphaId = randomUUID();
+      createdRoleIds.push(betaId, alphaId);
+      await owner.knex('roles').insert([
+        { id: betaId, agency_id: agencyId, key: 'Beta', name: 'Beta', is_system: false },
+        { id: alphaId, agency_id: agencyId, key: 'alpha', name: 'Alpha', is_system: false }
+      ]);
+
+      const response = await getRoles(await loginCookie(ownerUser), agencyId);
+      expect(response.status).toBe(200);
+      const keys = response.body.data.map((role) => role.key);
+      // Byte order puts 'B' (0x42) before 'a' (0x61); the en_US.utf8 collation of the local
+      // database would invert them, so only `collate "C"` keeps this order.
+      expect(keys.indexOf('Beta')).toBeGreaterThan(-1);
+      expect(keys.indexOf('alpha')).toBeGreaterThan(-1);
+      expect(keys.indexOf('Beta')).toBeLessThan(keys.indexOf('alpha'));
+    });
+
+    it('breaks a same-key tie by id, across the system and the agency scope', async () => {
+      const { agencyId, ownerUser } = await createAgencyWithOwner('Papéis Desempate', 'roles-tiebreak');
+      // A scoped `admin` with an id *smaller* than the seeded system admin's: the row is inserted
+      // after the seed, so without the `role.id` tie-break the stable sort keeps it behind; with
+      // `, role.id asc` it must lead.
+      let scopedAdminId = randomUUID();
+      while (scopedAdminId >= presetRoleIds.admin) scopedAdminId = randomUUID();
+      createdRoleIds.push(scopedAdminId);
+      await owner.knex('roles').insert({ id: scopedAdminId, agency_id: agencyId, key: 'admin', name: 'Admin da casa', is_system: false });
+
+      const response = await getRoles(await loginCookie(ownerUser), agencyId);
+      expect(response.status).toBe(200);
+      const ids = response.body.data.map((role) => role.id);
+      expect(ids).toEqual(expect.arrayContaining([presetRoleIds.admin, scopedAdminId]));
+      expect(ids.indexOf(scopedAdminId)).toBeLessThan(ids.indexOf(presetRoleIds.admin));
+    });
+
     it('never reveals roles of an agency the caller does not belong to, nor a nonexistent one', async () => {
       const { agencyId } = await createAgencyWithOwner('Papéis Escopo', 'roles-scope');
       const { agencyId: otherAgencyId } = await createAgencyWithOwner('Papéis Outra', 'roles-scope-other');

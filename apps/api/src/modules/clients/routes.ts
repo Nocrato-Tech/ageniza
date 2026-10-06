@@ -7,13 +7,18 @@ import {
   BrandStudySectionSchema,
   BrandStudySectionUpdateRequestSchema,
   ClientDetailResponseSchema,
+  ClientListQuerySchema,
+  ClientListResponseSchema,
   ClientSchema,
   CreateClientRequestSchema,
   CreatePersonaRequestSchema,
   PersonaSchema,
   UpdateClientRequestSchema,
   UpdatePersonaRequestSchema,
+  buildPaginationMetadata,
+  resolvePagination,
   type BrandStudySectionUpdate,
+  type ClientListItem,
   type WritableBrandSectionKey
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
@@ -24,7 +29,7 @@ import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { routeBody, routeResponse } from '../../plugins/infra/zod.js';
+import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import {
   brandSectionFromRow,
   brandStudyFromRows,
@@ -33,6 +38,7 @@ import {
   createPersona,
   isActiveClientNameConflict,
   isRowLevelSecurityViolation,
+  listClients,
   loadBrandSection,
   loadBrandSections,
   loadClient,
@@ -61,6 +67,10 @@ export interface ClientModuleDependencies {
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// specs/clientes.md §6: 20 per page. The route declares only the default; `resolvePagination`
+// owns the global ceiling (100) and the offset.
+const CLIENT_DEFAULT_PAGE_SIZE = 20;
 
 const unauthenticated = (): HttpError => new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
 
@@ -163,6 +173,11 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
 
   // Declared once per route: the same object is the documentation metadata and the source of the
   // schemas the handler validates with, so a handler cannot drift from what is documented.
+  const listDocs = {
+    permission: 'cliente.visualizar',
+    responseStatus: 200,
+    schemas: { params: AgencyPathParamsSchema, query: ClientListQuerySchema, response: ClientListResponseSchema }
+  } satisfies DocumentedRouteConfig;
   const createDocs = {
     permission: 'cliente.cadastrar',
     responseStatus: 201,
@@ -178,6 +193,41 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     responseStatus: 200,
     schemas: { params: AgencyClientPathParamsSchema, body: UpdateClientRequestSchema, response: ClientSchema }
   } satisfies DocumentedRouteConfig;
+
+  app.get('/agencies/:agencyId/clients', authenticated(listDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = request.tenant;
+    if (tenant === undefined) throw clientNotFound();
+    const query = routeQuery(listDocs, request);
+    const pagination = resolvePagination(query, CLIENT_DEFAULT_PAGE_SIZE);
+
+    const page = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
+      listClients(transaction, tenant.agencyId, {
+        status: query.status ?? 'active',
+        search: query.search,
+        sort: query.sort ?? 'attention',
+        includePendingInvitations: tenant.isOwner || tenant.permissions.has('cliente.convidar_usuario')
+      }, pagination));
+
+    const data = await Promise.all(page.items.map(async (row): Promise<ClientListItem> => {
+      const item: ClientListItem = {
+        id: row.id,
+        name: row.name,
+        photoUrl: await signPhotoUrl(request, row.photo_key),
+        instagramHandle: row.instagram_handle,
+        status: row.status,
+        closingDate: row.closing_date,
+        threadsAwaitingAgency: Number(row.threads_awaiting_agency)
+      };
+      // Omitted, not zeroed, for a caller without `cliente.convidar_usuario` (issue #125).
+      return row.pending_invitations === null ? item : { ...item, pendingInvitations: Number(row.pending_invitations) };
+    }));
+
+    return reply.send(routeResponse(listDocs, request, {
+      data,
+      meta: buildPaginationMetadata(pagination, page.totalItems)
+    }));
+  });
 
   app.post('/agencies/:agencyId/clients', authenticated(createDocs), async (request, reply) => {
     const auth = requireAuth(request);

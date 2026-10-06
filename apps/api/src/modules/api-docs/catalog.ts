@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 
-import { COLLABORATOR_ROLES_READ_PERMISSIONS } from '../collaborators/routes.js';
+import { COLLABORATOR_ROLES_READ_PERMISSIONS } from '../collaborators/permissions.js';
+import type { RoutePermission } from '../../plugins/infra/route-metadata.js';
 import {
   AgencyClientPathParamsSchema,
   AgencyClientPersonaPathParamsSchema,
@@ -24,6 +25,8 @@ import {
   BrandStudySectionUpdateRequestSchema,
   ClientDetailResponseSchema,
   ClientInvitationRequestSchema,
+  ClientListQuerySchema,
+  ClientListResponseSchema,
   ClientPathParamsSchema,
   ClientSchema,
   CollaboratorDetailQuerySchema,
@@ -80,11 +83,8 @@ export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agenci
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
-/** A permission a route demands; a list means any one of them is enough. */
-export type DocumentedRoutePermission = string | readonly string[] | null;
-
 /** Every route rendered with a list of permissions says so in prose, in both outputs. */
-export const permissionLabel = (permission: DocumentedRoutePermission): string =>
+export const permissionLabel = (permission: RoutePermission): string =>
   permission === null
     ? '—'
     : Array.isArray(permission)
@@ -115,7 +115,7 @@ export interface DocumentedRoute {
   readonly description: string;
   readonly access: string;
   /** Permission(s) the route's guard demands, or null when it has none; a list means any one. */
-  readonly permission: DocumentedRoutePermission;
+  readonly permission: RoutePermission;
   // Path and query schemas are always strict objects, which is what the OpenAPI registry accepts
   // as route parameters; a body may be any schema (a discriminated union, for instance).
   readonly params?: z.AnyZodObject;
@@ -144,7 +144,7 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   invitations: 'Convite de colaborador e de pessoa do portal, aceite e administração dos pendentes.',
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
-  clients: 'Cadastro do cliente da agência: criar, ler o detalhe com o resumo e editar.',
+  clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo e editar.',
   collaborators: 'A equipe da agência: listagem com paginação, busca e filtros.',
   media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.',
   profile: 'Edição do próprio nome e da própria foto de perfil.'
@@ -864,7 +864,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
 
   {
     method: 'get',
-    path: '/agencies/:agencyId/roles',
+path: '/agencies/:agencyId/roles',
     operationId: 'listAgencyRoles',
     module: 'collaborators',
     summary: 'Lista os papéis atribuíveis na agência',
@@ -886,6 +886,51 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
           { id: roleId, key: 'admin', name: 'Admin' },
           { id: '66666666-6666-4666-8666-666666666667', key: 'account_manager', name: 'Gestor de conta' }
         ]
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients',
+    operationId: 'listClients',
+    module: 'clients',
+    summary: 'Lista a carteira de clientes com ordem de triagem',
+    description: [
+      'Paginada pelo contrato global de listagem, com busca por nome, razão social e @ (sem',
+      'diferenciar maiúsculas nem acento), filtro de status e ordem `attention` por padrão: quem tem',
+      'thread aguardando a agência vem primeiro, depois nome ascendente, com `id` como desempate.',
+      '`pendingInvitations` só vem para quem tem `cliente.convidar_usuario`; para os demais o campo',
+      'é omitido, não zerado.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.visualizar',
+    params: AgencyPathParamsSchema,
+    query: ClientListQuerySchema,
+    requestExample: { page: 1, pageSize: 20, search: 'padaria', status: 'active', sort: 'attention' },
+    responses: [{
+      status: 200,
+      description: 'Página da carteira.',
+      schema: ClientListResponseSchema,
+      example: {
+        data: [{
+          id: clientId,
+          name: 'Padaria Central',
+          photoUrl: null,
+          instagramHandle: 'padariacentral',
+          status: 'active',
+          closingDate: null,
+          threadsAwaitingAgency: 2,
+          pendingInvitations: 1
+        }],
+        meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 }
       }
     }],
     errors: [

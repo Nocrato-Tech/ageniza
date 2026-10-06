@@ -22,6 +22,7 @@ import { createRequireSession } from '../auth/session-guard.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
+import { COLLABORATOR_ROLES_READ_PERMISSIONS } from './permissions.js';
 import { getCollaborator, listAgencyJobTitles, listAgencyRoles, listCollaborators, type CollaboratorRow } from './service.js';
 
 export type CollaboratorPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
@@ -127,10 +128,9 @@ const collaboratorDetailDocs = {
 // and the reactivation (#98): all three resolve the role by its uuid, and this is the only place
 // the ids are exposed. Either of the two permissions is enough to read the list; the metadata
 // says both, so the docs and the `x-permission` extension tell the truth (review of #293,
-// finding 3; decisions.md, 2026-10-06, pending validation). The same array is the one the guard
-// demands and the catalog documents -- identity, so the coverage test cannot drift.
-export const COLLABORATOR_ROLES_READ_PERMISSIONS = ['colaborador.convidar', 'colaborador.alterar_papel'] as const;
-
+// finding 3; decisions.md, 2026-10-06, pending validation). The tuple lives in `permissions.ts`
+// (a leaf), and the guard below demands exactly `agencyRolesDocs.permission` -- the same object
+// the route registers and the catalog documents, so a wider guard cannot hide behind the docs.
 const agencyRolesDocs = {
   permission: COLLABORATOR_ROLES_READ_PERMISSIONS,
   responseStatus: 200,
@@ -200,7 +200,7 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     preHandler: [
       requireSession,
       dependencies.requireAgencyAccess,
-      dependencies.requireAnyPermission(COLLABORATOR_ROLES_READ_PERMISSIONS)
+      dependencies.requireAnyPermission(agencyRolesDocs.permission)
     ],
     config: agencyRolesDocs
   }, async (request, reply) => {

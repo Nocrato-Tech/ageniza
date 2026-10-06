@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { DOCUMENTED_ROUTES } from './catalog.js';
+import { DOCUMENTED_ROUTES, permissionLabel } from './catalog.js';
 import { buildOpenApiDocument } from './document.js';
 
 interface OperationDocument {
-  readonly paths: Record<string, Record<string, { readonly 'x-permission'?: string | readonly string[] | null; readonly responses: Record<string, { readonly description?: string }> }>>;
+  readonly paths: Record<string, Record<string, { readonly 'x-permission'?: string | readonly [string, ...string[]] | null; readonly responses: Record<string, { readonly description?: string }> }>>;
   readonly components?: { readonly schemas?: Record<string, unknown> };
 }
 
@@ -33,7 +33,9 @@ describe('OpenAPI document (issue #182)', () => {
     for (const route of DOCUMENTED_ROUTES) {
       const operation = document.paths[openApiPath(route.path)]?.[route.method];
       expect(operation, `${route.method} ${route.path}`).toBeDefined();
-      expect(operation!['x-permission']).toBe(route.permission);
+      // Equality of value, not of reference: the extension must carry the same keys as the
+      // catalog entry, even when the generator re-creates the array (review of #293, Lupa).
+      expect(operation!['x-permission']).toEqual(route.permission);
       documented.add(`${route.method} ${openApiPath(route.path)}`);
     }
     const inDocument = Object.entries(document.paths).flatMap(([path, methods]) => Object.keys(methods).map((method) => `${method} ${path}`));
@@ -76,5 +78,17 @@ describe('OpenAPI document (issue #182)', () => {
 
   it('is deterministic, so the CI diff check is stable', () => {
     expect(JSON.stringify(buildOpenApiDocument())).toBe(JSON.stringify(buildOpenApiDocument()));
+  });
+});
+
+describe('permissionLabel (review of #293, Lupa)', () => {
+  it('renders a list of permissions as an OR in prose', () => {
+    expect(permissionLabel(['colaborador.convidar', 'colaborador.alterar_papel']))
+      .toBe('`colaborador.convidar` ou `colaborador.alterar_papel`');
+  });
+
+  it('keeps a single permission and a null permission as they were', () => {
+    expect(permissionLabel('colaborador.visualizar')).toBe('`colaborador.visualizar`');
+    expect(permissionLabel(null)).toBe('—');
   });
 });

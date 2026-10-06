@@ -10,7 +10,8 @@
  * `responseStatus` or whose body does not parse with the declared `schemas.response`, so the
  * catalog cannot drift from the route it documents.
  */
-export type RoutePermission = string | readonly string[] | null;
+/** A permission a route demands, or null; a list means any one of them is enough, and it never may be empty. */
+export type RoutePermission = string | readonly [string, ...string[]] | null;
 
 export interface DocumentedRouteConfig {
   readonly permission: RoutePermission;
