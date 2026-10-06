@@ -167,10 +167,14 @@ export const createVerifiedUserClaims = (input: { readonly userId: string }): Ve
 };
 
 /**
- * Publishes the verified user id as the transaction-local `app.user_id`, which RLS policies read
- * through `app_private.current_user_id()`. The connection must use the application role, which
- * cannot bypass RLS. This helper never accepts a tenant/agency id: policies derive tenant access
- * from memberships, and without this context the application role sees no tenant rows.
+ * Binds the verified user id as the transaction actor. RLS policies and the authorization helpers
+ * read it through `app_private.current_user_id()`, which now resolves the row `app_private.bind_actor`
+ * writes once per transaction -- the GUC `app.user_id` is never read. The bind is the first
+ * instruction of the top-level transaction: inside a savepoint a `rollback to savepoint` would undo
+ * it and free a second bind, so an already-open transaction is refused. The connection must use the
+ * application role, which cannot bypass RLS. This helper never accepts a tenant/agency id: policies
+ * derive tenant access from memberships, and without this context the application role sees no
+ * tenant rows.
  */
 export const withAuthenticatedUserTransaction = <TResult>(
   database: DatabaseClient,
@@ -180,9 +184,12 @@ export const withAuthenticatedUserTransaction = <TResult>(
   if (claims[verifiedUserClaimsBrand] !== true) {
     throw new Error('Authenticated database transactions require verified user claims.');
   }
+  if ((database as unknown as { isTransaction?: boolean }).isTransaction === true) {
+    throw new Error('Authenticated transactions must start from a database client, never an existing transaction.');
+  }
 
   return database.transaction(async (transaction) => {
-    await raw(transaction, "select set_config('app.user_id', ?, true)", [claims.userId]);
+    await raw(transaction, 'select app_private.bind_actor(?)', [claims.userId]);
     return work(transaction);
   });
 };

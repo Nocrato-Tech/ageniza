@@ -637,14 +637,18 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
     ).rejects.toThrow(/row-level security/);
 
     // A forged future resolved_at is silently overwritten by the stamping trigger: the row that
-    // lands is resolved now, not in 2999.
-    const beforeResolve = new Date();
+    // lands is resolved now, not in 2999. The lower bound comes from the database clock: PostgreSQL
+    // runs in a container whose clock can trail the test host, so comparing against `new Date()`
+    // here would flake on a stamp the trigger made correctly.
+    const beforeResolve = Number(
+      (await getOwner().knex.raw(`select floor(extract(epoch from now()) * 1000)::bigint as now_ms`)).rows[0].now_ms
+    );
     await expect(
       asUser(managerA, (transaction) => transaction('client_threads').where({ id: threadId }).update({ resolved_at: new Date('2999-01-01'), resolved_by: managerA }))
     ).resolves.toBe(1);
     const resolvedRow = await getOwner().knex('client_threads').where({ id: threadId }).first('resolved_at', 'resolved_by');
     expect(resolvedRow?.resolved_by).toBe(managerA);
-    expect(new Date(resolvedRow?.resolved_at).getTime()).toBeGreaterThanOrEqual(beforeResolve.getTime());
+    expect(new Date(resolvedRow?.resolved_at).getTime()).toBeGreaterThanOrEqual(beforeResolve);
     expect(new Date(resolvedRow?.resolved_at).getTime()).toBeLessThan(new Date('2999-01-01').getTime());
 
     // There is no "unresolve": every UPDATE this grant allows is stamped resolved_at = now(), so

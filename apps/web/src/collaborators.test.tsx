@@ -7,6 +7,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { MemoryRouter, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { PROFILE_PHOTO_MAX_BYTES } from '@ageniza/contracts';
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { pendingInviteExpiryLabel } from './pending-invitations.js';
@@ -94,12 +95,15 @@ interface Scenario {
   readonly authenticated?: boolean;
   readonly role?: TestRole;
   readonly permissions?: readonly string[];
+  readonly session?: () => Response | Promise<Response>;
   readonly collaborators?: (query: URLSearchParams, agencyId: string) => Response | Promise<Response>;
   readonly jobTitles?: () => Response | Promise<Response>;
   readonly detail?: (membershipId: string, agencyId: string) => Response | Promise<Response>;
   readonly invitations?: (query: URLSearchParams, agencyId: string) => Response | Promise<Response>;
   readonly resend?: (invitationId: string, agencyId: string) => Response | Promise<Response>;
   readonly cancel?: (invitationId: string, agencyId: string) => Response | Promise<Response>;
+  readonly updateProfile?: (body: unknown) => Response | Promise<Response>;
+  readonly uploadPhoto?: (body: unknown) => Response | Promise<Response>;
 }
 
 /** Behaves like the real API: 401 without a session, the listing and the job-titles contract shapes. */
@@ -115,8 +119,16 @@ const makeFetch = (scenario: Scenario = {}) => {
     const method = init?.method ?? 'GET';
     calls.push(`${method} ${path}${url.search}`);
     requests.push(String(input));
-    if (path.endsWith('/auth/session')) return authenticated ? json(sessionBody) : unauthenticated();
+    if (path.endsWith('/auth/session')) return scenario.session?.() ?? (authenticated ? json(sessionBody) : unauthenticated());
     if (!authenticated) return unauthenticated();
+    if (init?.method === 'PATCH' && path === '/me/profile') {
+      if (scenario.updateProfile === undefined) throw new Error(`unexpected PATCH ${url}`);
+      return scenario.updateProfile(JSON.parse(String(init.body)));
+    }
+    if (init?.method === 'POST' && path === '/me/photo') {
+      if (scenario.uploadPhoto === undefined) throw new Error(`unexpected POST ${url}`);
+      return scenario.uploadPhoto(JSON.parse(String(init.body)));
+    }
     const me = /\/agencies\/([^/]+)\/me$/.exec(path);
     if (me !== null) return json(agencyMe(me[1]!, agencyDisplayName(me[1]!), permissions, role));
     const resend = /\/agencies\/([^/]+)\/invitations\/([^/]+)\/resend$/.exec(path);
@@ -148,6 +160,52 @@ const makeFetch = (scenario: Scenario = {}) => {
     throw new Error(`unexpected ${init?.method ?? 'GET'} ${url}`);
   };
   return { impl, calls, requests };
+};
+
+interface SelfFetchOptions {
+  readonly uploadImageUrl?: string;
+  /** Returns a response the caller controls (a deferred promise, an error status, ...). */
+  readonly uploadResponse?: (body: unknown) => Response | Promise<Response>;
+}
+
+/**
+ * The session for this scenario is Ana herself: `/auth/session` answers her name, the listing and
+ * the detail carry her as `agency_memberships` does in the real API, `PATCH /me/profile` changes
+ * her name (and the session's, since both come from `auth."user"`), and `POST /me/photo` returns a
+ * signed URL after recording her new photo -- exactly what the real routes do.
+ */
+const makeSelfFetch = (options: SelfFetchOptions = {}) => {
+  // `photoUrl` starts null and becomes a signed URL after the upload, like the real person row.
+  type SelfPerson = Omit<typeof anaPrado, 'photoUrl'> & { photoUrl: string | null };
+  let person: SelfPerson = { ...anaPrado, photoUrl: null };
+  let sessionName = person.name;
+  const profileBodies: unknown[] = [];
+  const photoBodies: unknown[] = [];
+  const uploadSuccessUrl = options.uploadImageUrl ?? 'https://storage.test/ana-nova.png';
+  const fetch = makeFetch({
+    session: () => json({ user: { id: sessionBody.user.id, name: sessionName, email: anaPrado.email }, session: sessionBody.session }),
+    collaborators: () => json({ data: [person, marioCosta, juliaReis], meta: meta(1, 3, 1) }),
+    detail: (membershipId) => membershipId === person.membershipId
+      ? json(person)
+      : json({ error: { code: 'NOT_FOUND', message: 'Not found' } }, 404),
+    updateProfile: (body) => {
+      profileBodies.push(body);
+      const name = (body as { name?: unknown }).name;
+      if (typeof name !== 'string' || name.trim() === '') {
+        return json({ error: { code: 'VALIDATION_ERROR', message: 'invalid name' } }, 400);
+      }
+      person = { ...person, name: name.trim() };
+      sessionName = person.name;
+      return json({ id: sessionBody.user.id, name: person.name });
+    },
+    uploadPhoto: (body) => {
+      photoBodies.push(body);
+      if (options.uploadResponse !== undefined) return options.uploadResponse(body);
+      person = { ...person, photoUrl: uploadSuccessUrl };
+      return json({ imageUrl: person.photoUrl! });
+    }
+  });
+  return { ...fetch, person: () => person, profileBodies, photoBodies };
 };
 
 function Harness({ store }: { store: AuthSessionStore }) {
@@ -994,6 +1052,159 @@ describe('pendingInviteExpiryLabel (#106)', () => {
     expect(pendingInviteExpiryLabel(at(2026, 10, 6, 9).toISOString(), at(2026, 10, 6, 12))).toBe('expirado');
     expect(pendingInviteExpiryLabel(at(2026, 10, 5).toISOString(), at(2026, 10, 6))).toBe('expirado');
     expect(pendingInviteExpiryLabel('not-a-date', at(2026, 10, 6))).toBe('expirado');
+  });
+});
+
+describe('self profile editing (#108)', () => {
+  const selfUrl = (id = anaPrado.membershipId) => `/agencia/${AGENCY_A}/colaboradores?colaborador=${id}`;
+  const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const modalFileInput = (modal: HTMLElement): HTMLInputElement =>
+    modal.querySelector('input[type="file"]') as HTMLInputElement;
+
+  it('renders the own profile editable, with role fields read-only and their notes', async () => {
+    const { impl } = makeSelfFetch();
+    renderCollaborators(impl, selfUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const name = within(modal).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
+    expect(name.value).toBe('Ana Prado');
+    expect(within(modal).getByRole('button', { name: 'Trocar foto' })).toBeTruthy();
+    expect(within(modal).getByRole('button', { name: 'Salvar' })).toBeTruthy();
+    expect(within(modal).getByText('Editora')).toBeTruthy();
+    expect(within(modal).getByText('Produção')).toBeTruthy();
+    expect(within(modal).getByText('ana@example.test')).toBeTruthy();
+    expect(within(modal).getByText('Quem administra a agência define o cargo.')).toBeTruthy();
+    expect(within(modal).getByText('A troca de e-mail é feita pela operação.')).toBeTruthy();
+    expect(within(modal).getByText('Esta foto aparece nos seus crachás em todas as agências.')).toBeTruthy();
+    expect(within(modal).queryByRole('combobox')).toBeNull();
+    // No photo yet: initials, never a generic icon.
+    expect(within(modal).getByText('AP')).toBeTruthy();
+    expect(modal.querySelector('img')).toBeNull();
+  });
+
+  it('does not send a blank or oversized name and shows the field error', async () => {
+    const { impl, profileBodies } = makeSelfFetch();
+    renderCollaborators(impl, selfUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const name = within(modal).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
+    fireEvent.change(name, { target: { value: '   ' } });
+    fireEvent.click(within(modal).getByRole('button', { name: 'Salvar' }));
+    expect(await within(modal).findByText('Informe o seu nome.')).toBeTruthy();
+    expect(name.getAttribute('aria-invalid')).toBe('true');
+    expect(profileBodies).toEqual([]);
+
+    fireEvent.change(name, { target: { value: 'x'.repeat(121) } });
+    fireEvent.click(within(modal).getByRole('button', { name: 'Salvar' }));
+    expect(await within(modal).findByText('O nome pode ter no máximo 120 caracteres.')).toBeTruthy();
+    expect(profileBodies).toEqual([]);
+  });
+
+  it('saves a new name that shows in the modal, the badge and the account menu at once', async () => {
+    const { impl, profileBodies } = makeSelfFetch();
+    const { container } = renderCollaborators(impl, selfUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const name = within(modal).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
+    fireEvent.change(name, { target: { value: 'Ana Prado Silva' } });
+    fireEvent.click(within(modal).getByRole('button', { name: 'Salvar' }));
+    expect(await screen.findByRole('dialog', { name: 'Ana Prado Silva' })).toBe(modal);
+    await waitFor(() => expect(profileBodies).toContainEqual({ name: 'Ana Prado Silva' }));
+    expect(modal.querySelector('.collaborator-detail__self-name')?.textContent).toBe('Ana Prado Silva');
+    const badgeName = (): string | null | undefined =>
+      container.querySelector('.collaborators__grid .ui-badge-card__name')?.textContent;
+    await waitFor(() => expect(badgeName()).toBe('Ana Prado Silva'));
+    // The app header reads the name from the session, so it must be fresh too.
+    expect(await screen.findByRole('button', { name: 'Ana Prado Silva' })).toBeTruthy();
+  });
+
+  it('refuses a file outside the image allowlist without sending anything', async () => {
+    const { impl, photoBodies } = makeSelfFetch();
+    renderCollaborators(impl, selfUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    fireEvent.change(modalFileInput(modal), {
+      target: { files: [new File(['<html>'], 'pagina.html', { type: 'text/html' })] }
+    });
+    expect(await within(modal).findByText('Formato não aceito. Envie uma foto PNG, JPEG, GIF ou WebP.')).toBeTruthy();
+    expect(photoBodies).toEqual([]);
+  });
+
+  it('refuses a file above the accepted size without sending anything', async () => {
+    const { impl, photoBodies } = makeSelfFetch();
+    renderCollaborators(impl, selfUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    fireEvent.change(modalFileInput(modal), {
+      target: { files: [new File([new Uint8Array(PROFILE_PHOTO_MAX_BYTES + 1)], 'grande.png', { type: 'image/png' })] }
+    });
+    expect(await within(modal).findByText('A foto passa do tamanho máximo aceito.')).toBeTruthy();
+    expect(photoBodies).toEqual([]);
+  });
+
+  it('uploads with local progress without blocking the modal, and refreshes the badge', async () => {
+    let finish: (value: Response) => void = () => undefined;
+    const deferred = new Promise<Response>((resolve) => { finish = resolve; });
+    const newPhoto = 'https://storage.test/ana-2026.png';
+    const { impl, calls, photoBodies, person } = makeSelfFetch({ uploadResponse: () => deferred });
+    const { probe } = renderCollaborators(impl, selfUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    fireEvent.change(modalFileInput(modal), {
+      target: { files: [new File([pngBytes], 'foto.png', { type: 'image/png' })] }
+    });
+    await waitFor(() => expect(photoBodies).toEqual([{ imageBase64: Buffer.from(pngBytes).toString('base64') }]), { timeout: 5000 });
+    expect(modal.querySelector('progress')).toBeTruthy();
+    expect(within(modal).getByText('Enviando foto…')).toBeTruthy();
+    // Only the photo control is busy; the modal itself stays interactive.
+    expect(within(modal).getByRole('button', { name: 'Trocar foto' }).hasAttribute('disabled')).toBe(true);
+    const name = within(modal).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
+    expect(name.disabled).toBe(false);
+    await act(async () => {
+      finish(json({ imageUrl: newPhoto }));
+      person().photoUrl = newPhoto;
+    });
+    await waitFor(() => expect(modal.querySelector('img.ui-avatar__photo')?.getAttribute('src')).toBe(newPhoto));
+    await waitFor(() => expect(document.querySelector('.collaborators__grid img.ui-avatar__photo')?.getAttribute('src')).toBe(newPhoto));
+    // The photo travelled only the global route, never an agency-scoped one, and nothing reloaded.
+    expect(calls.filter((call) => call.startsWith('POST /'))).toEqual(['POST /me/photo']);
+    expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/colaboradores`);
+    expect(screen.queryByText(/nesta agência/i)).toBeNull();
+  });
+
+  it.each([
+    [415, 'UNSUPPORTED_MEDIA_TYPE', 'Formato não aceito. Envie uma foto PNG, JPEG, GIF ou WebP.'],
+    [413, 'PAYLOAD_TOO_LARGE', 'A foto passa do tamanho máximo aceito.']
+  ] as const)('shows the API\'s %i rejection as its own message', async (status, code, expected) => {
+    const { impl, photoBodies } = makeSelfFetch({
+      uploadResponse: () => json({ error: { code, message: 'the api private message' } }, status)
+    });
+    renderCollaborators(impl, selfUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    fireEvent.change(modalFileInput(modal), {
+      target: { files: [new File([pngBytes], 'foto.png', { type: 'image/png' })] }
+    });
+    expect(await within(modal).findByText(expected)).toBeTruthy();
+    expect(photoBodies).toHaveLength(1);
+    expect(modal.textContent).not.toContain('the api private message');
+    expect(modal.querySelector('progress')).toBeNull();
+  });
+
+  it('keeps another person\'s name and photo read-only', async () => {
+    const { impl } = makeFetch();
+    renderCollaborators(impl, selfUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    expect(within(modal).queryByRole('textbox')).toBeNull();
+    expect(within(modal).queryByRole('button', { name: 'Trocar foto' })).toBeNull();
+    expect(within(modal).queryByRole('button', { name: 'Salvar' })).toBeNull();
+    expect(modal.querySelector('input[type="file"]')).toBeNull();
+  });
+
+  it('renders the typed name as literal text, never as HTML', async () => {
+    const hostile = '<img src=x onerror=alert(1)>';
+    const { impl } = makeSelfFetch();
+    renderCollaborators(impl, selfUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const name = within(modal).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
+    fireEvent.change(name, { target: { value: hostile } });
+    fireEvent.click(within(modal).getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(modal.querySelector('.collaborator-detail__self-name')?.textContent).toBe(hostile));
+    expect(modal.querySelector('img')).toBeNull();
+    expect(modal.querySelector('[onerror]')).toBeNull();
   });
 });
 
