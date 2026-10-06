@@ -6,7 +6,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { parseResponse } from '../../plugins/infra/zod.js';
+import { routeResponse } from '../../plugins/infra/zod.js';
 import { loadAgencyMe } from './service.js';
 
 export type AgencyPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
@@ -58,6 +58,6 @@ export const registerAgencyModule = (app: FastifyInstance, dependencies: AgencyM
     // The guard ran a separate transaction: if the agency was suspended in between, this is a 404
     // indistinct from a nonexistent or inaccessible one.
     if (result === undefined) throw agencyNotFound();
-    return reply.send(parseResponse(agencyMeDocs.schemas.response, result));
+    return reply.send(routeResponse(agencyMeDocs, request, result));
   });
 };

@@ -2,8 +2,8 @@
 
 The invitation HTTP module owns the administrative and public invitation flows for AUTH-20B.
 All request and response payloads are validated at the route boundary, and tenant mutations run
-inside `withAuthenticatedUserTransaction`, which sets the transaction-local `app.user_id` before
-the RLS-protected query. The `requireAgencyAccess` and `requirePermission` prehandlers are injected
+inside `withAuthenticatedUserTransaction`, which binds the transaction actor before the
+RLS-protected query (see `@ageniza/database`). The `requireAgencyAccess` and `requirePermission` prehandlers are injected
 from the tenancy module so the invitation module does not duplicate tenant guard SQL.
 
 ## Routes
