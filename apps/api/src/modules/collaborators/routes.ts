@@ -21,7 +21,7 @@ import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
+import { routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { getCollaborator, listAgencyJobTitles, listAgencyRoles, listCollaborators, type CollaboratorRow } from './service.js';
 
 export type CollaboratorPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
@@ -151,7 +151,7 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     const tenant = request.tenant;
     if (tenant === undefined) throw agencyNotFound();
 
-    const query = parseRequest(collaboratorListDocs.schemas.query, request.query);
+    const query = routeQuery(collaboratorListDocs, request);
     const pagination = resolvePagination(query, COLLABORATOR_DEFAULT_PAGE_SIZE);
 
     const page = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
@@ -163,7 +163,7 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
       }, pagination)
     );
 
-    return reply.send(parseResponse(collaboratorListDocs.schemas.response, {
+    return reply.send(routeResponse(collaboratorListDocs, request, {
       data: await Promise.all(page.items.map((row) => collaboratorFromRow(dependencies, row, request.log))),
       meta: buildPaginationMetadata(pagination, page.totalItems)
     }));
@@ -185,12 +185,12 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     if (tenant === undefined) throw agencyNotFound();
 
     // The route declares no query parameter: an undeclared one (`?x=1`) is a 400, like the listing.
-    parseRequest(collaboratorJobTitlesDocs.schemas.query, request.query);
+    routeQuery(collaboratorJobTitlesDocs, request);
     const jobTitles = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
       listAgencyJobTitles(transaction, tenant.agencyId)
     );
 
-    return reply.send(parseResponse(collaboratorJobTitlesDocs.schemas.response, { data: jobTitles }));
+    return reply.send(routeResponse(collaboratorJobTitlesDocs, request, { data: jobTitles }));
   });
 
   app.get('/agencies/:agencyId/roles', {
@@ -207,12 +207,12 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     if (tenant === undefined) throw agencyNotFound();
 
     // No query parameter exists on this route; an undeclared one (`?x=1`) is a 400.
-    parseRequest(agencyRolesDocs.schemas.query, request.query);
+    routeQuery(agencyRolesDocs, request);
     const roles = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
       listAgencyRoles(transaction, tenant.agencyId, tenant.isOwner)
     );
 
-    return reply.send(parseResponse(agencyRolesDocs.schemas.response, { data: roles }));
+    return reply.send(routeResponse(agencyRolesDocs, request, { data: roles }));
   });
 
   app.get('/agencies/:agencyId/collaborators/:membershipId', {
@@ -228,9 +228,8 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     const tenant = request.tenant;
     if (tenant === undefined) throw agencyNotFound();
 
-    const params = parseRequest(collaboratorDetailDocs.schemas.params, request.params);
-    // The detail declares no query parameter: an undeclared one (`?x=1`) is a 400, like the listing.
-    parseRequest(collaboratorDetailDocs.schemas.query, request.query);
+    const params = routeParams(collaboratorDetailDocs, request);
+    routeQuery(collaboratorDetailDocs, request);
     // The schema accepts any short string so a malformed id reaches this uniform 404 instead of a
     // 400 that would say "this id is not a uuid", which a valid-but-foreign id cannot say.
     if (!uuidPattern.test(params.membershipId)) throw collaboratorNotFound();
@@ -241,6 +240,6 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     // A membership of another agency, a nonexistent one and a removed one all reach here as "no
     // row", and answer the same 404.
     if (row === undefined) throw collaboratorNotFound();
-    return reply.send(parseResponse(collaboratorDetailDocs.schemas.response, await collaboratorFromRow(dependencies, row, request.log)));
+    return reply.send(routeResponse(collaboratorDetailDocs, request, await collaboratorFromRow(dependencies, row, request.log)));
   });
 };

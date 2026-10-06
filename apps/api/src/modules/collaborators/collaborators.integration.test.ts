@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { CollaboratorJobTitlesResponseSchema } from '@ageniza/contracts';
+
 import {
   buildTestApp,
   captureLogs,
@@ -677,6 +679,52 @@ describe('collaborators module (issue #95)', () => {
     expect(response.body.error).toEqual({ code: 'NOT_FOUND', message: 'Agency not found.' });
   });
 
+  // Issue #225. The response schema trims and bounds job_title in UTF-16 units with JavaScript's
+  // whitespace set, and the column used to accept any text: one row with only a tab, only a NBSP,
+  // only U+FEFF or over 256 units made every read of the agency a 500. The DB now stores the
+  // normalized form and refuses the rest, so the reads keep answering 200 and agree with the contract.
+  it('#225: the forms that used to 500 the reads are refused or normalized, like the contract', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Cargos CHECK', 'jobs-check', 'Owner Cargos CHECK');
+    const bare = await insertBareUsers(5, 'jobs-check');
+    const emoji129 = '😀'.repeat(129);
+    const padded = `A${' '.repeat(300)}B`;
+    const zwnbsp = '\uFEFF';
+
+    // The contract itself rejects the over-limit forms the old CHECK accepted.
+    expect(CollaboratorJobTitlesResponseSchema.safeParse({ data: [emoji129] }).success).toBe(false);
+    expect(CollaboratorJobTitlesResponseSchema.safeParse({ data: [padded] }).success).toBe(false);
+
+    const insert = (index: number, jobTitle: string) => owner.knex('agency_memberships').insert({
+      agency_id: agencyId, user_id: bare[index]!, role_id: presetRoleIds.production, job_title: jobTitle, status: 'active'
+    });
+    const storedTitle = async (index: number): Promise<string | null> => {
+      const row = await owner.knex('agency_memberships').where({ agency_id: agencyId, user_id: bare[index]! }).first('job_title');
+      return (row?.job_title as string | null | undefined) ?? null;
+    };
+
+    // Refused: 129 emoji (258 UTF-16 units), A + 300 spaces + B and 257 ASCII -- no valid stored form.
+    await expect(insert(0, emoji129)).rejects.toThrow(/agency_memberships_job_title_format/);
+    await expect(insert(1, padded)).rejects.toThrow(/agency_memberships_job_title_format/);
+    await expect(insert(2, 'a'.repeat(257))).rejects.toThrow(/agency_memberships_job_title_format/);
+
+    // Normalized: a tab and U+FEFF are whitespace for the contract's trim, so the stored value is
+    // null, which the nullable schema accepts -- the read can no longer 500 on them.
+    await insert(3, '\t');
+    await insert(4, zwnbsp);
+    expect(await storedTitle(3)).toBeNull();
+    expect(await storedTitle(4)).toBeNull();
+
+    const cookie = await loginCookie(ownerUser);
+    const listing = await getCollaborators(cookie, agencyId);
+    expect(listing.status).toBe(200);
+    const titles = await getJobTitles(cookie, agencyId);
+    expect(titles.status).toBe(200);
+    // Everything the DB accepts is valid for the contract, so no read can 500 on it.
+    expect(CollaboratorJobTitlesResponseSchema.safeParse({ data: titles.body.data }).success).toBe(true);
+    const detail = await getCollaboratorDetail(cookie, agencyId, await membershipIdOf(agencyId, ownerUser.id));
+    expect(detail.status).toBe(200);
+  });
+
   describe('job titles of the agency (issue #218)', () => {
     it('returns only the route agency titles for a viewer linked to both', async () => {
       const alpha = await createAgencyWithOwner('Cargos Alfa', 'jobs-alpha', 'Owner Cargos Alfa');
@@ -709,17 +757,19 @@ describe('collaborators module (issue #95)', () => {
       expect(response.body.data).not.toContain('Cargo Removido');
     });
 
-    it('collapses duplicates and surrounding spaces, dropping blanks and nulls', async () => {
+    it('collapses duplicates and surrounding spaces, rejects blanks and drops nulls', async () => {
       const { agencyId, ownerUser } = await createAgencyWithOwner('Cargos Duplicados', 'jobs-dupes', 'Owner Cargos Duplicados');
       await addMember(agencyId, { name: 'Pessoa Um', emailLabel: 'jobs-dup-1', roleId: presetRoleIds.production, jobTitle: 'Editor de Vídeo' });
       await addMember(agencyId, { name: 'Pessoa Dois', emailLabel: 'jobs-dup-2', roleId: presetRoleIds.production, jobTitle: '  Editor de Vídeo  ' });
       await addMember(agencyId, { name: 'Pessoa Três', emailLabel: 'jobs-dup-3', roleId: presetRoleIds.production, jobTitle: 'Designer' });
+      // Issue #225: the trigger stores a blanks-only title as null, which the listing drops like any
+      // null; the value never reaches the job-titles output.
       await addMember(agencyId, { name: 'Pessoa Quatro', emailLabel: 'jobs-dup-4', roleId: presetRoleIds.production, jobTitle: '   ' });
       await addMember(agencyId, { name: 'Pessoa Cinco', emailLabel: 'jobs-dup-5', roleId: presetRoleIds.production, jobTitle: null });
 
       const response = await getJobTitles(await loginCookie(ownerUser), agencyId);
       expect(response.status).toBe(200);
-      // Trimmed duplicates fold into one, the blank and the null are absent, and the order is A-Z.
+      // Trimmed duplicates fold into one and blanks/nulls stay absent.
       expect(response.body.data).toEqual(['Designer', 'Editor de Vídeo']);
     });
 

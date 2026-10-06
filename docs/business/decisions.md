@@ -1100,6 +1100,44 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 
 ---
 
+## 2026-09-30 — O ator de cada transação é gravado uma vez pelo banco, e não pelo GUC `app.user_id`
+
+**Contexto.** A entrada de 2026-09-29 ("O SQL do papel de runtime (ageniza_app) é confiável") aceitou provisoriamente que o `app.user_id` é forjável por `ageniza_app` e deixou o endurecimento real para a #166, que precisa entrar antes da #97. O ataque provado na re-revisão do PR #159: dentro de uma transação já autenticada como Gestor de conta, um `set_config('app.user_id', <Owner>, true)` no meio da instrução faz toda a autorização passar a responder como o Owner, e o Gestor concede `admin`. Qualquer caminho que injete um fragmento de SQL numa transação autenticada, por exemplo uma injeção de SQL numa rota futura, herda essa escalada no produto inteiro. Todas as funções `security definer` e todas as policies leem o ator por `app_private.current_user_id()`, que hoje só lê o GUC. **É mudança estrutural:** muda como a autorização é avaliada em todos os módulos.
+
+**Decisão.** O ator deixa de viver num GUC e passa a viver numa tabela que só o banco escreve, com uma linha por transação, gravada uma única vez.
+
+1. **`app_private.actor_context`**: tabela `unlogged` com `xact_id xid8 primary key`, `user_id uuid not null` e `bound_at timestamptz not null default now()`. O `ageniza_app` não tem nenhum *grant* nela: não lê, não insere, não altera, não apaga.
+2. **`app_private.bind_actor(user_id uuid)`**: função `security definer`, com `search_path = ''` e `revoke … from public`. O `ageniza_app` só tem `execute`. Ela grava `(pg_current_xact_id(), user_id)`. Se a transação já tem ator, a chave primária colide e a função levanta `42501`. **Não existe troca de ator dentro de uma transação**, nem para o mesmo usuário. Ator nulo também é recusado.
+3. **`app_private.current_user_id()`**: é recriada em migration nova, sem editar a aplicada. Passa a ser `security definer` e devolve o `user_id` da linha cujo `xact_id` é o `pg_current_xact_id_if_assigned()` da transação corrente. Sem `bind_actor`, devolve nulo, e a RLS não mostra nenhuma linha de tenant, como hoje sem o GUC. O nome e a assinatura não mudam, então as policies e as funções que a chamam continuam iguais.
+4. **`withAuthenticatedUserTransaction`**, em `packages/database`, troca o `set_config` por `select app_private.bind_actor(?)`, como **primeira instrução** da transação e fora de qualquer *savepoint*. O worker e o `seed:demo` já passam por essa função. O `app.user_id` deixa de ser lido em qualquer lugar: forjá-lo não tem mais efeito.
+5. **Limpeza.** O `xid8` nunca se repete, então uma linha de transação encerrada não é perigosa, só ocupa espaço. Uma função `security definer`, `app_private.purge_actor_context()`, apaga as linhas com mais de uma hora e é chamada pelo worker de tempos em tempos. Como a tabela é `unlogged`, a escrita por requisição não gera WAL.
+
+**Por que o `ageniza_app` não consegue forjar.**
+- Ele não escreve na tabela: o *grant* não existe (provado em protótipo: `permission denied`).
+- Ele só grava por `bind_actor`, e ela só aceita **uma** gravação por transação. A aplicação grava primeiro, a partir da sessão verificada. Qualquer fragmento de SQL que rode depois na mesma transação, inclusive dentro da mesma instrução, recebe `42501` ao tentar gravar de novo (provado em protótipo).
+- O GUC fica sem efeito: `set_config('app.user_id', …)` continua executando, mas nada o lê (provado em protótipo: o `set_config` para outro usuário não muda o que a RLS mostra).
+- A chave é o `xid8` da transação, que é global e nunca se repete. Uma transação não enxerga o ator de outra, nem numa conexão reaproveitada do pool.
+
+**O que continua confiável, e fica dito.** Quem tem a **credencial** do `ageniza_app` e abre as próprias transações pode chamar `bind_actor` com qualquer usuário na primeira instrução. Nenhum mecanismo dentro do banco impede isso enquanto o mesmo papel também lê e escreve `auth.session` (o Better Auth precisa disso). Exigir o token de sessão em `bind_actor` não resolveria, porque o mesmo papel lê os tokens. Portanto:
+- a **credencial do banco** continua sendo segredo de servidor (AGENTS.md);
+- o que a #166 elimina é a escalada **dentro de uma transação já autenticada**, que é a forma que uma injeção de SQL ou um fragmento hostil teria;
+- a premissa "o papel de runtime é confiável" da entrada de 2026-09-29 fica **restrita ao primeiro bind de cada transação**, e deixa de valer para o resto dela.
+
+**Armadilha achada no protótipo.** Um `bind_actor` feito **dentro** de um *savepoint* é desfeito por `rollback to savepoint`, e um segundo bind passa a ser aceito. Por isso o item 4 exige o bind na transação de topo, antes de qualquer trabalho, e a implementação precisa de teste que prove essa ordem em `withAuthenticatedUserTransaction`. Nenhuma função do banco chama `bind_actor`.
+
+**Consequência.**
+- Toda transação autenticada passa a consumir um id de transação, mesmo as só de leitura. O custo é aceito, e o PR mede o tempo das suítes de integração antes e depois.
+- `current_user_id()` vira `security definer` com uma consulta por chave primária. O PR confere que nenhuma policy ficou visivelmente mais lenta.
+- Tabela `unlogged` some num crash e não vai para réplica. Os dois casos são aceitáveis, porque o ator só vale dentro de uma transação viva, e hoje não há réplica de leitura.
+- Todo fluxo que hoje troca o `app.user_id` dentro de uma transação precisa virar duas transações. A implementação faz esse inventário e o descreve no PR.
+- Os testes que forjam `app.user_id` passam a provar que o forjamento **não** tem efeito. Nenhum teste existente é removido.
+- A alegação de imunidade a "any GUC trick" não pode continuar no código fora de migrations aplicadas.
+- A #97 fica liberada quando a #166 entrar.
+
+**Origem.** Issue #166; re-revisão de segurança do PR #159. Opção 1 escolhida pelo dono do produto em 2026-09-30. O desenho foi prototipado num banco descartável antes da implementação. Desenho aprovado pelo dono do produto em 2026-09-30.
+
+---
+
 ## 2026-09-30 — Limite de tamanho do nome no perfil próprio
 
 **Contexto.** A SPEC de colaboradores (`specs/colaboradores.md`, §§3, 5 e 6) exige que o nome do próprio perfil seja obrigatório, não vazio e com **limite de tamanho**, mas não fixa um número. A task #101 precisava de um valor para validar `PATCH /me/profile`.
@@ -1157,6 +1195,30 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 **Consequência.** O filtro de cargo da grade tem fonte própria, sem alterar o formato de resposta que outras rotas já usam. Rota aditiva: nenhuma migration, nenhuma policy nova, nenhum campo novo em contrato existente. Como é um caminho novo de leitura da agência, entra com a mesma barreira de escopo da listagem (a RLS mostra as agências do chamador, nunca uma só; o filtro de agência da consulta é a barreira que separa).
 
 **Origem.** Issue #218, decidida pelo maestro a partir da lacuna achada na #102. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-01 — CHECK no cargo do vínculo, com backfill pequeno e explícito
+
+**Contexto.** `agency_memberships.job_title` é `text` sem restrição, enquanto o schema de resposta da listagem (#95), do detalhe (#96) e da rota de cargos (#218) exige um valor aparado de 1 a **256 unidades UTF-16**, contando como whitespace de borda o conjunto do `String.prototype.trim` do JavaScript (que inclui NBSP **e** U+FEFF, entre outros). Um único cargo fora desse formato derruba com **500** a leitura da agência inteira. Hoje só o `seed:demo` grava cargo; a #97 vai passar a gravar. Achado da revisão do PR #220 e da revisão do PR #232.
+
+**Decisão.** Mudança **estrutural, de backfill pequeno**, na migration `20261001000000_job_title_format`: a forma armazenada passa a ser o valor aparado pelas mesmas regras do contrato (trigger `BEFORE INSERT OR UPDATE` chama `app_private.normalize_job_title`), e o `CHECK` exige 1 a 256 **unidades UTF-16** (`app_private.utf16_length`), não pontos de código. Antes do `CHECK`, o backfill trata o legado: espaços-só viram `null` e um legado que ainda passe de 256 unidades UTF-16 também vira `null`; o `up()` da migration imprime as três contagens em uma linha (`console.log`, visível no log do `pnpm db:migrate`), porque um `raise notice` não chega a log nenhum sob o `log_min_messages` padrão do servidor — **não há truncamento silencioso**. `specs/colaboradores.md` não muda de formato. Alcance: uma tabela, uma coluna.
+
+**Consequência.** O dado lido nunca é inválido para o contrato, em nenhuma rota presente ou futura. O preço é a perda explícita do legado acima de 256, registrada e contada. **Pendente de validação** do dono do produto: a escolha de descartar (em vez de truncar) um cargo legado acima do limite.
+
+**Origem.** Issue #225, achados da revisão do PR #220 (#218) e da revisão do PR #232. **Pendente de validação** do dono do produto.
+
+---
+
+## 2026-10-06 — Até o lançamento do MVP, sem rodada de QA nem teste de invasão
+
+**Contexto.** Além da revisão de cada PR, o fluxo vinha incluindo rodadas de QA manual e testes de invasão sobre o que já estava integrado. Isso atrasa a entrega, e o foco agora é lançar o MVP o quanto antes.
+
+**Decisão.** Até o lançamento do MVP, o fluxo é implementar, revisar e integrar. Todo PR continua passando pela revisão de código e, quando toca o que `AGENTS.md` lista, pela revisão de segurança de [`docs/security-review.md`](../security-review.md), que segue igual: ataques executados contra o que o próprio PR entrega. Ficam suspensos as rodadas de QA manual, os testes de integridade e os testes de invasão fora do escopo de um PR. O dono do produto faz essa validação no fim do MVP, antes do lançamento.
+
+**Consequência.** Uma issue é dada como pronta quando o PR passa no CI e nas revisões, sem esperar uma rodada de QA. Bugs e brechas achados na validação final viram issues, priorizadas nesse momento.
+
+**Origem.** Decidido pelo dono do produto em sessão, em 2026-10-06.
 
 ---
 

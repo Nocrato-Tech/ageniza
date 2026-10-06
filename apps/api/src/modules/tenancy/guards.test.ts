@@ -24,7 +24,7 @@ const createDatabase = (rows: readonly Record<string, unknown>[], statements: st
   transaction: async (work) => work({
     raw: async (statement: string) => {
       statements.push(statement);
-      if (statement.includes('set_config')) return { rows: [] };
+      if (statement.includes('bind_actor')) return { rows: [] };
       return { rows };
     }
   } as never)
@@ -52,7 +52,7 @@ describe('tenant guards', () => {
       roleKey: 'production',
       permissions: new Set(['content.read', 'content.publish'])
     });
-    expect(statements[0]).toContain("set_config('app.user_id'");
+    expect(statements[0]).toContain('app_private.bind_actor');
     expect(statements[1]).toContain('agency_memberships');
   });
 

@@ -14,7 +14,7 @@ import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
+import { routeBody, routeResponse } from '../../plugins/infra/zod.js';
 import {
   clientFromRow,
   createClient,
@@ -119,7 +119,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
   app.post('/agencies/:agencyId/clients', authenticated(createDocs), async (request, reply) => {
     const auth = requireAuth(request);
     const tenant = requireTenant(request);
-    const body = parseRequest(createDocs.schemas.body, request.body);
+    const body = routeBody(createDocs, request);
 
     let row;
     try {
@@ -129,7 +129,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       if (isActiveClientNameConflict(error)) throw clientNameInUse();
       throw error;
     }
-    return reply.status(201).send(parseResponse(createDocs.schemas.response, clientFromRow(row, null)));
+    return reply.status(201).send(routeResponse(createDocs, request, clientFromRow(row, null)));
   });
 
   app.get('/agencies/:agencyId/clients/:clientId', authenticated(detailDocs), async (request, reply) => {
@@ -146,7 +146,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     if (result === undefined) throw clientNotFound();
 
     const photoUrl = await signPhotoUrl(request, result.row.photo_key);
-    return reply.send(parseResponse(detailDocs.schemas.response, {
+    return reply.send(routeResponse(detailDocs, request, {
       ...clientFromRow(result.row, photoUrl),
       summary: result.summary
     }));
@@ -156,7 +156,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     const auth = requireAuth(request);
     const tenant = requireTenant(request);
     const clientId = clientIdFromRoute(request);
-    const body = parseRequest(updateDocs.schemas.body, request.body);
+    const body = routeBody(updateDocs, request);
 
     const outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
       let updated;
@@ -181,6 +181,6 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     if (outcome.kind === 'not-found') throw clientNotFound();
     if (outcome.kind === 'archived') throw clientArchived();
     const photoUrl = await signPhotoUrl(request, outcome.row.photo_key);
-    return reply.send(parseResponse(updateDocs.schemas.response, clientFromRow(outcome.row, photoUrl)));
+    return reply.send(routeResponse(updateDocs, request, clientFromRow(outcome.row, photoUrl)));
   });
 };

@@ -7,8 +7,9 @@ that talks to it. There is no sign-up, invitation, agency, or role logic here â€
 ## Routes
 
 All routes are mounted under `/auth` (served publicly at `/api/auth/...` behind nginx). Request and
-response bodies are validated against `packages/contracts/src/auth.ts` with `parseRequest`/
-`parseResponse`. Origin/CSRF checking is global (see below); no route repeats it.
+response bodies are validated against `packages/contracts/src/auth.ts` with the route helpers
+(`routeBody`/`routeResponse`), which read the schema the route declares in its own `config`.
+Origin/CSRF checking is global (see below); no route repeats it.
 
 | Method and route | Body | Success | Errors |
 | --- | --- | --- | --- |
