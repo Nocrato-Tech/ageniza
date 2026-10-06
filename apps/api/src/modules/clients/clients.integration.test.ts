@@ -391,21 +391,73 @@ describe('CLIENTS HTTP module (#124)', () => {
     await expect(clientRow(clientId)).resolves.toMatchObject({ status: 'active', agency_id: agencyA });
   });
 
-  it('rejects control characters, oversized names and accepts NBSP and zero-width text', async () => {
-    expect((await postClient(adminCookie, agencyA, { name: `Tab\tName ${randomUUID()}` })).statusCode).toBe(400);
-    expect((await postClient(adminCookie, agencyA, { name: `Nul\u0000Name ${randomUUID()}` })).statusCode).toBe(400);
+  it('rejects control, bidi and invisible characters in names and requires a letter or number', async () => {
+    const suffix = randomUUID();
+    expect((await postClient(adminCookie, agencyA, { name: `Tab\tName ${suffix}` })).statusCode).toBe(400);
+    expect((await postClient(adminCookie, agencyA, { name: `Nul\u0000Name ${suffix}` })).statusCode).toBe(400);
     expect((await postClient(adminCookie, agencyA, { name: 'a'.repeat(10_000) })).statusCode).toBe(400);
 
-    const nbsp = `Café\u00a0Central ${randomUUID()}`;
-    expect((await postClient(adminCookie, agencyA, { name: nbsp })).statusCode).toBe(201);
-    const zeroWidth = `Café\u200bCentral ${randomUUID()}`;
-    expect((await postClient(adminCookie, agencyA, { name: zeroWidth })).statusCode).toBe(201);
+    // Each invisible character below would create an active homonym that renders identically to
+    // an existing name -- a zero-width space, a bidi override and the Hangul filler.
+    expect((await postClient(adminCookie, agencyA, { name: `Café\u200bCentral ${suffix}` })).statusCode).toBe(400);
+    expect((await postClient(adminCookie, agencyA, { name: `Café\u202eCentral ${suffix}` })).statusCode).toBe(400);
+    expect((await postClient(adminCookie, agencyA, { name: `Café\u3164Central ${suffix}` })).statusCode).toBe(400);
+    expect((await postClient(adminCookie, agencyA, { name: '★★★' })).statusCode).toBe(400);
+    expect((await postClient(adminCookie, agencyA, { name: '\u00a0\u00a0' })).statusCode).toBe(400);
+
+    // The joiners are accepted only between letters, combining marks or pictographs.
+    expect((await postClient(adminCookie, agencyA, { name: `Café\u200cCentral ${suffix}` })).statusCode).toBe(201);
+    expect((await postClient(adminCookie, agencyA, { name: `\u200dCafé ${suffix}` })).statusCode).toBe(400);
+
+    // NBSP is a space, not an invisible format character: inside the name it stays.
+    expect((await postClient(adminCookie, agencyA, { name: `Café\u00a0Central ${suffix}` })).statusCode).toBe(201);
+  });
+
+  it('applies the same name rule to the contact fields and legalName', async () => {
+    const clientId = await createClient({ agencyId: agencyA });
+    expect((await patchClient(adminCookie, agencyA, clientId, { contactName: 'Maria\u200bSouza' })).statusCode).toBe(400);
+    expect((await patchClient(adminCookie, agencyA, clientId, { contactPhone: '+55 11 90000-0000\u202e' })).statusCode).toBe(400);
+    expect((await patchClient(adminCookie, agencyA, clientId, { legalName: 'Padaria\u200bCentral Ltda' })).statusCode).toBe(400);
+
+    const accepted = await patchClient(managerCookie, agencyA, clientId, { contactName: 'Maria Souza', contactPhone: '+55 11 90000-0000' });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json()).toMatchObject({ contactName: 'Maria Souza', contactPhone: '+55 11 90000-0000' });
+  });
+
+  it('stores an empty legalName, segment or contact as null instead of an empty string', async () => {
+    const clientId = await createClient({ agencyId: agencyA, legalName: 'Original Ltda' });
+    const padded = await patchClient(adminCookie, agencyA, clientId, { legalName: '   ', segment: '', contactName: '\u00a0', contactPhone: '  ' });
+    expect(padded.statusCode).toBe(200);
+    expect(padded.json()).toMatchObject({ legalName: null, segment: null, contactName: null, contactPhone: null });
+    await expect(clientRow(clientId)).resolves.toMatchObject({ legal_name: null, segment: null, contact_name: null, contact_phone: null });
+  });
+
+  it('answers 400 on an empty PATCH and writes nothing', async () => {
+    const clientId = await createClient({ agencyId: agencyA, name: `Intocado ${randomUUID()}` });
+    const before = await clientRow(clientId);
+    expect((await patchClient(adminCookie, agencyA, clientId, {})).statusCode).toBe(400);
+    const after = await clientRow(clientId);
+    expect(after?.updated_by).toBe(before?.updated_by);
+    expect(new Date(after?.updated_at as Date).getTime()).toBe(new Date(before?.updated_at as Date).getTime());
+  });
+
+  it('answers 404 on a PATCH to a client of another agency even for a member of both, and changes nothing', async () => {
+    const clientB = await createClient({ agencyId: agencyB, name: `B ${randomUUID()}`, legalName: 'Original B Ltda' });
+    const before = await clientRow(clientB);
+    const response = await patchClient(dualAdminCookie, agencyA, clientB, { legalName: 'Alterado' });
+    expect(response.statusCode).toBe(404);
+    const after = await clientRow(clientB);
+    expect(after).toMatchObject({ legal_name: 'Original B Ltda', updated_by: before?.updated_by });
+    expect(new Date(after?.updated_at as Date).getTime()).toBe(new Date(before?.updated_at as Date).getTime());
   });
 
   it('signs photoUrl when a key exists, returns null with a warning for an unusable key, and null with no key', async () => {
     const withPhoto = await createClient({ agencyId: agencyA, photoKey: `agencies/${agencyA}/clients/${randomUUID()}/avatar/${randomUUID()}.png` });
     const signed = await getClient(adminCookie, agencyA, withPhoto);
-    expect(typeof (signed.json() as { photoUrl?: unknown }).photoUrl).toBe('string');
+    const photoUrl = (signed.json() as { photoUrl: string }).photoUrl;
+    const url = new URL(photoUrl);
+    expect(url.searchParams.get('X-Amz-Signature')).toBeTruthy();
+    expect(url.searchParams.get('X-Amz-Expires')).toBe('300');
 
     const brokenPhoto = await createClient({ agencyId: agencyA, photoKey: 'not-a-real-key' });
     const logsBefore = logs.text().length;

@@ -1454,7 +1454,9 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
           }
         },
         "required": [
@@ -1598,7 +1600,9 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
           },
           "legalName": {
             "type": [
@@ -4836,7 +4840,7 @@
       "post": {
         "operationId": "createClient",
         "summary": "Cadastra um cliente",
-        "description": "Só o nome. Nome já ativo na agência, mesmo com outra caixa ou espaços, responde 409 pela violação do índice único.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.cadastrar`.",
+        "description": "Só o nome. O nome é aparado, exige ao menos uma letra ou número e recusa caracteres de controle, invisíveis e overrides bidi (a regra compartilhada de nome de exibição). Nome já ativo na agência, mesmo com outra caixa ou espaços, responde 409 pela violação do índice único.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.cadastrar`.",
         "tags": [
           "clients"
         ],
@@ -5171,7 +5175,7 @@
       "patch": {
         "operationId": "updateClient",
         "summary": "Edita o cadastro do cliente",
-        "description": "Aceita qualquer subconjunto dos campos de cadastro; `null` limpa um campo. Cliente arquivado\nresponde 409 e nada muda; nome em uso entre os ativos responde 409 pelo índice único.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "description": "Aceita qualquer subconjunto dos campos de cadastro, mas exige ao menos um: corpo vazio é 400.\n`null` limpa um campo e texto em branco vira `null`; nome e contatos seguem a mesma regra do\nnome de exibição. Cliente arquivado responde 409 e nada muda; nome em uso entre os ativos\nresponde 409 pelo índice único.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
         "tags": [
           "clients"
         ],

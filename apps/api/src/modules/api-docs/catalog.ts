@@ -801,7 +801,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'createClient',
     module: 'clients',
     summary: 'Cadastra um cliente',
-    description: 'Só o nome. Nome já ativo na agência, mesmo com outra caixa ou espaços, responde 409 pela violação do índice único.',
+    description: 'Só o nome. O nome é aparado, exige ao menos uma letra ou número e recusa caracteres de controle, invisíveis e overrides bidi (a regra compartilhada de nome de exibição). Nome já ativo na agência, mesmo com outra caixa ou espaços, responde 409 pela violação do índice único.',
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.cadastrar',
     params: AgencyPathParamsSchema,
@@ -856,8 +856,10 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     module: 'clients',
     summary: 'Edita o cadastro do cliente',
     description: [
-      'Aceita qualquer subconjunto dos campos de cadastro; `null` limpa um campo. Cliente arquivado',
-      'responde 409 e nada muda; nome em uso entre os ativos responde 409 pelo índice único.'
+      'Aceita qualquer subconjunto dos campos de cadastro, mas exige ao menos um: corpo vazio é 400.',
+      '`null` limpa um campo e texto em branco vira `null`; nome e contatos seguem a mesma regra do',
+      'nome de exibição. Cliente arquivado responde 409 e nada muda; nome em uso entre os ativos',
+      'responde 409 pelo índice único.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.operar',
