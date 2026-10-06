@@ -1108,7 +1108,7 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 
 **Consequência.** `invitations_insert` passa a exigir `app_private.client_is_active(client_id)` para `purpose = 'client_invite'`, mantendo a regra de admin do convite de colaborador do #159. `clients.status`, `clients.archived_at`, `clients.closing_date` e `client_memberships.status` continuam fora do *grant* de `UPDATE` de `ageniza_app`: a única forma de mudá-los é por estas funções. Isso cumpre a regra 12 e a 13 da SPEC e é o modelo que a publicação agendada de Conteúdo deve copiar.
 
-**Origem.** Issue #123; migration `20260930000100_client_lifecycle_functions.mjs`.
+**Origem.** Issue #123; migration `20261006000050_client_lifecycle_functions.mjs`.
 
 ---
 
