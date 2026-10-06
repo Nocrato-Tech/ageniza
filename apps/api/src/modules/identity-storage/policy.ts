@@ -87,8 +87,27 @@ const requireKnownExtension = (extension: string): string => {
 export const buildUserAvatarKeyPrefix = (userId: string, versionId: string): string =>
   `users/${requireUuid(userId, 'userId')}/avatar/${requireUuid(versionId, 'versionId')}`;
 
+const clientAvatarDirectory = (agencyId: string, clientId: string): string =>
+  `agencies/${requireUuid(agencyId, 'agencyId')}/clients/${requireUuid(clientId, 'clientId')}/avatar/`;
+
 export const buildClientAvatarKeyPrefix = (agencyId: string, clientId: string, versionId: string): string =>
-  `agencies/${requireUuid(agencyId, 'agencyId')}/clients/${requireUuid(clientId, 'clientId')}/avatar/${requireUuid(versionId, 'versionId')}`;
+  `${clientAvatarDirectory(agencyId, clientId)}${requireUuid(versionId, 'versionId')}`;
+
+/**
+ * True only for a key that `buildClientAvatarKey` could have produced for exactly this agency and
+ * client. A stored reference is data, not proof: before the API deletes the object it names, it
+ * checks the key still points inside the client's own directory, so a reference that somehow names
+ * another tenant's object is never deleted.
+ */
+export const isClientAvatarKey = (key: string, agencyId: string, clientId: string): boolean => {
+  const directory = clientAvatarDirectory(agencyId, clientId);
+  if (!key.startsWith(directory)) return false;
+  const file = key.slice(directory.length);
+  const dot = file.lastIndexOf('.');
+  return dot > 0
+    && UUID_PATTERN.test(file.slice(0, dot))
+    && contentTypeForExtension(file.slice(dot + 1)) !== undefined;
+};
 
 export const buildUserAvatarKey = (userId: string, versionId: string, extension: string): string =>
   `${buildUserAvatarKeyPrefix(userId, versionId)}.${requireKnownExtension(extension)}`;

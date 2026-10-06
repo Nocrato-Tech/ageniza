@@ -233,7 +233,8 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
         requireAgencyAccess: createRequireAgencyAccess({ database }),
         requirePermission,
         identityStorage: createIdentityStorageClient(config.identityStorage),
-        photoUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds
+        photoUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds,
+        photoMaxImageBytes: config.identityStorage.maxImageBytes
       };
   const collaborators: CollaboratorModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
     database,

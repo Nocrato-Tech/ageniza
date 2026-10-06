@@ -1,4 +1,4 @@
-# Módulo `clients` (issues #124, #125 e #127)
+# Módulo `clients` (issues #124, #125, #126 e #127)
 
 Cadastrar, ler, editar e listar os clientes da agência, mais o estudo de marca e as personas.
 Todas as rotas sob `requireSession` e `requireAgencyAccess`, com a permissão nomeada que a policy
@@ -10,6 +10,8 @@ de RLS da tabela também exige:
 | `POST` | `/agencies/:agencyId/clients` | `cliente.cadastrar` |
 | `GET` | `/agencies/:agencyId/clients/:clientId` | `cliente.visualizar` |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId` | `cliente.operar` |
+| `PUT` | `/agencies/:agencyId/clients/:clientId/photo` | `cliente.operar` |
+| `DELETE` | `/agencies/:agencyId/clients/:clientId/photo` | `cliente.operar` |
 | `GET` | `/agencies/:agencyId/clients/:clientId/brand-study` | `cliente.visualizar` |
 | `PUT` | `/agencies/:agencyId/clients/:clientId/brand-study/sections/:sectionKey` | `cliente.operar` |
 | `POST` | `/agencies/:agencyId/clients/:clientId/personas` | `cliente.operar` |
@@ -74,6 +76,35 @@ declara é 400.
   custo não cresce com os convites das outras agências. **Só é computada** para quem tem
   `cliente.convidar_usuario`; para os demais o campo é **omitido**, nunca zero.
 
+## Foto (issue #126)
+
+`PUT .../photo` recebe `{ imageBase64 }` (JSON, o transporte que a #100 escolheu para todo ativo de
+identidade) e devolve `{ photoUrl }`; `DELETE .../photo` devolve `204`. O objeto vive no
+armazenamento de identidade, nunca em `media_assets`, e **não entra em quota de agência**.
+
+- **Tipo pelo conteúdo.** `uploadIdentityImage` lê os magic bytes; não há `contentType` no contrato
+  e o corpo é `.strict()`, então um rótulo declarado é 400. SVG, HTML e bytes desconhecidos são 415,
+  imagem acima do teto é 413, e **nada é gravado** em nenhum dos casos.
+- **Tamanho antes do corpo.** A rota declara o próprio `bodyLimit` (`policy.ts`): o parser do
+  Fastify recusa com 413 antes de qualquer handler ler o corpo. O limite global não foi aumentado.
+- **A chave vem só de ids do servidor**: `agencies/<agencyId>/clients/<clientId>/avatar/<uuid>.<ext>`,
+  com `agencyId` da rota autorizada e `clientId` validado como UUID (inválido é 404, como no resto
+  do módulo). Nada do corpo, da query ou do cabeçalho entra na chave.
+- **Cliente arquivado ou inexistente** é checado **antes** do envio ao bucket (409 `CLIENT_ARCHIVED`
+  ou o 404 indistinto). Se o arquivamento acontecer entre a checagem e o commit, o objeto recém
+  gravado é removido e a resposta é a mesma.
+- **Protocolo da #100.** O objeto novo é gravado, a referência é confirmada sob `select ... for
+  update` na linha do cliente, e só então o anterior é apagado. O lock serializa trocas
+  concorrentes (sem ele sobra objeto órfão). Falha ao confirmar apaga o objeto novo.
+- **Só se apaga o que é do cliente.** `photo_key` é dado numa tabela: antes de apagar o objeto
+  anterior a rota confere que a chave ainda está no diretório do próprio cliente
+  (`isClientAvatarKey`). Uma referência que aponte para outro cliente ou outra agência é registrada
+  em `warn` e **não** apagada.
+- **Teto por usuário** (`CLIENT_PHOTO_RATE_LIMIT`, 30 por minuto): o armazenamento de identidade
+  não tem quota, então o teto segue a conta. Mesmo número da foto de perfil.
+- As leituras (detalhe, resposta do `PATCH`) assinam a referência com a mesma validade; o bucket
+  nunca é público.
+
 ## Estudo de marca e personas (#127)
 
 As **sete seções são fixas** e o `GET` sempre devolve todas, preenchidas ou não (seção 3 da SPEC);
@@ -95,5 +126,7 @@ inglês no contrato e é gravado com o rótulo em português, como o banco exige
 
 ## O que ficou de fora
 
-- Foto (`#126`), arquivar/reativar e encerramento (`#131`).
+- Arquivar/reativar e encerramento (`#131`).
+- A foto no portal (`#129`): a rota ainda não existe; ao nascer, deve assinar `photo_key` do mesmo
+  jeito que o detalhe e a listagem.
 - Conversas em thread, acessos ao portal e o portal do cliente.

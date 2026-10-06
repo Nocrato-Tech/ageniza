@@ -68,7 +68,8 @@ forever, and even when the extension repeated, the object was overwritten *befor
 own database commit, so a rolled-back transaction left a photo live that no reference in the
 database ever pointed at.
 
-The protocol #101 and #126 must both follow:
+The protocol #101 and #126 must both follow (`clients/routes.ts` does, and also refuses to delete a
+previous key outside the client's own directory, `policy.ts`'s `isClientAvatarKey`):
 
 1. Call `uploadIdentityImage({ keyPrefix: buildUserAvatarKeyPrefix(userId, randomUUID()), body })`.
    It returns the final `key` (extension included).

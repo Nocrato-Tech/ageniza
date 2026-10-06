@@ -75,7 +75,8 @@ export const startApi = async (): Promise<void> => {
     requireAgencyAccess: createRequireAgencyAccess({ database }),
     requirePermission,
     identityStorage: config.identityStorage === undefined ? undefined : createIdentityStorageClient(config.identityStorage),
-    photoUrlExpirySeconds: config.identityStorage?.downloadUrlExpirySeconds ?? 300
+    photoUrlExpirySeconds: config.identityStorage?.downloadUrlExpirySeconds ?? 300,
+    photoMaxImageBytes: config.identityStorage?.maxImageBytes
   };
   // The collaborator listing signs the user's avatar, so it needs identity storage; like media,
   // the module is only registered when that storage is configured (production always configures it).

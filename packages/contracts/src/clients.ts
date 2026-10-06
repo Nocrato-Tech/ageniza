@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { AuthEmailSchema } from './auth.js';
 import { createDisplayNameSchema } from './display-name.js';
 import { createPaginatedResponseSchema, PaginationInputSchema } from './pagination.js';
+import { PROFILE_PHOTO_MAX_BASE64_LENGTH } from './profile.js';
 import { SearchTextSchema } from './search.js';
 
 /**
@@ -136,6 +137,19 @@ export const ClientSchema = z.object({
   archivedAt: z.string().nullable()
 }).strict();
 
+/**
+ * `PUT .../photo` body: the image base64-encoded in JSON, the transport issue #100 chose for every
+ * identity asset (the profile photo uses it too). There is no declared content type and no key:
+ * the type is sniffed from the bytes and the object key is built from server-validated ids only.
+ */
+export const UploadClientPhotoRequestSchema = z.object({
+  imageBase64: z.string().min(1).max(PROFILE_PHOTO_MAX_BASE64_LENGTH).regex(/^[A-Za-z0-9+/]+={0,2}$/, 'must be a base64-encoded image')
+}).strict();
+
+export const UploadClientPhotoResponseSchema = z.object({
+  photoUrl: z.string().url()
+}).strict();
+
 /** The General tab summary (specs/clientes.md section 6). */
 export const ClientSummarySchema = z.object({
   /** Filled brand-study sections, 0..7; `personas` counts when at least one persona is active. */
@@ -193,6 +207,8 @@ export const ClientListResponseSchema = createPaginatedResponseSchema(ClientList
 export type ClientStatus = z.infer<typeof ClientStatusSchema>;
 export type CreateClientRequest = z.infer<typeof CreateClientRequestSchema>;
 export type UpdateClientRequest = z.infer<typeof UpdateClientRequestSchema>;
+export type UploadClientPhotoRequest = z.infer<typeof UploadClientPhotoRequestSchema>;
+export type UploadClientPhotoResponse = z.infer<typeof UploadClientPhotoResponseSchema>;
 export type Client = z.infer<typeof ClientSchema>;
 export type ClientSummary = z.infer<typeof ClientSummarySchema>;
 export type ClientDetailResponse = z.infer<typeof ClientDetailResponseSchema>;
