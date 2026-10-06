@@ -1,5 +1,7 @@
 import type { z } from 'zod';
 
+import { COLLABORATOR_ROLES_READ_PERMISSIONS } from '../collaborators/permissions.js';
+import type { RoutePermission } from '../../plugins/infra/route-metadata.js';
 import {
   AgencyClientPathParamsSchema,
   AgencyClientPersonaPathParamsSchema,
@@ -9,6 +11,8 @@ import {
   AgencyMeResponseSchema,
   AgencyMediaAssetPathParamsSchema,
   AgencyPathParamsSchema,
+  AgencyRolesQuerySchema,
+  AgencyRolesResponseSchema,
   AuthLoginRequestSchema,
   AuthLoginResponseSchema,
   AuthPasswordForgotRequestSchema,
@@ -79,6 +83,14 @@ export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agenci
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
+/** Every route rendered with a list of permissions says so in prose, in both outputs. */
+export const permissionLabel = (permission: RoutePermission): string =>
+  permission === null
+    ? '—'
+    : Array.isArray(permission)
+      ? permission.map((key) => `\`${key}\``).join(' ou ')
+      : `\`${permission}\``;
+
 export interface ApiErrorDoc {
   readonly status: number;
   readonly code: string;
@@ -102,8 +114,8 @@ export interface DocumentedRoute {
   readonly summary: string;
   readonly description: string;
   readonly access: string;
-  /** Named permission `requirePermission` demands, or null when the route has none. */
-  readonly permission: string | null;
+  /** Permission(s) the route's guard demands, or null when it has none; a list means any one. */
+  readonly permission: RoutePermission;
   // Path and query schemas are always strict objects, which is what the OpenAPI registry accepts
   // as route parameters; a body may be any schema (a discriminated union, for instance).
   readonly params?: z.AnyZodObject;
@@ -852,6 +864,41 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
 
   {
     method: 'get',
+path: '/agencies/:agencyId/roles',
+    operationId: 'listAgencyRoles',
+    module: 'collaborators',
+    summary: 'Lista os papéis atribuíveis na agência',
+    description: [
+      'Papéis de sistema e papéis próprios da agência, com o id que o convite, a troca de papel e a',
+      'reativação exigem -- a única rota em que esses ids aparecem. O papel Admin só aparece para o',
+      'Owner.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: COLLABORATOR_ROLES_READ_PERMISSIONS,
+    params: AgencyPathParamsSchema,
+    query: AgencyRolesQuerySchema,
+    responses: [{
+      status: 200,
+      description: 'Papéis atribuíveis na agência.',
+      schema: AgencyRolesResponseSchema,
+      example: {
+        data: [
+          { id: roleId, key: 'admin', name: 'Admin' },
+          { id: '66666666-6666-4666-8666-666666666667', key: 'account_manager', name: 'Gestor de conta' }
+        ]
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+
+  {
+    method: 'get',
     path: '/agencies/:agencyId/clients',
     operationId: 'listClients',
     module: 'clients',
@@ -894,6 +941,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
     ]
   },
+
   {
     method: 'post',
     path: '/agencies/:agencyId/clients',

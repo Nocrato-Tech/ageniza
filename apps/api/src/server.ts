@@ -11,7 +11,7 @@ import { createAuthAuditRecorder } from './modules/auth/audit.js';
 import { createAuthLimiter } from './modules/auth/auth-limiter.js';
 import { createAuth } from './modules/auth/better-auth.js';
 import { createEmailService } from './modules/auth/email-service.js';
-import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from './modules/tenancy/guards.js';
+import { createRequireAgencyAccess, createRequireClientAccess, requireAnyPermission, requirePermission } from './modules/tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from './modules/invitations/routes.js';
 import type { ClientModuleDependencies } from './modules/clients/routes.js';
 import { createIdentityStorageClient } from './modules/identity-storage/storage-client.js';
@@ -85,7 +85,8 @@ export const startApi = async (): Promise<void> => {
     identityStorage: createIdentityStorageClient(config.identityStorage),
     identityDownloadUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds,
     requireAgencyAccess: createRequireAgencyAccess({ database }),
-    requirePermission
+    requirePermission,
+    requireAnyPermission
   };
   // Storage is optional at config-load time (tests/tooling that never touch media may omit it),
   // but the API only starts the media module when it is actually configured.

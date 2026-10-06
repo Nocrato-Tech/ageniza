@@ -4,6 +4,7 @@ import {
   DOCUMENTED_ROUTES,
   ERROR_MESSAGES,
   MODULE_DESCRIPTIONS,
+  permissionLabel,
   type ApiModule,
   type DocumentedRoute
 } from './catalog.js';
@@ -25,7 +26,7 @@ const routeSection = (route: DocumentedRoute): string => {
     route.summary + '.',
     '',
     `- Acesso: ${route.access}.`,
-    `- Permissão: ${route.permission === null ? '—' : `\`${route.permission}\``}.`
+    `- Permissão: ${permissionLabel(route.permission)}.`
   ];
   if (route.requestExample !== undefined) {
     lines.push('', '**Requisição** (`application/json`):', '', jsonBlock(route.requestExample));
@@ -43,7 +44,7 @@ const moduleSection = (module: ApiModule): string => {
   const table = [
     '| método | rota | acesso | permissão | o que faz |',
     '|---|---|---|---|---|',
-    ...routes.map((route) => `| \`${route.method.toUpperCase()}\` | \`${route.path}\` | ${route.access} | ${route.permission === null ? '—' : `\`${route.permission}\``} | ${route.summary} |`)
+    ...routes.map((route) => `| \`${route.method.toUpperCase()}\` | \`${route.path}\` | ${route.access} | ${permissionLabel(route.permission)} | ${route.summary} |`)
   ].join('\n');
   return [
     `### ${module} — ${MODULE_DESCRIPTIONS[module]}`,

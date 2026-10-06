@@ -10,8 +10,11 @@
  * `responseStatus` or whose body does not parse with the declared `schemas.response`, so the
  * catalog cannot drift from the route it documents.
  */
+/** A permission a route demands, or null; a list means any one of them is enough, and it never may be empty. */
+export type RoutePermission = string | readonly [string, ...string[]] | null;
+
 export interface DocumentedRouteConfig {
-  readonly permission: string | null;
+  readonly permission: RoutePermission;
   readonly responseStatus: number;
   readonly schemas: {
     readonly params?: unknown;
@@ -23,7 +26,7 @@ export interface DocumentedRouteConfig {
 
 declare module 'fastify' {
   interface FastifyContextConfig {
-    permission?: string | null;
+    permission?: RoutePermission;
     responseStatus?: number;
     schemas?: DocumentedRouteConfig['schemas'];
   }
