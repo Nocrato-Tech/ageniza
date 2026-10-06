@@ -11,6 +11,7 @@ import { apiPath } from './api-path.js';
 import { CollaboratorDetailDialog } from './collaborator-detail.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { PendingInvitationsSection } from './pending-invitations.js';
 import { NotFoundPage } from './status-pages.js';
 
 /** `specs/colaboradores.md` §6: 24 per page, a multiple of both 3 and 4 so the grid never breaks. */
@@ -85,6 +86,7 @@ export function CollaboratorsPage() {
   const role = searchParams.get('role') ?? '';
   const jobTitle = searchParams.get('jobTitle') ?? '';
   const page = parsePage(searchParams.get('page'));
+  const invitesPage = parsePage(searchParams.get('convites'));
   // Whitespace-only is not a search: the API trims `q` and refuses an empty filter as a 400.
   const search = q.trim();
 
@@ -112,6 +114,14 @@ export function CollaboratorsPage() {
   const changePage = (nextPage: number): void => {
     const next = new URLSearchParams(searchParams);
     if (nextPage <= 1) next.delete('page'); else next.set('page', String(nextPage));
+    setSearchParams(next, { replace: true });
+  };
+
+  // The invitations list has its own page, independent from the team's: the two counts and page
+  // totals differ by design (specs/colaboradores.md §7).
+  const changeInvitesPage = (nextPage: number): void => {
+    const next = new URLSearchParams(searchParams);
+    if (nextPage <= 1) next.delete('convites'); else next.set('convites', String(nextPage));
     setSearchParams(next, { replace: true });
   };
 
@@ -211,6 +221,7 @@ export function CollaboratorsPage() {
           summary={`${collaborators.data.data.length} de ${collaborators.data.meta.totalItems} pessoas`}
         />
       </>}
+      <PendingInvitationsSection page={invitesPage} onPageChange={changeInvitesPage} />
       {membershipId !== null && <CollaboratorDetailDialog key={agency.agencyId + membershipId} membershipId={membershipId} onClose={closeDetail} />}
     </section>
   );

@@ -373,6 +373,40 @@ describe('an over-long path parameter answers 414 inside the envelope (#217)', (
     const requestLogs = logs.lines().slice(offset).join('\n');
     expect(requestLogs).not.toContain('"level":50');
   });
+
+  // Issue #227: the synthetic reply of `frameworkErrors` skips the `onRequest` hooks, so these
+  // responses used to go out without the correlation and security headers every other reply has.
+  const expectRouterErrorHeaders = (response: Awaited<ReturnType<TestApp['app']['inject']>>): void => {
+    expect(response.headers['x-request-id']).toMatch(/^[A-Za-z0-9._:-]+$/);
+    expect(response.headers['x-correlation-id']).toMatch(/^[A-Za-z0-9._:-]+$/);
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['content-security-policy']).toContain("default-src 'none'");
+    expect(response.headers['x-frame-options']).toBe('SAMEORIGIN');
+    expect(response.headers['referrer-policy']).toBe('no-referrer');
+    expect(response.headers['cross-origin-resource-policy']).toBe('same-origin');
+    expect(response.headers['strict-transport-security']).toBeTruthy();
+  };
+
+  it('carries the correlation and security headers on the 414 and the 400', async () => {
+    const overlongResponse = await app.app.inject({ method: 'GET', url: `/invitations/${overlong}`, headers: origin });
+    expect(overlongResponse.statusCode).toBe(414);
+    expectRouterErrorHeaders(overlongResponse);
+
+    const badUrlResponse = await app.app.inject({ method: 'GET', url: '/invitations/%ZZ', headers: origin });
+    expect(badUrlResponse.statusCode).toBe(400);
+    expectRouterErrorHeaders(badUrlResponse);
+  });
+
+  it('preserves a valid inbound correlation id on the router error', async () => {
+    const response = await app.app.inject({
+      method: 'GET',
+      url: `/invitations/${overlong}`,
+      headers: { ...origin, 'x-correlation-id': 'flow-42' }
+    });
+
+    expect(response.statusCode).toBe(414);
+    expect(response.headers['x-correlation-id']).toBe('flow-42');
+  });
 });
 
 // Issue #195: `raw.readableAborted` is true whenever a client leaves, even on a bodyless GET, so the
