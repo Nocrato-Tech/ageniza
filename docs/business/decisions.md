@@ -1392,6 +1392,7 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 **Consequência.** Uma issue é dada como pronta quando o PR passa no CI e nas revisões, sem esperar uma rodada de QA. Bugs e brechas achados na validação final viram issues, priorizadas nesse momento.
 
 **Origem.** Decidido pelo dono do produto em sessão, em 2026-10-06.
+
 ---
 
 ## 2026-10-06 — Tamanho e vazio do texto das seções do estudo de marca
