@@ -31,3 +31,4 @@ Ver [structural-changes.md](../blob/develop/docs/business/structural-changes.md)
 - [ ] as suítes de integração que a mudança alcança
 - [ ] a SPEC foi corrigida, se a implementação divergiu dela
 - [ ] decisão de negócio tomada no caminho está em `decisions.md`
+- [ ] a mutação que prova cada aceite está listada em "Como foi verificado"

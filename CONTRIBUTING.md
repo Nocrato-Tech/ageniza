@@ -69,6 +69,8 @@ pnpm --filter @ageniza/api test:integration
 pnpm --filter @ageniza/worker test:integration
 ```
 
+E passe pelo [checklist do implementador](docs/implementation-checklist.md): cada item dele nasceu de um achado real de revisão, e o corpo do PR lista a mutação que prova cada aceite.
+
 ## O quadro: onde ver o que dá para pegar
 
 As issues continuam sendo a fonte — elas têm o aceite, as dependências e o esboço da tela. O quadro é a **visão**: [Ageniza — MVP](https://github.com/orgs/Nocrato-Tech/projects/1), também alcançável pela aba **Projects** do repositório.

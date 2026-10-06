@@ -1427,6 +1427,18 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 
 ---
 
+## 2026-10-06 — Checklist obrigatório antes de abrir ou atualizar um PR
+
+**Contexto.** As revisões de código e de segurança repetem os mesmos achados entre implementadores de vários modelos: teste que continua verde sem a regra que deveria proteger, cenário que a RLS escondeu a falta do filtro, mudança de contrato que mescla limpo e quebra em runtime, aceite do tipo "não acontece" sem checagem automatizada.
+
+**Decisão.** Antes de abrir ou atualizar um PR, o implementador passa por `docs/implementation-checklist.md`, e o corpo do PR lista a mutação que prova cada item de aceite. Cada item do checklist nasceu de um achado real de revisão, com os PRs de origem citados ao lado.
+
+**Consequência.** Um teste que continua verde sem a regra que deveria proteger vira achado de revisão e, se voltar a se repetir, entra para o checklist. O checklist não substitui `docs/security-review.md` nem as notas do projeto — só lista o que mais se repete.
+
+**Origem.** Pedido do dono do produto, em 2026-10-06.
+
+---
+
 ## 2026-10-06 — Razão social do cliente segue a regra de nome de exibição
 
 **Contexto.** A #213 fez o nome do cliente e os campos de contato usarem a regra compartilhada de nome de exibição (#200); a SPEC (`specs/clientes.md`, seção 3) chama `legal_name` só de "razão social", texto livre, e não fixa essa regra para o campo.

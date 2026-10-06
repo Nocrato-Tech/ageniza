@@ -17,6 +17,7 @@
 - Code, identifiers, comments and log messages are English; `docs/business/`, `specs/` and user-facing messages are Portuguese. A commit follows the language of what it changes.
 - Keep comments to a minimum: comment only what the code cannot say by itself, such as a non-obvious constraint or the reason behind a surprising decision. Never restate what the next line does, and never leave a paragraph where one line serves. Unnecessary comments are noise in the codebase.
 - Before handoff, run relevant lint, typecheck, tests, and build checks.
+- Before opening or updating a pull request, go through [docs/implementation-checklist.md](docs/implementation-checklist.md) and list in the PR the mutation that proves each acceptance item.
 - A pull request that touches the database, RLS, authentication, session, authorization, invitations, storage, uploads, infrastructure or personal data is merged only after an independent security review by someone other than its author, following [docs/security-review.md](docs/security-review.md) — any model or person can run it; `.claude/agents/security-reviewer.md` is the Claude Code wrapper for the same standard.
 - Until the MVP launch, an issue is done once its pull request passes CI, code review and, when required, the security review above: no separate QA, integrity or penetration testing rounds (see `docs/business/decisions.md`, 2026-10-06).
 - Never push to `main` or `develop` (not even with `--no-verify`); work on a branch and open a pull request.
