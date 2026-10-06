@@ -1,10 +1,14 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   AgencyClientPathParamsSchema,
   AgencyPathParamsSchema,
   ClientDetailResponseSchema,
   ClientSchema,
   CreateClientRequestSchema,
-  UpdateClientRequestSchema
+  UpdateClientRequestSchema,
+  UploadClientPhotoRequestSchema,
+  UploadClientPhotoResponseSchema
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
@@ -12,16 +16,26 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
-import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
+import { buildClientAvatarKeyPrefix, isClientAvatarKey } from '../identity-storage/policy.js';
+import {
+  IdentityImageTooLargeError,
+  IdentityImageTypeRejectedError,
+  type IdentityStorageClient,
+  type UploadedIdentityImage
+} from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
+import { CLIENT_PHOTO_RATE_LIMIT, clientPhotoBodyLimitBytes } from './policy.js';
 import {
   clientFromRow,
   createClient,
   isActiveClientNameConflict,
   loadClient,
   loadClientSummary,
-  updateClient
+  lockActiveClientPhoto,
+  setClientPhotoKey,
+  updateClient,
+  type ClientTransaction
 } from './service.js';
 
 export type ClientPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
@@ -32,6 +46,8 @@ export interface ClientModuleDependencies {
   /** Absent when identity storage is not configured; then every photoUrl is null. */
   readonly identityStorage?: IdentityStorageClient;
   readonly photoUrlExpirySeconds: number;
+  /** The identity storage size cap; the photo routes are registered only with storage configured. */
+  readonly photoMaxImageBytes?: number;
   /** Injected by the tenancy module so this module never duplicates the agency-access guard. */
   readonly requireAgencyAccess: ClientPreHandler;
   /** Injected by the tenancy module; same named-permission rule the RLS policy enforces. */
@@ -56,6 +72,9 @@ const clientArchived = (): HttpError => new HttpError({
   code: 'CLIENT_ARCHIVED',
   message: 'Cliente arquivado não pode ser editado.'
 });
+
+const imageTooLarge = (): HttpError => new HttpError({ statusCode: 413, code: 'PAYLOAD_TOO_LARGE', message: 'The image exceeds the size limit.' });
+const imageTypeRejected = (): HttpError => new HttpError({ statusCode: 415, code: 'UNSUPPORTED_MEDIA_TYPE', message: 'This image type is not accepted.' });
 
 const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth']> => {
   const auth = request.auth;
@@ -109,6 +128,16 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     permission: 'cliente.visualizar',
     responseStatus: 200,
     schemas: { params: AgencyClientPathParamsSchema, response: ClientDetailResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const photoDocs = {
+    permission: 'cliente.operar',
+    responseStatus: 200,
+    schemas: { params: AgencyClientPathParamsSchema, body: UploadClientPhotoRequestSchema, response: UploadClientPhotoResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const photoDeleteDocs = {
+    permission: 'cliente.operar',
+    responseStatus: 204,
+    schemas: { params: AgencyClientPathParamsSchema }
   } satisfies DocumentedRouteConfig;
   const updateDocs = {
     permission: 'cliente.operar',
@@ -182,5 +211,117 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     if (outcome.kind === 'archived') throw clientArchived();
     const photoUrl = await signPhotoUrl(request, outcome.row.photo_key);
     return reply.send(parseResponse(updateDocs.schemas.response, clientFromRow(outcome.row, photoUrl)));
+  });
+
+  const identityStorage = dependencies.identityStorage;
+  if (identityStorage === undefined) return;
+  const maxImageBytes = dependencies.photoMaxImageBytes;
+  if (maxImageBytes === undefined) throw new Error('photoMaxImageBytes is required when identity storage is configured.');
+
+  /** Why a photo write found no active client to lock: the one 404 for absent/other-agency, or the archived 409. */
+  const photoTargetRefused = async (transaction: ClientTransaction, agencyId: string, clientId: string): Promise<HttpError> =>
+    await loadClient(transaction, { agencyId, clientId }) === undefined ? clientNotFound() : clientArchived();
+
+  // An object is only ever deleted when its key still lies inside this client's own directory: the
+  // reference is data in a table, and a key naming someone else's object must not become a delete
+  // primitive.
+  const deleteOwnObject = async (
+    request: FastifyRequest,
+    key: string | null,
+    scope: { readonly agencyId: string; readonly clientId: string },
+    code: string
+  ): Promise<void> => {
+    if (key === null) return;
+    if (!isClientAvatarKey(key, scope.agencyId, scope.clientId)) {
+      request.log.warn({ error: { name: 'ForeignPhotoKey', code } }, 'Refused to delete a client photo key outside the client directory');
+      return;
+    }
+    await identityStorage.deleteObject({ key }).catch((cleanupError: unknown) => {
+      request.log.warn({
+        error: { name: cleanupError instanceof Error ? cleanupError.name : 'UnknownError', code }
+      }, 'Failed to remove a client photo object that is no longer referenced');
+    });
+  };
+
+  // Keyed by the session user, not the IP: identity storage has no quota, so the ceiling follows
+  // the account. `hook: 'preHandler'` runs after the guards, so `request.auth` is populated.
+  const photoRateLimit = {
+    rateLimit: {
+      max: CLIENT_PHOTO_RATE_LIMIT.max,
+      timeWindow: CLIENT_PHOTO_RATE_LIMIT.windowMs,
+      hook: 'preHandler' as const,
+      keyGenerator: (request: FastifyRequest) => request.auth?.userId ?? request.ip
+    }
+  };
+
+  const photoRoute = authenticated(photoDocs);
+  app.put('/agencies/:agencyId/clients/:clientId/photo', {
+    ...photoRoute,
+    // Own limit, sized for base64/JSON overhead; the global body limit is not raised for this route.
+    bodyLimit: clientPhotoBodyLimitBytes(maxImageBytes),
+    config: { ...photoRoute.config, ...photoRateLimit }
+  }, async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = clientIdFromRoute(request);
+    const body = parseRequest(photoDocs.schemas.body, request.body);
+    const scope = { agencyId: tenant.agencyId, clientId };
+
+    // Refuse an absent or archived client before anything is written to the bucket.
+    const target = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) => loadClient(transaction, scope));
+    if (target === undefined) throw clientNotFound();
+    if (target.status === 'archived') throw clientArchived();
+
+    let uploaded: UploadedIdentityImage;
+    try {
+      uploaded = await identityStorage.uploadIdentityImage({
+        keyPrefix: buildClientAvatarKeyPrefix(tenant.agencyId, clientId, randomUUID()),
+        body: Buffer.from(body.imageBase64, 'base64')
+      });
+    } catch (error) {
+      if (error instanceof IdentityImageTooLargeError) throw imageTooLarge();
+      if (error instanceof IdentityImageTypeRejectedError) throw imageTypeRejected();
+      throw error;
+    }
+
+    // Commit the new key first, reading the previous one under the row lock (issue #100's protocol).
+    let outcome: { readonly previousKey: string | null } | { readonly refused: HttpError };
+    try {
+      outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+        const locked = await lockActiveClientPhoto(transaction, scope);
+        if (locked === undefined) return { refused: await photoTargetRefused(transaction, tenant.agencyId, clientId) };
+        await setClientPhotoKey(transaction, { ...scope, actorUserId: auth.userId, photoKey: uploaded.key });
+        return { previousKey: locked.photoKey };
+      });
+    } catch (error) {
+      await deleteOwnObject(request, uploaded.key, scope, 'CLIENT_PHOTO_CLEANUP_FAILED');
+      throw error;
+    }
+    if ('refused' in outcome) {
+      // The client was archived (or vanished) between the pre-check and the commit.
+      await deleteOwnObject(request, uploaded.key, scope, 'CLIENT_PHOTO_CLEANUP_FAILED');
+      throw outcome.refused;
+    }
+
+    await deleteOwnObject(request, outcome.previousKey, scope, 'CLIENT_PHOTO_PREVIOUS_CLEANUP_FAILED');
+    const photoUrl = await identityStorage.presignGetObject({ key: uploaded.key, expiresInSeconds: dependencies.photoUrlExpirySeconds });
+    return reply.send(parseResponse(photoDocs.schemas.response, { photoUrl }));
+  });
+
+  app.delete('/agencies/:agencyId/clients/:clientId/photo', authenticated(photoDeleteDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = clientIdFromRoute(request);
+    const scope = { agencyId: tenant.agencyId, clientId };
+
+    const outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      const locked = await lockActiveClientPhoto(transaction, scope);
+      if (locked === undefined) throw await photoTargetRefused(transaction, tenant.agencyId, clientId);
+      if (locked.photoKey !== null) await setClientPhotoKey(transaction, { ...scope, actorUserId: auth.userId, photoKey: null });
+      return { previousKey: locked.photoKey };
+    });
+
+    await deleteOwnObject(request, outcome.previousKey, scope, 'CLIENT_PHOTO_PREVIOUS_CLEANUP_FAILED');
+    return reply.status(204).send();
   });
 };

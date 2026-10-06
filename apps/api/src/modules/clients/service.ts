@@ -91,6 +91,52 @@ export const loadClient = async (
 };
 
 /**
+ * Locks an active client of the agency and returns its current photo reference. `for update` also
+ * has to pass the `clients_update` policy, so an archived client, one of another agency, or a
+ * caller without `cliente.operar` all come back as `undefined` -- the caller tells 404 from 409
+ * with `loadClient`, which only needs the read policy.
+ *
+ * The lock is what serializes concurrent photo changes of one client: without it several
+ * transactions read the same "previous" key, each commits its own, and all but one object is
+ * orphaned in a storage that has no quota.
+ */
+export const lockActiveClientPhoto = async (
+  transaction: ClientTransaction,
+  input: { readonly agencyId: string; readonly clientId: string }
+): Promise<{ readonly photoKey: string | null } | undefined> => {
+  const result = await raw<RawRows<{ photo_key: string | null }>>(transaction, `
+    select photo_key
+    from public.clients
+    where id = ?::uuid and agency_id = ?::uuid and status = 'active'
+    for update
+  `, [input.clientId, input.agencyId]);
+  const row = result.rows[0];
+  return row === undefined ? undefined : { photoKey: row.photo_key };
+};
+
+/**
+ * Points the client at a new photo object, or clears it with `null`. Only valid after
+ * `lockActiveClientPhoto` found the row: a write that matches nothing here is a bug, not a state.
+ */
+export const setClientPhotoKey = async (
+  transaction: ClientTransaction,
+  input: {
+    readonly agencyId: string;
+    readonly clientId: string;
+    readonly actorUserId: string;
+    readonly photoKey: string | null;
+  }
+): Promise<void> => {
+  const result = await raw<RawRows<{ id: string }>>(transaction, `
+    update public.clients
+    set photo_key = ?, updated_by = ?::uuid, updated_at = now()
+    where id = ?::uuid and agency_id = ?::uuid
+    returning id
+  `, [input.photoKey, input.actorUserId, input.clientId, input.agencyId]);
+  if (result.rows.length !== 1) throw new Error('The locked client photo reference could not be written.');
+};
+
+/**
  * Applies the PATCH. A field absent from the body is left untouched; an explicit null clears it.
  * `updated_by` is always the session user and `updated_at` is stamped here, never taken from the
  * body. Zero rows means the RLS `clients_update` policy refused an archived (or out-of-reach) row;
