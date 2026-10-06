@@ -6138,8 +6138,14 @@
           {
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 64
+              "enum": [
+                "branding",
+                "tone_of_voice",
+                "colors",
+                "positioning",
+                "archetype",
+                "observations"
+              ]
             },
             "required": true,
             "name": "sectionKey",

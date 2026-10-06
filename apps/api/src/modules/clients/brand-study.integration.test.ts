@@ -247,6 +247,12 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     expect(edited.json()).toMatchObject({ name: 'Lucas Silva', description: null });
   });
 
+  it('rejects an empty persona PATCH body', async () => {
+    const clientId = await createClient(agencyA);
+    const personaId = await insertPersonaRow(clientId);
+    expect((await patchPersona(adminCookie, agencyA, clientId, personaId, {})).statusCode).toBe(400);
+  });
+
   it('lets account_manager write and production only read', async () => {
     const clientId = await createClient(agencyA);
     expect((await putSection(managerCookie, agencyA, clientId, 'branding', { body: 'Gestor' })).statusCode).toBe(200);
@@ -338,20 +344,53 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
   it('rejects giant text in UTF-8 bytes and whitespace-only text', async () => {
     const clientId = await createClient(agencyA);
 
+    // The limit is bytes, not characters: 'é' takes two, so 19998 'a' + 'é' is exactly 20000.
+    expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: `${'a'.repeat(19999)}é` })).statusCode).toBe(400);
+    expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: `${'a'.repeat(19998)}é` })).statusCode).toBe(200);
     expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'a'.repeat(20001) })).statusCode).toBe(400);
-    expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'é'.repeat(10001) })).statusCode).toBe(400);
     expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'a'.repeat(20000) })).statusCode).toBe(200);
+    expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'é'.repeat(10001) })).statusCode).toBe(400);
     expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: '   ' })).statusCode).toBe(400);
     expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: '\u00a0\u00a0' })).statusCode).toBe(400);
+    expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'Nul\u0000byte' })).statusCode).toBe(400);
     const padded = await putSection(adminCookie, agencyA, clientId, 'observations', { body: '  Observação  ' });
     expect(padded.json()).toMatchObject({ body: 'Observação' });
 
+    // Persona name crosses the boundary the same way: 118 'a' + 'é' is 120 bytes, +1 'a' is 121.
+    expect((await postPersona(adminCookie, agencyA, clientId, { name: `${'a'.repeat(119)}é` })).statusCode).toBe(400);
+    expect((await postPersona(adminCookie, agencyA, clientId, { name: `${'a'.repeat(118)}é` })).statusCode).toBe(201);
     expect((await postPersona(adminCookie, agencyA, clientId, { name: 'n'.repeat(121) })).statusCode).toBe(400);
     expect((await postPersona(adminCookie, agencyA, clientId, { name: 'é'.repeat(61) })).statusCode).toBe(400);
     expect((await postPersona(adminCookie, agencyA, clientId, { name: 'n'.repeat(120) })).statusCode).toBe(201);
     expect((await postPersona(adminCookie, agencyA, clientId, { name: '   ' })).statusCode).toBe(400);
     expect((await postPersona(adminCookie, agencyA, clientId, { name: 'Válida', description: 'd'.repeat(5001) })).statusCode).toBe(400);
+    expect((await postPersona(adminCookie, agencyA, clientId, { name: 'Válida', description: 'Nul\u0000byte' })).statusCode).toBe(400);
     expect((await putSection(adminCookie, agencyA, clientId, 'colors', { colors: [{ name: 'n'.repeat(61), hex: '#FFFFFF' }] })).statusCode).toBe(400);
+  });
+
+  it('accepts multiline text with accents and returns it unchanged', async () => {
+    const clientId = await createClient(agencyA);
+    const body = 'Primeira linha\nSegunda linha\r\n\tCom tab e acentuação çãõ.';
+    const written = await putSection(adminCookie, agencyA, clientId, 'branding', { body });
+    expect(written.statusCode).toBe(200);
+    expect(written.json()).toMatchObject({ body });
+
+    const section = (await getStudy(adminCookie, agencyA, clientId))
+      .json<{ sections: { key: string; body: string | null }[] }>().sections.find((candidate) => candidate.key === 'branding');
+    expect(section?.body).toBe(body);
+
+    const created = await postPersona(adminCookie, agencyA, clientId, {
+      name: 'Multilinha',
+      description: 'Dores:\n- preço\n- prazo',
+      pains: '\tindisponibilidade'
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({ description: 'Dores:\n- preço\n- prazo', pains: '\tindisponibilidade' });
+
+    const personaId = created.json<{ id: string }>().id;
+    const patched = await patchPersona(adminCookie, agencyA, clientId, personaId, { objections: 'Objeção 1\r\nObjeção 2' });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json()).toMatchObject({ objections: 'Objeção 1\r\nObjeção 2' });
   });
 
   it('enforces BFLA with a one-permission custom role: visualizar reads, every write 403', async () => {

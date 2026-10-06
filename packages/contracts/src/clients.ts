@@ -6,13 +6,19 @@ import { AuthEmailSchema } from './auth.js';
  * Client (specs/clientes.md section 3). `name` is the only required field and the only one a POST
  * accepts; a PATCH may send any subset of the registration fields, and `null` clears one.
  *
- * Every free-text field rejects control characters (U+0000..U+001F and U+007F) before anything
- * reaches the database: a NUL byte makes PostgreSQL reject the statement with a 500, and no field
- * here has a legitimate use for a control character. Lengths are checked in UTF-8 bytes, not
- * UTF-16 units, because that is what the `clients` column checks enforce (`octet_length`).
+ * Free text rejects control characters before anything reaches the database: a NUL byte makes
+ * PostgreSQL reject the statement with a 500, and no field here has a legitimate use for one.
+ * Single-line fields (names, phone, website...) reject every control range, while the multiline
+ * fields (brand-study text and persona text) allow tab, LF and CR, which are line breaks a person
+ * actually types. Lengths are checked in UTF-8 bytes, not UTF-16 units, because that is what the
+ * column checks enforce (`octet_length`).
  */
 // eslint-disable-next-line no-control-regex -- the control range is exactly what must be rejected.
 const hasControlCharacters = (value: string): boolean => /[\u0000-\u001f\u007f]/.test(value);
+
+// Tab (U+0009), LF (U+000A) and CR (U+000D) are allowed; every other C0 control and DEL is not.
+// eslint-disable-next-line no-control-regex -- the forbidden range is exactly what must be rejected.
+const hasForbiddenControlCharacters = (value: string): boolean => /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value);
 
 const utf8ByteLength = (value: string): number => {
   let bytes = 0;
@@ -26,6 +32,12 @@ const utf8ByteLength = (value: string): number => {
 const boundedText = (maxBytes: number) =>
   z.string()
     .refine((value) => !hasControlCharacters(value), 'must not contain control characters')
+    .refine((value) => utf8ByteLength(value) <= maxBytes, `must be at most ${maxBytes} bytes`);
+
+/** Multiline free text: tab, LF and CR are line breaks, every other control character is rejected. */
+const boundedMultilineText = (maxBytes: number) =>
+  z.string()
+    .refine((value) => !hasForbiddenControlCharacters(value), 'must not contain control characters')
     .refine((value) => utf8ByteLength(value) <= maxBytes, `must be at most ${maxBytes} bytes`);
 
 /** Trimmed, non-empty and at most 256 UTF-8 bytes -- the same shape the active-name index normalizes. */
@@ -158,11 +170,12 @@ export const BrandColorSchema = z.object({
 }).strict();
 
 /**
- * Text sections: trimmed, non-empty, control characters rejected, at most 20000 UTF-8 bytes.
- * Whitespace-only is rejected because `filled` counts only `btrim(body) <> ''`.
+ * Text sections: trimmed, non-empty, at most 20000 UTF-8 bytes. Multiline: tab, LF and CR are
+ * accepted and returned unchanged. Whitespace-only is rejected because `filled` counts only
+ * `btrim(body) <> ''`.
  */
 export const BrandSectionTextSchema = z.string()
-  .refine((value) => !hasControlCharacters(value), 'must not contain control characters')
+  .refine((value) => !hasForbiddenControlCharacters(value), 'must not contain control characters')
   .transform((value) => value.trim())
   .pipe(z.string().min(1, 'must not be empty').refine((value) => utf8ByteLength(value) <= 20000, 'must be at most 20000 bytes'));
 
@@ -181,19 +194,20 @@ export const PersonaNameSchema = z.string()
 
 export const CreatePersonaRequestSchema = z.object({
   name: PersonaNameSchema,
-  description: boundedText(5000).nullable().optional(),
-  pains: boundedText(5000).nullable().optional(),
-  desires: boundedText(5000).nullable().optional(),
-  objections: boundedText(5000).nullable().optional()
+  description: boundedMultilineText(5000).nullable().optional(),
+  pains: boundedMultilineText(5000).nullable().optional(),
+  desires: boundedMultilineText(5000).nullable().optional(),
+  objections: boundedMultilineText(5000).nullable().optional()
 }).strict();
 
+/** A PATCH with no field would only touch `updated_by`; an empty body is refused instead. */
 export const UpdatePersonaRequestSchema = z.object({
   name: PersonaNameSchema.optional(),
-  description: boundedText(5000).nullable().optional(),
-  pains: boundedText(5000).nullable().optional(),
-  desires: boundedText(5000).nullable().optional(),
-  objections: boundedText(5000).nullable().optional()
-}).strict();
+  description: boundedMultilineText(5000).nullable().optional(),
+  pains: boundedMultilineText(5000).nullable().optional(),
+  desires: boundedMultilineText(5000).nullable().optional(),
+  objections: boundedMultilineText(5000).nullable().optional()
+}).strict().refine((value) => Object.keys(value).length > 0, 'at least one field must be provided');
 
 /** Who last saved a section or persona, resolved through the agency membership, never `auth."user"` alone. */
 export const BrandStudyUpdatedBySchema = z.object({
