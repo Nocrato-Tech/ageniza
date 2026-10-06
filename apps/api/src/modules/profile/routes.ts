@@ -20,7 +20,7 @@ import {
   type UploadedIdentityImage
 } from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
+import { routeBody, routeResponse } from '../../plugins/infra/zod.js';
 import { profilePhotoBodyLimitBytes, PROFILE_PHOTO_RATE_LIMIT } from './policy.js';
 import { loadOwnProfile, updateOwnImage, updateOwnName } from './service.js';
 
@@ -87,14 +87,14 @@ export const registerProfileModule = (app: FastifyInstance, dependencies: Profil
 
   app.patch('/me/profile', { preHandler: requireSession, config: profileDocs }, async (request, reply) => {
     const auth = requireAuth(request);
-    const body = parseRequest(profileDocs.schemas.body, request.body);
+    const body = routeBody(profileDocs, request);
 
     const updated = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
       updateOwnName(transaction, auth.userId, body.name)
     );
     if (updated === undefined) throw new Error('The authenticated user no longer exists.');
 
-    return reply.send(parseResponse(profileDocs.schemas.response, updated));
+    return reply.send(routeResponse(profileDocs, request, updated));
   });
 
   app.post('/me/photo', {
@@ -105,7 +105,7 @@ export const registerProfileModule = (app: FastifyInstance, dependencies: Profil
     config: { ...photoDocs, ...photoRateLimit }
   }, async (request, reply) => {
     const auth = requireAuth(request);
-    const body = parseRequest(photoDocs.schemas.body, request.body);
+    const body = routeBody(photoDocs, request);
     const bytes = Buffer.from(body.imageBase64, 'base64');
 
     let uploaded: UploadedIdentityImage;
@@ -155,6 +155,6 @@ export const registerProfileModule = (app: FastifyInstance, dependencies: Profil
       key: uploaded.key,
       expiresInSeconds: dependencies.config.downloadUrlExpirySeconds
     });
-    return reply.send(parseResponse(photoDocs.schemas.response, { imageUrl }));
+    return reply.send(routeResponse(photoDocs, request, { imageUrl }));
   });
 };

@@ -46,7 +46,7 @@ export MIGRATION_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/age
 export DATABASE_URL=postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza_rev<N>
 ```
 
-Os ataques de banco rodam como **`ageniza_app`**, nunca como `postgres`, que ignora RLS e *grants*. O contexto do usuário é definido como os testes fazem (`set_config('app.user_id', …, true)`). Ao final, apague o banco e o worktree.
+Os ataques de banco rodam como **`ageniza_app`**, nunca como `postgres`, que ignora RLS e *grants*. O contexto do usuário é definido como os testes fazem: o ator é gravado na transação por `app_private.bind_actor` (uma vez por transação). Desde a #166 o GUC `app.user_id` continua gravável, mas nada o lê — forjá-lo não reproduz mais nenhum ataque. Ao final, apague o banco e o worktree.
 
 A lista mínima, adaptada ao que o PR toca:
 
@@ -57,7 +57,7 @@ A lista mínima, adaptada ao que o PR toca:
 - Conceder a si mesmo mais do que tem, como papel, admin ou posse.
 - **Concorrência**: duas transações reais ao mesmo tempo contra a mesma linha (`READ COMMITTED` reaplica o `UPDATE` na versão nova).
 - Funções `security definer`: `search_path` fixo, `revoke … from public`, e **toda** checagem de permissão escrita dentro da função.
-- GUC de contexto (`app.user_id`): `ageniza_app` consegue chamar `set_config` no meio de uma instrução. Nenhuma regra pode depender de ele não fazer isso.
+- Ator por transação: desde a #166 o ator é gravado uma única vez pelo banco em `app_private.actor_context`, por `app_private.bind_actor`; um segundo bind na mesma transação (mesmo dentro da mesma instrução) dá 42501. `set_config('app.user_id', …)` continua executando mas nada o lê, então nenhuma regra pode depender desse GUC.
 - DELETE físico de entidade de negócio.
 
 **API**

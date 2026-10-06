@@ -19,12 +19,27 @@ export const UpdateMyProfileResponseSchema = z.object({
 }).strict();
 
 /**
- * Base64 of the largest image the identity storage schema itself permits (10 MiB, the cap on
- * `IDENTITY_MAX_IMAGE_BYTES`), plus room for the JSON envelope. The route's own `bodyLimit` is
- * computed from the configured, smaller limit, so an oversized body is refused by Fastify's parser
- * before this schema ever sees it.
+ * The still-image content types the API accepts for an avatar, in the same terms a browser reports
+ * them. The API decides the type by the magic bytes (`identity-storage/policy.ts`, the authority);
+ * this list exists so the web can offer the right `accept` filter and refuse an obvious foreign
+ * format before a byte travels. Extra types here would refuse files the API accepts, so the API's
+ * own test asserts every value below is detected as the matching type.
  */
-export const PROFILE_PHOTO_MAX_BASE64_LENGTH = Math.ceil((10 * 1024 * 1024) / 3) * 4 + 64;
+export const PROFILE_PHOTO_ACCEPTED_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const;
+
+/**
+ * Hard ceiling of the identity storage schema (10 MiB, the cap on `IDENTITY_MAX_IMAGE_BYTES`). A
+ * deployment may configure a smaller limit; this is the largest an API can ever accept, so the web
+ * refuses locally only what no deployment could take, and leaves the rest to the server's 413.
+ */
+export const PROFILE_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Base64 of `PROFILE_PHOTO_MAX_BYTES`, plus room for the JSON envelope. The route's own `bodyLimit`
+ * is computed from the configured, smaller limit, so an oversized body is refused by Fastify's
+ * parser before this schema ever sees it.
+ */
+export const PROFILE_PHOTO_MAX_BASE64_LENGTH = Math.ceil(PROFILE_PHOTO_MAX_BYTES / 3) * 4 + 64;
 
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 
