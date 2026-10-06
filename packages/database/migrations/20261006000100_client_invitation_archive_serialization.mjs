@@ -1,5 +1,5 @@
 // Serializes a portal invite with the archive of its client (issue #123, security re-review of PR #202).
-// Forward-only, and a new migration: 20260930000100_client_lifecycle_functions.mjs is not edited.
+// Forward-only, and a new migration: 20261006000050_client_lifecycle_functions.mjs is not edited.
 //
 // Structural per docs/business/structural-changes.md, recorded in docs/business/decisions.md,
 // 2026-10-06 ("ESTRUTURAL: convite de portal e arquivamento do mesmo cliente se serializam por
