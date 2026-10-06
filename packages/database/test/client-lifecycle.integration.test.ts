@@ -657,10 +657,12 @@ describe('CLIENT lifecycle functions (#123)', () => {
 
     // A concurrent transaction holds the client row lock for the whole test.
     // The concurrent transaction needs a user context too: without a bound actor, RLS hides the row
-    // and the FOR UPDATE would lock nothing.
+    // and the FOR UPDATE would lock nothing. The row count proves the lock was actually taken: a
+    // hidden row would lock nothing and turn this test into an empty green.
     const locker = getApplication().transaction(async (transaction) => {
       await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
-      await raw(transaction, 'select id from public.clients where id = ?::uuid for update', [client]);
+      const locked = await raw<Rows<{ id: string }>>(transaction, 'select id from public.clients where id = ?::uuid for update', [client]);
+      expect(locked.rows).toHaveLength(1);
       reachedLock();
       await lockMayFinish;
     });
@@ -676,6 +678,43 @@ describe('CLIENT lifecycle functions (#123)', () => {
         await raw(transaction, 'select app_private.archive_client(?)', [client]);
       })).rejects.toMatchObject({ code: 'A0020' });
       expect((await clientState(client)).status).toBe('active');
+    } finally {
+      releaseLock();
+      await locker;
+      await deleteClient(client);
+    }
+  });
+
+  it('checks permission before locking on reactivate too, so an unauthorized caller never waits on the row lock', async () => {
+    const client = await createClient({ agencyId: agencyA, status: 'archived' });
+
+    let reachedLock!: () => void;
+    const lockAcquired = new Promise<void>((resolve) => { reachedLock = resolve; });
+    let releaseLock!: () => void;
+    const lockMayFinish = new Promise<void>((resolve) => { releaseLock = resolve; });
+
+    // The same shape as the archive test: the concurrent transaction holds the client row lock, with
+    // the row count proving the lock was actually taken, and the caller without permission must get
+    // A0020 before ever waiting on it.
+    const locker = getApplication().transaction(async (transaction) => {
+      await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
+      const locked = await raw<Rows<{ id: string }>>(transaction, 'select id from public.clients where id = ?::uuid for update', [client]);
+      expect(locked.rows).toHaveLength(1);
+      reachedLock();
+      await lockMayFinish;
+    });
+    await lockAcquired;
+
+    try {
+      // adminB belongs to agency B only, so it has no permission on A's client. The function must
+      // answer A0020 without ever touching the locked row; a 250ms lock_timeout makes a lock-first
+      // implementation fail as 55P03 instead.
+      await expect(getApplication().transaction(async (transaction) => {
+        await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminB]);
+        await raw(transaction, "set local lock_timeout = '250ms'", []);
+        await raw(transaction, 'select app_private.reactivate_client(?)', [client]);
+      })).rejects.toMatchObject({ code: 'A0020' });
+      expect((await clientState(client)).status).toBe('archived');
     } finally {
       releaseLock();
       await locker;
@@ -865,7 +904,8 @@ describe('CLIENT lifecycle functions (#123)', () => {
 
       const locker = getApplication().transaction(async (transaction) => {
         await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
-        await raw(transaction, 'select id from public.clients where id = ?::uuid for update', [client]);
+        const locked = await raw<Rows<{ id: string }>>(transaction, 'select id from public.clients where id = ?::uuid for update', [client]);
+        expect(locked.rows).toHaveLength(1);
         locked();
         await lockMayEnd;
       });
