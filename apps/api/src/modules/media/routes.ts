@@ -15,12 +15,11 @@ import {
 import { HttpError } from '@ageniza/core';
 import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { z } from 'zod';
 
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
+import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import type { MediaJobDispatcher } from './job-dispatcher.js';
 import {
   describeMediaContentType,
@@ -100,8 +99,6 @@ type CompletionResult = {
   readonly reason: string;
 };
 
-const routeParams = <T>(schema: z.ZodType<T>, request: FastifyRequest): T => parseRequest(schema, request.params);
-
 const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth']> => {
   const auth = request.auth;
   if (auth === undefined) throw unauthenticated();
@@ -161,8 +158,8 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
 
   app.post('/agencies/:agencyId/media/uploads', guarded(uploadDocs, uploadUrlRateLimit), async (request, reply) => {
     const auth = requireAuth(request);
-    const params = routeParams(uploadDocs.schemas.params, request);
-    const body = parseRequest(uploadDocs.schemas.body, request.body);
+    const params = routeParams(uploadDocs, request);
+    const body = routeBody(uploadDocs, request);
 
     const descriptor = describeMediaContentType(body.contentType);
     if (descriptor === undefined) throw unsupportedType();
@@ -207,7 +204,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       return { type: 'single' as const, url };
     });
 
-    return reply.status(201).send(parseResponse(uploadDocs.schemas.response, {
+    return reply.status(201).send(routeResponse(uploadDocs, request, {
       assetId,
       objectKey,
       category: descriptor.category,
@@ -219,8 +216,8 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
 
   app.post('/agencies/:agencyId/media/uploads/:assetId/parts', guarded(partsDocs, uploadUrlRateLimit), async (request, reply) => {
     const auth = requireAuth(request);
-    const params = routeParams(partsDocs.schemas.params, request);
-    const body = parseRequest(partsDocs.schemas.body, request.body);
+    const params = routeParams(partsDocs, request);
+    const body = routeBody(partsDocs, request);
     const expiresAt = new Date(Date.now() + config.uploadUrlExpirySeconds * 1_000).toISOString();
 
     const parts = await withAuthenticatedUserTransaction(database, auth.claims, async (transaction) => {
@@ -243,13 +240,13 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       })));
     });
 
-    return reply.send(parseResponse(partsDocs.schemas.response, { parts, expiresAt }));
+    return reply.send(routeResponse(partsDocs, request, { parts, expiresAt }));
   });
 
   app.post('/agencies/:agencyId/media/uploads/:assetId/complete', guarded(completeDocs), async (request, reply) => {
     const auth = requireAuth(request);
-    const params = routeParams(completeDocs.schemas.params, request);
-    const body = parseRequest(completeDocs.schemas.body, request.body);
+    const params = routeParams(completeDocs, request);
+    const body = routeBody(completeDocs, request);
 
     let copiedCanonicalKey: string | undefined;
     let result: CompletionResult;
@@ -364,7 +361,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       request.log.warn({ error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'MEDIA_STAGING_CLEANUP_FAILED' } }, 'Failed to remove validated upload staging object');
     }
 
-    return reply.send(parseResponse(completeDocs.schemas.response, {
+    return reply.send(routeResponse(completeDocs, request, {
       assetId: params.assetId,
       status: 'confirmed',
       sizeBytes: result.sizeBytes,
@@ -374,8 +371,8 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
 
   app.get('/agencies/:agencyId/media/:assetId/download-url', guarded(downloadDocs), async (request, reply) => {
     const auth = requireAuth(request);
-    const params = routeParams(downloadDocs.schemas.params, request);
-    const query = parseRequest(downloadDocs.schemas.query, request.query);
+    const params = routeParams(downloadDocs, request);
+    const query = routeQuery(downloadDocs, request);
 
     const objectKey = await withAuthenticatedUserTransaction(database, auth.claims, async (transaction) => {
       const asset = await findConfirmedAssetWithVariants(transaction, params.assetId, params.agencyId);
@@ -395,6 +392,6 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
 
     const url = await storage.presignGetObject({ key: objectKey, expiresInSeconds: config.downloadUrlExpirySeconds });
     const expiresAt = new Date(Date.now() + config.downloadUrlExpirySeconds * 1_000).toISOString();
-    return reply.send(parseResponse(downloadDocs.schemas.response, { url, expiresAt }));
+    return reply.send(routeResponse(downloadDocs, request, { url, expiresAt }));
   });
 };
