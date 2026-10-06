@@ -28,7 +28,7 @@
     },
     {
       "name": "clients",
-      "description": "Cadastro do cliente da agência: criar, ler o detalhe com o resumo e editar."
+      "description": "Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo e editar."
     },
     {
       "name": "collaborators",
@@ -1345,6 +1345,102 @@
         },
         "required": [
           "data"
+        ],
+        "additionalProperties": false
+      },
+      "listClientsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "photoUrl": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "instagramHandle": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "archived"
+                  ]
+                },
+                "closingDate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "threadsAwaitingAgency": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "pendingInvitations": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "photoUrl",
+                "instagramHandle",
+                "status",
+                "closingDate",
+                "threadsAwaitingAgency"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "pageSize": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "totalItems": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "totalPages": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "page",
+              "pageSize",
+              "totalItems",
+              "totalPages"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "meta"
         ],
         "additionalProperties": false
       },
@@ -5364,6 +5460,210 @@
       }
     },
     "/agencies/{agencyId}/clients": {
+      "get": {
+        "operationId": "listClients",
+        "summary": "Lista a carteira de clientes com ordem de triagem",
+        "description": "Paginada pelo contrato global de listagem, com busca por nome, razão social e @ (sem\ndiferenciar maiúsculas nem acento), filtro de status e ordem `attention` por padrão: quem tem\nthread aguardando a agência vem primeiro, depois nome ascendente, com `id` como desempate.\n`pendingInvitations` só vem para quem tem `cliente.convidar_usuario`; para os demais o campo\né omitido, não zerado.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 320,
+              "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+            },
+            "required": false,
+            "name": "search",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "archived"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "attention",
+                "name:asc"
+              ]
+            },
+            "required": false,
+            "name": "sort",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página da carteira.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listClientsResponse"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "id": "77777777-7777-4777-8777-777777777777",
+                      "name": "Padaria Central",
+                      "photoUrl": null,
+                      "instagramHandle": "padariacentral",
+                      "status": "active",
+                      "closingDate": null,
+                      "threadsAwaitingAgency": 2,
+                      "pendingInvitations": 1
+                    }
+                  ],
+                  "meta": {
+                    "page": 1,
+                    "pageSize": 20,
+                    "totalItems": 1,
+                    "totalPages": 1
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "operationId": "createClient",
         "summary": "Cadastra um cliente",
