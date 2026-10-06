@@ -901,31 +901,28 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
     }
   });
 
-  // Re-review finding N2: set_config is callable by ageniza_app (it is PUBLIC), so app.user_id
-  // could be cleared mid-statement -- inside the SET expression's subquery, after USING has
-  // already admitted the row and before this trigger runs. A bypass keyed on GUC state cannot
-  // tell that apart from a genuinely unauthenticated connection; current_user can, because it is
-  // the connection's own role and cannot change mid-statement without a role change ageniza_app
-  // is not granted. The attack must now fail inside the trigger, not merely at WITH CHECK
-  // afterwards with the GUC already empty.
-  it('refuses a mid-statement app.user_id clear: the trigger runs as ageniza_app regardless of the GUC', async () => {
+  // Issue #166: app.user_id is no longer read. The actor of the transaction is bound once by
+  // app_private.bind_actor and read through app_private.current_user_id(). set_config still runs
+  // (it is PUBLIC), set inside the SET expression's subquery -- evaluated after USING and before
+  // this trigger -- but the trigger authorizes the bound actor, here an Admin without
+  // colaborador.atribuir_admin. Forging the Owner's id must not grant admin.
+  it('ignores a mid-statement app.user_id forced to the Owner: the bound actor decides', async () => {
     const attack = asUser(adminC, (transaction) => raw(
       transaction,
       `update agency_memberships
           set role_id = (
             select id from roles
              where agency_id is null and key = 'admin'
-               and set_config('app.user_id', '', true) is not null
+               and set_config('app.user_id', ?::text, true) is not null
           )
         where agency_id = ? and user_id = ?`,
-      [agencyC, targetC]
+      [ownerC, agencyC, targetC]
     ));
 
-    // set_config runs inside the SET expression's subquery, which Postgres evaluates before this
-    // BEFORE UPDATE trigger fires -- so by the time the trigger runs, app.user_id already reads
-    // empty and every has_agency_permission check inside it returns false, denying on the first
-    // branch reached (colaborador.alterar_papel, not colaborador.atribuir_admin). Either message
-    // proves the same thing: the trigger denies as ageniza_app, before WITH CHECK ever runs.
+    // The set_config runs inside the SET expression's subquery, which Postgres evaluates before
+    // this BEFORE UPDATE trigger fires. It now changes nothing: has_agency_permission reads the
+    // actor bound at the top of the transaction (adminC), reaches the atribuir_admin branch and
+    // denies there -- not because a GUC was empty. The final state must not move.
     await expect(attack).rejects.toThrow(membershipRuleDenied);
     await expect(getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).first('role_id'))
       .resolves.toEqual({ role_id: productionRoleId });

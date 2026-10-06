@@ -24,6 +24,13 @@ import { createDurableQueue, type DurableQueue } from './queue.js';
 type WorkerSignal = 'SIGINT' | 'SIGTERM';
 type ReadinessCheck = () => Promise<void>;
 
+/**
+ * How often the worker sweeps `app_private.actor_context` (issue #166). The table only holds the
+ * actor of a live transaction, so anything older than an hour is garbage no one reads. Keeping it
+ * here makes the interval observable to tests.
+ */
+export const actorContextPurgeIntervalMs = 10 * 60 * 1000;
+
 export interface WorkerRuntime {
   readonly logger: CoreLogger;
   readonly database: DatabaseClient;
@@ -148,9 +155,25 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
   let listenPromise: Promise<void> | undefined;
   let startPromise: Promise<void> | undefined;
   let stopping = false;
+  let actorContextPurgeTimer: ReturnType<typeof setInterval> | undefined;
+
+  const purgeActorContext = async (): Promise<void> => {
+    try {
+      await database.knex.raw('select app_private.purge_actor_context()');
+    } catch (error) {
+      logger.warn({ error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'ACTOR_CONTEXT_PURGE_FAILED' } }, 'Actor context purge failed');
+    }
+  };
 
   shutdownManager.add('database', async () => {
     await database.close();
+  });
+  // Added right after database so LIFO runs it before the database closes.
+  shutdownManager.add('actor-context-purge', () => {
+    if (actorContextPurgeTimer !== undefined) {
+      clearInterval(actorContextPurgeTimer);
+      actorContextPurgeTimer = undefined;
+    }
   });
   shutdownManager.add('jobs', async () => {
     jobs.stopAccepting();
@@ -210,6 +233,9 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
           await queue?.start();
           if (stopping) throw new Error('Worker stopped during startup.');
           readiness.setReady(true);
+          actorContextPurgeTimer ??= setInterval(() => {
+            void purgeActorContext();
+          }, actorContextPurgeIntervalMs);
           logger.info(
             {
               environment: options.config.environment,
