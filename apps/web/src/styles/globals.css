@@ -629,6 +629,99 @@ input:focus-visible {
   color: var(--text-danger);
 }
 
+/* Pending invitations: specs/colaboradores.md section 7. A list, not a grid: an invitation has no
+ * photo or identity, only an e-mail, a role and a deadline. */
+.invites {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.invites__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.invites__header h2 {
+  margin: 0;
+  font: var(--heading-md);
+}
+
+.invites__count {
+  color: var(--text-secondary);
+  font: var(--label-md);
+}
+
+.invites__list {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.invites__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding-block: var(--space-3);
+  border-top: 1px solid var(--border-default);
+}
+
+.invites__item:first-child {
+  border-top: none;
+}
+
+.invites__email {
+  flex: 1 1 14rem;
+  margin: 0;
+  font: var(--label-md);
+  overflow-wrap: anywhere;
+}
+
+.invites__role,
+.invites__expiry {
+  margin: 0;
+  font: var(--body-md);
+}
+
+.invites__role {
+  color: var(--text-secondary);
+}
+
+.invites__expiry {
+  color: var(--text-muted);
+}
+
+.invites__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.invites__error-line {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-danger);
+  font: var(--body-md);
+}
+
+.invites__empty,
+.invites__error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  padding: var(--space-6) 0;
+}
+
+.invites__error {
+  color: var(--text-danger);
+}
+
 /* Auth form layout: specs/auth.md section 7, the centred single column the auth screens share. */
 .form-panel {
   display: grid;
