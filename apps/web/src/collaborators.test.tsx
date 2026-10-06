@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
+import { pendingInviteExpiryLabel } from './pending-invitations.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
@@ -49,12 +50,39 @@ const biancaSouza = { membershipId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name
 const meta = (page: number, totalItems: number, totalPages: number) => ({ page, pageSize: 24, totalItems, totalPages });
 const listResponse = (data: readonly unknown[], page = 1) => json({ data, meta: meta(page, data.length, data.length === 0 ? 0 : 1) });
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Deadlines are built relative to the moment the module loads; the labels the screen shows are
+// relative too, and the fractions keep every expected label away from a boundary.
+const pendingInvite = (id: string, email: string, roleKey: string, roleName: string, remainingMs: number) => ({
+  id,
+  email,
+  purpose: 'collaborator_invite',
+  role: { key: roleKey, name: roleName },
+  client: null,
+  createdAt: '2026-10-01T12:00:00.000Z',
+  expiresAt: new Date(Date.now() + remainingMs).toISOString()
+});
+const inviteAna = pendingInvite('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'ana@exemplo.com', 'production', 'Produção', 5.5 * DAY_MS);
+const invitePaulo = pendingInvite('ffffffff-ffff-4fff-8fff-ffffffffffff', 'paulo@exemplo.com', 'admin', 'Admin', 1.5 * DAY_MS);
+const inviteJulia = pendingInvite('99999999-9999-4999-8999-999999999999', 'julia@exemplo.com', 'account_manager', 'Gestor de conta', 6.5 * DAY_MS);
+const defaultInvites = [inviteAna, invitePaulo, inviteJulia];
+
+const noContent = (): Response => new Response(null, { status: 204 });
+const invitationsResponse = (data: readonly unknown[], query?: URLSearchParams, totals?: { totalItems: number; totalPages: number }): Response => {
+  const page = Number(query?.get('page') ?? '1');
+  return json({ data, meta: meta(page, totals?.totalItems ?? data.length, totals?.totalPages ?? (data.length === 0 ? 0 : 1)) });
+};
+
 interface Scenario {
   readonly authenticated?: boolean;
   readonly permissions?: readonly string[];
   readonly collaborators?: (query: URLSearchParams, agencyId: string) => Response | Promise<Response>;
   readonly jobTitles?: () => Response | Promise<Response>;
   readonly detail?: (membershipId: string, agencyId: string) => Response | Promise<Response>;
+  readonly invitations?: (query: URLSearchParams, agencyId: string) => Response | Promise<Response>;
+  readonly resend?: (invitationId: string, agencyId: string) => Response | Promise<Response>;
+  readonly cancel?: (invitationId: string, agencyId: string) => Response | Promise<Response>;
 }
 
 /** Behaves like the real API: 401 without a session, the listing and the job-titles contract shapes. */
@@ -62,16 +90,32 @@ const makeFetch = (scenario: Scenario = {}) => {
   const calls: string[] = [];
   const requests: string[] = [];
   const authenticated = scenario.authenticated ?? true;
-  const permissions = scenario.permissions ?? ['colaborador.visualizar', 'colaborador.convidar'];
+  const permissions = scenario.permissions ?? ['colaborador.visualizar', 'colaborador.convidar', 'convite.reenviar', 'convite.cancelar'];
   const impl: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     const path = url.pathname;
-    calls.push(`${init?.method ?? 'GET'} ${path}${url.search}`);
+    const method = init?.method ?? 'GET';
+    calls.push(`${method} ${path}${url.search}`);
     requests.push(String(input));
     if (path.endsWith('/auth/session')) return authenticated ? json(sessionBody) : unauthenticated();
     if (!authenticated) return unauthenticated();
     const me = /\/agencies\/([^/]+)\/me$/.exec(path);
     if (me !== null) return json(agencyMe(me[1]!, agencyDisplayName(me[1]!), permissions));
+    const resend = /\/agencies\/([^/]+)\/invitations\/([^/]+)\/resend$/.exec(path);
+    if (resend !== null && method === 'POST') {
+      if (!permissions.includes('convite.reenviar')) return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
+      return scenario.resend?.(resend[2]!, resend[1]!) ?? json({ invitationId: inviteJulia.id, expiresAt: inviteJulia.expiresAt });
+    }
+    const cancel = /\/agencies\/([^/]+)\/invitations\/([^/]+)$/.exec(path);
+    if (cancel !== null && method === 'DELETE') {
+      if (!permissions.includes('convite.cancelar')) return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
+      return scenario.cancel?.(cancel[2]!, cancel[1]!) ?? noContent();
+    }
+    const invitations = /\/agencies\/([^/]+)\/invitations$/.exec(path);
+    if (invitations !== null && method === 'GET') {
+      if (!permissions.includes('colaborador.convidar')) return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
+      return scenario.invitations?.(url.searchParams, invitations[1]!) ?? invitationsResponse(defaultInvites, url.searchParams);
+    }
     if (path.endsWith('/collaborators/job-titles')) return scenario.jobTitles?.() ?? json({ data: ['Editora', 'Copywriter'] });
     const detail = /\/agencies\/([^/]+)\/collaborators\/([^/]+)$/.exec(path);
     if (detail !== null) {
@@ -486,6 +530,362 @@ describe('collaborator detail (#103)', () => {
     const modal = await screen.findByRole('dialog', { name: hostile });
     expect(modal.querySelector('img')).toBeNull();
     expect(modal.querySelector('[onerror]')).toBeNull();
+  });
+});
+
+describe('pending invitations (#106)', () => {
+  const invitesRegion = () => screen.findByRole('region', { name: 'Convites aguardando aceite' });
+  const invitationsCalls = (calls: string[]) => calls.filter((call) => call.includes('/invitations'));
+
+  it.each(['account_manager', 'production', 'sales', 'finance'])('does not exist for %s', async () => {
+    const { impl, calls } = makeFetch({ permissions: ['colaborador.visualizar'] });
+    renderCollaborators(impl);
+
+    await screen.findByText('Ana Prado');
+    expect(screen.queryByText('Convites aguardando aceite')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Convites aguardando aceite' })).toBeNull();
+    expect(invitationsCalls(calls)).toEqual([]);
+  });
+
+  it('lists e-mail, role and relative deadline, with the count in its own header', async () => {
+    const { impl } = makeFetch();
+    renderCollaborators(impl);
+
+    const region = await invitesRegion();
+    expect(await within(region).findByText('ana@exemplo.com')).toBeTruthy();
+    expect(within(region).getByText('Produção')).toBeTruthy();
+    expect(within(region).getByText('expira em 5 dias')).toBeTruthy();
+    expect(within(region).getByText('paulo@exemplo.com')).toBeTruthy();
+    expect(within(region).getByText('expira amanhã')).toBeTruthy();
+    expect(region.querySelector('.invites__count')?.textContent).toBe('3');
+    expect(within(region).getByRole('button', { name: 'Reenviar convite de ana@exemplo.com' })).toBeTruthy();
+    expect(within(region).getByRole('button', { name: 'Cancelar convite de ana@exemplo.com' })).toBeTruthy();
+  });
+
+  it('draws a list-shaped skeleton on its first load', async () => {
+    const { impl } = makeFetch({ invitations: () => new Promise<Response>(() => undefined) });
+    renderCollaborators(impl);
+
+    const region = await invitesRegion();
+    expect(region.querySelectorAll('.ui-skeleton')).toHaveLength(3);
+    expect(region.querySelector('.invites__count')).toBeNull();
+    expect(await screen.findByText('Ana Prado')).toBeTruthy();
+  });
+
+  it('offers the invite action when no invitation is pending', async () => {
+    const { impl } = makeFetch({ invitations: (query) => invitationsResponse([], query) });
+    renderCollaborators(impl);
+
+    const region = await invitesRegion();
+    expect(await within(region).findByText('Nenhum convite aguardando aceite')).toBeTruthy();
+    const invite = within(region).getByRole('button', { name: 'Convidar' });
+    expect(invite.hasAttribute('disabled')).toBe(true);
+    expect(invite.getAttribute('title')).toBe('O convite chega na próxima entrega.');
+    expect(region.querySelector('.invites__count')?.textContent).toBe('0');
+  });
+
+  it('offers a retry when the invitations listing fails, without echoing the API message', async () => {
+    let attempts = 0;
+    const { impl } = makeFetch({
+      invitations: (query) => {
+        attempts += 1;
+        return attempts <= 2
+          ? json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, 500)
+          : invitationsResponse(defaultInvites, query);
+      }
+    });
+    renderCollaborators(impl);
+
+    const region = await invitesRegion();
+    const alert = await within(region).findByRole('alert', undefined, { timeout: 5000 });
+    expect(alert.textContent).toContain('Não foi possível carregar os convites.');
+    expect(region.textContent).not.toContain('private diagnostic');
+
+    fireEvent.click(within(region).getByRole('button', { name: 'Tentar de novo' }));
+    expect(await within(region).findByText('ana@exemplo.com')).toBeTruthy();
+  });
+
+  it.each([403, 404])('stays out of the screen when the API answers %i', async (status) => {
+    const { impl } = makeFetch({
+      invitations: () => json({ error: { code: status === 403 ? 'FORBIDDEN' : 'NOT_FOUND', message: 'sensitive detail' } }, status)
+    });
+    renderCollaborators(impl);
+
+    await screen.findByText('Ana Prado');
+    await waitFor(() => expect(screen.queryByText('Convites aguardando aceite')).toBeNull());
+    expect(screen.queryByRole('region', { name: 'Convites aguardando aceite' })).toBeNull();
+    expect(screen.queryByText('sensitive detail')).toBeNull();
+  });
+
+  it('ends the session when the API answers 401, never showing the invited e-mail', async () => {
+    const { impl } = makeFetch({ invitations: () => unauthenticated() });
+    renderCollaborators(impl);
+
+    await screen.findByLabelText('E-mail');
+    expect(screen.queryByText('ana@exemplo.com')).toBeNull();
+  });
+
+  it('keeps the section but hides the actions the role cannot perform', async () => {
+    const { impl } = makeFetch({ permissions: ['colaborador.visualizar', 'colaborador.convidar'] });
+    renderCollaborators(impl);
+
+    const region = await invitesRegion();
+    expect(await within(region).findByText('ana@exemplo.com')).toBeTruthy();
+    expect(within(region).queryByRole('button', { name: /Reenviar/ })).toBeNull();
+    expect(within(region).queryByRole('button', { name: /Cancelar/ })).toBeNull();
+  });
+
+  it('resends, renews the deadline in place and says the previous link stopped working', async () => {
+    let pending = [inviteAna];
+    const renewedId = 'abababab-abab-4bab-8bab-abababababab';
+    const renewedExpiry = new Date(Date.now() + 6.9 * DAY_MS).toISOString();
+    const { impl, calls } = makeFetch({
+      invitations: (query) => invitationsResponse(pending, query),
+      resend: (invitationId) => {
+        pending = pending.map((item) => item.id === invitationId ? { ...item, id: renewedId, expiresAt: renewedExpiry } : item);
+        return json({ invitationId: renewedId, expiresAt: renewedExpiry });
+      }
+    });
+    renderCollaborators(impl);
+
+    const region = await invitesRegion();
+    expect(await within(region).findByText('expira em 5 dias')).toBeTruthy();
+    fireEvent.click(within(region).getByRole('button', { name: 'Reenviar convite de ana@exemplo.com' }));
+
+    expect(await within(region).findByText('Convite reenviado para ana@exemplo.com. O link anterior deixou de valer.')).toBeTruthy();
+    expect(await within(region).findByText('expira em 6 dias')).toBeTruthy();
+    expect(calls).toContain(`POST /agencies/${AGENCY_A}/invitations/${inviteAna.id}/resend`);
+  });
+
+  it('keeps the row and allows repeating when resending fails', async () => {
+    let attempts = 0;
+    const { impl } = makeFetch({
+      resend: () => {
+        attempts += 1;
+        return attempts === 1
+          ? json({ error: { code: 'EMAIL_DELIVERY_FAILED', message: 'private diagnostic' } }, 502)
+          : json({ invitationId: inviteJulia.id, expiresAt: inviteJulia.expiresAt });
+      }
+    });
+    renderCollaborators(impl);
+
+    const region = await invitesRegion();
+    const resend = await within(region).findByRole('button', { name: 'Reenviar convite de ana@exemplo.com' });
+    fireEvent.click(resend);
+
+    const alert = await within(region).findByRole('alert');
+    expect(alert.textContent).toContain('Não foi possível reenviar o convite.');
+    expect(region.textContent).not.toContain('private diagnostic');
+    expect(within(region).getByText('ana@exemplo.com')).toBeTruthy();
+
+    fireEvent.click(resend);
+    expect(await within(region).findByText('Convite reenviado para ana@exemplo.com. O link anterior deixou de valer.')).toBeTruthy();
+  });
+
+  it.each([403, 404])('shows an error and keeps the row when resend answers %i', async (status) => {
+    const { impl } = makeFetch({
+      resend: () => json({ error: { code: status === 403 ? 'FORBIDDEN' : 'NOT_FOUND', message: 'sensitive detail' } }, status)
+    });
+    renderCollaborators(impl);
+
+    const region = await invitesRegion();
+    fireEvent.click(await within(region).findByRole('button', { name: 'Reenviar convite de ana@exemplo.com' }));
+
+    const alert = await within(region).findByRole('alert');
+    expect(alert.textContent).toContain('Não foi possível reenviar o convite.');
+    expect(region.textContent).not.toContain('sensitive detail');
+    expect(within(region).getByText('ana@exemplo.com')).toBeTruthy();
+  });
+
+  it('asks for confirmation before cancelling, and only removes after confirming', async () => {
+    let pending = [inviteAna, invitePaulo];
+    const { impl, calls } = makeFetch({
+      invitations: (query) => invitationsResponse(pending, query),
+      cancel: (invitationId) => {
+        pending = pending.filter((item) => item.id !== invitationId);
+        return noContent();
+      }
+    });
+    renderCollaborators(impl);
+
+    const region = await invitesRegion();
+    fireEvent.click(await within(region).findByRole('button', { name: 'Cancelar convite de ana@exemplo.com' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Cancelar este convite?' });
+    expect(dialog.textContent).toContain('O link enviado para ana@exemplo.com deixa de valer imediatamente.');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Voltar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(calls.some((call) => call.startsWith(`DELETE /agencies/${AGENCY_A}/invitations/`))).toBe(false);
+    expect(within(region).getByText('ana@exemplo.com')).toBeTruthy();
+
+    fireEvent.click(within(region).getByRole('button', { name: 'Cancelar convite de ana@exemplo.com' }));
+    const reopened = await screen.findByRole('dialog', { name: 'Cancelar este convite?' });
+    fireEvent.click(within(reopened).getByRole('button', { name: 'Cancelar convite' }));
+
+    await waitFor(() => expect(within(region).queryByText('ana@exemplo.com')).toBeNull());
+    expect(region.querySelector('.invites__count')?.textContent).toBe('1');
+    expect(calls).toContain(`DELETE /agencies/${AGENCY_A}/invitations/${inviteAna.id}`);
+  });
+
+  it('keeps the invitation when cancelling fails and allows repeating', async () => {
+    let pending = [inviteAna];
+    let attempts = 0;
+    const { impl } = makeFetch({
+      invitations: (query) => invitationsResponse(pending, query),
+      cancel: () => {
+        attempts += 1;
+        if (attempts === 1) return json({ error: { code: 'INVITATION_NOT_PENDING', message: 'private diagnostic' } }, 409);
+        pending = [];
+        return noContent();
+      }
+    });
+    renderCollaborators(impl);
+
+    const region = await invitesRegion();
+    const cancel = async (): Promise<void> => {
+      fireEvent.click(await within(region).findByRole('button', { name: 'Cancelar convite de ana@exemplo.com' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Cancelar este convite?' });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar convite' }));
+    };
+
+    await cancel();
+    const alert = await within(region).findByRole('alert');
+    expect(alert.textContent).toContain('Não foi possível cancelar o convite.');
+    expect(region.textContent).not.toContain('private diagnostic');
+    expect(within(region).getByText('ana@exemplo.com')).toBeTruthy();
+
+    await cancel();
+    await waitFor(() => expect(within(region).queryByText('ana@exemplo.com')).toBeNull());
+  });
+
+  it.each([403, 404])('shows an error and keeps the row when the cancellation answers %i', async (status) => {
+    const { impl } = makeFetch({
+      cancel: () => json({ error: { code: status === 403 ? 'FORBIDDEN' : 'NOT_FOUND', message: 'sensitive detail' } }, status)
+    });
+    renderCollaborators(impl);
+
+    const region = await invitesRegion();
+    fireEvent.click(await within(region).findByRole('button', { name: 'Cancelar convite de ana@exemplo.com' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Cancelar este convite?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar convite' }));
+
+    const alert = await within(region).findByRole('alert');
+    expect(alert.textContent).toContain('Não foi possível cancelar o convite.');
+    expect(region.textContent).not.toContain('sensitive detail');
+    expect(within(region).getByText('ana@exemplo.com')).toBeTruthy();
+  });
+
+  it('reads its own page from the URL and writes it back, next to the team list', async () => {
+    const pageInvites = (from: number, count: number) => Array.from({ length: count }, (_value, index) => {
+      const position = from + index;
+      return pendingInvite(`10000000-0000-4000-8000-${String(position).padStart(12, '0')}`, `p${position}@exemplo.com`, 'production', 'Produção', 5.5 * DAY_MS);
+    });
+    const { impl } = makeFetch({
+      invitations: (query) => {
+        const page = Number(query.get('page') ?? '1');
+        return invitationsResponse(page === 2 ? pageInvites(24, 6) : pageInvites(0, 24), query, { totalItems: 30, totalPages: 2 });
+      }
+    });
+    const { probe } = renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?convites=2`);
+
+    const region = await invitesRegion();
+    expect(await within(region).findByText('p24@exemplo.com')).toBeTruthy();
+    expect(region.querySelector('.invites__count')?.textContent).toBe('30');
+    // The team page has its own pagination; the invitations page never touches it.
+    expect(probe.search).toContain('convites=2');
+
+    fireEvent.click(within(region).getByRole('button', { name: 'Página anterior' }));
+    await waitFor(() => expect(probe.search).not.toContain('convites='));
+    expect(await within(region).findByText('p0@exemplo.com')).toBeTruthy();
+  });
+
+  it('returns to the last valid page instead of showing pending invitations as empty (#229)', async () => {
+    const { impl } = makeFetch({
+      invitations: (query) => {
+        const page = Number(query.get('page') ?? '1');
+        return page > 1
+          ? invitationsResponse([], query, { totalItems: 3, totalPages: 1 })
+          : invitationsResponse(defaultInvites, query, { totalItems: 3, totalPages: 1 });
+      }
+    });
+    const { probe } = renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?convites=2`);
+
+    const region = await invitesRegion();
+    expect(await within(region).findByText('ana@exemplo.com')).toBeTruthy();
+    await waitFor(() => expect(probe.search).not.toContain('convites='));
+    expect(within(region).queryByText('Nenhum convite aguardando aceite')).toBeNull();
+  });
+
+  it('never shows one agency\'s invitations under another with the same cache', async () => {
+    const { impl } = makeFetch({
+      invitations: (_query, agencyId) => invitationsResponse(agencyId === AGENCY_B ? [invitePaulo] : [inviteAna])
+    });
+    const { probe } = renderCollaborators(impl);
+
+    await screen.findByText('ana@exemplo.com');
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/colaboradores`); });
+
+    await screen.findByText('paulo@exemplo.com');
+    expect(screen.queryByText('ana@exemplo.com')).toBeNull();
+  });
+
+  it('renders an untrusted role name as literal text', async () => {
+    const hostile = '<img src=x onerror=alert(1)>';
+    const { impl } = makeFetch({ invitations: (query) => invitationsResponse([{ ...inviteAna, role: { key: 'production', name: hostile } }], query) });
+    renderCollaborators(impl);
+
+    const region = await invitesRegion();
+    expect(await within(region).findByText(hostile)).toBeTruthy();
+    expect(region.querySelector('img')).toBeNull();
+  });
+
+  // Aceite: "Nenhum token de convite aparece na tela, em nenhum estado." A response carrying one
+  // fails the strict contract instead of rendering it, in the listing and in the resend alike.
+  it('never renders an invitation token, even if a response carries one', async () => {
+    const { impl } = makeFetch({
+      invitations: (query) => json({ data: [{ ...inviteAna, token: 'live-credential' }], meta: meta(Number(query.get('page') ?? 1), 1, 1) })
+    });
+    renderCollaborators(impl);
+
+    const region = await invitesRegion();
+    await within(region).findByRole('alert');
+    expect(screen.queryByText('live-credential')).toBeNull();
+  });
+
+  it('does not render a token from the resend response either', async () => {
+    const { impl } = makeFetch({
+      resend: () => json({ invitationId: inviteJulia.id, expiresAt: inviteJulia.expiresAt, token: 'live-credential' })
+    });
+    renderCollaborators(impl);
+
+    const region = await invitesRegion();
+    fireEvent.click(await within(region).findByRole('button', { name: 'Reenviar convite de ana@exemplo.com' }));
+
+    const alert = await within(region).findByRole('alert');
+    expect(alert.textContent).toContain('Não foi possível reenviar o convite.');
+    expect(screen.queryByText('live-credential')).toBeNull();
+  });
+});
+
+describe('pendingInviteExpiryLabel (#106)', () => {
+  const now = new Date('2026-10-06T12:00:00.000Z');
+  const at = (remainingMs: number) => new Date(now.getTime() + remainingMs).toISOString();
+
+  it.each([
+    [0.5 * DAY_MS, 'expira hoje'],
+    [DAY_MS - 1, 'expira hoje'],
+    [DAY_MS, 'expira amanhã'],
+    [2 * DAY_MS - 1, 'expira amanhã'],
+    [2 * DAY_MS, 'expira em 2 dias'],
+    [5.5 * DAY_MS, 'expira em 5 dias'],
+    [7 * DAY_MS, 'expira em 7 dias']
+  ])('labels %d ms of remaining time as "%s"', (remainingMs, expected) => {
+    expect(pendingInviteExpiryLabel(at(remainingMs), now)).toBe(expected);
+  });
+
+  it('does not claim an already-passed deadline expires today', () => {
+    expect(pendingInviteExpiryLabel(at(-DAY_MS), now)).toBe('expirado');
+    expect(pendingInviteExpiryLabel(at(0), now)).toBe('expirado');
   });
 });
 
