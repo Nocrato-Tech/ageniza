@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import type { Knex } from 'knex';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -29,6 +30,7 @@ const adminA = randomUUID();
 const managerA = randomUUID();
 const singleA = randomUUID();
 const dualA = randomUUID();
+const inviterA = randomUUID();
 const adminB = randomUUID();
 const portalA1 = randomUUID();
 const portalA2 = randomUUID();
@@ -60,7 +62,7 @@ const invA2 = randomUUID();
 const invA1Used = randomUUID();
 const invDue = randomUUID();
 
-const allUsers = [ownerA, adminA, managerA, singleA, dualA, adminB, portalA1, portalA2, removedPortal, portalArchived, portalB];
+const allUsers = [ownerA, adminA, managerA, singleA, dualA, inviterA, adminB, portalA1, portalA2, removedPortal, portalArchived, portalB];
 const allAgencies = [agencyA, agencyB];
 const allClients = [
   clientA1, clientA2, clientA3, clientA4, clientArchived, clientB,
@@ -70,6 +72,7 @@ const allInvitations = [invA1, invA2, invA1Used, invDue];
 
 let roleIds: Record<'admin' | 'account_manager' | 'production', string>;
 let singleRoleId: string;
+let inviterRoleId: string;
 
 type Rows<T> = { readonly rows: readonly T[] };
 
@@ -163,6 +166,7 @@ beforeAll(async () => {
   if (Object.values(roleIds).some((id) => id === undefined)) throw new Error('System role seeds are missing.');
 
   singleRoleId = randomUUID();
+  inviterRoleId = randomUUID();
 
   await getOwner().transaction(async (transaction) => {
     await transaction('auth.user').insert(
@@ -178,10 +182,15 @@ beforeAll(async () => {
     await transaction('roles').insert({ id: singleRoleId, agency_id: agencyA, key: `only-operar-${singleRoleId}`, name: 'Só operar', is_system: false });
     await transaction('role_permissions').insert({ role_id: singleRoleId, permission_key: 'cliente.operar' });
 
+    // Holds only the invite permission, so it can insert a portal invite but has no write on `clients`.
+    await transaction('roles').insert({ id: inviterRoleId, agency_id: agencyA, key: `only-convidar-${inviterRoleId}`, name: 'Só convidar', is_system: false });
+    await transaction('role_permissions').insert({ role_id: inviterRoleId, permission_key: 'cliente.convidar_usuario' });
+
     await transaction('agency_memberships').insert([
       { agency_id: agencyA, user_id: adminA, role_id: roleIds.admin },
       { agency_id: agencyA, user_id: managerA, role_id: roleIds.account_manager },
       { agency_id: agencyA, user_id: singleA, role_id: singleRoleId },
+      { agency_id: agencyA, user_id: inviterA, role_id: inviterRoleId },
       { agency_id: agencyA, user_id: dualA, role_id: roleIds.admin },
       { agency_id: agencyB, user_id: dualA, role_id: roleIds.production },
       { agency_id: agencyB, user_id: adminB, role_id: roleIds.admin }
@@ -233,7 +242,7 @@ afterAll(async () => {
       await transaction('invitations').whereIn('id', allInvitations).delete();
       await transaction('client_memberships').whereIn('client_id', allClients).delete();
       await transaction('agency_memberships').whereIn('agency_id', allAgencies).delete();
-      await transaction('role_permissions').where({ role_id: singleRoleId }).delete();
+      await transaction('role_permissions').whereIn('role_id', [singleRoleId, inviterRoleId]).delete();
       await transaction('roles').whereIn('agency_id', allAgencies).delete();
       await transaction('clients').whereIn('id', allClients).delete();
       await transaction('agencies').whereIn('id', allAgencies).delete();
@@ -713,5 +722,172 @@ describe('CLIENT lifecycle functions (#123)', () => {
     await getOwner().knex('audit.events').whereIn('target_id', [firstClient, secondClient]).delete();
     await deleteClient(firstClient);
     await deleteClient(secondClient);
+  });
+
+  describe('portal invite racing the archive of its client', () => {
+    // True once some backend of this database waits on a lock, so a test only moves on when the
+    // second transaction is really blocked behind the first, not after a guessed delay.
+    const waitForLockWait = async (): Promise<void> => {
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const waiting = await getOwner().knex.raw<Rows<{ pid: number }>>(
+          "select pid from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'"
+        );
+        if (waiting.rows.length > 0) return;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      throw new Error('No backend ever blocked on a lock.');
+    };
+
+    const pendingInvites = async (clientId: string): Promise<number> => {
+      const rows = await getOwner().knex('invitations')
+        .where({ client_id: clientId, purpose: 'client_invite' })
+        .whereNull('used_at').whereNull('revoked_at')
+        .count<{ count: string }[]>('id as count');
+      return Number(rows[0]!.count);
+    };
+
+    const insertPortalInvite = (transaction: Knex.Transaction, clientId: string, inviteId: string) =>
+      transaction('invitations').insert({
+        id: inviteId, agency_id: agencyA, purpose: 'client_invite', client_id: clientId,
+        email: `race-${inviteId}@example.test`, token_hash: `hash-${inviteId}`, expires_at: new Date(Date.now() + 86_400_000)
+      });
+
+    const cleanup = async (clientId: string): Promise<void> => {
+      await getOwner().knex('audit.events').where({ target_id: clientId }).delete();
+      await getOwner().knex('invitations').where({ client_id: clientId }).delete();
+      await deleteClient(clientId);
+    };
+
+    it('refuses an invite whose insert was already past the policy when the archive committed, leaving no pending invite', async () => {
+      const client = await createClient({ agencyId: agencyA });
+      const inviteId = randomUUID();
+
+      let archived!: () => void;
+      const archiveDone = new Promise<void>((resolve) => { archived = resolve; });
+      let commitArchive!: () => void;
+      const archiveMayCommit = new Promise<void>((resolve) => { commitArchive = resolve; });
+
+      // T1 archives and holds the transaction open: the row lock and the new status are uncommitted.
+      const archive = getApplication().transaction(async (transaction) => {
+        await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+        await raw(transaction, 'select app_private.archive_client(?)', [client]);
+        archived();
+        await archiveMayCommit;
+      });
+      await archiveDone;
+
+      // T2 still sees the client as active, so the policy lets the row in and the insert then waits
+      // on the reference to the client that T1 holds locked.
+      const invite = getApplication().transaction(async (transaction) => {
+        await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+        await insertPortalInvite(transaction, client, inviteId);
+      });
+      const inviteOutcome = invite.then(() => 'inserted' as const, (error: unknown) => error);
+
+      try {
+        await waitForLockWait();
+        commitArchive();
+        await archive;
+
+        const outcome = await inviteOutcome;
+        expect(outcome).toMatchObject({ code: 'A0020' });
+        expect((await clientState(client)).status).toBe('archived');
+        expect(await getOwner().knex('invitations').where({ id: inviteId }).select('id')).toEqual([]);
+        expect(await pendingInvites(client)).toBe(0);
+      } finally {
+        commitArchive();
+        await archive.catch(() => undefined);
+        await inviteOutcome;
+        await cleanup(client);
+      }
+    });
+
+    it('revokes an invite that was inserted first and committed after the archive began, so none stays pending', async () => {
+      const client = await createClient({ agencyId: agencyA });
+      const inviteId = randomUUID();
+
+      let inserted!: () => void;
+      const insertDone = new Promise<void>((resolve) => { inserted = resolve; });
+      let commitInvite!: () => void;
+      const inviteMayCommit = new Promise<void>((resolve) => { commitInvite = resolve; });
+
+      const invite = getApplication().transaction(async (transaction) => {
+        await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+        await insertPortalInvite(transaction, client, inviteId);
+        inserted();
+        await inviteMayCommit;
+      });
+      await insertDone;
+
+      const archive = getApplication().transaction(async (transaction) => {
+        await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+        await raw(transaction, 'select app_private.archive_client(?)', [client]);
+      });
+      const archiveOutcome = archive.then(() => 'archived' as const, (error: unknown) => error);
+
+      try {
+        await waitForLockWait();
+        commitInvite();
+        await invite;
+
+        expect(await archiveOutcome).toBe('archived');
+        expect((await clientState(client)).status).toBe('archived');
+        expect((await invitationState(inviteId))?.revoked_at).not.toBeNull();
+        expect(await pendingInvites(client)).toBe(0);
+      } finally {
+        commitInvite();
+        await invite.catch(() => undefined);
+        await archiveOutcome;
+        await cleanup(client);
+      }
+    });
+
+    it('lets a role holding only cliente.convidar_usuario invite an active client, which a lock taken as the caller would break', async () => {
+      const client = await createClient({ agencyId: agencyA });
+      const inviteId = randomUUID();
+
+      try {
+        await asUser(inviterA, (transaction) => insertPortalInvite(transaction, client, inviteId));
+        expect(await getOwner().knex('invitations').where({ id: inviteId }).select('id')).toHaveLength(1);
+        expect(await pendingInvites(client)).toBe(1);
+      } finally {
+        await cleanup(client);
+      }
+    });
+
+    it('still checks authorization before it waits: an unauthorized insert fails on the policy even while the client row is locked', async () => {
+      const client = await createClient({ agencyId: agencyA });
+
+      let locked!: () => void;
+      const lockHeld = new Promise<void>((resolve) => { locked = resolve; });
+      let release!: () => void;
+      const lockMayEnd = new Promise<void>((resolve) => { release = resolve; });
+
+      const locker = getApplication().transaction(async (transaction) => {
+        await raw(transaction, "select set_config('app.user_id', ?, true)", [adminA]);
+        await raw(transaction, 'select id from public.clients where id = ?::uuid for update', [client]);
+        locked();
+        await lockMayEnd;
+      });
+      await lockHeld;
+
+      try {
+        for (const actor of [managerA, singleA]) {
+          const inviteId = randomUUID();
+          // Neither holds cliente.convidar_usuario or convite.reenviar: the policy must refuse before
+          // the insert reaches the locked reference, or lock_timeout would surface as 55P03.
+          await expect(getApplication().transaction(async (transaction) => {
+            await raw(transaction, "select set_config('app.user_id', ?, true)", [actor]);
+            await raw(transaction, "set local lock_timeout = '250ms'", []);
+            await insertPortalInvite(transaction, client, inviteId);
+          })).rejects.toThrow(/row-level security/);
+          expect(await getOwner().knex('invitations').where({ id: inviteId }).select('id')).toEqual([]);
+        }
+      } finally {
+        release();
+        await locker;
+        await cleanup(client);
+      }
+    });
   });
 });
