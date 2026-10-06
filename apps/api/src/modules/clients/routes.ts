@@ -282,18 +282,24 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     const subject = subjectFromQuery(query);
     const pagination = resolvePagination(query, THREADS_PAGE_SIZE);
 
-    const result = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+    const outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
       const client = await loadClient(transaction, { agencyId: tenant.agencyId, clientId });
-      if (client === undefined) return undefined;
-      return loadThreads(transaction, {
+      if (client === undefined) return { kind: 'not-found' } as const;
+      if ('personaId' in subject) {
+        const persona = await loadPersonaSubject(transaction, { agencyId: tenant.agencyId, clientId, personaId: subject.personaId });
+        if (persona === undefined) return { kind: 'subject-not-found' } as const;
+      }
+      const page = await loadThreads(transaction, {
         agencyId: tenant.agencyId, clientId, subject, state: query.state,
         pageSize: pagination.pageSize, offset: pagination.offset
       });
+      return { kind: 'ok', page } as const;
     });
-    if (result === undefined) throw clientNotFound();
+    if (outcome.kind === 'not-found') throw clientNotFound();
+    if (outcome.kind === 'subject-not-found') throw personaNotFound();
     return reply.send(parseResponse(threadListDocs.schemas.response, {
-      data: result.items.map(threadListItemFromRow),
-      meta: buildPaginationMetadata(pagination, result.totalItems)
+      data: outcome.page.items.map(threadListItemFromRow),
+      meta: buildPaginationMetadata(pagination, outcome.page.totalItems)
     }));
   });
 

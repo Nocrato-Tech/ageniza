@@ -55,8 +55,18 @@ tabela de conversa.
   escreve `agency`), e a policy de RLS confere a credencial do lado.
 - **O autor é lido pelo comentário**: nome e foto vêm pelo vínculo de agência (`agency`) ou de
   cliente (`client`), nunca de `auth."user"` por um id solto; sem vínculo, o autor é `null`.
-- Abrir, comentar e resolver num cliente arquivado respondem `409`; ler funciona. Persona de outro
-  cliente como assunto é o mesmo `404`.
+- Abrir, comentar e resolver num cliente arquivado respondem `409`; ler funciona. Persona arquivada
+  recusa escrita com `409 PERSONA_ARCHIVED` (o histórico segue legível). Persona de outro cliente,
+  ou inexistente, é o mesmo `404` ao abrir **e** ao listar.
+- **Aberta é o empate**: resolvida exige `resolved_at` estritamente posterior ao último comentário, e
+  `resolveThread` reaproveita `openThreadSql` em vez de repetir a regra. Resolver duas vezes não muda
+  quem resolveu nem quando.
+- O corpo do comentário é aparado, preserva quebra de linha e tabulação, recusa os demais caracteres
+  de controle e mede **5.000 bytes UTF-8** -- o critério da coluna, para o banco nunca responder 500
+  (`decisions.md`, 2026-10-06).
+- **Fora desta task**: uma corrida entre arquivar a persona ou o cliente e uma escrita já em voo
+  chega à RLS como violação (`42501`) e vira 500, não 409 -- as rotas que arquivam ainda não existem
+  (#127, #131) e o banco continua correto.
 
 ## O que ficou de fora
 

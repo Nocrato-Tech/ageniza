@@ -30,9 +30,14 @@ let production: TestUserFixture;
 let sales: TestUserFixture;
 let finance: TestUserFixture;
 let viewer: TestUserFixture;
+let operator: TestUserFixture;
+let outsider: TestUserFixture;
 let otherAdmin: TestUserFixture;
 let portalUser: TestUserFixture;
 
+let adminCookie: string;
+let operatorCookie: string;
+let outsiderCookie: string;
 let managerCookie: string;
 let productionCookie: string;
 let salesCookie: string;
@@ -122,6 +127,8 @@ describe('CLIENTS conversation HTTP module (#128)', () => {
     sales = await makeUser('conv-sales');
     finance = await makeUser('conv-finance');
     viewer = await makeUser('conv-viewer');
+    operator = await makeUser('conv-operator');
+    outsider = await makeUser('conv-outsider');
     otherAdmin = await makeUser('conv-other-admin');
     portalUser = await makeUser('conv-portal');
 
@@ -142,7 +149,22 @@ describe('CLIENTS conversation HTTP module (#128)', () => {
     await owner.knex('roles').insert({ id: customRoleId, agency_id: agencyA, key: `only-view-${customRoleId}`, name: 'Só visualizar', is_system: false });
     await owner.knex('role_permissions').insert({ role_id: customRoleId, permission_key: 'cliente.visualizar' });
 
+    // One permission each, so a guard checking the wrong key cannot hide behind a role holding both.
+    const operateOnlyRoleId = randomUUID();
+    const unrelatedRoleId = randomUUID();
+    createdCustomRoleIds.push(operateOnlyRoleId, unrelatedRoleId);
+    await owner.knex('roles').insert([
+      { id: operateOnlyRoleId, agency_id: agencyA, key: `only-operate-${operateOnlyRoleId}`, name: 'Só operar', is_system: false },
+      { id: unrelatedRoleId, agency_id: agencyA, key: `unrelated-${unrelatedRoleId}`, name: 'Sem cliente', is_system: false }
+    ]);
+    await owner.knex('role_permissions').insert([
+      { role_id: operateOnlyRoleId, permission_key: 'cliente.operar' },
+      { role_id: unrelatedRoleId, permission_key: 'colaborador.visualizar' }
+    ]);
+
     await owner.knex('agency_memberships').insert([
+      { agency_id: agencyA, user_id: operator.id, role_id: operateOnlyRoleId },
+      { agency_id: agencyA, user_id: outsider.id, role_id: unrelatedRoleId },
       { agency_id: agencyA, user_id: admin.id, role_id: roleId('admin') },
       { agency_id: agencyA, user_id: manager.id, role_id: roleId('account_manager') },
       { agency_id: agencyA, user_id: production.id, role_id: roleId('production') },
@@ -152,6 +174,9 @@ describe('CLIENTS conversation HTTP module (#128)', () => {
       { agency_id: agencyB, user_id: otherAdmin.id, role_id: roleId('admin') }
     ]);
 
+    adminCookie = await login(admin);
+    operatorCookie = await login(operator);
+    outsiderCookie = await login(outsider);
     managerCookie = await login(manager);
     productionCookie = await login(production);
     salesCookie = await login(sales);
@@ -366,5 +391,399 @@ describe('CLIENTS conversation HTTP module (#128)', () => {
     expect(typeof own?.author?.photoUrl).toBe('string');
     const untied = items.find((item) => item.body === 'autor sem vínculo');
     expect(untied?.author).toBeNull();
+  });
+
+  it('reads a client-side author through the client tie, and a side that does not match the tie reveals nothing', async () => {
+    const clientId = await createClient(agencyA);
+    const otherClientId = await createClient(agencyA);
+    const threadId = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency');
+    await owner.knex('client_memberships').insert([
+      { client_id: clientId, user_id: portalUser.id },
+      { client_id: otherClientId, user_id: viewer.id }
+    ]);
+    await owner.knex('auth.user').where({ id: portalUser.id }).update({ image: `users/${portalUser.id}/avatar/${randomUUID()}.png` });
+
+    await insertComment(threadId, clientId, portalUser.id, 'client', 'do cliente', new Date(Date.now() - 4_000));
+    // The portal user has no agency membership: reading them as an agency author would be a loose lookup.
+    await insertComment(threadId, clientId, portalUser.id, 'agency', 'lado agência sem vínculo de agência', new Date(Date.now() - 3_000));
+    // The manager has no client membership: reading them as a client author would be a loose lookup.
+    await insertComment(threadId, clientId, manager.id, 'client', 'lado cliente sem vínculo de cliente', new Date(Date.now() - 2_000));
+    // A client tie to a different client of the same agency does not authorize this client's comment.
+    await insertComment(threadId, clientId, viewer.id, 'client', 'vínculo de outro cliente', new Date(Date.now() - 1_000));
+
+    const items = (await listComments(managerCookie, agencyA, clientId, threadId)).json<{ data: { body: string; side: string; author: { name: string; photoUrl: string | null } | null }[] }>().data;
+    const byBody = (body: string) => items.find((item) => item.body === body);
+
+    expect(byBody('do cliente')).toMatchObject({ side: 'client', author: { name: portalUser.name } });
+    expect(typeof byBody('do cliente')?.author?.photoUrl).toBe('string');
+    expect(byBody('lado agência sem vínculo de agência')?.author).toBeNull();
+    expect(byBody('lado cliente sem vínculo de cliente')?.author).toBeNull();
+    expect(byBody('vínculo de outro cliente')?.author).toBeNull();
+  });
+
+  it('keeps the line breaks and tabs of a comment, and still refuses the other control characters', async () => {
+    const clientId = await createClient(agencyA);
+    const threadId = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency');
+
+    const multiline = await createComment(managerCookie, agencyA, clientId, threadId, { body: 'primeira linha\n\nsegunda\tlinha\r\nterceira' });
+    expect(multiline.statusCode).toBe(201);
+    expect(multiline.json()).toMatchObject({ body: 'primeira linha\n\nsegunda\tlinha\r\nterceira' });
+
+    for (const control of ['\u0000', '\u0001', '\u0008', '\u000b', '\u000c', '\u001b', '\u007f']) {
+      expect((await createComment(managerCookie, agencyA, clientId, threadId, { body: `a${control}b` })).statusCode).toBe(400);
+      expect((await createThread(managerCookie, agencyA, clientId, { subject: { sectionKey: 'branding' }, body: `a${control}b` })).statusCode).toBe(400);
+    }
+    await expect(owner.knex('client_thread_comments').where({ thread_id: threadId }).count({ count: '*' })).resolves.toEqual([{ count: '1' }]);
+  });
+
+  it('measures the body limit exactly: 5000 bytes pass, 5001 do not, and a non-breaking space is not content', async () => {
+    const clientId = await createClient(agencyA);
+    const threadId = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency');
+
+    expect((await createComment(managerCookie, agencyA, clientId, threadId, { body: 'a'.repeat(5_000) })).statusCode).toBe(201);
+    expect((await createComment(managerCookie, agencyA, clientId, threadId, { body: 'a'.repeat(5_001) })).statusCode).toBe(400);
+    // The column check is octet_length, so the API refuses what the database would answer with a 500.
+    expect((await createComment(managerCookie, agencyA, clientId, threadId, { body: 'é'.repeat(2_500) })).statusCode).toBe(201);
+    expect((await createComment(managerCookie, agencyA, clientId, threadId, { body: 'é'.repeat(2_501) })).statusCode).toBe(400);
+    expect((await createComment(managerCookie, agencyA, clientId, threadId, { body: '   \n\t' })).statusCode).toBe(400);
+    expect((await createThread(managerCookie, agencyA, clientId, { subject: { sectionKey: 'branding' }, body: 'a'.repeat(5_001) })).statusCode).toBe(400);
+    expect((await createComment(managerCookie, agencyA, clientId, threadId, { body: 123 })).statusCode).toBe(400);
+    expect((await createComment(managerCookie, agencyA, clientId, threadId, {})).statusCode).toBe(400);
+
+    const stored = await createComment(managerCookie, agencyA, clientId, threadId, { body: '   com bordas   ' });
+    expect(stored.json()).toMatchObject({ body: 'com bordas' });
+  });
+
+  it('accepts each of the seven sections as a subject and refuses any other', async () => {
+    const clientId = await createClient(agencyA);
+    for (const sectionKey of ['branding', 'tone_of_voice', 'colors', 'positioning', 'archetype', 'personas', 'observations']) {
+      const response = await createThread(managerCookie, agencyA, clientId, { subject: { sectionKey }, body: `sobre ${sectionKey}` });
+      expect(response.statusCode).toBe(201);
+      expect((await listThreads(managerCookie, agencyA, clientId, `?sectionKey=${sectionKey}`)).json<{ data: unknown[] }>().data).toHaveLength(1);
+    }
+    expect((await createThread(managerCookie, agencyA, clientId, { subject: { sectionKey: 'content' }, body: 'x' })).statusCode).toBe(400);
+    expect((await listThreads(managerCookie, agencyA, clientId, '?sectionKey=content')).statusCode).toBe(400);
+    expect((await createThread(managerCookie, agencyA, clientId, { subject: { personaId: 'not-a-uuid' }, body: 'x' })).statusCode).toBe(400);
+    expect((await createThread(managerCookie, agencyA, clientId, { body: 'x' })).statusCode).toBe(400);
+    expect((await createThread(managerCookie, agencyA, clientId, { subject: null, body: 'x' })).statusCode).toBe(400);
+  });
+
+  it('opens a thread on an active persona, and refuses to open one on an archived persona', async () => {
+    const clientId = await createClient(agencyA);
+    const activePersona = await insertPersona(clientId, 'active');
+    const archivedPersona = await insertPersona(clientId, 'archived');
+
+    const opened = await createThread(managerCookie, agencyA, clientId, { subject: { personaId: activePersona }, body: 'sobre a persona' });
+    expect(opened.statusCode).toBe(201);
+    expect(opened.json()).toMatchObject({ thread: { subject: { personaId: activePersona } } });
+
+    expect((await createThread(managerCookie, agencyA, clientId, { subject: { personaId: archivedPersona }, body: 'x' })).statusCode).toBe(409);
+    await expect(owner.knex('client_threads').where({ persona_id: archivedPersona }).select('id')).resolves.toEqual([]);
+
+    // History of an archived persona stays readable to the agency.
+    const archivedThread = await insertThread(clientId, { personaId: archivedPersona }, manager.id, 'agency');
+    await insertComment(archivedThread, clientId, manager.id, 'agency', 'histórico');
+    expect((await listThreads(managerCookie, agencyA, clientId, `?personaId=${archivedPersona}`)).json<{ data: unknown[] }>().data).toHaveLength(1);
+    expect((await listComments(managerCookie, agencyA, clientId, archivedThread)).json<{ data: unknown[] }>().data).toHaveLength(1);
+  });
+
+  it('answers 404 when the persona of the list is another client\'s, and does not leak that client\'s threads', async () => {
+    const clientA1 = await createClient(agencyA);
+    const clientA2 = await createClient(agencyA);
+    const personaOfA2 = await insertPersona(clientA2);
+    await insertThread(clientA2, { personaId: personaOfA2 }, manager.id, 'agency');
+
+    expect((await listThreads(managerCookie, agencyA, clientA1, `?personaId=${personaOfA2}`)).statusCode).toBe(404);
+    expect((await listThreads(managerCookie, agencyA, clientA1, `?personaId=${randomUUID()}`)).statusCode).toBe(404);
+    expect((await listThreads(managerCookie, agencyA, clientA2, `?personaId=${personaOfA2}`)).json<{ data: unknown[] }>().data).toHaveLength(1);
+  });
+
+  it('answers 404, never 403 or 200, to another agency and to another client of the same agency on all five routes', async () => {
+    const clientA1 = await createClient(agencyA);
+    const clientA2 = await createClient(agencyA);
+    const threadOfA1 = await insertThread(clientA1, { sectionKey: 'branding' }, manager.id, 'agency');
+    await insertComment(threadOfA1, clientA1, manager.id, 'agency', 'privado do cliente 1');
+
+    const attempts = async (cookie: string, agencyId: string, clientId: string): Promise<number[]> => [
+      (await listThreads(cookie, agencyId, clientId, '?sectionKey=branding')).statusCode,
+      (await createThread(cookie, agencyId, clientId, { subject: { sectionKey: 'branding' }, body: 'x' })).statusCode,
+      (await listComments(cookie, agencyId, clientId, threadOfA1)).statusCode,
+      (await createComment(cookie, agencyId, clientId, threadOfA1, { body: 'x' })).statusCode,
+      (await resolveThread(cookie, agencyId, clientId, threadOfA1)).statusCode
+    ];
+
+    // Another agency's admin (every permission there) against agency A's ids, with each client.
+    expect(await attempts(otherAdminCookie, agencyA, clientA1)).toEqual([404, 404, 404, 404, 404]);
+    expect(await attempts(otherAdminCookie, agencyA, clientA2)).toEqual([404, 404, 404, 404, 404]);
+    // Agency A's manager naming agency B in the URL.
+    expect(await attempts(managerCookie, agencyB, clientA1)).toEqual([404, 404, 404, 404, 404]);
+    // The right agency, the wrong client: the thread belongs to client 1.
+    expect(await attempts(managerCookie, agencyA, clientA2)).toEqual([200, 201, 404, 404, 404]);
+
+    await expect(owner.knex('client_thread_comments').where({ thread_id: threadOfA1 }).count({ count: '*' })).resolves.toEqual([{ count: '1' }]);
+    await expect(owner.knex('client_threads').where({ id: threadOfA1 }).first('resolved_at')).resolves.toEqual({ resolved_at: null });
+    await expect(owner.knex('client_threads').where({ client_id: clientA1 }).count({ count: '*' })).resolves.toEqual([{ count: '1' }]);
+  });
+
+  it('guards every route with its own permission: a role with only cliente.operar cannot read, one with only cliente.visualizar cannot write, one with neither cannot do anything', async () => {
+    const clientId = await createClient(agencyA);
+    const threadId = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency');
+    await insertComment(threadId, clientId, manager.id, 'agency', 'existente');
+
+    const reads = async (cookie: string): Promise<number[]> => [
+      (await listThreads(cookie, agencyA, clientId, '?sectionKey=branding')).statusCode,
+      (await listComments(cookie, agencyA, clientId, threadId)).statusCode
+    ];
+    const writes = async (cookie: string): Promise<number[]> => [
+      (await createThread(cookie, agencyA, clientId, { subject: { sectionKey: 'branding' }, body: 'x' })).statusCode,
+      (await createComment(cookie, agencyA, clientId, threadId, { body: 'x' })).statusCode,
+      (await resolveThread(cookie, agencyA, clientId, threadId)).statusCode
+    ];
+
+    expect(await reads(operatorCookie)).toEqual([403, 403]);
+    expect(await reads(outsiderCookie)).toEqual([403, 403]);
+    expect(await reads(viewerCookie)).toEqual([200, 200]);
+    expect(await writes(outsiderCookie)).toEqual([403, 403, 403]);
+    expect(await writes(viewerCookie)).toEqual([403, 403, 403]);
+    expect(await writes(operatorCookie)).toEqual([201, 201, 200]);
+  });
+
+  it('requires a session on every route, and the origin check on every write', async () => {
+    const clientId = await createClient(agencyA);
+    const threadId = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency');
+    const base = `/agencies/${agencyA}/clients/${clientId}/threads`;
+
+    const anonymous = [
+      await app.app.inject({ method: 'GET', url: `${base}?sectionKey=branding` }),
+      await app.app.inject({ method: 'GET', url: `${base}/${threadId}/comments` }),
+      await app.app.inject({ method: 'POST', url: base, headers: origin, payload: { subject: { sectionKey: 'branding' }, body: 'x' } }),
+      await app.app.inject({ method: 'POST', url: `${base}/${threadId}/comments`, headers: origin, payload: { body: 'x' } }),
+      await app.app.inject({ method: 'POST', url: `${base}/${threadId}/resolve`, headers: origin })
+    ];
+    expect(anonymous.map((response) => response.statusCode)).toEqual([401, 401, 401, 401, 401]);
+
+    const noOrigin = [
+      await app.app.inject({ method: 'POST', url: base, headers: { cookie: managerCookie }, payload: { subject: { sectionKey: 'branding' }, body: 'x' } }),
+      await app.app.inject({ method: 'POST', url: `${base}/${threadId}/comments`, headers: { cookie: managerCookie }, payload: { body: 'x' } }),
+      await app.app.inject({ method: 'POST', url: `${base}/${threadId}/resolve`, headers: { cookie: managerCookie } })
+    ];
+    expect(noOrigin.map((response) => response.statusCode)).toEqual([403, 403, 403]);
+    expect(noOrigin.map((response) => (response.json() as { error: { code: string } }).error.code)).toEqual(['CSRF_REJECTED', 'CSRF_REJECTED', 'CSRF_REJECTED']);
+    await expect(owner.knex('client_threads').where({ client_id: clientId }).count({ count: '*' })).resolves.toEqual([{ count: '1' }]);
+  });
+
+  it('answers a hostile body with 400 or 415, never a 500 and without echoing it', async () => {
+    const clientId = await createClient(agencyA);
+    const threadId = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency');
+    const url = `/agencies/${agencyA}/clients/${clientId}/threads/${threadId}/comments`;
+    const send = async (headers: Record<string, string>, payload: string) =>
+      app.app.inject({ method: 'POST', url, headers: { ...origin, cookie: managerCookie, ...headers }, payload });
+
+    const malformed = await send({ 'content-type': 'application/json' }, '{"body": "segredo-ecoado');
+    expect(malformed.statusCode).toBe(400);
+    expect(malformed.body).not.toContain('segredo-ecoado');
+    expect((await send({ 'content-type': 'application/json' }, '')).statusCode).toBe(400);
+    expect((await send({ 'content-type': 'application/json' }, 'null')).statusCode).toBe(400);
+    expect((await send({ 'content-type': 'application/json' }, '[]')).statusCode).toBe(400);
+    expect((await send({ 'content-type': 'application/json' }, `{"body":${'['.repeat(5_000)}${']'.repeat(5_000)}}`)).statusCode).toBe(400);
+    const wrongType = await send({ 'content-type': 'text/plain' }, 'body=segredo-ecoado');
+    expect([400, 415]).toContain(wrongType.statusCode);
+    expect(wrongType.body).not.toContain('segredo-ecoado');
+    await expect(owner.knex('client_thread_comments').where({ thread_id: threadId }).select('id')).resolves.toEqual([]);
+  });
+
+  it('pages the threads by 20 on the last activity, newest first, and clamps the page size to 100', async () => {
+    const clientId = await createClient(agencyA);
+    const base = Date.now() - 3_600_000;
+    const threadIds: string[] = [];
+    for (let index = 0; index < 21; index += 1) {
+      const threadId = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency');
+      await insertComment(threadId, clientId, manager.id, 'agency', `thread ${index}`, new Date(base + index * 1_000));
+      threadIds.push(threadId);
+    }
+    // The oldest thread receives the latest comment: it must lead, because the order is by activity.
+    await insertComment(threadIds[0] as string, clientId, manager.id, 'agency', 'atividade recente', new Date(base + 60_000));
+
+    const first = (await listThreads(managerCookie, agencyA, clientId, '?sectionKey=branding')).json<{ data: { id: string }[]; meta: { page: number; pageSize: number; totalItems: number; totalPages: number } }>();
+    expect(first.meta).toEqual({ page: 1, pageSize: 20, totalItems: 21, totalPages: 2 });
+    expect(first.data.map((item) => item.id)).toEqual([threadIds[0], ...threadIds.slice(2).reverse()]);
+
+    const second = (await listThreads(managerCookie, agencyA, clientId, '?sectionKey=branding&page=2')).json<{ data: { id: string }[] }>();
+    expect(second.data.map((item) => item.id)).toEqual([threadIds[1]]);
+
+    const clamped = (await listThreads(managerCookie, agencyA, clientId, '?sectionKey=branding&pageSize=1000')).json<{ meta: { pageSize: number } }>();
+    expect(clamped.meta.pageSize).toBe(100);
+    expect((await listThreads(managerCookie, agencyA, clientId, '?sectionKey=branding&pageSize=0')).statusCode).toBe(400);
+    expect((await listThreads(managerCookie, agencyA, clientId, '?sectionKey=branding&state=reopened')).statusCode).toBe(400);
+    expect((await listThreads(managerCookie, agencyA, clientId, '?sectionKey=branding&unknown=1')).statusCode).toBe(400);
+
+    const far = await listThreads(managerCookie, agencyA, clientId, '?sectionKey=branding&page=9007199254740991&pageSize=100');
+    expect(far.statusCode).toBe(200);
+    expect(far.json<{ data: unknown[] }>().data).toEqual([]);
+  });
+
+  it('pages the comments by 50, oldest first', async () => {
+    const clientId = await createClient(agencyA);
+    const threadId = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency');
+    const base = Date.now() - 3_600_000;
+    for (let index = 0; index < 51; index += 1) {
+      await insertComment(threadId, clientId, manager.id, 'agency', `comentário ${index}`, new Date(base + index * 1_000));
+    }
+
+    const first = (await listComments(managerCookie, agencyA, clientId, threadId)).json<{ data: { body: string }[]; meta: { pageSize: number; totalItems: number; totalPages: number } }>();
+    expect(first.meta).toMatchObject({ pageSize: 50, totalItems: 51, totalPages: 2 });
+    expect(first.data[0]?.body).toBe('comentário 0');
+    expect(first.data[49]?.body).toBe('comentário 49');
+    const second = (await listComments(managerCookie, agencyA, clientId, threadId, '?page=2')).json<{ data: { body: string }[] }>();
+    expect(second.data.map((item) => item.body)).toEqual(['comentário 50']);
+    expect((await listComments(managerCookie, agencyA, clientId, threadId, '?pageSize=500')).json<{ meta: { pageSize: number } }>().meta.pageSize).toBe(100);
+  });
+
+  it('filters by state, and the list item says what the screen needs and nothing else', async () => {
+    const clientId = await createClient(agencyA);
+    const openThread = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency');
+    const longBody = `${'x'.repeat(200)}`;
+    await insertComment(openThread, clientId, manager.id, 'agency', longBody, new Date(Date.now() - 20_000));
+    await insertComment(openThread, clientId, manager.id, 'agency', 'última', new Date(Date.now() - 10_000));
+    const resolvedThread = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency', new Date());
+    await insertComment(resolvedThread, clientId, manager.id, 'agency', 'resolvida', new Date(Date.now() - 60_000));
+
+    const open = (await listThreads(managerCookie, agencyA, clientId, '?sectionKey=branding&state=open')).json<{ data: Record<string, unknown>[] }>().data;
+    const resolved = (await listThreads(managerCookie, agencyA, clientId, '?sectionKey=branding&state=resolved')).json<{ data: Record<string, unknown>[] }>().data;
+    const all = (await listThreads(managerCookie, agencyA, clientId, '?sectionKey=branding')).json<{ data: Record<string, unknown>[] }>().data;
+    expect(open.map((item) => item.id)).toEqual([openThread]);
+    expect(resolved.map((item) => item.id)).toEqual([resolvedThread]);
+    expect(all).toHaveLength(2);
+
+    expect(Object.keys(open[0] as object).sort()).toEqual(['commentCount', 'id', 'lastComment', 'openedBy', 'resolvedAt', 'resolvedBy', 'state', 'subject']);
+    expect(open[0]).toMatchObject({
+      state: 'open', commentCount: 2, resolvedBy: null, resolvedAt: null,
+      openedBy: { name: manager.name, side: 'agency' }, lastComment: { side: 'agency', excerpt: 'última' }
+    });
+    expect(Object.keys((open[0] as { lastComment: object }).lastComment).sort()).toEqual(['at', 'excerpt', 'side']);
+
+    // The excerpt is a preview, never the whole body.
+    await insertComment(openThread, clientId, manager.id, 'agency', longBody, new Date(Date.now() - 5_000));
+    const previewed = (await listThreads(managerCookie, agencyA, clientId, '?sectionKey=branding&state=open')).json<{ data: { lastComment: { excerpt: string } }[] }>().data;
+    expect(previewed[0]?.lastComment.excerpt).toHaveLength(160);
+  });
+
+  it('exposes only the author name and photo on a comment, never an id, an e-mail or a credential', async () => {
+    const clientId = await createClient(agencyA);
+    const threadId = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency');
+    const created = await createComment(managerCookie, agencyA, clientId, threadId, { body: 'campos' });
+    const listed = (await listComments(managerCookie, agencyA, clientId, threadId)).json<{ data: Record<string, unknown>[] }>().data;
+
+    for (const comment of [created.json<Record<string, unknown>>(), listed[0] as Record<string, unknown>]) {
+      expect(Object.keys(comment).sort()).toEqual(['author', 'body', 'createdAt', 'id', 'side']);
+      expect(Object.keys(comment.author as object).sort()).toEqual(['name', 'photoUrl']);
+    }
+    // The photo URL is a signed link whose key carries the owner's id (as everywhere else in the product).
+    const withoutPhoto = JSON.stringify(listed.map((comment) => ({ ...comment, author: { name: (comment.author as { name: string }).name } })));
+    expect(withoutPhoto).not.toContain(manager.email);
+    expect(withoutPhoto).not.toContain(manager.id);
+  });
+
+  it('stamps the resolver and the time on the first resolve, and a second resolve by someone else changes nothing', async () => {
+    const clientId = await createClient(agencyA);
+    const threadId = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency');
+    await insertComment(threadId, clientId, manager.id, 'agency', 'a resolver', new Date(Date.now() - 60_000));
+
+    const before = Date.now();
+    const first = await resolveThread(managerCookie, agencyA, clientId, threadId);
+    expect(first.json()).toMatchObject({ state: 'resolved', resolvedBy: { name: manager.name } });
+    const stored = await owner.knex('client_threads').where({ id: threadId }).first('resolved_at', 'resolved_by');
+    expect(stored?.resolved_by).toBe(manager.id);
+    expect(new Date(stored?.resolved_at as Date).getTime()).toBeGreaterThanOrEqual(before - 5_000);
+    expect(new Date(stored?.resolved_at as Date).getTime()).toBeLessThanOrEqual(Date.now() + 1_000);
+
+    const second = await resolveThread(adminCookie, agencyA, clientId, threadId);
+    expect(second.statusCode).toBe(200);
+    expect(second.json()).toMatchObject({ state: 'resolved', resolvedBy: { name: manager.name } });
+    await expect(owner.knex('client_threads').where({ id: threadId }).first('resolved_at', 'resolved_by')).resolves.toEqual(stored);
+  });
+
+  it('serializes two resolves racing on the same thread: one resolver wins and both answer the same state', async () => {
+    const clientId = await createClient(agencyA);
+    const threadId = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency');
+    await insertComment(threadId, clientId, manager.id, 'agency', 'corrida', new Date(Date.now() - 60_000));
+
+    const [fromManager, fromAdmin] = await Promise.all([
+      resolveThread(managerCookie, agencyA, clientId, threadId),
+      resolveThread(adminCookie, agencyA, clientId, threadId)
+    ]);
+    expect([fromManager.statusCode, fromAdmin.statusCode]).toEqual([200, 200]);
+    const a = fromManager.json<{ resolvedBy: { name: string }; resolvedAt: string }>();
+    const b = fromAdmin.json<{ resolvedBy: { name: string }; resolvedAt: string }>();
+    expect(a.resolvedBy).toEqual(b.resolvedBy);
+    expect(a.resolvedAt).toBe(b.resolvedAt);
+  });
+
+  it('reopens a resolved thread when the agency comments again, as an answer from the agency', async () => {
+    const clientId = await createClient(agencyA);
+    const threadId = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency');
+    await insertComment(threadId, clientId, manager.id, 'agency', 'início', new Date(Date.now() - 60_000));
+    expect((await resolveThread(managerCookie, agencyA, clientId, threadId)).json()).toMatchObject({ state: 'resolved' });
+
+    const reopened = await createComment(managerCookie, agencyA, clientId, threadId, { body: 'voltando ao assunto' });
+    expect(reopened.statusCode).toBe(201);
+
+    const open = (await listThreads(managerCookie, agencyA, clientId, '?sectionKey=branding&state=open')).json<{ data: { id: string; resolvedBy: unknown }[] }>().data;
+    expect(open.map((item) => item.id)).toEqual([threadId]);
+    expect((await listThreads(managerCookie, agencyA, clientId, '?sectionKey=branding&state=resolved')).json<{ data: unknown[] }>().data).toEqual([]);
+    const detail = await app.app.inject({ method: 'GET', url: `/agencies/${agencyA}/clients/${clientId}`, headers: { ...origin, cookie: managerCookie } });
+    expect(detail.json()).toMatchObject({ summary: { threadsAwaitingAgency: 0, threadsAnsweredByAgency: 1 } });
+  });
+
+  it('counts a thread as awaiting the agency again when a client comment lands after the resolution, even one dated before it', async () => {
+    const clientId = await createClient(agencyA);
+    const threadId = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency');
+    await insertComment(threadId, clientId, manager.id, 'agency', 'início', new Date(Date.now() - 60_000));
+    await owner.knex('client_memberships').insert({ client_id: clientId, user_id: portalUser.id });
+    expect((await resolveThread(managerCookie, agencyA, clientId, threadId)).json()).toMatchObject({ state: 'resolved' });
+
+    // Backdated on purpose: this is what a comment whose transaction began before the resolve looks like.
+    await insertComment(threadId, clientId, portalUser.id, 'client', 'pergunta que chegou no meio da resolução', new Date(Date.now() - 30_000));
+
+    const open = (await listThreads(managerCookie, agencyA, clientId, '?sectionKey=branding&state=open')).json<{ data: { id: string; lastComment: { side: string } }[] }>().data;
+    expect(open).toEqual([expect.objectContaining({ id: threadId, lastComment: expect.objectContaining({ side: 'client' }) })]);
+    const detail = await app.app.inject({ method: 'GET', url: `/agencies/${agencyA}/clients/${clientId}`, headers: { ...origin, cookie: managerCookie } });
+    expect(detail.json()).toMatchObject({ summary: { threadsAwaitingAgency: 1 } });
+  });
+
+  it('calls a thread resolved only when the resolution is strictly later than its last comment', async () => {
+    const clientId = await createClient(agencyA);
+    const instant = new Date(Date.now() - 120_000);
+    const sameInstant = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency', instant);
+    await insertComment(sameInstant, clientId, manager.id, 'agency', 'no mesmo instante', instant);
+    const later = await insertThread(clientId, { sectionKey: 'branding' }, manager.id, 'agency', new Date(instant.getTime() + 1_000));
+    await insertComment(later, clientId, manager.id, 'agency', 'antes da resolução', instant);
+
+    const byState = async (state: string): Promise<string[]> =>
+      (await listThreads(managerCookie, agencyA, clientId, `?sectionKey=branding&state=${state}`)).json<{ data: { id: string }[] }>().data.map((item) => item.id);
+    expect(await byState('open')).toEqual([sameInstant]);
+    expect(await byState('resolved')).toEqual([later]);
+  });
+
+  it('opens the thread and its first comment in one transaction: a failing comment leaves no thread behind', async () => {
+    const clientId = await createClient(agencyA);
+    const marker = `fail-${randomUUID()}`;
+    await owner.knex.raw(`
+      create function public.conversation_test_fail() returns trigger language plpgsql as $$
+      begin
+        if new.body = '${marker}' then raise exception 'injected failure'; end if;
+        return new;
+      end;
+      $$
+    `);
+    await owner.knex.raw('create trigger conversation_test_fail before insert on public.client_thread_comments for each row execute function public.conversation_test_fail()');
+    try {
+      expect((await createThread(managerCookie, agencyA, clientId, { subject: { sectionKey: 'branding' }, body: marker })).statusCode).toBe(500);
+      await expect(owner.knex('client_threads').where({ client_id: clientId }).select('id')).resolves.toEqual([]);
+      expect((await createThread(managerCookie, agencyA, clientId, { subject: { sectionKey: 'branding' }, body: 'ok' })).statusCode).toBe(201);
+    } finally {
+      await owner.knex.raw('drop trigger conversation_test_fail on public.client_thread_comments');
+      await owner.knex.raw('drop function public.conversation_test_fail()');
+    }
   });
 });

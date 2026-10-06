@@ -265,14 +265,12 @@ export const resolveThread = async (
   input: { readonly clientId: string; readonly threadId: string; readonly actorUserId: string }
 ): Promise<boolean> => {
   const result = await raw<RawRows<{ id: string }>>(transaction, `
-    update public.client_threads
+    update public.client_threads thread
     set resolved_at = now(), resolved_by = ?::uuid
-    where id = ?::uuid and client_id = ?::uuid
-      and (resolved_at is null or resolved_at < (
-        select max(comment.created_at) from public.client_thread_comments comment where comment.thread_id = ?::uuid
-      ))
-    returning id
-  `, [input.actorUserId, input.threadId, input.clientId, input.threadId]);
+    where thread.id = ?::uuid and thread.client_id = ?::uuid
+      and ${openThreadSql('thread')}
+    returning thread.id
+  `, [input.actorUserId, input.threadId, input.clientId]);
   return result.rows[0] !== undefined;
 };
 

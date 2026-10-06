@@ -1157,3 +1157,15 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 **Consequência.** O filtro de cargo da grade tem fonte própria, sem alterar o formato de resposta que outras rotas já usam. Rota aditiva: nenhuma migration, nenhuma policy nova, nenhum campo novo em contrato existente. Como é um caminho novo de leitura da agência, entra com a mesma barreira de escopo da listagem (a RLS mostra as agências do chamador, nunca uma só; o filtro de agência da consulta é a barreira que separa).
 
 **Origem.** Issue #218, decidida pelo maestro a partir da lacuna achada na #102. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-06 — O comentário de conversa mede 5.000 bytes, e resolvida é estritamente posterior ao último comentário
+
+**Contexto.** Duas arestas que a SPEC (`specs/clientes.md`, seções 3 e 4) deixa abertas e que o serviço de conversa (#128) precisou fechar. A coluna `client_thread_comments.body` limita `octet_length(body) <= 5000`, enquanto a SPEC diz "até 5.000 caracteres"; um texto acentuado de 5.000 caracteres passa de 5.000 bytes e o banco o recusaria com erro 500. E a SPEC diz que a thread está resolvida quando `resolved_at` é *posterior* ao último comentário, sem dizer o que acontece num empate de instantes.
+
+**Decisão.** O limite é validado na API em **bytes UTF-8**, o mesmo critério da coluna: 5.000 bytes passam, 5.001 voltam 400. Quebras de linha e tabulação fazem parte do comentário; qualquer outro caractere de controle é recusado. No empate entre `resolved_at` e o último comentário a thread está **aberta**: resolvida exige resolução estritamente posterior, e `resolveThread` usa a mesma definição de `thread-state.ts`, em vez de repeti-la.
+
+**Consequência.** Nenhuma migration. Um comentário só com ASCII tem 5.000 caracteres; com acentos, um pouco menos. Medir em caracteres de verdade exige trocar o `check` da coluna por `char_length`, que é migration e reabre esta decisão. O empate nunca engole um comentário.
+
+**Origem.** Issue #128. **Pendente de validação** pelo dono do produto.

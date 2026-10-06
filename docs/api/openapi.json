@@ -6098,7 +6098,7 @@
       "get": {
         "operationId": "listThreads",
         "summary": "Lista as conversas de um assunto",
-        "description": "Assunto obrigatório: `sectionKey` **ou** `personaId`, exatamente um. `state=open|resolved`\nfiltra; sem ele, todas. Ordena pela última atividade. `state` é derivado de `resolved_at`\ncontra o último comentário.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
+        "description": "Assunto obrigatório: `sectionKey` **ou** `personaId`, exatamente um. `state=open|resolved`\nfiltra; sem ele, todas. Ordena pela última atividade. `state` é derivado de `resolved_at`\ncontra o último comentário. Persona de outro cliente, ou inexistente, é 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
         "tags": [
           "clients"
         ],

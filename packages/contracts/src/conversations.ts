@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { hasControlCharacters, utf8ByteLength } from './clients.js';
+import { utf8ByteLength } from './clients.js';
 import { PaginationInputSchema, createPaginatedResponseSchema } from './pagination.js';
 
 /**
@@ -26,9 +26,19 @@ export const ThreadSubjectSchema = z.union([
   z.object({ personaId: z.string().uuid() }).strict()
 ]);
 
-/** Trimmed, non-empty, at most 5000 UTF-8 bytes; control characters are rejected (NUL would 500). */
+/**
+ * Line breaks and tabs are part of a comment; every other control character is not (NUL would 500).
+ * The limit is in UTF-8 bytes because the `client_thread_comments.body` check is `octet_length`.
+ */
+const isDisallowedControlCode = (code: number): boolean =>
+  code <= 0x08 || code === 0x0b || code === 0x0c || (code >= 0x0e && code <= 0x1f) || code === 0x7f;
+
+const hasDisallowedControlCharacters = (value: string): boolean =>
+  [...value].some((character) => isDisallowedControlCode(character.codePointAt(0) ?? 0));
+
+/** Trimmed, non-empty, at most 5000 UTF-8 bytes. */
 export const ThreadCommentBodySchema = z.string()
-  .refine((value) => !hasControlCharacters(value), 'must not contain control characters')
+  .refine((value) => !hasDisallowedControlCharacters(value), 'must not contain control characters')
   .transform((value) => value.trim())
   .pipe(z.string().min(1, 'must not be empty').refine((value) => utf8ByteLength(value) <= 5000, 'must be at most 5000 bytes'));
 
