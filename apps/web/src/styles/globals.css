@@ -566,6 +566,57 @@ input:focus-visible {
   margin: 0;
 }
 
+/* Self profile (specs/colaboradores.md section 7): the same modal, editable only for its own person. */
+.collaborator-detail__photo {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: var(--space-2);
+}
+
+/* Driven by the visible "Trocar foto" button; kept in the DOM for its file picker and accept
+   filter, but visually hidden so it never draws a second control. */
+.collaborator-detail__photo-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.collaborator-detail__photo-progress {
+  width: 100%;
+  accent-color: var(--action-primary-bg);
+}
+
+.collaborator-detail__self {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.collaborator-detail__self p {
+  margin: 0;
+}
+
+.collaborator-detail__identity .collaborator-detail__self-name {
+  color: var(--text-primary);
+  font: var(--heading-md);
+}
+
+.self-profile {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.self-profile__readonly {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.self-profile__readonly p {
+  margin: 0;
+}
+
 .collaborators__empty,
 .collaborators__error {
   display: grid;
