@@ -1424,3 +1424,15 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 - **`media_assets`: achado, executado.** Um papel com **só** `midia.enviar` faz `update media_assets set status = 'confirmed', rejected_reason = null` numa mídia `rejected` (1 linha afetada, num banco isolado, com a transação desfeita). A policy exige só a permissão, o *grant* cobre `status`, `confirmed_*`, `rejected_reason` e as chaves de objeto, e não há trigger. As chaves ficam presas à agência por `CHECK`, então não há troca entre tenants, mas a rejeição por conteúdo se desfaz. **Não** corrigido neste PR (módulo de mídia, outra superfície): precisa de issue própria.
 
 **Origem.** Issue #290, revisão de segurança do PR #202 (Vigia), 2026-10-06.
+
+---
+
+## 2026-10-06 — Razão social do cliente segue a regra de nome de exibição
+
+**Contexto.** A #213 fez o nome do cliente e os campos de contato usarem a regra compartilhada de nome de exibição (#200); a SPEC (`specs/clientes.md`, seção 3) chama `legal_name` só de "razão social", texto livre, e não fixa essa regra para o campo.
+
+**Decisão.** A razão social segue a mesma regra: recusa caracteres de controle, invisíveis de formato e overrides bidi, exige ao menos uma letra ou número, texto em branco vira `null` e o teto é em bytes (256). É exibida na tela; sem a regra, um caractere invisível ou bidi forja um nome.
+
+**Consequência.** O `PATCH` passa a responder `400` para razão social fora da regra, e a edição do cadastro é o caminho para corrigir um valor antigo. Não há backfill.
+
+**Origem.** Issues #213 e #299. **Pendente de validação pelo dono do produto.**
