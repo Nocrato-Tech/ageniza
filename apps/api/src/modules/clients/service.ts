@@ -208,24 +208,22 @@ export interface ClientListPage {
  */
 const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, (character) => `\\${character}`);
 
-// Accented letters mapped to their unaccented form, lowercase **and** uppercase: `lower` only
-// folds letters the database locale knows, so under collation `C` it leaves `Á` untouched and the
-// fold would depend on the server locale. The trailing combining marks (U+0300..U+030C) have no
-// counterpart in `to`, so `translate` deletes them: a name stored decomposed (NFD) folds exactly
-// like the composed (NFC) form of the same name.
-const SEARCH_FOLD_FROM = 'áàâãäåéèêëíìîïóòôõöúùûüçñÁÀÂÃÄÅÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ\u0300\u0301\u0302\u0303\u0304\u0305\u0306\u0307\u0308\u030a\u030b\u030c';
-const SEARCH_FOLD_TO = 'aaaaaaeeeeiiiiooooouuuucnAAAAAAEEEEIIIIOOOOOUUUUCN';
+// The combining marks `normalize(..., NFD)` decomposes accented letters into (U+0300..U+036F).
+const COMBINING_MARKS_PATTERN = '[\u0300-\u036f]';
 
 /**
  * Case- and accent-insensitive form of a text expression (SPEC §6 listagem: search matches name,
- * razão social and @ "sem diferenciar maiúsculas nem acento"). The database has no `unaccent`
- * extension and adding one is a migration, which the contribution rules keep in its own change;
- * `translate` folds the accents in SQL instead, and both the column and the search term go
- * through this exact expression so they can never diverge.
+ * razão social and @ "sem diferenciar maiúsculas nem acento"). `normalize(..., NFD)` decomposes a
+ * composed accented letter (NFC), the regexp removes the combining marks, and `lower()` handles
+ * the remaining ASCII -- so the fold covers uppercase and NFD input and does not depend on the
+ * database locale. The database has no `unaccent` extension, and adding one is a migration, which
+ * the contribution rules keep in its own change; both the column and the search term go through
+ * this exact expression so they can never diverge.
  *
  * The argument is always a fixed column or bind placeholder chosen here, never a request value.
  */
-const foldTextSql = (expression: string): string => `translate(lower(${expression}), '${SEARCH_FOLD_FROM}', '${SEARCH_FOLD_TO}')`;
+const foldTextSql = (expression: string): string =>
+  `lower(regexp_replace(normalize(${expression}, NFD), '${COMBINING_MARKS_PATTERN}', '', 'g'))`;
 
 /**
  * Lists one page of an agency's clients (issue #125). The query starts from `public.clients`
@@ -267,19 +265,34 @@ export const listClients = async (
   }
 
   const where = conditions.join('\n    and ');
-  // The subquery is only computed for a caller who may see the badge; a caller without
-  // `cliente.convidar_usuario` gets null, so the route omits the field instead of zeroing it.
-  const pendingInvitationsSelect = filters.includePendingInvitations
-    ? `(
-        select count(*)
+  // One grouped count for the agency's page, computed once (`as materialized`, otherwise the
+  // planner may rescan the small aggregate per row): the `invitations_pending_equivalent_unique`
+  // partial index (agency_id first) serves the filter, and the cost no longer grows with every
+  // other agency's pending invitations. The count exists only for a caller who may see the badge;
+  // a caller without `cliente.convidar_usuario` gets null, so the route omits the field instead of
+  // zeroing it.
+  const pendingInvitationsCte = filters.includePendingInvitations
+    ? `with pending_invitations as materialized (
+        select invitation.client_id as client_id, count(*) as pending_count
         from public.invitations invitation
-        where invitation.client_id = client.id
+        where invitation.agency_id = ?::uuid
           and invitation.purpose = 'client_invite'
           and invitation.used_at is null
           and invitation.revoked_at is null
           and invitation.expires_at > now()
+        group by invitation.client_id
       )`
+    : '';
+  const pendingInvitationsJoin = filters.includePendingInvitations
+    ? 'left join pending_invitations on pending_invitations.client_id = client.id'
+    : '';
+  // coalesce turns "no pending invitation for this client" into a real zero for a caller who may
+  // see the badge: the omitted field is for the unauthorized caller, not for the zero count.
+  const pendingInvitationsColumn = filters.includePendingInvitations
+    ? 'coalesce(pending_invitations.pending_count, 0)'
     : 'null::bigint';
+  // The CTE's agency bind appears before the WHERE binds in the statement text.
+  const itemBindings: SqlBinding[] = filters.includePendingInvitations ? [agencyId, ...bindings] : [...bindings];
 
   const countResult = await raw<RawRows<{ total: string | number }>>(transaction, `
     select count(*) as total
@@ -295,6 +308,7 @@ export const listClients = async (
     : `(listing.threads_awaiting_agency > 0) desc, ${foldTextSql('listing.name')} asc, listing.id asc`;
 
   const itemsResult = await raw<RawRows<ClientListRow>>(transaction, `
+    ${pendingInvitationsCte}
     select
       listing.id,
       listing.name,
@@ -319,13 +333,14 @@ export const listClients = async (
             and ${openThreadSql('thread')}
             and ${latestCommentSideSql('thread')} = 'client'
         ) as threads_awaiting_agency,
-        ${pendingInvitationsSelect} as pending_invitations
+        ${pendingInvitationsColumn} as pending_invitations
       from public.clients client
+      ${pendingInvitationsJoin}
       where ${where}
     ) as listing
     order by ${orderBy}
     limit ? offset ?
-  `, [...bindings, pagination.pageSize, pagination.offset]);
+  `, [...itemBindings, pagination.pageSize, pagination.offset]);
 
   return { items: itemsResult.rows, totalItems };
 };

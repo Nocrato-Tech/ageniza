@@ -363,11 +363,17 @@ describe('clients listing (issue #125)', () => {
     await createClient({ agencyId, name: 'Beta Sem Thread' });
     const gama = await createClient({ agencyId, name: 'Gama Resolvida' });
     const delta = await createClient({ agencyId, name: 'Delta Reaberta' });
+    const hotel = await createClient({ agencyId, name: 'Hotel Respondida' });
 
     // Zeta: open thread whose last comment is the client's -> awaiting the agency.
     const zetaThread = await addThread(zeta, admin.id);
     await addComment({ threadId: zetaThread, clientId: zeta, authorUserId: admin.id, side: 'agency', createdAt: new Date('2026-01-01T10:00:00.000Z') });
     await addComment({ threadId: zetaThread, clientId: zeta, authorUserId: portal, side: 'client', createdAt: new Date('2026-01-01T11:00:00.000Z') });
+
+    // Hotel: OPEN thread whose last comment is the agency's -> the agency already answered, so it
+    // is NOT awaiting. This is the state a mutation dropping the "client side" condition misses.
+    const hotelThread = await addThread(hotel, admin.id);
+    await addComment({ threadId: hotelThread, clientId: hotel, authorUserId: admin.id, side: 'agency', createdAt: new Date('2026-01-01T10:00:00.000Z') });
 
     // Gama: the agency answered and then resolved -> neither awaiting nor reopened.
     const gamaThread = await addThread(gama, admin.id);
@@ -388,9 +394,10 @@ describe('clients listing (issue #125)', () => {
       'Zeta Com Thread',
       'Alfa Sem Thread',
       'Beta Sem Thread',
-      'Gama Resolvida'
+      'Gama Resolvida',
+      'Hotel Respondida'
     ]);
-    expect(attention.body.data.map((item) => item.threadsAwaitingAgency)).toEqual([1, 1, 0, 0, 0]);
+    expect(attention.body.data.map((item) => item.threadsAwaitingAgency)).toEqual([1, 1, 0, 0, 0, 0]);
 
     const byName = await getClients(cookie, agencyId, { sort: 'name:asc' });
     expect(byName.status).toBe(200);
@@ -399,6 +406,7 @@ describe('clients listing (issue #125)', () => {
       'Beta Sem Thread',
       'Delta Reaberta',
       'Gama Resolvida',
+      'Hotel Respondida',
       'Zeta Com Thread'
     ]);
   });
@@ -506,6 +514,12 @@ describe('clients listing (issue #125)', () => {
     const decomposed = await createClient({ agencyId, name: 'P\u0061\u0303o NFD' });
     const decomposedTerm = await getClients(cookie, agencyId, { search: 'pao' });
     expect(ids(decomposedTerm.body)).toEqual([decomposed]);
+
+    // NFD with a cedilla ('c' + U+0327) and a tilde ('a' + U+0303): the fold removes the
+    // combining marks, so the unaccented search finds the decomposed name.
+    const decomposedCedilla = await createClient({ agencyId, name: 'Comunicac\u0327a\u0303o NFD' });
+    const cedillaTerm = await getClients(cookie, agencyId, { search: 'comunicacao' });
+    expect(ids(cedillaTerm.body)).toEqual([decomposedCedilla]);
 
     // `taxId` is not a declared search field: a CNPJ fragment finds nothing.
     const cnpj = await getClients(cookie, agencyId, { search: '12345' });

@@ -49,15 +49,18 @@ declara é 400.
   primeiro, depois nome ascendente (sem diferenciar maiúsculas nem acento), com `id` como desempate
   para a paginação ser estável. `sort=name:asc` é só o nome.
 - **Busca.** `search` casa com nome, razão social e `instagram_handle`, sem diferenciar maiúsculas
-  nem acento (as maiúsculas acentuadas entram na dobra, para não depender do locale do banco) e
-  escapa `%` e `_` para a busca ser literal. Um `@` inicial, que a caixa de busca sugere, é
-  descartado na comparação com o handle, que é gravado sem ele. O banco não tem `unaccent`; o
-  `translate` em `service.ts` faz o folding dos dois lados, coluna e termo, pela mesma expressão.
+  nem acento: `normalize(..., NFD)` decompõe, um `regexp_replace` tira as marcas U+0300–U+036F e o
+  `lower()` final é ASCII, então a dobra cobre maiúsculas e entrada NFD e não depende do locale do
+  banco. `%` e `_` são escapados para a busca ser literal, e um `@` inicial, que a caixa de busca
+  sugere, é descartado na comparação com o handle, que é gravado sem ele. O banco não tem
+  `unaccent`; a expressão em `service.ts` é a mesma dos dois lados, coluna e termo.
 - **`threadsAwaitingAgency`** sai da definição única de `thread-state.ts`, numa subconsulta por
   cliente que o índice `client_thread_comments (thread_id, created_at)` da #122 atende.
 - **`pendingInvitations`** conta só convite de portal pendente (`client_invite`, não usado, não
-  revogado, não expirado) e **só é computado** para quem tem `cliente.convidar_usuario`; para os
-  demais o campo é **omitido**, nunca zero.
+  revogado, não expirado) numa CTE materializada, agrupada por `client_id` e filtrada pela agência:
+  a contagem acontece **uma vez por página**, não uma subconsulta correlacionada por cliente, e o
+  custo não cresce com os convites das outras agências. **Só é computada** para quem tem
+  `cliente.convidar_usuario`; para os demais o campo é **omitido**, nunca zero.
 
 ## O que ficou de fora
 
