@@ -179,8 +179,9 @@ describe('CLIENTS module without identity storage (#126/#282/#291)', () => {
         headers: { ...origin, cookie: managerCookie },
         ...(payload === undefined ? {} : { payload })
       });
-      const body = response.json<{ error?: { message?: string } }>();
-      const routeIsMissing = response.statusCode === 404 && body.error?.message === 'Route not found';
+      // Read the body only on 404: a future route that answers 204 has no body to parse.
+      const routeIsMissing = response.statusCode === 404
+        && response.json<{ error?: { message?: string } }>().error?.message === 'Route not found';
       if (routeIsMissing || response.statusCode === 500) {
         missing.push(`${route.method.toUpperCase()} ${route.path} -> ${response.statusCode}`);
       }
