@@ -13,6 +13,7 @@ import {
   DOCUMENTED_ROUTES,
   ERROR_MESSAGES,
   MODULE_DESCRIPTIONS,
+  permissionLabel,
   type ApiErrorDoc,
   type ApiModule
 } from './catalog.js';
@@ -127,7 +128,7 @@ export const buildOpenApiDocument = (): Record<string, unknown> => {
       path: toOpenApiPath(route.path),
       operationId: route.operationId,
       summary: route.summary,
-      description: `${route.description}\n\nAcesso: ${route.access}.${route.permission === null ? '' : ` Permissão exigida: \`${route.permission}\`.`}`,
+      description: `${route.description}\n\nAcesso: ${route.access}.${route.permission === null ? '' : ` Permissão exigida: ${permissionLabel(route.permission)}.`}`,
       tags: [route.module],
       'x-permission': route.permission,
       request: {

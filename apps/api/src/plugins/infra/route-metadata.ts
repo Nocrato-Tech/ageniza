@@ -10,8 +10,10 @@
  * `responseStatus` or whose body does not parse with the declared `schemas.response`, so the
  * catalog cannot drift from the route it documents.
  */
+export type RoutePermission = string | readonly string[] | null;
+
 export interface DocumentedRouteConfig {
-  readonly permission: string | null;
+  readonly permission: RoutePermission;
   readonly responseStatus: number;
   readonly schemas: {
     readonly params?: unknown;
@@ -23,7 +25,7 @@ export interface DocumentedRouteConfig {
 
 declare module 'fastify' {
   interface FastifyContextConfig {
-    permission?: string | null;
+    permission?: RoutePermission;
     responseStatus?: number;
     schemas?: DocumentedRouteConfig['schemas'];
   }

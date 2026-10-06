@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 
+import { COLLABORATOR_ROLES_READ_PERMISSIONS } from '../collaborators/routes.js';
 import {
   AgencyClientPathParamsSchema,
   AgencyCollaboratorPathParamsSchema,
@@ -71,6 +72,17 @@ export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agenci
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
+/** A permission a route demands; a list means any one of them is enough. */
+export type DocumentedRoutePermission = string | readonly string[] | null;
+
+/** Every route rendered with a list of permissions says so in prose, in both outputs. */
+export const permissionLabel = (permission: DocumentedRoutePermission): string =>
+  permission === null
+    ? '—'
+    : Array.isArray(permission)
+      ? permission.map((key) => `\`${key}\``).join(' ou ')
+      : `\`${permission}\``;
+
 export interface ApiErrorDoc {
   readonly status: number;
   readonly code: string;
@@ -94,8 +106,8 @@ export interface DocumentedRoute {
   readonly summary: string;
   readonly description: string;
   readonly access: string;
-  /** Named permission `requirePermission` demands, or null when the route has none. */
-  readonly permission: string | null;
+  /** Permission(s) the route's guard demands, or null when it has none; a list means any one. */
+  readonly permission: DocumentedRoutePermission;
   // Path and query schemas are always strict objects, which is what the OpenAPI registry accepts
   // as route parameters; a body may be any schema (a discriminated union, for instance).
   readonly params?: z.AnyZodObject;
@@ -806,10 +818,10 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     description: [
       'Papéis de sistema e papéis próprios da agência, com o id que o convite, a troca de papel e a',
       'reativação exigem -- a única rota em que esses ids aparecem. O papel Admin só aparece para o',
-      'Owner. A leitura aceita `colaborador.convidar` ou `colaborador.alterar_papel`.'
+      'Owner.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
-    permission: 'colaborador.convidar',
+    permission: COLLABORATOR_ROLES_READ_PERMISSIONS,
     params: AgencyPathParamsSchema,
     query: AgencyRolesQuerySchema,
     responses: [{

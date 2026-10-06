@@ -4,7 +4,7 @@ import { DOCUMENTED_ROUTES } from './catalog.js';
 import { buildOpenApiDocument } from './document.js';
 
 interface OperationDocument {
-  readonly paths: Record<string, Record<string, { readonly 'x-permission'?: string | null; readonly responses: Record<string, { readonly description?: string }> }>>;
+  readonly paths: Record<string, Record<string, { readonly 'x-permission'?: string | readonly string[] | null; readonly responses: Record<string, { readonly description?: string }> }>>;
   readonly components?: { readonly schemas?: Record<string, unknown> };
 }
 

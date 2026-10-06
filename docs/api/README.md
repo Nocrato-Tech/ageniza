@@ -688,7 +688,7 @@ Edita o cadastro do cliente.
 | `GET` | `/agencies/:agencyId/collaborators` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista a equipe da agência |
 | `GET` | `/agencies/:agencyId/collaborators/:membershipId` | Sessão + vínculo com a agência | `colaborador.visualizar` | Devolve um colaborador da agência |
 | `GET` | `/agencies/:agencyId/collaborators/job-titles` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista os cargos que existem na agência |
-| `GET` | `/agencies/:agencyId/roles` | Sessão + vínculo com a agência | `colaborador.convidar` | Lista os papéis atribuíveis na agência |
+| `GET` | `/agencies/:agencyId/roles` | Sessão + vínculo com a agência | `colaborador.convidar` ou `colaborador.alterar_papel` | Lista os papéis atribuíveis na agência |
 
 #### `GET /agencies/:agencyId/collaborators`
 
@@ -794,7 +794,7 @@ Lista os cargos que existem na agência.
 Lista os papéis atribuíveis na agência.
 
 - Acesso: Sessão + vínculo com a agência.
-- Permissão: `colaborador.convidar`.
+- Permissão: `colaborador.convidar` ou `colaborador.alterar_papel`.
 
 **Resposta `200`** — Papéis atribuíveis na agência.
 

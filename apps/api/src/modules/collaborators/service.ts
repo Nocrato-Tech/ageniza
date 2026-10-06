@@ -204,11 +204,13 @@ export const listAgencyRoles = async (
     conditions.push('not (role.key = \'admin\' and (role.agency_id is null or role.agency_id = ?::uuid))');
     bindings.push(agencyId);
   }
+  // `collate "C"` pins the order to the byte value of `key` whatever the database collation is,
+  // and `role.id` breaks any tie so the same agency always answers the same sequence.
   const result = await raw<RawRows<AgencyRoleRow>>(transaction, `
     select role.id, role.key, role.name
     from public.roles as role
     where ${conditions.join('\n  and ')}
-    order by role.key asc
+    order by role.key collate "C" asc, role.id asc
   `, bindings);
   return result.rows;
 };

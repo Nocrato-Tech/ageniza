@@ -847,8 +847,8 @@ describe('collaborators module (issue #95)', () => {
   });
 
   describe('assignable roles of the agency (issue #287)', () => {
-    // `listAgencyRoles` orders by `key` ascending in the database's own collation; for these
-    // ASCII keys that is plain byte order.
+    // `listAgencyRoles` orders by `key` with `collate "C"` (byte order) and breaks ties by id, so
+    // these ASCII keys are a plain byte-order sequence.
     const systemPresets = (withAdmin: boolean): AgencyRoleJson[] => {
       const presets: AgencyRoleJson[] = [
         { id: presetRoleIds.account_manager, key: 'account_manager', name: 'Gestor de conta' },
@@ -881,6 +881,45 @@ describe('collaborators module (issue #95)', () => {
       expect(response.status).toBe(200);
       expect(response.body.data).toEqual(systemPresets(false));
       expect(response.body.data.map((role) => role.id)).not.toContain(presetRoleIds.admin);
+    });
+
+    it('hides an agency-scoped role whose key is literally admin, from everyone but the Owner', async () => {
+      const { agencyId, ownerUser } = await createAgencyWithOwner('Papéis Admin Escopado', 'roles-scoped-admin');
+      const scopedAdminRoleId = randomUUID();
+      createdRoleIds.push(scopedAdminRoleId);
+      await owner.knex('roles').insert({ id: scopedAdminRoleId, agency_id: agencyId, key: 'admin', name: 'Admin da casa', is_system: false });
+      const adminMember = await addMember(agencyId, { name: 'Pessoa Admin Papéis', emailLabel: 'roles-scoped-admin-member', roleId: presetRoleIds.admin });
+
+      const memberResponse = await getRoles(await loginCookie(adminMember), agencyId);
+      expect(memberResponse.status).toBe(200);
+      expect(memberResponse.body.data.map((role) => role.id)).not.toContain(scopedAdminRoleId);
+
+      const ownerResponse = await getRoles(await loginCookie(ownerUser), agencyId);
+      expect(ownerResponse.status).toBe(200);
+      expect(ownerResponse.body.data.map((role) => role.id)).toContain(scopedAdminRoleId);
+    });
+
+    it('never mixes another agency\'s custom roles into the list, even for a member of both', async () => {
+      const { agencyId } = await createAgencyWithOwner('Papéis Dupla', 'roles-dual-a');
+      const { agencyId: otherAgencyId } = await createAgencyWithOwner('Papéis Dupla B', 'roles-dual-b');
+      const ownRoleId = await createCustomRole(agencyId, ['colaborador.alterar_papel']);
+      const otherRoleId = await createCustomRole(otherAgencyId, ['colaborador.alterar_papel']);
+      // The viewer holds a one-permission custom role in BOTH agencies, and `roles_select` shows
+      // the roles of both: only the query's own agency filter keeps each list scoped (review of
+      // #293, finding 1).
+      const viewer = await addMember(agencyId, { name: 'Dupla Papéis', emailLabel: 'roles-dual-viewer', roleId: ownRoleId });
+      await addAgencyMembership(otherAgencyId, viewer.id, otherRoleId);
+
+      const aResponse = await getRoles(await loginCookie(viewer), agencyId);
+      expect(aResponse.status).toBe(200);
+      expect(aResponse.body.data.map((role) => role.id)).toContain(ownRoleId);
+      expect(aResponse.body.data.map((role) => role.id)).not.toContain(otherRoleId);
+      expect(aResponse.body.data.map((role) => role.key)).not.toContain(`custom-${otherRoleId.slice(0, 8)}`);
+
+      const bResponse = await getRoles(await loginCookie(viewer), otherAgencyId);
+      expect(bResponse.status).toBe(200);
+      expect(bResponse.body.data.map((role) => role.id)).toContain(otherRoleId);
+      expect(bResponse.body.data.map((role) => role.id)).not.toContain(ownRoleId);
     });
 
     it('accepts a custom role with only colaborador.convidar, and one with only colaborador.alterar_papel', async () => {

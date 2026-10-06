@@ -21,7 +21,7 @@ import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { routeQuery, routeResponse } from '../../plugins/infra/zod.js';
+import { routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { getCollaborator, listAgencyJobTitles, listAgencyRoles, listCollaborators, type CollaboratorRow } from './service.js';
 
 export type CollaboratorPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
@@ -126,10 +126,13 @@ const collaboratorDetailDocs = {
 // The assignable roles of the agency (issue #287) serve the invite (#107), the role PATCH (#97)
 // and the reactivation (#98): all three resolve the role by its uuid, and this is the only place
 // the ids are exposed. Either of the two permissions is enough to read the list; the metadata
-// carries the first one, and the description documents the alternative (decisions.md, 2026-10-06,
-// pending validation).
+// says both, so the docs and the `x-permission` extension tell the truth (review of #293,
+// finding 3; decisions.md, 2026-10-06, pending validation). The same array is the one the guard
+// demands and the catalog documents -- identity, so the coverage test cannot drift.
+export const COLLABORATOR_ROLES_READ_PERMISSIONS = ['colaborador.convidar', 'colaborador.alterar_papel'] as const;
+
 const agencyRolesDocs = {
-  permission: 'colaborador.convidar',
+  permission: COLLABORATOR_ROLES_READ_PERMISSIONS,
   responseStatus: 200,
   schemas: { params: AgencyPathParamsSchema, query: AgencyRolesQuerySchema, response: AgencyRolesResponseSchema }
 } satisfies DocumentedRouteConfig;
@@ -197,7 +200,7 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     preHandler: [
       requireSession,
       dependencies.requireAgencyAccess,
-      dependencies.requireAnyPermission(['colaborador.convidar', 'colaborador.alterar_papel'])
+      dependencies.requireAnyPermission(COLLABORATOR_ROLES_READ_PERMISSIONS)
     ],
     config: agencyRolesDocs
   }, async (request, reply) => {

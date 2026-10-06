@@ -4873,11 +4873,14 @@
       "get": {
         "operationId": "listAgencyRoles",
         "summary": "Lista os papéis atribuíveis na agência",
-        "description": "Papéis de sistema e papéis próprios da agência, com o id que o convite, a troca de papel e a\nreativação exigem -- a única rota em que esses ids aparecem. O papel Admin só aparece para o\nOwner. A leitura aceita `colaborador.convidar` ou `colaborador.alterar_papel`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.convidar`.",
+        "description": "Papéis de sistema e papéis próprios da agência, com o id que o convite, a troca de papel e a\nreativação exigem -- a única rota em que esses ids aparecem. O papel Admin só aparece para o\nOwner.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.convidar` ou `colaborador.alterar_papel`.",
         "tags": [
           "collaborators"
         ],
-        "x-permission": "colaborador.convidar",
+        "x-permission": [
+          "colaborador.convidar",
+          "colaborador.alterar_papel"
+        ],
         "parameters": [
           {
             "schema": {
