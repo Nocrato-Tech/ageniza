@@ -29,6 +29,12 @@ The policy guards only `packages/database/migrations`: this is the canonical app
 
 The local equivalents are `pnpm db:start`, `pnpm db:migrate`, and `pnpm db:test:local`; Docker must be running. `pnpm db:reset` rebuilds the local database from migrations.
 
+## API production closure
+
+`better-auth` declares `vitest` as an optional peer, and pnpm resolves it because vitest exists in this workspace, which would ship vitest and its chain in the production API image (issue #281). The `.pnpmfile.cjs` hook removes that peer before resolution; all four Dockerfiles copy the file because `pnpm install --frozen-lockfile` verifies the `pnpmfileChecksum` recorded in `pnpm-lock.yaml` against it and fails when it is missing. Any edit to the file changes the checksum, so the lockfile must be regenerated in the same change. The hook is a silent no-op once `better-auth` stops declaring the peer, and can be deleted then.
+
+`CI / Quality gates` runs `node scripts/ci/verify-api-production-closure.mjs`, which deploys the API with `--prod` into a temporary directory and fails if the closure contains vitest or its chain. It turns the "no vitest in the production image" acceptance into a check instead of a manual inspection.
+
 ## Branch protections and promotion
 
 The organization is on GitHub Free and this repository is private, so GitHub rejects rulesets, branch protection, Environment reviewers, and CODEOWNERS enforcement. Until the plan changes, `main` and `develop` are guarded by:
