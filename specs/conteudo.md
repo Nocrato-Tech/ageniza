@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | rascunho |
+| **Status** | em revisão |
 | **Submódulos** | calendário e feed; conteúdo e aprovação; subtarefas; biblioteca de mídia por cliente; roteiro de stories; portal; e-mail ao cliente |
 | **Sessões** | 2026-10-01 |
 | **Decidido por** | Pedro Vidal (dono do produto) |
@@ -405,4 +405,41 @@ Herdadas: publicar e medir decidem juntos (2026-09-26); conteúdo além do encer
 
 ## 12. Recorte de implementação
 
-A preencher por `/modulo-issues conteudo`. A implementação depende de #122, #123 e #128 mergeadas.
+**Épico:** #238.
+
+| history | task | escopo | depende de |
+|---|---|---|---|
+| #239 Organizar a mídia em pastas | #247 | `db` | #122 |
+|  | #253 | `api` | #247 |
+|  | #267 | `web` | #253 |
+| #240 Planejar no calendário e no feed | #249 | `db` | #247, #123 |
+|  | #254 | `api` | #249 |
+|  | #262 | `web` | #254 |
+|  | #263 | `web` | #254 |
+|  | #264 | `web` | #253, #254, #256 |
+| #241 Subtarefas | #255 | `api` | #249 |
+|  | #265 | `web` | #255 |
+| #242 Aprovar com o cliente | #250 | `db` | #249, #128 |
+|  | #256 | `api` | #249 |
+|  | #257 | `api` | #250 |
+|  | #259 | `api` | #250, #128, #130 |
+|  | #266 | `web` | #259 |
+|  | #269 | `web` | #257, #141 |
+|  | #270 | `web` | #257, #259 |
+| #243 Publicar, cancelar e encerramento | #251 | `db` | #249, #123 |
+| #244 Roteiro de stories | #248 | `db` | #247 |
+|  | #258 | `api` | #248 |
+|  | #268 | `web` | #258, #262 |
+|  | #271 | `web` | #257, #258, #141 |
+| #245 E-mail ao cliente | #252 | `db` | #249 |
+|  | #260 | `infra` | #252, #256 |
+| #246 Sinais em Clientes e no portal | #261 | `api` | #254, #125, #129 |
+|  | #272 | `web` | #261, #262, #134, #136 |
+
+**Em aberto:** #273 · #274 · #275 · #276 · #277 · #278 — e, já existentes, #149 (publicação automática e métricas), #146 (notificação) e #153 (fuso por agência).
+
+**Débitos:** nenhum por enquanto.
+
+### A ordem que a dependência impõe
+
+Tudo depende de #122, #123 e #128 mergeadas. Banco primeiro: #247 (permissões e pastas) destrava #249 (conteúdo) e #248 (stories); #249 destrava #250, #251 e #252. Depois as APIs, e as telas por último. Cada migration vai num PR sozinho.
