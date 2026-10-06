@@ -27,7 +27,6 @@ import {
   type InvitationToken
 } from './tokens.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { z } from 'zod';
 
 import type { AuthAuditRecorder } from '../auth/audit.js';
 import type { AuthInstance } from '../auth/better-auth.js';
@@ -36,7 +35,7 @@ import { createRequireSession } from '../auth/session-guard.js';
 import type { EmailService } from '../auth/email-service.js';
 import { AUTH_RATE_LIMITS } from '../auth/policy.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
+import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 
 /** The small public port used by auth/password routes to validate invitation continuation. */
 export interface InvitationTokenLookup {
@@ -176,9 +175,6 @@ const lockPendingInvitationSlot = async (
     `${agencyId}:${purpose}:${email}:${clientId ?? NIL_UUID}`
   ]);
 };
-
-const routeParams = <T>(schema: z.ZodType<T>, request: FastifyRequest): T => parseRequest(schema, request.params);
-const routeQuery = <T>(schema: z.ZodType<T>, request: FastifyRequest): T => parseRequest(schema, request.query);
 
 // specs/colaboradores.md §6, "Convites pendentes": 24 per page, created_at ascending. The route
 // only declares this default and the order; `resolvePagination` owns the ceiling and the offset.
@@ -618,19 +614,19 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
   } satisfies DocumentedRouteConfig;
 
   app.get('/agencies/:agencyId/invitations', authenticated(listDocs), async (request) => {
-    const params = routeParams(listDocs.schemas.params, request);
-    const query = routeQuery(listDocs.schemas.query, request);
+    const params = routeParams(listDocs, request);
+    const query = routeQuery(listDocs, request);
     const pagination = resolvePagination(query, PENDING_INVITATIONS_DEFAULT_PAGE_SIZE);
     const { items, totalItems } = await listPendingCollaboratorInvitations(dependencies, request, params.agencyId, pagination);
-    return parseResponse(listDocs.schemas.response, {
+    return routeResponse(listDocs, request, {
       data: items.map(pendingInvitationFromRow),
       meta: buildPaginationMetadata(pagination, totalItems)
     });
   });
 
   app.post('/agencies/:agencyId/invitations/collaborators', authenticated(collaboratorDocs), async (request, reply) => {
-    const params = routeParams(collaboratorDocs.schemas.params, request);
-    const body = parseRequest(collaboratorDocs.schemas.body, request.body);
+    const params = routeParams(collaboratorDocs, request);
+    const body = routeBody(collaboratorDocs, request);
     const result = await createCollaboratorInvitation(dependencies, request, body.email, body.roleId, params.agencyId);
     try {
       await dependencies.emailService.sendCollaboratorInvitation({
@@ -642,12 +638,12 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     } catch {
       throw emailDeliveryFailed();
     }
-    return reply.status(201).send(parseResponse(collaboratorDocs.schemas.response, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
+    return reply.status(201).send(routeResponse(collaboratorDocs, request, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
   });
 
   app.post('/agencies/:agencyId/clients/:clientId/invitations', authenticated(clientInviteDocs), async (request, reply) => {
-    const params = routeParams(clientInviteDocs.schemas.params, request);
-    const body = parseRequest(clientInviteDocs.schemas.body, request.body);
+    const params = routeParams(clientInviteDocs, request);
+    const body = routeBody(clientInviteDocs, request);
     const result = await createClientInvitation(dependencies, request, body.email, params.agencyId, params.clientId);
     try {
       await dependencies.emailService.sendClientInvitation({
@@ -660,11 +656,11 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     } catch {
       throw emailDeliveryFailed();
     }
-    return reply.status(201).send(parseResponse(clientInviteDocs.schemas.response, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
+    return reply.status(201).send(routeResponse(clientInviteDocs, request, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
   });
 
   app.post('/agencies/:agencyId/invitations/:invitationId/resend', authenticated(resendDocs), async (request, reply) => {
-    const params = routeParams(resendDocs.schemas.params, request);
+    const params = routeParams(resendDocs, request);
     const result = await resendInvitation(dependencies, request, params.agencyId, params.invitationId);
     try {
       if (result.purpose === 'client_invite' && result.clientName !== null) {
@@ -686,22 +682,22 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     } catch {
       throw emailDeliveryFailed();
     }
-    return reply.send(parseResponse(resendDocs.schemas.response, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
+    return reply.send(routeResponse(resendDocs, request, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
   });
 
   app.delete('/agencies/:agencyId/invitations/:invitationId', authenticated(cancelDocs), async (request, reply) => {
-    const params = routeParams(cancelDocs.schemas.params, request);
+    const params = routeParams(cancelDocs, request);
     await cancelInvitation(dependencies, request, params.agencyId, params.invitationId);
     return reply.status(204).send();
   });
 
   app.get('/invitations/:token', publicConfig(previewDocs), async (request) => {
-    const { token } = routeParams(previewDocs.schemas.params, request);
+    const { token } = routeParams(previewDocs, request);
     const row = await lookupOrInvalid(lookup, token);
     const accountResult = await dependencies.database.transaction(async (transaction) =>
       raw<RawRows<{ exists: boolean }>>(transaction, 'select exists(select 1 from auth."user" where email = ?) as exists', [row.email])
     );
-    return parseResponse(previewDocs.schemas.response, {
+    return routeResponse(previewDocs, request, {
       purpose: row.purpose,
       email: row.email,
       agency: { name: row.agencyName },
@@ -711,8 +707,8 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
   });
 
   app.post('/invitations/:token/accept-new-account', publicConfig(acceptNewAccountDocs), async (request, reply) => {
-    const { token } = routeParams(acceptNewAccountDocs.schemas.params, request);
-    const body = parseRequest(acceptNewAccountDocs.schemas.body, request.body);
+    const { token } = routeParams(acceptNewAccountDocs, request);
+    const body = routeBody(acceptNewAccountDocs, request);
     const invitation = await lookupOrInvalid(lookup, token);
     const existing = await dependencies.database.transaction(async (transaction) =>
       raw<RawRows<{ id: string }>>(transaction, 'select id from auth."user" where email = ? limit 1', [invitation.email])
@@ -754,7 +750,7 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
       // cannot establish that session; the credential account remains recoverable through login.
       throw new HttpError({ statusCode: 500, code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' });
     }
-    return reply.status(201).send(parseResponse(acceptNewAccountDocs.schemas.response, {
+    return reply.status(201).send(routeResponse(acceptNewAccountDocs, request, {
       status: 'accepted',
       context: { agencyId: invitation.agencyId, clientId: invitation.clientId }
     }));
@@ -764,14 +760,12 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     ...publicConfig(acceptDocs),
     preHandler: requireSession
   }, async (request, reply) => {
-    const { token } = routeParams(acceptDocs.schemas.params, request);
-    // The contract is a body-less request: validate it so an unexpected body is a 400 instead of
-    // being silently ignored.
-    parseRequest(acceptDocs.schemas.body, request.body);
+    const { token } = routeParams(acceptDocs, request);
+    routeBody(acceptDocs, request);
     if (request.auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
     const invitation = await lookupOrInvalid(lookup, token);
     if (invitation.email !== request.auth.user.email) throw accountMismatch();
     const result = await acceptInvitation(dependencies, request, token, false);
-    return reply.send(parseResponse(acceptDocs.schemas.response, result));
+    return reply.send(routeResponse(acceptDocs, request, result));
   });
 };

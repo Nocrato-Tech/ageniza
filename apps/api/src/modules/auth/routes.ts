@@ -21,7 +21,7 @@ import { AUTH_RATE_LIMITS } from './policy.js';
 import { createRequireSession } from './session-guard.js';
 import { normalizeRateLimitIp } from '../../plugins/infra/rate-limit-ip.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
+import { routeBody, routeResponse } from '../../plugins/infra/zod.js';
 import type { InvitationTokenLookup } from '../invitations/routes.js';
 
 export interface AuthModuleDependencies {
@@ -115,7 +115,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
   const requireSession = createRequireSession({ auth: dependencies.auth });
 
   app.post('/auth/login', perIpRateLimit(AUTH_RATE_LIMITS.login.ip, loginDocs), async (request, reply) => {
-    const body = parseRequest(loginDocs.schemas.body, request.body);
+    const body = routeBody(loginDocs, request);
     dependencies.limiter.consume('login', normalizeRateLimitIp(request.ip), body.email);
 
     let headers: Headers;
@@ -144,7 +144,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     }
 
     applyAuthCookies(reply, headers);
-    return parseResponse(loginDocs.schemas.response, {
+    return routeResponse(loginDocs, request, {
       user: { id: response.user.id, name: response.user.name, email: response.user.email }
     });
   });
@@ -182,14 +182,14 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     // populated `request.auth`; a second `getSession` call here would be redundant and would
     // discard the renewed cookie the guard already resolved.
     if (request.auth === undefined) throw new HttpError(unauthenticatedFallback);
-    return parseResponse(sessionDocs.schemas.response, {
+    return routeResponse(sessionDocs, request, {
       user: request.auth.user,
       session: { expiresAt: request.auth.expiresAt }
     });
   });
 
   app.post('/auth/password/forgot', perIpRateLimit(AUTH_RATE_LIMITS.forgot.ip, forgotDocs), async (request, reply) => {
-    const body = parseRequest(forgotDocs.schemas.body, request.body);
+    const body = routeBody(forgotDocs, request);
     dependencies.limiter.consume('forgot', normalizeRateLimitIp(request.ip), body.email);
 
     const invitation = body.inviteToken === undefined || dependencies.invitationTokenLookup === undefined
@@ -211,11 +211,11 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
       }, 'Password reset request failed');
     });
 
-    return reply.status(202).send(parseResponse(forgotDocs.schemas.response, {}));
+    return reply.status(202).send(routeResponse(forgotDocs, request, {}));
   });
 
   app.post('/auth/password/reset', perIpRateLimit(AUTH_RATE_LIMITS.reset.ip, resetDocs), async (request, reply) => {
-    const body = parseRequest(resetDocs.schemas.body, request.body);
+    const body = routeBody(resetDocs, request);
     // Looked up non-destructively (before `resetPassword` consumes the same verification row)
     // purely so a B10 recovery below has a user id to act on; a lookup failure never blocks the
     // reset itself.
@@ -257,7 +257,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     // race of two valid reset tokens for the same account) — is `SIGN_IN_REQUIRED` instead, so the
     // client never tells someone who *does* have access that their account has none.
     const signInFailedResponse = () => reply.status(200).send(
-      parseResponse(resetDocs.schemas.response, { signedIn: false, reason: 'SIGN_IN_REQUIRED' })
+      routeResponse(resetDocs, request, { signedIn: false, reason: 'SIGN_IN_REQUIRED' })
     );
 
     if (resetInviteContinuation !== undefined) {
@@ -268,7 +268,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
       const signedIn = await signInAfterReset(dependencies, request, resetInviteContinuation.userId, body.newPassword);
       if (signedIn !== undefined) {
         applyAuthCookies(reply, signedIn.headers);
-        return reply.status(200).send(parseResponse(resetDocs.schemas.response, { signedIn: true }));
+        return reply.status(200).send(routeResponse(resetDocs, request, { signedIn: true }));
       }
       return signInFailedResponse();
     }
@@ -307,14 +307,14 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     // `SIGN_IN_REQUIRED`.
     if (contextCount === 0) {
       return reply.status(200).send(
-        parseResponse(resetDocs.schemas.response, { signedIn: false, reason: 'NO_CONTEXT_ACCESS' })
+        routeResponse(resetDocs, request, { signedIn: false, reason: 'NO_CONTEXT_ACCESS' })
       );
     }
 
     const signedIn = await signInAfterReset(dependencies, request, userIdForRecovery, body.newPassword);
     if (signedIn !== undefined) {
       applyAuthCookies(reply, signedIn.headers);
-      return reply.status(200).send(parseResponse(resetDocs.schemas.response, { signedIn: true }));
+      return reply.status(200).send(routeResponse(resetDocs, request, { signedIn: true }));
     }
     return signInFailedResponse();
   });
