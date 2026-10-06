@@ -430,6 +430,44 @@ describe('clients listing (issue #125)', () => {
     expect(attention.body.data[1]?.threadsAwaitingAgency).toBe(0);
   });
 
+  it('#125: the accent fold does not depend on lower() folding uppercase (Édson before Eduardo)', async () => {
+    const { agencyId, cookie } = await createAgencyWithAdmin('locale');
+    await createClient({ agencyId, name: 'Eduardo' });
+    await createClient({ agencyId, name: 'Édson' });
+
+    // Under a database locale where `lower('É')` stays 'É' (collation C), only folding the
+    // uppercase accented letters keeps 'edson' < 'eduardo'; without them 'É' sorts after 'e'.
+    const byName = await getClients(cookie, agencyId, { sort: 'name:asc' });
+    expect(names(byName.body)).toEqual(['Édson', 'Eduardo']);
+
+    const bySearch = await getClients(cookie, agencyId, { search: 'edson' });
+    expect(names(bySearch.body)).toEqual(['Édson']);
+  });
+
+  it('#125: attention means "has an awaiting thread", not how many: one never outweighs a name', async () => {
+    const { agencyId, admin, cookie } = await createAgencyWithAdmin('attention-count');
+    const portal = await insertBareUser('attention-count-portal');
+    const alfa = await createClient({ agencyId, name: 'Alfa Uma Thread' });
+    const zeta = await createClient({ agencyId, name: 'Zeta Duas Threads' });
+
+    for (const [clientId, count] of [[alfa, 1], [zeta, 2]] as const) {
+      for (let index = 0; index < count; index += 1) {
+        const thread = await addThread(clientId, admin.id);
+        await addComment({
+          threadId: thread,
+          clientId,
+          authorUserId: portal,
+          side: 'client',
+          createdAt: new Date(`2026-01-0${index + 1}T10:00:00.000Z`)
+        });
+      }
+    }
+
+    const response = await getClients(cookie, agencyId);
+    expect(names(response.body)).toEqual(['Alfa Uma Thread', 'Zeta Duas Threads']);
+    expect(response.body.data.map((item) => item.threadsAwaitingAgency)).toEqual([1, 2]);
+  });
+
   it('#125: search matches name, razão social and @ without case or accent, and never CNPJ', async () => {
     const { agencyId, cookie } = await createAgencyWithAdmin('search');
     const byName = await createClient({ agencyId, name: 'Pãdaria Aurora' });
@@ -452,6 +490,11 @@ describe('clients listing (issue #125)', () => {
 
     const handle = await getClients(cookie, agencyId, { search: 'padariacentral' });
     expect(ids(handle.body)).toEqual([byHandle]);
+
+    // The SPEC's search box says "@" but the handle is stored without it: a typed `@handle` means
+    // the handle and must find the same client.
+    const handleWithAt = await getClients(cookie, agencyId, { search: '@padariacentral' });
+    expect(ids(handleWithAt.body)).toEqual([byHandle]);
 
     // The term is folded too: no accent in the search still finds the accented name.
     const unaccentedTerm = await getClients(cookie, agencyId, { search: 'joao cafe' });

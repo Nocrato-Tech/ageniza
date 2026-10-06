@@ -208,11 +208,13 @@ export interface ClientListPage {
  */
 const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, (character) => `\\${character}`);
 
-// Lowercase accented letters mapped to their unaccented form. The trailing combining marks
-// (U+0300..U+030C) have no counterpart in `to`, so `translate` deletes them: a name stored
-// decomposed (NFD) folds exactly like the composed (NFC) form of the same name.
-const SEARCH_FOLD_FROM = 'áàâãäåéèêëíìîïóòôõöúùûüçñ\u0300\u0301\u0302\u0303\u0304\u0305\u0306\u0307\u0308\u030a\u030b\u030c';
-const SEARCH_FOLD_TO = 'aaaaaaeeeeiiiiooooouuuucn';
+// Accented letters mapped to their unaccented form, lowercase **and** uppercase: `lower` only
+// folds letters the database locale knows, so under collation `C` it leaves `Á` untouched and the
+// fold would depend on the server locale. The trailing combining marks (U+0300..U+030C) have no
+// counterpart in `to`, so `translate` deletes them: a name stored decomposed (NFD) folds exactly
+// like the composed (NFC) form of the same name.
+const SEARCH_FOLD_FROM = 'áàâãäåéèêëíìîïóòôõöúùûüçñÁÀÂÃÄÅÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ\u0300\u0301\u0302\u0303\u0304\u0305\u0306\u0307\u0308\u030a\u030b\u030c';
+const SEARCH_FOLD_TO = 'aaaaaaeeeeiiiiooooouuuucnAAAAAAEEEEIIIIOOOOOUUUUCN';
 
 /**
  * Case- and accent-insensitive form of a text expression (SPEC §6 listagem: search matches name,
@@ -249,12 +251,19 @@ export const listClients = async (
 
   if (filters.search !== undefined) {
     const pattern = `%${escapeLikePattern(filters.search)}%`;
+    // The SPEC's search box says "@", but the handle is stored without it; a leading `@` typed by
+    // the person means the handle, so it is dropped for the handle clause only. A lone `@` stays:
+    // stripping it would turn the clause into a wildcard matching every client with a handle.
+    const handleTerm = filters.search.startsWith('@') && filters.search.length > 1
+      ? filters.search.slice(1)
+      : filters.search;
+    const handlePattern = `%${escapeLikePattern(handleTerm)}%`;
     conditions.push(`(
       ${foldTextSql('client.name')} like ${foldTextSql('?')} escape '\\'
       or ${foldTextSql('client.legal_name')} like ${foldTextSql('?')} escape '\\'
       or ${foldTextSql('client.instagram_handle')} like ${foldTextSql('?')} escape '\\'
     )`);
-    bindings.push(pattern, pattern, pattern);
+    bindings.push(pattern, pattern, handlePattern);
   }
 
   const where = conditions.join('\n    and ');
