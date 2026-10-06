@@ -20,9 +20,9 @@
   },
   "dependencies": {
     "@ageniza/core": "workspace:*",
-    "nodemailer": "^6.9.14"
+    "nodemailer": "^10.0.13"
   },
   "devDependencies": {
-    "@types/nodemailer": "^6.4.15"
+    "@types/nodemailer": "^8.0.2"
   }
 }
