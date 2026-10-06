@@ -14,7 +14,9 @@ Gera, versiona e serve a documentação da API a partir dos schemas de `packages
 
 ## Por que zod-to-openapi, e não `@fastify/swagger`
 
-As rotas já validam entrada e saída com zod, via `parseRequest`/`parseResponse`. O caminho do
+As rotas já validam entrada e saída com zod, via os helpers de `plugins/infra/zod`
+(`routeParams`/`routeQuery`/`routeBody`/`routeResponse`), que leem o schema do próprio `config` da
+rota. O caminho do
 `@fastify/swagger` com type provider exigiria reescrever cada rota para declarar schema no Fastify —
 duas fontes para o mesmo contrato, exatamente o que a issue proíbe. O `zod-to-openapi` consome os
 mesmos objetos de `packages/contracts` que as rotas usam.

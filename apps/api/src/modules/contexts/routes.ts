@@ -14,7 +14,7 @@ import type { AuthInstance } from '../auth/better-auth.js';
 import { applyAuthCookies, toAuthHeaders } from '../auth/bridge.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { parseRequest, parseResponse } from '../../plugins/infra/zod.js';
+import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { findPreferredContext, isValidAgencyContext, isValidClientContext, listValidContexts } from './service.js';
 
 export type ContextPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
@@ -89,12 +89,12 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
       auth.claims,
       (transaction) => listValidContexts(transaction)
     );
-    return reply.send(parseResponse(listDocs.schemas.response, { contexts }));
+    return reply.send(routeResponse(listDocs, request, { contexts }));
   });
 
   app.get('/me/contexts/resolve', { preHandler: requireSession, config: resolveDocs }, async (request, reply) => {
     const auth = requireAuth(request);
-    const query = parseRequest(resolveDocs.schemas.query, request.query);
+    const query = routeQuery(resolveDocs, request);
     const { contexts, lastUsedContext } = await withAuthenticatedUserTransaction(
       dependencies.database,
       auth.claims,
@@ -106,29 +106,29 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
     // their last context mid-use is signed out on the very next pass through `resolve`.
     if (contexts.length === 0) {
       await endSessionForNoContext(dependencies.auth, request, reply);
-      return reply.send(parseResponse(resolveDocs.schemas.response, { decision: 'none' }));
+      return reply.send(routeResponse(resolveDocs, request, { decision: 'none' }));
     }
     // Step 3: exactly one valid context.
     if (contexts.length === 1) {
-      return reply.send(parseResponse(resolveDocs.schemas.response, { decision: 'enter', context: contexts[0]! }));
+      return reply.send(routeResponse(resolveDocs, request, { decision: 'enter', context: contexts[0]! }));
     }
     // Step 4: an explicit, valid `preferred` context wins over the last-used preference. An
     // invalid/inaccessible `preferred` is ignored in silence and the algorithm falls through.
     const preferred = query.preferred === undefined ? undefined : findPreferredContext(contexts, query.preferred);
     if (preferred !== undefined) {
-      return reply.send(parseResponse(resolveDocs.schemas.response, { decision: 'select', contexts, highlighted: preferred }));
+      return reply.send(routeResponse(resolveDocs, request, { decision: 'select', contexts, highlighted: preferred }));
     }
     // Step 5: the last-used context, if still valid.
     if (lastUsedContext !== null) {
-      return reply.send(parseResponse(resolveDocs.schemas.response, { decision: 'enter', context: lastUsedContext }));
+      return reply.send(routeResponse(resolveDocs, request, { decision: 'enter', context: lastUsedContext }));
     }
     // Step 6: no signal to prefer any one context.
-    return reply.send(parseResponse(resolveDocs.schemas.response, { decision: 'select', contexts, highlighted: null }));
+    return reply.send(routeResponse(resolveDocs, request, { decision: 'select', contexts, highlighted: null }));
   });
 
   app.put('/me/last-context', { preHandler: requireSession, config: lastContextDocs }, async (request, reply) => {
     const auth = requireAuth(request);
-    const body = parseRequest(lastContextDocs.schemas.body, request.body);
+    const body = routeBody(lastContextDocs, request);
 
     await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
       const valid = body.type === 'agency'

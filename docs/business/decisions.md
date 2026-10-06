@@ -1100,6 +1100,44 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 
 ---
 
+## 2026-09-30 — O ator de cada transação é gravado uma vez pelo banco, e não pelo GUC `app.user_id`
+
+**Contexto.** A entrada de 2026-09-29 ("O SQL do papel de runtime (ageniza_app) é confiável") aceitou provisoriamente que o `app.user_id` é forjável por `ageniza_app` e deixou o endurecimento real para a #166, que precisa entrar antes da #97. O ataque provado na re-revisão do PR #159: dentro de uma transação já autenticada como Gestor de conta, um `set_config('app.user_id', <Owner>, true)` no meio da instrução faz toda a autorização passar a responder como o Owner, e o Gestor concede `admin`. Qualquer caminho que injete um fragmento de SQL numa transação autenticada, por exemplo uma injeção de SQL numa rota futura, herda essa escalada no produto inteiro. Todas as funções `security definer` e todas as policies leem o ator por `app_private.current_user_id()`, que hoje só lê o GUC. **É mudança estrutural:** muda como a autorização é avaliada em todos os módulos.
+
+**Decisão.** O ator deixa de viver num GUC e passa a viver numa tabela que só o banco escreve, com uma linha por transação, gravada uma única vez.
+
+1. **`app_private.actor_context`**: tabela `unlogged` com `xact_id xid8 primary key`, `user_id uuid not null` e `bound_at timestamptz not null default now()`. O `ageniza_app` não tem nenhum *grant* nela: não lê, não insere, não altera, não apaga.
+2. **`app_private.bind_actor(user_id uuid)`**: função `security definer`, com `search_path = ''` e `revoke … from public`. O `ageniza_app` só tem `execute`. Ela grava `(pg_current_xact_id(), user_id)`. Se a transação já tem ator, a chave primária colide e a função levanta `42501`. **Não existe troca de ator dentro de uma transação**, nem para o mesmo usuário. Ator nulo também é recusado.
+3. **`app_private.current_user_id()`**: é recriada em migration nova, sem editar a aplicada. Passa a ser `security definer` e devolve o `user_id` da linha cujo `xact_id` é o `pg_current_xact_id_if_assigned()` da transação corrente. Sem `bind_actor`, devolve nulo, e a RLS não mostra nenhuma linha de tenant, como hoje sem o GUC. O nome e a assinatura não mudam, então as policies e as funções que a chamam continuam iguais.
+4. **`withAuthenticatedUserTransaction`**, em `packages/database`, troca o `set_config` por `select app_private.bind_actor(?)`, como **primeira instrução** da transação e fora de qualquer *savepoint*. O worker e o `seed:demo` já passam por essa função. O `app.user_id` deixa de ser lido em qualquer lugar: forjá-lo não tem mais efeito.
+5. **Limpeza.** O `xid8` nunca se repete, então uma linha de transação encerrada não é perigosa, só ocupa espaço. Uma função `security definer`, `app_private.purge_actor_context()`, apaga as linhas com mais de uma hora e é chamada pelo worker de tempos em tempos. Como a tabela é `unlogged`, a escrita por requisição não gera WAL.
+
+**Por que o `ageniza_app` não consegue forjar.**
+- Ele não escreve na tabela: o *grant* não existe (provado em protótipo: `permission denied`).
+- Ele só grava por `bind_actor`, e ela só aceita **uma** gravação por transação. A aplicação grava primeiro, a partir da sessão verificada. Qualquer fragmento de SQL que rode depois na mesma transação, inclusive dentro da mesma instrução, recebe `42501` ao tentar gravar de novo (provado em protótipo).
+- O GUC fica sem efeito: `set_config('app.user_id', …)` continua executando, mas nada o lê (provado em protótipo: o `set_config` para outro usuário não muda o que a RLS mostra).
+- A chave é o `xid8` da transação, que é global e nunca se repete. Uma transação não enxerga o ator de outra, nem numa conexão reaproveitada do pool.
+
+**O que continua confiável, e fica dito.** Quem tem a **credencial** do `ageniza_app` e abre as próprias transações pode chamar `bind_actor` com qualquer usuário na primeira instrução. Nenhum mecanismo dentro do banco impede isso enquanto o mesmo papel também lê e escreve `auth.session` (o Better Auth precisa disso). Exigir o token de sessão em `bind_actor` não resolveria, porque o mesmo papel lê os tokens. Portanto:
+- a **credencial do banco** continua sendo segredo de servidor (AGENTS.md);
+- o que a #166 elimina é a escalada **dentro de uma transação já autenticada**, que é a forma que uma injeção de SQL ou um fragmento hostil teria;
+- a premissa "o papel de runtime é confiável" da entrada de 2026-09-29 fica **restrita ao primeiro bind de cada transação**, e deixa de valer para o resto dela.
+
+**Armadilha achada no protótipo.** Um `bind_actor` feito **dentro** de um *savepoint* é desfeito por `rollback to savepoint`, e um segundo bind passa a ser aceito. Por isso o item 4 exige o bind na transação de topo, antes de qualquer trabalho, e a implementação precisa de teste que prove essa ordem em `withAuthenticatedUserTransaction`. Nenhuma função do banco chama `bind_actor`.
+
+**Consequência.**
+- Toda transação autenticada passa a consumir um id de transação, mesmo as só de leitura. O custo é aceito, e o PR mede o tempo das suítes de integração antes e depois.
+- `current_user_id()` vira `security definer` com uma consulta por chave primária. O PR confere que nenhuma policy ficou visivelmente mais lenta.
+- Tabela `unlogged` some num crash e não vai para réplica. Os dois casos são aceitáveis, porque o ator só vale dentro de uma transação viva, e hoje não há réplica de leitura.
+- Todo fluxo que hoje troca o `app.user_id` dentro de uma transação precisa virar duas transações. A implementação faz esse inventário e o descreve no PR.
+- Os testes que forjam `app.user_id` passam a provar que o forjamento **não** tem efeito. Nenhum teste existente é removido.
+- A alegação de imunidade a "any GUC trick" não pode continuar no código fora de migrations aplicadas.
+- A #97 fica liberada quando a #166 entrar.
+
+**Origem.** Issue #166; re-revisão de segurança do PR #159. Opção 1 escolhida pelo dono do produto em 2026-09-30. O desenho foi prototipado num banco descartável antes da implementação. Desenho aprovado pelo dono do produto em 2026-09-30.
+
+---
+
 ## 2026-09-30 — Limite de tamanho do nome no perfil próprio
 
 **Contexto.** A SPEC de colaboradores (`specs/colaboradores.md`, §§3, 5 e 6) exige que o nome do próprio perfil seja obrigatório, não vazio e com **limite de tamanho**, mas não fixa um número. A task #101 precisava de um valor para validar `PATCH /me/profile`.
@@ -1160,6 +1198,203 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 
 ---
 
+## 2026-10-01 — Conteúdo: a entrevista abre antes do merge de #123 e #128
+
+**Contexto.** A ordem de módulos decidida em 2026-09-24 é Colaboradores, Clientes, Conteúdo, Tarefas, Financeiro básico, Dashboard. A regra de orquestração exigia #122, #123 e #128 mergeadas antes da entrevista de Conteúdo, e #123 (funções de ciclo de vida do cliente) e #128 (conversa do lado da agência) estavam prontas em branch, esperando revisão. Tarefas foi cogitada para ir antes e descartada: tarefa nasce ligada a conteúdo, e o bloco 0 de Conteúdo já registra "tarefas por conteúdo".
+
+**Decisão.** A **entrevista** de Conteúdo abre agora. A **implementação** de Conteúdo continua dependendo de #122, #123 e #128 mergeadas, porque reaproveita o molde da função de escopo único (#123) e a conversa com `content_id` (#128).
+
+**Consequência.** A entrevista parte dos desenhos já decididos de #123 e #128, não do código mergeado. Se a revisão deles mudar a forma, a SPEC de Conteúdo é ajustada antes do recorte.
+
+**Origem.** Decidido pelo dono do produto em sessão, em 2026-10-01.
+
+---
+
+## 2026-10-01 — Conteúdo: propósito e fronteiras do MVP
+
+**Contexto.** Bloco 1 da entrevista de Conteúdo. A integração com a Meta está fora do MVP (2026-09-26), então a plataforma não publica em rede social.
+
+**Decisão.**
+- **Publicação é manual no MVP.** O cliente aprova e o conteúdo passa a **pronto para publicação**; a agência publica por fora e marca **publicado**, com a data real. O relatório interno ("entregue, atrasado, o que foi feito no mês") se apoia nesse registro.
+- **A aprovação é do cliente, no portal.** Existe também o registro de **aprovado fora da plataforma** pela agência, com quem marcou e quando, para o cliente que aprova por outro canal. O dono considera que ele quebra o fluxo ideal, e as condições em que ele é permitido são decididas nos blocos de autorização e de regras.
+- **Instagram no MVP**: post de imagem, carrossel e reels no simulador do feed; **vídeo longo** e **VSL** entram no calendário e na aprovação, fora da grade do feed. Outras plataformas ficam como roadmap.
+- **Tarefas nascem aqui, sempre ligadas a um conteúdo** (responsável, prazo, conclusão, percentual do conteúdo calculado). O módulo Tarefas, depois, é a visão macro: kanban por cliente e as tarefas vinculadas a conteúdos. Conteúdo é a gestão rápida, micro.
+- **Conteúdo preenche tudo o que Clientes reservou**: a aba Conteúdos do detalhe do cliente, os indicadores do card (pendente, em revisão, atrasado), o atraso como primeiro critério da carteira, e no portal o Calendário e o espaço "conteúdos a aprovar" do Início.
+- **E-mail ao cliente** quando houver conteúdo pronto para revisão e quando um conteúdo for publicado. O fluxo de notificação se expande depois.
+- **Fora do MVP**: publicação automática, métricas, vários destinos, versões e histórico de alterações do post, banco de legendas e hashtags, aprovação em várias etapas.
+
+**Consequência.** O gatilho da notificação registrado em Clientes ("Conteúdo fechar o fluxo de aprovação") dispara aqui, na forma mínima de e-mail. **Stories** ficam com fluxo próprio — roteiro do dia, que o cliente grava —, separado do fluxo de feed; se entra no MVP é decidido na rodada seguinte desta entrevista.
+
+**Origem.** Decidido pelo dono do produto em sessão (entrevista do módulo Conteúdo), em 2026-10-01.
+
+---
+
+## 2026-10-01 — Conteúdo: atores e autorização
+
+**Contexto.** Bloco 2 da entrevista de Conteúdo. Diferente de Clientes, Produção é quem produz o conteúdo.
+
+**Decisão.**
+- Permissões e presets:
+
+| permissão | o que libera | Admin | Gestor de conta | Produção | Vendas | Financeiro |
+|---|---|---|---|---|---|---|
+| `conteudo.visualizar` | ver calendário, conteúdos, comentários, subtarefas e roteiros de stories | ✓ | ✓ | ✓ | | |
+| `conteudo.operar` | criar, editar, mover de data, anexar mídia, comentar, criar subtarefas, enviar para aprovação, roteirizar stories | ✓ | ✓ | ✓ | | |
+| `conteudo.publicar` | marcar como publicado | ✓ | ✓ | ✓ | | |
+| `conteudo.aprovar_pela_agencia` | registrar "aprovado fora da plataforma" | ✓ | ✓ | | | |
+| `conteudo.cancelar` | cancelar um conteúdo, que fica guardado | ✓ | ✓ | | | |
+
+- **Vendas e Financeiro não veem Conteúdo.**
+- **Subtarefa** é aprovada pelo **responsável do conteúdo**; Admin e Gestor de conta podem substituí-lo.
+- **No portal**, qualquer pessoa ativa daquele cliente aprova ou pede ajuste, e uma basta; fica registrado quem.
+- **Em produção, o portal vê só título, data e tipo**; legenda e mídia aparecem a partir de "aguardando aprovação".
+- **Aprovado fora da plataforma** vale sempre, com a permissão e um **motivo obrigatório**, e aparece no portal como aprovado pela agência.
+- Quem tem `conteudo.visualizar` vê o conteúdo de **todos** os clientes da agência, como em Clientes; restringir por atribuição segue o gatilho já registrado.
+- **Stories entram no MVP na forma mínima**: a agência cria o roteiro de stories de uma data (sequência de cenas com texto e orientação); o cliente vê no portal e marca **gravado**. Sem mídia, sem aprovação, fora da grade do feed.
+
+**Consequência.** É o primeiro módulo em que `visualizar` não vale para os cinco presets. O que Clientes mostra derivado de conteúdo (aba Conteúdos, indicadores do card, ordem por atraso) precisa respeitar isso para quem não tem `conteudo.visualizar`.
+
+**Origem.** Decidido pelo dono do produto em sessão (entrevista do módulo Conteúdo), em 2026-10-01.
+
+---
+
+## 2026-10-01 — Conteúdo: entidades e campos
+
+**Contexto.** Bloco 3 da entrevista de Conteúdo.
+
+**Decisão.**
+- **Vendas e Financeiro** não veem a aba Conteúdos do cliente nem os indicadores derivados de conteúdo; a carteira deles mantém a ordem atual (conversas esperando resposta, depois nome).
+- **Data de publicação** com **hora opcional**; o atraso é medido pela data, no fuso `America/Sao_Paulo` enquanto o fuso por agência (#153) não existir.
+- **Formatos**: imagem (1), carrossel (2 a 20 itens, imagem ou vídeo, ordenados), reels (1 vídeo), vídeo longo (1), VSL (1); legenda até 2.200 caracteres; título interno até 120. Os limites seguem o Instagram no MVP, **mas o modelo não se amarra a ele**: formato e limite são por plataforma, para a expansão futura.
+- **Capa de vídeo**: imagem enviada pela agência, ou o quadro automático que o worker já gera.
+- **Subtarefa**: título, descrição opcional, responsável obrigatório (colaborador ativo), prazo obrigatório (data) e estado; o percentual do conteúdo é a razão entre subtarefas aprovadas e o total, e não aparece sem subtarefas.
+- **Responsável pelo conteúdo** obrigatório, por padrão quem criou, trocável por quem tem `conteudo.operar`.
+- **Comentários**: uma conversa por conteúdo, no formato da conversa do estudo de marca (`content_id` na tabela de threads), reaberta quando o cliente comenta.
+- **Roteiro de stories**: cliente, data, cenas ordenadas (texto e orientação opcional) e estado gravado, com quem marcou e quando. Sem comentário no MVP.
+- **Mídia organizada em pastas por cliente**: cada cliente tem pastas padrão (vídeos, imagens, carrosséis, ensaio fotográfico…). Ao criar um conteúdo, a mídia é atrelada a uma pasta: escolhe-se uma existente ou cria-se uma nova dentro das padrões. O upload é do **conteúdo pronto**; o material bruto fica fora (Drive). O detalhe do modelo é decidido na rodada seguinte.
+
+**Consequência.** A mídia deixa de ser só da agência: passa a ter cliente e pasta. É a estrutural pendente "cliente na mídia" (2026-09-26), cuja forma agora é **por pasta do cliente**, e que será registrada como estrutural no bloco de impacto desta entrevista. Fica em aberto, com gatilho "a entrevista de Tarefas": a regra antiga de que todo colaborador vê Tarefas, diante de tarefas que mostram o título do conteúdo.
+
+**Origem.** Decidido pelo dono do produto em sessão (entrevista do módulo Conteúdo), em 2026-10-01.
+
+---
+
+## 2026-10-01 — Conteúdo: pastas de mídia, estados e transições
+
+**Contexto.** Blocos 3 (fim) e 4 da entrevista de Conteúdo.
+
+**Decisão.**
+- **Pastas**: todo cliente nasce com uma lista fixa de pastas padrão do sistema (Vídeos, Imagens, Carrosséis, Ensaio fotográfico); a agência pode criar pastas próprias no primeiro nível. **Dois níveis**: pasta padrão e, dentro dela, pastas de trabalho. **Uma pasta pode servir a vários conteúdos** (um ensaio que vira vários posts): o conteúdo aponta para uma pasta e seleciona as mídias dela.
+- **O portal vê mídia só pelo conteúdo** que já pode ver (a partir de "aguardando aprovação"); a biblioteca não aparece no portal no MVP. Em aberto, com gatilho "o primeiro cliente pedir para baixar o material entregue".
+- **Estados do conteúdo**: em produção → aguardando aprovação → aprovado (na agência, "pronto para publicar") → publicado; aguardando aprovação → em ajuste → aguardando aprovação; qualquer estado menos publicado → cancelado → (reagendar) em produção. "Atrasado" não é estado: é a data passada sem publicado nem cancelado.
+- **Enviar para aprovação** exige mídia completa para o tipo e todas as subtarefas aprovadas; legenda opcional.
+- **Pedir ajuste** exige comentário, que entra na conversa do conteúdo.
+- **Editar depois de aprovado**: mudar legenda, mídia, capa ou tipo anula a aprovação e devolve a "aguardando aprovação"; mudar data, hora, título, responsável ou subtarefas mantém.
+- **Publicado** pode ser desfeito **no mesmo dia** por quem tem `conteudo.publicar`, voltando a aprovado; depois disso é final.
+- **Arrastar para outra data** vale em todos os estados menos publicado e cancelado, sem anular a aprovação.
+- **Subtarefa**: pendente → entregue (pelo responsável dela) → aprovada (pelo responsável do conteúdo) ou devolvida com comentário, voltando a pendente. Atraso é prazo passado sem aprovada.
+- **Roteiro de stories**: rascunho → enviado (aparece no portal) → gravado (marcado pelo cliente).
+
+**Consequência.** A mídia passa a ter cliente e pasta, e a leitura do portal sobre mídia é derivada do conteúdo. Os estados são impostos no banco, não só na rota (bloco de regras).
+
+**Origem.** Decidido pelo dono do produto em sessão (entrevista do módulo Conteúdo), em 2026-10-01.
+
+---
+
+## 2026-10-01 — Conteúdo: regras invioláveis
+
+**Contexto.** Bloco 5 da entrevista de Conteúdo. Cada regra vira teste e é garantida no banco, não só na tela.
+
+**Decisão.**
+1. O portal nunca vê trabalho interno: subtarefas, responsável, prazos internos, conteúdo em produção além de título, data e tipo, e roteiro em rascunho.
+2. O portal só vê o próprio cliente; quem não tem `conteudo.visualizar` não vê conteúdo algum, nem pela API.
+3. Conteúdo, pasta e mídia são sempre do mesmo cliente e da mesma agência; o conteúdo só seleciona mídias da própria pasta.
+4. Quem aprovou e quando é fixado pelo banco. Aprovar é de pessoa ativa do portal daquele cliente, ou "aprovado fora" com a permissão e motivo.
+5. Só as transições decididas existem.
+6. Mudar legenda, mídia, capa ou tipo depois de aprovado anula a aprovação.
+7. Publicado só a partir de aprovado, com data real não futura; desfazer só no mesmo dia.
+8. Cliente arquivado não recebe conteúdo novo e não dispara e-mail; o agendado depois do encerramento vira cancelado e não volta sozinho. Agência suspensa não dispara e-mail.
+9. Conteúdo não é apagado: cancelado continua guardado.
+10. Responsável de subtarefa é colaborador ativo; só o responsável do conteúdo, Admin ou Gestor de conta aprovam subtarefa.
+11. Enviar para aprovação exige mídia completa e subtarefas aprovadas; pedir ajuste exige comentário.
+- **Mídia** pode ser removida da pasta enquanto nenhum conteúdo aprovado ou publicado a usa; a remoção marca como removida e o arquivo sai pelo fluxo de retenção.
+- **O cliente comenta** só a partir de "aguardando aprovação".
+- **Conteúdo de cliente arquivado** fica visível só para leitura na agência.
+
+**Consequência.** As transições e a anulação da aprovação precisam de função ou trigger no banco, no molde do `BEFORE UPDATE` com OLD/NEW já adotado.
+
+**Origem.** Decidido pelo dono do produto em sessão (entrevista do módulo Conteúdo), em 2026-10-01.
+
+---
+
+## 2026-10-01 — Conteúdo: telas (esboço)
+
+**Contexto.** Bloco 6 da entrevista de Conteúdo. Esboço de telas; aparência vem do design system e do refino do designer.
+
+**Decisão.**
+- **Intenção na agência**: Produção e Gestor de conta, todo dia, no desktop, para "planejar o mês de um cliente e fechar o que falta para ir ao ar". Mesa editorial: o mês do cliente à vista e o travado saltando aos olhos.
+- **Intenção no portal**: o dono do negócio, pelo celular, poucas vezes por semana, para conferir e aprovar. O item da barra do portal passa de "Calendário" a **"Conteúdos"**.
+- **Agência**: item "Conteúdos" (`/agencia/:id/conteudos`) com o **seletor de clientes em stories** (ordem da carteira, anel destacado quando há algo pedindo ação, só ativos); o cliente escolhido vai para a URL (`/agencia/:id/conteudos/:clienteId`); a aba Conteúdos do detalhe do cliente mostra a mesma visão.
+- **Calendário e feed**: calendário no mês, com opção de semana; feed 3×3 com os conteúdos de feed não cancelados, do mais recente ao mais antigo, futuros marcados como planejados, sincronizado com o período do calendário. Vídeo longo e VSL só no calendário.
+- **Card**: capa, título, tipo, data e hora, status, alerta de prazo ou atraso e percentual das subtarefas. **Detalhe ao passar o mouse**: começo da legenda, responsável, resumo das subtarefas e última mensagem da conversa.
+- **Modal** com URL própria: aba Geral (prévia à esquerda; título, tipo, data e hora, pasta com seletor e upload, capa, legenda com contador, conversa) e aba Atribuição (responsável e subtarefas com as ações de cada estado). Os botões seguem o estado e a permissão.
+- **Visão "Pastas"** dentro de Conteúdos do cliente, para navegar na biblioteca e subir mídia antes de criar o post.
+- **Stories**: o **+** do dia oferece Conteúdo ou Roteiro de stories; o dia com roteiro tem indicador; o roteiro abre em modal próprio, com cenas e "Enviar ao cliente".
+- **Portal**: Conteúdos abre com "O que precisa de você" (aguardando aprovação), depois o calendário do mês com filtro por status e a alternância para o feed; o post abre em tela cheia com legenda, mídias navegáveis, Aprovar, Pedir ajuste e a conversa. O Início mostra "N conteúdos esperando sua aprovação" e o roteiro de stories de hoje com "Marcar como gravado". Celular primeiro.
+- **E-mails** para todas as pessoas ativas do portal do cliente: "conteúdos para aprovar" agrupado com espera de 15 minutos após o último envio; "publicado" em resumo diário; nada para cliente arquivado ou agência suspensa.
+- **Estados de tela**: vazio com criar para quem opera, feed com "planeje o primeiro post"; skeleton na primeira carga; erro com tentar de novo; sem permissão o item não aparece e a URL cai no não encontrado; no portal, "Nenhum conteúdo planejado para este mês".
+
+**Consequência.** O dono aceitou o esboço como ponto de partida, a aprimorar com o uso.
+
+**Origem.** Decidido pelo dono do produto em sessão (entrevista do módulo Conteúdo), em 2026-10-01.
+
+---
+
+## 2026-10-01 — Conteúdo: impacto estrutural
+
+**Esta é uma mudança estrutural.** Confrontado item por item com `structural-changes.md`, Conteúdo altera tabelas existentes, mexe em RLS de mais de um módulo, muda como a autorização é avaliada, cria formatos que outros módulos vão copiar e exige backfill.
+
+**Contexto.** Bloco 7 da entrevista de Conteúdo.
+
+**Decisão.**
+1. **Mídia com cliente e pasta.** `media_assets` ganha cliente e pasta, e entram as tabelas de pastas (padrão e de trabalho). O portal lê mídia **só através do conteúdo** que já pode ver. A mídia anterior, sem cliente, continua só da agência. Fecha a estrutural pendente "cliente na mídia" (2026-09-26) na forma **por pasta do cliente, lida pelo conteúdo**.
+2. **A conversa ganha `content_id`**, como anunciado em 2026-09-26. O portal só comenta a partir de "aguardando aprovação", regra que entra na policy de insert dos comentários.
+3. **Aprovação por atribuição.** Aprovar subtarefa depende de ser o responsável do conteúdo; quem tem `conteudo.aprovar_pela_agencia` substitui. Segue o formato de autorização dependente do valor (o mesmo de "só o Owner concede admin"): regra no banco, por função ou trigger, nunca um `if` na rota.
+4. **Consulta por período.** Calendário e feed consultam por intervalo de datas (`de`/`até`), com teto de 93 dias e teto de itens (400 acima disso), sem paginação. É o formato que Tarefas (kanban) e Dashboard vão copiar; a listagem paginada continua valendo para listas.
+5. **Trabalho sem requisição.** O envio de e-mails e o cancelamento de conteúdo além da data de encerramento usam funções `security definer` de escopo único, no molde de `archive_due_clients`. O cancelamento entra **na própria função de arquivar o cliente**, para arquivar e cancelar acontecerem juntos.
+6. **Backfill das pastas padrão.** A migration cria as pastas padrão para os clientes existentes; o cadastro de cliente passa a criá-las para cada cliente novo.
+7. **Fila de notificação.** O e-mail de Conteúdo é o primeiro mecanismo de notificação, desenhado como fila (destinatário, tipo, cliente, janela de agrupamento) enviada pelo worker, para os próximos tipos entrarem sem refazer. Preferências e notificação dentro do produto continuam em aberto.
+
+**Consequência.** A implementação começa pelas migrations e pelas funções de banco (pastas, mídia, conteúdo, subtarefas, estados, conversa), depois as rotas, depois as telas; cada migration em PR próprio, com o gate de decisão estrutural. Depende de #122, #123 e #128 mergeadas.
+
+**Origem.** Decidido pelo dono do produto em sessão (entrevista do módulo Conteúdo), em 2026-10-01.
+
+---
+
+## 2026-10-01 — CHECK no cargo do vínculo, com backfill pequeno e explícito
+
+**Contexto.** `agency_memberships.job_title` é `text` sem restrição, enquanto o schema de resposta da listagem (#95), do detalhe (#96) e da rota de cargos (#218) exige um valor aparado de 1 a **256 unidades UTF-16**, contando como whitespace de borda o conjunto do `String.prototype.trim` do JavaScript (que inclui NBSP **e** U+FEFF, entre outros). Um único cargo fora desse formato derruba com **500** a leitura da agência inteira. Hoje só o `seed:demo` grava cargo; a #97 vai passar a gravar. Achado da revisão do PR #220 e da revisão do PR #232.
+
+**Decisão.** Mudança **estrutural, de backfill pequeno**, na migration `20261001000000_job_title_format`: a forma armazenada passa a ser o valor aparado pelas mesmas regras do contrato (trigger `BEFORE INSERT OR UPDATE` chama `app_private.normalize_job_title`), e o `CHECK` exige 1 a 256 **unidades UTF-16** (`app_private.utf16_length`), não pontos de código. Antes do `CHECK`, o backfill trata o legado: espaços-só viram `null` e um legado que ainda passe de 256 unidades UTF-16 também vira `null`; o `up()` da migration imprime as três contagens em uma linha (`console.log`, visível no log do `pnpm db:migrate`), porque um `raise notice` não chega a log nenhum sob o `log_min_messages` padrão do servidor — **não há truncamento silencioso**. `specs/colaboradores.md` não muda de formato. Alcance: uma tabela, uma coluna.
+
+**Consequência.** O dado lido nunca é inválido para o contrato, em nenhuma rota presente ou futura. O preço é a perda explícita do legado acima de 256, registrada e contada. **Pendente de validação** do dono do produto: a escolha de descartar (em vez de truncar) um cargo legado acima do limite.
+
+**Origem.** Issue #225, achados da revisão do PR #220 (#218) e da revisão do PR #232. **Pendente de validação** do dono do produto.
+
+---
+
+## 2026-10-06 — Até o lançamento do MVP, sem rodada de QA nem teste de invasão
+
+**Contexto.** Além da revisão de cada PR, o fluxo vinha incluindo rodadas de QA manual e testes de invasão sobre o que já estava integrado. Isso atrasa a entrega, e o foco agora é lançar o MVP o quanto antes.
+
+**Decisão.** Até o lançamento do MVP, o fluxo é implementar, revisar e integrar. Todo PR continua passando pela revisão de código e, quando toca o que `AGENTS.md` lista, pela revisão de segurança de [`docs/security-review.md`](../security-review.md), que segue igual: ataques executados contra o que o próprio PR entrega. Ficam suspensos as rodadas de QA manual, os testes de integridade e os testes de invasão fora do escopo de um PR. O dono do produto faz essa validação no fim do MVP, antes do lançamento.
+
+**Consequência.** Uma issue é dada como pronta quando o PR passa no CI e nas revisões, sem esperar uma rodada de QA. Bugs e brechas achados na validação final viram issues, priorizadas nesse momento.
+
+**Origem.** Decidido pelo dono do produto em sessão, em 2026-10-06.
+
+---
+
 ## 2026-10-06 — ESTRUTURAL: o estado do convite só anda para frente, e quem garante é o banco
 
 **Contexto.** A re-revisão de segurança do PR #202 (Vigia) provou, fora do diff dele e já em `develop`, que um papel com **só** `convite.cancelar` executa `update invitations set revoked_at = null`: a policy `invitations_update` confere a permissão e o *grant* `UPDATE(revoked_at)` deixa a coluna, e nada confere a **direção** da mudança. O caminho completo foi executado: convite de **admin** revogado, des-revogado, aceito com o link original, e um vínculo admin nasce sem ninguém ter `colaborador.atribuir_admin`. O mesmo vale para o convite de portal que o arquivamento revoga (regra 15 de `specs/clientes.md`): ele volta a pendente. `accept_invitation` confia na linha: quem decide quem pode virar admin é a criação do convite, e uma criação revogada tem de continuar morta.
@@ -1177,4 +1412,3 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 - **`media_assets`: achado, executado.** Um papel com **só** `midia.enviar` faz `update media_assets set status = 'confirmed', rejected_reason = null` numa mídia `rejected` (1 linha afetada, num banco isolado, com a transação desfeita). A policy exige só a permissão, o *grant* cobre `status`, `confirmed_*`, `rejected_reason` e as chaves de objeto, e não há trigger. As chaves ficam presas à agência por `CHECK`, então não há troca entre tenants, mas a rejeição por conteúdo se desfaz. **Não** corrigido neste PR (módulo de mídia, outra superfície): precisa de issue própria.
 
 **Origem.** Issue #290, revisão de segurança do PR #202 (Vigia), 2026-10-06.
-
