@@ -8,13 +8,19 @@ import { SearchTextSchema } from './search.js';
  * Client (specs/clientes.md section 3). `name` is the only required field and the only one a POST
  * accepts; a PATCH may send any subset of the registration fields, and `null` clears one.
  *
- * Every free-text field rejects control characters (U+0000..U+001F and U+007F) before anything
- * reaches the database: a NUL byte makes PostgreSQL reject the statement with a 500, and no field
- * here has a legitimate use for a control character. Lengths are checked in UTF-8 bytes, not
- * UTF-16 units, because that is what the `clients` column checks enforce (`octet_length`).
+ * Free text rejects control characters before anything reaches the database: a NUL byte makes
+ * PostgreSQL reject the statement with a 500, and no field here has a legitimate use for one.
+ * Single-line fields (names, phone, website...) reject every control range, while the multiline
+ * fields (brand-study text and persona text) allow tab, LF and CR, which are line breaks a person
+ * actually types. Lengths are checked in UTF-8 bytes, not UTF-16 units, because that is what the
+ * column checks enforce (`octet_length`).
  */
 // eslint-disable-next-line no-control-regex -- the control range is exactly what must be rejected.
 const hasControlCharacters = (value: string): boolean => /[\u0000-\u001f\u007f]/.test(value);
+
+// Tab (U+0009), LF (U+000A) and CR (U+000D) are allowed; every other C0 control and DEL is not.
+// eslint-disable-next-line no-control-regex -- the forbidden range is exactly what must be rejected.
+const hasForbiddenControlCharacters = (value: string): boolean => /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value);
 
 const utf8ByteLength = (value: string): number => {
   let bytes = 0;
@@ -28,6 +34,12 @@ const utf8ByteLength = (value: string): number => {
 const boundedText = (maxBytes: number) =>
   z.string()
     .refine((value) => !hasControlCharacters(value), 'must not contain control characters')
+    .refine((value) => utf8ByteLength(value) <= maxBytes, `must be at most ${maxBytes} bytes`);
+
+/** Multiline free text: tab, LF and CR are line breaks, every other control character is rejected. */
+const boundedMultilineText = (maxBytes: number) =>
+  z.string()
+    .refine((value) => !hasForbiddenControlCharacters(value), 'must not contain control characters')
     .refine((value) => utf8ByteLength(value) <= maxBytes, `must be at most ${maxBytes} bytes`);
 
 /** Trimmed, non-empty and at most 256 UTF-8 bytes -- the same shape the active-name index normalizes. */
@@ -160,3 +172,131 @@ export type ClientListSort = z.infer<typeof ClientListSortSchema>;
 export type ClientListQuery = z.infer<typeof ClientListQuerySchema>;
 export type ClientListItem = z.infer<typeof ClientListItemSchema>;
 export type ClientListResponse = z.infer<typeof ClientListResponseSchema>;
+
+
+// --- Brand study (specs/clientes.md section 3) ----------------------------------------------
+
+/** The seven fixed sections. There is no route that creates a section. */
+export const BrandSectionKeySchema = z.enum([
+  'branding', 'tone_of_voice', 'colors', 'positioning', 'archetype', 'personas', 'observations'
+]);
+
+/** The six keys a `PUT` accepts; `personas` is the table below and is not writable as a section. */
+export const WritableBrandSectionKeySchema = z.enum([
+  'branding', 'tone_of_voice', 'colors', 'positioning', 'archetype', 'observations'
+]);
+
+/**
+ * The twelve archetypes: the key is the contract value, the label is what the database stores and
+ * the frontend shows. The English key is what a request sends and a response returns.
+ */
+export const ArchetypeSchema = z.enum([
+  'innocent', 'sage', 'explorer', 'outlaw', 'magician', 'hero',
+  'lover', 'jester', 'everyman', 'caregiver', 'ruler', 'creator'
+]);
+
+export const ARCHETYPE_LABELS: Readonly<Record<z.infer<typeof ArchetypeSchema>, string>> = Object.freeze({
+  innocent: 'Inocente',
+  sage: 'Sábio',
+  explorer: 'Explorador',
+  outlaw: 'Fora-da-lei',
+  magician: 'Mago',
+  hero: 'Herói',
+  lover: 'Amante',
+  jester: 'Bobo da corte',
+  everyman: 'Cara comum',
+  caregiver: 'Cuidador',
+  ruler: 'Governante',
+  creator: 'Criador'
+});
+
+export const BrandColorSchema = z.object({
+  name: boundedText(60),
+  hex: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'hex must be #RRGGBB')
+}).strict();
+
+/**
+ * Text sections: trimmed, non-empty, at most 20000 UTF-8 bytes. Multiline: tab, LF and CR are
+ * accepted and returned unchanged. Whitespace-only is rejected because `filled` counts only
+ * `btrim(body) <> ''`.
+ */
+export const BrandSectionTextSchema = z.string()
+  .refine((value) => !hasForbiddenControlCharacters(value), 'must not contain control characters')
+  .transform((value) => value.trim())
+  .pipe(z.string().min(1, 'must not be empty').refine((value) => utf8ByteLength(value) <= 20000, 'must be at most 20000 bytes'));
+
+/** `PUT` body, one shape per writable key. `strict()` rejects a field of another section. */
+export const BrandStudySectionUpdateRequestSchema = z.union([
+  z.object({ body: BrandSectionTextSchema }).strict(),
+  z.object({ colors: z.array(BrandColorSchema).max(24) }).strict(),
+  z.object({ archetype: ArchetypeSchema }).strict()
+]);
+
+/** Trimmed, non-empty, at most 120 UTF-8 bytes. */
+export const PersonaNameSchema = z.string()
+  .refine((value) => !hasControlCharacters(value), 'must not contain control characters')
+  .transform((value) => value.trim())
+  .pipe(z.string().min(1, 'must not be empty').refine((value) => utf8ByteLength(value) <= 120, 'must be at most 120 bytes'));
+
+export const CreatePersonaRequestSchema = z.object({
+  name: PersonaNameSchema,
+  description: boundedMultilineText(5000).nullable().optional(),
+  pains: boundedMultilineText(5000).nullable().optional(),
+  desires: boundedMultilineText(5000).nullable().optional(),
+  objections: boundedMultilineText(5000).nullable().optional()
+}).strict();
+
+/** A PATCH with no field would only touch `updated_by`; an empty body is refused instead. */
+export const UpdatePersonaRequestSchema = z.object({
+  name: PersonaNameSchema.optional(),
+  description: boundedMultilineText(5000).nullable().optional(),
+  pains: boundedMultilineText(5000).nullable().optional(),
+  desires: boundedMultilineText(5000).nullable().optional(),
+  objections: boundedMultilineText(5000).nullable().optional()
+}).strict().refine((value) => Object.keys(value).length > 0, 'at least one field must be provided');
+
+/** Who last saved a section or persona, resolved through the agency membership, never `auth."user"` alone. */
+export const BrandStudyUpdatedBySchema = z.object({
+  id: z.string().uuid(),
+  name: z.string()
+}).strict();
+
+/** One of the seven sections, always present in the response, filled or not. */
+export const BrandStudySectionSchema = z.object({
+  key: BrandSectionKeySchema,
+  body: z.string().nullable(),
+  colors: z.array(BrandColorSchema).nullable(),
+  archetype: ArchetypeSchema.nullable(),
+  updatedBy: BrandStudyUpdatedBySchema.nullable(),
+  updatedAt: z.string().nullable()
+}).strict();
+
+export const PersonaSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  description: z.string().nullable(),
+  pains: z.string().nullable(),
+  desires: z.string().nullable(),
+  objections: z.string().nullable(),
+  status: z.enum(['active', 'archived']),
+  updatedBy: BrandStudyUpdatedBySchema.nullable(),
+  updatedAt: z.string().nullable()
+}).strict();
+
+export const BrandStudyResponseSchema = z.object({
+  filled: z.number().int().min(0).max(7),
+  sections: z.array(BrandStudySectionSchema),
+  personas: z.array(PersonaSchema)
+}).strict();
+
+export type BrandSectionKey = z.infer<typeof BrandSectionKeySchema>;
+export type WritableBrandSectionKey = z.infer<typeof WritableBrandSectionKeySchema>;
+export type Archetype = z.infer<typeof ArchetypeSchema>;
+export type BrandColor = z.infer<typeof BrandColorSchema>;
+export type BrandStudySectionUpdate = z.infer<typeof BrandStudySectionUpdateRequestSchema>;
+export type BrandStudyUpdatedBy = z.infer<typeof BrandStudyUpdatedBySchema>;
+export type BrandStudySection = z.infer<typeof BrandStudySectionSchema>;
+export type Persona = z.infer<typeof PersonaSchema>;
+export type CreatePersonaRequest = z.infer<typeof CreatePersonaRequestSchema>;
+export type UpdatePersonaRequest = z.infer<typeof UpdatePersonaRequestSchema>;
+export type BrandStudyResponse = z.infer<typeof BrandStudyResponseSchema>;
