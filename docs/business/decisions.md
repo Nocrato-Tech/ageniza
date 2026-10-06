@@ -1108,7 +1108,7 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 
 **Consequência.** `invitations_insert` passa a exigir `app_private.client_is_active(client_id)` para `purpose = 'client_invite'`, mantendo a regra de admin do convite de colaborador do #159. `clients.status`, `clients.archived_at`, `clients.closing_date` e `client_memberships.status` continuam fora do *grant* de `UPDATE` de `ageniza_app`: a única forma de mudá-los é por estas funções. Isso cumpre a regra 12 e a 13 da SPEC e é o modelo que a publicação agendada de Conteúdo deve copiar.
 
-**Origem.** Issue #123; migration `20261006000050_client_lifecycle_functions.mjs`.
+**Origem.** Issue #123; migration `20261006000300_client_lifecycle_functions.mjs`.
 
 ---
 
@@ -1430,7 +1430,7 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 
 A ordem inversa já estava correta e fica coberta por teste: se o convite é inserido primeiro, o `FOR UPDATE` do arquivamento espera por ele e o `UPDATE` seguinte (visão nova, em `READ COMMITTED`) o revoga.
 
-**Consequência.** Nenhuma tabela é alterada: uma função e uma trigger novas, numa migration nova (`20261006000100_client_invitation_archive_serialization.mjs`), sem editar a que a #123 já introduziu. O arquivamento passa a convidar a corrida só por um caminho já arbitrado pelo banco, e toda escrita futura que "pendura" uma linha num cliente (conteúdo agendado, por exemplo) deve copiar este formato: a policy decide quem pode, a trava com releitura decide se ainda pode.
+**Consequência.** Nenhuma tabela é alterada: uma função e uma trigger novas, numa migration nova (`20261006000400_client_invitation_archive_serialization.mjs`), sem editar a que a #123 já introduziu. O arquivamento passa a convidar a corrida só por um caminho já arbitrado pelo banco, e toda escrita futura que "pendura" uma linha num cliente (conteúdo agendado, por exemplo) deve copiar este formato: a policy decide quem pode, a trava com releitura decide se ainda pode.
 
 **Alcance que não foi tocado.** As outras tabelas filhas do cliente citadas na regra 6 (seções, personas, threads, comentários) têm a mesma forma de risco (provado por execução para `client_personas`: uma persona inserida enquanto o arquivamento ainda não confirmou sobrevive, com o cliente `archived`; seções, threads e comentários não foram sondados) e **não** são alteradas aqui: pertencem a outras tasks do módulo, e mexer nelas dentro deste PR seria mudança em tabela de outro módulo. Fica registrado como débito para o maestro abrir.
 
