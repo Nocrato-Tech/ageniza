@@ -84,9 +84,7 @@ interface InvitationRow {
   readonly client_id: string | null;
   readonly client_name: string | null;
   readonly role_id: string | null;
-  readonly expires_at: string | Date;
-  readonly used_at: string | Date | null;
-  readonly revoked_at: string | Date | null;
+  readonly is_pending: boolean;
 }
 
 interface InvitationLookupRow {
@@ -193,7 +191,16 @@ interface PendingInvitationRow {
   readonly client_name: string | null;
   readonly created_at: string | Date;
   readonly expires_at: string | Date;
+  readonly total: string | number;
 }
+
+// Shared by the page query and its empty-page count fallback so the two filters cannot drift.
+const PENDING_COLLABORATOR_INVITATION_FILTER = `
+        invitation.agency_id = ?::uuid
+        and invitation.purpose = 'collaborator_invite'
+        and invitation.used_at is null
+        and invitation.revoked_at is null
+        and invitation.expires_at > now()`;
 
 interface PendingInvitationPage {
   readonly items: readonly PendingInvitationRow[];
@@ -383,10 +390,12 @@ const resendInvitation = async (
   if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
   const token = tokenForInsert(dependencies.config.appPublicUrl);
   return withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+    // Pendingness is a database-clock decision, like the listing and `app_private.accept_invitation`
+    // (issue #165): the application clock can drift from the server's.
     const currentResult = await raw<RawRows<InvitationRow>>(transaction, `
       select invitation.id, invitation.purpose, invitation.email, invitation.agency_id, agency.name as agency_name,
              invitation.client_id, client.name as client_name, invitation.role_id,
-             invitation.expires_at, invitation.used_at, invitation.revoked_at
+             (invitation.used_at is null and invitation.revoked_at is null and invitation.expires_at > now()) as is_pending
       from public.invitations invitation
       join public.agencies agency on agency.id = invitation.agency_id
       left join public.clients client on client.id = invitation.client_id
@@ -395,7 +404,7 @@ const resendInvitation = async (
     `, [invitationId, agencyId]);
     const current = currentResult.rows[0];
     if (current === undefined || current.purpose === 'agency_activation') throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Invitation not found.' });
-    if (current.used_at !== null || current.revoked_at !== null || new Date(current.expires_at).getTime() <= Date.now()) throw invitationNotPending();
+    if (!current.is_pending) throw invitationNotPending();
 
     await lockPendingInvitationSlot(transaction, agencyId, current.purpose, current.email, current.client_id);
     const revoked = await raw<RawRows<{ id: string }>>(transaction, `
@@ -434,15 +443,17 @@ const cancelInvitation = async (
   const auth = request.auth;
   if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
   await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
-    const currentResult = await raw<RawRows<Pick<InvitationRow, 'id' | 'purpose' | 'used_at' | 'revoked_at' | 'expires_at'>>>(transaction, `
-      select id, purpose, used_at, revoked_at, expires_at
+    // Same database-clock rule as the resend check above (issue #165).
+    const currentResult = await raw<RawRows<Pick<InvitationRow, 'id' | 'purpose' | 'is_pending'>>>(transaction, `
+      select id, purpose,
+             (used_at is null and revoked_at is null and expires_at > now()) as is_pending
       from public.invitations
       where id = ?::uuid and agency_id = ?::uuid
       for update
     `, [invitationId, agencyId]);
     const current = currentResult.rows[0];
     if (current === undefined || current.purpose === 'agency_activation') throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Invitation not found.' });
-    if (current.used_at !== null || current.revoked_at !== null || new Date(current.expires_at).getTime() <= Date.now()) throw invitationNotPending();
+    if (!current.is_pending) throw invitationNotPending();
     const revoked = await raw<RawRows<{ id: string }>>(transaction, `
       update public.invitations set revoked_at = now() where id = ?::uuid returning id
     `, [invitationId]);
@@ -500,17 +511,9 @@ const listPendingCollaboratorInvitations = async (
   const auth = request.auth;
   if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
   return withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
-    const countResult = await raw<RawRows<{ total: string | number }>>(transaction, `
-      select count(*) as total
-      from public.invitations invitation
-      where invitation.agency_id = ?::uuid
-        and invitation.purpose = 'collaborator_invite'
-        and invitation.used_at is null
-        and invitation.revoked_at is null
-        and invitation.expires_at > now()
-    `, [agencyId]);
-    const totalItems = Number(countResult.rows[0]?.total ?? 0);
-
+    // `count(*) over ()` rides the page query's own snapshot, so the counter and the list cannot
+    // describe two different states of the table (issue #165). The separate count only runs when
+    // the page is empty, where `totalItems` is allowed to exceed the empty `data` anyway.
     const itemsResult = await raw<RawRows<PendingInvitationRow>>(transaction, `
       select
         invitation.id,
@@ -520,20 +523,25 @@ const listPendingCollaboratorInvitations = async (
         role.name as role_name,
         client.name as client_name,
         invitation.created_at,
-        invitation.expires_at
+        invitation.expires_at,
+        count(*) over () as total
       from public.invitations invitation
       left join public.roles role on role.id = invitation.role_id
       left join public.clients client on client.id = invitation.client_id
-      where invitation.agency_id = ?::uuid
-        and invitation.purpose = 'collaborator_invite'
-        and invitation.used_at is null
-        and invitation.revoked_at is null
-        and invitation.expires_at > now()
+      where ${PENDING_COLLABORATOR_INVITATION_FILTER}
       order by invitation.created_at asc, invitation.id asc
       limit ? offset ?
     `, [agencyId, pagination.pageSize, pagination.offset]);
+    if (itemsResult.rows.length > 0) {
+      return { items: itemsResult.rows, totalItems: Number(itemsResult.rows[0]?.total ?? 0) };
+    }
 
-    return { items: itemsResult.rows, totalItems };
+    const countResult = await raw<RawRows<{ total: string | number }>>(transaction, `
+      select count(*) as total
+      from public.invitations invitation
+      where ${PENDING_COLLABORATOR_INVITATION_FILTER}
+    `, [agencyId]);
+    return { items: itemsResult.rows, totalItems: Number(countResult.rows[0]?.total ?? 0) };
   });
 };
 
