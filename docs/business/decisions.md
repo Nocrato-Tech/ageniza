@@ -1424,3 +1424,15 @@ A correção: a contagem de contextos passa a rodar **antes** da assinatura, nã
 - **`media_assets`: achado, executado.** Um papel com **só** `midia.enviar` faz `update media_assets set status = 'confirmed', rejected_reason = null` numa mídia `rejected` (1 linha afetada, num banco isolado, com a transação desfeita). A policy exige só a permissão, o *grant* cobre `status`, `confirmed_*`, `rejected_reason` e as chaves de objeto, e não há trigger. As chaves ficam presas à agência por `CHECK`, então não há troca entre tenants, mas a rejeição por conteúdo se desfaz. **Não** corrigido neste PR (módulo de mídia, outra superfície): precisa de issue própria.
 
 **Origem.** Issue #290, revisão de segurança do PR #202 (Vigia), 2026-10-06.
+
+---
+
+## 2026-10-06 — Checklist obrigatório antes de abrir ou atualizar um PR
+
+**Contexto.** As revisões de código e de segurança repetem os mesmos achados entre implementadores de vários modelos: teste que continua verde sem a regra que deveria proteger, cenário que a RLS escondeu a falta do filtro, mudança de contrato que mescla limpo e quebra em runtime, aceite do tipo "não acontece" sem checagem automatizada.
+
+**Decisão.** Antes de abrir ou atualizar um PR, o implementador passa por `docs/implementation-checklist.md`, e o corpo do PR lista a mutação que prova cada item de aceite. Cada item do checklist nasceu de um achado real de revisão, com os PRs de origem citados ao lado.
+
+**Consequência.** Um teste que continua verde sem a regra que deveria proteger vira achado de revisão e, se voltar a se repetir, entra para o checklist. O checklist não substitui `docs/security-review.md` nem as notas do projeto — só lista o que mais se repete.
+
+**Origem.** Pedido do dono do produto, em 2026-10-06.
