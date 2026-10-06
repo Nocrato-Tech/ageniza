@@ -693,11 +693,11 @@ describe('CLIENT lifecycle functions (#123)', () => {
     let releaseLock!: () => void;
     const lockMayFinish = new Promise<void>((resolve) => { releaseLock = resolve; });
 
-    // The same shape as the archive test: the concurrent transaction holds the client row lock, with
-    // the row count proving the lock was actually taken, and the caller without permission must get
-    // A0020 before ever waiting on it.
-    const locker = getApplication().transaction(async (transaction) => {
-      await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
+    // The owner holds the row lock: an archived client is not visible to ageniza_app's FOR UPDATE
+    // (clients_update is active-only, which is the point of the lifecycle functions), but the
+    // reactivation function is security definer and would wait on this same lock. The row count
+    // proves the lock was actually taken: a hidden row would lock nothing and turn this empty-green.
+    const locker = getOwner().transaction(async (transaction) => {
       const locked = await raw<Rows<{ id: string }>>(transaction, 'select id from public.clients where id = ?::uuid for update', [client]);
       expect(locked.rows).toHaveLength(1);
       reachedLock();
