@@ -22,6 +22,12 @@ de RLS da tabela também exige:
 O `POST` aceita só `{ name }`. O `PATCH` aceita qualquer subconjunto dos campos de cadastro da
 seção 3 da SPEC, e `null` limpa um campo. Contratos em `packages/contracts/src/clients.ts`.
 
+Nome, razão social e contatos usam a regra compartilhada de nome de exibição
+(`createDisplayNameSchema`, issue #200): recusam caractere de controle, invisível de formato e
+override bidi, e exigem ao menos uma letra ou número -- um espaço de largura zero não cria
+homônimo ativo visualmente idêntico. O `PATCH` exige ao menos um campo (corpo vazio é `400`), e
+texto em branco vira `null` em vez de string vazia.
+
 ## Regras que o banco não pode deixar só para a rota
 
 - **Nome em uso** entre os ativos: a rota traduz a violação do índice `clients_active_name_unique`

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { AuthEmailSchema } from './auth.js';
+import { createDisplayNameSchema } from './display-name.js';
 import { createPaginatedResponseSchema, PaginationInputSchema } from './pagination.js';
 import { PROFILE_PHOTO_MAX_BASE64_LENGTH } from './profile.js';
 import { SearchTextSchema } from './search.js';
@@ -43,11 +44,35 @@ const boundedMultilineText = (maxBytes: number) =>
     .refine((value) => !hasForbiddenControlCharacters(value), 'must not contain control characters')
     .refine((value) => utf8ByteLength(value) <= maxBytes, `must be at most ${maxBytes} bytes`);
 
-/** Trimmed, non-empty and at most 256 UTF-8 bytes -- the same shape the active-name index normalizes. */
-export const ClientNameSchema = z.string()
-  .refine((value) => !hasControlCharacters(value), 'must not contain control characters')
-  .transform((value) => value.trim())
-  .pipe(z.string().min(1, 'must not be empty').refine((value) => utf8ByteLength(value) <= 256, 'must be at most 256 bytes'));
+/** Trimmed; an empty or whitespace-only value is stored as null, never as ''. */
+const nullableTrimmedText = (maxBytes: number) =>
+  boundedText(maxBytes)
+    .transform((value) => value.trim())
+    .transform((value) => (value === '' ? null : value))
+    .nullable();
+
+/**
+ * A nullable display name: empty or whitespace-only becomes null, and the value must satisfy the
+ * shared display-name rule (#200). The byte cap is what the column checks, because a character
+ * cap alone would let a multibyte name reach the database and surface as a 500.
+ */
+const nullableDisplayText = (maxChars: number, maxBytes: number) =>
+  z.string()
+    .transform((value) => value.trim())
+    .transform((value) => (value === '' ? null : value))
+    .pipe(z.union([
+      z.null(),
+      createDisplayNameSchema(maxChars).refine((value) => utf8ByteLength(value) <= maxBytes, `must be at most ${maxBytes} bytes`)
+    ]))
+    .nullable();
+
+/**
+ * Client name: the shared display-name rule (control, bidi and invisible characters rejected, at
+ * least one letter or number) plus the 256-byte cap the column and the unique index enforce --
+ * "Padaria Central" followed by a zero-width space must not create a visually identical homonym.
+ */
+export const ClientNameSchema = createDisplayNameSchema(256)
+  .refine((value) => utf8ByteLength(value) <= 256, 'must be at most 256 bytes');
 
 /** Digits only, stored without any mask; 11 or 14 digits. */
 export const ClientTaxIdSchema = z.string()
@@ -78,18 +103,21 @@ export const CreateClientRequestSchema = z.object({
   name: ClientNameSchema
 }).strict();
 
-/** Body of `PATCH /agencies/:agencyId/clients/:clientId`; an absent key leaves the field alone. */
+/**
+ * Body of `PATCH /agencies/:agencyId/clients/:clientId`; an absent key leaves the field alone.
+ * An empty body would only touch `updated_by`, so at least one field is required.
+ */
 export const UpdateClientRequestSchema = z.object({
   name: ClientNameSchema.optional(),
-  legalName: boundedText(256).nullable().optional(),
+  legalName: nullableDisplayText(256, 256).optional(),
   taxId: ClientTaxIdSchema.nullable().optional(),
-  segment: boundedText(120).nullable().optional(),
+  segment: nullableTrimmedText(120).optional(),
   website: ClientWebsiteSchema.nullable().optional(),
   instagramHandle: ClientInstagramHandleSchema.nullable().optional(),
-  contactName: boundedText(256).nullable().optional(),
-  contactPhone: boundedText(32).nullable().optional(),
+  contactName: nullableDisplayText(256, 256).optional(),
+  contactPhone: nullableDisplayText(32, 32).optional(),
   contactEmail: ClientContactEmailSchema.nullable().optional()
-}).strict();
+}).strict().refine((value) => Object.keys(value).length > 0, 'at least one field must be provided');
 
 /** One client, as every route returns it. `photoUrl` is a signed read URL or null, never a key. */
 export const ClientSchema = z.object({

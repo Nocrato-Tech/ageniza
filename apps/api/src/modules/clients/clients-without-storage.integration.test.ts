@@ -13,6 +13,7 @@ import {
   type TestApp,
   type TestUserFixture
 } from '../auth/test-support/harness.js';
+import { DOCUMENTED_ROUTES } from '../api-docs/catalog.js';
 import type { DatabaseClient } from '@ageniza/database';
 
 // Issue #126, security review of PR #301: the photo routes must not gate the rest of the module.
@@ -53,6 +54,30 @@ interface InjectResponse {
 
 const get = async (url: string): Promise<InjectResponse> =>
   (await app.app.inject({ method: 'GET', url, headers: { ...origin, cookie: managerCookie } })) as unknown as InjectResponse;
+
+// Every clients route except the photo ones, straight from the api-docs catalog (issue #182): the
+// photo block is the only part that depends on identity storage, so each of these must answer with
+// the app mounted without it, wherever a future merge places them. A new documented route enters
+// this list by itself.
+const nonPhotoClientRoutes = DOCUMENTED_ROUTES.filter(
+  (route) => route.module === 'clients' && !route.path.endsWith('/photo')
+);
+
+const payloadFor = (method: string, path: string): Record<string, unknown> | undefined => {
+  if (method === 'post' && path.endsWith('/clients')) return { name: `No-storage created ${randomUUID()}` };
+  if (method === 'patch' && path.endsWith('/:clientId')) return { segment: 'Alimentação' };
+  if (method === 'put' && path.endsWith('/:sectionKey')) return { body: 'Marca sem storage' };
+  if (method === 'post' && path.endsWith('/personas')) return { name: 'Persona sem storage' };
+  if (method === 'patch' && path.endsWith('/:personaId')) return { name: 'Persona editada' };
+  return undefined;
+};
+
+const urlFor = (routePath: string, clientId: string): string =>
+  routePath
+    .replace(':agencyId', agencyId)
+    .replace(':clientId', clientId)
+    .replace(':personaId', randomUUID())
+    .replace(':sectionKey', 'branding');
 
 describe('CLIENTS module without identity storage (#126/#282/#291)', () => {
   beforeAll(async () => {
@@ -138,5 +163,28 @@ describe('CLIENTS module without identity storage (#126/#282/#291)', () => {
     }
 
     expect(logs.text().slice(logsBefore)).not.toContain('CLIENT_PHOTO');
+  });
+
+  it('registers every non-photo route of the module without storage, derived from the catalog', async () => {
+    // A floor so an empty filter can never make this test vacuously green.
+    expect(nonPhotoClientRoutes.length).toBeGreaterThanOrEqual(10);
+
+    const clientId = await createClient();
+    const missing: string[] = [];
+    for (const route of nonPhotoClientRoutes) {
+      const payload = payloadFor(route.method, route.path);
+      const response = await app.app.inject({
+        method: route.method.toUpperCase() as 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+        url: urlFor(route.path, clientId),
+        headers: { ...origin, cookie: managerCookie },
+        ...(payload === undefined ? {} : { payload })
+      });
+      const body = response.json<{ error?: { message?: string } }>();
+      const routeIsMissing = response.statusCode === 404 && body.error?.message === 'Route not found';
+      if (routeIsMissing || response.statusCode === 500) {
+        missing.push(`${route.method.toUpperCase()} ${route.path} -> ${response.statusCode}`);
+      }
+    }
+    expect(missing).toEqual([]);
   });
 });
