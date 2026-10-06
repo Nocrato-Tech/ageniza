@@ -47,7 +47,7 @@ const asUser = <TResult>(
 ): Promise<TResult> => withAuthenticatedUserTransaction(getApplication(), createVerifiedUserClaims({ userId }), work);
 
 const setUser = (transaction: Parameters<Parameters<DatabaseClient['transaction']>[0]>[0], userId: string): Promise<unknown> =>
-  raw(transaction, "select set_config('app.user_id', ?, true)", [userId]);
+  raw(transaction, 'select app_private.bind_actor(?::uuid)', [userId]);
 
 const createThread = async (resolved: boolean): Promise<string> => {
   const id = randomUUID();
