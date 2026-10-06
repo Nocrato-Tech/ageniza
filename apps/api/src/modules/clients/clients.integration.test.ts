@@ -413,8 +413,9 @@ describe('CLIENTS HTTP module (#124)', () => {
     expect((await postClient(adminCookie, agencyA, { name: `Café\u00a0Central ${suffix}` })).statusCode).toBe(201);
   });
 
-  it('applies the same name rule to the contact fields and legalName', async () => {
+  it('applies the same name rule to the PATCH: name, contact fields and legalName', async () => {
     const clientId = await createClient({ agencyId: agencyA });
+    expect((await patchClient(adminCookie, agencyA, clientId, { name: `Padaria\u200bCentral ${randomUUID()}` })).statusCode).toBe(400);
     expect((await patchClient(adminCookie, agencyA, clientId, { contactName: 'Maria\u200bSouza' })).statusCode).toBe(400);
     expect((await patchClient(adminCookie, agencyA, clientId, { contactPhone: '+55 11 90000-0000\u202e' })).statusCode).toBe(400);
     expect((await patchClient(adminCookie, agencyA, clientId, { legalName: 'Padaria\u200bCentral Ltda' })).statusCode).toBe(400);
@@ -430,6 +431,21 @@ describe('CLIENTS HTTP module (#124)', () => {
     expect(padded.statusCode).toBe(200);
     expect(padded.json()).toMatchObject({ legalName: null, segment: null, contactName: null, contactPhone: null });
     await expect(clientRow(clientId)).resolves.toMatchObject({ legal_name: null, segment: null, contact_name: null, contact_phone: null });
+  });
+
+  it('caps name, legalName, segment and contactPhone in UTF-8 bytes, not characters', async () => {
+    const clientId = await createClient({ agencyId: agencyA, name: `Bytes ${randomUUID()}` });
+    // 129 two-byte characters: 129 UTF-16 units, inside the 256-character cap, but 258 bytes.
+    expect((await patchClient(adminCookie, agencyA, clientId, { name: 'é'.repeat(129) })).statusCode).toBe(400);
+    expect((await patchClient(adminCookie, agencyA, clientId, { legalName: 'é'.repeat(129) })).statusCode).toBe(400);
+    // 17 two-byte characters: 34 bytes, over the 32-byte phone cap.
+    expect((await patchClient(adminCookie, agencyA, clientId, { contactPhone: 'é'.repeat(17) })).statusCode).toBe(400);
+    // 61 two-byte characters: 122 bytes, over the 120-byte segment cap.
+    expect((await patchClient(adminCookie, agencyA, clientId, { segment: 'é'.repeat(61) })).statusCode).toBe(400);
+    // 128 two-byte characters are exactly 256 bytes and pass.
+    const accepted = await patchClient(adminCookie, agencyA, clientId, { legalName: 'é'.repeat(128) });
+    expect(accepted.statusCode).toBe(200);
+    expect((accepted.json() as { legalName: string }).legalName).toBe('é'.repeat(128));
   });
 
   it('answers 400 on an empty PATCH and writes nothing', async () => {
