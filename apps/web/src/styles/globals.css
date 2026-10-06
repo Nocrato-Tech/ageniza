@@ -620,7 +620,7 @@ input:focus-visible {
   border-top: 1px solid var(--border-default);
 }
 
-.invites__list > li:first-child .invites__item {
+.invites__item:first-child {
   border-top: none;
 }
 
@@ -652,7 +652,7 @@ input:focus-visible {
   margin-left: auto;
 }
 
-.invites__row-error {
+.invites__error-line {
   flex-basis: 100%;
   margin: 0;
   color: var(--text-danger);

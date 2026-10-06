@@ -37,8 +37,15 @@ const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const unauthenticated = (): Response => json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication is required.' } }, 401);
 
-const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[]) => ({
-  agencyId, agencyName, isOwner: false, role: { key: 'admin', name: 'Admin' }, permissions
+interface TestRole {
+  readonly key: string;
+  readonly name: string;
+}
+
+const ADMIN_ROLE: TestRole = { key: 'admin', name: 'Admin' };
+
+const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[], role: TestRole) => ({
+  agencyId, agencyName, isOwner: false, role, permissions
 });
 const agencyDisplayName = (agencyId: string): string => agencyId === AGENCY_B ? 'Agência Dois' : 'Agência Um';
 
@@ -50,23 +57,32 @@ const biancaSouza = { membershipId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name
 const meta = (page: number, totalItems: number, totalPages: number) => ({ page, pageSize: 24, totalItems, totalPages });
 const listResponse = (data: readonly unknown[], page = 1) => json({ data, meta: meta(page, data.length, data.length === 0 ? 0 : 1) });
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+/** Noon local N calendar days ahead: the label counts calendar days, so the hour must not flip it. */
+const expiryInDays = (days: number): string => {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
+};
 
-// Deadlines are built relative to the moment the module loads; the labels the screen shows are
-// relative too, and the fractions keep every expected label away from a boundary.
-const pendingInvite = (id: string, email: string, roleKey: string, roleName: string, remainingMs: number) => ({
+const pendingInvite = (id: string, email: string, roleKey: string, roleName: string, expiresInDays: number) => ({
   id,
   email,
   purpose: 'collaborator_invite',
   role: { key: roleKey, name: roleName },
   client: null,
   createdAt: '2026-10-01T12:00:00.000Z',
-  expiresAt: new Date(Date.now() + remainingMs).toISOString()
+  expiresAt: expiryInDays(expiresInDays)
 });
-const inviteAna = pendingInvite('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'ana@exemplo.com', 'production', 'Produção', 5.5 * DAY_MS);
-const invitePaulo = pendingInvite('ffffffff-ffff-4fff-8fff-ffffffffffff', 'paulo@exemplo.com', 'admin', 'Admin', 1.5 * DAY_MS);
-const inviteJulia = pendingInvite('99999999-9999-4999-8999-999999999999', 'julia@exemplo.com', 'account_manager', 'Gestor de conta', 6.5 * DAY_MS);
+const inviteAna = pendingInvite('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'ana@exemplo.com', 'production', 'Produção', 5);
+const invitePaulo = pendingInvite('ffffffff-ffff-4fff-8fff-ffffffffffff', 'paulo@exemplo.com', 'admin', 'Admin', 1);
+const inviteJulia = pendingInvite('99999999-9999-4999-8999-999999999999', 'julia@exemplo.com', 'account_manager', 'Gestor de conta', 6);
 const defaultInvites = [inviteAna, invitePaulo, inviteJulia];
+
+const pageInvites = (from: number, count: number) => Array.from({ length: count }, (_value, index) => {
+  const position = from + index;
+  return pendingInvite(`10000000-0000-4000-8000-${String(position).padStart(12, '0')}`, `p${position}@exemplo.com`, 'production', 'Produção', 5);
+});
 
 const noContent = (): Response => new Response(null, { status: 204 });
 const invitationsResponse = (data: readonly unknown[], query?: URLSearchParams, totals?: { totalItems: number; totalPages: number }): Response => {
@@ -76,6 +92,7 @@ const invitationsResponse = (data: readonly unknown[], query?: URLSearchParams, 
 
 interface Scenario {
   readonly authenticated?: boolean;
+  readonly role?: TestRole;
   readonly permissions?: readonly string[];
   readonly collaborators?: (query: URLSearchParams, agencyId: string) => Response | Promise<Response>;
   readonly jobTitles?: () => Response | Promise<Response>;
@@ -90,6 +107,7 @@ const makeFetch = (scenario: Scenario = {}) => {
   const calls: string[] = [];
   const requests: string[] = [];
   const authenticated = scenario.authenticated ?? true;
+  const role = scenario.role ?? ADMIN_ROLE;
   const permissions = scenario.permissions ?? ['colaborador.visualizar', 'colaborador.convidar', 'convite.reenviar', 'convite.cancelar'];
   const impl: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
@@ -100,7 +118,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     if (path.endsWith('/auth/session')) return authenticated ? json(sessionBody) : unauthenticated();
     if (!authenticated) return unauthenticated();
     const me = /\/agencies\/([^/]+)\/me$/.exec(path);
-    if (me !== null) return json(agencyMe(me[1]!, agencyDisplayName(me[1]!), permissions));
+    if (me !== null) return json(agencyMe(me[1]!, agencyDisplayName(me[1]!), permissions, role));
     const resend = /\/agencies\/([^/]+)\/invitations\/([^/]+)\/resend$/.exec(path);
     if (resend !== null && method === 'POST') {
       if (!permissions.includes('convite.reenviar')) return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
@@ -537,12 +555,35 @@ describe('pending invitations (#106)', () => {
   const invitesRegion = () => screen.findByRole('region', { name: 'Convites aguardando aceite' });
   const invitationsCalls = (calls: string[]) => calls.filter((call) => call.includes('/invitations'));
 
-  it.each(['account_manager', 'production', 'sales', 'finance'])('does not exist for %s', async () => {
-    const { impl, calls } = makeFetch({ permissions: ['colaborador.visualizar'] });
+  // Each preset answers `/me` with its own role, and none of the four holds `colaborador.convidar`.
+  it.each([
+    ['account_manager', 'Gestor de conta'],
+    ['production', 'Produção'],
+    ['sales', 'Vendas'],
+    ['finance', 'Financeiro']
+  ])('does not exist for %s', async (roleKey, roleName) => {
+    const { impl, calls } = makeFetch({
+      role: { key: roleKey, name: roleName },
+      permissions: ['colaborador.visualizar']
+    });
     renderCollaborators(impl);
 
     await screen.findByText('Ana Prado');
     expect(screen.queryByText('Convites aguardando aceite')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Convites aguardando aceite' })).toBeNull();
+    expect(invitationsCalls(calls)).toEqual([]);
+  });
+
+  // Visibility follows `colaborador.convidar`, not the invitation actions: a role that can resend
+  // and cancel must still not see the section, and the listing is never requested for it.
+  it('does not exist without colaborador.convidar, even holding the invitation actions', async () => {
+    const { impl, calls } = makeFetch({
+      role: { key: 'custom', name: 'Personalizado' },
+      permissions: ['colaborador.visualizar', 'convite.reenviar', 'convite.cancelar']
+    });
+    renderCollaborators(impl);
+
+    await screen.findByText('Ana Prado');
     expect(screen.queryByRole('region', { name: 'Convites aguardando aceite' })).toBeNull();
     expect(invitationsCalls(calls)).toEqual([]);
   });
@@ -580,7 +621,8 @@ describe('pending invitations (#106)', () => {
     expect(await within(region).findByText('Nenhum convite aguardando aceite')).toBeTruthy();
     const invite = within(region).getByRole('button', { name: 'Convidar' });
     expect(invite.hasAttribute('disabled')).toBe(true);
-    expect(invite.getAttribute('title')).toBe('O convite chega na próxima entrega.');
+    // A `title` on a disabled button is not read; the explanation is visible text.
+    expect(within(region).getByText('O convite chega na próxima entrega.')).toBeTruthy();
     expect(region.querySelector('.invites__count')?.textContent).toBe('0');
   });
 
@@ -638,7 +680,7 @@ describe('pending invitations (#106)', () => {
   it('resends, renews the deadline in place and says the previous link stopped working', async () => {
     let pending = [inviteAna];
     const renewedId = 'abababab-abab-4bab-8bab-abababababab';
-    const renewedExpiry = new Date(Date.now() + 6.9 * DAY_MS).toISOString();
+    const renewedExpiry = expiryInDays(7);
     const { impl, calls } = makeFetch({
       invitations: (query) => invitationsResponse(pending, query),
       resend: (invitationId) => {
@@ -653,33 +695,43 @@ describe('pending invitations (#106)', () => {
     fireEvent.click(within(region).getByRole('button', { name: 'Reenviar convite de ana@exemplo.com' }));
 
     expect(await within(region).findByText('Convite reenviado para ana@exemplo.com. O link anterior deixou de valer.')).toBeTruthy();
-    expect(await within(region).findByText('expira em 6 dias')).toBeTruthy();
+    expect(await within(region).findByText('expira em 7 dias')).toBeTruthy();
     expect(calls).toContain(`POST /agencies/${AGENCY_A}/invitations/${inviteAna.id}/resend`);
   });
 
-  it('keeps the row and allows repeating when resending fails', async () => {
+  // The API commits the revoke-and-insert before sending the e-mail: a 502 leaves a new invitation
+  // in place, so the list must refetch and the next attempt must use the id the server actually kept.
+  it('recovers from a resend that fails after the invitation was already renewed', async () => {
+    let pending = [inviteAna];
     let attempts = 0;
-    const { impl } = makeFetch({
+    const renewedId = 'abababab-abab-4bab-8bab-abababababab';
+    const renewedExpiry = expiryInDays(7);
+    const { impl, calls } = makeFetch({
+      invitations: (query) => invitationsResponse(pending, query),
       resend: () => {
         attempts += 1;
-        return attempts === 1
-          ? json({ error: { code: 'EMAIL_DELIVERY_FAILED', message: 'private diagnostic' } }, 502)
-          : json({ invitationId: inviteJulia.id, expiresAt: inviteJulia.expiresAt });
+        if (attempts === 1) {
+          pending = [{ ...inviteAna, id: renewedId, expiresAt: renewedExpiry }];
+          return json({ error: { code: 'EMAIL_DELIVERY_FAILED', message: 'private diagnostic' } }, 502);
+        }
+        return json({ invitationId: renewedId, expiresAt: renewedExpiry });
       }
     });
     renderCollaborators(impl);
 
     const region = await invitesRegion();
-    const resend = await within(region).findByRole('button', { name: 'Reenviar convite de ana@exemplo.com' });
-    fireEvent.click(resend);
+    fireEvent.click(await within(region).findByRole('button', { name: 'Reenviar convite de ana@exemplo.com' }));
 
     const alert = await within(region).findByRole('alert');
     expect(alert.textContent).toContain('Não foi possível reenviar o convite.');
     expect(region.textContent).not.toContain('private diagnostic');
-    expect(within(region).getByText('ana@exemplo.com')).toBeTruthy();
+    expect(await within(region).findByText('expira em 7 dias')).toBeTruthy();
+    expect(calls).toContain(`POST /agencies/${AGENCY_A}/invitations/${inviteAna.id}/resend`);
 
-    fireEvent.click(resend);
+    // The second attempt goes to the id the failed response left in the database.
+    fireEvent.click(within(region).getByRole('button', { name: 'Reenviar convite de ana@exemplo.com' }));
     expect(await within(region).findByText('Convite reenviado para ana@exemplo.com. O link anterior deixou de valer.')).toBeTruthy();
+    expect(calls).toContain(`POST /agencies/${AGENCY_A}/invitations/${renewedId}/resend`);
   });
 
   it.each([403, 404])('shows an error and keeps the row when resend answers %i', async (status) => {
@@ -775,11 +827,30 @@ describe('pending invitations (#106)', () => {
     expect(within(region).getByText('ana@exemplo.com')).toBeTruthy();
   });
 
-  it('reads its own page from the URL and writes it back, next to the team list', async () => {
-    const pageInvites = (from: number, count: number) => Array.from({ length: count }, (_value, index) => {
-      const position = from + index;
-      return pendingInvite(`10000000-0000-4000-8000-${String(position).padStart(12, '0')}`, `p${position}@exemplo.com`, 'production', 'Produção', 5.5 * DAY_MS);
+  // The invitation was already used, expired or revoked server-side: the row must leave with the
+  // refetch instead of staying on screen with a stale error.
+  it.each([409, 404])('removes the row after the cancellation answers %i', async (status) => {
+    let pending = [inviteAna, invitePaulo];
+    const { impl } = makeFetch({
+      invitations: (query) => invitationsResponse(pending, query),
+      cancel: (invitationId) => {
+        pending = pending.filter((item) => item.id !== invitationId);
+        return json({ error: { code: status === 409 ? 'INVITATION_NOT_PENDING' : 'NOT_FOUND', message: 'sensitive detail' } }, status);
+      }
     });
+    renderCollaborators(impl);
+
+    const region = await invitesRegion();
+    fireEvent.click(await within(region).findByRole('button', { name: 'Cancelar convite de ana@exemplo.com' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Cancelar este convite?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar convite' }));
+
+    await waitFor(() => expect(within(region).queryByText('ana@exemplo.com')).toBeNull());
+    expect(region.textContent).not.toContain('sensitive detail');
+    expect(region.querySelector('.invites__count')?.textContent).toBe('1');
+  });
+
+  it('reads its own page from the URL and writes it back, next to the team list', async () => {
     const { impl } = makeFetch({
       invitations: (query) => {
         const page = Number(query.get('page') ?? '1');
@@ -797,6 +868,41 @@ describe('pending invitations (#106)', () => {
     fireEvent.click(within(region).getByRole('button', { name: 'Página anterior' }));
     await waitFor(() => expect(probe.search).not.toContain('convites='));
     expect(await within(region).findByText('p0@exemplo.com')).toBeTruthy();
+  });
+
+  it('paginates the invitations and the team independently', async () => {
+    const { impl } = makeFetch({
+      collaborators: (query) => json({ data: [anaPrado], meta: meta(Number(query.get('page') ?? '1'), 60, 3) }),
+      invitations: (query) => {
+        const page = Number(query.get('page') ?? '1');
+        return invitationsResponse(page === 2 ? pageInvites(24, 6) : pageInvites(0, 24), query, { totalItems: 30, totalPages: 2 });
+      }
+    });
+    const { container, probe } = renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?page=2&convites=2`);
+
+    const paginationAt = (index: number): HTMLElement => {
+      const pagination = container.querySelectorAll<HTMLElement>('.ui-pagination')[index];
+      if (pagination === undefined) throw new Error(`Pagination ${index} was not rendered.`);
+      return pagination;
+    };
+
+    const region = await invitesRegion();
+    expect(await within(region).findByText('p24@exemplo.com')).toBeTruthy();
+    expect(container.querySelectorAll('.ui-pagination')).toHaveLength(2);
+
+    // The invitations go back to page 1 (their list reloads and the pagination returns); the team stays on page 2.
+    fireEvent.click(within(paginationAt(1)).getByRole('button', { name: 'Página anterior' }));
+    await waitFor(() => expect(probe.search).not.toContain('convites='));
+    expect(probe.search).toContain('page=2');
+    expect(await within(region).findByText('p0@exemplo.com')).toBeTruthy();
+
+    // Forward again, then the team goes back to page 1; the invitations keep their page.
+    fireEvent.click(within(paginationAt(1)).getByRole('button', { name: 'Próxima página' }));
+    await waitFor(() => expect(probe.search).toContain('convites=2'));
+    expect(await within(region).findByText('p24@exemplo.com')).toBeTruthy();
+    fireEvent.click(within(paginationAt(0)).getByRole('button', { name: 'Página anterior' }));
+    await waitFor(() => expect(probe.search).not.toContain('page='));
+    expect(probe.search).toContain('convites=2');
   });
 
   it('returns to the last valid page instead of showing pending invitations as empty (#229)', async () => {
@@ -868,24 +974,26 @@ describe('pending invitations (#106)', () => {
 });
 
 describe('pendingInviteExpiryLabel (#106)', () => {
-  const now = new Date('2026-10-06T12:00:00.000Z');
-  const at = (remainingMs: number) => new Date(now.getTime() + remainingMs).toISOString();
+  // Local dates on purpose: the label counts calendar days in the reader's day, not elapsed time.
+  const at = (year: number, month: number, day: number, hour = 12, minute = 0) => new Date(year, month - 1, day, hour, minute);
 
   it.each([
-    [0.5 * DAY_MS, 'expira hoje'],
-    [DAY_MS - 1, 'expira hoje'],
-    [DAY_MS, 'expira amanhã'],
-    [2 * DAY_MS - 1, 'expira amanhã'],
-    [2 * DAY_MS, 'expira em 2 dias'],
-    [5.5 * DAY_MS, 'expira em 5 dias'],
-    [7 * DAY_MS, 'expira em 7 dias']
-  ])('labels %d ms of remaining time as "%s"', (remainingMs, expected) => {
-    expect(pendingInviteExpiryLabel(at(remainingMs), now)).toBe(expected);
+    { label: 'later the same day', now: at(2026, 10, 6, 12), expiresAt: at(2026, 10, 6, 23), expected: 'expira hoje' },
+    // 30 minutes away, but the next calendar day: "amanhã" is how people read it.
+    { label: 'next calendar day, half an hour later', now: at(2026, 10, 6, 23), expiresAt: at(2026, 10, 7, 0, 30), expected: 'expira amanhã' },
+    { label: 'tomorrow morning', now: at(2026, 10, 6, 12), expiresAt: at(2026, 10, 7, 9), expected: 'expira amanhã' },
+    { label: 'two calendar days away', now: at(2026, 10, 6, 12), expiresAt: at(2026, 10, 8, 9), expected: 'expira em 2 dias' },
+    { label: 'five calendar days away', now: at(2026, 10, 6, 12), expiresAt: at(2026, 10, 11, 9), expected: 'expira em 5 dias' },
+    { label: 'seven calendar days away', now: at(2026, 10, 6, 12), expiresAt: at(2026, 10, 13, 9), expected: 'expira em 7 dias' }
+  ])('labels the deadline $label as "$expected"', ({ now, expiresAt, expected }) => {
+    expect(pendingInviteExpiryLabel(expiresAt.toISOString(), now)).toBe(expected);
   });
 
   it('does not claim an already-passed deadline expires today', () => {
-    expect(pendingInviteExpiryLabel(at(-DAY_MS), now)).toBe('expirado');
-    expect(pendingInviteExpiryLabel(at(0), now)).toBe('expirado');
+    // Same calendar day, but the moment has passed.
+    expect(pendingInviteExpiryLabel(at(2026, 10, 6, 9).toISOString(), at(2026, 10, 6, 12))).toBe('expirado');
+    expect(pendingInviteExpiryLabel(at(2026, 10, 5).toISOString(), at(2026, 10, 6))).toBe('expirado');
+    expect(pendingInviteExpiryLabel('not-a-date', at(2026, 10, 6))).toBe('expirado');
   });
 });
 

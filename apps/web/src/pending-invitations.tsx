@@ -23,16 +23,20 @@ const CANCEL_ERROR = 'Não foi possível cancelar o convite. Tente de novo.';
 const INVITE_UNAVAILABLE = 'O convite chega na próxima entrega.';
 
 /**
- * The relative deadline (`specs/colaboradores.md` §7): "expira em 5 dias", "expira amanhã". An
- * absolute date would force the reader to do the arithmetic. The list only returns pending
- * invitations, but a stale cache could otherwise claim an already-passed deadline expires today.
+ * The relative deadline (`specs/colaboradores.md` §7): "expira em 5 dias", "expira amanhã". The
+ * label counts calendar days, not elapsed time: an invitation expiring tomorrow at 00:30 is
+ * "amanhã" even from tonight. A deadline that has already passed is never shown as if it were
+ * still pending, and a malformed one is not trusted either.
  */
 export const pendingInviteExpiryLabel = (expiresAt: string, now: Date = new Date()): string => {
-  const remainingMs = new Date(expiresAt).getTime() - now.getTime();
-  if (remainingMs <= 0) return 'expirado';
-  if (remainingMs < DAY_MS) return 'expira hoje';
-  if (remainingMs < 2 * DAY_MS) return 'expira amanhã';
-  return `expira em ${Math.floor(remainingMs / DAY_MS)} dias`;
+  const expiry = new Date(expiresAt);
+  if (Number.isNaN(expiry.getTime()) || expiry.getTime() <= now.getTime()) return 'expirado';
+  const startOfDay = (date: Date): number => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  // `Math.round` absorbs a DST day of 23 or 25 hours; Brazil has none, but the browser may.
+  const days = Math.round((startOfDay(expiry) - startOfDay(now)) / DAY_MS);
+  if (days <= 0) return 'expira hoje';
+  if (days === 1) return 'expira amanhã';
+  return `expira em ${days} dias`;
 };
 
 /** A hidden resource: a 403 or 404 from the guard keeps the section out of the screen entirely. */
@@ -78,16 +82,17 @@ export function PendingInvitationsSection({ page, onPageChange }: PendingInvitat
   const invalidateList = (): Promise<void> =>
     queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'invitations'] });
 
+  // The API commits the change before it sends the e-mail: a failed resend may have already renewed
+  // the invitation, and a failed cancel may have been raced by another one. Invalidating on settle
+  // makes the list show what the server actually holds, error or not.
   const resend = useMutation({
     mutationFn: (invitation: PendingInvitation) => httpClient.request({
       path: apiPath('/agencies/:agencyId/invitations/:invitationId/resend', { agencyId: agency.agencyId, invitationId: invitation.id }),
       method: 'POST',
       response: InvitationCreatedResponseSchema
     }),
-    onSuccess: (_result, invitation) => {
-      setResentEmail(invitation.email);
-      void invalidateList();
-    }
+    onSuccess: (_result, invitation) => setResentEmail(invitation.email),
+    onSettled: () => { void invalidateList(); }
   });
 
   const cancel = useMutation({
@@ -96,11 +101,9 @@ export function PendingInvitationsSection({ page, onPageChange }: PendingInvitat
       method: 'DELETE',
       response: AuthNoContentResponseSchema
     }),
-    onSuccess: () => {
-      setConfirming(null);
-      void invalidateList();
-    },
-    onError: () => setConfirming(null)
+    onSuccess: () => setConfirming(null),
+    onError: () => setConfirming(null),
+    onSettled: () => { void invalidateList(); }
   });
 
   // A page can stop existing after a cancellation, the same way #229 handled the team list: the
@@ -133,7 +136,8 @@ export function PendingInvitationsSection({ page, onPageChange }: PendingInvitat
   } else if (data.data.length === 0) {
     body = <div className="invites__empty">
       <p>Nenhum convite aguardando aceite</p>
-      <Button disabled title={INVITE_UNAVAILABLE}><span aria-hidden="true">+</span> Convidar</Button>
+      <Button disabled><span aria-hidden="true">+</span> Convidar</Button>
+      <p className="form-hint">{INVITE_UNAVAILABLE}</p>
     </div>;
   } else {
     body = <>
@@ -161,8 +165,7 @@ export function PendingInvitationsSection({ page, onPageChange }: PendingInvitat
               Cancelar
             </Button>}
           </div>
-          {resend.isError && resend.variables?.id === invitation.id && <p className="invites__row-error" role="alert">{RESEND_ERROR}</p>}
-          {cancel.isError && cancel.variables === invitation.id && <p className="invites__row-error" role="alert">{CANCEL_ERROR}</p>}
+          {cancel.isError && cancel.variables === invitation.id && <p className="invites__error-line" role="alert">{CANCEL_ERROR}</p>}
         </li>)}
       </ul>
       <Pagination page={data.meta.page} totalPages={data.meta.totalPages} onPageChange={onPageChange} />
@@ -175,6 +178,8 @@ export function PendingInvitationsSection({ page, onPageChange }: PendingInvitat
       {data !== undefined && <span className="invites__count">{data.meta.totalItems}</span>}
     </header>
     {resentEmail !== null && <LiveStatus>Convite reenviado para {resentEmail}. O link anterior deixou de valer.</LiveStatus>}
+    {/* The failure may already have renewed the invitation; the message stays visible above the list. */}
+    {resend.isError && <p className="invites__error-line" role="alert">{RESEND_ERROR}</p>}
     {body}
     <ConfirmDialog
       open={confirming !== null}
