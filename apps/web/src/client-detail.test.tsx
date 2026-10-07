@@ -296,17 +296,64 @@ describe('client detail (#136)', () => {
     });
     const { probe } = renderClientDetail(impl, `/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
     await screen.findByText('Padaria Central');
+    const back = (): HTMLElement => screen.getByRole('link', { name: '← Clientes' });
 
     fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
     await waitFor(() => expect(probe.pathname).toBe(clientUrl()));
+    expect(back().getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
+
+    // A tab click inside the detail must not drop the roster address (review of #379 r2).
+    fireEvent.click(await screen.findByRole('link', { name: 'Conteúdos' }));
+    expect(await screen.findByRole('heading', { name: 'Conteúdos' })).toBeTruthy();
+    expect(back().getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
+
+    fireEvent.click(back());
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes`));
+    expect(probe.search).toContain('search=padaria');
+    expect(probe.search).toContain('status=archived');
+    expect(probe.search).toContain('page=2');
+  });
+
+  it('keeps the roster address through the Portal block into Acessos (review of #379 r2)', async () => {
+    const { impl } = makeFetch({
+      clients: () => json({ data: [listItemOf(padaria)], meta: { page: 2, pageSize: 20, totalItems: 21, totalPages: 2 } })
+    });
+    const { container, probe } = renderClientDetail(impl, `/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
+    await screen.findByText('Padaria Central');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
+    await waitFor(() => expect(probe.pathname).toBe(clientUrl()));
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const general = container.querySelector<HTMLElement>('.client-general');
+    if (general === null) throw new Error('The General tab was not rendered.');
+    fireEvent.click(within(general).getByRole('link', { name: /Portal/ }));
+    expect(await screen.findByRole('heading', { name: 'Acessos' })).toBeTruthy();
+    expect(probe.pathname).toBe(clientUrl(CLIENT_ID, 'acessos'));
+
     const back = screen.getByRole('link', { name: '← Clientes' });
     expect(back.getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
-
     fireEvent.click(back);
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes`));
     expect(probe.search).toContain('search=padaria');
     expect(probe.search).toContain('status=archived');
     expect(probe.search).toContain('page=2');
+  });
+
+  it('only restores a roster address of this agency from the navigation state (review of #379)', async () => {
+    const { impl } = makeFetch();
+    const { probe } = renderClientDetail(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    expect(screen.getByRole('link', { name: '← Clientes' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes`);
+
+    // A state naming another agency's roster is refused, falling back to the plain list.
+    await act(async () => { probe.navigate(clientUrl(), { state: { clientListUrl: `/agencia/${AGENCY_B}/clientes?search=x` } }); });
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    expect(screen.getByRole('link', { name: '← Clientes' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes`);
+
+    // A state naming this agency's roster is honored with everything it carried.
+    await act(async () => { probe.navigate(clientUrl(), { state: { clientListUrl: `/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2` } }); });
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    expect(screen.getByRole('link', { name: '← Clientes' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
   });
 
   it('leads every General block to its tab with a click, and the back link to the wallet', async () => {
@@ -352,6 +399,17 @@ describe('client detail (#136)', () => {
     expect(screen.getAllByText('Não informado')).toHaveLength(7);
     expect(container.textContent).not.toContain('@');
     expect(screen.queryByText('@null')).toBeNull();
+  });
+
+  it('labels the registration document as "CNPJ ou CPF" on the General tab (review of #379)', async () => {
+    const { impl } = makeFetch();
+    const { container } = renderClientDetail(impl);
+
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const general = container.querySelector<HTMLElement>('.client-general');
+    if (general === null) throw new Error('The General tab was not rendered.');
+    // The same label the edit modal uses: the field accepts both documents (#137).
+    expect(within(general).getByText('CNPJ ou CPF')).toBeTruthy();
   });
 
   it('shows the archiving day in America/Sao_Paulo, not the UTC slice (review of #379)', async () => {

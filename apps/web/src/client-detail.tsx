@@ -173,7 +173,9 @@ export function ClientDetailPage() {
     <nav className="client-detail__tabs" aria-label="Seções do cliente">
       <ul>
         {tabs.map((tab) => <li key={tab.slug}>
-          <NavLink to={`/agencia/${agenciaId}/clientes/${client.id}/${tab.slug}`}>{tab.label}</NavLink>
+          {/* In-app navigations carry the roster address forward (state), so "← Clientes" still
+              knows it after any tab or block click (review of #379 r2). */}
+          <NavLink state={location.state} to={`/agencia/${agenciaId}/clientes/${client.id}/${tab.slug}`}>{tab.label}</NavLink>
         </li>)}
       </ul>
     </nav>
@@ -186,6 +188,7 @@ export function ClientDetailPage() {
 export function ClientGeneralTab() {
   const client = useClientDetail();
   const agency = useAgencyContext();
+  const location = useLocation();
   const canSeeAccess = useCan('cliente.convidar_usuario');
   const base = `/agencia/${agency.agencyId}/clientes/${client.id}`;
   const summary = client.summary;
@@ -216,18 +219,18 @@ export function ClientGeneralTab() {
         <dt>E-mail de contato</dt><dd>{client.contactEmail ?? NOT_INFORMED}</dd>
       </dl>
     </section>
-    <Link className="client-general__block" to={`${base}/estudo-de-marca`}>
+    <Link className="client-general__block" state={location.state} to={`${base}/estudo-de-marca`}>
       <h2>Estudo de marca</h2>
       <progress className="client-general__progress" max={7} value={summary.brandStudyFilled} aria-label="Seções preenchidas do estudo de marca" />
       <p>{summary.brandStudyFilled} de 7</p>
     </Link>
-    <Link className="client-general__block" to={`${base}/estudo-de-marca`}>
+    <Link className="client-general__block" state={location.state} to={`${base}/estudo-de-marca`}>
       <h2>Conversas</h2>
       <p>{summary.threadsAwaitingAgency} aguardando a agência</p>
       <p>{summary.threadsAnsweredByAgency} com resposta da agência</p>
     </Link>
     {canSeeAccess
-      ? <Link className="client-general__block" to={`${base}/acessos`}>
+      ? <Link className="client-general__block" state={location.state} to={`${base}/acessos`}>
         <h2>Portal</h2>
         <p>{portalCount}</p>
       </Link>
