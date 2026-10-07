@@ -162,7 +162,7 @@ describe('app_private.accept_legal_document (issue #81)', () => {
     await expect(rowsOf(actor)).resolves.toEqual([{ document: 'privacy', version: '2024-02-29' }, { document: 'terms', version: today }]);
   });
 
-  it('is executable by ageniza_app and not by PUBLIC, and the table still refuses a direct insert', async () => {
+  it('is executable by ageniza_app and not by PUBLIC', async () => {
     const privileges = await raw<{ rows: readonly { app: boolean; public_role: boolean }[] }>(getOwner().knex, `
       select
         has_function_privilege('ageniza_app', 'app_private.accept_legal_document(text, text)', 'execute') as app,
@@ -173,8 +173,51 @@ describe('app_private.accept_legal_document (issue #81)', () => {
         ) as public_role
     `, []);
     expect(privileges.rows[0]).toEqual({ app: true, public_role: false });
+  });
 
-    await expect(asUser(actorA, (transaction) => transaction('legal_acceptances').insert({ user_id: actorA, document: 'terms', version: '2031-01-01' })))
-      .rejects.toThrow(/row-level security/);
+  // Issue #343. The privilege layer refuses before the RLS is consulted, so the message names the
+  // table privilege, not a policy: "row-level security" would mean the grant is back.
+  it('refuses a direct insert, update and delete at the privilege layer, leaving the rows intact', async () => {
+    await accept(actorB, 'terms', '2026-03-01');
+    const before = await rowsOf(actorB);
+    const denied = { code: '42501', message: expect.stringContaining('permission denied for table legal_acceptances') };
+
+    await expect(asUser(actorB, (transaction) => transaction('legal_acceptances').insert({ user_id: actorB, document: 'terms', version: '2031-01-01' })))
+      .rejects.toMatchObject(denied);
+    await expect(asUser(actorB, (transaction) => transaction('legal_acceptances').where({ user_id: actorB }).update({ version: '2031-01-01' })))
+      .rejects.toMatchObject(denied);
+    await expect(asUser(actorB, (transaction) => transaction('legal_acceptances').where({ user_id: actorB }).update({ accepted_at: new Date(0) })))
+      .rejects.toMatchObject(denied);
+    await expect(asUser(actorB, (transaction) => transaction('legal_acceptances').where({ user_id: actorB }).delete()))
+      .rejects.toMatchObject(denied);
+
+    await expect(rowsOf(actorB)).resolves.toEqual(before);
+  });
+
+  it('leaves ageniza_app the SELECT behind the policy and no other privilege on the table or any column', async () => {
+    const { rows } = await raw<{ rows: readonly Record<string, boolean>[] }>(getOwner().knex, `
+      select
+        has_table_privilege('ageniza_app', 'public.legal_acceptances', 'select') as can_select,
+        has_table_privilege('ageniza_app', 'public.legal_acceptances', 'insert') as can_insert,
+        has_table_privilege('ageniza_app', 'public.legal_acceptances', 'update') as can_update,
+        has_table_privilege('ageniza_app', 'public.legal_acceptances', 'delete') as can_delete,
+        has_table_privilege('ageniza_app', 'public.legal_acceptances', 'truncate') as can_truncate,
+        has_table_privilege('ageniza_app', 'public.legal_acceptances', 'references') as can_references,
+        has_table_privilege('ageniza_app', 'public.legal_acceptances', 'trigger') as can_trigger,
+        has_any_column_privilege('ageniza_app', 'public.legal_acceptances', 'insert') as any_column_insert,
+        has_any_column_privilege('ageniza_app', 'public.legal_acceptances', 'update') as any_column_update
+    `, []);
+
+    expect(rows[0]).toEqual({
+      can_select: true,
+      can_insert: false,
+      can_update: false,
+      can_delete: false,
+      can_truncate: false,
+      can_references: false,
+      can_trigger: false,
+      any_column_insert: false,
+      any_column_update: false
+    });
   });
 });

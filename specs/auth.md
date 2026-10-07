@@ -50,7 +50,7 @@ Quase tudo já existe. **Uma tabela nova** (`email_change_requests`, issue #80, 
 |---|---|
 | `auth."user"` | `email` é **único**: é a identidade. `emailVerified` nasce `true` no aceite |
 | `auth."account"` | o hash da senha, provider `credential` |
-| `auth."session"` | `expiresAt`, com teto absoluto imposto por hook de banco |
+| `auth."session"` | `expiresAt`, com teto absoluto de 30 dias imposto pelo `databaseHooks` do Better Auth (JavaScript, não um gatilho do PostgreSQL) e conferido por `session-guard.ts` |
 | `auth."verification"` | os tokens de recuperação de senha |
 | `public.invitations` | guarda **só o hash** do token; nem a operação recupera o token depois de enviado |
 | `public.legal_acceptances` | versão de Termos e de Privacidade, com data e hora. Uma linha por conta, documento e versão: o aceite é **por documento** (regra 7a) |
@@ -63,8 +63,8 @@ Quase tudo já existe. **Uma tabela nova** (`email_change_requests`, issue #80, 
 
 ```
 sem sessão → ativa        # login com credencial válida E ao menos um contexto
-ativa      → ativa        # renovada a cada 24h de uso, até o teto de 7 dias
-ativa      → encerrada    # logout, logout-all, reset de senha, ou o teto vencido
+ativa      → ativa        # 7 dias sem uso, renovada a cada 24 h de uso, teto absoluto de 30 dias
+ativa      → encerrada    # logout, logout-all, reset de senha, 7 dias sem uso, ou o teto de 30 dias vencido
 ```
 
 Não há refresh token e não há nada em JavaScript: cookie httpOnly, `SameSite=lax`.
@@ -154,7 +154,7 @@ Foi **mudança de contrato numa rota implantada**: os testes de integração de 
 
 1. `GET /me/legal-acceptances` lê as linhas da própria conta (a policy `legal_acceptances_select` já as limita ao ator) e compara a versão mais nova de cada documento com a em vigor (`AUTH_TERMS_VERSION`, `AUTH_PRIVACY_VERSION`). `pending` é verdadeiro quando a conta nunca aceitou o documento ou aceitou uma versão mais velha.
 2. `POST /me/legal-acceptances` chama `app_private.accept_legal_document(document, version)`, uma função `security definer` de escopo único que toma o usuário do ator da transação, nunca de um argumento. Recusa (`A0031`) um documento desconhecido e uma versão que não seja uma data real nem posterior a hoje (no fuso do produto, `America/Sao_Paulo`), e a configuração das versões recusa o mesmo no boot. Retorna sem gravar quando a conta já aceitou aquela versão ou uma mais nova, então é idempotente e nunca regride.
-3. `ageniza_app` continua **sem INSERT direto** em `legal_acceptances`: a tabela é prova de consentimento, e os únicos caminhos de escrita são o aceite de convite (cadastro) e esta função.
+3. `ageniza_app` só **lê** `legal_acceptances`: a tabela é prova de consentimento, e a migration `20261007000500` (issue #343) revoga `insert`, `update` e `delete` do papel, de modo que a escrita direta é recusada pelo privilégio (`permission denied`, `42501`) antes de a RLS ser consultada. Os únicos caminhos de escrita são o aceite de convite (cadastro) e esta função, ambos `security definer`.
 
 O cadastro (`accept-new-account`) não muda: continua gravando as duas versões em vigor, com o checkbox único. Conta anterior a esta entrega sem linha para um documento aparece como pendente; não há backfill.
 
@@ -413,7 +413,7 @@ Nada novo. O e-mail transacional de convite e de recuperação já existe (issue
 
 1. **`POST /auth/login` muda de contrato** — passa a negar credencial correta sem contexto, e um código de erro novo aparece. Rota implantada, testes de integração alterados junto. Não é estrutural pelos critérios, e não é gratuito.
 2. **Vincular identidades seria estrutural** e foi descartado nesta sessão: mudaria o significado de `User`, atravessando RLS, `current_user_id()` e toda tabela que referencia usuário.
-3. **O aceite por documento (2026-10-07, pendente de validação)** muda o contrato de aceite e abre um segundo caminho de escrita em dado pessoal, a função `app_private.accept_legal_document`. Nenhuma tabela, coluna, grant ou policy de `legal_acceptances` muda, e não há backfill; o registro está em `decisions.md`.
+3. **O aceite por documento (2026-10-07, pendente de validação)** muda o contrato de aceite e abre um segundo caminho de escrita em dado pessoal, a função `app_private.accept_legal_document`. Nenhuma tabela, coluna ou policy de `legal_acceptances` muda, e não há backfill; o registro está em `decisions.md`. Os grants de escrita sobre a tabela foram revogados depois, pela issue #343 (decisão de 2026-10-07, também pendente de validação).
 4. **A troca de e-mail por pedido (2026-10-07, pendente de validação)** cria uma tabela, duas rotas e um e-mail transacional, e abre um caminho de escrita sobre o e-mail em `auth."user"` por função `security definer`. Não altera tabela que já existe e não precisa de backfill; o registro está em `decisions.md`.
 
 ## 10. Em aberto
@@ -435,6 +435,8 @@ E, 2026-10-07 (**pendente de validação**): Termos e Privacidade mudam de vers�
 E, 2026-10-07 (**pendente de validação**): a troca de e-mail da conta é um pedido aprovado pela operação, não uma edição — fecha o ponto em aberto sobre a troca de e-mail.
 
 E, 2026-10-07 (**pendente de validação**): a regra 11 tem exceções — convite, redefinir senha, confirmar e-mail, Termos e Privacidade abrem com sessão válida sem redirecionar; as demais telas do módulo redirecionam ao contexto ativo (issue #342).
+
+E, 2026-10-07 (**pendente de validação**): a sessão vale 7 dias sem uso, é renovada a cada 24 h de uso e tem teto absoluto de 30 dias — alinha a SPEC ao que o código e os testes já faziam (issue #341).
 
 E, 2026-09-29 (**pendente de validação**): o login aceita o token do convite para quem tem zero contextos, complementando a decisão de 2026-09-24 sobre credencial correta sem contexto.
 

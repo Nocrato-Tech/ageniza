@@ -1726,3 +1726,27 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 **Consequência.** A regra 11 e a tabela de estados da §7 passam a listar as exceções com o motivo, e cada exceção tem teste de "com sessão válida, a tela abre e não redireciona"; as telas comuns continuam cobertas pelo teste de redirecionamento (o de `/entrar` já existia). Nenhuma rota, contrato ou API muda: é regra de navegação e a SPEC que estavam desalinhadas. Reabre quem voltar a redirecionar uma dessas telas.
 
 **Origem.** Issue #342, decisão do maestro com autonomia dada pelo dono do produto em 2026-10-07. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-07 — `ageniza_app` só lê `legal_acceptances`: insert, update e delete são revogados
+
+**Contexto.** A SPEC (§6, issue #81, item 3) diz que `ageniza_app` "continua sem INSERT direto" em `legal_acceptances`. A migration `20260919000000` concedia `select, insert, update, delete` à tabela inteira, e quem barrava a escrita era só a RLS forçada, sem policy de escrita: os testes esperavam `row-level security`, não `permission denied`. Texto e código discordavam, e uma camada só separava a prova de consentimento de uma escrita direta (achado da auditoria de fechamento do módulo, issue #343). A mutação "conceder INSERT" era sem efeito, mas conceder INSERT **e** criar uma policy abria a tabela.
+
+**Decisão.** Opção (b): uma migration nova (`20261007000500`) revoga `insert`, `update` e `delete` de `ageniza_app` em `public.legal_acceptances`. A gravação legítima não muda: passa por `app_private.accept_invitation` (cadastro) e `app_private.accept_legal_document` (aceite por documento, #81), ambas `security definer`, que rodam como o dono do esquema e não dependem do grant. O `select` continua, atrás da policy `legal_acceptances_select`. É defesa em profundidade, no espírito da #296: dois mecanismos independentes (privilégio e RLS) dizem a mesma coisa. Os testes esperam `42501` com a mensagem `permission denied for table legal_acceptances` (distinta de `row-level security`), e um teste de catálogo afirma `has_table_privilege` e `has_any_column_privilege`. A opção (a), só corrigir o texto da SPEC, foi descartada porque deixaria a tabela dependente de uma única barreira.
+
+**Consequência.** Mexe em grant de tabela que já existe, por isso o gate de CI trata a migration como estrutural e este registro vai junto; pelos cinco critérios não é estrutural: nenhuma tabela, coluna, policy, formato de resposta ou forma de autorização muda, e não há backfill. Nenhuma rota usava a escrita direta. Quem precisar um dia de outro caminho de escrita sobre a tabela cria uma função `security definer` de escopo único, como as duas existentes, e não devolve o grant.
+
+**Origem.** Issue #343, decisão do maestro com autonomia dada pelo dono do produto em 2026-10-07. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-07 — A sessão vale 7 dias sem uso, renova a cada 24 h de uso e tem teto absoluto de 30 dias
+
+**Contexto.** A SPEC (§4) dizia "renovada a cada 24h de uso, até o teto de 7 dias", e a §3 chamava o teto de "hook de banco". O código faz outra coisa, desde a primeira entrega: a sessão expira com **7 dias sem uso** (`expiresIn`, `better-auth.ts`), é renovada a cada **24 h** de uso (`updateAge`) e tem **teto absoluto de 30 dias** desde `createdAt` (`AUTH_SESSION_MAX_AGE_DAYS = 30`, `policy.ts`), imposto por `session-guard.ts` e pelo `databaseHooks.session.update.before` do Better Auth, que é JavaScript e não um gatilho do PostgreSQL. Os testes seguem o código (sessão de 31 dias recusada, renovação de uma sessão de 29 dias limitada a `createdAt + 30 dias`). Achado da auditoria de fechamento do módulo, issue #341.
+
+**Decisão.** Opção (a): a SPEC passa a dizer **7 dias sem uso, renovada a cada 24 h de uso, teto absoluto de 30 dias**, e a §3 passa a chamar o teto de `databaseHooks` do Better Auth. É o padrão de mercado e não obriga quem usa o produto todo dia a entrar de novo toda semana; o teto de 30 dias continua limitando a sessão roubada. A opção (b), teto de 7 dias no código e nos testes, foi descartada: derrubaria a sessão de quem usa o produto diariamente a cada semana, em troca de uma janela de roubo menor que ninguém pediu.
+
+**Consequência.** Só texto: SPEC, README do módulo e este registro. Nenhum código, teste, tabela, policy ou formato de resposta muda, e não há backfill. SPEC, código e testes dizem o mesmo número (30), e os testes o travam: desligar a conferência de `session-guard.ts`, remover o recorte do hook ou trocar a constante por 7, 29 ou 31 deixa a suíte de autenticação vermelha. Reabre quem quiser outro teto: é uma constante, o teste correspondente e a SPEC.
+
+**Origem.** Issue #341, decisão do maestro com autonomia dada pelo dono do produto em 2026-10-07. **Pendente de validação** pelo dono do produto.
