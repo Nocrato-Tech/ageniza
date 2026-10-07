@@ -115,15 +115,18 @@ describe('screens that open with a valid session (rule 11 exceptions, issue #342
     expect(screen.queryByRole('heading', { name: 'Onde você quer entrar?' })).toBeNull();
   });
 
-  it('opens the password reset from the e-mail link, without redirecting', async () => {
-    const { probe } = renderRoute('/senha/redefinir', true, authenticatedFetch);
-    expect(await screen.findByRole('heading', { name: 'Este link não é mais válido' })).toBeTruthy();
+  it('opens the password reset from the e-mail link with its form, without redirecting', async () => {
+    // With a token the screen renders the form; a redirect added after the token check would bounce here.
+    const { probe } = renderRoute('/senha/redefinir?token=um-token', true, authenticatedFetch);
+    expect(await screen.findByRole('heading', { name: 'Definir nova senha' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Salvar' })).toBeTruthy();
     expect(probe.pathname).toBe('/senha/redefinir');
   });
 
-  it('opens the e-mail confirmation from the e-mail link, without redirecting', async () => {
-    const { probe } = renderRoute('/email/confirmar', true, authenticatedFetch);
-    expect(await screen.findByRole('heading', { name: 'Este link não é mais válido' })).toBeTruthy();
+  it('opens the e-mail confirmation from the e-mail link with its button, without redirecting', async () => {
+    const { probe } = renderRoute('/email/confirmar?token=um-token', true, authenticatedFetch);
+    expect(await screen.findByRole('heading', { name: 'Confirmar novo e-mail' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Confirmar troca de e-mail' })).toBeTruthy();
     expect(probe.pathname).toBe('/email/confirmar');
   });
 
