@@ -115,6 +115,8 @@ interface Scenario {
   readonly jobTitles?: () => Response | Promise<Response>;
   readonly roles?: (agencyId: string) => Response | Promise<Response>;
   readonly detail?: (membershipId: string, agencyId: string) => Response | Promise<Response>;
+  readonly updateCollaborator?: (membershipId: string, body: unknown, agencyId: string) => Response | Promise<Response>;
+  readonly removeCollaborator?: (membershipId: string, agencyId: string) => Response | Promise<Response>;
   readonly reactivate?: (membershipId: string, body: unknown, agencyId: string) => Response | Promise<Response>;
   readonly invitations?: (query: URLSearchParams, agencyId: string) => Response | Promise<Response>;
   readonly createInvitation?: (body: unknown, agencyId: string) => Response | Promise<Response>;
@@ -178,6 +180,12 @@ const makeFetch = (scenario: Scenario = {}) => {
       return scenario.invitations?.(url.searchParams, invitations[1]!) ?? invitationsResponse(defaultInvites, url.searchParams);
     }
     if (path.endsWith('/collaborators/job-titles')) return scenario.jobTitles?.() ?? json({ data: ['Editora', 'Copywriter'] });
+    const remove = /\/agencies\/([^/]+)\/collaborators\/([^/]+)\/remove$/.exec(path);
+    if (remove !== null && method === 'POST') {
+      if (!permissions.includes('colaborador.remover')) return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
+      if (scenario.removeCollaborator === undefined) throw new Error(`unexpected POST ${url}`);
+      return scenario.removeCollaborator(remove[2]!, remove[1]!);
+    }
     const reactivate = /\/agencies\/([^/]+)\/collaborators\/([^/]+)\/reactivate$/.exec(path);
     if (reactivate !== null && method === 'POST') {
       if (!isOwner && !permissions.includes('colaborador.alterar_papel')) {
@@ -189,6 +197,10 @@ const makeFetch = (scenario: Scenario = {}) => {
     const detail = /\/agencies\/([^/]+)\/collaborators\/([^/]+)$/.exec(path);
     if (detail !== null) {
       if (!permissions.includes('colaborador.visualizar')) return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
+      if (method === 'PATCH') {
+        if (scenario.updateCollaborator === undefined) throw new Error(`unexpected PATCH ${url}`);
+        return scenario.updateCollaborator(detail[2]!, JSON.parse(String(init?.body)), detail[1]!);
+      }
       const person = [anaPrado, marioCosta, juliaReis].find((item) => item.membershipId === detail[2]);
       return scenario.detail?.(detail[2]!, detail[1]!) ?? (person === undefined
         ? json({ error: { code: 'NOT_FOUND', message: 'Not found' } }, 404)
@@ -648,6 +660,404 @@ describe('collaborator detail (#103)', () => {
     const modal = await screen.findByRole('dialog', { name: hostile });
     expect(modal.querySelector('img')).toBeNull();
     expect(modal.querySelector('[onerror]')).toBeNull();
+  });
+});
+
+describe('collaborator admin actions (#104)', () => {
+  const detailUrl = (id: string) => `/agencia/${AGENCY_A}/colaboradores?colaborador=${id}`;
+  const OWNER_PERMISSIONS = ['colaborador.visualizar', 'colaborador.alterar_funcao', 'colaborador.alterar_papel', 'colaborador.remover', 'colaborador.atribuir_admin'];
+  const ADMIN_PERMISSIONS = ['colaborador.visualizar', 'colaborador.alterar_funcao', 'colaborador.alterar_papel', 'colaborador.remover'];
+  const MANAGER_PERMISSIONS = ['colaborador.visualizar', 'colaborador.alterar_funcao'];
+  const VIEWER_PERMISSIONS = ['colaborador.visualizar'];
+  const CUSTOM_ROLE = { key: 'custom', name: 'Papel personalizado' };
+  const roleIdOf = (key: string): string => SYSTEM_ROLES.find((role) => role.key === key)!.id;
+
+  const openMario = async (scenario: Scenario) => {
+    const fetch = makeFetch(scenario);
+    renderCollaborators(fetch.impl, detailUrl(marioCosta.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    return { ...fetch, dialog };
+  };
+
+  it('offers the Admin role only to the Owner, even if the roles response leaks it', async () => {
+    const owner = makeFetch({ isOwner: true, permissions: OWNER_PERMISSIONS });
+    renderCollaborators(owner.impl, detailUrl(marioCosta.membershipId));
+    const ownerDialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    await within(ownerDialog).findByRole('option', { name: 'Admin' });
+    expect(Array.from((within(ownerDialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement).options).map((option) => option.textContent))
+      .toEqual(['Selecione', 'Gestor de conta', 'Admin', 'Financeiro', 'Produção', 'Vendas']);
+    cleanup();
+
+    // The API hides `admin` from a non-owner (#287); the screen has to hide it too, so this
+    // response deliberately leaks it.
+    const leaked = makeFetch({ permissions: ADMIN_PERMISSIONS, roles: () => json({ data: SYSTEM_ROLES }) });
+    renderCollaborators(leaked.impl, detailUrl(marioCosta.membershipId));
+    const adminDialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    await within(adminDialog).findByRole('option', { name: 'Gestor de conta' });
+    const adminSelect = within(adminDialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement;
+    expect(Array.from(adminSelect.options).map((option) => option.textContent))
+      .toEqual(['Selecione', 'Gestor de conta', 'Financeiro', 'Produção', 'Vendas']);
+    expect(Array.from(adminSelect.options).some((option) => option.value === ADMIN_ROLE_ID)).toBe(false);
+  });
+
+  it('lets the account manager edit the cargo and shows the role as read-only', async () => {
+    const bodies: unknown[] = [];
+    const { impl } = makeFetch({
+      role: { key: 'account_manager', name: 'Gestor de conta' },
+      permissions: MANAGER_PERMISSIONS,
+      updateCollaborator: (_membershipId, body) => {
+        bodies.push(body);
+        return json({ ...marioCosta, jobTitle: (body as { jobTitle: string | null }).jobTitle });
+      }
+    });
+    renderCollaborators(impl, detailUrl(marioCosta.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    expect((within(dialog).getByRole('textbox', { name: 'Cargo' }) as HTMLInputElement).value).toBe('Copywriter');
+    expect(within(dialog).queryByRole('combobox')).toBeNull();
+    expect(within(dialog).getByText('Produção')).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: 'Remover do quadro' })).toBeNull();
+
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Cargo' }), { target: { value: 'Editora' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    // The role is not theirs to change, so the request carries only the cargo.
+    await waitFor(() => expect(bodies).toEqual([{ jobTitle: 'Editora' }]));
+  });
+
+  it.each([
+    ['production', 'Produção'],
+    ['sales', 'Vendas'],
+    ['finance', 'Financeiro']
+  ])('shows everything read-only for %s, without a save button', async (roleKey, roleName) => {
+    const { impl } = makeFetch({ role: { key: roleKey, name: roleName }, permissions: VIEWER_PERMISSIONS });
+    renderCollaborators(impl, detailUrl(marioCosta.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
+    expect(within(dialog).queryByRole('combobox')).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Salvar' })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Remover do quadro' })).toBeNull();
+  });
+
+  // Review of #104: the presets carry `alterar_papel` and `remover` together, so only a custom
+  // role with a single permission proves each action answers to its own permission.
+  it('lets a custom role with only colaborador.alterar_papel edit the papel, and never offers the removal', async () => {
+    const bodies: unknown[] = [];
+    const { impl } = makeFetch({
+      role: CUSTOM_ROLE,
+      permissions: ['colaborador.visualizar', 'colaborador.alterar_papel'],
+      updateCollaborator: (_membershipId, body) => {
+        bodies.push(body);
+        return json({ ...marioCosta, role: { key: 'finance', name: 'Financeiro' } });
+      }
+    });
+    renderCollaborators(impl, detailUrl(marioCosta.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
+    expect(within(dialog).getByText('Copywriter')).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: 'Remover do quadro' })).toBeNull();
+
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: roleIdOf('finance') } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    // Only the role travels: the cargo is not this role's to change nor this save's to touch.
+    await waitFor(() => expect(bodies).toEqual([{ roleId: roleIdOf('finance') }]));
+  });
+
+  it('lets a custom role with only colaborador.remover remove, with the fields read-only', async () => {
+    const removed: string[] = [];
+    const { impl } = makeFetch({
+      role: CUSTOM_ROLE,
+      permissions: ['colaborador.visualizar', 'colaborador.remover'],
+      collaborators: () => json({ data: [marioCosta, juliaReis], meta: meta(1, 2, 1) }),
+      detail: () => json(marioCosta),
+      removeCollaborator: (membershipId) => {
+        removed.push(membershipId);
+        return json({ ...marioCosta, status: 'removed' });
+      }
+    });
+    renderCollaborators(impl, detailUrl(marioCosta.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
+    expect(within(dialog).queryByRole('combobox')).toBeNull();
+    expect(within(dialog).getByText('Copywriter')).toBeTruthy();
+    expect(within(dialog).getByText('Produção')).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remover do quadro' }));
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Remover Mário Costa do quadro?' })).getByRole('button', { name: 'Remover' }));
+
+    await waitFor(() => expect(removed).toEqual([marioCosta.membershipId]));
+  });
+
+  it('lets a custom role with only colaborador.alterar_funcao edit the cargo, and nothing else', async () => {
+    const bodies: unknown[] = [];
+    const { impl } = makeFetch({
+      role: CUSTOM_ROLE,
+      permissions: ['colaborador.visualizar', 'colaborador.alterar_funcao'],
+      updateCollaborator: (_membershipId, body) => {
+        bodies.push(body);
+        return json({ ...marioCosta, jobTitle: 'Editora' });
+      }
+    });
+    renderCollaborators(impl, detailUrl(marioCosta.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    expect(within(dialog).queryByRole('combobox')).toBeNull();
+    expect(within(dialog).getByText('Produção')).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: 'Remover do quadro' })).toBeNull();
+
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Cargo' }), { target: { value: 'Editora' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(bodies).toEqual([{ jobTitle: 'Editora' }]));
+  });
+
+  it('sends only the field that changed, even when both actions are allowed', async () => {
+    const bodies: unknown[] = [];
+    type AdminPerson = Omit<typeof marioCosta, 'jobTitle'> & { jobTitle: string | null };
+    let person: AdminPerson = { ...marioCosta };
+    const { impl } = makeFetch({
+      permissions: ADMIN_PERMISSIONS,
+      detail: () => json(person),
+      updateCollaborator: (_membershipId, body) => {
+        bodies.push(body);
+        const next = body as { jobTitle?: string | null; roleId?: string };
+        const role = next.roleId === undefined ? undefined : SYSTEM_ROLES.find((item) => item.id === next.roleId);
+        person = {
+          ...person,
+          ...(next.jobTitle === undefined ? {} : { jobTitle: next.jobTitle }),
+          ...(role === undefined ? {} : { role: { key: role.key, name: role.name } })
+        };
+        return json(person);
+      }
+    });
+    renderCollaborators(impl, detailUrl(marioCosta.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Cargo' }), { target: { value: 'Editora' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(bodies).toEqual([{ jobTitle: 'Editora' }]));
+
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: roleIdOf('finance') } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(bodies).toEqual([{ jobTitle: 'Editora' }, { roleId: roleIdOf('finance') }]));
+  });
+
+  it('does not let the person edit the own cargo or role in this modal', async () => {
+    const { impl } = makeFetch({
+      session: () => json({ user: { id: sessionBody.user.id, name: anaPrado.name, email: anaPrado.email }, session: sessionBody.session }),
+      permissions: OWNER_PERMISSIONS,
+      isOwner: true
+    });
+    renderCollaborators(impl, detailUrl(anaPrado.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Ana Prado' });
+
+    expect(within(dialog).getByRole('textbox', { name: 'Nome' })).toBeTruthy();
+    expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
+    expect(within(dialog).queryByRole('combobox')).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Remover do quadro' })).toBeNull();
+  });
+
+  it('offers no remove and no role edit on the Owner, for anyone', async () => {
+    const ownerTarget = { ...marioCosta, isOwner: true };
+    const { impl } = makeFetch({
+      permissions: OWNER_PERMISSIONS,
+      isOwner: true,
+      collaborators: () => json({ data: [ownerTarget], meta: meta(1, 1, 1) }),
+      detail: () => json(ownerTarget)
+    });
+    renderCollaborators(impl, detailUrl(ownerTarget.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    expect(within(dialog).queryByRole('combobox')).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Remover do quadro' })).toBeNull();
+    // The cargo stays editable for the roles the SPEC allows (Admin and account manager).
+    expect(within(dialog).getByRole('textbox', { name: 'Cargo' })).toBeTruthy();
+  });
+
+  it('saves cargo and papel and updates the badge behind without reloading', async () => {
+    const bodies: unknown[] = [];
+    type AdminPerson = Omit<typeof marioCosta, 'jobTitle'> & { jobTitle: string | null };
+    let person: AdminPerson = { ...marioCosta };
+    const { impl } = makeFetch({
+      permissions: ADMIN_PERMISSIONS,
+      collaborators: () => json({ data: [person], meta: meta(1, 1, 1) }),
+      detail: () => json(person),
+      updateCollaborator: (_membershipId, body) => {
+        bodies.push(body);
+        const next = body as { jobTitle?: string | null; roleId?: string };
+        const role = next.roleId === undefined ? undefined : SYSTEM_ROLES.find((item) => item.id === next.roleId);
+        person = {
+          ...person,
+          ...(next.jobTitle === undefined ? {} : { jobTitle: next.jobTitle }),
+          ...(role === undefined ? {} : { role: { key: role.key, name: role.name } })
+        };
+        return json(person);
+      }
+    });
+    const { container, probe } = renderCollaborators(impl);
+    fireEvent.click(await screen.findByRole('link', { name: 'Ver detalhes de Mário Costa' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Cargo' }), { target: { value: 'Editor de Vídeo' } });
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: roleIdOf('finance') } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(bodies).toEqual([{ jobTitle: 'Editor de Vídeo', roleId: roleIdOf('finance') }]));
+    // The modal header reflects the new values at once.
+    expect(await within(dialog).findByText('Editor de Vídeo · Financeiro')).toBeTruthy();
+    // And the badge behind, without a reload.
+    await waitFor(() => {
+      const badge = container.querySelector('.collaborators__grid .ui-badge-card');
+      expect(badge?.querySelector('.ui-badge-card__job')?.textContent).toBe('Editor de Vídeo');
+      expect(badge?.querySelector('.ui-badge-card__role')?.textContent).toBe('Financeiro');
+    });
+    expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/colaboradores`);
+  });
+
+  it('asks for confirmation explaining the consequence before removing, and takes the person out of the list', async () => {
+    const removed: string[] = [];
+    let people = [marioCosta, juliaReis];
+    const { impl } = makeFetch({
+      permissions: ADMIN_PERMISSIONS,
+      collaborators: () => json({ data: people, meta: meta(1, people.length, 1) }),
+      detail: () => json(marioCosta),
+      removeCollaborator: (membershipId) => {
+        removed.push(membershipId);
+        people = people.filter((item) => item.membershipId !== membershipId);
+        return json({ ...marioCosta, status: 'removed' });
+      }
+    });
+    const { container, probe } = renderCollaborators(impl);
+    fireEvent.click(await screen.findByRole('link', { name: 'Ver detalhes de Mário Costa' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remover do quadro' }));
+    const confirmation = await screen.findByRole('dialog', { name: 'Remover Mário Costa do quadro?' });
+    expect(confirmation.textContent).toContain('perde o acesso a esta agência na próxima requisição');
+    expect(confirmation.textContent).toContain('pode ser reativada depois');
+    expect(removed).toEqual([]);
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Cancelar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Remover Mário Costa do quadro?' })).toBeNull());
+    expect(removed).toEqual([]);
+    // The badge behind is the only place the name may appear twice with the modal heading, so the
+    // grid is read directly.
+    const badgeNames = (): (string | null)[] =>
+      Array.from(container.querySelectorAll('.collaborators__grid .ui-badge-card__name')).map((element) => element.textContent);
+    expect(badgeNames()).toContain('Mário Costa');
+
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Mário Costa' })).getByRole('button', { name: 'Remover do quadro' }));
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Remover Mário Costa do quadro?' })).getByRole('button', { name: 'Remover' }));
+
+    await waitFor(() => expect(removed).toEqual([marioCosta.membershipId]));
+    // The modal closes and the badge leaves the default list, without a reload.
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Mário Costa' })).toBeNull());
+    await waitFor(() => expect(badgeNames()).not.toContain('Mário Costa'));
+    expect(badgeNames()).toContain('Júlia Reis');
+    expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/colaboradores`);
+  });
+
+  it('shows its own permission message when the save answers 403', async () => {
+    const { dialog } = await openMario({
+      permissions: ADMIN_PERMISSIONS,
+      updateCollaborator: () => json({ error: { code: 'FORBIDDEN', message: 'private diagnostic' } }, 403)
+    });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Cargo' }), { target: { value: 'Editora' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    expect(await within(dialog).findByText('Você não tem permissão para alterar este colaborador.')).toBeTruthy();
+    expect(dialog.textContent).not.toContain('private diagnostic');
+  });
+
+  it('shows the not-found message when the save answers 404', async () => {
+    const { dialog } = await openMario({
+      permissions: ADMIN_PERMISSIONS,
+      updateCollaborator: () => json({ error: { code: 'NOT_FOUND', message: 'private diagnostic' } }, 404)
+    });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Cargo' }), { target: { value: 'Editora' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    expect(await within(dialog).findByText('Colaborador não encontrado.')).toBeTruthy();
+    expect(dialog.textContent).not.toContain('private diagnostic');
+  });
+
+  it('marks the cargo field for a validation error, preserving the typed value', async () => {
+    const { dialog } = await openMario({
+      permissions: ADMIN_PERMISSIONS,
+      updateCollaborator: () => json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'private diagnostic',
+          details: { issues: [{ path: 'jobTitle', code: 'custom', message: 'private issue message' }] }
+        }
+      }, 400)
+    });
+    const cargo = within(dialog).getByRole('textbox', { name: 'Cargo' }) as HTMLInputElement;
+    fireEvent.change(cargo, { target: { value: 'Editora' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    expect(await within(dialog).findByText('O cargo contém caracteres que não são aceitos.')).toBeTruthy();
+    expect(cargo.value).toBe('Editora');
+    expect(dialog.textContent).not.toContain('private');
+  });
+
+  it('marks the role field when the API refuses the chosen role', async () => {
+    const { dialog } = await openMario({
+      permissions: ADMIN_PERMISSIONS,
+      updateCollaborator: () => json({ error: { code: 'INVALID_ROLE', message: 'private diagnostic' } }, 400)
+    });
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: roleIdOf('finance') } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    expect(await within(dialog).findByText('Escolha um papel da lista.')).toBeTruthy();
+    expect((within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement).value).toBe(roleIdOf('finance'));
+    expect(dialog.textContent).not.toContain('private diagnostic');
+  });
+
+  it('shows its own permission message when the removal answers 403', async () => {
+    const { dialog } = await openMario({
+      permissions: ADMIN_PERMISSIONS,
+      removeCollaborator: () => json({ error: { code: 'FORBIDDEN', message: 'private diagnostic' } }, 403)
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remover do quadro' }));
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Remover Mário Costa do quadro?' })).getByRole('button', { name: 'Remover' }));
+
+    expect(await within(dialog).findByText('Você não tem permissão para remover este colaborador.')).toBeTruthy();
+    expect(dialog.textContent).not.toContain('private diagnostic');
+  });
+
+  it('shows the already-removed message on a 409 and refreshes the list', async () => {
+    let people = [marioCosta, juliaReis];
+    const { dialog } = await openMario({
+      permissions: ADMIN_PERMISSIONS,
+      collaborators: () => json({ data: people, meta: meta(1, people.length, 1) }),
+      removeCollaborator: () => {
+        people = people.filter((item) => item.membershipId !== marioCosta.membershipId);
+        return json({ error: { code: 'COLLABORATOR_ALREADY_REMOVED', message: 'private diagnostic' } }, 409);
+      }
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remover do quadro' }));
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Remover Mário Costa do quadro?' })).getByRole('button', { name: 'Remover' }));
+
+    expect(await within(dialog).findByText('Este colaborador já foi removido.')).toBeTruthy();
+    expect(dialog.textContent).not.toContain('private diagnostic');
+    // The server already holds the removal; the list behind stops showing the person.
+    await waitFor(() => expect(document.querySelector('.collaborators__grid')?.textContent).not.toContain('Mário Costa'));
+  });
+
+  it('shows the not-found message when the removal answers 404', async () => {
+    const { dialog } = await openMario({
+      permissions: ADMIN_PERMISSIONS,
+      removeCollaborator: () => json({ error: { code: 'NOT_FOUND', message: 'private diagnostic' } }, 404)
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remover do quadro' }));
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Remover Mário Costa do quadro?' })).getByRole('button', { name: 'Remover' }));
+
+    expect(await within(dialog).findByText('Colaborador não encontrado.')).toBeTruthy();
+    expect(dialog.textContent).not.toContain('private diagnostic');
   });
 });
 
