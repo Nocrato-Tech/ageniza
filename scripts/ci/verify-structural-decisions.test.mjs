@@ -47,13 +47,14 @@ describe('gate', () => {
   it('passes a structural migration recorded alongside it', () => {
     expect(evaluate(
       migration('alter table public.agencies add column nickname text;'),
-      ['packages/database/migrations/20260926000000_change.mjs', 'docs/business/decisions.md']
+      ['packages/database/migrations/20260926000000_change.mjs', 'docs/business/decisions/2026-10-07-uma-decisao-por-arquivo.md']
     )).toMatchObject({ satisfied: true });
   });
 
-  it('recognises the decisions file by its exact path', () => {
-    expect(recordsDecision(['docs/business/decisions.md'])).toBe(true);
+  it('recognises a decision file in the decisions directory', () => {
+    expect(recordsDecision(['docs/business/decisions/2026-10-07-uma-decisao-por-arquivo.md'])).toBe(true);
     expect(recordsDecision(['docs/business/structural-changes.md'])).toBe(false);
+    expect(recordsDecision(['docs/business/decisions.md'])).toBe(false);
   });
 });
 

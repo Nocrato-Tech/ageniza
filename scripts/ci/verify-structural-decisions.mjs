@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 // docs/business/structural-changes.md asks a structural change to be recorded before it is written.
 // An instruction alone does not hold: this turns it into a gate, so the expensive decisions cannot
 // be settled quietly inside a pull request that was about something else.
-const DECISIONS_FILE = 'docs/business/decisions.md';
+const DECISIONS_DIRECTORY = 'docs/business/decisions/';
 
 /** SQL that reaches something already deployed, as opposed to creating new objects. */
 const STRUCTURAL_SQL = [
@@ -35,7 +35,8 @@ export const structuralReasons = (sql) => {
 };
 
 /** True when the change records a decision alongside the migration. */
-export const recordsDecision = (changedFiles) => changedFiles.includes(DECISIONS_FILE);
+export const recordsDecision = (changedFiles) =>
+  changedFiles.some((file) => file.startsWith(DECISIONS_DIRECTORY));
 
 export const evaluate = (migrations, changedFiles) => {
   const structural = migrations
@@ -69,13 +70,13 @@ if (process.argv[1]?.endsWith('verify-structural-decisions.mjs')) {
 
   if (!satisfied) {
     console.error(
-      `\nThis change carries a structural migration but does not touch ${DECISIONS_FILE}.\n` +
+      `\nThis change carries a structural migration but records no decision in ${DECISIONS_DIRECTORY}.\n` +
       'Read docs/business/structural-changes.md, then record the decision — context, decision and\n' +
       'consequence — in the same change. If this is a false positive, say so in the entry and keep it:\n' +
       'a recorded non-decision costs one paragraph, an unrecorded one costs a retrofit.'
     );
     process.exitCode = 1;
   } else if (structural.length > 0) {
-    console.log(`\nStructural change recorded in ${DECISIONS_FILE}.`);
+    console.log(`\nStructural change recorded in ${DECISIONS_DIRECTORY}.`);
   }
 }
