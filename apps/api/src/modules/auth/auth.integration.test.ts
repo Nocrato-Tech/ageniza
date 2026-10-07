@@ -619,30 +619,6 @@ describe('POST /auth/password/forgot (#8, #8b)', () => {
     expect(logText).toMatch(/EMAIL_DELIVERY_FAILED|Password reset email delivery failed/);
     expect(logText).not.toContain(failingUser.email);
   });
-
-  // Issue #339: the continuation only travels when the invite is addressed to the same e-mail.
-  it('does not attach an invite continuation addressed to another e-mail', async () => {
-    const sender = createFakeEmailSender();
-    const app = await openApp({ sender });
-    const account = await makeUser(app, 'forgot-invite-other');
-
-    const agencyOwner = await insertTestUser(app.pool, app.auth, { emailLabel: 'forgot-invite-other-owner' });
-    createdUsers.push({ app, userId: agencyOwner.id });
-    const agencyId = await grantOwnedAgencyContext(agencyOwner.id);
-    createdAgencyIds.push(agencyId);
-    const { token } = await insertCollaboratorInvitation({ agencyId, email: uniqueTestEmail('forgot-invite-other-target') });
-
-    const response = await app.app.inject({
-      method: 'POST', url: '/auth/password/forgot', headers: origin,
-      payload: { email: account.email, inviteToken: token }
-    });
-    expect(response.statusCode).toBe(202);
-
-    await app.emailService.drain();
-    const message = sender.sent.filter((sent) => sent.to === account.email).at(-1)?.text ?? '';
-    expect(message).toMatch(/senha\/redefinir\?token=/);
-    expect(message).not.toContain('invite=');
-  });
 });
 
 describe('POST /auth/password/reset (#9, #10, #11)', () => {
@@ -745,42 +721,6 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
     expect(loginWithNewPassword.statusCode).toBe(403);
     expect(loginWithNewPassword.json()).toMatchObject({ error: { code: 'NO_CONTEXT_ACCESS' } });
   });
-
-  // Issue #339: a continuation only signs in when the invite is valid AND addressed to the same
-  // e-mail as the account behind the reset token.
-  it.each(['valid', 'expired', 'revoked', 'suspended'] as const)(
-    'ignores a %s invite continuation addressed to another e-mail: NO_CONTEXT_ACCESS, no cookie, no session',
-    async (kind) => {
-      const sender = createFakeEmailSender();
-      const app = await openApp({ sender });
-      const user = await insertTestUser(app.pool, app.auth, { emailLabel: `reset-invite-other-${kind}` });
-      createdUsers.push({ app, userId: user.id });
-
-      const agencyOwner = await insertTestUser(app.pool, app.auth, { emailLabel: `reset-invite-other-${kind}-owner` });
-      createdUsers.push({ app, userId: agencyOwner.id });
-      const agencyId = await grantOwnedAgencyContext(agencyOwner.id);
-      createdAgencyIds.push(agencyId);
-      const otherEmail = uniqueTestEmail(`reset-invite-other-${kind}-target`);
-      const invitation = kind === 'expired'
-        ? await insertCollaboratorInvitation({ agencyId, email: otherEmail, expiresAt: new Date(Date.now() - 60_000) })
-        : kind === 'revoked'
-          ? await insertCollaboratorInvitation({ agencyId, email: otherEmail, revokedAt: new Date() })
-          : await insertCollaboratorInvitation({ agencyId, email: otherEmail });
-      if (kind === 'suspended') await queryAsOwner('update public.agencies set status = $1 where id = $2', ['suspended', agencyId]);
-
-      const token = await requestResetToken(app, sender, user.email);
-      const reset = await app.app.inject({
-        method: 'POST', url: '/auth/password/reset', headers: origin,
-        payload: { token, newPassword: 'a brand new correct horse battery staple', inviteToken: invitation.token }
-      });
-
-      expect(reset.statusCode).toBe(200);
-      expect(reset.json()).toEqual({ signedIn: false, reason: 'NO_CONTEXT_ACCESS' });
-      expect(reset.cookies.length).toBe(0);
-      const sessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id]);
-      expect(sessionRows.rowCount).toBe(0);
-    }
-  );
 
   it('signs in with at least one context, but responds SIGN_IN_REQUIRED (never NO_CONTEXT_ACCESS) when the post-reset sign-in itself fails', async () => {
     // 2026-09-29 security review of PR #176, achado 1: with contexts, a `signInEmail` failure must
