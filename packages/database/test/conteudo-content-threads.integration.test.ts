@@ -20,6 +20,7 @@ let onlyOperar: string;
 let onlyVisualizar: string;
 let operarAndVisualizar: string;
 let onlyClienteOperar: string;
+let clienteOperarWhoReadsContent: string;
 const content = {} as Record<ContentStatus, string>;
 
 beforeAll(async () => {
@@ -28,6 +29,7 @@ beforeAll(async () => {
   onlyVisualizar = await w.personWith('conteudo.visualizar');
   operarAndVisualizar = await w.personWith('conteudo.operar', 'conteudo.visualizar');
   onlyClienteOperar = await w.personWith('cliente.operar', 'cliente.visualizar');
+  clienteOperarWhoReadsContent = await w.personWith('cliente.operar', 'cliente.visualizar', 'conteudo.visualizar');
   for (const status of ['in_production', 'awaiting_approval', 'adjusting', 'approved', 'published', 'cancelled'] as const) {
     content[status] = await w.seedContent(ids.clientA1, { status });
   }
@@ -202,6 +204,20 @@ describe('who opens and writes in the conversation of a content, and when (issue
     }))).rejects.toMatchObject(rlsViolation);
   });
 
+  it('refuses to open the conversation of a content of an archived client, to the agency and to the portal', async () => {
+    const archived = await w.seedContent(ids.clientArchived, { status: 'awaiting_approval' });
+    await w.archiveClient(ids.clientArchived);
+
+    try {
+      await expect(openThread(ids.adminA, archived, 'agency', { client_id: ids.clientArchived })).rejects.toMatchObject(rlsViolation);
+      await expect(openThread(ids.portalArchived, archived, 'client', { client_id: ids.clientArchived })).rejects.toMatchObject(rlsViolation);
+    } finally {
+      await w.reactivateClient(ids.clientArchived);
+    }
+
+    expect(await w.getOwner().knex('client_threads').where({ content_id: archived }).select('id')).toHaveLength(0);
+  });
+
   it('refuses the conversation of an archived client, and of a content of a suspended agency', async () => {
     const archived = await w.seedContent(ids.clientArchived, { status: 'awaiting_approval' });
     const thread = await seedThread(archived, { client_id: ids.clientArchived });
@@ -344,6 +360,7 @@ describe('a comment of the client reopens the conversation of a content (issue #
 
   it.each([
     ['a role with only cliente.operar, the permission of the other conversations', () => onlyClienteOperar],
+    ['a role with cliente.operar that also reads Conteúdo, who sees the conversation and may not resolve it', () => clienteOperarWhoReadsContent],
     ['a role with only conteudo.visualizar', () => onlyVisualizar],
     ['Sales', () => ids.salesA],
     ['a person of the portal', () => ids.portalA1],
@@ -381,6 +398,18 @@ describe('request changes: awaiting approval to adjusting, with a comment (issue
       .toEqual([{ author_user_id: user(), author_side: 'client', body: 'Troque a foto da capa' }]);
   });
 
+  it.each([
+    ['text with a zero-width space inside', `Troque a foto${String.fromCharCode(0x200b)} da capa`],
+    ['an emoji sequence, which is made of joiners and symbols', String.fromCodePoint(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467)],
+    ['5000 bytes of multibyte text', 'ã'.repeat(2500)]
+  ] as const)('accepts a comment that is %s', async (_label, body) => {
+    const id = await w.seedContent(ids.clientA1, { status: 'awaiting_approval' });
+
+    await requestChanges(ids.portalA1, id, 1, body);
+
+    await adjusting(id);
+  });
+
   it('adds the comment to the conversation the agency already opened, and reopens it if it was resolved', async () => {
     const id = await w.seedContent(ids.clientA1, { status: 'awaiting_approval' });
     const thread = await seedThread(id, { resolved_by: ids.adminA, resolved_at: new Date() });
@@ -395,7 +424,11 @@ describe('request changes: awaiting approval to adjusting, with a comment (issue
 
   it.each([
     ['null', null], ['empty', ''], ['spaces', '   '], ['a no-break space', String.fromCharCode(0xa0)],
-    ['an ideographic space', String.fromCharCode(0x3000)], ['more than 5000 bytes', 'a'.repeat(5001)]
+    ['an ideographic space', String.fromCharCode(0x3000)], ['more than 5000 bytes', 'a'.repeat(5001)],
+    ['a zero-width space', String.fromCharCode(0x200b)], ['a byte order mark', String.fromCharCode(0xfeff)],
+    ['a zero-width joiner', String.fromCharCode(0x200d)], ['a word joiner', String.fromCharCode(0x2060)],
+    ['a bell control character', String.fromCharCode(7)], ['a delete control character', String.fromCharCode(0x7f)],
+    ['spaces, invisible characters and controls mixed', ` ${String.fromCharCode(0x200b, 9, 7, 0xfeff, 0xa0)} `]
   ] as const)('refuses a comment that is %s, leaving the content waiting and no conversation behind', async (_label, body) => {
     const id = await w.seedContent(ids.clientA1, { status: 'awaiting_approval' });
 
@@ -483,6 +516,28 @@ describe('request changes: awaiting approval to adjusting, with a comment (issue
     expect(await asking).toMatchObject({ code: 'A0063' });
     expect(await w.contentRow(id)).toMatchObject({ status: 'awaiting_approval', revision: 2 });
     expect(await w.getOwner().knex('client_threads').where({ content_id: id }).select('id')).toHaveLength(0);
+  });
+
+  it('waits for the archiving of the client, then answers "not found" without moving the content or writing the comment', async () => {
+    const id = await w.seedContent(ids.clientA2, { status: 'awaiting_approval' });
+    const archiving = await w.openTransactionAs(ids.adminA);
+    let asking: Promise<unknown> | undefined;
+
+    try {
+      await archiving.raw('select app_private.archive_client(?::uuid)', [ids.clientA2]);
+      asking = requestChanges(ids.portalA2, id, 1, 'Pedido durante o arquivamento').catch((error: unknown) => error);
+      await w.waitUntilSomeoneWaitsOnALock();
+    } finally {
+      await archiving.commit();
+    }
+
+    try {
+      expect(await asking).toMatchObject({ code: 'A0060' });
+      expect((await w.contentRow(id)).status).toBe('awaiting_approval');
+      expect(await w.getOwner().knex('client_threads').where({ content_id: id }).select('id')).toHaveLength(0);
+    } finally {
+      await w.reactivateClient(ids.clientA2);
+    }
   });
 
   it('waits for the agency that is opening the conversation of the same content, then uses that one', async () => {

@@ -25,8 +25,9 @@
 // Error codes added to the ones of 20261007001200_contents.mjs: none; the function answers A0060, A0062, A0063
 // and A0068 as the other portal function (`approve_content`) does.
 
+// Spaces, the characters that draw nothing (zero-width, joiners, direction marks, the byte order mark) and control characters.
 const isBlank = (column) =>
-  `regexp_replace(${column}, '[[:space:]\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000]+', '', 'g') = ''`;
+  `regexp_replace(${column}, '[[:space:]\\u0001-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f\\u00a0\\u00ad\\u1680\\u180e\\u2000-\\u200f\\u2028-\\u202f\\u205f-\\u2060\\u3000\\ufeff]+', '', 'g') = ''`;
 
 const OPEN_TO_CLIENT = "('awaiting_approval', 'adjusting', 'approved', 'published')";
 
@@ -280,6 +281,13 @@ export async function up(knex) {
 
       if p_body is null or ${isBlank('p_body')} or octet_length(p_body) > 5000 then
         raise exception using errcode = 'A0068', message = 'A request for changes carries its comment.';
+      end if;
+
+      -- The client is locked before the content, the order archive_client takes: a request that waits for the archiving of the
+      -- client finds it archived and answers "not found", instead of moving the content and writing a comment after the archive.
+      perform 1 from public.clients client where client.id = v_client_id and client.status = 'active' for share;
+      if not found then
+        raise exception using errcode = 'A0060', message = 'Content not found.';
       end if;
 
       select content.status, content.revision into v_status, v_revision
