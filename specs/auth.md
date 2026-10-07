@@ -105,7 +105,7 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 8a. Redefinir senha **sempre autentica** quem redefiniu, pelo mesmo mecanismo do login — **salvo** quando a conta tem zero contextos e não há `inviteToken` válido para o mesmo e-mail: nesse caso a senha é trocada, mas nenhuma sessão é criada, e a resposta diz o motivo (`signedIn: false, reason: 'NO_CONTEXT_ACCESS'`), para a tela levar a `/sem-acesso` (2026-09-29, substitui o comportamento anterior de `204` sem sessão fora do fluxo de convite). Contagem de contextos e sessão nova nessa ordem: primeiro conta, só então assina — assim uma conta confirmada em zero contextos nunca chega a ter sessão para revogar. Fora do caso confirmado de zero, qualquer outra falha em criar a sessão pós-reset — a conta não ser encontrada, a contagem falhar, ou o `signInEmail` falhar (inclusive dois links de reset válidos da mesma conta disputando a senha) — usa um motivo diferente, `signedIn: false, reason: 'SIGN_IN_REQUIRED'`, para a tela levar a `/entrar` em vez de `/sem-acesso`: `NO_CONTEXT_ACCESS` só quando o zero foi de fato confirmado (achado da revisão de segurança do PR #176, 2026-09-29).
 9. Trocar de contexto grava a preferência e **não** recria a sessão.
 10. `401` em qualquer requisição leva ao login preservando o destino, e nunca deixa dado antigo na tela.
-11. Quem tem sessão válida e abre uma tela deste módulo é levado ao seu contexto, em vez de logar de novo.
+11. Quem tem sessão válida e abre uma tela deste módulo é levado ao seu contexto, em vez de logar de novo — **exceto** as telas que precisam abrir para qualquer sessão: `/convite/:token` (quem já está logado aceita o convite pelo fluxo da regra 3a), `/senha/redefinir` e `/email/confirmar` (o link chega por e-mail e pode ser de outra conta, inclusive para quem já tem sessão) e `/termos` e `/privacidade` (páginas públicas de conteúdo). As demais telas do módulo (`/entrar`, `/sem-acesso`, `/senha/esquecida`) continuam redirecionando ao contexto ativo, e cada exceção tem teste próprio de que a tela abre com sessão válida sem redirecionar (issue #342, 2026-10-07, pendente de validação).
 12. A pessoa **não troca o próprio e-mail**: ela pede, pelo menu de conta, informando o e-mail novo e a **senha atual**, e a **operação** aprova pelo CLI (`cli:email-change`), porque a conta é global e o pedido não pertence a nenhuma agência (2026-10-07, pendente de validação). Senha errada não cria pedido. Há **um pedido aberto por conta**; um novo substitui o anterior. O endereço **atual** recebe o aviso "pediram a troca do e-mail desta conta; se não foi você, troque a senha".
 13. Aprovado o pedido, um link de **uso único**, válido por 48 horas, vai ao e-mail **novo**. Pedido não aprovado nunca troca nada.
 14. Confirmar o link troca o e-mail (marcando-o como verificado), **encerra todas as sessões** da conta e os links de redefinição de senha pendentes, e avisa o endereço **antigo**. Link usado, vencido, substituído ou recusado, e e-mail que outra conta passou a usar, respondem o mesmo `INVALID_LINK`.
@@ -391,7 +391,7 @@ Tela pública do link que a aprovação envia ao e-mail novo. **Pede um clique**
 | **Carregando** | skeleton na primeira carga; o botão de cada formulário mostra progresso e fica desabilitado, sem travar a tela |
 | **Erro de rede** | a mensagem oferece repetir a ação, nunca só informa |
 | **Sessão expirada** | leva ao login preservando o destino, e devolve a pessoa ao mesmo lugar depois |
-| **Já autenticado** | qualquer tela deste módulo redireciona ao contexto ativo |
+| **Já autenticado** | qualquer tela deste módulo redireciona ao contexto ativo, **exceto** `/convite/:token`, `/senha/redefinir`, `/email/confirmar`, `/termos` e `/privacidade`, que abrem com qualquer sessão (regra 11) |
 
 ### Idioma
 
@@ -434,6 +434,8 @@ E, 2026-10-07 (**pendente de validação**): Termos e Privacidade mudam de vers�
 
 E, 2026-10-07 (**pendente de validação**): a troca de e-mail da conta é um pedido aprovado pela operação, não uma edição — fecha o ponto em aberto sobre a troca de e-mail.
 
+E, 2026-10-07 (**pendente de validação**): a regra 11 tem exceções — convite, redefinir senha, confirmar e-mail, Termos e Privacidade abrem com sessão válida sem redirecionar; as demais telas do módulo redirecionam ao contexto ativo (issue #342).
+
 E, 2026-09-29 (**pendente de validação**): o login aceita o token do convite para quem tem zero contextos, complementando a decisão de 2026-09-24 sobre credencial correta sem contexto.
 
 E, 2026-10-07 (**pendente de validação**): o aviso de `already_member` aparece uma vez no destino, e o aceite automático depois do login vale só para o e-mail do convite — com outra conta conectada, nada é aceito e a tela explica.
@@ -454,7 +456,7 @@ E, herdadas de [`autorizacao.md`](autorizacao.md): "sem permissão" não é tela
 
 **Em aberto:** nenhum.
 
-**Decididas em 2026-10-07:** [#81](https://github.com/Nocrato-Tech/ageniza/issues/81), reaceite de Termos — aviso não bloqueante com aceite por documento (seção 7, regra 7a); e [#80](https://github.com/Nocrato-Tech/ageniza/issues/80), troca de e-mail — pedido aprovado pela operação (seção 5, regras 12 a 18).
+**Decididas em 2026-10-07:** [#81](https://github.com/Nocrato-Tech/ageniza/issues/81), reaceite de Termos — aviso não bloqueante com aceite por documento (seção 7, regra 7a); [#80](https://github.com/Nocrato-Tech/ageniza/issues/80), troca de e-mail — pedido aprovado pela operação (seção 5, regras 12 a 18); e [#342](https://github.com/Nocrato-Tech/ageniza/issues/342), as exceções da regra 11 — telas que abrem com sessão válida (seção 5, regra 11, e seção 7).
 
 A [#54](https://github.com/Nocrato-Tech/ageniza/issues/54), que registrava a dívida de "as telas nunca foram desenhadas", foi fechada por este recorte.
 
