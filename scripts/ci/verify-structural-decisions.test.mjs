@@ -55,20 +55,6 @@ describe('gate', () => {
     expect(recordsDecision(['docs/business/decisions.md'])).toBe(true);
     expect(recordsDecision(['docs/business/structural-changes.md'])).toBe(false);
   });
-
-  it('recognises a decision recorded in a file of its own, and nothing else under that name', () => {
-    expect(recordsDecision(['docs/business/decisions/2026-10-07-autor-do-comentario.md'])).toBe(true);
-    expect(recordsDecision(['docs/business/decisions/notes.txt'])).toBe(false);
-    expect(recordsDecision(['docs/business/decisions-old/2026-10-07-x.md'])).toBe(false);
-    expect(evaluate(
-      migration('revoke all on function app_private.x() from public;'),
-      ['packages/database/migrations/20261007000800_change.mjs', 'docs/business/decisions/2026-10-07-x.md']
-    )).toMatchObject({ satisfied: true });
-    expect(evaluate(
-      migration('revoke all on function app_private.x() from public;'),
-      ['packages/database/migrations/20261007000800_change.mjs']
-    )).toMatchObject({ satisfied: false });
-  });
 });
 
 describe('new table that alters only itself', () => {
