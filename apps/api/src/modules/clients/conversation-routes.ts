@@ -48,7 +48,7 @@ import {
 } from './conversation-service.js';
 import { createPhotoUrlSigner } from './photo-url.js';
 import { COMMENT_DEFAULT_PAGE_SIZE, THREAD_DEFAULT_PAGE_SIZE } from './policy.js';
-import { isRowLevelSecurityViolation, type ClientTransaction } from './service.js';
+import { isClientNoLongerActive, isRowLevelSecurityViolation, type ClientTransaction } from './service.js';
 
 type PreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
@@ -152,6 +152,8 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
     try {
       return await withAuthenticatedUserTransaction(dependencies.database, auth.claims, work);
     } catch (error) {
+      // The archive won the race for the client; the portal never learns that, an archived client is "not found" there.
+      if (isClientNoLongerActive(error)) throw refusalError(scope.side === 'agency' ? 'client-archived' : 'client-not-found');
       if (!isRowLevelSecurityViolation(error) && !(error instanceof ConversationWriteRefused)) throw error;
       const refusal = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
         diagnoseConversationRefusal(transaction, scope, target));
