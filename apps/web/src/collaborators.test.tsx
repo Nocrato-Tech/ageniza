@@ -1567,8 +1567,11 @@ describe('invite collaborator modal (#107)', () => {
     await fillInvite(dialog, 'nao-e-email');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
 
-    expect(await within(dialog).findByText('Informe um e-mail válido.')).toBeTruthy();
-    expect((within(dialog).getByRole('textbox', { name: 'E-mail' }) as HTMLInputElement).value).toBe('nao-e-email');
+    const error = await within(dialog).findByText('Informe um e-mail válido.');
+    const email = within(dialog).getByRole('textbox', { name: 'E-mail' }) as HTMLInputElement;
+    expect(email.getAttribute('aria-invalid')).toBe('true');
+    expect(email.getAttribute('aria-describedby')).toBe(error.id);
+    expect(email.value).toBe('nao-e-email');
     expect(calls.some((call) => call.startsWith('POST /agencies/'))).toBe(false);
   });
 
@@ -1607,7 +1610,8 @@ describe('invite collaborator modal (#107)', () => {
     await fillInvite(dialog, 'Nova@Exemplo.com');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
 
-    expect(await within(dialog).findByText('Convite enviado para nova@exemplo.com. O link vale por 7 dias.')).toBeTruthy();
+    const confirmation = await within(dialog).findByRole('status');
+    expect(confirmation.textContent).toBe('Convite enviado para nova@exemplo.com. O link vale por 7 dias.');
     // The creation invalidates the pending list, so the new invite appears behind the modal.
     expect(await within(region).findByText('nova@exemplo.com')).toBeTruthy();
     expect(region.querySelector('.invites__count')?.textContent).toBe('2');
@@ -1673,7 +1677,7 @@ describe('invite collaborator modal (#107)', () => {
     expect(dialog.textContent).not.toContain('private diagnostic');
   });
 
-  it.each([400, 422])('marks the field the API refused on a %i, without echoing the API message', async (status) => {
+  it('marks the field the API refused on a 400, without echoing the API message', async () => {
     const { impl } = makeFetch({
       createInvitation: () => json({
         error: {
@@ -1681,7 +1685,7 @@ describe('invite collaborator modal (#107)', () => {
           message: 'private diagnostic',
           details: { issues: [{ path: 'email', code: 'invalid_string', message: 'private issue message' }] }
         }
-      }, status)
+      }, 400)
     });
     const { container } = renderCollaborators(impl);
     await screen.findByText('Ana Prado');
@@ -1704,8 +1708,12 @@ describe('invite collaborator modal (#107)', () => {
     await fillInvite(dialog, 'nova@exemplo.com');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
 
-    expect(await within(dialog).findByText('Escolha um papel da lista.')).toBeTruthy();
-    expect((within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement).value).toBe(PRODUCTION_ROLE_ID);
+    const error = await within(dialog).findByText('Escolha um papel da lista.');
+    const role = within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement;
+    const hint = within(dialog).getByText('Define o que a pessoa poderá fazer.');
+    expect(role.getAttribute('aria-invalid')).toBe('true');
+    expect(role.getAttribute('aria-describedby')).toBe(`${hint.id} ${error.id}`);
+    expect(role.value).toBe(PRODUCTION_ROLE_ID);
     expect(dialog.textContent).not.toContain('private diagnostic');
   });
 
@@ -1763,9 +1771,24 @@ describe('invite collaborator modal (#107)', () => {
 
     const alert = await within(dialog).findByRole('alert', undefined, { timeout: 5000 });
     expect(alert.textContent).toContain('Não foi possível carregar os papéis.');
+    expect((within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement).disabled).toBe(true);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Tentar de novo' }));
     await waitFor(() => expect((within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement).disabled).toBe(false));
     expect(Array.from((within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement).options).map((option) => option.textContent)).toContain('Produção');
+  });
+
+  it('keeps the role select disabled while the roles are still loading', async () => {
+    let finishRoles: (value: Response) => void = () => undefined;
+    const rolesResponse = new Promise<Response>((resolve) => { finishRoles = resolve; });
+    const { impl } = makeFetch({ roles: () => rolesResponse });
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const dialog = await openInvite(container);
+    const role = within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement;
+    expect(role.disabled).toBe(true);
+
+    await act(async () => { finishRoles(rolesFor(false)); });
+    await waitFor(() => expect(role.disabled).toBe(false));
   });
 
   it('keeps the busy state on the send button, not on the whole modal', async () => {
@@ -1784,6 +1807,21 @@ describe('invite collaborator modal (#107)', () => {
     expect((within(dialog).getByRole('textbox', { name: 'E-mail' }) as HTMLInputElement).disabled).toBe(false);
     await act(async () => { finish(json({ invitationId: inviteAna.id, expiresAt: expiryInDays(7) }, 201)); });
     expect(await within(dialog).findByText(/Convite enviado para nova@exemplo.com/)).toBeTruthy();
+  });
+
+  it('focuses the e-mail field on open and the Fechar button on completion', async () => {
+    const { impl } = makeFetch();
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const dialog = await openInvite(container);
+    const email = within(dialog).getByRole('textbox', { name: 'E-mail' });
+    await waitFor(() => expect(document.activeElement).toBe(email));
+
+    await fillInvite(dialog, 'nova@exemplo.com');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+
+    const close = await within(dialog).findByRole('button', { name: 'Fechar' });
+    await waitFor(() => expect(document.activeElement).toBe(close));
   });
 
   it('closes on Escape and returns the focus to the Convidar button', async () => {
@@ -2236,6 +2274,36 @@ describe('removed filter and reactivation (#105)', () => {
     expect(await screen.findByRole('combobox', { name: 'Status' })).toBeTruthy();
   });
 
+  // A shared link with `status=removed` without the permission used to turn the whole team list into a not-found.
+  it('falls back to the active list with a notice when the link asks for removed without permission', async () => {
+    const queries: string[] = [];
+    const { impl, calls } = makeFetch({
+      permissions: ['colaborador.visualizar'],
+      collaborators: (query) => {
+        queries.push(query.toString());
+        if (query.get('status') === 'removed') return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
+        return listResponse([anaPrado]);
+      }
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+
+    expect(await screen.findByText('Ana Prado')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Page not found' })).toBeNull();
+    expect(screen.getByText('Você não tem permissão para ver colaboradores removidos. Mostrando os ativos.')).toBeTruthy();
+    expect(queries.some((query) => query.includes('page=1'))).toBe(true);
+    expect(calls.some((call) => call.includes('status=removed'))).toBe(false);
+  });
+
+  it('does not warn someone who can see removed links when the URL filters them', async () => {
+    const { impl } = makeFetch({
+      permissions: reactivatePermissions,
+      collaborators: (query) => listResponse(removedOnly(query))
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+    expect(screen.queryByText(/não tem permissão para ver colaboradores removidos/)).toBeNull();
+  });
+
   it('writes the removed filter to the URL and asks the server for removed links only', async () => {
     const queries: string[] = [];
     const { impl } = makeFetch({
@@ -2285,11 +2353,12 @@ describe('removed filter and reactivation (#105)', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Reativar Paulo Lima' });
     const role = within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement;
     const confirm = within(dialog).getByRole('button', { name: 'Reativar' }) as HTMLButtonElement;
-    // Paulo's previous role was Produção, and the select still starts empty.
+    // Paulo's previous role was Produção, and the select still starts empty even after the options
+    // arrive: pre-selecting the first option in display only is not a chosen role.
+    await within(dialog).findByRole('option', { name: 'Produção' });
     expect(role.value).toBe('');
     expect(confirm.disabled).toBe(true);
 
-    await within(dialog).findByRole('option', { name: 'Produção' });
     fireEvent.change(role, { target: { value: PRODUCTION_ROLE_ID } });
     expect(confirm.disabled).toBe(false);
     fireEvent.click(confirm);
@@ -2426,6 +2495,51 @@ describe('removed filter and reactivation (#105)', () => {
     expect(dialog.textContent).not.toContain('the api private message');
   });
 
+  it('marks the role field, linking the hint and the error, when the API refuses the role', async () => {
+    const { impl } = makeFetch({
+      permissions: reactivatePermissions,
+      collaborators: (query) => listResponse(removedOnly(query)),
+      roles: () => rolesFor(false),
+      reactivate: () => json({ error: { code: 'INVALID_ROLE', message: 'the api private message' } }, 400)
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar Paulo Lima' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reativar Paulo Lima' });
+    await within(dialog).findByRole('option', { name: 'Produção' });
+    const role = within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement;
+    const hint = within(dialog).getByText('O papel anterior não é reaproveitado.');
+    fireEvent.change(role, { target: { value: PRODUCTION_ROLE_ID } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reativar' }));
+
+    const error = await within(dialog).findByText('Escolha um papel da lista.');
+    expect(role.getAttribute('aria-invalid')).toBe('true');
+    expect(role.getAttribute('aria-describedby')).toBe(`${hint.id} ${error.id}`);
+    expect(role.value).toBe(PRODUCTION_ROLE_ID);
+    expect(dialog.textContent).not.toContain('the api private message');
+  });
+
+  it('keeps the role select disabled while the roles are still loading', async () => {
+    let finishRoles: (value: Response) => void = () => undefined;
+    const rolesResponse = new Promise<Response>((resolve) => { finishRoles = resolve; });
+    const { impl } = makeFetch({
+      permissions: reactivatePermissions,
+      collaborators: (query) => listResponse(removedOnly(query)),
+      roles: () => rolesResponse
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar Paulo Lima' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reativar Paulo Lima' });
+    const role = within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement;
+    expect(role.disabled).toBe(true);
+
+    await act(async () => { finishRoles(rolesFor(false)); });
+    await waitFor(() => expect(role.disabled).toBe(false));
+  });
+
   it('keeps the dialog open and offers a retry when the roles fail to load', async () => {
     let attempts = 0;
     const { impl } = makeFetch({
@@ -2444,6 +2558,7 @@ describe('removed filter and reactivation (#105)', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Reativar Paulo Lima' });
     // The query client retries a 5xx after its delay, so the error state arrives later.
     expect(await within(dialog).findByText('Não foi possível carregar os papéis. Tente de novo.', undefined, { timeout: 5000 })).toBeTruthy();
+    expect((within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement).disabled).toBe(true);
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Tentar de novo' }));
     await waitFor(() => expect((within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement).disabled).toBe(false));

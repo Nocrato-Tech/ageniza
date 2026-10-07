@@ -104,7 +104,10 @@ export function CollaboratorsPage() {
   const q = searchParams.get('q') ?? '';
   const role = searchParams.get('role') ?? '';
   const jobTitle = searchParams.get('jobTitle') ?? '';
-  const status: 'active' | 'removed' = searchParams.get('status') === 'removed' ? 'removed' : 'active';
+  const requestedStatus: 'active' | 'removed' = searchParams.get('status') === 'removed' ? 'removed' : 'active';
+  // A shared link with `status=removed` must not take the list down: without the permission the API refuses it (403), so it falls back to active and says so.
+  const removedFilterIgnored = requestedStatus === 'removed' && !canSeeRemoved;
+  const status: 'active' | 'removed' = removedFilterIgnored ? 'active' : requestedStatus;
   const page = parsePage(searchParams.get('page'));
   const invitesPage = parsePage(searchParams.get('convites'));
   // Whitespace-only is not a search: the API trims `q` and refuses an empty filter as a 400.
@@ -197,6 +200,8 @@ export function CollaboratorsPage() {
         />
         {canSeeRemoved && <Select label="Status" value={status} options={STATUS_OPTIONS} onChange={(value) => setFilter('status', value)} />}
       </div>
+
+      {removedFilterIgnored && <p>Você não tem permissão para ver colaboradores removidos. Mostrando os ativos.</p>}
 
       {collaborators.isPending ? (
         <ul className="collaborators__grid" aria-hidden="true">
