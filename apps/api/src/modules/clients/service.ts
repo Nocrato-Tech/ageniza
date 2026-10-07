@@ -190,6 +190,19 @@ export const updateClient = async (
 };
 
 /**
+ * Whether a `client_brand_sections` row counts as filled: the one definition the summary count and
+ * the portal's "seção não preenchida" rule (#130) share. `personas` has no row; an active persona
+ * fills it instead. The alias is a fixed literal chosen in this repository.
+ */
+export const sectionFilledSql = (sectionAlias: string): string => `case ${sectionAlias}.section_key
+            when 'colors' then ${sectionAlias}.colors is not null
+              and jsonb_typeof(${sectionAlias}.colors) = 'array'
+              and jsonb_array_length(${sectionAlias}.colors) > 0
+            when 'archetype' then ${sectionAlias}.archetype is not null
+            else ${sectionAlias}.body is not null and btrim(${sectionAlias}.body) <> ''
+          end`;
+
+/**
  * The General tab summary (specs/clientes.md section 6). `personas` counts as one filled section
  * when at least one persona is active; "aguardando a agência" and "com resposta da agência" come
  * from the single thread-state definition, so this count cannot drift from the listing (#125).
@@ -201,13 +214,7 @@ export const loadClientSummary = async (transaction: ClientTransaction, clientId
         select count(*)
         from public.client_brand_sections section
         where section.client_id = ?::uuid
-          and case section.section_key
-            when 'colors' then section.colors is not null
-              and jsonb_typeof(section.colors) = 'array'
-              and jsonb_array_length(section.colors) > 0
-            when 'archetype' then section.archetype is not null
-            else section.body is not null and btrim(section.body) <> ''
-          end
+          and ${sectionFilledSql('section')}
       ) + (
         case when exists (
           select 1 from public.client_personas persona

@@ -14,3 +14,10 @@ export const clientPhotoBodyLimitBytes = (maxImageBytes: number): number =>
  * client's row lock keeps each upload from leaking objects; this keeps the total count sane.
  */
 export const CLIENT_PHOTO_RATE_LIMIT = { max: 30, windowMs: 60_000 } as const;
+
+/** specs/clientes.md section 6: threads of a subject list 20 at a time, comments 50. */
+export const THREAD_DEFAULT_PAGE_SIZE = 20;
+export const COMMENT_DEFAULT_PAGE_SIZE = 50;
+
+/** A thread item previews its last comment; the full text is on the comments route. */
+export const THREAD_EXCERPT_LENGTH = 140;

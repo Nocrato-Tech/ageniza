@@ -76,6 +76,7 @@ export const startApi = async (): Promise<void> => {
     auth,
     requireAgencyAccess: createRequireAgencyAccess({ database }),
     requirePermission,
+    requireClientAccess: createRequireClientAccess({ database }),
     identityStorage: config.identityStorage === undefined ? undefined : createIdentityStorageClient(config.identityStorage),
     photoUrlExpirySeconds: config.identityStorage?.downloadUrlExpirySeconds ?? 300,
     photoMaxImageBytes: config.identityStorage?.maxImageBytes

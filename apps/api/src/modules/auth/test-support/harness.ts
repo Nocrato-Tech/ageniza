@@ -234,12 +234,13 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   const contexts: ContextModuleDependencies = { database, auth, requireClientAccess };
   const agencies: AgencyModuleDependencies = { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }) };
   const clients: ClientModuleDependencies = config.identityStorage === undefined
-    ? { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }), requirePermission, photoUrlExpirySeconds: 300 }
+    ? { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }), requirePermission, requireClientAccess, photoUrlExpirySeconds: 300 }
     : {
         database,
         auth,
         requireAgencyAccess: createRequireAgencyAccess({ database }),
         requirePermission,
+        requireClientAccess,
         identityStorage: createIdentityStorageClient(config.identityStorage),
         photoUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds,
         photoMaxImageBytes: config.identityStorage.maxImageBytes

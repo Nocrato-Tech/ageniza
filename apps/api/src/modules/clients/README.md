@@ -1,6 +1,7 @@
-# Módulo `clients` (issues #124, #125, #126 e #127)
+# Módulo `clients` (issues #124, #125, #126, #127, #128 e #130)
 
-Cadastrar, ler, editar e listar os clientes da agência, mais o estudo de marca e as personas.
+Cadastrar, ler, editar e listar os clientes da agência, mais o estudo de marca, as personas e a
+conversa em thread com o cliente (as rotas dela estão na seção "Conversa", abaixo).
 Todas as rotas sob `requireSession` e `requireAgencyAccess`, com a permissão nomeada que a policy
 de RLS da tabela também exige:
 
@@ -124,9 +125,59 @@ inglês no contrato e é gravado com o rótulo em português, como o banco exige
 - Cliente arquivado responde `409` em toda escrita, inclusive quando o arquivamento acontece entre
   a leitura e o `INSERT`/`UPDATE` (a violação de RLS `42501` vira o mesmo 409).
 
+## Conversa (#128 agência, #130 portal)
+
+Os dois lados chamam o **mesmo serviço** (`conversation-service.ts`); o que muda é o
+`ConversationScope` que cada conjunto de rotas monta da própria guarda. O lado de uma thread ou de
+um comentário **nunca** vem do corpo (todo corpo é `.strict()`, então `side` é 400): é `agency` nas
+rotas da agência e `client` nas do portal, e a RLS confere o par lado e credencial. Contratos em
+`packages/contracts/src/conversations.ts`; as rotas em `conversation-routes.ts`.
+
+| método | rota | quem |
+|---|---|---|
+| `GET` | `/agencies/:agencyId/clients/:clientId/threads` | `cliente.visualizar` |
+| `POST` | `/agencies/:agencyId/clients/:clientId/threads` | `cliente.operar` |
+| `GET` | `…/threads/:threadId/comments` | `cliente.visualizar` |
+| `POST` | `…/threads/:threadId/comments` | `cliente.operar` |
+| `POST` | `…/threads/:threadId/resolve` | `cliente.operar` |
+| `GET` | `/clients/:clientId/threads` | vínculo ativo de cliente |
+| `POST` | `/clients/:clientId/threads` | vínculo ativo de cliente |
+| `GET` | `/clients/:clientId/threads/:threadId/comments` | vínculo ativo de cliente |
+| `POST` | `/clients/:clientId/threads/:threadId/comments` | vínculo ativo de cliente |
+
+As do portal usam `requireSession` e `requireClientAccess`, sem permissão do catálogo. **Não existe
+`resolve` no portal** (só a agência resolve), nem rota de editar, apagar ou reabrir de nenhum lado.
+
+- **Estado derivado**, de `thread-state.ts`: resolvida só enquanto `resolved_at` é posterior ao último
+  comentário. Comentar numa thread resolvida a reabre; `resolvedBy` e `resolvedAt` só vêm preenchidos
+  enquanto ela está resolvida, e resolver de novo não escreve nada.
+- **Listagem**: o assunto é obrigatório e é exatamente um, `sectionKey` ou `personaId` (os dois, ou
+  nenhum, é 400). 20 threads por página, a de atividade mais recente primeiro com `id` de desempate;
+  50 comentários por página, o mais antigo primeiro. O total sai de `count(*) over ()`, no
+  mesmo snapshot da página.
+- **404 indistinto**: cliente de outra agência, thread de outro cliente, persona de outro cliente e
+  id malformado respondem o mesmo 404. No portal a persona arquivada também, e isso é um filtro da
+  rota, não só da RLS: o **colaborador que também tem vínculo de cliente** atravessa a policy pelo
+  ramo de membro da agência, então toda regra do portal vale por filtro explícito (persona ativa,
+  cliente da URL, vínculo e cliente ativos na guarda). Pelo portal essa pessoa age só como cliente,
+  com qualquer papel na agência; cada rota do portal tem teste com ela.
+- **409**: `CLIENT_ARCHIVED` (cliente arquivado é só leitura), `PERSONA_ARCHIVED` (a agência abrindo,
+  comentando ou resolvendo em persona arquivada) e `SECTION_NOT_FILLED` (o portal abrindo thread em
+  seção que a agência não preencheu; a agência não tem essa restrição). A checagem vem **antes** da
+  escrita; se o estado muda entre a checagem e a escrita, a recusa da RLS é relida numa transação
+  nova e dá o mesmo 409 (404 no portal, que só sabe que o que via sumiu).
+- **Autor**: nome e foto saem de `app_private.thread_comment_authors`, a função `security definer`
+  que lê o vínculo do lado do comentário e só responde a quem lê a thread (decisão
+  `2026-10-07-autor-do-comentario-pelo-vinculo`). `author` é `null` quando o lado do comentário não
+  tem vínculo de onde ler o nome, como o dono da agência sem linha de vínculo. A mesma função devolve
+  quem resolveu a thread, pelo vínculo de agência, então `resolvedBy.name` existe mesmo quando quem
+  resolveu nunca comentou (e só é `null` nesse mesmo caso do dono). A conversa nunca lê
+  `auth."user"` por id.
+- **Texto do comentário**: aparado, não vazio, até 5.000 bytes UTF-8 (o teto da coluna).
+
 ## O que ficou de fora
 
 - Arquivar/reativar e encerramento (`#131`).
 - A foto no portal (`#129`): a rota ainda não existe; ao nascer, deve assinar `photo_key` do mesmo
   jeito que o detalhe e a listagem.
-- Conversas em thread, acessos ao portal e o portal do cliente.
+- Acessos ao portal e o portal do cliente (telas).

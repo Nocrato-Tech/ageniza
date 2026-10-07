@@ -19,7 +19,7 @@ import {
   type TestUserFixture
 } from '../auth/test-support/harness.js';
 import { createIdentityStorageClient } from '../identity-storage/storage-client.js';
-import { createRequireAgencyAccess, requirePermission } from '../tenancy/guards.js';
+import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../tenancy/guards.js';
 import { CLIENT_PHOTO_RATE_LIMIT } from './policy.js';
 import { registerClientModule } from './routes.js';
 
@@ -400,6 +400,7 @@ describe('client photo (issue #126)', () => {
       auth: app.auth,
       requireAgencyAccess: createRequireAgencyAccess({ database: app.database }),
       requirePermission,
+      requireClientAccess: createRequireClientAccess({ database: app.database }),
       identityStorage: { ...real, uploadIdentityImage: (input) => { uploads += 1; return real.uploadIdentityImage(input); } },
       photoUrlExpirySeconds: TEST_IDENTITY_STORAGE_CONFIG.downloadUrlExpirySeconds,
       photoMaxImageBytes: TEST_IDENTITY_STORAGE_CONFIG.maxImageBytes
@@ -443,6 +444,7 @@ describe('client photo (issue #126)', () => {
       auth: app.auth,
       requireAgencyAccess: createRequireAgencyAccess({ database }),
       requirePermission,
+      requireClientAccess: createRequireClientAccess({ database }),
       identityStorage: createIdentityStorageClient(TEST_IDENTITY_STORAGE_CONFIG),
       photoUrlExpirySeconds: TEST_IDENTITY_STORAGE_CONFIG.downloadUrlExpirySeconds,
       photoMaxImageBytes: TEST_IDENTITY_STORAGE_CONFIG.maxImageBytes
@@ -483,6 +485,7 @@ describe('client photo (issue #126)', () => {
       auth: app.auth,
       requireAgencyAccess: createRequireAgencyAccess({ database }),
       requirePermission,
+      requireClientAccess: createRequireClientAccess({ database }),
       identityStorage: createIdentityStorageClient(TEST_IDENTITY_STORAGE_CONFIG),
       photoUrlExpirySeconds: TEST_IDENTITY_STORAGE_CONFIG.downloadUrlExpirySeconds,
       photoMaxImageBytes: TEST_IDENTITY_STORAGE_CONFIG.maxImageBytes
