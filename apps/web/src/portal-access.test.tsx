@@ -263,18 +263,25 @@ describe('portal access tab (#140)', () => {
 
   it('keeps the roster address when paginating, through every page parameter', async () => {
     const rosterUrl = `/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`;
+    const manyInvites = Array.from({ length: 20 }, (_value, index) => ({ ...carla, invitationId: `cccc3333-3333-4333-8333-${String(index).padStart(12, '0')}`, email: `convidado-${index}@padaria.test` }));
     const { impl, calls } = makeFetch({
       members: (status, page) => (status === 'removed'
         ? json({ data: [pedro], meta: { page, pageSize: 20, totalItems: 21, totalPages: 2 } })
         : json({ data: [page === 2 ? joao : maria], meta: { page, pageSize: 20, totalItems: 21, totalPages: 2 } })),
-      clientInvitations: () => json(pageOf([]))
+      clientInvitations: (page) => json({ data: page === 2 ? [rita] : manyInvites, meta: { page, pageSize: 20, totalItems: 21, totalPages: 2 } })
     });
-    const { probe } = renderAccess(impl, { pathname: accessUrl, state: { clientListUrl: rosterUrl } });
+    const { container, probe } = renderAccess(impl, { pathname: accessUrl, state: { clientListUrl: rosterUrl } });
     await screen.findByText('Maria Souza');
     const back = (): HTMLElement => screen.getByRole('link', { name: '← Clientes' });
     expect(back().getAttribute('href')).toBe(rosterUrl);
+    // The members pagination is the first on the page; the invitations one comes after it.
+    const membersNext = (): HTMLElement => {
+      const pagination = container.querySelectorAll<HTMLElement>('.portal-access .ui-pagination')[0];
+      if (pagination === undefined) throw new Error('The members pagination was not rendered.');
+      return pagination;
+    };
 
-    fireEvent.click(screen.getByRole('button', { name: 'Próxima página' }));
+    fireEvent.click(within(membersNext()).getByRole('button', { name: 'Próxima página' }));
     await waitFor(() => expect(probe.search).toContain('membros=2'));
     expect(await screen.findByText('João Lima')).toBeTruthy();
     // The page write carried the roster address forward (review of #388).
@@ -288,13 +295,36 @@ describe('portal access tab (#140)', () => {
     fireEvent.click(removedNext);
     await waitFor(() => expect(probe.search).toContain('removidas=2'));
     expect(back().getAttribute('href')).toBe(rosterUrl);
+
+    // The invitations page carries it too (review of #390 r2).
+    const invites = screen.getByRole('region', { name: 'Convites aguardando aceite' });
+    fireEvent.click(within(invites).getByRole('button', { name: 'Próxima página' }));
+    await waitFor(() => expect(probe.search).toContain('convites=2'));
+    expect(await screen.findByText('rita@padaria.test')).toBeTruthy();
+    expect(back().getAttribute('href')).toBe(rosterUrl);
+    expect(calls.some((call) => call.includes('/invitations?page=2'))).toBe(true);
+  });
+
+  it('keeps the roster address when the clamp moves an out-of-range page back', async () => {
+    const rosterUrl = `/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`;
+    // The URL asks for page 2 of a list that shrank to a single page: the clamp writes the
+    // address back and must carry the roster address with it (review of #390 r2).
+    const { impl } = makeFetch({
+      members: (status) => (status === 'removed' ? json(pageOf([])) : json(pageOf([maria]))),
+      clientInvitations: () => json(pageOf([]))
+    });
+    const { probe } = renderAccess(impl, { pathname: accessUrl, search: '?membros=2', state: { clientListUrl: rosterUrl } });
+
+    await screen.findByText('Maria Souza');
+    await waitFor(() => expect(probe.search).not.toContain('membros=2'));
+    expect(screen.getByRole('link', { name: '← Clientes' }).getAttribute('href')).toBe(rosterUrl);
   });
 
   it('invites with only the e-mail, keeping the failure on the field and updating the roster badge', async () => {
     let pending = 0;
     const { impl, calls } = makeFetch({
       clients: () => json(pageOf([listItemOf(padaria, pending)])),
-      members: (status) => (status === 'removed' ? json(pageOf([])) : json(pageOf([]))),
+      members: () => json(pageOf([])),
       invite: () => {
         pending = 1;
         return json({ invitationId: carla.invitationId, expiresAt: new Date(Date.now() + 7 * DAY_MS).toISOString() }, 201);
@@ -442,6 +472,25 @@ describe('portal access tab (#140)', () => {
     expect(screen.queryByText('rita@padaria.test')).toBeNull();
   });
 
+  it('resends the invitation that was clicked, not the first one', async () => {
+    const resent: string[] = [];
+    const { impl } = makeFetch({
+      members: (status) => (status === 'removed' ? json(pageOf([])) : json(pageOf([maria]))),
+      clientInvitations: () => json(pageOf([carla, rita])),
+      resend: (invitationId) => {
+        resent.push(invitationId);
+        return json({ invitationId, expiresAt: new Date(Date.now() + 14 * DAY_MS).toISOString() });
+      }
+    });
+    renderAccess(impl);
+    await screen.findByText('rita@padaria.test');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reenviar convite de rita@padaria.test' }));
+    await waitFor(() => expect(resent).toEqual([rita.invitationId]));
+    expect(await screen.findByText('Convite reenviado para rita@padaria.test. O link anterior deixou de valer.')).toBeTruthy();
+    expect(resent).not.toContain(carla.invitationId);
+  });
+
   it('removes the person that was clicked, moves her into Removidas and updates the General counter', async () => {
     let detailData = padaria;
     let active = [maria, joao];
@@ -484,31 +533,35 @@ describe('portal access tab (#140)', () => {
     expect(await screen.findByText('1 pessoa com acesso')).toBeTruthy();
   });
 
-  it('reactivates a removed person and updates the General counter', async () => {
+  it('reactivates the removed person that was clicked and updates the General counter', async () => {
+    const ana = { ...maria, membershipId: 'ffff6666-6666-4666-8666-666666666666', name: 'Ana Prado', email: 'ana@padaria.test' };
     let detailData = padaria;
     let active: MemberFixture[] = [maria];
-    let removed: MemberFixture[] = [pedro];
+    let removed: MemberFixture[] = [pedro, { ...ana, status: 'removed' }];
+    const reactivated: string[] = [];
     const { impl } = makeFetch({
       client: () => json(detailData),
       members: (status) => (status === 'removed' ? json(pageOf(removed)) : json(pageOf(active))),
       clientInvitations: () => json(pageOf([])),
       memberStatus: (membershipId, action) => {
         if (action !== 'reactivate') throw new Error(`unexpected ${action}`);
+        reactivated.push(membershipId);
         removed = removed.filter((member) => member.membershipId !== membershipId);
-        active = [...active, { ...pedro, status: 'active' }];
+        active = [...active, { ...ana, status: 'active' }];
         detailData = { ...detailData, summary: { ...detailData.summary, activePortalMembers: active.length } };
-        return json({ ...pedro, status: 'active' });
+        return json({ ...ana, status: 'active' });
       }
     });
     renderAccess(impl);
     await screen.findByText('Maria Souza');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Removidas (1)' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Reativar o acesso de Pedro Alves' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Removidas (2)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar o acesso de Ana Prado' }));
 
-    // Back in the main list; the collapsed affordance disappears with the empty removed list.
-    expect(await screen.findByText('Pedro Alves')).toBeTruthy();
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Removidas (1)' })).toBeNull());
+    // The right id travelled, and only that person moved: Pedro stays in the removed list.
+    await waitFor(() => expect(reactivated).toEqual([ana.membershipId]));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Removidas (1)' })).toBeTruthy());
+    expect(screen.getByText('Pedro Alves')).toBeTruthy();
     // The General tab counter follows the invalidated detail summary, without a reload.
     fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
     expect(await screen.findByText('2 pessoas com acesso')).toBeTruthy();
@@ -538,7 +591,7 @@ describe('portal access tab (#140)', () => {
 
   it('draws the distinct empty states: no people with Convidar, no invitations, no removed list', async () => {
     const { impl } = makeFetch({
-      members: (status) => (status === 'removed' ? json(pageOf([])) : json(pageOf([]))),
+      members: () => json(pageOf([])),
       clientInvitations: () => json(pageOf([]))
     });
     renderAccess(impl);
