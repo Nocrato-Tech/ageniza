@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
@@ -11,6 +11,7 @@ import { apiPath } from './api-path.js';
 import { CollaboratorDetailDialog } from './collaborator-detail.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { InviteCollaboratorDialog } from './invite-collaborator.js';
 import { PendingInvitationsSection } from './pending-invitations.js';
 import { NotFoundPage } from './status-pages.js';
 
@@ -68,6 +69,7 @@ export function CollaboratorsPage() {
   const httpClient = useApiClient();
   const agency = useAgencyContext();
   const canInvite = useCan('colaborador.convidar');
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -150,7 +152,7 @@ export function CollaboratorsPage() {
       <header className="collaborators__header">
         <h1 id="collaborators-title">Colaboradores</h1>
         {canInvite && (
-          <Button disabled title="O convite chega na próxima entrega.">
+          <Button onClick={() => setInviteOpen(true)}>
             <span aria-hidden="true">+</span> Convidar
           </Button>
         )}
@@ -221,8 +223,9 @@ export function CollaboratorsPage() {
           summary={`${collaborators.data.data.length} de ${collaborators.data.meta.totalItems} pessoas`}
         />
       </>}
-      <PendingInvitationsSection page={invitesPage} onPageChange={changeInvitesPage} />
+      <PendingInvitationsSection page={invitesPage} onPageChange={changeInvitesPage} onInvite={() => setInviteOpen(true)} />
       {membershipId !== null && <CollaboratorDetailDialog key={agency.agencyId + membershipId} membershipId={membershipId} onClose={closeDetail} />}
+      {inviteOpen && <InviteCollaboratorDialog onClose={() => setInviteOpen(false)} />}
     </section>
   );
 }
