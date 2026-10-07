@@ -23,8 +23,11 @@ database, single use.
 privileges of `public` are revoked in the migration). The only paths are two `security definer`
 functions:
 
-- `app_private.request_email_change(new_email)`: the account comes from the actor bound to the
-  transaction, never from an argument. Supersedes the open request and records the new one.
+- `app_private.request_email_change(new_email, verified_hash)`: the account comes from the actor bound to the
+  transaction, never from an argument. `verified_hash` is the credential hash the route verified the password
+  against; with the account locked, the function refuses (`A0042`) when it is no longer the account's, and
+  records its fingerprint, not the one of whatever the account holds at insert time. Supersedes the open request
+  and records the new one.
 - `app_private.confirm_email_change(token_hash)`: locks the account, then the request, checks the
   request is approved, unexpired, and that the account still has the old address and nobody took
   the new one, then swaps, deletes sessions and verifications, and closes the request.
@@ -35,8 +38,13 @@ rejection in SQL of its own.
 ## The password is part of the request
 
 The notice to the current address says "if it was not you, change the password", so changing the password has to undo the request
-(security review of PR #325). `request_email_change` records a fingerprint of the credential (SHA-256 of the password hash, never the
-hash; null when the account has none), and two barriers hold:
+(security review of PR #325). `request_email_change` records a fingerprint of the credential the route verified the password against
+(SHA-256 of the password hash, never the hash), and two barriers hold. The route reads the hash and checks the password in one
+transaction and asks in another, so the fingerprint cannot be taken from the account at insert time: a reset landing in between would
+be recorded as if the request had been made under the new password. The route hands the function the hash it verified; the
+function compares it with the current one under the account lock and refuses (the route answers the wrong-password 403, nothing is
+recorded or sent) when the reset got there first, and a reset that lands after finds a different fingerprint and closes the request
+(second review round of PR #325).
 
 1. The password reset (`onPasswordReset` in `better-auth.ts`) calls `app_private.supersede_email_change_requests(user_id)`, which
    locks the account and closes its open requests whose fingerprint is no longer the credential's (status `superseded`, link gone). It

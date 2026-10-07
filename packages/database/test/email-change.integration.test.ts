@@ -349,6 +349,7 @@ describe('app_private.confirm_email_change (issue #80)', () => {
 
   it('does not deadlock with a request on the same account: the account is always locked before its requests', async () => {
     const user = await insertUser('lock-order');
+    await insertCredential(user.id);
     await insertSession(user.id);
     const newEmail = unique('lock-order-new');
     const approved = await seedApproved(user, newEmail);

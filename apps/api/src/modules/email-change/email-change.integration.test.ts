@@ -749,6 +749,43 @@ describe('account e-mail change by request (issue #80)', () => {
       expect(await emailOf(user.id)).toBe(address);
     });
 
+    it('refuses a request whose password was verified before a reset that landed between the check and the insert, so no link can ever swap the address', async () => {
+      const victim = await makeUser('reset-in-flight');
+      const cookie = await loginCookie(victim);
+      const attacker = newAddress('attacker-in-flight');
+      const noticesBefore = (await sentTo(victim.email)).filter((message) => message.template === 'email-change-requested').length;
+      // The verification is the real one; the victim's reset (the real "Esqueci a senha" flow, hook
+      // included) is made to land right after it returns and before the request is written, which is
+      // where the route's two transactions are apart.
+      const context = await app.auth.$context;
+      const verify = context.password.verify;
+      let resetDuringTheRequest = false;
+      context.password.verify = async (data) => {
+        const verified = await verify(data);
+        if (!resetDuringTheRequest) {
+          resetDuringTheRequest = true;
+          await resetPassword(victim, 'the victim chose this one');
+        }
+        return verified;
+      };
+
+      let answered: Awaited<ReturnType<typeof requestChange>>;
+      try {
+        answered = await requestChange(cookie, { newEmail: attacker, currentPassword: victim.password });
+      } finally {
+        context.password.verify = verify;
+      }
+
+      expect(resetDuringTheRequest).toBe(true);
+      expect(answered.status).toBe(403);
+      expect(answered.body.error?.code).toBe('INVALID_PASSWORD');
+      expect(await requestsOf(victim.id)).toEqual([]);
+      expect((await sentTo(victim.email)).filter((message) => message.template === 'email-change-requested')).toHaveLength(noticesBefore);
+      expect((await operate('list')).stdout).not.toContain(attacker);
+      expect(await emailOf(victim.id)).toBe(victim.email);
+      expect((await login(victim.email, 'the victim chose this one')).status).toBe(200);
+    });
+
     it('still refuses an approved link when the credential moved by a path that did not close the request', async () => {
       const victim = await makeUser('credential-behind-hook');
       const token = await askAndApprove(victim, newAddress('behind-hook-new'));
