@@ -58,6 +58,8 @@ describe('gate', () => {
     expect(recordsDecision(['docs/business/decisions/2026-10-7-dia-invalido.md'])).toBe(false);
     expect(recordsDecision(['docs/business/decisions/2026-10-07-uma/arquivo.md'])).toBe(false);
     expect(recordsDecision(['docs/business/decisions/2026-10-07-MAIUSCULO.md'])).toBe(false);
+    expect(recordsDecision(['docs/business/decisions/x.md.bak'])).toBe(false);
+    expect(recordsDecision(['docs/business/decisions/2026-10-07-slug.md.bak'])).toBe(false);
     expect(recordsDecision(['docs/business/decisions.md'])).toBe(false);
     expect(recordsDecision(['docs/business/structural-changes.md'])).toBe(false);
   });
