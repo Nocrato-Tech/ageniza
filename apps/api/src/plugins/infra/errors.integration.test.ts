@@ -376,25 +376,35 @@ describe('an over-long path parameter answers 414 inside the envelope (#217)', (
 
   // Issue #227: the synthetic reply of `frameworkErrors` skips the `onRequest` hooks, so these
   // responses used to go out without the correlation and security headers every other reply has.
-  const expectRouterErrorHeaders = (response: Awaited<ReturnType<TestApp['app']['inject']>>): void => {
+  // Issue #309: the security half is compared by EQUALITY with a normal reply, by header name, not
+  // by `toContain` or truthiness -- a divergent CSP or an HSTS max-age=1 in this path stayed green.
+  type InjectedResponse = Awaited<ReturnType<TestApp['app']['inject']>>;
+
+  /** Every header helmet touches, matched by name so a new default is compared too. */
+  const SECURITY_HEADER_PATTERN = /^(content-security-policy|x-content-type-options|x-frame-options|x-xss-protection|x-dns-prefetch-control|x-download-options|x-permitted-cross-domain-policies|referrer-policy|strict-transport-security|origin-agent-cluster|cross-origin-(opener|embedder|resource)-policy)$/;
+
+  const securityHeadersOf = (response: InjectedResponse): Record<string, unknown> =>
+    Object.fromEntries(Object.entries(response.headers).filter(([name]) => SECURITY_HEADER_PATTERN.test(name)));
+
+  const expectRouterErrorHeaders = (response: InjectedResponse, reference: InjectedResponse): void => {
     expect(response.headers['x-request-id']).toMatch(/^[A-Za-z0-9._:-]+$/);
     expect(response.headers['x-correlation-id']).toMatch(/^[A-Za-z0-9._:-]+$/);
-    expect(response.headers['x-content-type-options']).toBe('nosniff');
-    expect(response.headers['content-security-policy']).toContain("default-src 'none'");
-    expect(response.headers['x-frame-options']).toBe('SAMEORIGIN');
-    expect(response.headers['referrer-policy']).toBe('no-referrer');
-    expect(response.headers['cross-origin-resource-policy']).toBe('same-origin');
-    expect(response.headers['strict-transport-security']).toBeTruthy();
+    // Same source, not a lookalike: `toEqual` also fails when the router error is missing a header
+    // the normal reply carries.
+    expect(securityHeadersOf(response)).toEqual(securityHeadersOf(reference));
   };
 
-  it('carries the correlation and security headers on the 414 and the 400', async () => {
+  it('carries the correlation and security headers on the 414 and the 400, identical to a normal reply', async () => {
+    const health = await app.app.inject({ method: 'GET', url: '/health', headers: origin });
+    expect(health.statusCode).toBe(200);
+
     const overlongResponse = await app.app.inject({ method: 'GET', url: `/invitations/${overlong}`, headers: origin });
     expect(overlongResponse.statusCode).toBe(414);
-    expectRouterErrorHeaders(overlongResponse);
+    expectRouterErrorHeaders(overlongResponse, health);
 
     const badUrlResponse = await app.app.inject({ method: 'GET', url: '/invitations/%ZZ', headers: origin });
     expect(badUrlResponse.statusCode).toBe(400);
-    expectRouterErrorHeaders(badUrlResponse);
+    expectRouterErrorHeaders(badUrlResponse, health);
   });
 
   it('preserves a valid inbound correlation id on the router error', async () => {
@@ -406,6 +416,32 @@ describe('an over-long path parameter answers 414 inside the envelope (#217)', (
 
     expect(response.statusCode).toBe(414);
     expect(response.headers['x-correlation-id']).toBe('flow-42');
+  });
+
+  // Issue #309 (review of PR #230, M1): the router error reaches `applyCorrelationHeaders` through
+  // the synthetic reply too, so a correlation id the pattern refuses -- a markup fragment, say --
+  // must be replaced by a generated one, never echoed back to the caller.
+  it('does not echo an invalid inbound correlation id on the router error', async () => {
+    const hostile = '<img src=x onerror=1>';
+    const overlongResponse = await app.app.inject({
+      method: 'GET',
+      url: `/invitations/${overlong}`,
+      headers: { ...origin, 'x-correlation-id': hostile }
+    });
+    expect(overlongResponse.statusCode).toBe(414);
+    expect(overlongResponse.headers['x-correlation-id']).toMatch(/^[A-Za-z0-9._:-]+$/);
+    expect(overlongResponse.headers['x-correlation-id']).not.toBe(hostile);
+    expect(overlongResponse.headers['x-request-id']).toMatch(/^[A-Za-z0-9._:-]+$/);
+
+    const badUrlResponse = await app.app.inject({
+      method: 'GET',
+      url: '/invitations/%ZZ',
+      headers: { ...origin, 'x-correlation-id': hostile }
+    });
+    expect(badUrlResponse.statusCode).toBe(400);
+    expect(badUrlResponse.headers['x-correlation-id']).toMatch(/^[A-Za-z0-9._:-]+$/);
+    expect(badUrlResponse.headers['x-correlation-id']).not.toBe(hostile);
+    expect(badUrlResponse.headers['x-request-id']).toMatch(/^[A-Za-z0-9._:-]+$/);
   });
 });
 
