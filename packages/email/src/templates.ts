@@ -120,3 +120,30 @@ export const emailVerificationEmail = (input: ActionEmailInput): EmailMessage =>
 
 export const passwordResetEmail = (input: ActionEmailInput): EmailMessage =>
   compose('Redefina sua senha do Ageniza', ['Abra o link abaixo para escolher uma nova senha.'], input);
+
+const notice = (subject: string, lines: readonly string[]): EmailMessage => ({
+  subject,
+  text: lines.join('\n\n'),
+  html: lines.map((line) => `<p>${escapeHtml(line)}</p>`).join('\n')
+});
+
+/** To the address the account has now, when someone asks to change it. Carries no link. */
+export const emailChangeRequestedEmail = (): EmailMessage =>
+  notice('Pediram a troca do e-mail da sua conta no Ageniza', [
+    'Pediram a troca do e-mail desta conta no Ageniza.',
+    'Se não foi você, troque a senha: na tela de entrada, use "Esqueci a senha".'
+  ]);
+
+/** To the NEW address, once the operation approved the request. */
+export const emailChangeConfirmationEmail = (input: ActionEmailInput): EmailMessage =>
+  compose('Confirme o novo e-mail da sua conta no Ageniza', [
+    'A troca do e-mail da sua conta no Ageniza foi aprovada.',
+    'Abra o link abaixo para confirmar este endereço como o novo e-mail da conta.'
+  ], input);
+
+/** To the OLD address, after the swap. */
+export const emailChangedEmail = (): EmailMessage =>
+  notice('O e-mail da sua conta no Ageniza foi alterado', [
+    'O e-mail desta conta no Ageniza foi alterado e todas as sessões foram encerradas.',
+    'Se não foi você, fale com a operação do Ageniza.'
+  ]);

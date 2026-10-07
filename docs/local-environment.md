@@ -67,6 +67,19 @@ pnpm --filter @ageniza/api cli:agency reactivate --agency-id <uuid>
 pnpm --filter @ageniza/api cli:agency resend-activation --agency-id <uuid>
 ```
 
+## Aprovando uma troca de e-mail
+
+A pessoa não troca o próprio e-mail: ela pede pelo menu de conta, e a operação aprova pelo CLI, com as mesmas quatro variáveis do `cli:agency`. Os pedidos não geram notificação; `list` é como se descobre o que está aberto.
+
+```sh
+pnpm --filter @ageniza/api cli:email-change list
+pnpm --filter @ageniza/api cli:email-change approve --request-id <uuid>
+pnpm --filter @ageniza/api cli:email-change approve --request-id <uuid> --ownership-confirmed
+pnpm --filter @ageniza/api cli:email-change reject --request-id <uuid>
+```
+
+`approve` envia o link de confirmação ao e-mail **novo** (no Mailpit, localmente) e imprime só o id do pedido e a validade; nunca o token. Conta que é Owner de uma agência só é aprovada com `--ownership-confirmed`, depois de a operação confirmar a titularidade fora do produto. Aprovar de novo um pedido já aprovado e não usado emite um link novo, e o anterior deixa de valer.
+
 ## Dados de demonstração
 
 Para pular a criação manual e já ter um cenário realista no banco local:

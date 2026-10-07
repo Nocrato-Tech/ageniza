@@ -331,8 +331,8 @@ describe('AccountMenu', () => {
     }, { contexts: () => pending });
 
     fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
-    // Before the list resolves the only item is Sair; the menu focuses it for now.
-    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Sair' }));
+    // Before the list resolves the first item is the e-mail change request; the menu focuses it for now.
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Pedir troca de e-mail' }));
 
     await act(async () => { release?.(); });
     const switcher = await screen.findByRole('menuitem', { name: /Trocar de contexto/ });
@@ -349,8 +349,8 @@ describe('AccountMenu', () => {
     }, { contexts: () => pending });
 
     fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
-    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Sair' }), { key: 'ArrowDown' });
-    const moved = screen.getByRole('menuitem', { name: 'Sair de todas as sessões' });
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Pedir troca de e-mail' }), { key: 'ArrowDown' });
+    const moved = screen.getByRole('menuitem', { name: 'Sair' });
     expect(document.activeElement).toBe(moved);
 
     await act(async () => { release?.(); });

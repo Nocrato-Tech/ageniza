@@ -8,6 +8,9 @@ import {
   clientInvitationEmail,
   collaboratorInvitationEmail,
   createEmailSender,
+  emailChangeConfirmationEmail,
+  emailChangedEmail,
+  emailChangeRequestedEmail,
   emailVerificationEmail,
   invitationEmail,
   maskEmailAddress,
@@ -44,6 +47,21 @@ describe('transactional email templates', () => {
     expect(invitation.text).toContain('60 minutos');
     expect(emailVerificationEmail({ actionUrl, expiresInMinutes: 30 }).subject).toContain('Confirme');
     expect(passwordResetEmail({ actionUrl, expiresInMinutes: 15 }).subject).toContain('Redefina');
+  });
+
+  it('renders the e-mail change messages: two notices without a link and one confirmation with it', () => {
+    const requested = emailChangeRequestedEmail();
+    expect(requested.text).toContain('Pediram a troca do e-mail desta conta');
+    expect(requested.text).toContain('troque a senha');
+    expect(requested.text).not.toMatch(/https?:/);
+    const changed = emailChangedEmail();
+    expect(changed.text).toContain('foi alterado');
+    expect(changed.text).not.toMatch(/https?:/);
+    const confirmation = emailChangeConfirmationEmail({ actionUrl, expiresInMinutes: 2 * 1_440 });
+    expect(confirmation.subject).toContain('novo e-mail');
+    expect(confirmation.text).toContain(actionUrl);
+    expect(confirmation.text).toContain('Este link expira em 2 dias.');
+    expect(confirmation.html).toContain('href="');
   });
 
   it('renders the agency activation template in Portuguese with day-based expiry', () => {

@@ -9,6 +9,7 @@ import { registerAuthModule, type AuthModuleDependencies } from './modules/auth/
 import { registerClientModule, type ClientModuleDependencies } from './modules/clients/routes.js';
 import { registerCollaboratorModule, type CollaboratorModuleDependencies } from './modules/collaborators/routes.js';
 import { registerContextModule, type ContextModuleDependencies } from './modules/contexts/routes.js';
+import { registerEmailChangeModule, type EmailChangeModuleDependencies } from './modules/email-change/routes.js';
 import { createInvitationTokenLookup, registerInvitationModule, type InvitationModuleDependencies } from './modules/invitations/routes.js';
 import { registerMediaModule, type MediaModuleDependencies } from './modules/media/routes.js';
 import { registerLegalModule, type LegalModuleDependencies } from './modules/legal/routes.js';
@@ -48,6 +49,8 @@ export interface ApiAppOptions {
   profile?: ProfileModuleDependencies;
   /** Legal acceptance dependencies are optional; undefined for tests that never touch the legal routes. */
   legal?: LegalModuleDependencies;
+  /** E-mail change dependencies are optional; undefined for tests that never touch those routes. */
+  emailChange?: EmailChangeModuleDependencies;
   /**
    * Test-only observer for every registered route, fired by Fastify's `onRoute` hook before
    * `app.ready()`. The API documentation test uses it to prove the OpenAPI document covers the
@@ -188,6 +191,9 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   }
   if (options.legal !== undefined) {
     registerLegalModule(app, options.legal);
+  }
+  if (options.emailChange !== undefined) {
+    registerEmailChangeModule(app, options.emailChange);
   }
   // Development-only API reference (issue #182). The dynamic import keeps the viewer and the
   // OpenAPI generator out of the production image, which prunes devDependencies. `containerLocal`
