@@ -1565,6 +1565,20 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 3. **Remover não encerra sessão.** A sessão é global (Better Auth) e não existe sessão por agência; o acesso à agência é decidido a cada requisição por `requireAgencyAccess`, que só enxerga vínculo `active`. A pessoa perde a agência na requisição seguinte, com o mesmo cookie, e continua com as outras agências. Confirmado por teste; a SPEC não pede mais que isso.
 4. **Reativar com o papel `admin` exige `colaborador.atribuir_admin` na rota**, como a troca de papel e o convite (decisão de 2026-10-07 sobre o `PATCH`). A mesma checagem vale para quem foi Admin e volta como Admin.
 
-**Consequência.** A segunda barreira do banco **não cobre** o caso de quem foi Admin e volta como Admin: o trigger `check_agency_membership_update` só exige `atribuir_admin` quando o `role_id` muda, e a reativação com o mesmo `role_id` muda só o `status`. Hoje quem segura é a rota (testada), e o banco permitiria o `UPDATE` direto de um Admin; fechar isso é uma migration que altera o trigger, estrutural e fora deste PR. A remoção continua sem regra de "último Admin" (2026-09-24).
+**Consequência.** A remoção continua sem regra de "último Admin" (2026-09-24). A segunda barreira do banco tinha uma lacuna exatamente no caminho de reativação que esta task cria; ela é fechada neste mesmo PR, pela decisão estrutural seguinte.
 
-**Origem.** Issue #98. As decisões 1 e 2 e a lacuna do trigger estão **pendentes de validação** pelo dono do produto; a 1 foi proposta antes, para a #98, em branch antiga que não chegou a PR.
+**Origem.** Issue #98. As decisões 1 e 2 estão **pendentes de validação** pelo dono do produto; a 1 foi proposta antes, para a #98, em branch antiga que não chegou a PR. A 3 foi confirmada pelo maestro (a sessão é global e o acesso cai na requisição seguinte).
+
+---
+
+## 2026-10-07 — ESTRUTURAL: o trigger do vínculo também exige `atribuir_admin` quando o vínculo volta a `active` com papel `admin`
+
+**Esta é uma mudança estrutural**, por um dos cinco critérios de [structural-changes.md](structural-changes.md): muda **como a autorização é avaliada** (uma regra que depende do valor concedido, de 2026-09-24) num ponto que ela não alcançava. Registrada junto da migration, no mesmo PR, a pedido do maestro.
+
+**Contexto.** `app_private.check_agency_membership_update` (migration `20260928000000`) pede `colaborador.atribuir_admin` só quando `role_id` **muda** para o papel `admin`. Reativar um vínculo removido muda `status` e não `role_id`: quem foi Admin e volta como Admin mantém o mesmo `role_id` e passava pelo trigger sem a permissão, o que é justamente o que a regra "só o Owner concede Admin" existe para impedir. Hoje só a rota o impedia; um `UPDATE` direto de um Admin como `ageniza_app` era aceito. Achado ao implementar a #98, que cria esse caminho.
+
+**Decisão.** Migration nova `20261007000100_reactivation_admin_grant` (a antiga não é editada): o mesmo trigger, substituído no lugar, passa a exigir `colaborador.atribuir_admin` também na transição `removed` → `active` com o papel `admin`, mude o `role_id` ou não, com mensagem própria do trigger (`colaborador.atribuir_admin is required to bring back a link with the admin role.`, `42501`). Só essa transição: editar o cargo de um Admin ativo, removê-lo ou reativar com papel comum não muda. O dono do schema e as funções `security definer` que ele possui (`accept_invitation`) continuam fora do trigger, como antes.
+
+**Consequência.** A rota e o banco passam a recusar o mesmo caso, e um teste confere que concordam para cada ator. Nenhuma tabela, coluna, policy ou grant muda, e não há backfill: vínculos já ativos não são reavaliados. O reaceite de convite por quem foi removido segue pelo `accept_invitation`, que não passa por este trigger.
+
+**Origem.** Issue #98, achado da implementação, decidido pelo maestro. **Pendente de validação** pelo dono do produto.
