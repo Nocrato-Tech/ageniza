@@ -70,7 +70,12 @@ describe('app_private.sao_paulo_date', () => {
     }
   });
 
-  it('is closed to PUBLIC and to the application role, which reaches it only through the two functions', async () => {
+  it('can be called by the application role itself, at a fixed instant', async () => {
+    const result = await raw<{ rows: readonly { day: string }[] }>(application!.knex, "select app_private.sao_paulo_date('2026-10-08T01:00:00Z'::timestamptz)::text as day", []);
+    expect(result.rows[0]!.day).toBe('2026-10-07');
+  });
+
+  it('is open to the application role and closed to PUBLIC, with a fixed search_path', async () => {
     const { rows } = await raw<{ rows: readonly { app: boolean; public_role: boolean; fixed_path: boolean }[] }>(getOwner().knex, `
       select
         has_function_privilege('ageniza_app', 'app_private.sao_paulo_date(timestamptz)', 'execute') as app,
@@ -82,7 +87,7 @@ describe('app_private.sao_paulo_date', () => {
         coalesce((select p.proconfig @> array['search_path=""'] from pg_catalog.pg_proc p
                   where p.oid = 'app_private.sao_paulo_date(timestamptz)'::regprocedure), false) as fixed_path
     `, []);
-    expect(rows[0]).toEqual({ app: false, public_role: false, fixed_path: true });
+    expect(rows[0]).toEqual({ app: true, public_role: false, fixed_path: true });
   });
 });
 

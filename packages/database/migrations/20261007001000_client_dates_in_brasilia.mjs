@@ -19,7 +19,8 @@
 export async function up(knex) {
   await knex.raw(`
     -- The day, in the product's time zone, that an instant falls on. Pure, so the boundary can be
-    -- tested at a fixed instant; no caller needs it directly, only the two functions below.
+    -- tested at a fixed instant. It reads no row and holds no data, so the application role may call it
+    -- too (Conteúdo's policies and functions need today's date); PUBLIC may not.
     create function app_private.sao_paulo_date(p_instant timestamptz)
     returns date
     language sql
@@ -29,6 +30,7 @@ export async function up(knex) {
       select (p_instant at time zone 'America/Sao_Paulo')::date
     $function$;
     revoke all on function app_private.sao_paulo_date(timestamptz) from public;
+    grant execute on function app_private.sao_paulo_date(timestamptz) to ageniza_app;
   `);
 
   await knex.raw(`
