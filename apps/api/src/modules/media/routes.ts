@@ -187,8 +187,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
         extension: descriptor.extension,
         objectKey,
         uploadObjectKey,
-        declaredSizeBytes: body.declaredSizeBytes,
-        createdByUserId: auth.userId
+        declaredSizeBytes: body.declaredSizeBytes
       });
 
       if (usesMultipartUpload(config, body.declaredSizeBytes)) {
