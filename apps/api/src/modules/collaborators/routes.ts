@@ -142,6 +142,7 @@ const collaboratorFromRow = async (
   jobTitle: row.job_title,
   role: { key: row.role_key, name: row.role_name },
   isOwner: row.is_owner === true,
+  isSelf: row.is_self === true,
   status: row.status,
   joinedAt: new Date(row.created_at).toISOString()
 });
