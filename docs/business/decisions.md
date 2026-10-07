@@ -1765,18 +1765,6 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 
 ---
 
-## 2026-10-07 — A data "Na agência desde" aparece também no próprio perfil
-
-**Contexto.** O wireframe do modal de colaborador (SPEC §7) traz "Na agência desde <data>" no cabeçalho, sem exceção. O modal da **própria pessoa** mostrava só a foto e os campos de edição, sem a data: o cabeçalho com cargo, papel, e-mail e data era desenhado só para os outros. O aceite da #90 falava só da origem do dado (`created_at`), que já estava provada. Achado da auditoria de fechamento do módulo, issue #357.
-
-**Decisão.** A data aparece **também quando a pessoa abre o próprio perfil**. O dado é o mesmo, `joinedAt` (`agency_memberships.created_at`), que o item de colaborador já traz para todos.
-
-**Consequência.** A SPEC (§7) passa a dizer que a data vale para todos. Só interface: nenhuma rota, coluna, permissão ou formato de resposta muda. O teste do modal da própria pessoa acompanha a decisão, no aceite da #357.
-
-**Origem.** Issue #357, decisão do maestro em 2026-10-07. **Pendente de validação** pelo dono do produto.
-
----
-
 ## 2026-10-07 — Criar e reenviar convite travam na mesma ordem, e o deadlock vira 409 TRY_AGAIN
 
 **Contexto.** A revisão de segurança do PR #330 (#304) observou, num defeito que já existia, que criar convite trava o slot dos convites equivalentes e depois a linha, e reenviar trava a linha e depois o slot. Com o mesmo destinatário ao mesmo tempo, o resultado era deadlock (`40P01`), que não era traduzido e virava `500`. Sem impacto de segurança, porque nada é gravado. Issue #335. Registrada aqui depois do código, porque a issue não gerou entrada.
@@ -1789,3 +1777,15 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 **Consequência.** Só código da API e o OpenAPI: nenhuma tabela, policy, permissão ou migration muda, e nenhum fluxo legítimo muda. Vale a lição já registrada: função que trava mais de uma linha trava sempre na mesma ordem, em todos os caminhos.
 
 **Origem.** Issue #335, decisão do maestro. Entrada acrescentada na #358.
+
+---
+
+## 2026-10-07 — O modal do próprio perfil mostra a data de entrada, como o wireframe
+
+**Contexto.** A §7 de `specs/colaboradores.md` desenha "Na agência desde <data>" no cabeçalho do modal, sem exceção, e o ramo do próprio perfil só mostrava a foto e a nota de que a foto é global (issue #357, achado da auditoria de fechamento do módulo).
+
+**Decisão.** A data de entrada aparece também no modal do próprio perfil: não há motivo para esconder da pessoa a própria data de entrada, e a tela passa a seguir o wireframe sem exceção.
+
+**Consequência.** O ramo do próprio perfil ganha a linha da data, que já vinha no item da API; um teste novo cobre o próprio perfil e fica vermelho se a linha sair. Nenhum contrato, rota ou dado muda.
+
+**Origem.** Issue #357, decisão do maestro com autonomia dada pelo dono do produto em 2026-10-07. **Pendente de validação** pelo dono do produto.

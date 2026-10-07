@@ -301,7 +301,7 @@ Abre ao clicar no crachá. A URL reflete a pessoa aberta, para o link ser compar
 | **Admin** e **Owner** | editam cargo e papel; removem. O Owner é o único que pode conceder `admin` |
 | **Gestor de conta** | edita **cargo**; o papel aparece como leitura |
 | **Produção, Vendas, Financeiro** | só leem |
-| **A própria pessoa** | edita nome e foto; cargo e papel são leitura, com a nota de que quem muda é quem administra (a API, por sua vez, deixa quem tem `alterar_funcao` editar o próprio cargo — seção 2, nota ²) |
+| **A própria pessoa** | edita nome e foto; vê a data de entrada ("Na agência desde"), como todos; cargo e papel são leitura, com a nota de que quem muda é quem administra (a API, por sua vez, deixa quem tem `alterar_funcao` editar o próprio cargo — seção 2, nota ²) |
 | Qualquer um, olhando o **Owner** | sem ação de remover e sem edição de papel |
 
 **E-mail** aparece como leitura em todos os casos, com a nota de que a troca é feita pela operação — nunca um campo desabilitado sem explicação.
@@ -430,7 +430,7 @@ E, 2026-10-07 (**pendente de validação**, salvo a marcada):
 - Link com `?status=removed` sem permissão cai nos ativos, com aviso
 - ESTRUTURAL: o item de colaborador diz se o vínculo é da própria pessoa (`isSelf`)
 - A criação de convite de colaborador devolve `supersededInvitationId`
-- A data "Na agência desde" aparece também no próprio perfil (#357)
+- O modal do próprio perfil mostra a data de entrada, como o wireframe (#357)
 - A lista de colaboradores ordena sem distinguir acento nem maiúsculas (#355)
 
 E, 2026-10-07, decididas pelo maestro e **não** incluídas na lista de pendentes de validação (#359):
@@ -456,7 +456,7 @@ Herdadas de [`autorizacao.md`](autorizacao.md): o vocabulário `archived`/`remov
 
 **Depois do recorte**, o módulo ganhou issues próprias, que carregam as decisões da seção 11: [#218](https://github.com/Nocrato-Tech/ageniza/issues/218) rota de cargos · [#225](https://github.com/Nocrato-Tech/ageniza/issues/225) `CHECK` do cargo · [#287](https://github.com/Nocrato-Tech/ageniza/issues/287) rota de papéis · [#286](https://github.com/Nocrato-Tech/ageniza/issues/286) `isSelf` · [#322](https://github.com/Nocrato-Tech/ageniza/issues/322) link com filtro de removidos · [#324](https://github.com/Nocrato-Tech/ageniza/issues/324) regra de caracteres do cargo · [#333](https://github.com/Nocrato-Tech/ageniza/issues/333) `supersededInvitationId` · [#304](https://github.com/Nocrato-Tech/ageniza/issues/304) e [#335](https://github.com/Nocrato-Tech/ageniza/issues/335) trava do convite · [#355](https://github.com/Nocrato-Tech/ageniza/issues/355) ordem alfabética · [#357](https://github.com/Nocrato-Tech/ageniza/issues/357) data de entrada no próprio perfil · [#358](https://github.com/Nocrato-Tech/ageniza/issues/358) esta SPEC · [#359](https://github.com/Nocrato-Tech/ageniza/issues/359) validação do dono.
 
-As decisões de #355 e #357 definem a regra; o código e os testes que a cumprem são o aceite das próprias issues.
+A decisão da #355 define a regra; o código e o teste que a cumprem são o aceite da própria issue. A da #357 já está implementada, com teste.
 
 ### A ordem que a dependência impõe
 
