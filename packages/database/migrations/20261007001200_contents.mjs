@@ -2,8 +2,7 @@
 //
 // Structural: docs/business/decisions/2026-10-01-conteudo-impacto-estrutural.md (points 1 and 3) and
 // docs/business/decisions/2026-10-07-conteudo-conteudo-no-banco.md, which records what the SPEC leaves open.
-// Besides the three new tables it adds a unique constraint to `media_assets` and replaces its SELECT policy
-// (the portal reads a media only through a content it may open).
+// Besides the three new tables it adds a unique constraint to `media_assets`.
 //
 // specs/conteudo.md §3 (entities), §4 (states), §5 rules 1 to 7, 9, 10, 11 and 14, §6 (RLS).
 //
@@ -15,9 +14,16 @@
 //    allows the transitions of §4 and nothing else, stamps `approved_by`/`approved_at`/`published_at`/
 //    `cancelled_at` from the bound actor and from `now()`, and annuls an approval when the caption, the cover
 //    or the format of an approved content changes (rule 6).
-//  - The portal has NO policy on this table: it reads through `app_private.portal_contents`, which returns
-//    title, date, format and status for a content in production and the rest only from "awaiting approval" on.
-//    Nothing internal (owner, approval reason, who approved) is in a table a client link can read.
+//  - The portal has NO policy on this table, on `content_media` or on `media_assets`: it reads through
+//    `app_private.portal_contents` (title, date, format and status for a content in production, the rest only from
+//    "awaiting approval" on) and `app_private.portal_content_media` (the columns of a media a client needs, and only
+//    of a content it may open). Nothing internal (owner, approval reason, who approved, who uploaded, the storage
+//    keys) is in a table or a row a client link can read.
+//  - What a state needs is checked again whenever the database moves a content there by itself: an approved or
+//    waiting content whose media or format changes keeps a media that fits its format, and `publish_content`
+//    checks it too.
+//  - The owner of a content is the value that authorizes approving its subtasks, so changing it needs
+//    `conteudo.aprovar_pela_agencia` (42501), and a subtask records who approved it and when.
 //  - `revision` counts the changes of caption, cover, format and media. Approving takes the revision the person
 //    saw, so a caption edited between the reading and the click is refused instead of approved unseen.
 //  - Published and cancelled contents are not edited at all; a date moves in every other state.
@@ -223,47 +229,7 @@ export async function up(knex) {
 
     create policy content_media_select on public.content_media
       for select to ageniza_app
-      using (
-        app_private.has_agency_permission(app_private.client_agency_id(client_id), 'conteudo.visualizar')
-        or app_private.content_open_to_client(content_id)
-      );
-
-    create function app_private.media_asset_open_to_client(p_asset_id uuid)
-    returns boolean
-    language sql
-    stable
-    security definer
-    set search_path = ''
-    as $function$
-      select exists (
-        select 1 from public.contents content
-        where content.status in ${OPEN_TO_CLIENT}
-          and app_private.is_client_member(content.client_id)
-          and (
-            content.cover_asset_id = p_asset_id
-            or exists (
-              select 1 from public.content_media item
-              where item.content_id = content.id and item.asset_id = p_asset_id
-            )
-          )
-      )
-    $function$;
-    revoke all on function app_private.media_asset_open_to_client(uuid) from public;
-    grant execute on function app_private.media_asset_open_to_client(uuid) to ageniza_app;
-
-    drop policy media_assets_select on public.media_assets;
-    create policy media_assets_select on public.media_assets
-      for select to ageniza_app
-      using (
-        (client_id is null and app_private.has_agency_permission(agency_id, 'midia.enviar'))
-        or (
-          client_id is not null
-          and (
-            app_private.has_agency_permission(agency_id, 'conteudo.visualizar')
-            or app_private.media_asset_open_to_client(id)
-          )
-        )
-      );
+      using (app_private.has_agency_permission(app_private.client_agency_id(client_id), 'conteudo.visualizar'));
   `);
 
   await knex.raw(`
@@ -279,9 +245,14 @@ export async function up(knex) {
       return_comment text null check (
         return_comment is null or (not (${isBlank('return_comment')}) and octet_length(return_comment) <= 5000 and status = 'pending')
       ),
+      approved_by uuid null references auth."user"(id),
+      approved_at timestamptz null,
       created_at timestamptz not null default now(),
       constraint content_tasks_content_fk foreign key (content_id, client_id)
-        references public.contents (id, client_id)
+        references public.contents (id, client_id),
+      constraint content_tasks_approval_shape check (
+        (status = 'approved') = (approved_by is not null) and (approved_by is null) = (approved_at is null)
+      )
     );
     create index content_tasks_content_idx on public.content_tasks (content_id);
 
@@ -319,13 +290,22 @@ export async function up(knex) {
   `);
 
   await knex.raw(`
-    create function app_private.contents_check_people()
+    create function app_private.contents_check_references()
     returns trigger
     language plpgsql
     security definer
     set search_path = ''
     as $function$
     begin
+      -- The owner decides who may approve a subtask, so a person who only operates cannot move it to themselves.
+      if tg_op = 'UPDATE' and new.owner_user_id is distinct from old.owner_user_id and not app_private.has_agency_permission(
+        app_private.client_agency_id(new.client_id), 'conteudo.aprovar_pela_agencia'
+      ) then
+        raise exception using
+          errcode = '42501',
+          message = 'Only who approves for the agency changes the person in charge of a content.';
+      end if;
+
       if (tg_op = 'INSERT' or new.owner_user_id is distinct from old.owner_user_id) and not app_private.agency_user_can(
         app_private.client_agency_id(new.client_id), new.owner_user_id, 'conteudo.visualizar'
       ) then
@@ -333,15 +313,24 @@ export async function up(knex) {
           errcode = 'A0073',
           message = 'The person in charge of a content is an active collaborator who can see Conteúdo.';
       end if;
+
+      -- A content that waits for approval or is approved keeps a media that fits its format.
+      if tg_op = 'UPDATE' and new.format is distinct from old.format and old.status in ('awaiting_approval', 'approved')
+        and not app_private.content_media_is_complete(new.id, new.format)
+      then
+        raise exception using
+          errcode = 'A0065',
+          message = 'The media is not complete for the new format.';
+      end if;
       return new;
     end;
     $function$;
-    revoke all on function app_private.contents_check_people() from public;
+    revoke all on function app_private.contents_check_references() from public;
 
-    create trigger contents_check_people
+    create trigger contents_check_references
       before insert or update on public.contents
       for each row
-      execute function app_private.contents_check_people();
+      execute function app_private.contents_check_references();
 
     create function app_private.content_tasks_check_people()
     returns trigger
@@ -375,17 +364,18 @@ export async function up(knex) {
     declare
       v_today date := app_private.sao_paulo_date(pg_catalog.now());
       v_category text;
+      v_status text;
       v_removed_at timestamptz;
     begin
       if new.cover_asset_id is not null and (tg_op = 'INSERT' or new.cover_asset_id is distinct from old.cover_asset_id) then
-        select asset.category, asset.removed_at into v_category, v_removed_at
+        select asset.category, asset.status, asset.removed_at into v_category, v_status, v_removed_at
         from public.media_assets asset
         where asset.id = new.cover_asset_id;
         -- A cover that is not found is left to the policy and the foreign key.
-        if found and (v_category <> 'image' or v_removed_at is not null) then
+        if found and (v_category <> 'image' or v_status <> 'confirmed' or v_removed_at is not null) then
           raise exception using
             errcode = 'A0069',
-            message = 'The cover of a content is an image that was not removed.';
+            message = 'The cover of a content is a confirmed image that was not removed.';
         end if;
       end if;
 
@@ -543,13 +533,25 @@ export async function up(knex) {
         else
           new.return_comment := null;
         end if;
+        if new.status = 'approved' then
+          -- Fixed here, from the actor bound in this transaction: nobody chooses who approved or when.
+          new.approved_by := app_private.current_user_id();
+          new.approved_at := pg_catalog.now();
+          if new.approved_by is null then
+            raise exception using
+              errcode = '42501',
+              message = 'A task is approved by a person.';
+          end if;
+        end if;
         return new;
       end if;
 
-      if tg_op = 'UPDATE' and new.return_comment is distinct from old.return_comment then
+      if tg_op = 'UPDATE' and (new.return_comment, new.approved_by, new.approved_at)
+        is distinct from (old.return_comment, old.approved_by, old.approved_at)
+      then
         raise exception using
           errcode = '42501',
-          message = 'The comment of a returned task is written with the state.';
+          message = 'The comment of a returned task, and who approved it, are written with the state.';
       end if;
 
       if tg_op = 'UPDATE' and old.status = 'approved' and (new.title, new.description, new.assignee_user_id, new.due_on)
@@ -620,36 +622,32 @@ export async function up(knex) {
     $function$;
     revoke all on function app_private.lock_content_for_agency(uuid, text) from public;
 
-    create function app_private.content_media_is_complete(p_content_id uuid)
+    create function app_private.content_media_is_complete(p_content_id uuid, p_format text)
     returns boolean
     language sql
     stable
     security definer
     set search_path = ''
     as $function$
-      select coalesce((
+      select
+        case p_format
+          when 'image' then summary.total = 1 and summary.images = 1
+          when 'carousel' then summary.total between 2 and 20
+          else summary.total = 1 and summary.videos = 1
+        end
+        and summary.unusable = 0
+      from (
         select
-          case content.format
-            when 'image' then summary.total = 1 and summary.images = 1
-            when 'carousel' then summary.total between 2 and 20
-            else summary.total = 1 and summary.videos = 1
-          end
-          and summary.unusable = 0
-        from public.contents content
-        cross join lateral (
-          select
-            count(*) as total,
-            count(*) filter (where asset.category = 'image') as images,
-            count(*) filter (where asset.category = 'video') as videos,
-            count(*) filter (where asset.status <> 'confirmed' or asset.removed_at is not null) as unusable
-          from public.content_media item
-          join public.media_assets asset on asset.id = item.asset_id
-          where item.content_id = content.id
-        ) summary
-        where content.id = p_content_id
-      ), false)
+          count(*) as total,
+          count(*) filter (where asset.category = 'image') as images,
+          count(*) filter (where asset.category = 'video') as videos,
+          count(*) filter (where asset.status <> 'confirmed' or asset.removed_at is not null) as unusable
+        from public.content_media item
+        join public.media_assets asset on asset.id = item.asset_id
+        where item.content_id = p_content_id
+      ) summary
     $function$;
-    revoke all on function app_private.content_media_is_complete(uuid) from public;
+    revoke all on function app_private.content_media_is_complete(uuid, text) from public;
 
     create function app_private.set_content_media(p_content_id uuid, p_asset_ids uuid[])
     returns void
@@ -700,6 +698,11 @@ export async function up(knex) {
       select p_content_id, item.asset_id, v_content.client_id, v_content.folder_id, item.position::integer
       from unnest(p_asset_ids) with ordinality as item(asset_id, position);
 
+      -- A content that waits for approval or is approved never holds a media that does not fit its format.
+      if v_content.status in ('awaiting_approval', 'approved') and not app_private.content_media_is_complete(p_content_id, v_content.format) then
+        raise exception using errcode = 'A0065', message = 'The media is not complete for the format.';
+      end if;
+
       update public.contents
       set revision = revision + 1,
           status = case when status = 'approved' then 'awaiting_approval' else status end
@@ -728,7 +731,7 @@ export async function up(knex) {
       if v_content.status not in ('in_production', 'adjusting') then
         raise exception using errcode = 'A0062', message = 'Only a content in production or in adjustment is sent for approval.';
       end if;
-      if not app_private.content_media_is_complete(p_content_id) then
+      if not app_private.content_media_is_complete(p_content_id, v_content.format) then
         raise exception using errcode = 'A0065', message = 'The media is not complete for the format.';
       end if;
       if exists (select 1 from public.content_tasks task where task.content_id = p_content_id and task.status <> 'approved') then
@@ -834,6 +837,9 @@ export async function up(knex) {
       end if;
       if v_content.status <> 'approved' then
         raise exception using errcode = 'A0062', message = 'Only an approved content is published.';
+      end if;
+      if not app_private.content_media_is_complete(p_content_id, v_content.format) then
+        raise exception using errcode = 'A0065', message = 'The media is not complete for the format.';
       end if;
 
       update public.contents set status = 'published', published_on = p_published_on where id = p_content_id;
@@ -1072,6 +1078,40 @@ export async function up(knex) {
     $function$;
     revoke all on function app_private.portal_contents(uuid, date, date, text[], uuid) from public;
     grant execute on function app_private.portal_contents(uuid, date, date, text[], uuid) to ageniza_app;
+
+    -- The original key is agency_id/asset_id/original.extension by constraint, so it is not returned.
+    create function app_private.portal_content_media(p_content_id uuid)
+    returns table (
+      asset_id uuid, role text, item_position integer, category text, extension text, content_type text,
+      size_bytes bigint, duration_seconds numeric, video_processing_status text, thumbnail_object_key text, preview_object_key text
+    )
+    language sql
+    stable
+    security definer
+    set search_path = ''
+    as $function$
+      select
+        asset.id, entry.role, entry.item_position, asset.category, asset.extension, asset.confirmed_content_type,
+        asset.confirmed_size_bytes, asset.video_duration_seconds, asset.video_processing_status,
+        asset.thumbnail_object_key, asset.preview_object_key
+      from public.contents content
+      cross join lateral (
+        select content.cover_asset_id as asset_id, 'cover'::text as role, 0 as item_position
+        where content.cover_asset_id is not null
+        union all
+        select item.asset_id, 'media'::text, item.position
+        from public.content_media item
+        where item.content_id = content.id
+      ) entry
+      join public.media_assets asset on asset.id = entry.asset_id
+      where content.id = p_content_id
+        and app_private.content_open_to_client(content.id)
+        and asset.status = 'confirmed'
+        and asset.removed_at is null
+      order by entry.role, entry.item_position
+    $function$;
+    revoke all on function app_private.portal_content_media(uuid) from public;
+    grant execute on function app_private.portal_content_media(uuid) to ageniza_app;
   `);
 }
 

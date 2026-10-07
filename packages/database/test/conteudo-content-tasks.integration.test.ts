@@ -321,7 +321,9 @@ describe('approve and return: the owner of the content, or who approves for the 
     await approveAs(user(), toApprove);
     await returnAs(user(), toReturn, 'Falta o áudio');
 
-    expect((await w.taskRow(toApprove)).status).toBe('approved');
+    const approved = await w.taskRow(toApprove);
+    expect(approved).toMatchObject({ status: 'approved', approved_by: user() });
+    expect(Math.abs((approved.approved_at as Date).getTime() - Date.now())).toBeLessThan(10_000);
     expect(await w.taskRow(toReturn)).toMatchObject({ status: 'pending', return_comment: 'Falta o áudio' });
   });
 
@@ -426,6 +428,63 @@ describe('approve and return: the owner of the content, or who approves for the 
       await w.reactivateClient(ids.clientArchived);
     }
     await expect(approveAs(ids.adminA, closed)).rejects.toMatchObject(WRONG_STATE);
+  });
+});
+
+describe('the owner of a content cannot be moved to approve a subtask (issue #249, review A2)', () => {
+  it('refuses the person who delivers a subtask to make themselves the owner and approve it, step by step', async () => {
+    const attacker = await w.personWith('conteudo.operar', 'conteudo.visualizar');
+    const reviewed = await w.seedContent(ids.clientA1, { owner: ids.managerA });
+    const id = await w.seedTask(reviewed, { assignee: attacker });
+
+    await deliverAs(attacker, id);
+    await expect(approveAs(attacker, id)).rejects.toMatchObject(NOT_ALLOWED);
+    await expect(w.asUser(attacker, (transaction) => transaction('contents').where({ id: reviewed }).update({ owner_user_id: attacker })))
+      .rejects.toMatchObject({ code: '42501', message: expect.stringContaining('approves for the agency') });
+    await expect(approveAs(attacker, id)).rejects.toMatchObject(NOT_ALLOWED);
+
+    expect(await w.taskRow(id)).toMatchObject({ status: 'delivered', approved_by: null, approved_at: null });
+    expect((await w.contentRow(reviewed)).owner_user_id).toBe(ids.managerA);
+  });
+
+  it('records who approved a subtask and when, from the actor and the clock, whatever the statement names', async () => {
+    const id = await w.seedTask(contentOfOwner, { status: 'delivered' });
+
+    await asOwnerWithActor(ids.managerA, (transaction) => transaction('content_tasks').where({ id }).update({
+      status: 'approved', approved_by: ids.adminA, approved_at: new Date('2000-01-01T00:00:00.000Z')
+    }));
+
+    const row = await w.taskRow(id);
+    expect(row.approved_by).toBe(ids.managerA);
+    expect(Math.abs((row.approved_at as Date).getTime() - Date.now())).toBeLessThan(10_000);
+  });
+
+  it('does not approve a subtask without an actor, and does not rewrite who approved it', async () => {
+    const delivered = await w.seedTask(contentOfOwner, { status: 'delivered' });
+    const approved = await w.seedTask(contentOfOwner, { status: 'approved' });
+
+    await expect(w.getOwner().knex('content_tasks').where({ id: delivered }).update({ status: 'approved' }))
+      .rejects.toMatchObject({ code: '42501', message: expect.stringContaining('approved by a person') });
+    await expect(asOwnerWithActor(ids.adminA, (transaction) => transaction('content_tasks').where({ id: approved }).update({ approved_by: ids.managerA })))
+      .rejects.toMatchObject({ code: '42501', message: expect.stringContaining('who approved it') });
+
+    expect((await w.taskRow(delivered)).status).toBe('delivered');
+    expect((await w.taskRow(approved)).approved_by).toBe(ids.adminA);
+  });
+
+  it('refuses a task that is approved with nobody approving, and one with an approver that is not approved', async () => {
+    await expect(w.getOwner().knex('content_tasks').insert({ content_id: contentOfOwner, client_id: ids.clientA1, title: 'x', assignee_user_id: ids.productionA, due_on: '2026-10-15', status: 'approved' }))
+      .rejects.toMatchObject({ code: '23514', constraint: 'content_tasks_approval_shape' });
+    await expect(w.getOwner().knex('content_tasks').insert({ content_id: contentOfOwner, client_id: ids.clientA1, title: 'x', assignee_user_id: ids.productionA, due_on: '2026-10-15', approved_by: ids.adminA, approved_at: new Date() }))
+      .rejects.toMatchObject({ code: '23514', constraint: 'content_tasks_approval_shape' });
+  });
+
+  it.each(['approved_by', 'approved_at'] as const)('refuses an UPDATE and an INSERT of %s at the privilege layer', async (column) => {
+    const id = await w.seedTask(content);
+    const value = column === 'approved_by' ? ids.adminA : new Date();
+
+    await expect(updateTask(ids.adminA, id, { [column]: value })).rejects.toMatchObject(deniedByGrant);
+    await expect(insertTask(ids.adminA, content, { [column]: value })).rejects.toMatchObject(deniedByGrant);
   });
 });
 
