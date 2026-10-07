@@ -70,7 +70,7 @@ export const readQuotaSnapshot = async (
   };
 };
 
-// Advisory, not a row lock: `agencies` has no UPDATE policy, so FOR UPDATE under RLS matches no rows.
+// Advisory, not a row lock: `ageniza_app` has no UPDATE on `agencies`, and a row lock needs it.
 export const lockAgencyStorageQuota = async (transaction: Transaction, agencyId: string): Promise<void> => {
   await raw(transaction, 'select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended((\'media-quota:\' || (?::uuid)::text), 0))', [agencyId]);
 };
