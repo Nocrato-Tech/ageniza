@@ -4,7 +4,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { z } from 'zod';
 
 import { CollaboratorListResponseSchema } from '@ageniza/contracts';
-import { BadgeCard, Button, Pagination, Select, Skeleton, TextInput } from '@ageniza/ui';
+import { BadgeCard, Button, LiveStatus, Pagination, Select, Skeleton, TextInput } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -104,7 +104,12 @@ export function CollaboratorsPage() {
   const q = searchParams.get('q') ?? '';
   const role = searchParams.get('role') ?? '';
   const jobTitle = searchParams.get('jobTitle') ?? '';
-  const status: 'active' | 'removed' = searchParams.get('status') === 'removed' ? 'removed' : 'active';
+  const requestedStatus: 'active' | 'removed' = searchParams.get('status') === 'removed' ? 'removed' : 'active';
+  // A shared link can carry `status=removed` to someone without the administrative permission; the
+  // API would answer 403 and the whole team list would turn into a not-found. The SPEC says that
+  // without the permission only `active` is returned, so the filter falls back to it and says so.
+  const removedFilterIgnored = requestedStatus === 'removed' && !canSeeRemoved;
+  const status: 'active' | 'removed' = removedFilterIgnored ? 'active' : requestedStatus;
   const page = parsePage(searchParams.get('page'));
   const invitesPage = parsePage(searchParams.get('convites'));
   // Whitespace-only is not a search: the API trims `q` and refuses an empty filter as a 400.
@@ -197,6 +202,8 @@ export function CollaboratorsPage() {
         />
         {canSeeRemoved && <Select label="Status" value={status} options={STATUS_OPTIONS} onChange={(value) => setFilter('status', value)} />}
       </div>
+
+      {removedFilterIgnored && <LiveStatus>Você não tem permissão para ver colaboradores removidos. Mostrando os ativos.</LiveStatus>}
 
       {collaborators.isPending ? (
         <ul className="collaborators__grid" aria-hidden="true">
