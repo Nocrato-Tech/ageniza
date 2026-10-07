@@ -345,6 +345,15 @@ input:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* The link ended: a divider plus the label, inside the badge (specs/colaboradores.md §7, #105). */
+.ui-badge-card__removed {
+  margin: 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-default);
+  color: var(--text-muted);
+  font: var(--body-md);
+}
+
 .ui-badge-card__skeleton {
   height: 11rem;
 }
@@ -486,6 +495,12 @@ input:focus-visible {
 
 .collaborators__badge-link:hover .ui-badge-card {
   background: var(--bg-hover);
+}
+
+/* The reactivate action of a removed badge sits under the card, never inside the link (#105). */
+.collaborators__reactivate {
+  margin-top: var(--space-2);
+  justify-self: start;
 }
 
 .ui-modal {
