@@ -237,6 +237,16 @@ describe('BadgeCard', () => {
     expect(container.querySelector('.ui-badge-card__job')).toBeNull();
     expect(screen.getByText('Gestor de conta')).toBeTruthy();
   });
+
+  it('says the link ended only on a removed badge', () => {
+    const { container } = render(<BadgeCard name="Paulo Lima" photoUrl={null} jobTitle="Motion" role="Produção" removed />);
+    expect(screen.getByText('removido')).toBeTruthy();
+    expect(container.querySelector('.ui-badge-card__removed')).not.toBeNull();
+
+    cleanup();
+    render(<BadgeCard name="Ana Prado" photoUrl={null} jobTitle="Editora" role="Produção" />);
+    expect(screen.queryByText('removido')).toBeNull();
+  });
 });
 
 describe('Select', () => {

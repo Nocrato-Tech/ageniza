@@ -13,6 +13,7 @@ import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InviteCollaboratorDialog } from './invite-collaborator.js';
 import { PendingInvitationsSection } from './pending-invitations.js';
+import { ReactivateCollaboratorDialog } from './reactivate-collaborator.js';
 import { NotFoundPage } from './status-pages.js';
 
 /** `specs/colaboradores.md` §6: 24 per page, a multiple of both 3 and 4 so the grid never breaks. */
@@ -25,6 +26,12 @@ const SYSTEM_ROLES = [
   { value: 'production', label: 'Produção' },
   { value: 'sales', label: 'Vendas' },
   { value: 'finance', label: 'Financeiro' }
+] as const;
+
+/** The status filter only exists for the roles that may see removed links (specs/colaboradores.md §7, #105). */
+const STATUS_OPTIONS = [
+  { value: 'active', label: 'Ativos' },
+  { value: 'removed', label: 'Removidos' }
 ] as const;
 
 /**
@@ -44,6 +51,7 @@ interface Filters {
   readonly q: string;
   readonly role: string;
   readonly jobTitle: string;
+  readonly status: 'active' | 'removed';
 }
 
 /** The listing path, with every value percent-encoded (never `+`, which is not a space in a path). */
@@ -52,6 +60,8 @@ const listPath = (agenciaId: string, filters: Filters): string => {
   if (filters.q !== '') params.push(['q', filters.q]);
   if (filters.role !== '') params.push(['role', filters.role]);
   if (filters.jobTitle !== '') params.push(['jobTitle', filters.jobTitle]);
+  // `active` is the API default, so only the removed filter travels; the two are never mixed.
+  if (filters.status === 'removed') params.push(['status', 'removed']);
   const query = params.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&');
   return `${apiPath('/agencies/:agenciaId/collaborators', { agenciaId })}?${query}`;
 };
@@ -69,7 +79,14 @@ export function CollaboratorsPage() {
   const httpClient = useApiClient();
   const agency = useAgencyContext();
   const canInvite = useCan('colaborador.convidar');
+  const canRemove = useCan('colaborador.remover');
+  const canChangeRole = useCan('colaborador.alterar_papel');
+  // Seeing removed links is the administrative permission of the SPEC; reactivating needs the role
+  // permission, because the route asks for it (specs/colaboradores.md §5 rule 9, issue #98/#105).
+  const canSeeRemoved = agency.isOwner || canRemove || canChangeRole;
+  const canReactivate = agency.isOwner || canChangeRole;
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [reactivating, setReactivating] = useState<{ membershipId: string; name: string } | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -87,14 +104,15 @@ export function CollaboratorsPage() {
   const q = searchParams.get('q') ?? '';
   const role = searchParams.get('role') ?? '';
   const jobTitle = searchParams.get('jobTitle') ?? '';
+  const status: 'active' | 'removed' = searchParams.get('status') === 'removed' ? 'removed' : 'active';
   const page = parsePage(searchParams.get('page'));
   const invitesPage = parsePage(searchParams.get('convites'));
   // Whitespace-only is not a search: the API trims `q` and refuses an empty filter as a 400.
   const search = q.trim();
 
   const collaborators = useQuery({
-    queryKey: ['agency', agency.agencyId, 'collaborators', { page, q: search, role, jobTitle }],
-    queryFn: () => httpClient.request({ path: listPath(agency.agencyId, { page, q: search, role, jobTitle }), response: CollaboratorListResponseSchema })
+    queryKey: ['agency', agency.agencyId, 'collaborators', { page, q: search, role, jobTitle, status }],
+    queryFn: () => httpClient.request({ path: listPath(agency.agencyId, { page, q: search, role, jobTitle, status }), response: CollaboratorListResponseSchema })
   });
 
   const jobTitles = useQuery({
@@ -105,9 +123,10 @@ export function CollaboratorsPage() {
     })
   });
 
-  const setFilter = (key: 'q' | 'role' | 'jobTitle', value: string): void => {
+  const setFilter = (key: 'q' | 'role' | 'jobTitle' | 'status', value: string): void => {
     const next = new URLSearchParams(searchParams);
-    if (value === '') next.delete(key); else next.set(key, value);
+    // `active` is the listing default, so it is the absence of the parameter, never `status=active`.
+    if (value === '' || (key === 'status' && value === 'active')) next.delete(key); else next.set(key, value);
     // A filter change always returns to the first page.
     next.delete('page');
     setSearchParams(next, { replace: true });
@@ -176,6 +195,7 @@ export function CollaboratorsPage() {
           title={jobTitles.isError ? 'Não foi possível carregar os cargos.' : undefined}
           onChange={(value) => setFilter('jobTitle', value)}
         />
+        {canSeeRemoved && <Select label="Status" value={status} options={STATUS_OPTIONS} onChange={(value) => setFilter('status', value)} />}
       </div>
 
       {collaborators.isPending ? (
@@ -188,7 +208,11 @@ export function CollaboratorsPage() {
           <Button onClick={() => { void collaborators.refetch(); }}>Tentar de novo</Button>
         </div>
       ) : outOfRange ? null : <>
-        {collaborators.data.data.length === 0 && hasFilters ? (
+        {collaborators.data.data.length === 0 && status === 'removed' && !hasFilters ? (
+          <div className="collaborators__empty">
+            <p>Ninguém foi removido desta agência</p>
+          </div>
+        ) : collaborators.data.data.length === 0 && hasFilters ? (
           <div className="collaborators__empty">
             <p>{search !== '' ? `Nenhuma pessoa encontrada para "${search}"` : 'Nenhuma pessoa encontrada com esses filtros.'}</p>
             <Button variant="ghost" onClick={() => { setSearchParams({}, { replace: true }); }}>
@@ -210,8 +234,18 @@ export function CollaboratorsPage() {
                     photoUrl={collaborator.photoUrl}
                     jobTitle={collaborator.jobTitle}
                     role={collaborator.role.name}
+                    removed={collaborator.status === 'removed'}
                   />
                 </Link>
+                {collaborator.status === 'removed' && canReactivate && (
+                  <Button
+                    className="collaborators__reactivate"
+                    size="sm"
+                    variant="secondary"
+                    aria-label={`Reativar ${collaborator.name}`}
+                    onClick={() => setReactivating({ membershipId: collaborator.membershipId, name: collaborator.name })}
+                  >Reativar</Button>
+                )}
               </li>
             ))}
           </ul>
@@ -226,6 +260,12 @@ export function CollaboratorsPage() {
       <PendingInvitationsSection page={invitesPage} onPageChange={changeInvitesPage} onInvite={() => setInviteOpen(true)} />
       {membershipId !== null && <CollaboratorDetailDialog key={agency.agencyId + membershipId} membershipId={membershipId} onClose={closeDetail} />}
       {inviteOpen && <InviteCollaboratorDialog onClose={() => setInviteOpen(false)} />}
+      {reactivating !== null && <ReactivateCollaboratorDialog
+        key={agency.agencyId + reactivating.membershipId}
+        membershipId={reactivating.membershipId}
+        name={reactivating.name}
+        onClose={() => setReactivating(null)}
+      />}
     </section>
   );
 }
