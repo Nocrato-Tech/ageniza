@@ -1870,9 +1870,11 @@ describe('invitation HTTP module', () => {
     });
   });
 
-  // Issue #354: the route refuses an active member's e-mail and still accepts a removed one
-  // (re-inviting a removed member reactivates the same link when the invitation is accepted).
-  describe('active and removed members in the collaborator invitation (issue #354)', () => {
+  // Issue #354: the invitation routes refuse an active member's e-mail and still accept a removed
+  // one (re-inviting a removed member reactivates the same link when accepted). The membership
+  // check must stay scoped to the route's own agency/client: seeing a membership the caller has a
+  // link to, elsewhere, would turn the 409 into an oracle.
+  describe('active and removed members in the invitation routes (issue #354)', () => {
     const MEMBER_IP = '127.0.0.6';
     const loginFromMemberIp = async (user: TestUserFixture): Promise<string> => {
       const login = await app.app.inject({
@@ -1885,48 +1887,125 @@ describe('invitation HTTP module', () => {
       expect(login.statusCode).toBe(200);
       return sessionCookieHeader(login.cookies);
     };
+    const addAgencyMembership = async (targetAgencyId: string, emailLabel: string, status: 'active' | 'removed'): Promise<TestUserFixture> => {
+      const member = await makeUser(emailLabel);
+      await owner.knex('agency_memberships').insert({ agency_id: targetAgencyId, user_id: member.id, role_id: productionRoleId, status });
+      return member;
+    };
+    const addPortalMembership = async (targetClientId: string, emailLabel: string, status: 'active' | 'removed'): Promise<TestUserFixture> => {
+      const member = await makeUser(emailLabel);
+      await owner.knex('client_memberships').insert({ client_id: targetClientId, user_id: member.id, status });
+      return member;
+    };
 
-    it('refuses an invitation to the e-mail of an active member, writing nothing and sending nothing', async () => {
-      const cookie = await loginFromMemberIp(admin);
-      const emailsBefore = sender.sent.length;
-      const invitationsBefore = await owner.knex('invitations').where({ agency_id: agencyId }).select('id');
-
-      const response = await app.app.inject({
+    describe('collaborator invitations', () => {
+      const inviteCollaborator = (cookie: string, email: string): Promise<Injection> => app.app.inject({
         method: 'POST',
         url: `/agencies/${agencyId}/invitations/collaborators`,
         remoteAddress: MEMBER_IP,
         headers: { ...origin, cookie },
-        payload: { email: admin.email, roleId: productionRoleId }
+        payload: { email, roleId: productionRoleId }
       });
 
-      expect(response.statusCode).toBe(409);
-      expect(response.json().error).toMatchObject({ code: 'MEMBERSHIP_EXISTS' });
-      expect(sender.sent).toHaveLength(emailsBefore);
-      await expect(owner.knex('invitations').where({ agency_id: agencyId }).select('id')).resolves.toHaveLength(invitationsBefore.length);
+      it('refuses an invitation to a second active member of the agency, writing nothing and sending nothing', async () => {
+        const cookie = await loginFromMemberIp(admin);
+        const active = await addAgencyMembership(agencyId, 'invitation-active-member', 'active');
+        const emailsBefore = sender.sent.length;
+        const invitationsBefore = await owner.knex('invitations').where({ agency_id: agencyId }).select('id');
+
+        const response = await inviteCollaborator(cookie, active.email);
+        expect(response.statusCode).toBe(409);
+        expect(response.json().error).toMatchObject({ code: 'MEMBERSHIP_EXISTS' });
+        expect(sender.sent).toHaveLength(emailsBefore);
+        await expect(owner.knex('invitations').where({ agency_id: agencyId }).select('id')).resolves.toHaveLength(invitationsBefore.length);
+      });
+
+      it('accepts an invitation to a removed member of the agency, and the removed member may be re-invited', async () => {
+        const cookie = await loginFromMemberIp(admin);
+        const removed = await addAgencyMembership(agencyId, 'invitation-removed-member', 'removed');
+        const emailsBefore = sender.sent.length;
+
+        const response = await inviteCollaborator(cookie, removed.email);
+        expect(response.statusCode).toBe(201);
+        expect(sender.sent.length).toBeGreaterThan(emailsBefore);
+        const pending = await owner.knex('invitations')
+          .where({ agency_id: agencyId, email: removed.email })
+          .whereNull('revoked_at')
+          .whereNull('used_at')
+          .first('id');
+        expect(pending).toBeDefined();
+      });
+
+      it('accepts an invitation to a member active only in another agency of the caller', async () => {
+        const cookie = await loginFromMemberIp(admin);
+        const otherAgencyId = await createAgency('Other active member agency', admin.id);
+        const other = await addAgencyMembership(otherAgencyId, 'invitation-other-agency-member', 'active');
+
+        const response = await inviteCollaborator(cookie, other.email);
+        expect(response.statusCode).toBe(201);
+        const pending = await owner.knex('invitations')
+          .where({ agency_id: agencyId, email: other.email })
+          .whereNull('revoked_at')
+          .whereNull('used_at')
+          .first('id');
+        expect(pending).toBeDefined();
+      });
     });
 
-    it('accepts an invitation to the e-mail of a removed member', async () => {
-      const cookie = await loginFromMemberIp(admin);
-      const removed = await makeUser('invitation-removed-member');
-      await owner.knex('agency_memberships').insert({ agency_id: agencyId, user_id: removed.id, role_id: productionRoleId, status: 'removed' });
-      const emailsBefore = sender.sent.length;
-
-      const response = await app.app.inject({
+    describe('client invitations', () => {
+      const inviteClient = (cookie: string, email: string): Promise<Injection> => app.app.inject({
         method: 'POST',
-        url: `/agencies/${agencyId}/invitations/collaborators`,
+        url: `/agencies/${agencyId}/clients/${clientId}/invitations`,
         remoteAddress: MEMBER_IP,
         headers: { ...origin, cookie },
-        payload: { email: removed.email, roleId: productionRoleId }
+        payload: { email }
       });
 
-      expect(response.statusCode).toBe(201);
-      expect(sender.sent.length).toBeGreaterThan(emailsBefore);
-      const pending = await owner.knex('invitations')
-        .where({ agency_id: agencyId, email: removed.email })
-        .whereNull('revoked_at')
-        .whereNull('used_at')
-        .first('id');
-      expect(pending).toBeDefined();
+      it('refuses an invitation to an active portal member of the client, writing nothing and sending nothing', async () => {
+        const cookie = await loginFromMemberIp(admin);
+        const active = await addPortalMembership(clientId, 'invitation-client-active-member', 'active');
+        const emailsBefore = sender.sent.length;
+        const invitationsBefore = await owner.knex('invitations').where({ agency_id: agencyId }).select('id');
+
+        const response = await inviteClient(cookie, active.email);
+        expect(response.statusCode).toBe(409);
+        expect(response.json().error).toMatchObject({ code: 'MEMBERSHIP_EXISTS' });
+        expect(sender.sent).toHaveLength(emailsBefore);
+        await expect(owner.knex('invitations').where({ agency_id: agencyId }).select('id')).resolves.toHaveLength(invitationsBefore.length);
+      });
+
+      it('accepts an invitation to a removed portal member of the client', async () => {
+        const cookie = await loginFromMemberIp(admin);
+        const removed = await addPortalMembership(clientId, 'invitation-client-removed-member', 'removed');
+        const emailsBefore = sender.sent.length;
+
+        const response = await inviteClient(cookie, removed.email);
+        expect(response.statusCode).toBe(201);
+        expect(sender.sent.length).toBeGreaterThan(emailsBefore);
+        const pending = await owner.knex('invitations')
+          .where({ agency_id: agencyId, purpose: 'client_invite', email: removed.email, client_id: clientId })
+          .whereNull('revoked_at')
+          .whereNull('used_at')
+          .first('id');
+        expect(pending).toBeDefined();
+      });
+
+      it('accepts an invitation to a portal member active only in another client of the caller', async () => {
+        const cookie = await loginFromMemberIp(admin);
+        const otherClientId = randomUUID();
+        createdClientIds.push(otherClientId);
+        await owner.knex('clients').insert({ id: otherClientId, agency_id: agencyId, name: 'Other active member client' });
+        const other = await addPortalMembership(otherClientId, 'invitation-other-client-member', 'active');
+
+        const response = await inviteClient(cookie, other.email);
+        expect(response.statusCode).toBe(201);
+        const pending = await owner.knex('invitations')
+          .where({ agency_id: agencyId, purpose: 'client_invite', email: other.email, client_id: clientId })
+          .whereNull('revoked_at')
+          .whereNull('used_at')
+          .first('id');
+        expect(pending).toBeDefined();
+      });
     });
   });
 });
