@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link, NavLink, Outlet, useMatch, useOutletContext, useParams } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useMatch, useOutletContext, useParams } from 'react-router-dom';
+import { z } from 'zod';
 
 import { ClientDetailResponseSchema, ClientSchema, type ClientDetailResponse } from '@ageniza/contracts';
 import { Avatar, Button, Skeleton } from '@ageniza/ui';
@@ -13,22 +14,31 @@ import { HttpClientError, useApiClient } from './http.js';
 import { NotFoundPage } from './status-pages.js';
 
 const NOT_INFORMED = 'Não informado';
-/** The closing actions are issue #139; until they land, the header shows where they will be,
- *  never a control that silently does nothing (docs/design-system.md section 23). */
-const ARCHIVE_PENDING = 'As ações de encerramento chegam na próxima entrega.';
-const REACTIVATE_PENDING = 'A reativação chega na próxima entrega.';
 
 export const clientDetailQueryKey = (agencyId: string, clientId: string) =>
   ['agency', agencyId, 'clients', 'detail', clientId] as const;
 
 /**
- * `closingDate` is a date-only string and `archivedAt` an ISO timestamp. Reading the day and month
- * from the text keeps the label identical in every timezone; `new Date` would shift it.
+ * `closingDate` is a date-only string. Reading the day and month from the text keeps the label
+ * identical in every timezone; `new Date` would shift it.
  */
 export const formatDayMonth = (value: string): string => {
   const [year, month, day] = value.slice(0, 10).split('-');
   if (year === undefined || month === undefined || day === undefined) return value;
   return `${day}/${month}`;
+};
+
+/**
+ * `archivedAt` is an ISO timestamp the API answers in UTC (`toISOString`): slicing the text would
+ * show the UTC day, which flips for the evening hours of `America/Sao_Paulo` (archiving at 22h of
+ * the 7th becomes the 8th in UTC). The archiving day is the agency's day, so the label is
+ * formatted in that timezone.
+ */
+const archivingDayFormatter = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' });
+
+export const formatArchivedDay = (value: string): string => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : archivingDayFormatter.format(date);
 };
 
 /** The contract validates http(s) on write; a response is untrusted input and never becomes a href. */
@@ -61,7 +71,6 @@ const useClientDetail = (): ClientDetailResponse => {
 
 function ClientHeader({ client, onEdit }: { client: ClientDetailResponse; onEdit: () => void }) {
   const canOperate = useCan('cliente.operar');
-  const canArchive = useCan('cliente.arquivar');
   const active = client.status === 'active';
 
   return <header className="client-detail__header">
@@ -76,8 +85,6 @@ function ClientHeader({ client, onEdit }: { client: ClientDetailResponse; onEdit
     </div>
     <div className="client-detail__actions">
       {canOperate && active && <Button onClick={onEdit}>Editar</Button>}
-      {canArchive && active && <Button variant="ghost" disabled title={ARCHIVE_PENDING} aria-label="Ações de encerramento"><span aria-hidden="true">⋯</span></Button>}
-      {canArchive && !active && <Button disabled title={REACTIVATE_PENDING}>Reativar</Button>}
     </div>
   </header>;
 }
@@ -91,6 +98,7 @@ function ClientHeader({ client, onEdit }: { client: ClientDetailResponse; onEdit
 export function ClientDetailPage() {
   const agency = useAgencyContext();
   const httpClient = useApiClient();
+  const location = useLocation();
   const { agenciaId = '', clienteId = '' } = useParams();
   const [editOpen, setEditOpen] = useState(false);
   const canSeeAccess = useCan('cliente.convidar_usuario');
@@ -116,9 +124,23 @@ export function ClientDetailPage() {
 
   if (notFound || (accessTab !== null && !canSeeAccess)) return <NotFoundPage as="section" />;
 
-  const back = <Link className="client-detail__back" to={`/agencia/${agenciaId}/clientes`}>← Clientes</Link>;
+  // The roster passes its own address (filters and page included) when it opens the detail
+  // (review of #379, specs/clientes.md §7 "volta à carteira preservando busca, filtro e página").
+  // The state is only an address this agency's roster can have produced; anything else falls back
+  // to the plain list.
+  const listUrlFromState = (() => {
+    const state = z.object({ clientListUrl: z.string() }).safeParse(location.state);
+    if (!state.success) return undefined;
+    const prefix = `/agencia/${agenciaId}/clientes`;
+    const url = state.data.clientListUrl;
+    return url === prefix || url.startsWith(`${prefix}?`) ? url : undefined;
+  })();
+  const back = <Link className="client-detail__back" to={listUrlFromState ?? `/agencia/${agenciaId}/clientes`}>← Clientes</Link>;
 
-  if (detail.isError || (detail.data !== undefined && client === undefined)) {
+  // A background refetch that fails (e.g. after the save invalidation) must not replace the page
+  // nor unmount an open modal: the error screen is only for when there is nothing to show.
+  const failedWithoutData = detail.isError && detail.data === undefined;
+  if (failedWithoutData || (detail.data !== undefined && client === undefined)) {
     return <section className="client-detail">
       {back}
       <div className="client-detail__error" role="alert">
@@ -144,7 +166,7 @@ export function ClientDetailPage() {
     {back}
     {client.status === 'archived' && (
       <p className="client-detail__archived">
-        {client.archivedAt === null ? 'Cliente arquivado' : `Cliente arquivado em ${formatDayMonth(client.archivedAt)}`}
+        {client.archivedAt === null ? 'Cliente arquivado' : `Cliente arquivado em ${formatArchivedDay(client.archivedAt)}`}
       </p>
     )}
     <ClientHeader client={client} onEdit={() => setEditOpen(true)} />
@@ -182,7 +204,7 @@ export function ClientGeneralTab() {
       <h2 id="client-registration-title">Cadastro</h2>
       <dl className="client-general__fields">
         <dt>Razão social</dt><dd>{client.legalName ?? NOT_INFORMED}</dd>
-        <dt>CNPJ</dt><dd>{client.taxId ?? NOT_INFORMED}</dd>
+        <dt>CNPJ ou CPF</dt><dd>{client.taxId ?? NOT_INFORMED}</dd>
         <dt>Segmento</dt><dd>{client.segment ?? NOT_INFORMED}</dd>
         <dt>Site</dt><dd>{client.website === null
           ? NOT_INFORMED

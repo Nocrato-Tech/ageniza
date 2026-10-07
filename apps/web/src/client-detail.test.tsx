@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { PROFILE_PHOTO_MAX_BYTES } from '@ageniza/contracts';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
-import { formatDayMonth } from './client-detail.js';
+import { formatArchivedDay, formatDayMonth } from './client-detail.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
@@ -73,10 +73,12 @@ const academia = {
   website: null,
   summary: { brandStudyFilled: 1, threadsAwaitingAgency: 0, threadsAnsweredByAgency: 0, activePortalMembers: 1 }
 };
+/** The API clears `closingDate` on archiving; the fixture still carries one on purpose, so the
+ *  "encerra em" badge can be proven dead on an archived client (mutation survived otherwise). */
 const archivedClient = {
   ...padaria,
   status: 'archived',
-  closingDate: null,
+  closingDate: '2026-10-30',
   archivedAt: '2026-10-04T12:00:00.000Z',
   summary: { ...padaria.summary, activePortalMembers: 0 }
 };
@@ -100,6 +102,8 @@ const listItemOf = (client: Record<string, unknown>): Record<string, unknown> =>
   threadsAwaitingAgency: 2,
   pendingInvitations: 0
 });
+
+const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 interface Scenario {
   readonly authenticated?: boolean;
@@ -211,6 +215,8 @@ const editNameInput = (dialog: HTMLElement): HTMLInputElement =>
   within(groupOf(dialog, 'Cliente')).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
 const editInstagramInput = (dialog: HTMLElement): HTMLInputElement =>
   within(groupOf(dialog, 'Cliente')).getByRole('textbox', { name: 'Instagram' }) as HTMLInputElement;
+const editLegalNameInput = (dialog: HTMLElement): HTMLInputElement =>
+  within(groupOf(dialog, 'Empresa')).getByRole('textbox', { name: 'Razão social' }) as HTMLInputElement;
 const editTaxIdInput = (dialog: HTMLElement): HTMLInputElement =>
   within(groupOf(dialog, 'Empresa')).getByRole('textbox', { name: 'CNPJ ou CPF' }) as HTMLInputElement;
 const editWebsiteInput = (dialog: HTMLElement): HTMLInputElement =>
@@ -284,33 +290,79 @@ describe('client detail (#136)', () => {
     await waitFor(() => expect(probe.pathname).toBe(clientUrl()));
   });
 
+  it('preserves the roster search, filter and page when returning from the detail (#136, review of #379)', async () => {
+    const { impl } = makeFetch({
+      clients: () => json({ data: [listItemOf(padaria)], meta: { page: 2, pageSize: 20, totalItems: 21, totalPages: 2 } })
+    });
+    const { probe } = renderClientDetail(impl, `/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
+    await screen.findByText('Padaria Central');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
+    await waitFor(() => expect(probe.pathname).toBe(clientUrl()));
+    const back = screen.getByRole('link', { name: '← Clientes' });
+    expect(back.getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
+
+    fireEvent.click(back);
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes`));
+    expect(probe.search).toContain('search=padaria');
+    expect(probe.search).toContain('status=archived');
+    expect(probe.search).toContain('page=2');
+  });
+
   it('leads every General block to its tab with a click, and the back link to the wallet', async () => {
     const { impl } = makeFetch();
     const { container, probe } = renderClientDetail(impl);
     await screen.findByRole('heading', { name: 'Padaria Central' });
 
-    const general = container.querySelector<HTMLElement>('.client-general');
-    if (general === null) throw new Error('The General tab was not rendered.');
+    const general = (): HTMLElement => {
+      const block = container.querySelector<HTMLElement>('.client-general');
+      if (block === null) throw new Error('The General tab was not rendered.');
+      return block;
+    };
     expect(screen.getByRole('link', { name: '← Clientes' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes`);
-    const brandLink = within(general).getByRole('link', { name: /Estudo de marca/ });
-    const conversationsLink = within(general).getByRole('link', { name: /Conversas/ });
-    const portalLink = within(general).getByRole('link', { name: /Portal/ });
-    expect(brandLink.getAttribute('href')).toBe(clientUrl(CLIENT_ID, 'estudo-de-marca'));
-    expect(conversationsLink.getAttribute('href')).toBe(clientUrl(CLIENT_ID, 'estudo-de-marca'));
-    expect(portalLink.getAttribute('href')).toBe(clientUrl(CLIENT_ID, 'acessos'));
+    expect(within(general()).getByRole('link', { name: /Estudo de marca/ }).getAttribute('href')).toBe(clientUrl(CLIENT_ID, 'estudo-de-marca'));
+    expect(within(general()).getByRole('link', { name: /Conversas/ }).getAttribute('href')).toBe(clientUrl(CLIENT_ID, 'estudo-de-marca'));
+    expect(within(general()).getByRole('link', { name: /Portal/ }).getAttribute('href')).toBe(clientUrl(CLIENT_ID, 'acessos'));
 
-    fireEvent.click(brandLink);
+    fireEvent.click(within(general()).getByRole('link', { name: /Estudo de marca/ }));
     expect(await screen.findByRole('heading', { name: 'Estudo de marca' })).toBeTruthy();
     expect(probe.pathname).toBe(clientUrl(CLIENT_ID, 'estudo-de-marca'));
+
+    // The browser back between tabs returns to Geral.
+    await act(async () => { probe.navigate(-1); });
+    expect(await screen.findByRole('heading', { name: 'Cadastro' })).toBeTruthy();
+    expect(probe.pathname).toBe(clientUrl(CLIENT_ID, 'geral'));
+
+    fireEvent.click(within(general()).getByRole('link', { name: /Conversas/ }));
+    expect(await screen.findByRole('heading', { name: 'Estudo de marca' })).toBeTruthy();
+    expect(probe.pathname).toBe(clientUrl(CLIENT_ID, 'estudo-de-marca'));
+    await act(async () => { probe.navigate(-1); });
+    expect(await screen.findByRole('heading', { name: 'Cadastro' })).toBeTruthy();
+
+    fireEvent.click(within(general()).getByRole('link', { name: /Portal/ }));
+    expect(await screen.findByRole('heading', { name: 'Acessos' })).toBeTruthy();
+    expect(probe.pathname).toBe(clientUrl(CLIENT_ID, 'acessos'));
   });
 
-  it('writes "Não informado" for every empty registration field instead of hiding it', async () => {
+  it('writes "Não informado" for every empty registration field, and never renders a bare "@"', async () => {
     const { impl } = makeFetch({ client: () => json(drainedClient) });
-    renderClientDetail(impl);
+    const { container } = renderClientDetail(impl);
 
     await screen.findByRole('heading', { name: 'Padaria Central' });
     expect(screen.getAllByText('Não informado')).toHaveLength(7);
-    expect(screen.queryByText('@padariacentral')).toBeNull();
+    expect(container.textContent).not.toContain('@');
+    expect(screen.queryByText('@null')).toBeNull();
+  });
+
+  it('shows the archiving day in America/Sao_Paulo, not the UTC slice (review of #379)', async () => {
+    // 01:00 UTC is 22h of the previous day in São Paulo: archiving at 22h of 07/10 becomes the
+    // 8th in UTC. The banner must say the agency's day.
+    const { impl } = makeFetch({ client: () => json({ ...archivedClient, archivedAt: '2026-10-08T01:00:00.000Z' }) });
+    renderClientDetail(impl);
+
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    expect(screen.getByText('Cliente arquivado em 07/10')).toBeTruthy();
+    expect(screen.queryByText('Cliente arquivado em 08/10')).toBeNull();
   });
 
   it('shows Editar only for cliente.operar on an active client, and opens the edit modal', async () => {
@@ -320,42 +372,31 @@ describe('client detail (#136)', () => {
     expect(screen.queryByRole('button', { name: 'Editar' })).toBeNull();
     cleanup();
 
-    const manager = makeFetch({ permissions: MANAGER_PERMISSIONS });
-    renderClientDetail(manager.impl);
+    renderClientDetail(makeFetch({ permissions: MANAGER_PERMISSIONS }).impl);
     await screen.findByRole('heading', { name: 'Padaria Central' });
     expect(await openEditDialog()).toBeTruthy();
   });
 
-  it('shows the closing actions only for cliente.arquivar', async () => {
-    const reader = makeFetch({ permissions: READER_PERMISSIONS });
-    renderClientDetail(reader.impl);
-    await screen.findByRole('heading', { name: 'Padaria Central' });
-    expect(screen.queryByRole('button', { name: 'Ações de encerramento' })).toBeNull();
-    cleanup();
-
-    const manager = makeFetch({ permissions: MANAGER_PERMISSIONS });
-    renderClientDetail(manager.impl);
-    await screen.findByRole('heading', { name: 'Padaria Central' });
-    expect(screen.queryByRole('button', { name: 'Ações de encerramento' })).toBeNull();
-    cleanup();
-
+  it('shows no closing action before its own task lands (#139)', async () => {
     const admin = makeFetch();
     renderClientDetail(admin.impl);
     await screen.findByRole('heading', { name: 'Padaria Central' });
-    // #139 has not landed: the control is visibly inert, never a menu that does nothing.
-    expect(screen.getByRole('button', { name: 'Ações de encerramento' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Ações de encerramento' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reativar' })).toBeNull();
+    expect(within(screen.getByRole('heading', { name: 'Padaria Central' }).closest('header') as HTMLElement).queryByText('⋯')).toBeNull();
   });
 
-  it('never shows Editar on an archived client, and offers Reativar only to cliente.arquivar', async () => {
+  it('never shows Editar on an archived client, not even a Reativar before #139', async () => {
     const admin = makeFetch({ client: () => json(archivedClient) });
     renderClientDetail(admin.impl);
     await screen.findByRole('heading', { name: 'Padaria Central' });
     expect(screen.getByText('Arquivado')).toBeTruthy();
     expect(screen.getByText('Cliente arquivado em 04/10')).toBeTruthy();
+    // The fixture carries a closingDate the API would have cleared on archiving; the badge must
+    // still not appear (the mutation that ignores `active` dies here).
     expect(screen.queryByText(/encerra em/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Editar' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Ações de encerramento' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Reativar' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Reativar' })).toBeNull();
     cleanup();
 
     const manager = makeFetch({ permissions: MANAGER_PERMISSIONS, client: () => json(archivedClient) });
@@ -397,12 +438,20 @@ describe('client detail (#136)', () => {
     expect(screen.queryByRole('link', { name: /Portal/ })).toBeNull();
   });
 
-  it.each(['conteudos', 'tarefas', 'relatorios', 'estudo-de-marca', 'acessos'])('draws %s as a name and one sentence, with no extra control', async (tab) => {
+  it.each([
+    ['conteudos', 'Conteúdos', 'Aqui vai ficar o calendário editorial deste cliente, com os posts, a prévia do feed e as aprovações.'],
+    ['tarefas', 'Tarefas', 'Aqui vão ficar as tarefas deste cliente, com prazos e responsáveis.'],
+    ['relatorios', 'Relatórios', 'Aqui vai ficar o relatório deste cliente, com os resultados do trabalho.'],
+    ['estudo-de-marca', 'Estudo de marca', 'Aqui vão ficar as seções da marca, as personas e as conversas.'],
+    ['acessos', 'Acessos', 'Aqui vão ficar as pessoas com acesso ao portal e os convites pendentes.']
+  ])('draws %s as its name and its sentence, with no extra control', async (tab, title, sentence) => {
     const { impl } = makeFetch();
     const { container } = renderClientDetail(impl, clientUrl(CLIENT_ID, tab));
 
     await screen.findByRole('heading', { name: 'Padaria Central' });
     const panel = tabPanel(container);
+    expect(within(panel).getByRole('heading', { name: title })).toBeTruthy();
+    expect(within(panel).getByText(sentence)).toBeTruthy();
     expect(within(panel).queryByRole('button')).toBeNull();
     expect(within(panel).queryByRole('link')).toBeNull();
     expect(within(panel).queryByRole('textbox')).toBeNull();
@@ -449,6 +498,35 @@ describe('client detail (#136)', () => {
     expect(alert.textContent).not.toContain('private diagnostic');
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
     expect(await screen.findByRole('heading', { name: 'Padaria Central' })).toBeTruthy();
+  });
+
+  it('keeps the page and an open modal when a background refetch fails (review of #379)', async () => {
+    let attempts = 0;
+    const { impl } = makeFetch({
+      client: () => {
+        attempts += 1;
+        return attempts === 1
+          ? json(padaria)
+          : json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, 500);
+      }
+    });
+    const { container, queryClient } = renderClientDetail(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const dialog = await openEditDialog();
+
+    // A refetch triggered while the modal is open (e.g. after the save invalidation) fails;
+    // the cached client keeps the page and the modal alive.
+    act(() => { queryClient.invalidateQueries({ queryKey: ['agency', AGENCY_A, 'clients', 'detail', CLIENT_ID.toLowerCase()] }); });
+    // With data present, the failed refetch keeps `status: success` on purpose; the failure lands
+    // in `error` after its retry backoff (`isError` on the page), so the test waits for it.
+    await waitFor(() => {
+      const state = queryClient.getQueryState(['agency', AGENCY_A, 'clients', 'detail', CLIENT_ID.toLowerCase()]);
+      expect(state?.error).not.toBeNull();
+    }, { timeout: 5000 });
+    expect(await screen.findByRole('heading', { name: 'Padaria Central' })).toBeTruthy();
+    expect(screen.queryByText('Não foi possível carregar o cliente. Tente de novo.')).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Editar cliente' })).toBe(dialog);
+    expect(container.textContent).not.toContain('private diagnostic');
   });
 
   it.each([403, 404])('answers %i as the same not-found, without revealing the client', async (status) => {
@@ -528,12 +606,12 @@ describe('edit client modal (#137)', () => {
     expect(within(dialog).queryByRole('button', { name: 'Remover' })).toBeNull();
   });
 
-  it('stays disabled until something changes, and sends only the changed fields', async () => {
+  it('stays disabled until something changes, sends only the changed fields, and closes on success', async () => {
     const bodies: unknown[] = [];
     const { impl } = makeFetch({ patch: (body) => { bodies.push(body); return json(registrationOf(padaria)); } });
     renderClientDetail(impl);
     await screen.findByRole('heading', { name: 'Padaria Central' });
-    const dialog = await openEditDialog();
+    let dialog = await openEditDialog();
     const submit = within(dialog).getByRole('button', { name: 'Salvar' });
     expect(submit.hasAttribute('disabled')).toBe(true);
 
@@ -543,12 +621,15 @@ describe('edit client modal (#137)', () => {
     fireEvent.click(submit);
     await waitFor(() => expect(bodies).toEqual([{ instagramHandle: 'novo_handle' }]));
     expect(bodies[0]).not.toHaveProperty('name');
+    // A save that landed closes the modal over the updated detail (review of #379).
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Editar cliente' })).toBeNull());
 
-    // Only the name changes now: the body carries it alone.
+    dialog = await openEditDialog();
     fireEvent.change(editNameInput(dialog), { target: { value: 'Padaria Renovada' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(bodies[1]).toEqual({ name: 'Padaria Renovada' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Editar cliente' })).toBeNull());
   });
 
   it('sends null when a field is cleared, and the CNPJ/CPF mask is stripped', async () => {
@@ -559,9 +640,40 @@ describe('edit client modal (#137)', () => {
     const dialog = await openEditDialog();
 
     fireEvent.change(editInstagramInput(dialog), { target: { value: '' } });
+    fireEvent.change(editLegalNameInput(dialog), { target: { value: '' } });
     fireEvent.change(editTaxIdInput(dialog), { target: { value: '98.765.432/0001-10' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
-    await waitFor(() => expect(bodies).toEqual([{ instagramHandle: null, taxId: '98765432000110' }]));
+    await waitFor(() => expect(bodies).toEqual([{ instagramHandle: null, legalName: null, taxId: '98765432000110' }]));
+  });
+
+  it('keeps letters in CNPJ/CPF for the API to refuse them on the field, never clearing the document', async () => {
+    const bodies: unknown[] = [];
+    const { impl } = makeFetch({
+      patch: (body) => {
+        bodies.push(body);
+        return json({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'validation failed',
+            details: { issues: [{ path: 'taxId', code: 'custom', message: 'private issue message' }] }
+          }
+        }, 400);
+      }
+    });
+    renderClientDetail(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const dialog = await openEditDialog();
+    const taxId = editTaxIdInput(dialog);
+
+    fireEvent.change(taxId, { target: { value: 'abc' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    expect(await within(dialog).findByText('CNPJ ou CPF deve ter 11 ou 14 dígitos.')).toBeTruthy();
+    expect(bodies).toEqual([{ taxId: 'abc' }]);
+    expect(taxId.getAttribute('aria-invalid')).toBe('true');
+    expect(taxId.value).toBe('abc');
+    expect(dialog.textContent).not.toContain('private');
+    expect(screen.getByRole('dialog', { name: 'Editar cliente' })).toBe(dialog);
   });
 
   it('refuses an empty name on the field, sending nothing', async () => {
@@ -645,7 +757,28 @@ describe('edit client modal (#137)', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(attempts).toBe(2));
-    expect(within(dialog).queryByText('Não foi possível salvar o cliente. Tente de novo.')).toBeNull();
+    // The retry that lands closes the modal and clears the error from the screen.
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Editar cliente' })).toBeNull());
+    expect(screen.queryByText('Não foi possível salvar o cliente. Tente de novo.')).toBeNull();
+  });
+
+  it('shows the save busy state on the button, without closing the modal (review of #379)', async () => {
+    let resolvePatch: ((response: Response) => void) | undefined;
+    const pendingPatch = new Promise<Response>((resolve) => { resolvePatch = resolve; });
+    const { impl } = makeFetch({ patch: () => pendingPatch });
+    renderClientDetail(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const dialog = await openEditDialog();
+    fireEvent.change(editNameInput(dialog), { target: { value: 'Padaria Renovada' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    const submit = within(dialog).getByRole('button', { name: 'Salvar' });
+    await waitFor(() => expect(submit.hasAttribute('aria-busy')).toBe(true));
+    expect(submit.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('dialog', { name: 'Editar cliente' })).toBe(dialog);
+
+    await act(async () => { resolvePatch?.(json({ ...registrationOf(padaria), name: 'Padaria Renovada' })); });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Editar cliente' })).toBeNull());
   });
 
   it('shows the new name in the header and in the roster without a reload (SPEC §6 invalidation)', async () => {
@@ -664,19 +797,40 @@ describe('edit client modal (#137)', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
     await waitFor(() => expect(probe.pathname).toBe(clientUrl()));
     const dialog = await openEditDialog();
-
     fireEvent.change(editNameInput(dialog), { target: { value: 'Padaria Renovada' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(current.name).toBe('Padaria Renovada'));
 
-    // The header behind the modal reads the same cache: no reload needed.
+    // The save closed the modal; the header behind reads the same cache: no reload needed.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await screen.findByRole('heading', { name: 'Padaria Renovada' })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Fechar edição do cliente' }));
     fireEvent.click(screen.getByRole('link', { name: '← Clientes' }));
     // The roster was invalidated; without it, the cached "Padaria Central" would stay.
     expect(await screen.findByText('Padaria Renovada')).toBeTruthy();
     expect(screen.queryByText('Padaria Central')).toBeNull();
+  });
+
+  it('keeps the typed draft when the photo upload answers (review of #379)', async () => {
+    let current = padaria;
+    const { impl } = makeFetch({
+      client: () => json(current),
+      putPhoto: () => {
+        current = { ...current, photoUrl: 'https://storage.test/nova.png' };
+        return json({ photoUrl: 'https://storage.test/nova.png' });
+      }
+    });
+    renderClientDetail(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const dialog = await openEditDialog();
+
+    fireEvent.change(editInstagramInput(dialog), { target: { value: '@digitado' } });
+    fireEvent.change(modalFileInput(dialog), {
+      target: { files: [new File([pngBytes], 'foto.png', { type: 'image/png' })] }
+    });
+    await waitFor(() => expect(dialog.querySelector('img.ui-avatar__photo')?.getAttribute('src')).toBe('https://storage.test/nova.png'));
+    expect(editInstagramInput(dialog).value).toBe('@digitado');
+    expect(editNameInput(dialog).value).toBe('Padaria Central');
   });
 
   it('refuses a photo of the wrong type with a message, without touching the current photo', async () => {
@@ -707,8 +861,26 @@ describe('edit client modal (#137)', () => {
     expect(calls.some((call) => call.startsWith('PUT'))).toBe(false);
   });
 
+  it.each([
+    [413, 'PAYLOAD_TOO_LARGE', 'A foto passa do tamanho máximo aceito.'],
+    [415, 'UNSUPPORTED_MEDIA_TYPE', 'Formato não aceito. Envie uma foto PNG, JPEG, GIF ou WebP.']
+  ])('maps the photo refusal %i (%s) to its message, decided by the API bytes', async (status, code, message) => {
+    const { impl } = makeFetch({
+      putPhoto: () => json({ error: { code, message: 'private diagnostic' } }, status)
+    });
+    renderClientDetail(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const dialog = await openEditDialog();
+
+    fireEvent.change(modalFileInput(dialog), {
+      target: { files: [new File([pngBytes], 'foto.png', { type: 'image/png' })] }
+    });
+    expect(await within(dialog).findByText(message)).toBeTruthy();
+    expect(dialog.textContent).not.toContain('private diagnostic');
+    expect(within(dialog).queryByText('PC')).toBeTruthy();
+  });
+
   it('uploads a valid photo with its own state, independent of Salvar', async () => {
-    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     const photoBodies: unknown[] = [];
     let current = padaria;
     let resolveUpload: ((response: Response) => void) | undefined;
@@ -766,6 +938,52 @@ describe('edit client modal (#137)', () => {
     await waitFor(() => expect(container.querySelector('.client-detail__header img')).toBeNull());
   });
 
+  it('shows the uploaded photo in the roster without a reload (SPEC §6, review of #379)', async () => {
+    let current = padaria;
+    const { impl } = makeFetch({
+      client: () => json(current),
+      clients: () => json({ data: [listItemOf(current)], meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 } }),
+      putPhoto: () => {
+        current = { ...current, photoUrl: 'https://storage.test/nova.png' };
+        return json({ photoUrl: 'https://storage.test/nova.png' });
+      }
+    });
+    const { container, probe } = renderClientDetail(impl, `/agencia/${AGENCY_A}/clientes`);
+    await screen.findByText('Padaria Central');
+    fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
+    await waitFor(() => expect(probe.pathname).toBe(clientUrl()));
+    const dialog = await openEditDialog();
+
+    fireEvent.change(modalFileInput(dialog), {
+      target: { files: [new File([pngBytes], 'foto.png', { type: 'image/png' })] }
+    });
+    await waitFor(() => expect(dialog.querySelector('img.ui-avatar__photo')?.getAttribute('src')).toBe('https://storage.test/nova.png'));
+
+    fireEvent.click(screen.getByRole('link', { name: '← Clientes' }));
+    await waitFor(() => expect(container.querySelector('.clients__card img.ui-avatar__photo')?.getAttribute('src')).toBe('https://storage.test/nova.png'));
+  });
+
+  it('shows the removed photo in the roster without a reload (SPEC §6, review of #379)', async () => {
+    let current = withPhoto;
+    const { impl } = makeFetch({
+      client: () => json(current),
+      clients: () => json({ data: [listItemOf(current)], meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 } }),
+      deletePhoto: (): Response => { current = { ...current, photoUrl: null }; return noContent(); }
+    });
+    const { container, probe } = renderClientDetail(impl, `/agencia/${AGENCY_A}/clientes`);
+    await screen.findByText('Padaria Central');
+    fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
+    await waitFor(() => expect(probe.pathname).toBe(clientUrl()));
+    const dialog = await openEditDialog();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remover' }));
+    await waitFor(() => expect(within(dialog).getByText('PC')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('link', { name: '← Clientes' }));
+    await waitFor(() => expect(container.querySelector('.clients__card img')).toBeNull());
+    expect(within(container.querySelector('.clients__card') as HTMLElement).getByText('PC')).toBeTruthy();
+  });
+
   it('opens the modal only for cliente.operar, never for an archived client', async () => {
     const manager = makeFetch({ permissions: MANAGER_PERMISSIONS, client: () => json(archivedClient) });
     renderClientDetail(manager.impl);
@@ -796,5 +1014,17 @@ describe('formatDayMonth (#136)', () => {
     ['2026-01-01', '01/01']
   ])('labels %s as %s, in any timezone', (value, expected) => {
     expect(formatDayMonth(value)).toBe(expected);
+  });
+});
+
+describe('formatArchivedDay (#379 review)', () => {
+  it.each([
+    // 01:00 UTC is 22h of the previous day in São Paulo (UTC-3, no DST since 2019).
+    ['2026-10-08T01:00:00.000Z', '07/10'],
+    ['2026-10-04T12:00:00.000Z', '04/10'],
+    ['2026-10-04T02:59:59.000Z', '03/10'],
+    ['not-a-date', 'not-a-date']
+  ])('labels %s as %s, in the agency day', (value, expected) => {
+    expect(formatArchivedDay(value)).toBe(expected);
   });
 });

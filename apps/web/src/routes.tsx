@@ -87,11 +87,11 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
           <Route path="conteudos" element={<ClientSkeletonTab title="Conteúdos" description="Aqui vai ficar o calendário editorial deste cliente, com os posts, a prévia do feed e as aprovações." />} />
           <Route path="tarefas" element={<ClientSkeletonTab title="Tarefas" description="Aqui vão ficar as tarefas deste cliente, com prazos e responsáveis." />} />
           {/* The content of #138 and #140 is their own task; until then the tabs are skeleton text. */}
-          <Route path="estudo-de-marca" element={<ClientSkeletonTab title="Estudo de marca" description="Aqui vão ficar as seções da marca, as personas e as conversas, nas próximas entregas." />} />
+          <Route path="estudo-de-marca" element={<ClientSkeletonTab title="Estudo de marca" description="Aqui vão ficar as seções da marca, as personas e as conversas." />} />
           <Route path="relatorios" element={<ClientSkeletonTab title="Relatórios" description="Aqui vai ficar o relatório deste cliente, com os resultados do trabalho." />} />
           {/* The permission gate lives in ClientDetailPage: without it the whole address is the
               ordinary not-found, header included, not a not-found inside a visible client page. */}
-          <Route path="acessos" element={<ClientSkeletonTab title="Acessos" description="Aqui vão ficar as pessoas com acesso ao portal e os convites pendentes, nas próximas entregas." />} />
+          <Route path="acessos" element={<ClientSkeletonTab title="Acessos" description="Aqui vão ficar as pessoas com acesso ao portal e os convites pendentes." />} />
           <Route path="*" element={<NotFoundPage as="section" />} />
         </Route>
       </Route>

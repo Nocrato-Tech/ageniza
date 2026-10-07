@@ -73,8 +73,9 @@ const fromClient = (client: ClientDetailResponse): RegistrationFields => ({
 
 /**
  * The fields that really changed, with the shape each one travels in: Instagram loses its `@`
- * (the column stores it without), CNPJ/CPF loses the mask, and a cleared field becomes `null`
- * instead of an empty string (`specs/clientes.md` §3).
+ * (the column stores it without), CNPJ/CPF loses only the mask (`.` `-` `/` and spaces; letters
+ * stay, so the API rejects them on the field instead of a silent `null` clearing the document —
+ * review of #379), and a cleared field becomes `null` instead of an empty string (§3).
  */
 const changedFields = (client: ClientDetailResponse, fields: RegistrationFields): UpdateClientRequest => {
   const body: UpdateClientRequest = {};
@@ -82,7 +83,7 @@ const changedFields = (client: ClientDetailResponse, fields: RegistrationFields)
   if (name !== client.name) body.name = name;
   const instagramHandle = fields.instagramHandle.trim().replace(/^@/, '');
   if (instagramHandle !== (client.instagramHandle ?? '')) body.instagramHandle = instagramHandle === '' ? null : instagramHandle;
-  const taxId = fields.taxId.replace(/\D/g, '');
+  const taxId = fields.taxId.replace(/[.\-/\s]/g, '');
   if (taxId !== (client.taxId ?? '')) body.taxId = taxId === '' ? null : taxId;
   const legalName = fields.legalName.trim();
   if (legalName !== (client.legalName ?? '')) body.legalName = legalName === '' ? null : legalName;
@@ -140,11 +141,13 @@ export function EditClientDialog({ client, onClose }: { client: ClientDetailResp
   const [photoUrl, setPhotoUrl] = useState<string | null>(client.photoUrl);
   const [photoError, setPhotoError] = useState<string | undefined>();
   const [progress, setProgress] = useState<number | null>(null);
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => { nameRef.current?.focus(); }, []);
 
   const setField = (field: keyof RegistrationFields, value: string): void => {
     setFields((current) => ({ ...current, [field]: value }));
+    setDirty(true);
     setFieldErrors((current) => (current[field] === undefined ? current : { ...current, [field]: undefined }));
     setFormError(undefined);
   };
@@ -153,22 +156,19 @@ export function EditClientDialog({ client, onClose }: { client: ClientDetailResp
     setFieldErrors((current) => ({ ...current, [field]: message }));
   };
 
-  // A refetch or another edit can answer while the modal is open; the fields follow the server
-  // only when the person has not typed anything (the same rule as the collaborator modal).
+  // A photo upload or removal answers with a new `client` (setQueryData), and any refetch can
+  // answer while the modal is open. The fields follow the server only while the person has not
+  // typed anything: once dirty, the draft survives the photo state (review of #379).
   useEffect(() => {
-    setFields(fromClient(client));
-  }, [client]);
+    if (!dirty) setFields(fromClient(client));
+  }, [client, dirty]);
 
-  // `specs/clientes.md` §6: editing the registration or the photo invalidates listagem, detalhe
-  // and the client in the portal.
-  const invalidateAfterClientWrite = (agencyId: string, clientId: string): void => {
-    // The detail key is a prefix child of the listing key, so one invalidation covers both.
+  // `specs/clientes.md` §6: editing the registration or the photo invalidates the listing and the
+  // detail (the detail key is a prefix child of the listing key, so one invalidation covers both).
+  // The portal's own client query does not exist yet; the portal screen (#141) will invalidate it
+  // when it lands — recorded in the SPEC table, not faked here (review of #379).
+  const invalidateAfterClientWrite = (agencyId: string): void => {
     void queryClient.invalidateQueries({ queryKey: ['agency', agencyId, 'clients'] });
-    // No portal screen exists in the app yet; the predicate only guards the future query that
-    // will carry the new name into the portal (SPEC §6 invalidation table).
-    void queryClient.invalidateQueries({
-      predicate: (query) => query.queryKey[0] === 'client' && query.queryKey[1] === clientId
-    });
   };
 
   const applySaveError = (error: unknown): void => {
@@ -198,12 +198,12 @@ export function EditClientDialog({ client, onClose }: { client: ClientDetailResp
       response: ClientSchema
     }),
     onSuccess: (updated) => {
-      setFields(fromClient({ ...client, ...updated }));
-      setFieldErrors({});
-      setFormError(undefined);
       queryClient.setQueryData<ClientDetailResponse>(clientDetailQueryKey(agency.agencyId, client.id), (current) =>
         current === undefined ? current : { ...current, ...updated });
-      invalidateAfterClientWrite(agency.agencyId, client.id);
+      invalidateAfterClientWrite(agency.agencyId);
+      // The SPEC's "o modal não fecha" is about the error state; a save that landed closes the
+      // dialog over the updated detail (review of #379).
+      onClose();
     },
     onError: (error: unknown) => { applySaveError(error); }
   });
@@ -221,7 +221,7 @@ export function EditClientDialog({ client, onClose }: { client: ClientDetailResp
       setPhotoUrl(response.photoUrl);
       queryClient.setQueryData<ClientDetailResponse>(clientDetailQueryKey(agency.agencyId, client.id), (current) =>
         current === undefined ? current : { ...current, photoUrl: response.photoUrl });
-      invalidateAfterClientWrite(agency.agencyId, client.id);
+      invalidateAfterClientWrite(agency.agencyId);
     },
     onError: (error: unknown) => {
       setProgress(null);
@@ -240,7 +240,7 @@ export function EditClientDialog({ client, onClose }: { client: ClientDetailResp
       setPhotoUrl(null);
       queryClient.setQueryData<ClientDetailResponse>(clientDetailQueryKey(agency.agencyId, client.id), (current) =>
         current === undefined ? current : { ...current, photoUrl: null });
-      invalidateAfterClientWrite(agency.agencyId, client.id);
+      invalidateAfterClientWrite(agency.agencyId);
     },
     onError: () => { setPhotoError(PHOTO_REMOVE_FAILED); }
   });
