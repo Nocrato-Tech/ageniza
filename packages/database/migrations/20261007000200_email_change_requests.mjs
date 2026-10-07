@@ -83,7 +83,8 @@ export async function up(knex) {
       end if;
 
       -- Serializes concurrent requests of the same account, so superseding the open one and
-      -- inserting the new one never races into the one-open-request index.
+      -- inserting the new one never races into the one-open-request index. It is also the first of
+      -- the two locks every path takes in the same order: the account, then its requests.
       select account.email into v_current from auth."user" account where account.id = v_user_id for update;
       if not found then
         raise exception using errcode = 'A0040', message = 'An authenticated user is required.';
@@ -125,20 +126,33 @@ export async function up(knex) {
     as $function$
     declare
       v_request public.email_change_requests%rowtype;
+      v_user_id uuid;
       v_current text;
     begin
       if p_token_hash is null or p_token_hash = '' then
         raise exception using errcode = 'A0042', message = 'Link is not valid.';
       end if;
 
-      -- The row lock is what makes the link single-use under two concurrent confirmations.
-      select * into v_request from public.email_change_requests request where request.token_hash = p_token_hash for update;
-      if not found or v_request.status <> 'approved' or v_request.token_expires_at <= pg_catalog.now() then
+      -- One lock order for everything that touches a request: the ACCOUNT first, then its requests.
+      -- request_email_change and the CLI's approval take them in that order, so this one must too, or
+      -- a request and a confirmation on the same account deadlock (40P01). The account is only known
+      -- through the request, so the request is read without a lock, the account is locked, and the
+      -- request is then locked and read again: whatever changed in between is seen by the second read.
+      select request.user_id into v_user_id from public.email_change_requests request where request.token_hash = p_token_hash;
+      if not found then
         raise exception using errcode = 'A0042', message = 'Link is not valid.';
       end if;
 
-      select account.email into v_current from auth."user" account where account.id = v_request.user_id for update;
-      if not found or v_current <> v_request.old_email then
+      select account.email into v_current from auth."user" account where account.id = v_user_id for update;
+      if not found then
+        raise exception using errcode = 'A0042', message = 'Link is not valid.';
+      end if;
+
+      -- The row lock is what makes the link single-use under two concurrent confirmations.
+      select * into v_request from public.email_change_requests request where request.token_hash = p_token_hash for update;
+      if not found or v_request.user_id <> v_user_id or v_request.status <> 'approved'
+         or v_request.token_expires_at <= pg_catalog.now() or v_current <> v_request.old_email
+      then
         raise exception using errcode = 'A0042', message = 'Link is not valid.';
       end if;
 

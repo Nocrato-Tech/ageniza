@@ -17,6 +17,15 @@ export const databaseErrorCode = (error: unknown): string | undefined =>
   typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: unknown }).code) : undefined;
 
 /**
+ * Deadlock (40P01) and serialization failure (40001) are not bugs and not the caller's fault: the
+ * statement lost a race with another transaction and can simply be repeated. They answer 409.
+ */
+export const isRetryableConflict = (error: unknown): boolean => {
+  const code = databaseErrorCode(error);
+  return code === '40P01' || code === '40001';
+};
+
+/**
  * The hash of the account's credential. `auth.account` has no RLS, so the user id is always the
  * verified session user, never a value from the request.
  */

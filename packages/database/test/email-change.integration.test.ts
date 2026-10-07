@@ -92,6 +92,37 @@ const sessionsOf = async (userId: string): Promise<number> =>
 const requestsOf = (userId: string) =>
   getOwner().knex('email_change_requests').where({ user_id: userId }).orderBy('requested_at').select('id', 'status', 'new_email', 'old_email', 'token_hash');
 
+/**
+ * Holds the row lock of one request in a real owner transaction until released, so the transactions
+ * under test can be lined up behind it in a known order.
+ */
+const holdRequestLock = (requestId: string): { readonly locked: Promise<void>; release: () => void; readonly done: Promise<void> } => {
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => { release = resolve; });
+  let markLocked: () => void = () => undefined;
+  const locked = new Promise<void>((resolve) => { markLocked = resolve; });
+  const done = getOwner().transaction(async (transaction) => {
+    await raw(transaction, 'select id from public.email_change_requests where id = ? for update', [requestId]);
+    markLocked();
+    await released;
+  });
+  return { locked, release: () => release(), done };
+};
+
+/** Waits until a backend running a statement that matches the pattern is blocked on a lock. */
+const waitUntilBlocked = async (statementPattern: string): Promise<void> => {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const result = await raw<{ rows: { waiting: number }[] }>(getOwner().knex, `
+      select count(*)::int as waiting
+      from pg_catalog.pg_stat_activity
+      where datname = current_database() and wait_event_type = 'Lock' and query ilike ?
+    `, [statementPattern]);
+    if ((result.rows[0]?.waiting ?? 0) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`No backend running ${statementPattern} ever waited on a lock.`);
+};
+
 beforeAll(async () => {
   owner = createLocalTestDatabaseClient(ownerUrl);
   application = createLocalTestDatabaseClient(applicationUrl);
@@ -252,6 +283,29 @@ describe('app_private.confirm_email_change (issue #80)', () => {
     }
     expect(await emailOf(user.id)).toBe(newEmail);
     expect(await getOwner().knex('audit.events').where({ actor_user_id: user.id, action: 'email_change.completed' }).count('* as total')).toEqual([{ total: '1' }]);
+  });
+
+  it('does not deadlock with a request on the same account: the account is always locked before its requests', async () => {
+    const user = await insertUser('lock-order');
+    await insertSession(user.id);
+    const newEmail = unique('lock-order-new');
+    const approved = await seedApproved(user, newEmail);
+    const holder = holdRequestLock(approved.id);
+    await holder.locked;
+
+    // The confirmation goes first and waits behind the holder; the request lines up after it. With
+    // the account locked second by the confirmation, the two end up waiting on each other (40P01).
+    const confirmation = confirm(approved.tokenHash);
+    await waitUntilBlocked('%confirm_email_change%');
+    const requested = request(user.id, unique('lock-order-next'));
+    await waitUntilBlocked('%request_email_change%');
+    holder.release();
+    await holder.done;
+
+    const outcomes = await Promise.allSettled([confirmation, requested]);
+    expect(outcomes.map((outcome) => outcome.status)).toEqual(['fulfilled', 'fulfilled']);
+    expect(await emailOf(user.id)).toBe(newEmail);
+    expect((await requestsOf(user.id)).map((row) => row.status)).toEqual(['completed', 'pending']);
   });
 
   it('does not let a signup that took the address in the meantime be overwritten', async () => {

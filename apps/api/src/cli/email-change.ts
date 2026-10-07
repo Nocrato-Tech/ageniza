@@ -6,6 +6,7 @@ import { createLogger } from '@ageniza/core';
 import { createEmailSender, emailChangeConfirmationEmail, type EmailSender } from '@ageniza/email';
 
 import { EMAIL_CHANGE_LINK_TTL_HOURS, EMAIL_CHANGE_LINK_TTL_MINUTES } from '../modules/email-change/policy.js';
+import { isRetryableConflict } from '../modules/email-change/service.js';
 import {
   AgencyCliError,
   assertUuid,
@@ -97,6 +98,29 @@ const recordAudit = async (transaction: AgencyCliTransaction, action: string, re
   );
 };
 
+/**
+ * Locks the account and then its request, the order every path uses (see
+ * `app_private.confirm_email_change`): the other order deadlocks (40P01) against a request or a
+ * confirmation on the same account. The request is read once without a lock only to learn whose it
+ * is; the locked read that follows is the one that counts.
+ */
+const lockAccountThenRequest = async (
+  transaction: AgencyCliTransaction,
+  requestId: string
+): Promise<{ readonly request: RequestRow; readonly accountEmail: string | undefined }> => {
+  const owner = await transaction.query<{ user_id: string }>('select user_id from public.email_change_requests where id = ?', [requestId]);
+  const userId = owner.rows[0]?.user_id;
+  if (userId === undefined) throw new EmailChangeCliError('Request not found.');
+  const account = await transaction.query<{ email: string }>('select email from auth."user" where id = ? for update', [userId]);
+  const locked = await transaction.query<RequestRow>(
+    'select id, user_id, old_email, new_email, status from public.email_change_requests where id = ? for update',
+    [requestId]
+  );
+  const request = locked.rows[0];
+  if (request === undefined) throw new EmailChangeCliError('Request not found.');
+  return { request, accountEmail: account.rows[0]?.email };
+};
+
 /** What an approval decided, computed inside the transaction and acted on after it commits. */
 type ApprovalOutcome =
   | { readonly kind: 'approved'; readonly newEmail: string; readonly token: string; readonly expiresAt: string }
@@ -132,22 +156,14 @@ export const createEmailChangeCommandService = (options: CreateEmailChangeComman
   const approve = async (input: { readonly requestId: string; readonly ownershipConfirmed: boolean }): Promise<EmailChangeApprovalResult> => {
     const requestId = assertUuid(input.requestId, 'request-id');
     const outcome = await options.database.transaction(async (transaction): Promise<ApprovalOutcome> => {
-      const found = await transaction.query<RequestRow>(
-        'select id, user_id, old_email, new_email, status from public.email_change_requests where id = ? for update',
-        [requestId]
-      );
-      const request = found.rows[0];
-      if (request === undefined) throw new EmailChangeCliError('Request not found.');
+      const { request, accountEmail } = await lockAccountThenRequest(transaction, requestId);
       // An approved request that was never spent can be approved again: it issues a fresh link,
       // which is how a lost or expired one is resent. Anything else is final.
       if (request.status !== 'pending' && request.status !== 'approved') {
         throw new EmailChangeCliError(`The request is ${request.status}; only a pending or approved request can be approved.`);
       }
 
-      const account = await transaction.query<{ email: string }>(
-        'select email from auth."user" where id = ? for update', [request.user_id]
-      );
-      if (account.rows[0]?.email !== request.old_email) {
+      if (accountEmail !== request.old_email) {
         // The account changed address since the request, so it describes an account that no longer
         // exists as such. Closing it here must survive the refusal below.
         await transaction.query(
@@ -205,11 +221,7 @@ export const createEmailChangeCommandService = (options: CreateEmailChangeComman
   const reject = (requestIdInput: string): Promise<EmailChangeRejectionResult> => {
     const requestId = assertUuid(requestIdInput, 'request-id');
     return options.database.transaction(async (transaction) => {
-      const found = await transaction.query<{ status: string }>(
-        'select status from public.email_change_requests where id = ? for update', [requestId]
-      );
-      const request = found.rows[0];
-      if (request === undefined) throw new EmailChangeCliError('Request not found.');
+      const { request } = await lockAccountThenRequest(transaction, requestId);
       if (request.status !== 'pending' && request.status !== 'approved') {
         throw new EmailChangeCliError(`The request is ${request.status}; only a pending or approved request can be rejected.`);
       }
@@ -314,7 +326,11 @@ export const runEmailChangeCli = async (options: RunEmailChangeCliOptions = {}):
     io.stdout.write(`${JSON.stringify(result)}\n`);
     return 0;
   } catch (error) {
-    const message = error instanceof AgencyCliError ? error.message : 'E-mail change command failed.';
+    const message = error instanceof AgencyCliError
+      ? error.message
+      : isRetryableConflict(error)
+        ? 'The account was being changed by another operation; nothing was done. Run the command again.'
+        : 'E-mail change command failed.';
     io.stderr.write(`${message}\n`);
     return 1;
   } finally {

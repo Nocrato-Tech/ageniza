@@ -19,6 +19,7 @@ import {
   confirmEmailChange,
   databaseErrorCode,
   EMAIL_CHANGE_ERRORS,
+  isRetryableConflict,
   loadCredentialHash,
   requestEmailChange
 } from './service.js';
@@ -40,6 +41,9 @@ const invalidPassword = (): HttpError =>
   new HttpError({ statusCode: 403, code: 'INVALID_PASSWORD', message: 'A senha atual não confere.' });
 const sameAddress = (): HttpError =>
   new HttpError({ statusCode: 400, code: 'SAME_EMAIL', message: 'Informe um e-mail diferente do atual.' });
+/** A lost race, never a 500 and never any detail of what raced: repeating the call is the answer. */
+const tryAgain = (): HttpError =>
+  new HttpError({ statusCode: 409, code: 'TRY_AGAIN', message: 'Houve um conflito momentâneo. Tente de novo.' });
 const invalidLink = (): HttpError =>
   new HttpError({ statusCode: 400, code: 'INVALID_LINK', message: 'Este link não é mais válido.' });
 
@@ -98,6 +102,7 @@ export const registerEmailChangeModule = (app: FastifyInstance, dependencies: Em
       );
     } catch (error) {
       if (databaseErrorCode(error) === EMAIL_CHANGE_ERRORS.sameAddress) throw sameAddress();
+      if (isRetryableConflict(error)) throw tryAgain();
       throw error;
     }
 
@@ -121,6 +126,7 @@ export const registerEmailChangeModule = (app: FastifyInstance, dependencies: Em
     } catch (error) {
       // One public answer for every reason the link cannot swap the address.
       if (databaseErrorCode(error) === EMAIL_CHANGE_ERRORS.invalidLink) throw invalidLink();
+      if (isRetryableConflict(error)) throw tryAgain();
       throw error;
     }
 

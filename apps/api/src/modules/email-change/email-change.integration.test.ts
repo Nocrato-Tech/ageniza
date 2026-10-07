@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createAgencyCliDatabase } from '../../cli/agency.js';
+import { isRetryableConflict } from './service.js';
 import { runEmailChangeCli, type EmailChangeConfirmationEmail, type EmailChangeMailer } from '../../cli/email-change.js';
 import {
   buildTestApp,
@@ -90,8 +91,12 @@ const requestChange = async (cookie: string | undefined, payload: unknown) => {
   return { status: response.statusCode, body: response.json() as { error?: { code: string }; meta?: unknown }, raw: response.body };
 };
 
-const confirmLink = async (token: unknown, headers: Record<string, string> = origin) => {
-  const response = await app.app.inject({ method: 'POST', url: '/email-change/confirm', headers, payload: { token } as never });
+let nextClient = 0;
+/** Each call comes from its own address, so the per-IP ceiling of the public route stays out of the way. */
+const freshClientAddress = (): string => `10.80.${Math.floor(nextClient / 250)}.${(nextClient++ % 250) + 1}`;
+
+const confirmLink = async (token: unknown, headers: Record<string, string> = origin, remoteAddress: string = freshClientAddress()) => {
+  const response = await app.app.inject({ method: 'POST', url: '/email-change/confirm', headers, payload: { token } as never, remoteAddress });
   return { status: response.statusCode, body: response.json() as { error?: { code: string; message: string } } };
 };
 
@@ -129,6 +134,54 @@ const tokenOf = (message: EmailChangeConfirmationEmail | undefined): string => {
   if (token === null) throw new Error('The operation mailed no link.');
   return token;
 };
+
+interface RequestLockHolder {
+  readonly locked: Promise<void>;
+  /** Releases the row lock without ever asking for the account. */
+  release(): void;
+  /** Asks for the account's row lock while still holding the request's, which closes the cycle. */
+  wantAccount(): void;
+  readonly done: Promise<void>;
+}
+
+/**
+ * Holds the row lock of one request in a real owner transaction, so the transactions under test
+ * line up behind it in a known order. With `wantAccount` it then asks for the account's lock, the
+ * other half of a deadlock against whoever holds the account and waits for the request.
+ */
+const holdRequestLock = (requestId: string, userId: string): RequestLockHolder => {
+  let proceed: (account: boolean) => void = () => undefined;
+  const gate = new Promise<boolean>((resolve) => { proceed = resolve; });
+  let markLocked: () => void = () => undefined;
+  const locked = new Promise<void>((resolve) => { markLocked = resolve; });
+  const done = owner.knex.transaction(async (transaction) => {
+    await transaction.raw('select id from public.email_change_requests where id = ? for update', [requestId]);
+    markLocked();
+    if (await gate) await transaction.raw('select id from auth."user" where id = ? for update', [userId]);
+  });
+  return { locked, release: () => proceed(false), wantAccount: () => proceed(true), done: done.then(() => undefined) };
+};
+
+/** Waits until a backend running a statement that matches the pattern is blocked on a lock. */
+const waitUntilBlocked = async (statementPattern: string): Promise<void> => {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const result = await owner.knex.raw(
+      `select count(*)::int as waiting from pg_catalog.pg_stat_activity
+       where datname = current_database() and wait_event_type = 'Lock' and query ilike ?`, [statementPattern]
+    );
+    if ((result.rows[0]?.waiting ?? 0) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`No backend running ${statementPattern} ever waited on a lock.`);
+};
+
+const insertOpenRequest = async (user: TestUserFixture): Promise<string> => {
+  const id = randomUUID();
+  await owner.knex('email_change_requests').insert({ id, user_id: user.id, old_email: user.email, new_email: newAddress('race-new'), status: 'pending' });
+  return id;
+};
+
+const LOCKED_READ_OF_A_REQUEST = '%from public.email_change_requests where id%for update%';
 
 /** Asks, approves, and returns the token the CLI mailed to the new address. */
 const askAndApprove = async (user: TestUserFixture, address: string, flags: string[] = []): Promise<string> => {
@@ -296,6 +349,16 @@ describe('account e-mail change by request (issue #80)', () => {
       }
 
       expect(statuses).toEqual([403, 403, 403, 403, 403, 429]);
+    });
+
+    it('limits the public confirmation per client address', async () => {
+      const address = '10.99.99.99';
+      const statuses: number[] = [];
+
+      for (let attempt = 0; attempt < 21; attempt += 1) statuses.push((await confirmLink('a-guess', origin, address)).status);
+
+      expect(statuses).toEqual([...Array(20).fill(400), 429]);
+      expect((await confirmLink('a-guess', origin, '10.99.99.98')).status).toBe(400);
     });
 
     it('answers a malformed or empty JSON body with 400, without an error log', async () => {
@@ -492,6 +555,106 @@ describe('account e-mail change by request (issue #80)', () => {
       expect(reset.json().error.code).toBe('INVALID_LINK');
       expect((await login(address, 'an attacker chosen password')).status).toBe(401);
       expect((await login(address, user.password)).status).toBe(200);
+    });
+  });
+
+  describe('races between the three paths that lock an account and its requests', { timeout: 30_000 }, () => {
+    it('a request and an approval of the same account both go through, in the account-then-request lock order', async () => {
+      const user = await makeUser('race-approve');
+      const cookie = await loginCookie(user);
+      const requestId = await insertOpenRequest(user);
+      const holder = holdRequestLock(requestId, user.id);
+      await holder.locked;
+      const mailedBefore = mailed.length;
+
+      // The approval lines up first, then the request; once the holder lets go, an approval that
+      // locks the request before the account and a request that holds the account wait on each other.
+      const approval = operate('approve', '--request-id', requestId);
+      await waitUntilBlocked(LOCKED_READ_OF_A_REQUEST);
+      const asked = requestChange(cookie, { newEmail: newAddress('race-next'), currentPassword: user.password });
+      await waitUntilBlocked('%request_email_change%');
+      holder.release();
+      await holder.done;
+
+      const [approved, requested] = await Promise.all([approval, asked]);
+      expect({ approval: approved.code, stderr: approved.stderr, request: requested.status }).toEqual({ approval: 0, stderr: '', request: 202 });
+      expect((await requestsOf(user.id)).map((row) => row.status)).toEqual(['superseded', 'pending']);
+      const staleLink = tokenOf(mailed[mailedBefore]);
+      expect((await confirmLink(staleLink)).status).toBe(400);
+      expect(await emailOf(user.id)).toBe(user.email);
+    });
+
+    it('answers 409 TRY_AGAIN, with no detail and nothing changed, when a request loses a deadlock', async () => {
+      const user = await makeUser('deadlock-request');
+      const cookie = await loginCookie(user);
+      const requestId = await insertOpenRequest(user);
+      const holder = holdRequestLock(requestId, user.id);
+      await holder.locked;
+      const noticesBefore = (await sentTo(user.email)).length;
+
+      const asked = requestChange(cookie, { newEmail: newAddress('deadlock-next'), currentPassword: user.password });
+      await waitUntilBlocked('%request_email_change%');
+      holder.wantAccount();
+      const [lost] = await Promise.all([asked, holder.done]);
+
+      expect(lost.status).toBe(409);
+      expect(lost.body.error?.code).toBe('TRY_AGAIN');
+      expect(lost.raw).not.toMatch(/deadlock|40P01|email_change|pg_|relation|process/i);
+      expect(await requestsOf(user.id)).toEqual([expect.objectContaining({ id: requestId, status: 'pending' })]);
+      expect(await sentTo(user.email)).toHaveLength(noticesBefore);
+      const retried = await requestChange(cookie, { newEmail: newAddress('deadlock-retry'), currentPassword: user.password });
+      expect(retried.status).toBe(202);
+    });
+
+    it('answers 409 TRY_AGAIN when a confirmation loses a deadlock, and the link still works afterwards', async () => {
+      const user = await makeUser('deadlock-confirm');
+      const address = newAddress('deadlock-confirm-new');
+      const token = await askAndApprove(user, address);
+      const requestId = (await requestRow(user.id)).id;
+      const holder = holdRequestLock(requestId, user.id);
+      await holder.locked;
+
+      const confirming = confirmLink(token);
+      await waitUntilBlocked('%confirm_email_change%');
+      holder.wantAccount();
+      const [lost] = await Promise.all([confirming, holder.done]);
+
+      expect(lost.status).toBe(409);
+      expect(lost.body.error?.code).toBe('TRY_AGAIN');
+      expect(JSON.stringify(lost.body)).not.toMatch(/deadlock|40P01|email_change|pg_|relation|process/i);
+      expect(await emailOf(user.id)).toBe(user.email);
+      expect((await requestRow(user.id)).status).toBe('approved');
+
+      expect((await confirmLink(token)).status).toBe(200);
+      expect(await emailOf(user.id)).toBe(address);
+    });
+
+    it('makes the operation say to run the command again when an approval loses a deadlock, and changes nothing', async () => {
+      const user = await makeUser('deadlock-approve');
+      const requestId = await insertOpenRequest(user);
+      const holder = holdRequestLock(requestId, user.id);
+      await holder.locked;
+      const mailedBefore = mailed.length;
+
+      const approval = operate('approve', '--request-id', requestId);
+      await waitUntilBlocked(LOCKED_READ_OF_A_REQUEST);
+      holder.wantAccount();
+      const [lost] = await Promise.all([approval, holder.done]);
+
+      expect(lost.code).toBe(1);
+      expect(lost.stderr).toContain('Run the command again');
+      expect(lost.stderr).not.toMatch(/deadlock|40P01/i);
+      expect(mailed).toHaveLength(mailedBefore);
+      expect(await requestsOf(user.id)).toEqual([expect.objectContaining({ id: requestId, status: 'pending' })]);
+      expect((await operate('approve', '--request-id', requestId)).code).toBe(0);
+    });
+
+    it('treats a deadlock and a serialization failure as a lost race, and nothing else', () => {
+      expect(isRetryableConflict({ code: '40P01' })).toBe(true);
+      expect(isRetryableConflict({ code: '40001' })).toBe(true);
+      for (const other of [{ code: 'A0042' }, { code: '23505' }, { code: '42501' }, { code: '57014' }, new Error('x'), null, undefined, 'x']) {
+        expect(isRetryableConflict(other), String(other)).toBe(false);
+      }
     });
   });
 

@@ -182,6 +182,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   INVALID_ROLE: 'O papel informado não é válido para esta agência.',
   CLIENT_NAME_IN_USE: 'Já existe um cliente ativo com este nome.',
   CLIENT_ARCHIVED: 'Cliente arquivado não pode ser editado.',
+  TRY_AGAIN: 'Houve um conflito momentâneo. Tente de novo.',
   INVALID_PASSWORD: 'A senha atual não confere.',
   SAME_EMAIL: 'Informe um e-mail diferente do atual.',
   EMAIL_DELIVERY_FAILED: 'Não foi possível entregar o e-mail.',
@@ -1558,6 +1559,7 @@ path: '/agencies/:agencyId/roles',
       { status: 400, code: 'SAME_EMAIL' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'INVALID_PASSWORD' },
+      { status: 409, code: 'TRY_AGAIN' },
       { status: 429, code: 'RATE_LIMITED' }
     ]
   },
@@ -1589,6 +1591,7 @@ path: '/agencies/:agencyId/roles',
       COMMON_ERRORS.payloadTooLarge,
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 400, code: 'INVALID_LINK' },
+      { status: 409, code: 'TRY_AGAIN' },
       { status: 429, code: 'RATE_LIMITED' }
     ]
   }
