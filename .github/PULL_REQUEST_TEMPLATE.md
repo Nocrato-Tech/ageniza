@@ -17,7 +17,7 @@ O fluxo completo está em CONTRIBUTING.md.
 
 ## Verificação estrutural
 
-Ver [structural-changes.md](../blob/develop/docs/business/structural-changes.md). Se marcar qualquer item, a decisão precisa estar registrada em `decisions.md` **antes** desta implementação.
+Ver [structural-changes.md](../blob/develop/docs/business/structural-changes.md). Se marcar qualquer item, a decisão precisa estar registrada em `docs/business/decisions/` **antes** desta implementação.
 
 - [ ] altera tabela que já existe
 - [ ] muda formato de resposta que outras rotas copiam
@@ -30,5 +30,5 @@ Ver [structural-changes.md](../blob/develop/docs/business/structural-changes.md)
 - [ ] `pnpm lint && pnpm typecheck && pnpm build && pnpm test`
 - [ ] as suítes de integração que a mudança alcança
 - [ ] a SPEC foi corrigida, se a implementação divergiu dela
-- [ ] decisão de negócio tomada no caminho está em `decisions.md`
+- [ ] decisão de negócio tomada no caminho está em `docs/business/decisions/`
 - [ ] a mutação que prova cada aceite está listada em "Como foi verificado"

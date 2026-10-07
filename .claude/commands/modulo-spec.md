@@ -8,7 +8,7 @@ Consolide tudo o que foi decidido sobre o módulo **$1** em `specs/$1.md`, a par
 ## Fontes
 
 - A conversa da entrevista (`/modulo-entrevista $1`), se ela aconteceu nesta sessão.
-- As entradas de `docs/business/decisions.md` que tocam o módulo.
+- As entradas de `docs/business/decisions/` que tocam o módulo.
 - O que já existe em `apps/api/src/modules`, nas migrations e em `apps/web/src`.
 - `specs/$1.md`, se já existir — atualize em vez de sobrescrever.
 
@@ -18,7 +18,7 @@ Consolide tudo o que foi decidido sobre o módulo **$1** em `specs/$1.md`, a par
 - Back e front ficam no mesmo documento. A separação acontece nas issues, não aqui.
 - O esboço de tela é baixa fidelidade — o que existe e onde. Sem direção de arte.
 - Cada regra da seção "Regras invioláveis" tem que ser verificável por um teste. Se não dá para testar, está vaga demais.
-- A seção "Decisões registradas" é só índice: o texto da decisão vive em `decisions.md`, nunca duplicado aqui.
+- A seção "Decisões registradas" é só índice: o texto da decisão vive em `docs/business/decisions/`, nunca duplicado aqui.
 - Marque o `Status` com honestidade — `rascunho` enquanto o dono do produto não aprovou.
 
 ## Ao fim

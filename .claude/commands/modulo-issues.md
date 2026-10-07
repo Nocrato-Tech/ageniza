@@ -13,7 +13,7 @@ Leia `specs/$1.md` e derive dela o recorte de implementação no GitHub. O proce
 - **Uma issue `em-aberto` por item da seção 10**, com o gatilho no corpo.
 - **Uma issue `debito` por dívida reconhecida.**
 
-Toda issue leva `modulo:$1`. Quem tocar algo marcado na seção 9 leva também `estrutural`, e o corpo aponta a entrada correspondente em `decisions.md`.
+Toda issue leva `modulo:$1`. Quem tocar algo marcado na seção 9 leva também `estrutural`, e o corpo aponta a entrada correspondente em `docs/business/decisions/`.
 
 ## Como escrever
 

@@ -7,7 +7,7 @@ Um roteiro para quem chegou ao projeto. Serve tanto para quem vai escrever códi
 Leia nesta ordem, são cerca de vinte minutos:
 
 1. [Visão do produto](business/product-overview.md) — o domínio, quem é quem, como se entra, o que acontece na suspensão.
-2. [Decisões de negócio](business/decisions.md) — o que já foi decidido e por quê, incluindo o que ainda está pendente de validação.
+2. [Decisões de negócio](business/decisions/) — o que já foi decidido e por quê, uma decisão por arquivo, incluindo o que ainda está pendente de validação.
 3. As [SPECs](../specs/) dos módulos já fechados — elas dizem o que cada módulo faz, até o esboço das telas.
 
 Nada disso exige saber programar.
@@ -73,7 +73,7 @@ As duas últimas exigem Docker no ar, e a do worker também exige `ffmpeg`.
 - **RLS não é opcional.** Toda tabela de negócio força *row level security*, e a role da aplicação não tem permissão para contornar. Se uma consulta volta vazia sem erro, a causa provável é contexto de usuário ausente na transação, não um bug de SQL.
 - **A checagem na API não substitui o banco.** As duas camadas existem de propósito. Nunca remova uma porque a outra já cobre.
 - **Migration aplicada não se edita.** Corrige-se com outra. O histórico é sempre para frente.
-- **Não invente regra de negócio.** Se a especificação não cobre o caso, escolha a interpretação mais conservadora e registre a dúvida em [decisions.md](business/decisions.md) ou na issue. Regra inventada em silêncio é a mais cara de descobrir depois, porque parece comportamento.
+- **Não invente regra de negócio.** Se a especificação não cobre o caso, escolha a interpretação mais conservadora e registre a dúvida em [um arquivo novo em decisions/](business/decisions/) ou na issue. Regra inventada em silêncio é a mais cara de descobrir depois, porque parece comportamento.
 - **Idioma:** código e comentários em inglês, documentação de negócio em português, mensagens ao usuário em português. O commit segue o idioma do que ele muda.
 - **Comentário é exceção.** Comente o que o código não consegue dizer — uma restrição não óbvia, a razão de uma decisão surpreendente. Nunca o que a próxima linha já diz.
 
@@ -95,9 +95,9 @@ O processo é parte do resultado, e boa parte deste repositório foi construída
 
 - **Decisão é de quem é dono do produto.** O agente pergunta, propõe e registra. Nada vira decisão porque pareceu coerente para quem estava implementando.
 - **Fato é trabalho do agente; decisão é sua.** Ele não deveria perguntar o que dá para descobrir lendo o repositório.
-- **Decisão fechada é registrada na hora**, em `decisions.md`, marcada como pendente de validação enquanto ninguém validou. O que fica só no histórico da conversa se perde.
+- **Decisão fechada é registrada na hora**, em `docs/business/decisions/`, marcada como pendente de validação enquanto ninguém validou. O que fica só no histórico da conversa se perde.
 - **Ponto em aberto precisa de gatilho** — o evento que obriga a decisão, não uma data. Sem gatilho é dívida invisível.
 - **Entrega de agente passa por revisão independente**, como qualquer outra. Revisões aqui acharam falhas reais que os testes escritos pelo próprio autor não pegavam: quem escreve o código escreve o teste com os mesmos pontos cegos.
 - **Mudança estrutural para a sessão.** O agente é obrigado a parar, registrar e só então implementar — e há um gate de CI que reprova migration estrutural sem decisão registrada.
 
-**O que desconfiar numa entrega de agente:** teste que exercita o caminho feliz e nada mais; regra de negócio que apareceu do nada e não está em nenhuma SPEC; comentário explicando o óbvio; e migration que altera uma tabela existente sem entrada correspondente em `decisions.md`.
+**O que desconfiar numa entrega de agente:** teste que exercita o caminho feliz e nada mais; regra de negócio que apareceu do nada e não está em nenhuma SPEC; comentário explicando o óbvio; e migration que altera uma tabela existente sem entrada correspondente em `docs/business/decisions/`.
