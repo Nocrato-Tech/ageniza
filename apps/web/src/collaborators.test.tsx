@@ -669,6 +669,7 @@ describe('collaborator admin actions (#104)', () => {
   const ADMIN_PERMISSIONS = ['colaborador.visualizar', 'colaborador.alterar_funcao', 'colaborador.alterar_papel', 'colaborador.remover'];
   const MANAGER_PERMISSIONS = ['colaborador.visualizar', 'colaborador.alterar_funcao'];
   const VIEWER_PERMISSIONS = ['colaborador.visualizar'];
+  const CUSTOM_ROLE = { key: 'custom', name: 'Papel personalizado' };
   const roleIdOf = (key: string): string => SYSTEM_ROLES.find((role) => role.key === key)!.id;
 
   const openMario = async (scenario: Scenario) => {
@@ -737,6 +738,112 @@ describe('collaborator admin actions (#104)', () => {
     expect(within(dialog).queryByRole('combobox')).toBeNull();
     expect(within(dialog).queryByRole('button', { name: 'Salvar' })).toBeNull();
     expect(within(dialog).queryByRole('button', { name: 'Remover do quadro' })).toBeNull();
+  });
+
+  // Review of #104: the presets carry `alterar_papel` and `remover` together, so only a custom
+  // role with a single permission proves each action answers to its own permission.
+  it('lets a custom role with only colaborador.alterar_papel edit the papel, and never offers the removal', async () => {
+    const bodies: unknown[] = [];
+    const { impl } = makeFetch({
+      role: CUSTOM_ROLE,
+      permissions: ['colaborador.visualizar', 'colaborador.alterar_papel'],
+      updateCollaborator: (_membershipId, body) => {
+        bodies.push(body);
+        return json({ ...marioCosta, role: { key: 'finance', name: 'Financeiro' } });
+      }
+    });
+    renderCollaborators(impl, detailUrl(marioCosta.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
+    expect(within(dialog).getByText('Copywriter')).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: 'Remover do quadro' })).toBeNull();
+
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: roleIdOf('finance') } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    // Only the role travels: the cargo is not this role's to change nor this save's to touch.
+    await waitFor(() => expect(bodies).toEqual([{ roleId: roleIdOf('finance') }]));
+  });
+
+  it('lets a custom role with only colaborador.remover remove, with the fields read-only', async () => {
+    const removed: string[] = [];
+    const { impl } = makeFetch({
+      role: CUSTOM_ROLE,
+      permissions: ['colaborador.visualizar', 'colaborador.remover'],
+      collaborators: () => json({ data: [marioCosta, juliaReis], meta: meta(1, 2, 1) }),
+      detail: () => json(marioCosta),
+      removeCollaborator: (membershipId) => {
+        removed.push(membershipId);
+        return json({ ...marioCosta, status: 'removed' });
+      }
+    });
+    renderCollaborators(impl, detailUrl(marioCosta.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
+    expect(within(dialog).queryByRole('combobox')).toBeNull();
+    expect(within(dialog).getByText('Copywriter')).toBeTruthy();
+    expect(within(dialog).getByText('Produção')).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remover do quadro' }));
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Remover Mário Costa do quadro?' })).getByRole('button', { name: 'Remover' }));
+
+    await waitFor(() => expect(removed).toEqual([marioCosta.membershipId]));
+  });
+
+  it('lets a custom role with only colaborador.alterar_funcao edit the cargo, and nothing else', async () => {
+    const bodies: unknown[] = [];
+    const { impl } = makeFetch({
+      role: CUSTOM_ROLE,
+      permissions: ['colaborador.visualizar', 'colaborador.alterar_funcao'],
+      updateCollaborator: (_membershipId, body) => {
+        bodies.push(body);
+        return json({ ...marioCosta, jobTitle: 'Editora' });
+      }
+    });
+    renderCollaborators(impl, detailUrl(marioCosta.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    expect(within(dialog).queryByRole('combobox')).toBeNull();
+    expect(within(dialog).getByText('Produção')).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: 'Remover do quadro' })).toBeNull();
+
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Cargo' }), { target: { value: 'Editora' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(bodies).toEqual([{ jobTitle: 'Editora' }]));
+  });
+
+  it('sends only the field that changed, even when both actions are allowed', async () => {
+    const bodies: unknown[] = [];
+    type AdminPerson = Omit<typeof marioCosta, 'jobTitle'> & { jobTitle: string | null };
+    let person: AdminPerson = { ...marioCosta };
+    const { impl } = makeFetch({
+      permissions: ADMIN_PERMISSIONS,
+      detail: () => json(person),
+      updateCollaborator: (_membershipId, body) => {
+        bodies.push(body);
+        const next = body as { jobTitle?: string | null; roleId?: string };
+        const role = next.roleId === undefined ? undefined : SYSTEM_ROLES.find((item) => item.id === next.roleId);
+        person = {
+          ...person,
+          ...(next.jobTitle === undefined ? {} : { jobTitle: next.jobTitle }),
+          ...(role === undefined ? {} : { role: { key: role.key, name: role.name } })
+        };
+        return json(person);
+      }
+    });
+    renderCollaborators(impl, detailUrl(marioCosta.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Cargo' }), { target: { value: 'Editora' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(bodies).toEqual([{ jobTitle: 'Editora' }]));
+
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: roleIdOf('finance') } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(bodies).toEqual([{ jobTitle: 'Editora' }, { roleId: roleIdOf('finance') }]));
   });
 
   it('does not let the person edit the own cargo or role in this modal', async () => {

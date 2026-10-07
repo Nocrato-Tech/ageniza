@@ -330,7 +330,7 @@ function AdminEditFields({ collaborator, membershipId, canChangeJobTitle, canCha
     if (error.code === 'INVALID_ROLE') { setRoleError(ROLE_INVALID); return; }
     if (error.code === 'FORBIDDEN' || error.status === 403) { setFormError(ADMIN_FORBIDDEN); return; }
     if (error.status === 404) { setFormError(ADMIN_NOT_FOUND); return; }
-    if (error.status === 400 || error.status === 422) {
+    if (error.status === 400) {
       const field = refusedField(error.details);
       if (field === 'jobTitle') setJobTitleError(JOB_TITLE_INVALID);
       else if (field === 'roleId') setRoleError(ROLE_INVALID);
