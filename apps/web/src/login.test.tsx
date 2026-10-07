@@ -73,8 +73,10 @@ function SessionHarness({ store }: { store: AuthSessionStore }) {
   return <ApplicationRoutes session={session} />;
 }
 
-function LocationProbe({ probe }: { probe: { pathname: string } }) {
-  probe.pathname = useLocation().pathname;
+function LocationProbe({ probe }: { probe: { pathname: string; state: unknown } }) {
+  const location = useLocation();
+  probe.pathname = location.pathname;
+  probe.state = location.state;
   return null;
 }
 
@@ -83,7 +85,7 @@ const renderLogin = (impl: typeof fetch, options: { state?: unknown } = {}) => {
   const client = new HttpClient('http://127.0.0.1:3001', impl, { onSessionEnded: sessionEnd.notify });
   const queryClient = createQueryClient();
   const store = createAuthSessionStore(client, { onSessionStarted: () => queryClient.clear() });
-  const probe = { pathname: '' };
+  const probe = { pathname: '', state: null as unknown };
   const entry = options.state === undefined ? '/entrar' : { pathname: '/entrar', state: options.state };
   render(
     <AuthSessionProvider store={store}>
@@ -216,6 +218,8 @@ describe('LoginPage (/entrar)', () => {
 
     await waitFor(() => expect(probe.pathname).toBe('/convite/invite-token-value'));
     expect(calls.resolve).toBe(0);
+    // The invitation screen learns that the login came from the invite link and accepts on its own.
+    expect(probe.state).toEqual({ inviteLogin: true });
   });
 
   it('carries the invite token into the recovery screen', async () => {
