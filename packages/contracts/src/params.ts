@@ -50,6 +50,17 @@ export const AgencyClientPersonaPathParamsSchema = z.object({
   personaId: z.string().uuid()
 }).strict();
 
+export const AgencyClientThreadPathParamsSchema = z.object({
+  agencyId: z.string().uuid(),
+  clientId: z.string().uuid(),
+  threadId: z.string().uuid()
+}).strict();
+
+export const ClientThreadPathParamsSchema = z.object({
+  clientId: z.string().uuid(),
+  threadId: z.string().uuid()
+}).strict();
+
 export const PublicInvitationTokenPathParamsSchema = z.object({
   token: z.string().min(1).max(2_048)
 }).strict();
@@ -62,4 +73,6 @@ export type AgencyCollaboratorPathParams = z.infer<typeof AgencyCollaboratorPath
 export type AgencyMediaAssetPathParams = z.infer<typeof AgencyMediaAssetPathParamsSchema>;
 export type AgencyClientSectionPathParams = z.infer<typeof AgencyClientSectionPathParamsSchema>;
 export type AgencyClientPersonaPathParams = z.infer<typeof AgencyClientPersonaPathParamsSchema>;
+export type AgencyClientThreadPathParams = z.infer<typeof AgencyClientThreadPathParamsSchema>;
+export type ClientThreadPathParams = z.infer<typeof ClientThreadPathParamsSchema>;
 export type PublicInvitationTokenPathParams = z.infer<typeof PublicInvitationTokenPathParamsSchema>;

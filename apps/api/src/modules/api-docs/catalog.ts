@@ -6,6 +6,7 @@ import {
   AcceptLegalDocumentRequestSchema,
   AgencyClientPathParamsSchema,
   AgencyClientPersonaPathParamsSchema,
+  AgencyClientThreadPathParamsSchema,
   AgencyClientSectionPathParamsSchema,
   AgencyCollaboratorPathParamsSchema,
   AgencyInvitationPathParamsSchema,
@@ -30,6 +31,10 @@ import {
   ClientListResponseSchema,
   ClientPathParamsSchema,
   ClientSchema,
+  ClientThreadPathParamsSchema,
+  CommentListQuerySchema,
+  CommentListResponseSchema,
+  CommentSchema,
   CollaboratorDetailQuerySchema,
   CollaboratorInvitationRequestSchema,
   CollaboratorJobTitlesQuerySchema,
@@ -43,6 +48,9 @@ import {
   ContextResolveQuerySchema,
   ContextResolveResponseSchema,
   CreateClientRequestSchema,
+  CreateCommentRequestSchema,
+  CreateThreadRequestSchema,
+  CreateThreadResponseSchema,
   CreateMediaUploadRequestSchema,
   CreatePersonaRequestSchema,
   CreateMediaUploadResponseSchema,
@@ -66,6 +74,9 @@ import {
   PersonaSchema,
   PublicInvitationTokenPathParamsSchema,
   PutLastContextRequestSchema,
+  ThreadListQuerySchema,
+  ThreadListResponseSchema,
+  ThreadSchema,
   RequestMediaUploadPartsRequestSchema,
   RequestMediaUploadPartsResponseSchema,
   UpdateClientRequestSchema,
@@ -155,7 +166,7 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   invitations: 'Convite de colaborador e de pessoa do portal, aceite e administração dos pendentes.',
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
-  clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto.',
+  clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; estudo de marca e personas; e a conversa em thread entre a agência e o cliente, pelos dois lados.',
   collaborators: 'A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.',
   media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.',
   profile: 'Edição do próprio nome e da própria foto de perfil.',
@@ -184,6 +195,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   INVALID_ROLE: 'O papel informado não é válido para esta agência.',
   CLIENT_NAME_IN_USE: 'Já existe um cliente ativo com este nome.',
   CLIENT_ARCHIVED: 'Cliente arquivado não pode ser editado.',
+  PERSONA_ARCHIVED: 'Persona arquivada: a conversa é somente leitura.',
+  SECTION_NOT_FILLED: 'Esta seção ainda não foi preenchida pela agência.',
   TRY_AGAIN: 'Houve um conflito momentâneo. Tente de novo.',
   INVALID_PASSWORD: 'A senha atual não confere.',
   SAME_EMAIL: 'Informe um e-mail diferente do atual.',
@@ -211,6 +224,8 @@ const userId = '55555555-5555-4555-8555-555555555555';
 const roleId = '66666666-6666-4666-8666-666666666666';
 const clientId = '77777777-7777-4777-8777-777777777777';
 const personaId = '88888888-8888-4888-8888-888888888888';
+const threadId = '99999999-9999-4999-8999-999999999999';
+const commentId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 const agencyContextExample = {
   type: 'agency',
@@ -257,6 +272,25 @@ const personaExample = {
   status: 'active',
   updatedBy: { id: userId, name: 'Dono da Agência' },
   updatedAt: '2026-09-30T12:00:00.000Z'
+} as const;
+
+const commentExample = {
+  id: commentId,
+  body: 'Podemos aproximar o tom de voz do que usamos nas redes?',
+  side: 'client',
+  author: { name: 'Ana, da Padaria Central', photoUrl: null },
+  createdAt: '2026-10-07T12:00:00.000Z'
+} as const;
+
+const threadExample = {
+  id: threadId,
+  subject: { sectionKey: 'tone_of_voice' },
+  state: 'open',
+  openedBy: { name: 'Ana, da Padaria Central', side: 'client' },
+  lastComment: { side: 'client', at: '2026-10-07T12:00:00.000Z', excerpt: 'Podemos aproximar o tom de voz do que usamos nas redes?' },
+  commentCount: 1,
+  resolvedBy: null,
+  resolvedAt: null
 } as const;
 
 const brandSectionExample = {
@@ -1390,6 +1424,270 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Persona not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' }
+    ]
+  },
+
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/threads',
+    operationId: 'listAgencyThreads',
+    module: 'clients',
+    summary: 'Lista as conversas de um assunto do cliente',
+    description: [
+      'O assunto é obrigatório e é exatamente um: `sectionKey` (uma das sete seções) ou `personaId`; os dois',
+      'juntos, ou nenhum, são 400. `state` filtra por `open` ou `resolved`; sem ele vêm todas. Vinte por',
+      'página, a de atividade mais recente primeiro. O estado é derivado: a conversa está resolvida só',
+      'enquanto a resolução é posterior ao último comentário. Persona de outro cliente é 404; a conversa',
+      'de persona arquivada continua legível para a agência.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.visualizar',
+    params: AgencyClientPathParamsSchema,
+    query: ThreadListQuerySchema,
+    requestExample: { sectionKey: 'tone_of_voice', state: 'open' },
+    responses: [{
+      status: 200,
+      description: 'Página de conversas.',
+      schema: ThreadListResponseSchema,
+      example: { data: [threadExample], meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/threads',
+    operationId: 'openAgencyThread',
+    module: 'clients',
+    summary: 'Abre uma conversa pela agência, com o primeiro comentário',
+    description: [
+      'Cria a conversa e o primeiro comentário na mesma transação, com o lado `agency`. O lado nunca vem',
+      'do corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000',
+      'bytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`',
+      'e persona de outro cliente 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.operar',
+    params: AgencyClientPathParamsSchema,
+    body: CreateThreadRequestSchema,
+    requestExample: { subject: { sectionKey: 'tone_of_voice' }, body: 'Vamos revisar o tom de voz com o time?' },
+    responses: [{
+      status: 201,
+      description: 'Conversa aberta.',
+      schema: CreateThreadResponseSchema,
+      example: {
+        thread: { ...threadExample, openedBy: { name: 'Dono da Agência', side: 'agency' }, lastComment: { side: 'agency', at: '2026-10-07T12:00:00.000Z', excerpt: 'Vamos revisar o tom de voz com o time?' } },
+        comment: { ...commentExample, body: 'Vamos revisar o tom de voz com o time?', side: 'agency', author: { name: 'Dono da Agência', photoUrl: null } }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'PERSONA_ARCHIVED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/threads/:threadId/comments',
+    operationId: 'listAgencyThreadComments',
+    module: 'clients',
+    summary: 'Lista os comentários de uma conversa',
+    description: [
+      'Cinquenta por página, do mais antigo ao mais novo. O nome e a foto do autor vêm do vínculo do',
+      'lado do comentário, e a pessoa removida mantém o nome, porque o comentário é histórico.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.visualizar',
+    params: AgencyClientThreadPathParamsSchema,
+    query: CommentListQuerySchema,
+    requestExample: { page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página de comentários.',
+      schema: CommentListResponseSchema,
+      example: { data: [commentExample], meta: { page: 1, pageSize: 50, totalItems: 1, totalPages: 1 } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/threads/:threadId/comments',
+    operationId: 'addAgencyThreadComment',
+    module: 'clients',
+    summary: 'Comenta uma conversa pela agência',
+    description: [
+      'Grava o comentário com o lado `agency`; comentar numa conversa resolvida a reabre, sem escrever na',
+      'conversa, porque o estado é derivado. Não existe rota de editar nem de apagar comentário.',
+      'Cliente arquivado e persona arquivada respondem 409.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.operar',
+    params: AgencyClientThreadPathParamsSchema,
+    body: CreateCommentRequestSchema,
+    requestExample: { body: 'Combinado, ajustamos esta semana.' },
+    responses: [{ status: 201, description: 'Comentário gravado.', schema: CommentSchema, example: { ...commentExample, side: 'agency' } }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'PERSONA_ARCHIVED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/threads/:threadId/resolve',
+    operationId: 'resolveThread',
+    module: 'clients',
+    summary: 'Resolve uma conversa',
+    description: [
+      'Grava `resolved_at` e `resolved_by`. Resolver uma conversa que já está resolvida não escreve nada.',
+      'Não existe rota de reabrir: um comentário novo reabre. Só quem tem `cliente.operar` resolve; a',
+      'pessoa do portal nunca.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.operar',
+    params: AgencyClientThreadPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'Conversa resolvida.',
+      schema: ThreadSchema,
+      example: { ...threadExample, state: 'resolved', resolvedBy: { name: 'Dono da Agência' }, resolvedAt: '2026-10-07T13:00:00.000Z' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'PERSONA_ARCHIVED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/clients/:clientId/threads',
+    operationId: 'listPortalThreads',
+    module: 'clients',
+    summary: 'Lista as conversas de um assunto, no portal',
+    description: [
+      'Mesmos parâmetros, paginação e forma da lista da agência, pelo mesmo serviço. Persona arquivada',
+      'não é assunto válido no portal: responde 404 como se não existisse.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientPathParamsSchema,
+    query: ThreadListQuerySchema,
+    requestExample: { sectionKey: 'tone_of_voice' },
+    responses: [{
+      status: 200,
+      description: 'Página de conversas.',
+      schema: ThreadListResponseSchema,
+      example: { data: [threadExample], meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/clients/:clientId/threads',
+    operationId: 'openPortalThread',
+    module: 'clients',
+    summary: 'Abre uma conversa pelo portal, com o primeiro comentário',
+    description: [
+      'Grava a conversa e o primeiro comentário com o lado `client`, que a rota fixa. Seção que a agência',
+      'ainda não preencheu responde 409 `SECTION_NOT_FILLED`; persona arquivada ou de outro cliente, 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientPathParamsSchema,
+    body: CreateThreadRequestSchema,
+    requestExample: { subject: { sectionKey: 'tone_of_voice' }, body: 'Podemos aproximar o tom de voz do que usamos nas redes?' },
+    responses: [{
+      status: 201,
+      description: 'Conversa aberta.',
+      schema: CreateThreadResponseSchema,
+      example: { thread: threadExample, comment: commentExample }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'SECTION_NOT_FILLED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/clients/:clientId/threads/:threadId/comments',
+    operationId: 'listPortalThreadComments',
+    module: 'clients',
+    summary: 'Lista os comentários de uma conversa, no portal',
+    description: 'Mesma paginação e forma da lista da agência. Conversa de outro cliente é 404.',
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientThreadPathParamsSchema,
+    query: CommentListQuerySchema,
+    requestExample: { page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página de comentários.',
+      schema: CommentListResponseSchema,
+      example: { data: [commentExample], meta: { page: 1, pageSize: 50, totalItems: 1, totalPages: 1 } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/clients/:clientId/threads/:threadId/comments',
+    operationId: 'addPortalThreadComment',
+    module: 'clients',
+    summary: 'Comenta uma conversa pelo portal',
+    description: [
+      'Grava o comentário com o lado `client`; comentar numa conversa resolvida a reabre. Não existe',
+      'rota de resolver no portal: só a agência resolve.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientThreadPathParamsSchema,
+    body: CreateCommentRequestSchema,
+    requestExample: { body: 'Obrigada, ficou melhor assim.' },
+    responses: [{ status: 201, description: 'Comentário gravado.', schema: CommentSchema, example: commentExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' }
     ]
   },
 
