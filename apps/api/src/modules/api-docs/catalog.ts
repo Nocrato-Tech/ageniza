@@ -62,6 +62,7 @@ import {
   RequestMediaUploadPartsRequestSchema,
   RequestMediaUploadPartsResponseSchema,
   UpdateClientRequestSchema,
+  ReactivateCollaboratorRequestSchema,
   UpdateCollaboratorRequestSchema,
   UpdateMyProfileRequestSchema,
   UpdateMyProfileResponseSchema,
@@ -148,7 +149,7 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
   clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto.',
-  collaborators: 'A equipe da agência: listagem com paginação, busca e filtros, detalhe e alteração de cargo e papel.',
+  collaborators: 'A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.',
   media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.',
   profile: 'Edição do próprio nome e da própria foto de perfil.'
 };
@@ -759,8 +760,9 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Lista a equipe da agência',
     description: [
       'Paginada pelo contrato global de listagem, com busca por nome e e-mail e filtros por papel,',
-      'cargo e status (somente ativos). A lista é a mesma para todos os papéis; a foto vem como URL',
-      'assinada. O filtro de removidos chega com a guarda administrativa da #98.'
+      'cargo e status. A lista é a mesma para todos os papéis; a foto vem como URL assinada.',
+      '`status=removed` mostra quem saiu do quadro e exige `colaborador.remover` ou',
+      '`colaborador.alterar_papel` (o Owner passa por posse): sem elas, 403.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'colaborador.visualizar',
@@ -803,8 +805,9 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Devolve um colaborador da agência',
     description: [
       'Carrega o mesmo contrato do item da listagem, com URL própria para o link ser compartilhável.',
-      'Um vínculo de outra agência, inexistente, malformado ou removido devolve o mesmo 404, sem',
-      'revelar existência.'
+      'Um vínculo de outra agência, inexistente ou malformado devolve o mesmo 404, sem revelar',
+      'existência; um vínculo removido também, exceto para quem pode ver removidos (`colaborador.remover`',
+      'ou `colaborador.alterar_papel`, ou o Owner).'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'colaborador.visualizar',
@@ -880,6 +883,94 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/collaborators/:membershipId/remove',
+    operationId: 'removeCollaborator',
+    module: 'collaborators',
+    summary: 'Remove um colaborador do quadro',
+    description: [
+      'Coloca o vínculo em `removed`; a linha permanece e a pessoa perde o acesso à agência na',
+      'requisição seguinte. O Owner não é removido e ninguém remove a si mesmo (403). Remover um',
+      'vínculo que já está removido é 409. Um vínculo de outra agência, inexistente ou malformado',
+      'devolve 404. Devolve o vínculo já em `removed`.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'colaborador.remover',
+    params: AgencyCollaboratorPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'O colaborador removido.',
+      schema: CollaboratorSchema,
+      example: {
+        membershipId,
+        name: 'Camila Nogueira',
+        email: 'camila@exemplo.test',
+        photoUrl: null,
+        jobTitle: 'Editor de Vídeo',
+        role: { key: 'production', name: 'Produção' },
+        isOwner: false,
+        status: 'removed',
+        joinedAt: '2026-03-12T12:00:00.000Z'
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'COLLABORATOR_ALREADY_REMOVED' }
+    ]
+  },
+
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/collaborators/:membershipId/reactivate',
+    operationId: 'reactivateCollaborator',
+    module: 'collaborators',
+    summary: 'Reativa um colaborador removido',
+    description: [
+      'Volta o mesmo vínculo para `active` com o papel de `roleId`, que é obrigatório: o papel',
+      'anterior nunca é reaproveitado. Se o papel for `admin`, exige também `colaborador.atribuir_admin`,',
+      'que só o Owner tem (403). Reativar um vínculo que não está removido é 409, e papel que não é de',
+      'sistema nem da agência é 400 `INVALID_ROLE`. Um vínculo de outra agência, inexistente ou',
+      'malformado devolve 404. Devolve o vínculo já em `active`.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'colaborador.alterar_papel',
+    params: AgencyCollaboratorPathParamsSchema,
+    body: ReactivateCollaboratorRequestSchema,
+    requestExample: { roleId },
+    responses: [{
+      status: 200,
+      description: 'O colaborador reativado.',
+      schema: CollaboratorSchema,
+      example: {
+        membershipId,
+        name: 'Camila Nogueira',
+        email: 'camila@exemplo.test',
+        photoUrl: null,
+        jobTitle: 'Editor de Vídeo',
+        role: { key: 'production', name: 'Produção' },
+        isOwner: false,
+        status: 'active',
+        joinedAt: '2026-03-12T12:00:00.000Z'
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'INVALID_ROLE' },
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'COLLABORATOR_NOT_REMOVED' }
     ]
   },
 

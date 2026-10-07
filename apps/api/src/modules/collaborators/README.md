@@ -20,8 +20,7 @@ seja estável entre chamadas.
 
 O detalhe usa a mesma consulta, filtrada por `membership.id`, com o mesmo filtro de agência: um
 vínculo de outra agência não é uma linha, e a rota responde o mesmo 404 de um id inexistente — nunca
-403, que confirmaria a existência. Id malformado também cai nesse 404. Vínculo `removed` é 404 até
-a task de remoção (#98) trazer a visão administrativa.
+403, que confirmaria a existência. Id malformado também cai nesse 404. Vínculo `removed` é 404 para quem não pode ver removidos (ver "Quem vê removidos").
 
 ## Permissão
 
@@ -88,13 +87,44 @@ filtro `jobTitle` da listagem, para todo cargo gravado ser filtrável), e `null`
 aplicado pelo schema antes de a requisição chegar ao banco, que mede o tamanho com uma função
 quadrática.
 
+## Remover e reativar (`POST`, issue #98)
+
+`POST /agencies/:agencyId/collaborators/:membershipId/remove` exige `colaborador.remover` e coloca o
+vínculo em `removed`; `POST …/reactivate` exige `colaborador.alterar_papel` e um `roleId` **obrigatório**
+no corpo. As duas devolvem o vínculo no contrato do detalhe, já no novo estado.
+
+- **A linha permanece.** Remover não apaga; reativar é o mesmo registro (`unique (agency_id, user_id)`
+  impede outro). Nenhuma rota apaga fisicamente.
+- **Reativar nunca herda o papel anterior.** Sem `roleId` é `400`; o papel do corpo é o que vale. Se for
+  `admin`, exige também `colaborador.atribuir_admin` (403). Essa checagem é da rota **e precisa ser**: o
+  trigger do banco só pede a permissão quando o `role_id` muda, então quem foi Admin e volta como Admin
+  passaria por ele sem ela.
+- **Proteções, todas `403` com mensagem própria:** o Owner não é removido (nem tem o vínculo
+  reativado por aqui) e ninguém remove a si mesmo. "A agência não fica sem Admin" foi descartada de
+  propósito (`decisions.md`, 2026-09-24): remover o último Admin é estado legítimo.
+- **Estado errado é `409`**, nos dois sentidos: remover quem já está removido
+  (`COLLABORATOR_ALREADY_REMOVED`) e reativar quem não está removido (`COLLABORATOR_NOT_REMOVED`), e nada
+  muda, nem `updated_at`. Foi a escolha entre idempotente e rejeitado que a issue deixou aberta.
+- **A linha é lida com `for update` em qualquer status** (`lockMembership`), então duas remoções
+  simultâneas dão um `200` e um `409`, e um `PATCH` de cargo enfileirado atrás da remoção responde `404`.
+  Um `UPDATE` que não altera linha (a policy filtra em silêncio) e um `42501` do banco são `403`, nunca
+  `200` nem `500`.
+- **Não há sessão por agência para encerrar.** A sessão é global e o acesso à agência é decidido a cada
+  requisição por `requireAgencyAccess`, que só enxerga vínculo `active`: a pessoa perde a agência na
+  requisição seguinte, com o mesmo cookie, e o contexto some de `GET /me/contexts`.
+
+## Quem vê removidos
+
+`?status=removed` na listagem e o detalhe de um vínculo removido valem para quem tem
+`colaborador.remover` **ou** `colaborador.alterar_papel`, além do Owner por posse (`canSeeRemovedLinks`,
+em `policy.ts`): quem pode remover ou reativar precisa encontrar a pessoa. Sem isso, o filtro é `403`,
+depois da guarda e da validação e antes de qualquer leitura, e o detalhe é o mesmo `404` de um id de outra
+agência. A lista padrão e `status=active` nunca mostram removidos, para ninguém. O critério é a tarefa e
+não o nome do papel, um desvio de "apenas Admin e Owner" pendente de validação (`decisions.md`, 2026-10-07).
+
 ## O que ficou de fora
 
-- **O filtro de removidos chega com a #98.** A SPEC exige permissão administrativa para revelar
-  vínculos `removed` (regra inviolável 9). Por isso, nesta fase, `status` aceita só `active`,
-  `?status=removed` é 400 e o detalhe de um removido é 404; a visão administrativa entra na
-  #98/#105.
 - **Remuneração.** Não existe neste módulo; pertence ao Financeiro.
-- **Remoção, reativação, convites e edição de perfil.** São outras rotas do módulo (#98 e seguintes).
+- **Convites e edição de perfil.** São outras rotas do módulo.
 - **Auditoria da troca de papel.** `audit.events` não registra "quem mudou este campo"; ver
   "Rastreio de alteração de dados" em `docs/business/structural-changes.md`.
