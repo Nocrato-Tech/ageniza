@@ -34,12 +34,15 @@ export const formatDayMonth = (value: string): string => {
  * the 7th becomes the 8th in UTC). The archiving day is the agency's day, so the label is
  * formatted in that timezone.
  */
-const archivingDayFormatter = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' });
+const agencyDayFormatter = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' });
 
-export const formatArchivedDay = (value: string): string => {
+/** Day and month of an ISO timestamp in the agency's timezone (America/Sao_Paulo). */
+export const formatAgencyDayMonth = (value: string): string => {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : archivingDayFormatter.format(date);
+  return Number.isNaN(date.getTime()) ? value : agencyDayFormatter.format(date);
 };
+
+export const formatArchivedDay = formatAgencyDayMonth;
 
 /** The contract validates http(s) on write; a response is untrusted input and never becomes a href. */
 const isHttpUrl = (value: string): boolean => /^https?:\/\//i.test(value);
@@ -63,7 +66,8 @@ interface ClientDetailContextValue {
   readonly client: ClientDetailResponse;
 }
 
-const useClientDetail = (): ClientDetailResponse => {
+/** The tab components read the client the detail page already loaded (outlet context). */
+export const useClientDetail = (): ClientDetailResponse => {
   const context = useOutletContext<ClientDetailContextValue | null>();
   if (context === null) throw new Error('ClientDetail outlet context is required.');
   return context.client;
