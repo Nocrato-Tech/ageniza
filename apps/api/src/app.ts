@@ -12,6 +12,7 @@ import { registerContextModule, type ContextModuleDependencies } from './modules
 import { registerEmailChangeModule, type EmailChangeModuleDependencies } from './modules/email-change/routes.js';
 import { createInvitationTokenLookup, registerInvitationModule, type InvitationModuleDependencies } from './modules/invitations/routes.js';
 import { registerMediaModule, type MediaModuleDependencies } from './modules/media/routes.js';
+import { registerLegalModule, type LegalModuleDependencies } from './modules/legal/routes.js';
 import { registerProfileModule, type ProfileModuleDependencies } from './modules/profile/routes.js';
 import { applyCorrelationHeaders } from './plugins/infra/correlation.js';
 import { registerCors } from './plugins/infra/cors.js';
@@ -46,6 +47,8 @@ export interface ApiAppOptions {
   media?: MediaModuleDependencies;
   /** Profile dependencies are optional; undefined where identity storage is not configured. */
   profile?: ProfileModuleDependencies;
+  /** Legal acceptance dependencies are optional; undefined for tests that never touch the legal routes. */
+  legal?: LegalModuleDependencies;
   /** E-mail change dependencies are optional; undefined for tests that never touch those routes. */
   emailChange?: EmailChangeModuleDependencies;
   /**
@@ -185,6 +188,9 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   }
   if (options.profile !== undefined) {
     registerProfileModule(app, options.profile);
+  }
+  if (options.legal !== undefined) {
+    registerLegalModule(app, options.legal);
   }
   if (options.emailChange !== undefined) {
     registerEmailChangeModule(app, options.emailChange);

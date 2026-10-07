@@ -18,7 +18,7 @@ import { privacyPolicy } from './legal/privacy.js';
 import { termsOfUse } from './legal/terms.js';
 import { LoginPage } from './login.js';
 import { NoAccessPage } from './no-access.js';
-import { PortalHomePage } from './portal.js';
+import { PortalAreaLayout, PortalHomePage } from './portal.js';
 import { ResetPasswordPage } from './reset-password.js';
 import { LoadingPage, NotFoundPage, SessionGate } from './status-pages.js';
 
@@ -76,7 +76,9 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="*" element={<NotFoundPage as="section" />} />
     </Route>
     <Route element={<ProtectedLayout session={session} />}>
-      <Route path="portal/:clienteId" element={<PortalHomePage />} />
+      <Route path="portal/:clienteId" element={<PortalAreaLayout />}>
+        <Route index element={<PortalHomePage />} />
+      </Route>
       <Route path="contextos" element={<ContextSelectPage />} />
       {/* `/app` is not a destination anymore; the resolve decides where the person enters. */}
       <Route path="app" element={<Navigate to="/contextos" replace />} />

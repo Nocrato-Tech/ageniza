@@ -183,7 +183,25 @@ const containsExampleSecretMarker = (value: string): boolean => {
   return EXAMPLE_SECRET_MARKERS.some((marker) => lower.includes(marker));
 };
 
-const authDocumentVersion = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'must use YYYY-MM-DD');
+const isRealCalendarDate = (value: string): boolean => {
+  const [year, month, day] = value.split('-').map(Number);
+  if (year === undefined || month === undefined || day === undefined) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+};
+
+/** Today in the product's time zone, `YYYY-MM-DD`: the same day the database compares against. */
+const todayInSaoPaulo = (): string => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+
+/**
+ * A legal document version is the date the text took effect: a real date, never a future one. A
+ * future version would make an acceptance recorded against it suppress every real version after it
+ * (`app_private.accept_legal_document` never regresses), so the configuration refuses it at boot.
+ */
+const authDocumentVersion = z.string().trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'must use YYYY-MM-DD')
+  .refine(isRealCalendarDate, 'must be a real calendar date')
+  .refine((value) => value <= todayInSaoPaulo(), 'must not be in the future');
 
 const storageEnvironmentShape = {
   R2_ENDPOINT: optionalUrl('must be a valid storage endpoint URL'),

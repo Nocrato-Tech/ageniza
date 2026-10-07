@@ -27,6 +27,7 @@ import { createRequireSession } from '../session-guard.js';
 import { createMediaJobDispatcher, type MediaJobDispatcher } from '../../media/job-dispatcher.js';
 import type { MediaModuleDependencies } from '../../media/routes.js';
 import { createMediaStorageClient } from '../../media/storage-client.js';
+import type { LegalModuleDependencies } from '../../legal/routes.js';
 import type { EmailChangeModuleDependencies } from '../../email-change/routes.js';
 import type { ProfileModuleDependencies } from '../../profile/routes.js';
 
@@ -271,6 +272,11 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
       downloadUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds
     }
   };
+  const legal: LegalModuleDependencies = {
+    database,
+    auth,
+    config: { authTermsVersion: config.authTermsVersion, authPrivacyVersion: config.authPrivacyVersion }
+  };
   const emailChange: EmailChangeModuleDependencies = { database, auth, emailService };
   const authDependencies = {
     auth,
@@ -290,6 +296,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     collaborators,
     media,
     profile,
+    legal,
     emailChange,
     onRoute: options.onRoute,
     // A handler whose reply status drifts from its own `config.responseStatus` fails the request,

@@ -9,6 +9,7 @@ export * from './errors.js';
 export * from './health.js';
 export * from './invitations.js';
 export * from './jobs.js';
+export * from './legal.js';
 export * from './media.js';
 export * from './pagination.js';
 export * from './params.js';

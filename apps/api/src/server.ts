@@ -21,6 +21,7 @@ import type { CollaboratorModuleDependencies } from './modules/collaborators/rou
 import { createMediaJobDispatcher } from './modules/media/job-dispatcher.js';
 import type { MediaModuleDependencies } from './modules/media/routes.js';
 import { createMediaStorageClient } from './modules/media/storage-client.js';
+import type { LegalModuleDependencies } from './modules/legal/routes.js';
 import type { EmailChangeModuleDependencies } from './modules/email-change/routes.js';
 import type { ProfileModuleDependencies } from './modules/profile/routes.js';
 
@@ -115,6 +116,12 @@ export const startApi = async (): Promise<void> => {
     }
   };
 
+  const legalDependencies: LegalModuleDependencies = {
+    database,
+    auth,
+    config: { authTermsVersion: config.authTermsVersion, authPrivacyVersion: config.authPrivacyVersion }
+  };
+
   const emailChangeDependencies: EmailChangeModuleDependencies = { database, auth, emailService };
 
   const readiness = createReadiness(false);
@@ -134,6 +141,7 @@ export const startApi = async (): Promise<void> => {
     collaborators: collaboratorDependencies,
     media: mediaDependencies,
     profile: profileDependencies,
+    legal: legalDependencies,
     emailChange: emailChangeDependencies
   });
 

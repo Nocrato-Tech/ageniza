@@ -43,6 +43,10 @@
       "description": "Edição do próprio nome e da própria foto de perfil."
     },
     {
+      "name": "legal",
+      "description": "Versão dos Termos e da Privacidade que a conta aceitou, e o aceite de um documento por vez."
+    },
+    {
       "name": "email-change",
       "description": "Pedido de troca do e-mail da conta, aprovado pela operação, e a confirmação pelo link enviado ao e-mail novo."
     }
@@ -2652,6 +2656,67 @@
         },
         "required": [
           "imageBase64"
+        ],
+        "additionalProperties": false
+      },
+      "getMyLegalAcceptancesResponse": {
+        "type": "object",
+        "properties": {
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "document": {
+                  "type": "string",
+                  "enum": [
+                    "terms",
+                    "privacy"
+                  ]
+                },
+                "currentVersion": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "acceptedVersion": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "pending": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "document",
+                "currentVersion",
+                "acceptedVersion",
+                "pending"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "documents"
+        ],
+        "additionalProperties": false
+      },
+      "acceptLegalDocumentRequest": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string",
+            "enum": [
+              "terms",
+              "privacy"
+            ]
+          }
+        },
+        "required": [
+          "document"
         ],
         "additionalProperties": false
       },
@@ -8996,6 +9061,228 @@
                   "error": {
                     "code": "UNSUPPORTED_MEDIA_TYPE",
                     "message": "This content type is not accepted."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/legal-acceptances": {
+      "get": {
+        "operationId": "getMyLegalAcceptances",
+        "summary": "Consulta a versão aceita dos Termos e da Privacidade",
+        "description": "Uma entrada por documento, Termos primeiro: a versão em vigor no servidor, a versão mais nova\nque a conta aceitou (`null` se nunca aceitou) e se há aceite pendente. Pendente não bloqueia\nnenhuma funcionalidade; só alimenta o aviso da interface.\n\nAcesso: Sessão.",
+        "tags": [
+          "legal"
+        ],
+        "x-permission": null,
+        "responses": {
+          "200": {
+            "description": "Situação dos dois documentos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getMyLegalAcceptancesResponse"
+                },
+                "example": {
+                  "documents": [
+                    {
+                      "document": "terms",
+                      "currentVersion": "2026-01-01",
+                      "acceptedVersion": "2026-01-01",
+                      "pending": false
+                    },
+                    {
+                      "document": "privacy",
+                      "currentVersion": "2026-10-01",
+                      "acceptedVersion": "2026-02-01",
+                      "pending": true
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "acceptLegalDocument",
+        "summary": "Aceita um documento legal, na versão em vigor",
+        "description": "O corpo nomeia só o documento; a versão gravada é sempre a que está em vigor no servidor, e\no corpo `.strict()` recusa um campo `version`. O aceite é por documento: aceitar a Privacidade\nnão marca os Termos. É idempotente e nunca regride: repetir, ou aceitar uma versão que a conta\njá superou, responde 200 sem gravar nada. A resposta traz a situação dos dois documentos.\n\nAcesso: Sessão.",
+        "tags": [
+          "legal"
+        ],
+        "x-permission": null,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/acceptLegalDocumentRequest"
+              },
+              "example": {
+                "document": "privacy"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Situação dos dois documentos depois do aceite.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getMyLegalAcceptancesResponse"
+                },
+                "example": {
+                  "documents": [
+                    {
+                      "document": "terms",
+                      "currentVersion": "2026-01-01",
+                      "acceptedVersion": "2026-01-01",
+                      "pending": false
+                    },
+                    {
+                      "document": "privacy",
+                      "currentVersion": "2026-10-01",
+                      "acceptedVersion": "2026-02-01",
+                      "pending": true
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Request payload is too large"
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"

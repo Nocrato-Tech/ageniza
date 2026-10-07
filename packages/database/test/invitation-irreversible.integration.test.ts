@@ -215,6 +215,30 @@ describe('invitation state only moves forward (#290)', () => {
     }
   });
 
+  // Issue #302 (security review of PR #294, mutation T7). The guard has to be keyed on
+  // `current_user`, never on the `app.user_id` GUC: `ageniza_app` can clear the GUC inside the SET
+  // expression, and a guard keyed on it would skip the direction check while the bound actor still
+  // satisfies the policy. Clearing the GUC inside the statement also proves the refusal comes from
+  // the trigger -- its own message -- and not from the policy's "row-level security" one.
+  it('keys its guard on current_user, not on the app.user_id GUC, even when the GUC is cleared inside the statement', async () => {
+    const invitee = await makeInvitee();
+    const invitation = await insertInvitation({ purpose: 'collaborator_invite', inviteeId: invitee, roleId: productionRoleId, revokedAt: new Date(Date.now() - 60_000) });
+    const original = (await invitationState(invitation.id)).revoked_at;
+
+    const refusal = await asUser(cancellerUser, (transaction) => raw(transaction, `
+      update public.invitations
+         set revoked_at = (case when pg_catalog.set_config('app.user_id', '', true) is not null then null::timestamptz end)
+       where id = ?::uuid
+    `, [invitation.id])).catch((error: unknown) => error);
+
+    expect(refusal).toMatchObject({
+      code: '42501',
+      message: expect.stringContaining('A revoked invitation cannot be changed; create a new one.')
+    });
+    expect(String((refusal as Error).message)).not.toContain('row-level security');
+    expect((await invitationState(invitation.id)).revoked_at).toEqual(original);
+  });
+
   it('refuses the INSERT ... ON CONFLICT DO UPDATE route to the same column', async () => {
     const invitee = await makeInvitee();
     const invitation = await insertInvitation({ purpose: 'collaborator_invite', inviteeId: invitee, roleId: productionRoleId, revokedAt: new Date(Date.now() - 60_000) });
