@@ -88,6 +88,16 @@ const confeitaria = {
   threadsAwaitingAgency: 0,
   pendingInvitations: 0
 };
+/** A single awaiting thread: the badge has to say "1 sugestão aguardando", not the plural. */
+const mercado = {
+  id: '6f6f6f6f-6666-4666-8666-666666666666',
+  name: 'Mercado Bom Preço',
+  photoUrl: null,
+  instagramHandle: null,
+  status: 'active',
+  closingDate: null,
+  threadsAwaitingAgency: 1
+};
 /** The full registration a `POST` answers with (specs/clientes.md section 3). */
 const createdClient = {
   id: '5e5e5e5e-5555-4555-8555-555555555555',
@@ -193,6 +203,14 @@ const cardNames = (container: HTMLElement): (string | null)[] =>
 const searchBox = (): HTMLInputElement => screen.getByRole('searchbox', { name: 'Buscar por nome, razão social ou @' }) as HTMLInputElement;
 const statusFilter = (): HTMLSelectElement => screen.getByRole('combobox', { name: 'Status' }) as HTMLSelectElement;
 
+/** The card as a list item; the link is named by its own client name (aria-labelledby, #374 review). */
+const cardOf = (name: string): HTMLElement => {
+  const link = screen.getByRole('link', { name });
+  const item = link.closest('li');
+  if (item === null) throw new Error(`The card of ${name} was not rendered.`);
+  return item;
+};
+
 describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
   it('renders the cards in the order the server returned, without reordering', async () => {
     // The server order is Padaria (with suggestions), Academia — deliberately not alphabetical,
@@ -204,6 +222,21 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
     expect(cardNames(container)).toEqual(['Padaria Central', 'Academia Corpo']);
     // The screen obeys the server order: it asks for its page and never sends an order of its own.
     expect(calls).toContain(`GET /agencies/${AGENCY_A}/clients?page=1&pageSize=20`);
+  });
+
+  it('shows the badges with their exact text: plural count, singular count, closing date, and none at zero', async () => {
+    const { impl } = makeFetch({ clients: () => listResponse([padaria, academia, mercado, confeitaria]) });
+    renderClients(impl);
+    await screen.findByText('Padaria Central');
+
+    expect(within(cardOf('Padaria Central')).getByText('2 sugestões aguardando')).toBeTruthy();
+    expect(within(cardOf('Mercado Bom Preço')).getByText('1 sugestão aguardando')).toBeTruthy();
+    // Zero awaiting threads: no badge, not "0 sugestões aguardando".
+    expect(within(cardOf('Academia Corpo')).queryByText(/sugest/)).toBeNull();
+    expect(within(cardOf('Confeitaria Doce')).queryByText(/sugest/)).toBeNull();
+    // The API date "2026-10-30" renders as day/month, never month/day and never a day earlier.
+    expect(within(cardOf('Academia Corpo')).getByText('encerra em 30/10')).toBeTruthy();
+    expect(within(cardOf('Padaria Central')).queryByText(/encerra em/)).toBeNull();
   });
 
   it('reads search, status and page from the URL and sends them to the server', async () => {
@@ -242,6 +275,40 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
     expect(probe.search).toContain('status=archived');
   });
 
+  it('changes the page through the pagination and writes it to the URL, dropping it on page one', async () => {
+    const queries: string[] = [];
+    const { impl } = makeFetch({
+      clients: (query) => {
+        queries.push(query.toString());
+        const page = Number(query.get('page') ?? '1');
+        return listResponse([page === 2 ? academia : padaria], page, { totalItems: 21, totalPages: 2 });
+      }
+    });
+    const { probe } = renderClients(impl);
+    await screen.findByText('Padaria Central');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Próxima página' }));
+    await waitFor(() => expect(probe.search).toContain('page=2'));
+    expect(queries.at(-1)).toContain('page=2');
+    expect(await screen.findByText('Academia Corpo')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Página anterior' }));
+    await waitFor(() => expect(probe.search).not.toContain('page='));
+    // Page one is cached from the first load, so it comes back without another request.
+    expect(await screen.findByText('Padaria Central')).toBeTruthy();
+  });
+
+  it('falls back to page one when the URL page is not a safe integer', async () => {
+    const { impl, calls } = makeFetch();
+    renderClients(impl, `/agencia/${AGENCY_A}/clientes?page=1e20`);
+
+    await screen.findByText('Padaria Central');
+    // The very first request is page 1: a safe-integer check alone would send 1e20 (a 400), and the
+    // out-of-range guard would only paper over it with a second request.
+    const listCalls = calls.filter((call) => call.startsWith('GET /agencies') && call.includes('/clients?'));
+    expect(listCalls).toEqual([`GET /agencies/${AGENCY_A}/clients?page=1&pageSize=20`]);
+  });
+
   it('shows the create button only with cliente.cadastrar', async () => {
     const without = makeFetch({ permissions: ['cliente.visualizar'] });
     renderClients(without.impl);
@@ -262,17 +329,24 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
     expect(calls.filter((call) => call.includes('/clients'))).toEqual([]);
   });
 
+  it('turns a 403 from the listing into the ordinary not-found, without an error state', async () => {
+    // /me still carries the permission; the server refuses mid-session. The resource is hidden,
+    // and the screen offers no retry for what it may not see.
+    const { impl } = makeFetch({
+      clients: () => json({ error: { code: 'FORBIDDEN', message: 'sensitive detail' } }, 403)
+    });
+    renderClients(impl);
+
+    await screen.findByRole('heading', { name: 'Page not found' });
+    expect(screen.queryByText('sensitive detail')).toBeNull();
+    expect(screen.queryByText('Não foi possível carregar os clientes. Tente de novo.')).toBeNull();
+  });
+
   it('shows the pending-invitation badge only with the permission and the field, and never a zero', async () => {
     const { impl } = makeFetch({ clients: () => listResponse([padaria, academia, confeitaria]) });
     const { container } = renderClients(impl);
     await screen.findByText('Padaria Central');
 
-    const cardOf = (name: string): HTMLElement => {
-      const link = screen.getByRole('link', { name: `Abrir cliente ${name}` });
-      const item = link.closest('li');
-      if (item === null) throw new Error(`The card of ${name} was not rendered.`);
-      return item;
-    };
     expect(within(cardOf('Padaria Central')).getByText('convite pendente')).toBeTruthy();
     // `academia` travels without the field (no `cliente.convidar_usuario`): no badge, not even "0".
     expect(within(cardOf('Academia Corpo')).queryByText('convite pendente')).toBeNull();
@@ -321,6 +395,19 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
     expect(await screen.findByText('Padaria Central')).toBeTruthy();
     expect(probe.search).not.toContain('search=');
     expect(searchBox().value).toBe('');
+  });
+
+  it('never sends a whitespace-only search to the server', async () => {
+    const { impl, calls } = makeFetch();
+    renderClients(impl);
+    await screen.findByText('Padaria Central');
+
+    fireEvent.change(searchBox(), { target: { value: '   ' } });
+    await waitFor(() => expect(searchBox().value).toBe('   '));
+    // The API trims and refuses an empty filter as a 400, so the trimmed value decides the request.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(calls.some((call) => call.includes('search='))).toBe(false);
+    expect(screen.getByText('Padaria Central')).toBeTruthy();
   });
 
   it('shows the empty roster with the create action only for who can create', async () => {
@@ -378,7 +465,7 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
     const { impl } = makeFetch();
     const { probe } = renderClients(impl);
 
-    fireEvent.click(await screen.findByRole('link', { name: 'Abrir cliente Padaria Central' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Padaria Central' }));
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${padaria.id}/geral`));
     expect(screen.getByRole('heading', { name: 'Cliente' })).toBeTruthy();
   });

@@ -23,7 +23,8 @@ const STATUS_OPTIONS = [
 
 const parsePage = (value: string | null): number => {
   const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+  // `1e20` is an integer to `Number.isInteger` but not exactly representable; the API would 400 it.
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1;
 };
 
 interface Filters {
@@ -62,7 +63,7 @@ function ClientCard({ client, canSeeInvitations }: { client: ClientListItem; can
   return <article className={`clients__card${archived ? ' clients__card--archived' : ''}`}>
     <Avatar name={client.name} photoUrl={client.photoUrl} size="lg" />
     <div className="clients__card-body">
-      <p className="clients__card-name">{client.name}</p>
+      <p className="clients__card-name" id={`client-${client.id}-name`}>{client.name}</p>
       {client.instagramHandle !== null && <p className="clients__card-handle">@{client.instagramHandle}</p>}
       {!archived && <ul className="clients__badges">
         {client.threadsAwaitingAgency > 0 && (
@@ -204,7 +205,7 @@ export function ClientsPage() {
                 <Link
                   className="clients__card-link"
                   to={`/agencia/${agency.agencyId}/clientes/${client.id}/geral`}
-                  aria-label={`Abrir cliente ${client.name}`}
+                  aria-labelledby={`client-${client.id}-name`}
                 >
                   <ClientCard client={client} canSeeInvitations={canSeeInvitations} />
                 </Link>

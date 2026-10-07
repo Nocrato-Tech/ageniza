@@ -552,8 +552,10 @@ input:focus-visible {
   text-decoration: none;
 }
 
+/* Hover feedback by border, never by background: the attention badge uses `text/link`, and the
+   design system forbids that color over `bg/hover` (docs/design-system.md 20.1). */
 .clients__card-link:hover .clients__card {
-  background: var(--bg-hover);
+  border-color: var(--focus-ring);
 }
 
 .clients__card {
@@ -631,7 +633,7 @@ input:focus-visible {
 
 /* Archived roster: dimmed and without badges; the only destination is the read-only detail. */
 .clients__card--archived {
-  opacity: 0.6;
+  opacity: 0.55;
 }
 
 .clients__card-skeleton {
