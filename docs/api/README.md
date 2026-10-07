@@ -561,7 +561,7 @@ Devolve as permissões efetivas do contexto de agência.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
-### clients — Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto.
+### clients — Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; estudo de marca e personas; e a conversa em thread entre a agência e o cliente, pelos dois lados.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
@@ -577,6 +577,15 @@ Devolve as permissões efetivas do contexto de agência.
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/personas/:personaId` | Sessão + vínculo com a agência | `cliente.operar` | Edita uma persona |
 | `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/archive` | Sessão + vínculo com a agência | `cliente.operar` | Arquiva uma persona |
 | `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive` | Sessão + vínculo com a agência | `cliente.operar` | Desarquiva uma persona |
+| `GET` | `/agencies/:agencyId/clients/:clientId/threads` | Sessão + vínculo com a agência | `cliente.visualizar` | Lista as conversas de um assunto do cliente |
+| `POST` | `/agencies/:agencyId/clients/:clientId/threads` | Sessão + vínculo com a agência | `cliente.operar` | Abre uma conversa pela agência, com o primeiro comentário |
+| `GET` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com a agência | `cliente.visualizar` | Lista os comentários de uma conversa |
+| `POST` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com a agência | `cliente.operar` | Comenta uma conversa pela agência |
+| `POST` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/resolve` | Sessão + vínculo com a agência | `cliente.operar` | Resolve uma conversa |
+| `GET` | `/clients/:clientId/threads` | Sessão + vínculo com o cliente | — | Lista as conversas de um assunto, no portal |
+| `POST` | `/clients/:clientId/threads` | Sessão + vínculo com o cliente | — | Abre uma conversa pelo portal, com o primeiro comentário |
+| `GET` | `/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com o cliente | — | Lista os comentários de uma conversa, no portal |
+| `POST` | `/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com o cliente | — | Comenta uma conversa pelo portal |
 
 #### `GET /agencies/:agencyId/clients`
 
@@ -1042,6 +1051,404 @@ Desarquiva uma persona.
 ```
 
 **Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/threads`
+
+Lista as conversas de um assunto do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "sectionKey": "tone_of_voice",
+  "state": "open"
+}
+```
+
+**Resposta `200`** — Página de conversas.
+
+```json
+{
+  "data": [
+    {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "subject": {
+        "sectionKey": "tone_of_voice"
+      },
+      "state": "open",
+      "openedBy": {
+        "name": "Ana, da Padaria Central",
+        "side": "client"
+      },
+      "lastComment": {
+        "side": "client",
+        "at": "2026-10-07T12:00:00.000Z",
+        "excerpt": "Podemos aproximar o tom de voz do que usamos nas redes?"
+      },
+      "commentCount": 1,
+      "resolvedBy": null,
+      "resolvedAt": null
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 20,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/threads`
+
+Abre uma conversa pela agência, com o primeiro comentário.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "subject": {
+    "sectionKey": "tone_of_voice"
+  },
+  "body": "Vamos revisar o tom de voz com o time?"
+}
+```
+
+**Resposta `201`** — Conversa aberta.
+
+```json
+{
+  "thread": {
+    "id": "99999999-9999-4999-8999-999999999999",
+    "subject": {
+      "sectionKey": "tone_of_voice"
+    },
+    "state": "open",
+    "openedBy": {
+      "name": "Dono da Agência",
+      "side": "agency"
+    },
+    "lastComment": {
+      "side": "agency",
+      "at": "2026-10-07T12:00:00.000Z",
+      "excerpt": "Vamos revisar o tom de voz com o time?"
+    },
+    "commentCount": 1,
+    "resolvedBy": null,
+    "resolvedAt": null
+  },
+  "comment": {
+    "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "body": "Vamos revisar o tom de voz com o time?",
+    "side": "agency",
+    "author": {
+      "name": "Dono da Agência",
+      "photoUrl": null
+    },
+    "createdAt": "2026-10-07T12:00:00.000Z"
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/threads/:threadId/comments`
+
+Lista os comentários de uma conversa.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1
+}
+```
+
+**Resposta `200`** — Página de comentários.
+
+```json
+{
+  "data": [
+    {
+      "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "body": "Podemos aproximar o tom de voz do que usamos nas redes?",
+      "side": "client",
+      "author": {
+        "name": "Ana, da Padaria Central",
+        "photoUrl": null
+      },
+      "createdAt": "2026-10-07T12:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 50,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/threads/:threadId/comments`
+
+Comenta uma conversa pela agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "body": "Combinado, ajustamos esta semana."
+}
+```
+
+**Resposta `201`** — Comentário gravado.
+
+```json
+{
+  "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "body": "Podemos aproximar o tom de voz do que usamos nas redes?",
+  "side": "agency",
+  "author": {
+    "name": "Ana, da Padaria Central",
+    "photoUrl": null
+  },
+  "createdAt": "2026-10-07T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/threads/:threadId/resolve`
+
+Resolve uma conversa.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.operar`.
+
+**Resposta `200`** — Conversa resolvida.
+
+```json
+{
+  "id": "99999999-9999-4999-8999-999999999999",
+  "subject": {
+    "sectionKey": "tone_of_voice"
+  },
+  "state": "resolved",
+  "openedBy": {
+    "name": "Ana, da Padaria Central",
+    "side": "client"
+  },
+  "lastComment": {
+    "side": "client",
+    "at": "2026-10-07T12:00:00.000Z",
+    "excerpt": "Podemos aproximar o tom de voz do que usamos nas redes?"
+  },
+  "commentCount": 1,
+  "resolvedBy": {
+    "name": "Dono da Agência"
+  },
+  "resolvedAt": "2026-10-07T13:00:00.000Z"
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId/threads`
+
+Lista as conversas de um assunto, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "sectionKey": "tone_of_voice"
+}
+```
+
+**Resposta `200`** — Página de conversas.
+
+```json
+{
+  "data": [
+    {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "subject": {
+        "sectionKey": "tone_of_voice"
+      },
+      "state": "open",
+      "openedBy": {
+        "name": "Ana, da Padaria Central",
+        "side": "client"
+      },
+      "lastComment": {
+        "side": "client",
+        "at": "2026-10-07T12:00:00.000Z",
+        "excerpt": "Podemos aproximar o tom de voz do que usamos nas redes?"
+      },
+      "commentCount": 1,
+      "resolvedBy": null,
+      "resolvedAt": null
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 20,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /clients/:clientId/threads`
+
+Abre uma conversa pelo portal, com o primeiro comentário.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "subject": {
+    "sectionKey": "tone_of_voice"
+  },
+  "body": "Podemos aproximar o tom de voz do que usamos nas redes?"
+}
+```
+
+**Resposta `201`** — Conversa aberta.
+
+```json
+{
+  "thread": {
+    "id": "99999999-9999-4999-8999-999999999999",
+    "subject": {
+      "sectionKey": "tone_of_voice"
+    },
+    "state": "open",
+    "openedBy": {
+      "name": "Ana, da Padaria Central",
+      "side": "client"
+    },
+    "lastComment": {
+      "side": "client",
+      "at": "2026-10-07T12:00:00.000Z",
+      "excerpt": "Podemos aproximar o tom de voz do que usamos nas redes?"
+    },
+    "commentCount": 1,
+    "resolvedBy": null,
+    "resolvedAt": null
+  },
+  "comment": {
+    "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "body": "Podemos aproximar o tom de voz do que usamos nas redes?",
+    "side": "client",
+    "author": {
+      "name": "Ana, da Padaria Central",
+      "photoUrl": null
+    },
+    "createdAt": "2026-10-07T12:00:00.000Z"
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `404 NOT_FOUND` · `409 SECTION_NOT_FILLED` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId/threads/:threadId/comments`
+
+Lista os comentários de uma conversa, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1
+}
+```
+
+**Resposta `200`** — Página de comentários.
+
+```json
+{
+  "data": [
+    {
+      "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "body": "Podemos aproximar o tom de voz do que usamos nas redes?",
+      "side": "client",
+      "author": {
+        "name": "Ana, da Padaria Central",
+        "photoUrl": null
+      },
+      "createdAt": "2026-10-07T12:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 50,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /clients/:clientId/threads/:threadId/comments`
+
+Comenta uma conversa pelo portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "body": "Obrigada, ficou melhor assim."
+}
+```
+
+**Resposta `201`** — Comentário gravado.
+
+```json
+{
+  "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "body": "Podemos aproximar o tom de voz do que usamos nas redes?",
+  "side": "client",
+  "author": {
+    "name": "Ana, da Padaria Central",
+    "photoUrl": null
+  },
+  "createdAt": "2026-10-07T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 ### collaborators — A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.
 
@@ -1635,6 +2042,8 @@ Confirma a troca de e-mail pelo link enviado ao e-mail novo.
 | `INVALID_ROLE` | O papel informado não é válido para esta agência. |
 | `CLIENT_NAME_IN_USE` | Já existe um cliente ativo com este nome. |
 | `CLIENT_ARCHIVED` | Cliente arquivado não pode ser editado. |
+| `PERSONA_ARCHIVED` | Persona arquivada: a conversa é somente leitura. |
+| `SECTION_NOT_FILLED` | Esta seção ainda não foi preenchida pela agência. |
 | `TRY_AGAIN` | Houve um conflito momentâneo. Tente de novo. |
 | `INVALID_PASSWORD` | A senha atual não confere. |
 | `SAME_EMAIL` | Informe um e-mail diferente do atual. |

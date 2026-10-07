@@ -31,6 +31,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
+import { registerConversationRoutes } from './conversation-routes.js';
 import { buildClientAvatarKeyPrefix, isClientAvatarKey } from '../identity-storage/policy.js';
 import {
   IdentityImageTooLargeError,
@@ -38,6 +39,7 @@ import {
   type IdentityStorageClient,
   type UploadedIdentityImage
 } from '../identity-storage/storage-client.js';
+import { createPhotoUrlSigner } from './photo-url.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { CLIENT_PHOTO_RATE_LIMIT, clientPhotoBodyLimitBytes } from './policy.js';
@@ -80,6 +82,8 @@ export interface ClientModuleDependencies {
   readonly requireAgencyAccess: ClientPreHandler;
   /** Injected by the tenancy module; same named-permission rule the RLS policy enforces. */
   readonly requirePermission: (key: string) => ClientPreHandler;
+  /** Injected by the tenancy module; the portal conversation routes are authorized by the client link alone. */
+  readonly requireClientAccess: ClientPreHandler;
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -172,18 +176,10 @@ const assertSectionShape = (sectionKey: WritableBrandSectionKey, body: BrandStud
 export const registerClientModule = (app: FastifyInstance, dependencies: ClientModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
 
-  const signPhotoUrl = async (request: FastifyRequest, photoKey: string | null): Promise<string | null> => {
-    if (photoKey === null || dependencies.identityStorage === undefined) return null;
-    try {
-      return await dependencies.identityStorage.presignGetObject({ key: photoKey, expiresInSeconds: dependencies.photoUrlExpirySeconds });
-    } catch (error) {
-      // A stored key the storage rejects is not worth a 500: the client still loads, photoUrl null.
-      request.log.warn({
-        error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'CLIENT_PHOTO_URL_FAILED' }
-      }, 'Could not sign the client photo URL; returning null');
-      return null;
-    }
-  };
+  const signPhotoUrl = createPhotoUrlSigner(dependencies, {
+    code: 'CLIENT_PHOTO_URL_FAILED',
+    message: 'Could not sign the client photo URL; returning null'
+  });
 
   const authenticated = (docs: DocumentedRouteConfig & { permission: string }) => ({
     preHandler: [requireSession, dependencies.requireAgencyAccess, dependencies.requirePermission(docs.permission)],
@@ -485,6 +481,8 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
 
   app.post('/agencies/:agencyId/clients/:clientId/personas/:personaId/archive', authenticated(personaStatusDocs), personaStatusHandler('archived'));
   app.post('/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive', authenticated(personaStatusDocs), personaStatusHandler('active'));
+
+  registerConversationRoutes(app, dependencies);
 
   const identityStorage = dependencies.identityStorage;
   if (identityStorage !== undefined) {

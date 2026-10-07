@@ -22,9 +22,9 @@ const hasControlCharacters = (value: string): boolean => /[\u0000-\u001f\u007f]/
 
 // Tab (U+0009), LF (U+000A) and CR (U+000D) are allowed; every other C0 control and DEL is not.
 // eslint-disable-next-line no-control-regex -- the forbidden range is exactly what must be rejected.
-const hasForbiddenControlCharacters = (value: string): boolean => /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value);
+export const hasForbiddenControlCharacters = (value: string): boolean => /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value);
 
-const utf8ByteLength = (value: string): number => {
+export const utf8ByteLength = (value: string): number => {
   let bytes = 0;
   for (const character of value) {
     const codePoint = character.codePointAt(0) ?? 0;

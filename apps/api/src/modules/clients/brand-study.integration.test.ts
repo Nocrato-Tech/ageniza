@@ -13,7 +13,7 @@ import {
   type TestUserFixture
 } from '../auth/test-support/harness.js';
 import type { DatabaseClient } from '@ageniza/database';
-import { createRequireAgencyAccess, requirePermission } from '../tenancy/guards.js';
+import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../tenancy/guards.js';
 import { registerClientModule } from './routes.js';
 
 const origin = { origin: TEST_APP_PUBLIC_URL };
@@ -129,6 +129,7 @@ const withRacingApp = async <T>(
     auth: app.auth,
     requireAgencyAccess: createRequireAgencyAccess({ database: app.database }),
     requirePermission,
+    requireClientAccess: createRequireClientAccess({ database: app.database }),
     photoUrlExpirySeconds: 300
   });
   await racingApp.ready();
