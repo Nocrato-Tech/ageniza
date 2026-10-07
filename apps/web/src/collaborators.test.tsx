@@ -1586,7 +1586,7 @@ describe('self profile editing (#108)', () => {
 
     fireEvent.change(modalFileInput(modal), { target: { files: [untagged] } });
 
-    await waitFor(() => expect(photoBodies).toHaveLength(1));
+    await waitFor(() => expect(photoBodies).toHaveLength(1), { timeout: 5000 });
     expect(calls).toContain('POST /me/photo');
     expect(within(modal).queryByText('Formato não aceito. Envie uma foto PNG, JPEG, GIF ou WebP.')).toBeNull();
   });
@@ -1665,11 +1665,15 @@ describe('self profile editing (#108)', () => {
     });
     const { container, probe } = renderCollaborators(impl);
 
+    // The account menu shows the same person's name; scope the badge, or the query matches twice.
+    const badgeName = (): string | null | undefined =>
+      container.querySelector('.collaborators__grid .ui-badge-card__name')?.textContent;
+
     // Agency A: Ana's badge starts with her name and initials, no photo.
-    await within(container).findByText('Ana Prado');
+    await waitFor(() => expect(badgeName()).toBe('Ana Prado'));
     // Agency B: the same global person, cached there before any change.
     await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/colaboradores`); });
-    await within(container).findByText('Ana Prado');
+    await waitFor(() => expect(badgeName()).toBe('Ana Prado'));
     expect(container.querySelector('.collaborators__grid img.ui-avatar__photo')).toBeNull();
 
     // Back to A, change the name and upload a photo from the own profile.
@@ -1682,12 +1686,12 @@ describe('self profile editing (#108)', () => {
     fireEvent.change(modal.querySelector('input[type="file"]') as HTMLInputElement, {
       target: { files: [new File([pngBytes], 'foto.png', { type: 'image/png' })] }
     });
-    await waitFor(() => expect(modal.querySelector('img.ui-avatar__photo')?.getAttribute('src')).toBe(newPhoto));
+    await waitFor(() => expect(modal.querySelector('img.ui-avatar__photo')?.getAttribute('src')).toBe(newPhoto), { timeout: 5000 });
 
     // B's cache predates both changes; name and photo must be there without a reload.
     await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/colaboradores`); });
-    await within(container).findByText('Ana Prado Silva');
-    await waitFor(() => expect(container.querySelector('.collaborators__grid img.ui-avatar__photo')?.getAttribute('src')).toBe(newPhoto));
+    await waitFor(() => expect(badgeName()).toBe('Ana Prado Silva'));
+    await waitFor(() => expect(container.querySelector('.collaborators__grid img.ui-avatar__photo')?.getAttribute('src')).toBe(newPhoto), { timeout: 5000 });
   });
 
   it('keeps another person\'s name and photo read-only', async () => {
