@@ -3,7 +3,7 @@ import { PostgresDialect } from 'kysely';
 import type { Pool } from 'pg';
 
 import type { ApiConfig } from '@ageniza/config/server';
-import type { CoreLogger } from '@ageniza/core';
+import { captureUnexpectedError, type CoreLogger } from '@ageniza/core';
 
 import { currentAuditRequestId, currentPasswordResetInviteToken } from './audit-context.js';
 import { recordAuthAuditEventSafely, type AuthAuditRecorder } from './audit.js';
@@ -91,6 +91,20 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
         dependencies.sender.sendPasswordReset({ to: user.email, token, inviteToken: currentPasswordResetInviteToken() });
       },
       onPasswordReset: async ({ user }): Promise<void> => {
+        // The notice about an account e-mail change tells the person to change the password if the
+        // request was not theirs, so this is where that request dies (issue #80, security review of
+        // PR #325). It never undoes the reset: if it fails, the request is still refused when it is
+        // approved or confirmed, because it was made under a credential that no longer exists.
+        try {
+          await dependencies.pool.query('select app_private.supersede_email_change_requests($1::uuid)', [user.id]);
+        } catch (error) {
+          dependencies.logger.error({
+            operation: 'auth.email_change_supersede',
+            status: 'failed',
+            error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'EMAIL_CHANGE_SUPERSEDE_FAILED' }
+          }, 'Failed to close the open e-mail change requests after a password reset');
+          captureUnexpectedError(error, { operation: 'auth.email_change_supersede' });
+        }
         // B9: recorded regardless of whether a request id is available (null rather than
         // silently skipped), and a write failure never undoes or blocks the already-completed
         // password reset.

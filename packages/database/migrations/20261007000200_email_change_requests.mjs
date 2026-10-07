@@ -23,6 +23,15 @@
 //   A0042 -> the link is not valid (unknown, used, expired, superseded, or the swap is no longer
 //            possible); one error for all, so the response is never an oracle
 //   A0043 -> the new address is the one the account already has
+//
+// A request is only as good as the credential that existed when it was made. The notice sent to the
+// current address says "if it was not you, change the password", so changing the password must undo
+// the request, and two barriers hold that (security review of PR #325, 2026-10-07):
+//   1. app_private.supersede_email_change_requests, called by the password reset, closes the open
+//      requests of the account whose credential no longer matches the one recorded at request time;
+//   2. the request records a fingerprint of the credential, and both the approval (CLI) and
+//      confirm_email_change refuse a request whose fingerprint is no longer the account's, whether or
+//      not barrier 1 ran (a hook that failed, a password changed by a path that does not call it).
 
 export async function up(knex) {
   await knex.raw(`
@@ -36,6 +45,7 @@ export async function up(knex) {
       token_hash text null,
       token_expires_at timestamptz null,
       ownership_confirmed_at timestamptz null,
+      credential_fingerprint text null,
       requested_at timestamptz not null default now(),
       decided_at timestamptz null,
       completed_at timestamptz null,
@@ -56,6 +66,33 @@ export async function up(knex) {
     alter table public.email_change_requests enable row level security;
     alter table public.email_change_requests force row level security;
     revoke all on public.email_change_requests from ageniza_app;
+  `);
+
+  await knex.raw(`
+    -- SHA-256 of the account's credential hash, never the hash itself: the request only needs to know
+    -- whether the credential is still the one it was made under. A reset salts a new hash, so even
+    -- the same password yields a different fingerprint. Null when the account has no credential.
+    -- Internal to the functions below and to the CLI (which runs as the owner): not granted to the
+    -- application role.
+    create function app_private.credential_fingerprint(p_user_id uuid)
+    returns text
+    language sql
+    stable
+    security definer
+    set search_path = ''
+    as $function$
+      select pg_catalog.encode(
+        pg_catalog.sha256(pg_catalog.convert_to(
+          pg_catalog.string_agg(coalesce(credential.password, ''), '|' order by credential.id), 'UTF8'
+        )),
+        'hex'
+      )
+      from auth."account" credential
+      where credential."userId" = p_user_id and credential."providerId" = 'credential'
+      having pg_catalog.count(*) > 0;
+    $function$;
+    revoke all on function app_private.credential_fingerprint(uuid) from public;
+    revoke all on function app_private.credential_fingerprint(uuid) from ageniza_app;
   `);
 
   await knex.raw(`
@@ -103,8 +140,8 @@ export async function up(knex) {
 
       -- The address is recorded whether or not another account already uses it: the answer to the
       -- person is the same either way, and the operation sees the collision when it approves.
-      insert into public.email_change_requests (user_id, old_email, new_email)
-      values (v_user_id, v_current, v_new)
+      insert into public.email_change_requests (user_id, old_email, new_email, credential_fingerprint)
+      values (v_user_id, v_current, v_new, app_private.credential_fingerprint(v_user_id))
       returning id into v_request_id;
 
       insert into audit.events (action, actor_user_id, target_type, target_id)
@@ -156,6 +193,22 @@ export async function up(knex) {
         raise exception using errcode = 'A0042', message = 'Link is not valid.';
       end if;
 
+      -- The credential changed after the request (the person reset the password, as the notice told
+      -- them to): whoever asked may not have been them, so the link is dead. Same answer as any other
+      -- dead link.
+      if v_request.credential_fingerprint is distinct from app_private.credential_fingerprint(v_user_id) then
+        raise exception using errcode = 'A0042', message = 'Link is not valid.';
+      end if;
+
+      -- An agency owner's swap needs the holder confirmed outside the product, at approval. The
+      -- account may have become an owner between the approval and now (accepting an activation
+      -- invitation), so the approval's record is checked again here.
+      if v_request.ownership_confirmed_at is null
+         and exists (select 1 from public.agencies agency where agency.owner_user_id = v_user_id)
+      then
+        raise exception using errcode = 'A0042', message = 'Link is not valid.';
+      end if;
+
       -- Addresses are stored normalized (user_email_normalized), so equality is the whole check.
       if exists (select 1 from auth."user" other where other.email = v_request.new_email) then
         raise exception using errcode = 'A0042', message = 'Link is not valid.';
@@ -186,6 +239,51 @@ export async function up(knex) {
     $function$;
     revoke all on function app_private.confirm_email_change(text) from public;
     grant execute on function app_private.confirm_email_change(text) to ageniza_app;
+  `);
+
+  await knex.raw(`
+    -- Barrier 1: called by the password reset right after the new credential is stored. It closes
+    -- the open requests of the account that were made under another credential, which also kills
+    -- their link. It takes the account lock first, like every path (see confirm_email_change).
+    -- It only ever closes what barrier 2 would refuse anyway, so it is harmless to anyone who calls it
+    -- without having changed the credential: nothing is cancelled for a credential that did not move.
+    create function app_private.supersede_email_change_requests(p_user_id uuid)
+    returns integer
+    language plpgsql
+    security definer
+    set search_path = ''
+    as $function$
+    declare
+      v_closed integer;
+    begin
+      if p_user_id is null then
+        return 0;
+      end if;
+
+      perform 1 from auth."user" account where account.id = p_user_id for update;
+
+      with closed as (
+        update public.email_change_requests open_request
+        set status = 'superseded',
+            token_hash = null,
+            token_expires_at = null,
+            decided_at = pg_catalog.now()
+        where open_request.user_id = p_user_id
+          and open_request.status in ('pending', 'approved')
+          and open_request.credential_fingerprint is distinct from app_private.credential_fingerprint(p_user_id)
+        returning open_request.id
+      ), audited as (
+        insert into audit.events (action, actor_user_id, target_type, target_id)
+        select 'email_change.superseded_by_credential', p_user_id, 'email_change_request', closed.id from closed
+        returning 1
+      )
+      select pg_catalog.count(*)::integer into v_closed from audited;
+
+      return v_closed;
+    end;
+    $function$;
+    revoke all on function app_private.supersede_email_change_requests(uuid) from public;
+    grant execute on function app_private.supersede_email_change_requests(uuid) to ageniza_app;
   `);
 }
 

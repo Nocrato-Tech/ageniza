@@ -67,7 +67,7 @@ interface Seeded { readonly id: string; readonly tokenHash: string }
 const seedApproved = async (
   user: { id: string; email: string },
   newEmail: string,
-  overrides: { status?: string; expiresInMs?: number; oldEmail?: string; withToken?: boolean } = {}
+  overrides: { status?: string; expiresInMs?: number; oldEmail?: string; withToken?: boolean; ownershipConfirmed?: boolean } = {}
 ): Promise<Seeded> => {
   const id = randomUUID();
   const tokenHash = `hash-${randomUUID()}`;
@@ -80,10 +80,41 @@ const seedApproved = async (
     new_email: newEmail,
     status,
     token_hash: withToken ? tokenHash : null,
-    token_expires_at: withToken ? new Date(Date.now() + (overrides.expiresInMs ?? 3_600_000)) : null
+    token_expires_at: withToken ? new Date(Date.now() + (overrides.expiresInMs ?? 3_600_000)) : null,
+    credential_fingerprint: await fingerprintOf(user.id),
+    ownership_confirmed_at: overrides.ownershipConfirmed === true ? new Date() : null
   });
   return { id, tokenHash };
 };
+
+const createdAgencies: string[] = [];
+
+const insertCredential = async (userId: string, password = `hash-${randomUUID()}`): Promise<string> => {
+  await getOwner().knex('auth.account').insert({
+    id: randomUUID(), accountId: userId, providerId: 'credential', userId, password, updatedAt: new Date()
+  });
+  return password;
+};
+
+/** What a password reset does to the credential: a new salted hash replaces the old one. */
+const changeCredential = async (userId: string): Promise<void> => {
+  await getOwner().knex('auth.account').where({ userId, providerId: 'credential' }).update({ password: `hash-${randomUUID()}`, updatedAt: new Date() });
+};
+
+const makeOwner = async (userId: string): Promise<void> => {
+  const id = randomUUID();
+  await getOwner().knex('agencies').insert({ id, name: `Agency ${id.slice(0, 8)}`, owner_user_id: userId });
+  createdAgencies.push(id);
+};
+
+const fingerprintOf = async (userId: string): Promise<string | null> =>
+  (await raw<{ rows: { fingerprint: string | null }[] }>(getOwner().knex, 'select app_private.credential_fingerprint(?::uuid) as fingerprint', [userId])).rows[0]?.fingerprint ?? null;
+
+/** The password reset's side of barrier 1, as the application role runs it. */
+const supersedeOpenRequests = (userId: string): Promise<number> =>
+  getApplication().transaction(async (transaction) => (await raw<{ rows: { closed: number }[] }>(
+    transaction, 'select app_private.supersede_email_change_requests(?::uuid) as closed', [userId]
+  )).rows[0]?.closed ?? -1);
 
 const emailOf = async (userId: string): Promise<string> =>
   (await getOwner().knex('auth.user').where({ id: userId }).first('email')).email;
@@ -130,6 +161,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await getOwner().knex('audit.events').whereIn('actor_user_id', createdUsers).delete();
+  await getOwner().knex('agencies').whereIn('id', createdAgencies).delete();
   await getOwner().knex('auth.user').whereIn('id', createdUsers).delete();
   await application?.close();
   await owner?.close();
@@ -322,6 +354,133 @@ describe('app_private.confirm_email_change (issue #80)', () => {
   });
 });
 
+describe('a request does not outlive the credential it was made under (issue #80, security review of PR #325)', () => {
+  it('records a fingerprint of the credential, not the credential, and none for an account without one', async () => {
+    const withPassword = await insertUser('fingerprinted');
+    const password = await insertCredential(withPassword.id);
+    const withoutPassword = await insertUser('no-credential');
+
+    const [requested] = await request(withPassword.id, unique('fingerprint-new'));
+    await request(withoutPassword.id, unique('no-credential-new'));
+
+    const stored = await getOwner().knex('email_change_requests').where({ id: requested?.request_id }).first('credential_fingerprint');
+    expect(stored.credential_fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(stored.credential_fingerprint).toBe(await fingerprintOf(withPassword.id));
+    expect(stored.credential_fingerprint).not.toContain(password);
+    expect((await getOwner().knex('email_change_requests').where({ user_id: withoutPassword.id }).first('credential_fingerprint')).credential_fingerprint).toBeNull();
+  });
+
+  it('closes the open requests of the account whose credential changed, kills their link and leaves the others alone', async () => {
+    const victim = await insertUser('reset-victim');
+    await insertCredential(victim.id);
+    const bystander = await insertUser('reset-bystander');
+    await insertCredential(bystander.id);
+    await request(victim.id, unique('victim-new'));
+    const approved = await seedApproved(bystander, unique('bystander-new'));
+    const victimApproved = await insertUser('reset-victim-approved');
+    await insertCredential(victimApproved.id);
+    const approvedUnderOldCredential = await seedApproved(victimApproved, unique('victim-approved-new'));
+
+    await changeCredential(victim.id);
+    await changeCredential(victimApproved.id);
+
+    expect(await supersedeOpenRequests(victim.id)).toBe(1);
+    expect(await supersedeOpenRequests(victimApproved.id)).toBe(1);
+
+    expect(await requestsOf(victim.id)).toEqual([expect.objectContaining({ status: 'superseded', token_hash: null })]);
+    expect(await requestsOf(victimApproved.id)).toEqual([expect.objectContaining({ status: 'superseded', token_hash: null })]);
+    await expect(confirm(approvedUnderOldCredential.tokenHash)).rejects.toMatchObject({ code: 'A0042' });
+    expect(await emailOf(victimApproved.id)).toBe(victimApproved.email);
+    // A request made under a credential that did not move is not touched.
+    expect(await requestsOf(bystander.id)).toEqual([expect.objectContaining({ id: approved.id, status: 'approved', token_hash: approved.tokenHash })]);
+    expect(await getOwner().knex('audit.events').where({ actor_user_id: victim.id, action: 'email_change.superseded_by_credential' }).count('* as total')).toEqual([{ total: '1' }]);
+  });
+
+  it('closes nothing when the credential did not change, so calling it cancels no one', async () => {
+    const user = await insertUser('unchanged');
+    await insertCredential(user.id);
+    const approved = await seedApproved(user, unique('unchanged-new'));
+
+    expect(await supersedeOpenRequests(user.id)).toBe(0);
+    expect(await supersedeOpenRequests(randomUUID())).toBe(0);
+
+    expect(await requestsOf(user.id)).toEqual([expect.objectContaining({ status: 'approved', token_hash: approved.tokenHash })]);
+    expect(await confirm(approved.tokenHash)).toHaveLength(1);
+  });
+
+  it('refuses the link on its own when the credential changed, even if nothing closed the request', async () => {
+    const user = await insertUser('stale-credential');
+    await insertCredential(user.id);
+    await insertSession(user.id);
+    const approved = await seedApproved(user, unique('stale-credential-new'));
+
+    await changeCredential(user.id);
+
+    await expect(confirm(approved.tokenHash)).rejects.toMatchObject({ code: 'A0042' });
+    expect(await emailOf(user.id)).toBe(user.email);
+    expect(await sessionsOf(user.id)).toBe(1);
+    expect(await requestsOf(user.id)).toEqual([expect.objectContaining({ status: 'approved', token_hash: approved.tokenHash })]);
+  });
+
+  it('refuses the link when the account had no credential at request time and has one now', async () => {
+    const user = await insertUser('credential-appeared');
+    const approved = await seedApproved(user, unique('credential-appeared-new'));
+    await insertCredential(user.id);
+
+    await expect(confirm(approved.tokenHash)).rejects.toMatchObject({ code: 'A0042' });
+    expect(await emailOf(user.id)).toBe(user.email);
+  });
+
+  it('does not deadlock with a request on the same account: the account is locked before its requests', async () => {
+    const user = await insertUser('supersede-lock-order');
+    await insertCredential(user.id);
+    const approved = await seedApproved(user, unique('supersede-lock-order-new'));
+    await changeCredential(user.id);
+    const holder = holdRequestLock(approved.id);
+    await holder.locked;
+
+    const superseding = supersedeOpenRequests(user.id);
+    await waitUntilBlocked('%supersede_email_change_requests%');
+    const requested = request(user.id, unique('supersede-lock-order-next'));
+    await waitUntilBlocked('%request_email_change%');
+    holder.release();
+    await holder.done;
+
+    const outcomes = await Promise.allSettled([superseding, requested]);
+    expect(outcomes.map((outcome) => outcome.status)).toEqual(['fulfilled', 'fulfilled']);
+    expect((await requestsOf(user.id)).map((row) => row.status)).toEqual(['superseded', 'pending']);
+  });
+});
+
+describe('the swap of an agency owner needs the holder confirmed (issue #80, security review of PR #325)', () => {
+  it('refuses the link of an account that became an owner after the approval, and keeps it for a second approval', async () => {
+    const user = await insertUser('became-owner');
+    await insertSession(user.id);
+    const newEmail = unique('became-owner-new');
+    const approved = await seedApproved(user, newEmail);
+    await makeOwner(user.id);
+
+    await expect(confirm(approved.tokenHash)).rejects.toMatchObject({ code: 'A0042' });
+    expect(await emailOf(user.id)).toBe(user.email);
+    expect(await sessionsOf(user.id)).toBe(1);
+
+    await getOwner().knex('email_change_requests').where({ id: approved.id }).update({ ownership_confirmed_at: new Date() });
+    expect(await confirm(approved.tokenHash)).toHaveLength(1);
+    expect(await emailOf(user.id)).toBe(newEmail);
+  });
+
+  it('still swaps the address of an owner whose holder was confirmed at the approval, and of anyone who is not an owner', async () => {
+    const owner = await insertUser('confirmed-owner');
+    await makeOwner(owner.id);
+    const confirmedRequest = await seedApproved(owner, unique('confirmed-owner-new'), { ownershipConfirmed: true });
+    const member = await insertUser('plain-account');
+    const plainRequest = await seedApproved(member, unique('plain-account-new'));
+
+    expect(await confirm(confirmedRequest.tokenHash)).toHaveLength(1);
+    expect(await confirm(plainRequest.tokenHash)).toHaveLength(1);
+  });
+});
+
 describe('what the table itself guarantees (issue #80)', () => {
   it('refuses a link on a request that is not approved, and an approval without one', async () => {
     const user = await insertUser('constraints');
@@ -366,12 +525,16 @@ describe('the email change functions are not open to everyone (issue #80)', () =
         ) as public_role
       from pg_catalog.pg_proc p
       join pg_catalog.pg_namespace n on n.oid = p.pronamespace
-      where n.nspname = 'app_private' and p.proname in ('request_email_change', 'confirm_email_change')
+      where n.nspname = 'app_private'
+        and p.proname in ('request_email_change', 'confirm_email_change', 'supersede_email_change_requests', 'credential_fingerprint')
       order by p.proname
     `, []);
+    // The fingerprint reads the credential table and is for the functions above and the CLI only.
     expect(result.rows).toEqual([
       { name: 'confirm_email_change', app: true, public_role: false },
-      { name: 'request_email_change', app: true, public_role: false }
+      { name: 'credential_fingerprint', app: false, public_role: false },
+      { name: 'request_email_change', app: true, public_role: false },
+      { name: 'supersede_email_change_requests', app: true, public_role: false }
     ]);
   });
 });

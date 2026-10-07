@@ -177,7 +177,11 @@ const waitUntilBlocked = async (statementPattern: string): Promise<void> => {
 
 const insertOpenRequest = async (user: TestUserFixture): Promise<string> => {
   const id = randomUUID();
-  await owner.knex('email_change_requests').insert({ id, user_id: user.id, old_email: user.email, new_email: newAddress('race-new'), status: 'pending' });
+  // Recorded like `request_email_change` does, or the request would look as if it predated the credential.
+  const fingerprint = (await owner.knex.raw('select app_private.credential_fingerprint(?::uuid) as fingerprint', [user.id])).rows[0]?.fingerprint ?? null;
+  await owner.knex('email_change_requests').insert({
+    id, user_id: user.id, old_email: user.email, new_email: newAddress('race-new'), status: 'pending', credential_fingerprint: fingerprint
+  });
   return id;
 };
 
@@ -655,6 +659,153 @@ describe('account e-mail change by request (issue #80)', () => {
       for (const other of [{ code: 'A0042' }, { code: '23505' }, { code: '42501' }, { code: '57014' }, new Error('x'), null, undefined, 'x']) {
         expect(isRetryableConflict(other), String(other)).toBe(false);
       }
+    });
+  });
+
+  // The notice to the current address says "if it was not you, change the password". So changing the
+  // password must undo what the notice announced: the request, and the link if one was issued. Two
+  // barriers hold it (security review of PR #325): the reset closes the account's open requests, and
+  // the approval and the confirmation refuse a request made under a credential that no longer exists.
+  describe('changing the password undoes the request the notice told the person to undo', () => {
+    /** The real "Esqueci a senha" flow: the mailed link, then the new password. */
+    const resetPassword = async (user: TestUserFixture, newPassword: string): Promise<void> => {
+      const noticesBefore = (await sentTo(user.email)).length;
+      const forgot = await app.app.inject({
+        method: 'POST', url: '/auth/password/forgot', headers: origin, payload: { email: user.email }, remoteAddress: freshClientAddress()
+      });
+      expect(forgot.statusCode).toBe(202);
+      const mail = (await sentTo(user.email)).slice(noticesBefore).find((message) => message.template === 'password-reset');
+      const token = mail?.text.match(/token=([^\s&]+)/)?.[1];
+      expect(token).toBeDefined();
+      const reset = await app.app.inject({
+        method: 'POST', url: '/auth/password/reset', headers: origin, remoteAddress: freshClientAddress(),
+        payload: { token: decodeURIComponent(token ?? ''), newPassword }
+      });
+      expect(reset.statusCode, reset.body).toBe(200);
+    };
+
+    /** A credential changed by a path that never calls the reset's hook, which only the second barrier can catch. */
+    const changeCredentialBehindTheHook = async (userId: string): Promise<void> => {
+      await owner.knex('auth.account').where({ userId, providerId: 'credential' }).update({ password: `swapped-${randomUUID()}`, updatedAt: new Date() });
+    };
+
+    it('closes the pending request, so the operation has nothing to approve and the account stays as it was', async () => {
+      const victim = await makeUser('reset-pending');
+      const bystander = await makeUser('reset-bystander');
+      const victimCookie = await loginCookie(victim);
+      const attacker = newAddress('attacker-pending');
+      expect((await requestChange(victimCookie, { newEmail: attacker, currentPassword: victim.password })).status).toBe(202);
+      const row = await requestRow(victim.id);
+      const bystanderRequest = await requestChange(await loginCookie(bystander), { newEmail: newAddress('bystander-new'), currentPassword: bystander.password });
+      expect(bystanderRequest.status).toBe(202);
+      const mailedBefore = mailed.length;
+
+      await resetPassword(victim, 'the victim chose this one');
+
+      expect(await sessionStatus(victimCookie)).toBe(401);
+      expect(await owner.knex('email_change_requests').where({ id: row.id }).first('status', 'token_hash', 'token_expires_at'))
+        .toEqual({ status: 'superseded', token_hash: null, token_expires_at: null });
+      const listed = JSON.parse((await operate('list')).stdout) as { requestId: string }[];
+      expect(listed.map((entry) => entry.requestId)).not.toContain(row.id);
+
+      const approval = await operate('approve', '--request-id', row.id);
+
+      expect(approval.code).toBe(1);
+      expect(approval.stderr).toContain('superseded');
+      expect(mailed).toHaveLength(mailedBefore);
+      expect(await emailOf(victim.id)).toBe(victim.email);
+      // Someone else's request is not touched by this reset.
+      expect(await requestsOf(bystander.id)).toEqual([expect.objectContaining({ status: 'pending' })]);
+    });
+
+    it('kills the link of an approved request: the link sent to the new address no longer swaps anything', async () => {
+      const victim = await makeUser('reset-approved');
+      const attacker = newAddress('attacker-approved');
+      const token = await askAndApprove(victim, attacker);
+      expect((await requestRow(victim.id)).status).toBe('approved');
+
+      await resetPassword(victim, 'the victim chose this one');
+
+      expect(await requestsOf(victim.id)).toEqual([expect.objectContaining({ status: 'superseded' })]);
+      expect((await requestRow(victim.id)).token_hash).toBeNull();
+      const confirmed = await confirmLink(token);
+      expect(confirmed.status).toBe(400);
+      expect(confirmed.body.error?.code).toBe('INVALID_LINK');
+      expect(await emailOf(victim.id)).toBe(victim.email);
+      expect((await login(victim.email, 'the victim chose this one')).status).toBe(200);
+      expect((await login(attacker, 'the victim chose this one')).status).toBe(401);
+    });
+
+    it('does not stop the person from asking again afterwards, under the new password', async () => {
+      const user = await makeUser('reset-then-ask');
+      await requestChange(await loginCookie(user), { newEmail: newAddress('first-ask'), currentPassword: user.password });
+      await resetPassword(user, 'a password chosen after the reset');
+      const afterReset = { ...user, password: 'a password chosen after the reset' };
+      const address = newAddress('second-ask');
+
+      const token = await askAndApprove(afterReset, address);
+
+      expect((await confirmLink(token)).status).toBe(200);
+      expect(await emailOf(user.id)).toBe(address);
+    });
+
+    it('still refuses an approved link when the credential moved by a path that did not close the request', async () => {
+      const victim = await makeUser('credential-behind-hook');
+      const token = await askAndApprove(victim, newAddress('behind-hook-new'));
+      const cookie = await loginCookie(victim);
+      await changeCredentialBehindTheHook(victim.id);
+
+      const confirmed = await confirmLink(token);
+
+      expect(confirmed.status).toBe(400);
+      expect(confirmed.body.error?.code).toBe('INVALID_LINK');
+      expect(await emailOf(victim.id)).toBe(victim.email);
+      expect(await sessionStatus(cookie)).toBe(200);
+      expect(await requestsOf(victim.id)).toEqual([expect.objectContaining({ status: 'approved' })]);
+    });
+
+    it('makes the operation refuse to approve a request made under a credential that moved, say so, and close it', async () => {
+      const victim = await makeUser('approve-after-credential');
+      await requestChange(await loginCookie(victim), { newEmail: newAddress('approve-after-new'), currentPassword: victim.password });
+      const row = await requestRow(victim.id);
+      await changeCredentialBehindTheHook(victim.id);
+      const mailedBefore = mailed.length;
+
+      const approval = await operate('approve', '--request-id', row.id);
+
+      expect(approval.code).toBe(1);
+      expect(approval.stderr).toContain('password changed');
+      expect(mailed).toHaveLength(mailedBefore);
+      expect(await requestsOf(victim.id)).toEqual([expect.objectContaining({ status: 'superseded' })]);
+      expect((await requestRow(victim.id)).token_hash).toBeNull();
+    });
+  });
+
+  describe('the swap of an agency owner needs the holder confirmed', () => {
+    it('refuses a link whose account became an owner after the approval, and works again once the operation confirms the holder', async () => {
+      const user = await makeUser('became-owner');
+      const address = newAddress('became-owner-new');
+      const staleToken = await askAndApprove(user, address);
+      await createAgency(user.id);
+
+      const refused = await confirmLink(staleToken);
+
+      expect(refused.status).toBe(400);
+      expect(refused.body.error?.code).toBe('INVALID_LINK');
+      expect(await emailOf(user.id)).toBe(user.email);
+
+      const row = await requestRow(user.id);
+      const mailedBefore = mailed.length;
+      const withoutConfirmation = await operate('approve', '--request-id', row.id);
+      expect(withoutConfirmation.code).toBe(1);
+      expect(withoutConfirmation.stderr).toContain('--ownership-confirmed');
+      expect(mailed).toHaveLength(mailedBefore);
+
+      expect((await operate('approve', '--request-id', row.id, '--ownership-confirmed')).code).toBe(0);
+      const freshToken = tokenOf(mailed[mailed.length - 1]);
+      expect((await confirmLink(staleToken)).status).toBe(400);
+      expect((await confirmLink(freshToken)).status).toBe(200);
+      expect(await emailOf(user.id)).toBe(address);
     });
   });
 

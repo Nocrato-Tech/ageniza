@@ -124,7 +124,8 @@ const lockAccountThenRequest = async (
 /** What an approval decided, computed inside the transaction and acted on after it commits. */
 type ApprovalOutcome =
   | { readonly kind: 'approved'; readonly newEmail: string; readonly token: string; readonly expiresAt: string }
-  | { readonly kind: 'stale' };
+  | { readonly kind: 'stale' }
+  | { readonly kind: 'credential_changed' };
 
 export const createEmailChangeCommandService = (options: CreateEmailChangeCommandServiceOptions): EmailChangeCommandService => {
   const list = (): Promise<readonly OpenEmailChangeRequest[]> => options.database.transaction(async (transaction) => {
@@ -174,6 +175,23 @@ export const createEmailChangeCommandService = (options: CreateEmailChangeComman
         return { kind: 'stale' };
       }
 
+      // The credential changed after the request (the notice told the person to change the password
+      // if it was not theirs): the request was made under a credential that no longer exists. Closing
+      // it here must survive the refusal below. The reset closes it too; this is the barrier that
+      // holds when that did not run.
+      const credential = await transaction.query<{ changed: boolean }>(
+        'select credential_fingerprint is distinct from app_private.credential_fingerprint(user_id) as changed from public.email_change_requests where id = ?',
+        [request.id]
+      );
+      if (credential.rows[0]?.changed !== false) {
+        await transaction.query(
+          `update public.email_change_requests
+           set status = 'superseded', token_hash = null, token_expires_at = null, decided_at = now()
+           where id = ?`, [request.id]
+        );
+        return { kind: 'credential_changed' };
+      }
+
       const inUse = await transaction.query<{ taken: boolean }>(
         'select exists (select 1 from auth."user" other where other.email = ?) as taken', [request.new_email]
       );
@@ -206,6 +224,9 @@ export const createEmailChangeCommandService = (options: CreateEmailChangeComman
       return { kind: 'approved', newEmail: request.new_email, token, expiresAt: asIso(expires.token_expires_at) };
     });
 
+    if (outcome.kind === 'credential_changed') {
+      throw new EmailChangeCliError('The account password changed since the request, so the request was closed. Ask for a new one.');
+    }
     if (outcome.kind === 'stale') {
       throw new EmailChangeCliError('The account changed its e-mail since the request, so the request was closed. Ask for a new one.');
     }
