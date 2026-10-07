@@ -1,5 +1,5 @@
-import { useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import {
   CollaboratorSchema,
@@ -42,7 +42,16 @@ const fallbackAuthStore: AuthSessionStore = {
 const detailQueryKey = (agencyId: string, membershipId: string) =>
   ['agency', agencyId, 'collaborators', 'detail', membershipId] as const;
 
-const listQueryKey = (agencyId: string) => ['agency', agencyId, 'collaborators'] as const;
+/**
+ * Name and photo belong to the global user, not to one membership (specs/colaboradores.md §3):
+ * after either changes, every agency's cached collaborator data is stale, not just the one the
+ * modal was opened from.
+ */
+const invalidateEveryAgencyCollaborators = (queryClient: QueryClient): void => {
+  void queryClient.invalidateQueries({
+    predicate: (query) => query.queryKey[0] === 'agency' && query.queryKey[2] === 'collaborators'
+  });
+};
 
 /** Mirrors `UpdateMyProfileRequestSchema` before a byte leaves the browser; the API validates again. */
 const validateName = (value: string): string | undefined => {
@@ -86,9 +95,9 @@ function SelfProfilePhoto({ collaborator, membershipId }: { collaborator: Collab
       setError(undefined);
       queryClient.setQueryData<Collaborator>(detailQueryKey(agency.agencyId, membershipId), (current) =>
         current === undefined ? current : { ...current, photoUrl: response.imageUrl });
-      // The badge behind the modal reads its photo from the listing, so the listing is refetched
-      // now; hovering the old photo until a reload is the defect the SPEC calls out.
-      void queryClient.invalidateQueries({ queryKey: listQueryKey(agency.agencyId) });
+      // The uploaded photo is the user's, so every agency's collaborator data behind the modal
+      // shows the old one until it is invalidated, not only the agency the modal was opened from.
+      invalidateEveryAgencyCollaborators(queryClient);
     },
     onError: (uploadError: unknown) => {
       setProgress(null);
@@ -150,7 +159,15 @@ function SelfProfileFields({ collaborator, membershipId }: { collaborator: Colla
   const nameId = useId();
   const errorId = useId();
   const [name, setName] = useState(collaborator.name);
+  const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | undefined>();
+
+  // The detail query can answer again while the modal is open (another tab, a revalidation). The
+  // field follows it only while it has no typed value of its own; overwriting a draft would lose
+  // what the person wrote.
+  useEffect(() => {
+    if (!dirty) setName(collaborator.name);
+  }, [collaborator.name, dirty]);
 
   const save = useMutation({
     mutationFn: (nextName: string) => httpClient.request({
@@ -161,11 +178,12 @@ function SelfProfileFields({ collaborator, membershipId }: { collaborator: Colla
     }),
     onSuccess: (updated) => {
       setName(updated.name);
+      setDirty(false);
       setError(undefined);
       // The modal header and the badge behind both read their name from these queries.
       queryClient.setQueryData<Collaborator>(detailQueryKey(agency.agencyId, membershipId), (current) =>
         current === undefined ? current : { ...current, name: updated.name });
-      void queryClient.invalidateQueries({ queryKey: listQueryKey(agency.agencyId) });
+      invalidateEveryAgencyCollaborators(queryClient);
       // The account menu shows the session user's name; refreshing it keeps the header coherent.
       void authStore?.refresh();
     },
@@ -188,23 +206,23 @@ function SelfProfileFields({ collaborator, membershipId }: { collaborator: Colla
         name="name"
         autoComplete="name"
         value={name}
-        onChange={(event) => { setName(event.target.value); setError(undefined); }}
+        onChange={(event) => { setName(event.target.value); setDirty(true); setError(undefined); }}
         aria-invalid={error !== undefined}
         aria-describedby={error === undefined ? undefined : errorId}
       />
       {error !== undefined && <FieldMessage id={errorId} role="alert">{error}</FieldMessage>}
     </div>
     <div className="self-profile__readonly">
-      <p className="ui-field__label">Cargo</p>
+      <p className="self-profile__label">Cargo</p>
       <p>{collaborator.jobTitle ?? 'Não informado'}</p>
       <p className="form-hint">{JOB_TITLE_NOTE}</p>
     </div>
     <div className="self-profile__readonly">
-      <p className="ui-field__label">Papel</p>
+      <p className="self-profile__label">Papel</p>
       <p>{collaborator.role.name}</p>
     </div>
     <div className="self-profile__readonly">
-      <p className="ui-field__label">E-mail</p>
+      <p className="self-profile__label">E-mail</p>
       <p>{collaborator.email}</p>
       <p className="form-hint">{EMAIL_NOTE}</p>
     </div>
@@ -223,8 +241,8 @@ function CollaboratorDetails({ collaborator, isSelf }: { collaborator: Collabora
     {isSelf
       ? <div className="collaborator-detail__identity">
         <SelfProfilePhoto collaborator={collaborator} membershipId={membershipId} />
+        {/* The name is already the modal heading; repeating it here would show it twice. */}
         <div className="collaborator-detail__self">
-          <p className="collaborator-detail__self-name">{collaborator.name}</p>
           <p className="form-hint">{PHOTO_IS_GLOBAL}</p>
         </div>
       </div>
@@ -275,7 +293,9 @@ export function CollaboratorDetailDialog({ membershipId, onClose }: { membership
   const notFound = !validId || (detail.error instanceof HttpClientError && [403, 404].includes(detail.error.status ?? 0));
   const collaborator = !notFound && detail.data?.membershipId.toLowerCase() === normalizedId ? detail.data : undefined;
   // Name and photo belong to the global user; the only identity the membership detail carries is
-  // the e-mail, and the session owns the same canonical e-mail for the signed-in person.
+  // the e-mail, and the session owns the same canonical e-mail for the signed-in person. The
+  // comparison is provisional: the API will say whether the link is the signed-in person's own
+  // (#286), and this e-mail heuristic leaves with it.
   const isSelf = collaborator !== undefined && session.user !== null && session.user.email === collaborator.email;
 
   return <Modal title={collaborator?.name ?? 'Detalhe do colaborador'} closeLabel="Fechar detalhe do colaborador" onClose={onClose}>
