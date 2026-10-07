@@ -15,6 +15,7 @@ import { Button, ConfirmDialog, Menu, MenuItem, MenuSeparator, Skeleton } from '
 import { useAuthSession, useOptionalAuthSessionStore, type AuthSessionStore } from './auth.js';
 import { contextDestination, targetFromDestination, type ContextTarget } from './context-destination.js';
 import { contextDescription, contextKey, contextTitle } from './context-labels.js';
+import { EmailChangeDialog } from './email-change.js';
 import { HttpClientError, useApiClient } from './http.js';
 
 type LogoutAction = 'logout' | 'logout-all';
@@ -35,6 +36,7 @@ const contextsErrorMessage = 'N\u00e3o foi poss\u00edvel carregar seus contextos
 const switchErrorMessage = 'N\u00e3o foi poss\u00edvel trocar de contexto. Tente de novo.';
 const logoutAllLabel = 'Sair de todas as sess\u00f5es';
 const switchLabel = 'Trocar de contexto';
+const emailChangeLabel = 'Pedir troca de e-mail';
 
 /** Whether a context is the one the route is currently showing, derived from the address, not a name. */
 const isCurrentContext = (context: Context, target: ContextTarget | null): boolean => {
@@ -58,6 +60,7 @@ export function AccountMenu({ activeContext, user: userOverride }: AccountMenuPr
   const [menuOpen, setMenuOpen] = useState(false);
   const [panel, setPanel] = useState<AccountMenuPanel>('root');
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [emailChangeOpen, setEmailChangeOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<LogoutAction | null>(null);
   const [failedAction, setFailedAction] = useState<LogoutAction | null>(null);
 
@@ -156,6 +159,7 @@ export function AccountMenu({ activeContext, user: userOverride }: AccountMenuPr
               {switchLabel} <span aria-hidden='true'>{'\u203A'}</span>
             </MenuItem>
           )}
+          <MenuItem onClick={() => { setEmailChangeOpen(true); }}>{emailChangeLabel}</MenuItem>
           <MenuSeparator />
           <MenuItem onClick={() => { void startLogout('logout'); }}>Sair</MenuItem>
           <MenuSeparator />
@@ -202,6 +206,7 @@ export function AccountMenu({ activeContext, user: userOverride }: AccountMenuPr
           <Button size='sm' variant='ghost' onClick={() => { void startLogout(failedAction); }}>Tentar de novo</Button>
         </div>
       )}
+      {emailChangeOpen && <EmailChangeDialog onClose={() => { setEmailChangeOpen(false); }} />}
       <ConfirmDialog
         open={confirmOpen}
         title={`${logoutAllLabel}?`}
