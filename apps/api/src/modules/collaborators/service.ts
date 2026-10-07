@@ -214,3 +214,88 @@ export const listAgencyRoles = async (
   `, bindings);
   return result.rows;
 };
+
+export interface MembershipTarget {
+  readonly user_id: string;
+  readonly is_owner: boolean;
+}
+
+/**
+ * Reads and locks the active membership a change is about, scoped to the route's agency: another
+ * agency's link, a nonexistent one and a removed one are all "no row". The lock serializes two
+ * changes of the same person, so the checks that follow judge the row the update will actually see.
+ */
+export const lockActiveMembership = async (
+  transaction: CollaboratorTransaction,
+  agencyId: string,
+  membershipId: string
+): Promise<MembershipTarget | undefined> => {
+  const result = await raw<RawRows<MembershipTarget>>(transaction, `
+    select
+      membership.user_id as user_id,
+      app_private.is_agency_owner(membership.agency_id, membership.user_id) as is_owner
+    from public.agency_memberships as membership
+    where membership.agency_id = ?::uuid
+      and membership.id = ?::uuid
+      and membership.status = 'active'
+    for update of membership
+  `, [agencyId, membershipId]);
+  return result.rows[0];
+};
+
+/**
+ * Resolves a role the caller wants to hand out. Undefined when the role is neither a system role
+ * nor one of this agency's; otherwise whether it is the `admin` role, by the same
+ * `app_private.is_admin_role` the UPDATE trigger and the invitation policy use.
+ */
+export const findAssignableRole = async (
+  transaction: CollaboratorTransaction,
+  agencyId: string,
+  roleId: string
+): Promise<{ readonly isAdmin: boolean } | undefined> => {
+  const result = await raw<RawRows<{ is_admin: boolean }>>(transaction, `
+    select app_private.is_admin_role(role.id, ?::uuid) as is_admin
+    from public.roles as role
+    where role.id = ?::uuid
+      and (role.agency_id is null or role.agency_id = ?::uuid)
+  `, [agencyId, roleId, agencyId]);
+  const row = result.rows[0];
+  return row === undefined ? undefined : { isAdmin: row.is_admin === true };
+};
+
+export interface MembershipChange {
+  readonly jobTitle?: string | null;
+  readonly roleId?: string;
+}
+
+/**
+ * Writes only the fields present in the change, so two concurrent changes of different fields
+ * never overwrite each other with a stale copy. Returns whether a row was updated: the caller must
+ * never answer success for zero rows (a policy that filters the row is silent, not an error).
+ */
+export const updateMembership = async (
+  transaction: CollaboratorTransaction,
+  agencyId: string,
+  membershipId: string,
+  change: MembershipChange
+): Promise<boolean> => {
+  const assignments = ['updated_at = now()'];
+  const bindings: SqlBinding[] = [];
+  if (change.jobTitle !== undefined) {
+    assignments.push('job_title = ?');
+    bindings.push(change.jobTitle);
+  }
+  if (change.roleId !== undefined) {
+    assignments.push('role_id = ?::uuid');
+    bindings.push(change.roleId);
+  }
+  const result = await raw<RawRows<{ id: string }>>(transaction, `
+    update public.agency_memberships
+       set ${assignments.join(', ')}
+     where agency_id = ?::uuid
+       and id = ?::uuid
+       and status = 'active'
+    returning id
+  `, [...bindings, agencyId, membershipId]);
+  return result.rows.length === 1;
+};

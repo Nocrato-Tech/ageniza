@@ -2,7 +2,25 @@ import { z } from 'zod';
 
 import { AuthEmailSchema } from './auth.js';
 import { createPaginatedResponseSchema, PaginationInputSchema } from './pagination.js';
-import { SearchTextSchema } from './search.js';
+import { NO_CONTROL_CHARACTERS, SearchTextSchema } from './search.js';
+
+/** Longest job title, counted in UTF-16 units like every `max` of this contract. */
+export const COLLABORATOR_JOB_TITLE_MAX_LENGTH = 256;
+
+/**
+ * A job title a request may write: trimmed, 1 to 256 characters, and free of control characters.
+ * The control rule is the one `jobTitle` of the listing filter applies (`SearchTextSchema`), so a
+ * title this schema accepts is always one the filter can select -- a title the database stores but
+ * the filter refuses (400) could never be filtered by.
+ *
+ * The length is checked here, before the statement reaches the database: the database measures it
+ * with a per-character function that is quadratic in the input.
+ */
+export const CollaboratorJobTitleSchema = z.string()
+  .trim()
+  .min(1)
+  .max(COLLABORATOR_JOB_TITLE_MAX_LENGTH)
+  .regex(NO_CONTROL_CHARACTERS, 'Job title cannot contain control characters');
 
 /** Access role of a collaborator: the system/agency role that grants authorization. */
 export const CollaboratorRoleSchema = z.object({
@@ -48,11 +66,25 @@ export const CollaboratorSchema = z.object({
 export const CollaboratorListQuerySchema = PaginationInputSchema.extend({
   q: SearchTextSchema.optional(),
   role: SearchTextSchema.max(128).optional(),
-  jobTitle: SearchTextSchema.max(256).optional(),
+  jobTitle: SearchTextSchema.max(COLLABORATOR_JOB_TITLE_MAX_LENGTH).optional(),
   status: z.literal('active').optional()
 }).strict();
 
 export const CollaboratorListResponseSchema = createPaginatedResponseSchema(CollaboratorSchema);
+
+/**
+ * Body of `PATCH /agencies/:agencyId/collaborators/:membershipId` (issue #97). Either field, or
+ * both; the permission each one needs is decided from the fields that are present, not from the
+ * route. `jobTitle: null` clears the title. An empty body is a validation error, never a 200 that
+ * changed nothing.
+ */
+export const UpdateCollaboratorRequestSchema = z.object({
+  jobTitle: CollaboratorJobTitleSchema.nullable().optional(),
+  roleId: z.string().uuid().optional()
+}).strict().refine(
+  (body) => body.jobTitle !== undefined || body.roleId !== undefined,
+  { message: 'Send at least one of jobTitle or roleId.' }
+);
 
 /**
  * Query of `GET /agencies/:agencyId/collaborators/:membershipId` (issue #226). The detail declares
@@ -103,6 +135,7 @@ export const AgencyRolesResponseSchema = z.object({
 
 export type CollaboratorRole = z.infer<typeof CollaboratorRoleSchema>;
 export type Collaborator = z.infer<typeof CollaboratorSchema>;
+export type UpdateCollaboratorRequest = z.infer<typeof UpdateCollaboratorRequestSchema>;
 export type CollaboratorListQuery = z.infer<typeof CollaboratorListQuerySchema>;
 export type CollaboratorListResponse = z.infer<typeof CollaboratorListResponseSchema>;
 export type CollaboratorDetailQuery = z.infer<typeof CollaboratorDetailQuerySchema>;

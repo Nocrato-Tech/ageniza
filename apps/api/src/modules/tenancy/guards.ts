@@ -148,11 +148,27 @@ export const createRequireAgencyAccess = (dependencies: TenancyGuardDependencies
 /** Alias matching the guard name used by route modules. */
 export const requireAgencyAccess = createRequireAgencyAccess;
 
+/**
+ * Whether the caller holds a permission: the Owner passes every check by ownership, exactly like
+ * `app_private.has_agency_permission`. For a rule that depends on the request body, where a single
+ * fixed `requirePermission` key cannot say enough.
+ */
+export const tenantHolds = (tenant: Pick<TenantContext, 'isOwner' | 'permissions'>, key: string): boolean =>
+  tenant.isOwner || tenant.permissions.has(key);
+
+/**
+ * 42501 is what both an RLS policy and a trigger of this schema raise. A route checks before it
+ * writes, so reaching it means the two layers disagreed; the caller still gets the 403 the route
+ * would have given, never a 500.
+ */
+export const isInsufficientPrivilegeError = (error: unknown): boolean =>
+  typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === '42501';
+
 /** Builds a preHandler for one permission after `requireAgencyAccess` populated the context. */
 export const requirePermission = (key: string) =>
   async (request: FastifyRequest): Promise<void> => {
     const tenant = request.tenant;
-    if (tenant === undefined || (!tenant.isOwner && !tenant.permissions.has(key))) throw forbidden();
+    if (tenant === undefined || !tenantHolds(tenant, key)) throw forbidden();
   };
 
 /**

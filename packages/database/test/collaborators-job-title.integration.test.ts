@@ -189,3 +189,34 @@ describe('upgrade of a real legacy job_title (issue #225)', () => {
     }
   }, 180_000);
 });
+
+describe('function grants of the job_title migration (issue #97)', () => {
+  const privilege = async (role: string, signature: string): Promise<boolean> => {
+    const result = await getOwner().knex.raw<{ rows: Array<{ allowed: boolean }> }>(
+      'select has_function_privilege(?, ?, \'execute\') as allowed',
+      [role, signature]
+    );
+    return result.rows[0]?.allowed === true;
+  };
+
+  // The two helpers the API relies on are the only ones the application role may execute; the
+  // backfill rewrites every membership and the trigger function is not an entry point, so neither
+  // is granted to ageniza_app or left to PUBLIC.
+  it('lets ageniza_app execute only normalize_job_title and utf16_length', async () => {
+    await expect(privilege('ageniza_app', 'app_private.normalize_job_title(text)')).resolves.toBe(true);
+    await expect(privilege('ageniza_app', 'app_private.utf16_length(text)')).resolves.toBe(true);
+    for (const signature of ['app_private.backfill_job_title()', 'app_private.set_job_title()']) {
+      await expect(privilege('ageniza_app', signature)).resolves.toBe(false);
+      await expect(privilege('public', signature)).resolves.toBe(false);
+    }
+  });
+
+  it('refuses to run the backfill as ageniza_app', async () => {
+    const application = createLocalTestDatabaseClient(process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza');
+    try {
+      await expect(application.knex.raw('select * from app_private.backfill_job_title()')).rejects.toMatchObject({ code: '42501' });
+    } finally {
+      await application.close();
+    }
+  });
+});
