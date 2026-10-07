@@ -1,0 +1,28 @@
+# Conteúdo: pastas de mídia e mídia com cliente no banco
+
+**Data.** 2026-10-07
+
+**Esta é uma mudança estrutural.** Cumpre os pontos 1 (mídia com cliente e pasta) e 6 (backfill das pastas padrão) de [`2026-10-01-conteudo-impacto-estrutural.md`](2026-10-01-conteudo-impacto-estrutural.md): altera `media_assets` e `clients`, substitui as três policies de `media_assets` e grava linhas para os clientes que já existem. Aqui ficam as escolhas de implementação que a decisão de 2026-10-01 e a SPEC (`specs/conteudo.md` §2, §3, §5 regra 3 e §6) não fecham, e que alguém tentaria de novo.
+
+**Contexto.** A issue #247 pede as cinco permissões `conteudo.*`, a tabela `media_folders`, as colunas `client_id`, `folder_id` e `removed_at` em `media_assets`, as quatro pastas padrão para todo cliente e a RLS por cliente com grants por coluna. A #371 mexe na mesma tabela e entra na mesma migration (ver [`2026-10-07-o-banco-carimba-o-autor-e-a-confirmacao-da-midia.md`](2026-10-07-o-banco-carimba-o-autor-e-a-confirmacao-da-midia.md)).
+
+**Decisão.**
+1. **Permissões.** `conteudo.visualizar`, `conteudo.operar` e `conteudo.publicar` para Admin, Gestor de conta e Produção; `conteudo.aprovar_pela_agencia` e `conteudo.cancelar` para Admin e Gestor de conta; Vendas e Financeiro sem nenhuma, como na tabela da seção 2.
+2. **Dois níveis por chave estrangeira, não por trigger.** `media_folders` tem as colunas geradas `depth` (0 na pasta de primeiro nível, 1 na de trabalho) e `parent_depth` (0 quando há pai), e a chave estrangeira `(parent_id, client_id, parent_depth)` aponta para `(id, client_id, depth)`: o pai precisa ser pasta de primeiro nível **do mesmo cliente**. Vale para o dono do schema e sob concorrência. Trigger descartado (precisaria travar o pai para não correr); `CHECK` descartado (não enxerga outra linha).
+3. **Pasta e mídia do mesmo cliente e da mesma agência, por chave estrangeira composta.** `media_assets (folder_id, client_id)` → `media_folders (id, client_id)` e `media_assets (client_id, agency_id)` → `clients (id, agency_id)`, o que cria `clients_id_agency_id_key`. Chave composta com coluna nula não é conferida, então `CHECK (folder_id is null or client_id is not null)` fecha a brecha de uma pasta sem cliente.
+4. **Pasta padrão só por função.** `is_default` é gravada apenas por `app_private.create_default_media_folders(client_id)`, `security definer`, sem `execute` para `ageniza_app`, idempotente (índice único parcial `(client_id, name) where is_default` e `on conflict do nothing`). A migration a chama para **todos** os clientes, os arquivados inclusive, e um trigger `after insert` em `clients` a chama para cada cliente novo. Trigger e não a rota de cadastro: vale também para o seed e para qualquer caminho futuro, e quem cadastra cliente sem `conteudo.operar` continua criando o cliente com as pastas.
+5. **Pasta padrão não se renomeia nem se move** (a SPEC chama de "lista fixa de pastas padrão do sistema"; é a leitura mais conservadora). `ageniza_app` insere `client_id`, `parent_id` e `name`, atualiza só `name` e só de pasta não padrão, e nunca apaga; `client_id`, `parent_id` e `is_default` não mudam. A SPEC não pede apagar nem arquivar pasta, então não existe coluna nem grant para isso. Pasta em cliente arquivado não se cria nem se renomeia. `media_folders.client_id` tem `on delete cascade`: só o dono do schema apaga cliente (purga), e sem a cascata toda purga e todo teste teriam de apagar as pastas à mão; mídia que aponta para o cliente ou para a pasta continua impedindo a exclusão.
+6. **Nome da pasta.** Não vazio depois de colapsar espaços (tab e NBSP incluídos, como no índice de nome ativo de `clients`) e até 256 bytes. O tamanho de exibição e os caracteres aceitos ficam para a rota, porque a SPEC não os define.
+7. **Policies de mídia.** Mídia sem cliente continua com `midia.enviar` para ler e escrever. Mídia com cliente se lê com `conteudo.visualizar` e se escreve com `conteudo.operar`; quem só tem `midia.enviar` não lê nem escreve mídia de cliente. O `INSERT` de mídia de cliente arquivado é recusado (regra 14 da SPEC); o `UPDATE` de mídia que já existe não, para o worker concluir o processamento do vídeo e o envio pendente poder fechar.
+8. **Nenhuma policy de portal** sobre pasta nem sobre mídia: o portal lê mídia só através do conteúdo que já pode ver, e essa leitura entra com a migration de `contents`.
+9. **Coluna nova nasce sem escrita.** Concedidos: `INSERT` de `client_id` e `folder_id` (o upload da mídia do conteúdo). Nenhum `UPDATE`. `removed_at` e a troca de pasta chegam com a migration que protege "mídia usada em conteúdo aprovado ou publicado não pode ser removida da pasta" (regra 12).
+
+**Consequência.**
+- A cota de armazenamento (`readQuotaSnapshot`) soma `media_assets` pela RLS de quem chama: quem só tem `midia.enviar` não enxerga a mídia de cliente e subestimaria o uso. Hoje nenhuma rota grava mídia com cliente, então nada muda; **a rota de upload de Conteúdo precisa somar o uso por uma função própria ou exigir as duas permissões antes de abrir**. Fica como pendência dessa rota.
+- Todo cliente tem as quatro pastas desde esta migration, e `pnpm db:test:local` confere isso para todos os clientes do banco, não só para os do teste.
+- O catálogo cresce de 15 para 20 permissões e de 25 para 38 linhas de `role_permissions`; `tenancy.integration.test.ts`, que conta os dois, foi atualizado.
+- Pelos critérios de `structural-changes.md` é estrutural nos três: altera tabela existente, substitui policy e faz backfill.
+
+**Origem.** Issue #247, decidido na implementação a pedido do maestro, dentro da decisão do dono de 2026-10-01 citada acima.
+
+**Validação.** Pendente de validação do dono.
