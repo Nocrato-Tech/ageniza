@@ -25,12 +25,22 @@ functions:
 
 - `app_private.request_email_change(new_email)`: the account comes from the actor bound to the
   transaction, never from an argument. Supersedes the open request and records the new one.
-- `app_private.confirm_email_change(token_hash)`: locks the request and the account, checks the
+- `app_private.confirm_email_change(token_hash)`: locks the account, then the request, checks the
   request is approved, unexpired, and that the account still has the old address and nobody took
   the new one, then swaps, deletes sessions and verifications, and closes the request.
 
 The CLI connects as the migration owner, like `cli:agency`, and does the listing, approval and
 rejection in SQL of its own.
+
+## One lock order
+
+Every path that changes a request locks the **account first, then its requests**:
+`request_email_change`, `confirm_email_change` (which reads the request unlocked to learn the account,
+locks the account, then locks and re-reads the request) and the CLI's approve and reject. The
+opposite order deadlocks (`40P01`) when two of them run on the same account. A deadlock or a
+serialization failure (`40001`) that still happens is a lost race, not a bug: both routes answer
+`409 TRY_AGAIN` with no detail, and the CLI says to run the command again. The race tests hold a
+request's row lock in a real transaction to line the others up behind it.
 
 ## What the contract guarantees
 

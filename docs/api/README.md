@@ -1514,7 +1514,7 @@ Pede a troca do e-mail da própria conta.
 {}
 ```
 
-**Erros:** `400 SAME_EMAIL` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 INVALID_PASSWORD` · `413 PAYLOAD_TOO_LARGE` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+**Erros:** `400 SAME_EMAIL` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 INVALID_PASSWORD` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 #### `POST /email-change/confirm`
 
@@ -1537,7 +1537,7 @@ Confirma a troca de e-mail pelo link enviado ao e-mail novo.
 {}
 ```
 
-**Erros:** `400 INVALID_LINK` · `400 VALIDATION_ERROR` · `403 CSRF_REJECTED` · `413 PAYLOAD_TOO_LARGE` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+**Erros:** `400 INVALID_LINK` · `400 VALIDATION_ERROR` · `403 CSRF_REJECTED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 ## Catálogo de códigos de erro
 
@@ -1563,6 +1563,7 @@ Confirma a troca de e-mail pelo link enviado ao e-mail novo.
 | `INVALID_ROLE` | O papel informado não é válido para esta agência. |
 | `CLIENT_NAME_IN_USE` | Já existe um cliente ativo com este nome. |
 | `CLIENT_ARCHIVED` | Cliente arquivado não pode ser editado. |
+| `TRY_AGAIN` | Houve um conflito momentâneo. Tente de novo. |
 | `INVALID_PASSWORD` | A senha atual não confere. |
 | `SAME_EMAIL` | Informe um e-mail diferente do atual. |
 | `EMAIL_DELIVERY_FAILED` | Não foi possível entregar o e-mail. |

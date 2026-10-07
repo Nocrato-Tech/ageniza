@@ -9592,6 +9592,25 @@
               }
             }
           },
+          "409": {
+            "description": "TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "TRY_AGAIN",
+                    "message": "Houve um conflito momentâneo. Tente de novo."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
           "413": {
             "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
             "content": {
@@ -9716,6 +9735,25 @@
                   "error": {
                     "code": "CSRF_REJECTED",
                     "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "TRY_AGAIN",
+                    "message": "Houve um conflito momentâneo. Tente de novo."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
