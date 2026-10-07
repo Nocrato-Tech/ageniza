@@ -39,6 +39,7 @@ import {
   CollaboratorSchema,
   CompleteMediaUploadRequestSchema,
   CompleteMediaUploadResponseSchema,
+  CollaboratorInvitationCreatedResponseSchema,
   ContextResolveQuerySchema,
   ContextResolveResponseSchema,
   CreateClientRequestSchema,
@@ -482,7 +483,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'createCollaboratorInvitation',
     module: 'invitations',
     summary: 'Convida uma pessoa para a agência',
-    description: 'O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail e o token só existe nele. Convidar com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403).',
+    description: 'O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail e o token só existe nele. Convidar com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). A resposta informa o convite pendente que esta criação revogou, quando havia um.',
     access: 'Sessão + vínculo com a agência',
     permission: 'colaborador.convidar',
     params: AgencyPathParamsSchema,
@@ -491,8 +492,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     responses: [{
       status: 201,
       description: 'Convite criado e enviado.',
-      schema: InvitationCreatedResponseSchema,
-      example: { invitationId, expiresAt: '2026-10-02T12:00:00.000Z' }
+      schema: CollaboratorInvitationCreatedResponseSchema,
+      example: { invitationId, expiresAt: '2026-10-02T12:00:00.000Z', supersededInvitationId: null }
     }],
     errors: [
       COMMON_ERRORS.csrf,

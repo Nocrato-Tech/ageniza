@@ -5,6 +5,7 @@ import {
   AgencyInvitationPathParamsSchema,
   AgencyPathParamsSchema,
   ClientInvitationRequestSchema,
+  CollaboratorInvitationCreatedResponseSchema,
   CollaboratorInvitationRequestSchema,
   InvitationAcceptNewAccountRequestSchema,
   InvitationAcceptNewAccountResponseSchema,
@@ -294,7 +295,7 @@ const createCollaboratorInvitation = async (
   email: string,
   roleId: string,
   agencyId: string
-): Promise<{ invitationId: string; expiresAt: Date; token: InvitationToken; agencyName: string }> => {
+): Promise<{ invitationId: string; expiresAt: Date; token: InvitationToken; agencyName: string; supersededInvitationId: string | null }> => {
   const auth = request.auth;
   if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
   const tenant = request.tenant;
@@ -323,16 +324,18 @@ const createCollaboratorInvitation = async (
       if (memberResult.rows[0] !== undefined) throw membershipExists();
 
       await lockPendingInvitationSlot(transaction, agencyId, 'collaborator_invite', email, null);
-      const revoked = await raw<RawRows<{ id: string }>>(transaction, `
+      const revoked = await raw<RawRows<{ id: string; was_pending: boolean }>>(transaction, `
         update public.invitations
            set revoked_at = now()
          where agency_id = ?::uuid and purpose = 'collaborator_invite' and email = ?
            and used_at is null and revoked_at is null
-        returning id
+         returning id, expires_at > pg_catalog.statement_timestamp() as was_pending
       `, [agencyId, email]);
       for (const old of revoked.rows) {
         await auditInTransaction(transaction, { action: 'invitation.revoked', actorUserId: auth.userId, agencyId, targetId: old.id });
       }
+      // At most one equivalent unrevoked row exists; an expired one is revoked too but is no longer a link.
+      const supersededInvitationId = revoked.rows.find((row) => row.was_pending)?.id ?? null;
 
       const result = await raw<RawRows<{ id: string; expires_at: Date }>>(transaction, `
         insert into public.invitations
@@ -343,7 +346,7 @@ const createCollaboratorInvitation = async (
       const row = result.rows[0];
       if (row === undefined) throw new Error('Invitation insert did not return a row.');
       await auditInTransaction(transaction, { action: 'invitation.sent', actorUserId: auth.userId, agencyId, targetId: row.id });
-      return { invitationId: row.id, expiresAt: new Date(row.expires_at), token, agencyName: agency.agencyName };
+      return { invitationId: row.id, expiresAt: new Date(row.expires_at), token, agencyName: agency.agencyName, supersededInvitationId };
     });
   } catch (error) {
     if (isInsufficientPrivilegeError(error)) throw forbidden();
@@ -642,7 +645,7 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
   const collaboratorDocs = {
     permission: 'colaborador.convidar',
     responseStatus: 201,
-    schemas: { params: AgencyPathParamsSchema, body: CollaboratorInvitationRequestSchema, response: InvitationCreatedResponseSchema }
+    schemas: { params: AgencyPathParamsSchema, body: CollaboratorInvitationRequestSchema, response: CollaboratorInvitationCreatedResponseSchema }
   } satisfies DocumentedRouteConfig;
   const clientInviteDocs = {
     permission: 'cliente.convidar_usuario',
@@ -700,7 +703,11 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     } catch {
       throw emailDeliveryFailed();
     }
-    return reply.status(201).send(routeResponse(collaboratorDocs, request, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
+    return reply.status(201).send(routeResponse(collaboratorDocs, request, {
+      invitationId: result.invitationId,
+      expiresAt: result.expiresAt.toISOString(),
+      supersededInvitationId: result.supersededInvitationId
+    }));
   });
 
   app.post('/agencies/:agencyId/clients/:clientId/invitations', authenticated(clientInviteDocs), async (request, reply) => {

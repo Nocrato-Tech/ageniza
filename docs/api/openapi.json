@@ -93,6 +93,24 @@
         ],
         "additionalProperties": false
       },
+      "invitationCreatedResponse": {
+        "type": "object",
+        "properties": {
+          "invitationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "invitationId",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
       "getHealthResponse": {
         "type": "object",
         "properties": {
@@ -418,11 +436,19 @@
           "expiresAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "supersededInvitationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
           }
         },
         "required": [
           "invitationId",
-          "expiresAt"
+          "expiresAt",
+          "supersededInvitationId"
         ],
         "additionalProperties": false
       },
@@ -3638,7 +3664,7 @@
       "post": {
         "operationId": "createCollaboratorInvitation",
         "summary": "Convida uma pessoa para a agência",
-        "description": "O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail e o token só existe nele. Convidar com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403).\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.convidar`.",
+        "description": "O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail e o token só existe nele. Convidar com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). A resposta informa o convite pendente que esta criação revogou, quando havia um.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.convidar`.",
         "tags": [
           "invitations"
         ],
@@ -3678,7 +3704,8 @@
                 },
                 "example": {
                   "invitationId": "33333333-3333-4333-8333-333333333333",
-                  "expiresAt": "2026-10-02T12:00:00.000Z"
+                  "expiresAt": "2026-10-02T12:00:00.000Z",
+                  "supersededInvitationId": null
                 }
               }
             }
@@ -3867,7 +3894,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/createCollaboratorInvitationResponse"
+                  "$ref": "#/components/schemas/invitationCreatedResponse"
                 },
                 "example": {
                   "invitationId": "33333333-3333-4333-8333-333333333333",
@@ -4047,7 +4074,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/createCollaboratorInvitationResponse"
+                  "$ref": "#/components/schemas/invitationCreatedResponse"
                 },
                 "example": {
                   "invitationId": "33333333-3333-4333-8333-333333333333",

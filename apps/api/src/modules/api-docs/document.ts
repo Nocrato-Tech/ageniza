@@ -1,7 +1,7 @@
 import { OpenAPIRegistry, OpenApiGeneratorV31, extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 
-import { ApiErrorResponseSchema } from '@ageniza/contracts';
+import { ApiErrorResponseSchema, InvitationCreatedResponseSchema } from '@ageniza/contracts';
 
 // The registry labels schemas with `.openapi()`, which this call installs on the zod prototype.
 // It runs only on the documentation path (the CLI and the local-only `/docs` module), never on a
@@ -75,6 +75,8 @@ export const buildOpenApiDocument = (): Record<string, unknown> => {
   };
 
   const apiErrorRef = register(ApiErrorResponseSchema, 'ApiErrorResponse');
+  // Shared by the client-invitation creation and the resend; a route-based name would lie about it.
+  register(InvitationCreatedResponseSchema, 'invitationCreatedResponse');
   const componentError = errorExample({ status: 500, code: 'INTERNAL_ERROR' });
   assertExample(ApiErrorResponseSchema, componentError, 'ApiErrorResponse');
 

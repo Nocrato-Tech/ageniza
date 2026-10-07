@@ -101,6 +101,11 @@ export const InvitationCreatedResponseSchema = z.object({
   expiresAt: z.string().datetime()
 }).strict();
 
+/** Collaborator creation answers the still-valid invitation it superseded, if any (issue #333). */
+export const CollaboratorInvitationCreatedResponseSchema = InvitationCreatedResponseSchema.extend({
+  supersededInvitationId: z.string().uuid().nullable()
+}).strict();
+
 export const InvitationAcceptRequestSchema = AuthNoBodySchema;
 
 export const InvitationAcceptResponseSchema = z.object({
@@ -129,5 +134,6 @@ export type InvitationAcceptNewAccountResponse = z.infer<typeof InvitationAccept
 export type CollaboratorInvitationRequest = z.infer<typeof CollaboratorInvitationRequestSchema>;
 export type ClientInvitationRequest = z.infer<typeof ClientInvitationRequestSchema>;
 export type InvitationCreatedResponse = z.infer<typeof InvitationCreatedResponseSchema>;
+export type CollaboratorInvitationCreatedResponse = z.infer<typeof CollaboratorInvitationCreatedResponseSchema>;
 export type InvitationAcceptRequest = z.infer<typeof InvitationAcceptRequestSchema>;
 export type InvitationAcceptResponse = z.infer<typeof InvitationAcceptResponseSchema>;
