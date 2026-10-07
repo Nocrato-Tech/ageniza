@@ -19,5 +19,9 @@ export const CLIENT_PHOTO_RATE_LIMIT = { max: 30, windowMs: 60_000 } as const;
 export const THREAD_DEFAULT_PAGE_SIZE = 20;
 export const COMMENT_DEFAULT_PAGE_SIZE = 50;
 
+/** specs/clientes.md section 6: the people of a portal and its pending invitations list 20 at a time. */
+export const CLIENT_MEMBER_DEFAULT_PAGE_SIZE = 20;
+export const CLIENT_INVITATION_DEFAULT_PAGE_SIZE = 20;
+
 /** A thread item previews its last comment; the full text is on the comments route. */
 export const THREAD_EXCERPT_LENGTH = 140;

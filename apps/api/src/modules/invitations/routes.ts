@@ -122,6 +122,12 @@ const invitationNotPending = (): HttpError => new HttpError({
   message: 'O convite não está pendente.'
 });
 
+const clientArchived = (): HttpError => new HttpError({
+  statusCode: 409,
+  code: 'CLIENT_ARCHIVED',
+  message: 'Cliente arquivado não pode receber convites.'
+});
+
 const membershipExists = (): HttpError => new HttpError({
   statusCode: 409,
   code: 'MEMBERSHIP_EXISTS',
@@ -368,15 +374,18 @@ const createClientInvitation = async (
   if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
   const token = tokenForInsert(dependencies.config.appPublicUrl);
   return withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
-    const clientResult = await raw<RawRows<{ client_name: string; agency_name: string }>>(transaction, `
-      select client.name as client_name, agency.name as agency_name
+    const clientResult = await raw<RawRows<{ client_name: string; agency_name: string; client_status: 'active' | 'archived' }>>(transaction, `
+      select client.name as client_name, agency.name as agency_name, client.status as client_status
       from public.clients client
       join public.agencies agency on agency.id = client.agency_id
       where client.id = ?::uuid and client.agency_id = ?::uuid
-        and client.status = 'active' and agency.status = 'active'
+        and agency.status = 'active'
     `, [clientId, agencyId]);
     const client = clientResult.rows[0];
     if (client === undefined) throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Client not found.' });
+    // The client exists in this agency, so saying it is archived reveals nothing; the invitation
+    // would be born dead, and `invitations_insert` refuses it anyway (specs/clientes.md rule 6).
+    if (client.client_status === 'archived') throw clientArchived();
 
     const memberResult = await raw<RawRows<{ id: string }>>(transaction, `
       select membership.id

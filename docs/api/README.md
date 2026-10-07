@@ -322,7 +322,7 @@ Convida uma pessoa para o portal de um cliente.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 MEMBERSHIP_EXISTS` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR` · `502 EMAIL_DELIVERY_FAILED`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 MEMBERSHIP_EXISTS` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR` · `502 EMAIL_DELIVERY_FAILED`
 
 #### `POST /agencies/:agencyId/invitations/:invitationId/resend`
 
@@ -561,7 +561,7 @@ Devolve as permissões efetivas do contexto de agência.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
-### clients — Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; estudo de marca e personas; e a conversa em thread entre a agência e o cliente, pelos dois lados.
+### clients — Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
@@ -582,10 +582,16 @@ Devolve as permissões efetivas do contexto de agência.
 | `GET` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com a agência | `cliente.visualizar` | Lista os comentários de uma conversa |
 | `POST` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com a agência | `cliente.operar` | Comenta uma conversa pela agência |
 | `POST` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/resolve` | Sessão + vínculo com a agência | `cliente.operar` | Resolve uma conversa |
+| `GET` | `/agencies/:agencyId/clients/:clientId/members` | Sessão + vínculo com a agência | `cliente.convidar_usuario` | Lista as pessoas com acesso ao portal de um cliente |
+| `POST` | `/agencies/:agencyId/clients/:clientId/members/:membershipId/remove` | Sessão + vínculo com a agência | `cliente.remover_usuario` | Remove uma pessoa do portal do cliente |
+| `POST` | `/agencies/:agencyId/clients/:clientId/members/:membershipId/reactivate` | Sessão + vínculo com a agência | `cliente.remover_usuario` | Reativa uma pessoa do portal do cliente |
+| `GET` | `/agencies/:agencyId/clients/:clientId/invitations` | Sessão + vínculo com a agência | `cliente.convidar_usuario` | Lista os convites de portal pendentes de um cliente |
 | `GET` | `/clients/:clientId/threads` | Sessão + vínculo com o cliente | — | Lista as conversas de um assunto, no portal |
 | `POST` | `/clients/:clientId/threads` | Sessão + vínculo com o cliente | — | Abre uma conversa pelo portal, com o primeiro comentário |
 | `GET` | `/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com o cliente | — | Lista os comentários de uma conversa, no portal |
 | `POST` | `/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com o cliente | — | Comenta uma conversa pelo portal |
+| `GET` | `/clients/:clientId` | Sessão + vínculo com o cliente | — | Lê o cadastro do próprio cliente e o resumo do Início, no portal |
+| `GET` | `/clients/:clientId/brand-study` | Sessão + vínculo com o cliente | — | Lê o estudo de marca, no portal |
 
 #### `GET /agencies/:agencyId/clients`
 
@@ -1269,6 +1275,124 @@ Resolve uma conversa.
 
 **Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_ARCHIVED` · `500 INTERNAL_ERROR`
 
+#### `GET /agencies/:agencyId/clients/:clientId/members`
+
+Lista as pessoas com acesso ao portal de um cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.convidar_usuario`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "status": "active"
+}
+```
+
+**Resposta `200`** — Página de pessoas do portal.
+
+```json
+{
+  "data": [
+    {
+      "membershipId": "22222222-2222-4222-8222-222222222222",
+      "name": "Maria Souza",
+      "email": "maria@padariacentral.exemplo.test",
+      "status": "active",
+      "since": "2026-09-02T12:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 20,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/members/:membershipId/remove`
+
+Remove uma pessoa do portal do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.remover_usuario`.
+
+**Resposta `200`** — Vínculo removido.
+
+```json
+{
+  "membershipId": "22222222-2222-4222-8222-222222222222",
+  "name": "Maria Souza",
+  "email": "maria@padariacentral.exemplo.test",
+  "status": "removed",
+  "since": "2026-09-02T12:00:00.000Z"
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/members/:membershipId/reactivate`
+
+Reativa uma pessoa do portal do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.remover_usuario`.
+
+**Resposta `200`** — Vínculo reativado.
+
+```json
+{
+  "membershipId": "22222222-2222-4222-8222-222222222222",
+  "name": "Maria Souza",
+  "email": "maria@padariacentral.exemplo.test",
+  "status": "active",
+  "since": "2026-09-02T12:00:00.000Z"
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/invitations`
+
+Lista os convites de portal pendentes de um cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.convidar_usuario`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1
+}
+```
+
+**Resposta `200`** — Página de convites pendentes.
+
+```json
+{
+  "data": [
+    {
+      "invitationId": "33333333-3333-4333-8333-333333333333",
+      "email": "joao@padariacentral.exemplo.test",
+      "expiresAt": "2026-10-14T12:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 20,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
 #### `GET /clients/:clientId/threads`
 
 Lista as conversas de um assunto, no portal.
@@ -1449,6 +1573,127 @@ Comenta uma conversa pelo portal.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId`
+
+Lê o cadastro do próprio cliente e o resumo do Início, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Resposta `200`** — Cadastro do cliente e resumo do Início.
+
+```json
+{
+  "id": "77777777-7777-4777-8777-777777777777",
+  "name": "Padaria Central",
+  "status": "active",
+  "photoUrl": null,
+  "legalName": "Padaria Central Ltda",
+  "taxId": "12345678000190",
+  "segment": "Alimentação",
+  "website": "https://padariacentral.exemplo.test",
+  "instagramHandle": "padariacentral",
+  "contactName": "Maria Souza",
+  "contactPhone": "+55 11 90000-0000",
+  "contactEmail": "maria@padariacentral.exemplo.test",
+  "closingDate": null,
+  "archivedAt": null,
+  "agencyName": "Agência Exemplo",
+  "onboardingSeenAt": "2026-10-01T12:00:00.000Z",
+  "home": {
+    "threadsAnsweredByAgency": 2,
+    "brandStudyFilled": 3
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId/brand-study`
+
+Lê o estudo de marca, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Resposta `200`** — Estudo de marca.
+
+```json
+{
+  "filled": 3,
+  "sections": [
+    {
+      "key": "branding",
+      "body": "Marca acolhedora.",
+      "colors": null,
+      "archetype": null,
+      "updatedAt": "2026-09-30T12:00:00.000Z"
+    },
+    {
+      "key": "tone_of_voice",
+      "body": null,
+      "colors": null,
+      "archetype": null,
+      "updatedAt": null
+    },
+    {
+      "key": "colors",
+      "body": null,
+      "colors": [
+        {
+          "name": "Vinho",
+          "hex": "#7A1F2B"
+        }
+      ],
+      "archetype": null,
+      "updatedAt": "2026-09-30T12:00:00.000Z"
+    },
+    {
+      "key": "positioning",
+      "body": null,
+      "colors": null,
+      "archetype": null,
+      "updatedAt": null
+    },
+    {
+      "key": "archetype",
+      "body": null,
+      "colors": null,
+      "archetype": "caregiver",
+      "updatedAt": "2026-09-30T12:00:00.000Z"
+    },
+    {
+      "key": "personas",
+      "body": null,
+      "colors": null,
+      "archetype": null,
+      "updatedAt": null
+    },
+    {
+      "key": "observations",
+      "body": null,
+      "colors": null,
+      "archetype": null,
+      "updatedAt": null
+    }
+  ],
+  "personas": [
+    {
+      "id": "88888888-8888-4888-8888-888888888888",
+      "name": "Dona Maria",
+      "description": "Dona de casa, 58 anos.",
+      "pains": "Pouco tempo para pesquisar.",
+      "desires": "Reconhecimento da comunidade.",
+      "objections": "Preço acima do esperado.",
+      "status": "active",
+      "updatedAt": "2026-09-30T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 ### collaborators — A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.
 

@@ -56,6 +56,14 @@ export const AgencyClientThreadPathParamsSchema = z.object({
   threadId: z.string().uuid()
 }).strict();
 
+export const AgencyClientMemberPathParamsSchema = z.object({
+  agencyId: z.string().uuid(),
+  clientId: z.string().uuid(),
+  // A plain string for the same reason as `AgencyCollaboratorPathParamsSchema.membershipId`: a
+  // malformed link id answers the same 404 as a foreign or absent one, never a 400.
+  membershipId: z.string().min(1).max(100)
+}).strict();
+
 export const ClientThreadPathParamsSchema = z.object({
   clientId: z.string().uuid(),
   threadId: z.string().uuid()
@@ -74,5 +82,6 @@ export type AgencyMediaAssetPathParams = z.infer<typeof AgencyMediaAssetPathPara
 export type AgencyClientSectionPathParams = z.infer<typeof AgencyClientSectionPathParamsSchema>;
 export type AgencyClientPersonaPathParams = z.infer<typeof AgencyClientPersonaPathParamsSchema>;
 export type AgencyClientThreadPathParams = z.infer<typeof AgencyClientThreadPathParamsSchema>;
+export type AgencyClientMemberPathParams = z.infer<typeof AgencyClientMemberPathParamsSchema>;
 export type ClientThreadPathParams = z.infer<typeof ClientThreadPathParamsSchema>;
 export type PublicInvitationTokenPathParams = z.infer<typeof PublicInvitationTokenPathParamsSchema>;

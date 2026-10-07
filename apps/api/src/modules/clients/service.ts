@@ -203,14 +203,11 @@ export const sectionFilledSql = (sectionAlias: string): string => `case ${sectio
           end`;
 
 /**
- * The General tab summary (specs/clientes.md section 6). `personas` counts as one filled section
- * when at least one persona is active; "aguardando a agência" and "com resposta da agência" come
- * from the single thread-state definition, so this count cannot drift from the listing (#125).
+ * How many of the seven sections are filled: the one definition the agency summary and the portal's
+ * Início share. Two `?` placeholders, both the client id. `personas` counts as one filled section
+ * when at least one persona is active.
  */
-export const loadClientSummary = async (transaction: ClientTransaction, clientId: string): Promise<ClientSummary> => {
-  const result = await raw<RawRows<SummaryRow>>(transaction, `
-    select
-      (
+export const BRAND_STUDY_FILLED_SQL = `(
         select count(*)
         from public.client_brand_sections section
         where section.client_id = ?::uuid
@@ -220,7 +217,17 @@ export const loadClientSummary = async (transaction: ClientTransaction, clientId
           select 1 from public.client_personas persona
           where persona.client_id = ?::uuid and persona.status = 'active'
         ) then 1 else 0 end
-      ) as brand_study_filled,
+      )`;
+
+/**
+ * The General tab summary (specs/clientes.md section 6). `personas` counts as one filled section
+ * when at least one persona is active; "aguardando a agência" and "com resposta da agência" come
+ * from the single thread-state definition, so this count cannot drift from the listing (#125).
+ */
+export const loadClientSummary = async (transaction: ClientTransaction, clientId: string): Promise<ClientSummary> => {
+  const result = await raw<RawRows<SummaryRow>>(transaction, `
+    select
+      ${BRAND_STUDY_FILLED_SQL} as brand_study_filled,
       (
         select count(*) from public.client_threads thread
         where thread.client_id = ?::uuid
@@ -412,6 +419,10 @@ const ARCHETYPE_KEY_BY_LABEL = new Map<string, Archetype>(
 );
 
 export const archetypeLabel = (key: Archetype): string => ARCHETYPE_LABELS[key];
+
+/** The contract key of a stored archetype label, or null for a value the contract does not know. */
+export const archetypeKeyOfLabel = (label: string | null): Archetype | null =>
+  label === null ? null : ARCHETYPE_KEY_BY_LABEL.get(label) ?? null;
 
 /**
  * The name of the user who last saved a row, resolved only through the agency tie -- an active
@@ -638,7 +649,7 @@ export const brandSectionFromRow = (row: BrandSectionRow | undefined, key: Brand
     key,
     body: row.body,
     colors: (row.colors as BrandColor[] | null) ?? null,
-    archetype: row.archetype === null ? null : ARCHETYPE_KEY_BY_LABEL.get(row.archetype) ?? null,
+    archetype: archetypeKeyOfLabel(row.archetype),
     updatedBy: updatedByFromRow(row),
     updatedAt: new Date(row.updated_at).toISOString()
   };

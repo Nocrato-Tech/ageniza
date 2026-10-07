@@ -333,6 +333,51 @@ export const BrandStudyResponseSchema = z.object({
   personas: z.array(PersonaSchema)
 }).strict();
 
+// --- Portal reads (specs/clientes.md sections 2, 6 and 7) ----------------------------------------
+
+/** Neither portal read takes a query parameter; the empty strict object makes an undeclared one a 400. */
+export const PortalClientQuerySchema = z.object({}).strict();
+
+/** The Início summary: what the portal's next action is built from (specs/clientes.md section 6). */
+export const PortalHomeSchema = z.object({
+  /** Open threads whose latest comment is the agency's, on subjects the portal can read. */
+  threadsAnsweredByAgency: z.number().int().nonnegative(),
+  brandStudyFilled: z.number().int().min(0).max(7)
+}).strict();
+
+/**
+ * `GET /clients/:clientId`: the client's own registration, read-only, plus what the portal header
+ * and the tour need. `status` and `archivedAt` are pinned because the portal never reaches an
+ * archived client, so a row that was would fail to parse instead of being served.
+ */
+export const PortalClientResponseSchema = z.object({
+  ...ClientSchema.shape,
+  status: z.literal('active'),
+  archivedAt: z.null(),
+  agencyName: z.string(),
+  /** When the caller's own link saw the tour; never another person's of the same client. */
+  onboardingSeenAt: z.string().nullable(),
+  home: PortalHomeSchema
+}).strict();
+
+/** A section as the portal reads it: the same as the agency's, without who edited it internally. */
+export const PortalBrandStudySectionSchema = BrandStudySectionSchema.omit({ updatedBy: true });
+
+/** An active persona; an archived one is not served, and the literal makes a leak fail to parse. */
+export const PortalPersonaSchema = PersonaSchema.omit({ updatedBy: true }).extend({ status: z.literal('active') });
+
+export const PortalBrandStudyResponseSchema = z.object({
+  filled: z.number().int().min(0).max(7),
+  sections: z.array(PortalBrandStudySectionSchema),
+  personas: z.array(PortalPersonaSchema)
+}).strict();
+
+export type PortalHome = z.infer<typeof PortalHomeSchema>;
+export type PortalClientResponse = z.infer<typeof PortalClientResponseSchema>;
+export type PortalBrandStudySection = z.infer<typeof PortalBrandStudySectionSchema>;
+export type PortalPersona = z.infer<typeof PortalPersonaSchema>;
+export type PortalBrandStudyResponse = z.infer<typeof PortalBrandStudyResponseSchema>;
+
 export type BrandSectionKey = z.infer<typeof BrandSectionKeySchema>;
 export type WritableBrandSectionKey = z.infer<typeof WritableBrandSectionKeySchema>;
 export type Archetype = z.infer<typeof ArchetypeSchema>;
