@@ -166,6 +166,8 @@ interface SelfFetchOptions {
   readonly uploadImageUrl?: string;
   /** Returns a response the caller controls (a deferred promise, an error status, ...). */
   readonly uploadResponse?: (body: unknown) => Response | Promise<Response>;
+  /** Returns a PATCH /me/profile response the caller controls (an error status, ...). */
+  readonly updateProfileResponse?: (body: unknown) => Response | Promise<Response>;
 }
 
 /**
@@ -190,6 +192,7 @@ const makeSelfFetch = (options: SelfFetchOptions = {}) => {
       : json({ error: { code: 'NOT_FOUND', message: 'Not found' } }, 404),
     updateProfile: (body) => {
       profileBodies.push(body);
+      if (options.updateProfileResponse !== undefined) return options.updateProfileResponse(body);
       const name = (body as { name?: unknown }).name;
       if (typeof name !== 'string' || name.trim() === '') {
         return json({ error: { code: 'VALIDATION_ERROR', message: 'invalid name' } }, 400);
@@ -1081,6 +1084,26 @@ describe('self profile editing (#108)', () => {
     expect(modal.querySelector('img')).toBeNull();
   });
 
+  it('shows the own name once, in the modal heading, without repeating it under the photo', async () => {
+    const { impl } = makeSelfFetch();
+    renderCollaborators(impl, selfUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+
+    expect(within(modal).getByRole('heading', { name: 'Ana Prado' })).toBeTruthy();
+    expect(within(modal).getAllByText('Ana Prado')).toHaveLength(1);
+    expect(modal.querySelector('.collaborator-detail__self-name')).toBeNull();
+  });
+
+  it('labels the read-only fields with the profile class, not the Select internal one', async () => {
+    const { impl } = makeSelfFetch();
+    renderCollaborators(impl, selfUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+
+    expect(Array.from(modal.querySelectorAll('.self-profile__label')).map((element) => element.textContent))
+      .toEqual(['Cargo', 'Papel', 'E-mail']);
+    expect(modal.querySelector('.ui-field__label')).toBeNull();
+  });
+
   it('does not send a blank or oversized name and shows the field error', async () => {
     const { impl, profileBodies } = makeSelfFetch();
     renderCollaborators(impl, selfUrl());
@@ -1098,6 +1121,53 @@ describe('self profile editing (#108)', () => {
     expect(profileBodies).toEqual([]);
   });
 
+  it('refuses a name with a character the display-name rules forbid, without sending it', async () => {
+    const { impl, profileBodies } = makeSelfFetch();
+    renderCollaborators(impl, selfUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const name = within(modal).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
+    const hostile = `Ana${String.fromCharCode(7)}Prado`;
+    fireEvent.change(name, { target: { value: hostile } });
+    fireEvent.click(within(modal).getByRole('button', { name: 'Salvar' }));
+
+    expect(await within(modal).findByText('O nome contém caracteres que não são aceitos.')).toBeTruthy();
+    expect(profileBodies).toEqual([]);
+    expect(name.value).toBe(hostile);
+  });
+
+  it.each([400, 500])('keeps the typed name and shows its own message when the PATCH answers %i', async (status) => {
+    const { impl, profileBodies } = makeSelfFetch({
+      updateProfileResponse: () => json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, status)
+    });
+    renderCollaborators(impl, selfUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const name = within(modal).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
+    fireEvent.change(name, { target: { value: 'Ana Nova' } });
+    fireEvent.click(within(modal).getByRole('button', { name: 'Salvar' }));
+
+    expect(await within(modal).findByText('Não foi possível salvar o nome. Tente de novo.')).toBeTruthy();
+    expect(modal.textContent).not.toContain('private diagnostic');
+    expect(name.value).toBe('Ana Nova');
+    expect(profileBodies).toHaveLength(1);
+  });
+
+  it('follows an external name change while untouched and keeps a typed draft when dirty', async () => {
+    const { impl } = makeSelfFetch();
+    const { queryClient } = renderCollaborators(impl, selfUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const name = within(modal).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
+    const detailKey = ['agency', AGENCY_A, 'collaborators', 'detail', anaPrado.membershipId];
+
+    // Another tab (or a revalidation) brought a newer name; the untouched field follows it.
+    act(() => { queryClient.setQueryData(detailKey, { ...anaPrado, name: 'Ana Atualizada' }); });
+    await waitFor(() => expect(name.value).toBe('Ana Atualizada'));
+
+    // A typed draft is not overwritten by the same external update.
+    fireEvent.change(name, { target: { value: 'Rascunho local' } });
+    act(() => { queryClient.setQueryData(detailKey, { ...anaPrado, name: 'Outra Externa' }); });
+    expect(name.value).toBe('Rascunho local');
+  });
+
   it('saves a new name that shows in the modal, the badge and the account menu at once', async () => {
     const { impl, profileBodies } = makeSelfFetch();
     const { container } = renderCollaborators(impl, selfUrl());
@@ -1107,7 +1177,8 @@ describe('self profile editing (#108)', () => {
     fireEvent.click(within(modal).getByRole('button', { name: 'Salvar' }));
     expect(await screen.findByRole('dialog', { name: 'Ana Prado Silva' })).toBe(modal);
     await waitFor(() => expect(profileBodies).toContainEqual({ name: 'Ana Prado Silva' }));
-    expect(modal.querySelector('.collaborator-detail__self-name')?.textContent).toBe('Ana Prado Silva');
+    // The modal heading is the only place the name appears inside the dialog.
+    expect(within(modal).getByRole('heading', { name: 'Ana Prado Silva' })).toBeTruthy();
     const badgeName = (): string | null | undefined =>
       container.querySelector('.collaborators__grid .ui-badge-card__name')?.textContent;
     await waitFor(() => expect(badgeName()).toBe('Ana Prado Silva'));
@@ -1137,6 +1208,20 @@ describe('self profile editing (#108)', () => {
     expect(photoBodies).toEqual([]);
   });
 
+  it('uploads a file the browser reported no type for, letting the API decide by the bytes', async () => {
+    const { impl, calls, photoBodies } = makeSelfFetch();
+    renderCollaborators(impl, selfUrl());
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const untagged = new File([pngBytes], 'foto', { type: '' });
+    expect(untagged.type).toBe('');
+
+    fireEvent.change(modalFileInput(modal), { target: { files: [untagged] } });
+
+    await waitFor(() => expect(photoBodies).toHaveLength(1));
+    expect(calls).toContain('POST /me/photo');
+    expect(within(modal).queryByText('Formato não aceito. Envie uma foto PNG, JPEG, GIF ou WebP.')).toBeNull();
+  });
+
   it('uploads with local progress without blocking the modal, and refreshes the badge', async () => {
     let finish: (value: Response) => void = () => undefined;
     const deferred = new Promise<Response>((resolve) => { finish = resolve; });
@@ -1156,6 +1241,8 @@ describe('self profile editing (#108)', () => {
     expect(name.disabled).toBe(false);
     await act(async () => {
       finish(json({ imageUrl: newPhoto }));
+      // The deferred `uploadResponse` bypasses the fake's own success path, so the stored person is
+      // updated by hand here; the real API persists the reference before it answers.
       person().photoUrl = newPhoto;
     });
     await waitFor(() => expect(modal.querySelector('img.ui-avatar__photo')?.getAttribute('src')).toBe(newPhoto));
@@ -1184,6 +1271,56 @@ describe('self profile editing (#108)', () => {
     expect(modal.querySelector('progress')).toBeNull();
   });
 
+  it('refreshes the name and photo cached for another agency, because both belong to the user', async () => {
+    const membershipB = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const newPhoto = 'https://storage.test/ana-global.png';
+    let displayName = anaPrado.name;
+    let photoUrl: string | null = null;
+    const personFor = (agencyId: string) => ({
+      ...anaPrado,
+      name: displayName,
+      membershipId: agencyId === AGENCY_B ? membershipB : anaPrado.membershipId,
+      photoUrl
+    });
+    const { impl } = makeFetch({
+      session: () => json({ user: { id: sessionBody.user.id, name: displayName, email: anaPrado.email }, session: sessionBody.session }),
+      collaborators: (_query, agencyId) => json({ data: [personFor(agencyId)], meta: meta(1, 1, 1) }),
+      detail: (membershipId, agencyId) => membershipId === membershipB || membershipId === anaPrado.membershipId
+        ? json(personFor(agencyId))
+        : json({ error: { code: 'NOT_FOUND', message: 'Not found' } }, 404),
+      updateProfile: (body) => {
+        displayName = (body as { name: string }).name;
+        return json({ id: sessionBody.user.id, name: displayName });
+      },
+      uploadPhoto: () => { photoUrl = newPhoto; return json({ imageUrl: newPhoto }); }
+    });
+    const { container, probe } = renderCollaborators(impl);
+
+    // Agency A: Ana's badge starts with her name and initials, no photo.
+    await within(container).findByText('Ana Prado');
+    // Agency B: the same global person, cached there before any change.
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/colaboradores`); });
+    await within(container).findByText('Ana Prado');
+    expect(container.querySelector('.collaborators__grid img.ui-avatar__photo')).toBeNull();
+
+    // Back to A, change the name and upload a photo from the own profile.
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_A}/colaboradores`); });
+    fireEvent.click(await screen.findByRole('link', { name: 'Ver detalhes de Ana Prado' }));
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    fireEvent.change(within(modal).getByRole('textbox', { name: 'Nome' }), { target: { value: 'Ana Prado Silva' } });
+    fireEvent.click(within(modal).getByRole('button', { name: 'Salvar' }));
+    await screen.findByRole('dialog', { name: 'Ana Prado Silva' });
+    fireEvent.change(modal.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [new File([pngBytes], 'foto.png', { type: 'image/png' })] }
+    });
+    await waitFor(() => expect(modal.querySelector('img.ui-avatar__photo')?.getAttribute('src')).toBe(newPhoto));
+
+    // B's cache predates both changes; name and photo must be there without a reload.
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/colaboradores`); });
+    await within(container).findByText('Ana Prado Silva');
+    await waitFor(() => expect(container.querySelector('.collaborators__grid img.ui-avatar__photo')?.getAttribute('src')).toBe(newPhoto));
+  });
+
   it('keeps another person\'s name and photo read-only', async () => {
     const { impl } = makeFetch();
     renderCollaborators(impl, selfUrl());
@@ -1202,7 +1339,7 @@ describe('self profile editing (#108)', () => {
     const name = within(modal).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
     fireEvent.change(name, { target: { value: hostile } });
     fireEvent.click(within(modal).getByRole('button', { name: 'Salvar' }));
-    await waitFor(() => expect(modal.querySelector('.collaborator-detail__self-name')?.textContent).toBe(hostile));
+    await waitFor(() => expect(within(modal).getByRole('heading', { name: hostile })).toBeTruthy());
     expect(modal.querySelector('img')).toBeNull();
     expect(modal.querySelector('[onerror]')).toBeNull();
   });
