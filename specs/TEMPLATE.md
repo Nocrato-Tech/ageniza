@@ -108,7 +108,7 @@ Só se houver: job no worker, armazenamento, e-mail, fila, agendamento. Diga tam
 
 ## 9. Impacto estrutural
 
-Confrontar com [structural-changes.md](../docs/business/structural-changes.md). Se qualquer condição for verdadeira, a decisão é registrada em `decisions.md` **antes** da implementação, dita como estrutural.
+Confrontar com [structural-changes.md](../docs/business/structural-changes.md). Se qualquer condição for verdadeira, a decisão é registrada em `docs/business/decisions/` **antes** da implementação, dita como estrutural.
 
 - [ ] altera tabela que já existe
 - [ ] muda formato de resposta que outras rotas copiam
@@ -126,7 +126,7 @@ Todo item precisa de um **gatilho**: o evento que obriga a decisão. Sem gatilho
 
 ## 11. Decisões registradas
 
-Links para as entradas correspondentes em [decisions.md](../docs/business/decisions.md). Aqui fica só o índice; o texto da decisão vive lá.
+Links para as entradas correspondentes em [decisions/](../docs/business/decisions/). Aqui fica só o índice; o texto da decisão vive lá.
 
 - 
 

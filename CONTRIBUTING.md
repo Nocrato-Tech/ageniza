@@ -170,8 +170,8 @@ Se a falha não tem relação com a sua mudança, diga isso no PR com a evidênc
 
 Altera tabela existente? Muda um formato de resposta que outras rotas copiam? Mexe em RLS de mais de um módulo? Muda como a autorização é avaliada? Exigiria backfill?
 
-Então **pare antes de implementar**, registre a decisão em [`decisions.md`](docs/business/decisions.md) dizendo que é estrutural, e só depois escreva. Há um gate de CI que reprova migration estrutural sem decisão registrada — mas ele cobre o banco, e o resto depende de você reconhecer o caso.
+Então **pare antes de implementar**, registre a decisão em um arquivo novo em [`docs/business/decisions/`](docs/business/decisions/) dizendo que é estrutural, e só depois escreva. Há um gate de CI que reprova migration estrutural sem decisão registrada — mas ele cobre o banco, e o resto depende de você reconhecer o caso.
 
 ## Regra de negócio não se inventa
 
-Se a especificação não cobre o caso, escolha a interpretação mais conservadora e **registre a dúvida** — em `decisions.md` ou na issue. Regra inventada em silêncio é a mais cara de descobrir depois, porque parece comportamento.
+Se a especificação não cobre o caso, escolha a interpretação mais conservadora e **registre a dúvida** — numa entrada nova em `docs/business/decisions/` ou na issue. Regra inventada em silêncio é a mais cara de descobrir depois, porque parece comportamento.

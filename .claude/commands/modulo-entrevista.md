@@ -10,7 +10,7 @@ Você vai conduzir a entrevista de escopo do módulo **$1**. Seu papel é **perg
 ## Antes de perguntar qualquer coisa
 
 1. Leia `docs/business/module-process.md`, `docs/business/product-overview.md` e `docs/business/structural-changes.md`.
-2. Leia as entradas de `docs/business/decisions.md` que tocam este módulo.
+2. Leia as entradas de `docs/business/decisions/` que tocam este módulo.
 3. Verifique o que já existe implementado: `apps/api/src/modules`, as migrations e `apps/web/src`. Uma entrevista que ignora o que já foi construído produz escopo que não encaixa.
 4. Se já existir `specs/$1.md`, leia e continue de onde parou em vez de recomeçar.
 
@@ -50,7 +50,7 @@ Sete blocos, nesta ordem — que é a ordem do custo de errar. Não pule para o 
 
 ## Registrar durante a sessão
 
-**Decisão fechada é escrita na hora**, em `docs/business/decisions.md`, com data, título, contexto, decisão, consequência e origem. Marque **pendente de validação** quando ninguém tiver validado ainda.
+**Decisão fechada é escrita na hora**, em um arquivo novo em `docs/business/decisions/` (`AAAA-MM-DD-<slug>.md`), com `# Título`, `**Data.**`, contexto, decisão, consequência e origem. Marque **pendente de validação** quando ninguém tiver validado ainda.
 
 Se o bloco 7 acusar mudança estrutural, **pare o assunto ali**: registre a decisão dizendo explicitamente que é estrutural, antes de qualquer conversa de implementação.
 
