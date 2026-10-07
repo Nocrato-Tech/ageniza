@@ -1623,3 +1623,15 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 **Consequência.** A rota e o banco passam a recusar o mesmo caso, e um teste confere que concordam para cada ator. Nenhuma tabela, coluna, policy ou grant muda, e não há backfill: vínculos já ativos não são reavaliados. O reaceite de convite por quem foi removido segue pelo `accept_invitation`, que não passa por este trigger.
 
 **Origem.** Issue #98, achado da implementação, decidido pelo maestro. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-07 — Link com `?status=removed` sem permissão cai nos ativos, com aviso
+
+**Contexto.** A decisão de 2026-10-07 sobre remover e reativar fixou o `403` da API para `?status=removed` sem `colaborador.remover`, `colaborador.alterar_papel` ou posse. Na web, esse `403` caía no mesmo "não encontrado" de um recurso inexistente e derrubava a página inteira: quem recebia um link compartilhado com o filtro não via nem a lista de ativos, que lhe é permitida. A SPEC (`specs/colaboradores.md` §7) diz que, sem a permissão, só `active` é devolvido.
+
+**Decisão.** A tela nunca pede `status=removed` a quem não pode vê-lo: o parâmetro é ignorado nesse caso, a listagem cai no filtro de ativos (o padrão da API) e um aviso diz "Você não tem permissão para ver colaboradores removidos. Mostrando os ativos." O `403` da API continua sendo a barreira; a tela apenas não o provoca, em vez de transformá-lo em "não encontrado" para a página toda.
+
+**Consequência.** Nenhuma rota, tabela, formato de resposta, permissão ou policy muda. O aviso não revela a existência de vínculo removido nenhum — só que o filtro pedido não se aplica —, então a decisão de 2026-09-24 ("sem permissão" não é uma tela) continua valendo: a tela não nega a lista, que é permitida, nem confirma o recurso escondido. A alternativa descartada é o "não encontrado" da página inteira, que reaparece se alguém fizer a tela voltar a pedir o filtro proibido.
+
+**Origem.** Issue #322 (ressalva da revisão do PR #327), decidida pelo maestro. **Pendente de validação** pelo dono do produto.
