@@ -44,8 +44,8 @@ export function InvitationNotice() {
 
   if (!visible || agencyName === null) return null;
 
-  return <div className="invitation-notice" role="status">
-    <p>Você já fazia parte de {agencyName}. Nada mudou no seu acesso.</p>
+  return <>
+    <p role="status">Você já fazia parte de {agencyName}. Nada mudou no seu acesso.</p>
     <Button variant="ghost" size="sm" onClick={() => setVisible(false)}>Fechar</Button>
-  </div>;
+  </>;
 }

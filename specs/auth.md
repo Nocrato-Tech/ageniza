@@ -239,9 +239,9 @@ Uma rota, dois estados, escolhidos por `accountExists`.
 └────────────────────────────────────────┘
 ```
 
-`POST /invitations/:token/accept`. `already_member` não é erro: o aceite segue normalmente até o destino (a agência ou o portal) e, no topo de onde a pessoa cai, um aviso discreto diz "Você já fazia parte de `<Agência>`. Nada mudou no seu acesso." O aviso aparece uma vez e some ao ser fechado ou quando a pessoa navega (2026-10-07, pendente de validação).
+`POST /invitations/:token/accept`. `already_member` não é erro: o aceite segue normalmente até o destino do próprio convite — a agência ou o portal — e, no topo de onde a pessoa cai, um aviso discreto diz "Você já fazia parte de `<Agência>`. Nada mudou no seu acesso." O aviso aparece uma vez e some ao ser fechado ou quando a pessoa navega (2026-10-07, pendente de validação).
 
-**Aceite automático depois do login.** Quem clica em "Aceitar convite" sem sessão vai para `/entrar` levando o token. Depois do login, quando o e-mail da conta é o do convite, o aceite acontece **sem novo clique** e a pessoa cai no destino. Quando o e-mail é outro, **nada é aceito**: a tela do convite explica que ele foi enviado para outro endereço e oferece sair e entrar com a conta certa. Convite vencido ou revogado continua o mesmo `INVALID_LINK` de sempre (2026-10-07, pendente de validação).
+**Aceite automático depois do login.** Quem clica em "Aceitar convite" sem sessão vai para `/entrar` levando o token. Depois do login, quando o e-mail da conta é o do convite, o aceite acontece **sem novo clique** e a pessoa cai na agência ou no portal **do convite**, nunca no contexto que a sessão resolveria. Quando o e-mail é outro, **nada é aceito**: a tela do convite explica que ele foi enviado para outro endereço e oferece sair e entrar com a conta certa. O marcador que arma esse aceite vive só no `state` da navegação: um parâmetro equivalente na URL não dispara nada. Convite vencido ou revogado continua o mesmo `INVALID_LINK` de sempre (2026-10-07, pendente de validação).
 
 **Estado B — não tem conta:**
 

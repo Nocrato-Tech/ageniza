@@ -769,25 +769,6 @@ input:focus-visible {
   font: var(--body-md);
 }
 
-/* One-time `already_member` acceptance notice at the destination (specs/auth.md section 7). */
-.invitation-notice {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: var(--space-6);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-hover);
-}
-
-.invitation-notice p {
-  margin: 0;
-  color: var(--text-secondary);
-  font: var(--body-md);
-}
-
 .form-stack {
   display: grid;
   gap: var(--space-4);

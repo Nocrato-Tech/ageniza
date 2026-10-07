@@ -12,7 +12,6 @@ import { ForgotPasswordPage } from './forgot-password.js';
 import { getHealth } from './health.js';
 import { useApiClient } from './http.js';
 import { InvitationPage } from './invite.js';
-import { InvitationNotice } from './invitation-notice.js';
 import { LegalDocumentPage } from './legal-pages.js';
 import { privacyPolicy } from './legal/privacy.js';
 import { termsOfUse } from './legal/terms.js';
@@ -28,7 +27,7 @@ export function PublicLayout() {
 
 export function ProtectedLayout({ session, children }: { session: AuthSessionSnapshot; children?: ReactNode }) {
   return <SessionGate session={session}>
-    <div className="app-shell"><a className="skip-link" href="#main-content">Skip to content</a><header className="protected-header"><Link to="/">Ageniza</Link><AccountMenu user={session.user} /></header><main id="main-content"><InvitationNotice />{children ?? <Outlet />}</main></div>
+    <div className="app-shell"><a className="skip-link" href="#main-content">Skip to content</a><header className="protected-header"><Link to="/">Ageniza</Link><AccountMenu user={session.user} /></header><main id="main-content">{children ?? <Outlet />}</main></div>
   </SessionGate>;
 }
 
