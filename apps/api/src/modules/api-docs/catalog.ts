@@ -4,6 +4,7 @@ import { COLLABORATOR_ROLES_READ_PERMISSIONS, COLLABORATOR_UPDATE_PERMISSIONS } 
 import type { RoutePermission } from '../../plugins/infra/route-metadata.js';
 import {
   AcceptLegalDocumentRequestSchema,
+  AgencyClientMemberPathParamsSchema,
   AgencyClientPathParamsSchema,
   AgencyClientPersonaPathParamsSchema,
   AgencyClientThreadPathParamsSchema,
@@ -26,9 +27,14 @@ import {
   BrandStudySectionSchema,
   BrandStudySectionUpdateRequestSchema,
   ClientDetailResponseSchema,
+  ClientInvitationListQuerySchema,
+  ClientInvitationListResponseSchema,
   ClientInvitationRequestSchema,
   ClientListQuerySchema,
   ClientListResponseSchema,
+  ClientMemberListQuerySchema,
+  ClientMemberListResponseSchema,
+  ClientMemberSchema,
   ClientPathParamsSchema,
   ClientSchema,
   ClientThreadPathParamsSchema,
@@ -72,6 +78,9 @@ import {
   PaginationInputSchema,
   PendingInvitationListResponseSchema,
   PersonaSchema,
+  PortalBrandStudyResponseSchema,
+  PortalClientQuerySchema,
+  PortalClientResponseSchema,
   PublicInvitationTokenPathParamsSchema,
   PutLastContextRequestSchema,
   ThreadListQuerySchema,
@@ -166,7 +175,7 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   invitations: 'Convite de colaborador e de pessoa do portal, aceite e administração dos pendentes.',
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
-  clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; estudo de marca e personas; e a conversa em thread entre a agência e o cliente, pelos dois lados.',
+  clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.',
   collaborators: 'A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.',
   media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.',
   profile: 'Edição do próprio nome e da própria foto de perfil.',
@@ -323,6 +332,37 @@ const brandStudyExample = {
     emptyBrandSection('observations')
   ],
   personas: [personaExample]
+} as const;
+
+const clientMemberExample = {
+  membershipId,
+  name: 'Maria Souza',
+  email: 'maria@padariacentral.exemplo.test',
+  status: 'active',
+  since: '2026-09-02T12:00:00.000Z'
+} as const;
+
+const portalBrandStudyExample = {
+  filled: 3,
+  sections: [
+    { key: 'branding', body: 'Marca acolhedora.', colors: null, archetype: null, updatedAt: '2026-09-30T12:00:00.000Z' },
+    { key: 'tone_of_voice', body: null, colors: null, archetype: null, updatedAt: null },
+    { key: 'colors', body: null, colors: [{ name: 'Vinho', hex: '#7A1F2B' }], archetype: null, updatedAt: '2026-09-30T12:00:00.000Z' },
+    { key: 'positioning', body: null, colors: null, archetype: null, updatedAt: null },
+    { key: 'archetype', body: null, colors: null, archetype: 'caregiver', updatedAt: '2026-09-30T12:00:00.000Z' },
+    { key: 'personas', body: null, colors: null, archetype: null, updatedAt: null },
+    { key: 'observations', body: null, colors: null, archetype: null, updatedAt: null }
+  ],
+  personas: [{
+    id: personaId,
+    name: 'Dona Maria',
+    description: 'Dona de casa, 58 anos.',
+    pains: 'Pouco tempo para pesquisar.',
+    desires: 'Reconhecimento da comunidade.',
+    objections: 'Preço acima do esperado.',
+    status: 'active',
+    updatedAt: '2026-09-30T12:00:00.000Z'
+  }]
 } as const;
 
 export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
@@ -548,7 +588,10 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'createClientInvitation',
     module: 'invitations',
     summary: 'Convida uma pessoa para o portal de um cliente',
-    description: 'Cria o vínculo de portal, que é independente do vínculo de colaborador.',
+    description: [
+      'Cria o convite de portal, que é independente do vínculo de colaborador. Cliente arquivado responde',
+      '409 `CLIENT_ARCHIVED`: o convite nasceria morto, porque arquivar revoga os pendentes e o aceite recusa.'
+    ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.convidar_usuario',
     params: AgencyClientPathParamsSchema,
@@ -567,6 +610,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode receber convites.' },
       { status: 409, code: 'MEMBERSHIP_EXISTS' },
       { status: 409, code: 'TRY_AGAIN' },
       { status: 502, code: 'EMAIL_DELIVERY_FAILED' }
@@ -1585,6 +1629,124 @@ path: '/agencies/:agencyId/roles',
   },
   {
     method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/members',
+    operationId: 'listClientMembers',
+    module: 'clients',
+    summary: 'Lista as pessoas com acesso ao portal de um cliente',
+    description: [
+      'Vinte por página, por nome, sem diferenciar maiúsculas nem acento. `status` é `active` (padrão) ou',
+      '`removed`. Nome e e-mail saem do vínculo da pessoa com o cliente. Cliente arquivado continua legível;',
+      'cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.convidar_usuario',
+    params: AgencyClientPathParamsSchema,
+    query: ClientMemberListQuerySchema,
+    requestExample: { status: 'active' },
+    responses: [{
+      status: 200,
+      description: 'Página de pessoas do portal.',
+      schema: ClientMemberListResponseSchema,
+      example: { data: [clientMemberExample], meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/members/:membershipId/remove',
+    operationId: 'removeClientMember',
+    module: 'clients',
+    summary: 'Remove uma pessoa do portal do cliente',
+    description: [
+      'A pessoa perde o acesso ao portal deste cliente na requisição seguinte; as demais pessoas do cliente',
+      'e os outros clientes dela não mudam. O vínculo é preservado como `removed` e pode ser reativado.',
+      'Remover quem já está removido não escreve nada e responde o vínculo como está. Cliente arquivado',
+      'responde 409; vínculo de outro cliente ou id inválido, 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.remover_usuario',
+    params: AgencyClientMemberPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'Vínculo removido.',
+      schema: ClientMemberSchema,
+      example: { ...clientMemberExample, status: 'removed' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Member not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/members/:membershipId/reactivate',
+    operationId: 'reactivateClientMember',
+    module: 'clients',
+    summary: 'Reativa uma pessoa do portal do cliente',
+    description: [
+      'A pessoa volta a entrar no portal na requisição seguinte, sem convite novo. Reativar quem já está',
+      'ativo não escreve nada e responde o vínculo como está. Cliente arquivado responde 409; vínculo de',
+      'outro cliente ou id inválido, 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.remover_usuario',
+    params: AgencyClientMemberPathParamsSchema,
+    responses: [{ status: 200, description: 'Vínculo reativado.', schema: ClientMemberSchema, example: clientMemberExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Member not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/invitations',
+    operationId: 'listClientInvitations',
+    module: 'clients',
+    summary: 'Lista os convites de portal pendentes de um cliente',
+    description: [
+      'Só convite de portal deste cliente que não foi aceito, nem revogado, nem expirou; o que expira primeiro',
+      'vem antes, vinte por página. Convite de colaborador e convite de outro cliente nunca aparecem aqui,',
+      'embora a policy de leitura deixe quem tem a permissão ver os de todos os tipos. Reenviar e cancelar',
+      'são as rotas de convite que já existem.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.convidar_usuario',
+    params: AgencyClientPathParamsSchema,
+    query: ClientInvitationListQuerySchema,
+    requestExample: { page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página de convites pendentes.',
+      schema: ClientInvitationListResponseSchema,
+      example: {
+        data: [{ invitationId, email: 'joao@padariacentral.exemplo.test', expiresAt: '2026-10-14T12:00:00.000Z' }],
+        meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'get',
     path: '/clients/:clientId/threads',
     operationId: 'listPortalThreads',
     module: 'clients',
@@ -1688,6 +1850,65 @@ path: '/agencies/:agencyId/roles',
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/clients/:clientId',
+    operationId: 'getPortalClient',
+    module: 'clients',
+    summary: 'Lê o cadastro do próprio cliente e o resumo do Início, no portal',
+    description: [
+      'Somente leitura. Traz o cadastro inteiro, a foto assinada, o nome da agência, `onboardingSeenAt` do',
+      'vínculo de quem chama (nunca o de outra pessoa do mesmo cliente) e `home`: as conversas abertas com',
+      'resposta da agência, só as que o portal enxerga, e o preenchimento do estudo. Outro cliente, cliente',
+      'arquivado, agência suspensa, vínculo removido e colaborador sem vínculo de cliente (Owner inclusive)',
+      'devolvem o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientPathParamsSchema,
+    query: PortalClientQuerySchema,
+    responses: [{
+      status: 200,
+      description: 'Cadastro do cliente e resumo do Início.',
+      schema: PortalClientResponseSchema,
+      example: {
+        ...clientExample,
+        agencyName: 'Agência Exemplo',
+        onboardingSeenAt: '2026-10-01T12:00:00.000Z',
+        home: { threadsAnsweredByAgency: 2, brandStudyFilled: 3 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/clients/:clientId/brand-study',
+    operationId: 'getPortalBrandStudy',
+    module: 'clients',
+    summary: 'Lê o estudo de marca, no portal',
+    description: [
+      'A mesma forma do estudo da agência, com duas diferenças: persona arquivada não vem, nem para o',
+      'colaborador que também tem vínculo de cliente, e `updatedBy` não vem em seção nem em persona, porque',
+      'quem editou por dentro é informação da agência. As sete seções vêm sempre; a que a agência não',
+      'preencheu vem vazia.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientPathParamsSchema,
+    query: PortalClientQuerySchema,
+    responses: [{ status: 200, description: 'Estudo de marca.', schema: PortalBrandStudyResponseSchema, example: portalBrandStudyExample }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
     ]
   },
 

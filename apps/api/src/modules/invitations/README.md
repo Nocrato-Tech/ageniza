@@ -9,7 +9,10 @@ from the tenancy module so the invitation module does not duplicate tenant guard
 ## Routes
 
 - `POST /agencies/:agencyId/invitations/collaborators` creates a collaborator invitation.
-- `POST /agencies/:agencyId/clients/:clientId/invitations` creates a client invitation.
+- `POST /agencies/:agencyId/clients/:clientId/invitations` creates a client invitation. An archived
+  client of the agency answers `409 CLIENT_ARCHIVED` (the invitation would be born dead); one of
+  another agency, or a missing one, is still the same `404`. The pending ones are listed by
+  `GET …/clients/:clientId/invitations`, in the `clients` module.
 - `POST /agencies/:agencyId/invitations/:invitationId/resend` replaces a pending invitation.
 - `DELETE /agencies/:agencyId/invitations/:invitationId` revokes a pending invitation.
 - `GET /invitations/:token` previews a valid invitation.

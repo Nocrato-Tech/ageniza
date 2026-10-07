@@ -31,7 +31,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
+import { registerAccessRoutes } from './access-routes.js';
 import { registerConversationRoutes } from './conversation-routes.js';
+import { registerPortalReadRoutes } from './portal-routes.js';
 import { buildClientAvatarKeyPrefix, isClientAvatarKey } from '../identity-storage/policy.js';
 import {
   IdentityImageTooLargeError,
@@ -483,6 +485,8 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
   app.post('/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive', authenticated(personaStatusDocs), personaStatusHandler('active'));
 
   registerConversationRoutes(app, dependencies);
+  registerPortalReadRoutes(app, dependencies);
+  registerAccessRoutes(app, dependencies);
 
   const identityStorage = dependencies.identityStorage;
   if (identityStorage !== undefined) {

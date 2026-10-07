@@ -1,4 +1,4 @@
-# Módulo `clients` (issues #124, #125, #126, #127, #128 e #130)
+# Módulo `clients` (issues #124, #125, #126, #127, #128, #129, #130 e #132)
 
 Cadastrar, ler, editar e listar os clientes da agência, mais o estudo de marca, as personas e a
 conversa em thread com o cliente (as rotas dela estão na seção "Conversa", abaixo).
@@ -175,9 +175,68 @@ As do portal usam `requireSession` e `requireClientAccess`, sem permissão do ca
   `auth."user"` por id.
 - **Texto do comentário**: aparado, não vazio, até 5.000 bytes UTF-8 (o teto da coluna).
 
+## Leituras do portal (#129)
+
+| método | rota | quem |
+|---|---|---|
+| `GET` | `/clients/:clientId` | vínculo ativo de cliente |
+| `GET` | `/clients/:clientId/brand-study` | vínculo ativo de cliente |
+
+`requireSession` e `requireClientAccess`, sem permissão do catálogo, em `portal-routes.ts` e
+`portal-service.ts`. O cliente é sempre o que a guarda provou (`request.clientContext`), nunca um valor
+da requisição, e nenhuma consulta daqui lê `auth."user"`: o portal não mostra pessoa nestas rotas.
+
+- **Cadastro**: os mesmos campos do detalhe da agência, somente leitura, com a foto assinada do mesmo
+  jeito, o `agencyName` do cabeçalho do portal e `onboardingSeenAt` **do vínculo de quem chama**, lido
+  por id de vínculo (outra pessoa do mesmo cliente tem outro valor). `status` e `archivedAt` são
+  fixados em `active` e `null` pelo contrato.
+- **`home`**: `threadsAnsweredByAgency` conta threads abertas cujo último comentário é da agência,
+  **deste cliente** e **só as que o portal lê** (a de persona arquivada fica de fora); `brandStudyFilled`
+  usa a definição única de `service.ts`. Quando a agência responde o número sobe; um comentário novo do
+  cliente o faz cair.
+- **Estudo**: as sete seções sempre, só as personas `active`, sem `updatedBy` (a consulta nem seleciona
+  `updated_by`). `updatedAt` fica.
+- **A RLS não diz por qual lado**: o colaborador que também tem vínculo de cliente lê a persona
+  arquivada e as threads de todos os clientes da agência pelo ramo de membro, então persona ativa, cliente
+  da rota e vínculo próprio são condições do SQL. Cada rota tem teste com ele (`dual`), com o de papel sem
+  nenhuma chave `cliente.*` (`dualBare`) e com o de uma agência que tem vínculo com cliente de outra.
+- **404 indistinto** (a guarda): outro cliente, cliente de outra agência, cliente arquivado, agência
+  suspensa, vínculo removido, colaborador sem vínculo (Owner inclusive), id malformado ou ausente.
+
+Decisão: `2026-10-07-portal-le-o-cadastro-inteiro-e-o-inicio-conta-so-o-que-o`.
+
+## Acessos ao portal, pela agência (#132)
+
+| método | rota | permissão |
+|---|---|---|
+| `GET` | `/agencies/:agencyId/clients/:clientId/members` | `cliente.convidar_usuario` |
+| `POST` | `…/members/:membershipId/remove` | `cliente.remover_usuario` |
+| `POST` | `…/members/:membershipId/reactivate` | `cliente.remover_usuario` |
+| `GET` | `/agencies/:agencyId/clients/:clientId/invitations` | `cliente.convidar_usuario` |
+
+Em `access-routes.ts` e `access-service.ts`. Reenviar e cancelar convite são as rotas do módulo
+`invitations`, sem mudança. `POST …/clients/:clientId/invitations` passa a responder `409
+CLIENT_ARCHIVED` para cliente arquivado da própria agência (antes, o `404` genérico).
+
+- **Pessoas**: 20 por página, por nome sem diferenciar maiúsculas nem acento, comparado byte a byte
+  (`collate "C"`) com o id do vínculo de desempate; `status=active` (padrão) ou `removed`. Item:
+  `membershipId`, `name`, `email`, `status`, `since`. A consulta parte de `client_memberships` filtrado
+  pelo cliente e pela agência e chega em `auth."user"` só pelo `user_id` do vínculo.
+- **Convites**: 20 por página, o que expira primeiro no topo (`id` de desempate), só
+  `purpose = 'client_invite'` **daquele cliente**, não aceitos, não revogados e não expirados. A policy
+  `invitations_select` deixa quem tem `cliente.convidar_usuario` ler convite de colaborador também
+  (`docs/business/structural-changes.md`, "Permissões de convite compartilhadas entre tipos"); o filtro
+  é da consulta e um teste prova que convite de colaborador, de ativação e de outro cliente não saem.
+- **Remover e reativar** chamam `app_private.set_client_membership_status`. A rota confere antes que o
+  cliente é da agência e não está arquivado (`409`) e que o vínculo é **daquele cliente** (`404`); a pessoa
+  perde ou recupera o acesso na requisição seguinte, e só deste cliente. Repetir a operação é idempotente.
+  Se a função recusar depois das checagens (cliente arquivado, vínculo sumido ou permissão perdida no
+  meio), a recusa é relida numa transação nova e dá o `409`, o `404` ou o `403` que a checagem teria dado.
+- Cliente arquivado é só leitura: as duas listas respondem; remover e reativar, `409`.
+
+Decisão: `2026-10-07-acessos-ao-portal-remover-e-reativar-pessoa-sao-idempotentes`.
+
 ## O que ficou de fora
 
 - Arquivar/reativar e encerramento (`#131`).
-- A foto no portal (`#129`): a rota ainda não existe; ao nascer, deve assinar `photo_key` do mesmo
-  jeito que o detalhe e a listagem.
-- Acessos ao portal e o portal do cliente (telas).
+- O portal do cliente e a aba Acessos (telas).
