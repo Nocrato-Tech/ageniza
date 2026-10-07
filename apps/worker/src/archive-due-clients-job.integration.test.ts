@@ -321,10 +321,20 @@ describe('the schedule of clients.archive-due', { timeout: 60_000 }, () => {
     await closeQueue(restarted);
   });
 
-  it('does not run at start unless the definition asks for it', async () => {
+  // A definition that says nothing about it is every other job of the worker, the video one included: it
+  // must not be sent with an empty payload at each deploy. Only an explicit `true` runs at start.
+  it.each([
+    ['says false', (): DurableJobDefinition<Record<string, never>> => definition({ runOnStart: false })],
+    ['omits the option', (): DurableJobDefinition<Record<string, never>> => ({
+      name: jobName,
+      retryDelaySeconds: 1,
+      handler: archiveDueClientsJob({ database: getApplication() }).handler
+    })]
+  ])('does not run at start when the definition %s', async (label, build) => {
     const waiting = await insertClient('Espera o relógio', { closing_date: await brasiliaDay(-1) });
+    expect('runOnStart' in build(), label).toBe(label === 'says false');
     const before = (await jobStates()).length;
-    const queue = await openQueue([definition()], captureLogs());
+    const queue = await openQueue([build()], captureLogs());
     await new Promise((resolve) => setTimeout(resolve, 3_000));
     expect((await jobStates()).length).toBe(before);
     expect((await statusOf(waiting)).status).toBe('active');
