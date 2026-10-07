@@ -2,7 +2,7 @@
 
 `POST /me/email-change` and `POST /email-change/confirm`, plus the operation's CLI,
 `cli:email-change` (`src/cli/email-change.ts`). Specification: `specs/auth.md` section 5, rules 12
-to 17, and `docs/business/decisions.md`, 2026-10-07.
+to 18, and `docs/business/decisions.md`, 2026-10-07.
 
 The person does not change their own e-mail: they **ask**, with the current password, and the
 operation approves from the CLI, because `auth."user"` is global and the request belongs to no
@@ -31,6 +31,25 @@ functions:
 
 The CLI connects as the migration owner, like `cli:agency`, and does the listing, approval and
 rejection in SQL of its own.
+
+## The password is part of the request
+
+The notice to the current address says "if it was not you, change the password", so changing the password has to undo the request
+(security review of PR #325). `request_email_change` records a fingerprint of the credential (SHA-256 of the password hash, never the
+hash; null when the account has none), and two barriers hold:
+
+1. The password reset (`onPasswordReset` in `better-auth.ts`) calls `app_private.supersede_email_change_requests(user_id)`, which
+   locks the account and closes its open requests whose fingerprint is no longer the credential's (status `superseded`, link gone). It
+   only closes what barrier 2 would refuse, so calling it without a credential change cancels nothing. If it fails, the reset still
+   completes and the error is logged; barrier 2 covers it.
+2. The CLI `approve` and `confirm_email_change` refuse a request whose fingerprint changed: `approve` closes it and says the password
+   changed, the confirmation answers the same `INVALID_LINK` as any dead link.
+
+The reset is the only way to change a password today: there is no authenticated change and Better Auth's route is not mounted. A new
+path must call the same function; barrier 2 already protects the swap without it.
+
+`confirm_email_change` also refuses an account that is an agency owner without `ownership_confirmed_at`: it may have become one between
+the approval and the link (accepting an activation invitation).
 
 ## One lock order
 

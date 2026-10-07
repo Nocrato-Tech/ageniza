@@ -20,7 +20,7 @@ Deixar alguém entrar no produto, provar quem é, escolher em qual dos seus cont
 - **Cadastro público.** Não existe e não vai existir: conta nasce de convite (`disableSignUp: true` no Better Auth).
 - **Verificação de e-mail.** Já está satisfeita — a conta nasce `emailVerified = true` porque o convite chegou naquele endereço.
 - **Troca de senha por quem está logado.** Fora do MVP; a recuperação por link cobre quem perdeu o acesso.
-- **Troca de e-mail da conta pela própria pessoa.** A pessoa não troca sozinha: ela pede, e a operação aprova (regras 12 a 17 da seção 5).
+- **Troca de e-mail da conta pela própria pessoa.** A pessoa não troca sozinha: ela pede, e a operação aprova (regras 12 a 18 da seção 5).
 - **Vínculo entre identidades.** Dois e-mails são duas contas, e elas não se conhecem.
 - **Criação de agência.** É comando interno da operação, não fluxo de produto.
 - **Login social e segundo fator.** Nunca entraram em pauta.
@@ -112,6 +112,7 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 15. E-mail novo que já pertence a outra conta recebe **a mesma resposta** de qualquer outro: a rota nunca revela quais e-mails têm conta. A operação vê a colisão ao listar e ao aprovar, e o aprovar é recusado.
 16. Conta que é **Owner** de alguma agência: o pedido existe igual, mas aprovar exige a operação confirmar a titularidade fora do produto (`--ownership-confirmed`), porque o e-mail do Owner amarra a assinatura.
 17. Convites pendentes endereçados ao e-mail antigo **não mudam**: convite é por e-mail, não por conta.
+18. **Trocar a senha desfaz o pedido.** O aviso ao endereço atual diz "se não foi você, troque a senha", então a redefinição de senha encerra o pedido aberto da conta (`superseded`, sem link), e a aprovação e a confirmação recusam um pedido feito sob uma credencial que mudou depois dele, mesmo que o encerramento não tenha rodado: pedir, redefinir a senha, aprovar e confirmar não troca o e-mail. Na confirmação, a conta que virou Owner depois da aprovação, sem a titularidade confirmada, também é recusada (regra 16). Todas as recusas respondem o mesmo `INVALID_LINK` (2026-10-07, pendente de validação).
 
 ## 6. Backend
 
@@ -159,7 +160,7 @@ O cadastro (`accept-new-account`) não muda: continua gravando as duas versões 
 
 ### Implementado (issue #80)
 
-**Troca de e-mail por pedido** (regras 12 a 17), em um módulo próprio, `email-change`.
+**Troca de e-mail por pedido** (regras 12 a 18), em um módulo próprio, `email-change`.
 
 **O mecanismo escolhido.** O `changeEmail` do Better Auth 1.7.5 foi avaliado e **não serve**: é autoatendimento (sem senha atual e sem aprovação de ninguém), o token é um JWT assinado que pode ser reapresentado até vencer, não grava pedido nenhum, e não encerra as sessões. Por isso o token é próprio, no mesmo formato do convite: 32 bytes aleatórios, só o hash no banco, uso único.
 
@@ -168,6 +169,7 @@ O cadastro (`accept-new-account`) não muda: continua gravando as duas versões 
 3. `POST /email-change/confirm` chama `app_private.confirm_email_change(token_hash)`, que numa transação trava o pedido, confere que está aprovado e dentro da validade, que a conta ainda tem o e-mail do pedido e que ninguém passou a usar o novo, troca o e-mail, apaga as sessões e as verificações (links de redefinição) da conta, e fecha o pedido. A API então avisa o endereço antigo.
 4. `ageniza_app` não tem privilégio nenhum sobre `email_change_requests`: nem a pessoa lê o próprio pedido.
 5. **Ordem de trava única:** os três caminhos que alteram um pedido (pedir, confirmar e aprovar pelo CLI) travam **a conta primeiro e depois os pedidos**; a ordem oposta travava em deadlock (`40P01`) quando dois deles rodavam na mesma conta. Mesmo assim, deadlock e falha de serialização (`40001`) são traduzidos pelas duas rotas em `409 TRY_AGAIN` e, no CLI, em uma mensagem de repetir o comando, sem detalhe do que concorreu.
+6. **A credencial é parte do pedido.** `request_email_change` grava uma impressão da credencial da conta (`app_private.credential_fingerprint`: SHA-256 do hash da senha, nunca o hash; nula se a conta não tem senha). Barreira 1: a redefinição de senha (`onPasswordReset`) chama `app_private.supersede_email_change_requests(user_id)`, que trava a conta e fecha os pedidos abertos cuja impressão não é mais a da conta (a função só fecha o que a barreira 2 recusaria, então chamá-la sem troca de credencial não cancela ninguém). Barreira 2: o `approve` do CLI e `confirm_email_change` recusam o pedido cuja impressão mudou, com mensagem própria no CLI ("The account password changed since the request…", fechando o pedido) e o mesmo `INVALID_LINK` na confirmação. Hoje a redefinição é o único caminho de troca de senha (não há troca autenticada, e a rota do Better Auth não é montada); um caminho novo precisa chamar a mesma função e ganha a barreira 2 de graça. `confirm_email_change` também recusa a conta que é Owner de alguma agência e não teve a titularidade confirmada na aprovação (`ownership_confirmed_at` nulo).
 
 **Limitações aceitas.** Recusar um pedido não avisa a pessoa (a operação fala com ela fora do produto). A operação descobre os pedidos rodando `list`; não há notificação. Quem perdeu o acesso ao e-mail antigo **e** à senha continua sem caminho: recuperação de conta fica fora do MVP. O teto de pedidos é em memória, como o dos demais limites de autenticação.
 
@@ -452,7 +454,7 @@ E, herdadas de [`autorizacao.md`](autorizacao.md): "sem permissão" não é tela
 
 **Em aberto:** nenhum.
 
-**Decididas em 2026-10-07:** [#81](https://github.com/Nocrato-Tech/ageniza/issues/81), reaceite de Termos — aviso não bloqueante com aceite por documento (seção 7, regra 7a); e [#80](https://github.com/Nocrato-Tech/ageniza/issues/80), troca de e-mail — pedido aprovado pela operação (seção 5, regras 12 a 17).
+**Decididas em 2026-10-07:** [#81](https://github.com/Nocrato-Tech/ageniza/issues/81), reaceite de Termos — aviso não bloqueante com aceite por documento (seção 7, regra 7a); e [#80](https://github.com/Nocrato-Tech/ageniza/issues/80), troca de e-mail — pedido aprovado pela operação (seção 5, regras 12 a 18).
 
 A [#54](https://github.com/Nocrato-Tech/ageniza/issues/54), que registrava a dívida de "as telas nunca foram desenhadas", foi fechada por este recorte.
 
