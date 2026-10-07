@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   AuthLogoutResponseSchema,
   ContextResolveResponseSchema,
@@ -17,6 +17,7 @@ import { contextDestination, contextTarget, rememberContext } from './context-de
 import { useDocumentTitle } from './document-title.js';
 import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { invitationNoticeState } from './invitation-notice.js';
 
 const INVITATION_INVALID = 'Este convite não é mais válido';
 const ACCEPT_FAILED = 'Não foi possível aceitar o convite. Tente de novo.';
@@ -26,12 +27,16 @@ const RESOLVE_FAILED = 'O convite foi aceito, mas não foi possível carregar se
  * `/convite/:token`, one route with two states chosen by `accountExists` of `GET /invitations/:token`
  * (specs/auth.md section 7). Nothing of the invitation appears until the API validates the token.
  * The login with `inviteToken` and the acceptance happen before any `resolve` (decisions 2026-09-29,
- * rule 3a): the zero-context session has to survive until the invitation is accepted.
+ * rule 3a): the zero-context session has to survive until the invitation is accepted. A login that
+ * carried the token lands here with `inviteLogin`: when the authenticated account is the invited
+ * one the acceptance runs on its own; when it is another account nothing is accepted and the screen
+ * explains the mismatch (decisions 2026-10-07).
  */
 export function InvitationPage() {
   const { token = '' } = useParams();
   const httpClient = useApiClient();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const authStore = useAuthSessionStore();
   const session = useAuthSession(authStore);
@@ -44,12 +49,19 @@ export function InvitationPage() {
   const [mismatch, setMismatch] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [resolving, setResolving] = useState(false);
+  const fromInviteLogin = (location.state as { inviteLogin?: unknown } | null)?.inviteLogin === true;
+  const autoAcceptStarted = useRef(false);
+  const noticeAgencyName = useRef<string | undefined>(undefined);
   useDocumentTitle('Convite — Ageniza');
 
   const preview = useQuery({
     queryKey: ['invitation', token],
     queryFn: () => httpClient.request({ path: apiPath('/invitations/:token', { token }), response: InvitationPreviewResponseSchema })
   });
+
+  /** The one-time `already_member` notice, when the acceptance produced one, travels in the state. */
+  const noticeState = (): ReturnType<typeof invitationNoticeState> | undefined =>
+    noticeAgencyName.current === undefined ? undefined : invitationNoticeState(noticeAgencyName.current);
 
   /** The acceptance succeeded; only the resolve is left, and it is repeatable on its own. */
   const runResolve = async (): Promise<void> => {
@@ -60,10 +72,10 @@ export function InvitationPage() {
       if (resolve.decision === 'none') { authStore.end(); queryClient.clear(); navigate('/sem-acesso', { replace: true }); return; }
       if (resolve.decision === 'enter') {
         await rememberContext(httpClient, contextTarget(resolve.context));
-        navigate(contextDestination(resolve.context), { replace: true });
+        navigate(contextDestination(resolve.context), { replace: true, state: noticeState() });
         return;
       }
-      navigate('/contextos', { replace: true });
+      navigate('/contextos', { replace: true, state: noticeState() });
     } catch {
       setResolveError(RESOLVE_FAILED);
     } finally {
@@ -71,7 +83,8 @@ export function InvitationPage() {
     }
   };
 
-  const routeAfterAccept = async (): Promise<void> => {
+  const routeAfterAccept = async (alreadyMemberAgencyName?: string): Promise<void> => {
+    if (alreadyMemberAgencyName !== undefined) noticeAgencyName.current = alreadyMemberAgencyName;
     setAccepted(true);
     // The new session may belong to a different account; drop the previous account's cache first.
     queryClient.clear();
@@ -81,13 +94,26 @@ export function InvitationPage() {
 
   const accept = useMutation({
     mutationFn: () => httpClient.request({ path: apiPath('/invitations/:token/accept', { token }), method: 'POST', response: InvitationAcceptResponseSchema }),
-    onSuccess: () => routeAfterAccept(),
+    onSuccess: (result) => routeAfterAccept(result.status === 'already_member' ? preview.data?.agency.name : undefined),
     onError: (error: unknown) => {
       if (error instanceof HttpClientError && error.status === 403 && error.code === 'INVITATION_ACCOUNT_MISMATCH') { setMismatch(true); return; }
       if (error instanceof HttpClientError && error.status === 410) { setAccepted(false); void preview.refetch(); return; }
       setFormError(ACCEPT_FAILED);
     }
   });
+
+  // Acceptance after a login that carried the invite token (decisions 2026-10-07): runs once, and
+  // only when the authenticated account is the one the invitation was sent to. Another account
+  // never accepts; the render below explains the mismatch instead.
+  useEffect(() => {
+    if (!fromInviteLogin || autoAcceptStarted.current) return;
+    if (session.status !== 'ready' || !session.isAuthenticated) return;
+    const invitation = preview.data;
+    if (invitation === undefined || !invitation.accountExists) return;
+    if (invitation.email !== session.user?.email) return;
+    autoAcceptStarted.current = true;
+    accept.mutate();
+  }, [fromInviteLogin, session, preview.data, accept.mutate]);
 
   const createAccount = useMutation({
     mutationFn: (body: { name: string; password: string; acceptTerms: true }) =>
@@ -169,6 +195,8 @@ export function InvitationPage() {
   }
 
   const { agency, client, email, accountExists } = preview.data;
+  const connectedWithAnotherAccount = session.user !== null && session.user.email !== email;
+  const showMismatch = mismatch || (fromInviteLogin && connectedWithAnotherAccount);
 
   return <section className="form-panel" aria-labelledby="invite-title">
     <h1 id="invite-title">Você foi convidado</h1>
@@ -179,9 +207,9 @@ export function InvitationPage() {
     </dl>
 
     {accountExists
-      ? mismatch
+      ? showMismatch
         ? <div role="alert">
-          <p>Você está conectado com outra conta. Entre com o e-mail do convite.</p>
+          <p>Você está conectado com outra conta. O convite foi enviado para {email}.</p>
           <Button onClick={() => { void enterWithAnotherAccount(); }}>Entrar com outra conta</Button>
         </div>
         : <div className="form-actions">
