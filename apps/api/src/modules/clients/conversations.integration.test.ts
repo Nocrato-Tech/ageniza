@@ -794,6 +794,14 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
       // The thread of A2 under A1's own path is the same 404, never a leak by id.
       expect((await call('GET', `${portalThreads(clientA1)}/${ofA2}/comments`, cookies.portalOne!)).statusCode).toBe(404);
       expect((await call('POST', `${portalThreads(clientA1)}/${ofA2}/comments`, cookies.portalOne!, { body: 'x' })).statusCode).toBe(404);
+      // portalOne holds an active link to the bare client too, so row-level security would show them
+      // that thread: only the client in the path keeps it out of A1's conversation.
+      const ofBare = await seedThread(clientBare, { sectionKey: 'branding' }, [{ author: 'portalOne', side: 'client', at: '2026-02-02T10:00:00Z' }]);
+      const bareComments = await countComments(clientBare);
+      expect((await call('GET', `${portalThreads(clientA1)}/${ofBare}/comments`, cookies.portalOne!)).statusCode).toBe(404);
+      expect((await call('POST', `${portalThreads(clientA1)}/${ofBare}/comments`, cookies.portalOne!, { body: 'x' })).statusCode).toBe(404);
+      expect((await call('GET', `${portalThreads(clientBare)}/${ofBare}/comments`, cookies.portalOne!)).statusCode).toBe(200);
+      expect(await countComments(clientBare)).toBe(bareComments);
       expect((await call('GET', `${portalThreads(clientB1)}?${section('branding')}`, cookies.portalOne!)).statusCode).toBe(404);
       expect((await call('GET', `${portalThreads(clientA1)}/${randomUUID()}/comments`, cookies.portalOne!)).statusCode).toBe(404);
       expect((await call('GET', `${portalThreads(clientA1)}/not-a-uuid/comments`, cookies.portalOne!)).statusCode).toBe(404);
