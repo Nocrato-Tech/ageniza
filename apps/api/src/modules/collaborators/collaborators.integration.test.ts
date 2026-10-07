@@ -265,7 +265,7 @@ describe('collaborators module (issue #95)', () => {
 
     // `isSelf` (issue #286) is the one field that legitimately differs: each viewer sees their own
     // link marked. Everything else is compared as it was, and the mark is checked for each viewer.
-    const withoutSelf = (body: CollaboratorListJson) => ({ ...body, data: body.data.map(({ isSelf: _isSelf, ...item }) => item) });
+    const withoutSelf = (body: CollaboratorListJson) => ({ ...body, data: body.data.map((item) => ({ ...item, isSelf: false })) });
     const expected = await getCollaborators(await loginCookie(viewers[0]!), agencyId);
     expect(expected.status).toBe(200);
     expect(expected.body.meta.totalItems).toBe(6);
