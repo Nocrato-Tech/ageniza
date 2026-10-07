@@ -4,7 +4,7 @@ Nenhum módulo novo começa a ser implementado antes de passar por aqui. O proce
 
 | fase | artefato | responde |
 |---|---|---|
-| 1. Entrevista | entradas em [decisions.md](decisions.md) | **por que assim**, e qual alternativa foi fechada |
+| 1. Entrevista | entradas em [decisions/](decisions/) | **por que assim**, e qual alternativa foi fechada |
 | 2. SPEC | `specs/<modulo>.md` | **como fica** — back, front e UX |
 | 3. Recorte | issues no GitHub | **o que vai ser feito**, por quem, em que ordem |
 | 4. Fechamento | PR + atualização da SPEC | **o que realmente ficou** |
@@ -35,7 +35,7 @@ Os sete blocos são a ordem da árvore, que é a ordem do custo de errar:
 
 **Mudança estrutural para a sessão.** Se o bloco 7 acusar uma das condições de [structural-changes.md](structural-changes.md), a decisão é registrada antes de qualquer implementação, dizendo explicitamente que é estrutural.
 
-**Decisão fechada é registrada na hora**, não no fim do módulo — em [decisions.md](decisions.md), marcada como *pendente de validação* enquanto ninguém tiver validado. Registrar a decisão provisória e marcá-la é melhor do que esperar a aprovação e perder o contexto de por que a alternativa foi descartada.
+**Decisão fechada é registrada na hora**, não no fim do módulo — em um arquivo novo em [decisions/](decisions/), marcada como *pendente de validação* enquanto ninguém tiver validado. Registrar a decisão provisória e marcá-la é melhor do que esperar a aprovação e perder o contexto de por que a alternativa foi descartada.
 
 ## Fase 2 — SPEC
 

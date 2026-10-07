@@ -15,7 +15,7 @@ regra é o erro mais repetido.
 9. **Locker de concorrência.** A transação que trava a linha afirma `rows=1`; sem isso, sem ator, a RLS faz do teste de concorrência um vazio verde (#202).
 10. **Guarda montada à mão.** A rota deriva a guarda do próprio `docs` (`docs.permission`) e tem teste de 403 com papel de uma permissão só; papel vazio não prova a guarda (#293).
 11. **Listagem.** Desempate de ordenação, busca mínima (ex.: `@` sozinho) e contagem e página no mesmo snapshot com `count(*) over ()` (#291, #293, #298).
-12. **Decisão no mesmo PR.** Regra de negócio nova vai para `docs/business/decisions.md` no mesmo PR, com linha em branco antes do `---` (#282).
+12. **Decisão no mesmo PR.** Regra de negócio nova vira um arquivo novo em `docs/business/decisions/` no mesmo PR (#282).
 13. **Pasta e banco próprios.** Agente em paralelo usa a própria pasta e o próprio banco `ageniza_<id>`; o banco `ageniza` é o do ambiente local do dono.
 
 As lições completas de segurança estão em `docs/security-review.md` e nas notas do projeto; este checklist só lista o que mais se repete.

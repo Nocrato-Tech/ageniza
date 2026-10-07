@@ -1,0 +1,14 @@
+# `ageniza_app` não tem DELETE em `agency_memberships` nem em `invitations`
+
+**Data.** 2026-10-07
+
+**Contexto.** A regra 11 da SPEC de colaboradores diz que remover não apaga a linha de `agency_memberships`, e `docs/security-review.md` manda não dar DELETE físico de entidade de negócio a `ageniza_app`. A migration `20260919000000` concedia `select, insert, update, delete` nas duas tabelas, e o que impedia o DELETE era só a **ausência de policy** de DELETE sob RLS forçada. Uma policy `for delete using (…)` criada por engano apagaria vínculos e convites sem que nenhum teste de privilégio avisasse; `tenancy.integration.test.ts` até fixava que `delete from agency_memberships` "resolve" com zero linhas, o que só era verdade enquanto o privilégio existia e a policy não (achado da auditoria de fechamento do módulo, issue #356). É o mesmo desenho que a #343 achou em `legal_acceptances`.
+
+**Decisão.** Opção (a): uma migration nova (`20261007000600`) revoga `delete` de `ageniza_app` em `public.agency_memberships` e em `public.invitations`, no precedente da #347. Nenhum caminho legítimo apaga: remover e reativar são `UPDATE` de `status`, cancelar convite é `UPDATE` de `revoked_at`, e as funções `security definer` rodam como o dono do esquema, que o revoke não toca. Os testes esperam `42501` com `permission denied for table …` (distinta de `row-level security`), um teste de catálogo afirma `has_table_privilege` falso para `delete` e `truncate` com `select` verdadeiro, e um teste cria uma policy de DELETE permissiva por engano numa transação revertida e afirma que o privilégio sozinho ainda recusa. A opção (b), aceitar a RLS como única barreira, foi descartada porque deixaria as duas tabelas dependentes de uma barreira só.
+
+**Escopo.** Entram agora só as duas tabelas da regra 11. `agencies`, `agency_storage_quotas`, `client_memberships`, `media_assets`, `permissions`, `role_permissions` e `roles` seguem com `delete` concedido e protegidas só pela RLS: cada uma pede a própria decisão e a própria prova, e misturá-las aqui esconderia o que muda em cada módulo. Ficam para uma issue própria, que esta mudança não abre.
+
+**Consequência.** Mexe em grant de tabela que já existe, por isso o gate de CI trata a migration como estrutural e este registro vai junto; pelos cinco critérios não é estrutural: nenhuma tabela, coluna, policy, formato de resposta ou forma de autorização muda, e não há backfill. Nenhum código de produção usava a escrita direta. Quem precisar um dia de apagar uma dessas linhas (purga de retenção, LGPD) cria uma função `security definer` de escopo único, como a #343 já previu, e não devolve o grant.
+
+**Origem.** Issue #356, decisão do maestro com autonomia dada pelo dono do produto em 2026-10-07. **Pendente de validação** pelo dono do produto.
+

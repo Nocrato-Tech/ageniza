@@ -1,0 +1,20 @@
+# PATCH do vínculo: o corpo, a ordem das recusas e o que o cargo aceita
+
+**Data.** 2026-10-07
+
+**Contexto.** A #97 implementa na API a regra estrutural de 2026-09-24 (só o Owner concede `admin`): o `PATCH` de cargo e papel e a mesma regra na criação e no reenvio de convite. A SPEC fixa as permissões por campo e as proteções, mas não o nome dos campos do corpo, o status de cada recusa, a ordem em que as checagens respondem, nem o que um cargo pode conter. Nada abaixo muda tabela, policy ou formato de resposta já usado por outra rota.
+
+**Decisão.**
+
+1. **Corpo em camelCase**, como o resto da API: `jobTitle` e `roleId` (a issue os chama pelos nomes das colunas). A resposta é o contrato do detalhe (`CollaboratorSchema`).
+2. **A porta e a permissão por campo.** Para chegar à rota basta uma de `colaborador.alterar_funcao` ou `colaborador.alterar_papel` (a guarda é derivada de `docs.permission`, que o catálogo e o `x-permission` repetem). Lido o corpo, a permissão exigida é a de cada campo presente e, quando o papel é `admin`, também `colaborador.atribuir_admin`. A ordem das respostas é: 401, 404 da agência, 403 da porta, 400 do corpo, 403 por campo, 404 do vínculo (de outra agência, inexistente, malformado ou removido: o mesmo), 400 `INVALID_ROLE`, 403 de `atribuir_admin` quando o papel é `admin`, 403 do Owner e do próprio papel. Quem não pode não descobre nada antes do 403.
+3. **Toda recusa de autorização é `403 FORBIDDEN`**, com mensagem própria para as três que a pessoa precisa entender: falta de `colaborador.atribuir_admin` ao conceder `admin`, papel do Owner e papel próprio. Um `42501` vindo do banco (policy ou trigger) também é `403`, nunca `500`, e um `UPDATE` que não altera nenhuma linha é `403`, nunca `200`: a policy filtra em silêncio, e responder sucesso afirmaria uma mudança que não houve.
+4. **A permissão pedida para `admin` é `atribuir_admin`, não a posse.** O Owner passa por curto-circuito, inclusive o Owner sem vínculo (só `agencies.owner_user_id`); um papel personalizado que a receba também passa. O papel é `admin` pela função do banco `app_private.is_admin_role`, a mesma do trigger e da policy de `invitations`, para API e banco não divergirem sobre o que é "admin".
+5. **A regra vale no convite.** Criar convite de colaborador com o papel `admin` e reenviar um convite que o carrega exigem `colaborador.atribuir_admin` (`403`). Sem isso o reenvio devolvia `500`, porque a policy `invitations_insert` o recusa no banco.
+6. **O cargo aceita 1 a 256 unidades UTF-16 depois do `trim`, sem caracteres de controle**, e `null` limpa. O limite é aplicado pelo schema antes de a instrução chegar ao banco, porque `app_private.utf16_length` (#225) é quadrático no tamanho. A regra de controle é a do filtro `jobTitle` da listagem: um cargo que o banco aceita (a `CHECK` só olha tamanho e forma) e o filtro recusa com `400` nunca poderia ser filtrado. **Pendente de validação:** a SPEC não diz o que um cargo contém; bidi e caracteres invisíveis, que o nome de pessoa recusa, ficam de fora porque a SPEC não pede.
+7. **Editar o próprio cargo é permitido** a quem tem `colaborador.alterar_funcao`, e o cargo do Owner também. As regras invioláveis 4 e 5 falam só do papel, e o banco não restringe o cargo. **Pendente de validação:** a SPEC chama a permissão de "editar o cargo de outro" e o modal mostra o cargo como leitura para a própria pessoa; se o dono do produto quiser recusar a edição do próprio cargo, é uma condição na rota, sem migration.
+
+**Consequência.** As duas barreiras continuam: a da API devolve o `403` com mensagem, a do banco é a que sobra se alguém esquecer a da API, e um teste confirma que as duas concordam, para cada ator e cada alteração. Os grants da migration do cargo passam a ser afirmados por teste (`has_function_privilege`): `ageniza_app` executa só `normalize_job_title` e `utf16_length`, e nem ele nem `PUBLIC` executam `backfill_job_title` e `set_job_title`.
+
+**Origem.** Issue #97 e achados das revisões dos PRs #220 e #232. As decisões 6 e 7 estão **pendentes de validação** pelo dono do produto.
+

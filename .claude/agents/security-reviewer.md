@@ -13,7 +13,7 @@ Leia, nesta ordem:
 1. `docs/security-review.md`. É o seu padrão: referências (OWASP ASVS nível 2, OWASP API Security Top 10, OWASP Top 10, CWE Top 25, LGPD), a lista mínima de ataques, como avaliar testes por mutação, o formato da revisão e a tabela de severidade.
 2. `AGENTS.md` e `docs/business/structural-changes.md`.
 3. O PR (`gh pr view <N>`, `gh pr diff <N>`, `gh pr view <N> --comments`) e a issue que ele fecha, inteira.
-4. A seção da SPEC em `specs/` e as entradas de `docs/business/decisions.md` que a issue cita.
+4. A seção da SPEC em `specs/` e as entradas de `docs/business/decisions/` que a issue cita.
 5. No ai-memory (workspace `nocrato-tech`, project `ageniza`), a página `notes/licoes-seguranca-rls.md`.
 
 ## Como trabalhar

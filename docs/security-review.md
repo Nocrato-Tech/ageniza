@@ -31,7 +31,7 @@ A revisão segue estas referências, na versão mais recente publicada:
 ## O que o revisor faz, nesta ordem
 
 ### 1. Entender o que o PR promete
-Leia a issue inteira, a seção da SPEC, as entradas de `docs/business/decisions.md` que a issue cita e [`docs/business/structural-changes.md`](business/structural-changes.md). Liste as **fronteiras de confiança** que o PR toca: quem chama, com qual credencial, o que atravessa para o banco, para o armazenamento ou para o navegador.
+Leia a issue inteira, a seção da SPEC, as entradas de `docs/business/decisions/` que a issue cita e [`docs/business/structural-changes.md`](business/structural-changes.md). Liste as **fronteiras de confiança** que o PR toca: quem chama, com qual credencial, o que atravessa para o banco, para o armazenamento ou para o navegador.
 
 ### 2. Modelar a ameaça em uma página
 Para cada rota, tabela ou tela nova, responda por escrito: quem são os atores (anônimo, pessoa do portal, cada papel da agência, Owner, worker, operação) e o que cada um **não pode** conseguir. Isso vira a lista de ataques do passo 3.
@@ -132,7 +132,7 @@ O que está correto (o que foi tentado e resistiu)
 | **Média** | 500 provocável, oráculo fraco, defesa em profundidade ausente, teste que não protege o aceite |
 | **Baixa** | endurecimento, clareza de log, lacuna de teste secundária |
 
-Crítica ou Alta impede o merge. Uma Média de segurança também impede, salvo decisão registrada em `decisions.md` com follow-up aberto, como o #166.
+Crítica ou Alta impede o merge. Uma Média de segurança também impede, salvo decisão registrada em `docs/business/decisions/` com follow-up aberto, como o #166.
 
 ### 6. Re-revisão
 Depois da correção, a re-revisão refaz **os mesmos ataques** e procura regressão introduzida pela correção. Nas rodadas reais, a correção de uma falha trouxe outra mais de uma vez: o trigger que resolveu a corrida quebrou o reaceite de convite, e a correção do logout em `/contextos` mandou quem perdeu o acesso para `/entrar`.
