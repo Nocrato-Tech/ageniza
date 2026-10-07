@@ -16,6 +16,42 @@ import { randomUUID } from 'node:crypto';
 
 const origin = { origin: TEST_APP_PUBLIC_URL };
 
+type Injection = Awaited<ReturnType<TestApp['app']['inject']>>;
+type Transaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
+
+/** Every raw statement the API sends through the harness's application-role client (issue #304). */
+const recordedStatements: string[] = [];
+
+/**
+ * Wraps the harness database so each `raw` the modules send is recorded before it runs. The
+ * pending-invitations listing has to answer the counter and the page from one snapshot, which the
+ * test proves by requiring a single statement against the invitations table (issue #304).
+ */
+const recordStatements = (database: DatabaseClient): DatabaseClient => {
+  const recordingTransaction = (transaction: Transaction): Transaction => new Proxy(transaction, {
+    get(target, property, receiver) {
+      if (property === 'raw') {
+        return (statement: string, bindings?: Parameters<Transaction['raw']>[1]) => {
+          recordedStatements.push(statement);
+          return target.raw(statement, bindings ?? []);
+        };
+      }
+      const value = Reflect.get(target, property, receiver) as unknown;
+      return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+    }
+  });
+  return new Proxy(database, {
+    get(target, property, receiver) {
+      if (property === 'transaction') {
+        return (work: (transaction: Transaction) => Promise<unknown>) =>
+          target.transaction((transaction) => work(recordingTransaction(transaction)));
+      }
+      const value = Reflect.get(target, property, receiver) as unknown;
+      return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+    }
+  });
+};
+
 let owner: DatabaseClient;
 let app: TestApp;
 let sender: ReturnType<typeof createFakeEmailSender>;
@@ -106,11 +142,49 @@ const waitForRelationLockWait = async (database: DatabaseClient, relation: strin
   throw new Error(`No backend ever waited on the ${relation} lock.`);
 };
 
+/** Waits until some backend is blocked on another transaction's row lock, so a clock race is
+ * sequenced by the lock, not by a sleep (issue #304). */
+const waitForRowLockWait = async (database: DatabaseClient): Promise<void> => {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    const result = await raw<{ rows: Array<{ waiting: number }> }>(database.knex, `
+      select count(*)::int as waiting
+      from pg_catalog.pg_locks
+      where not granted and locktype = 'transactionid'
+    `, []);
+    if ((result.rows[0]?.waiting ?? 0) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error('No backend ever waited for a row lock.');
+};
+
+/**
+ * Holds the invitation row, starts the request so it blocks on its own `for update`, lets the
+ * invitation expire (still under the lock) and only then releases it. The request's decision has
+ * to see the expired version -- `data` stays untouched (issue #304).
+ */
+const expireInvitationWhileRequestWaits = async (invitationId: string, start: () => Promise<Injection>): Promise<Injection> => {
+  const holder = await owner.knex.transaction();
+  let released = false;
+  try {
+    await holder.raw('select id from public.invitations where id = ?::uuid for update', [invitationId]);
+    const responsePromise = start();
+    await waitForRowLockWait(owner);
+    // A moment in the past relative to the release, but later than the request's transaction
+    // start: the old transaction-clock check would still call the invitation pending.
+    await holder.raw('update public.invitations set expires_at = ? where id = ?::uuid', [new Date(Date.now() - 10), invitationId]);
+    await holder.commit();
+    released = true;
+    return await responsePromise;
+  } finally {
+    if (!released) await holder.rollback();
+  }
+};
+
 describe('invitation HTTP module', () => {
   beforeAll(async () => {
     owner = ownerClient();
     sender = createFakeEmailSender();
-    app = await buildTestApp({ sender });
+    app = await buildTestApp({ sender, wrapDatabase: recordStatements });
     admin = await makeUser('invitation-admin');
     invitee = await makeUser('invitation-invitee');
 
@@ -435,6 +509,62 @@ describe('invitation HTTP module', () => {
     const revoked = await owner.knex('invitations').where({ id: cancelable.invitationId }).first('revoked_at');
     expect(revoked?.revoked_at).not.toBeNull();
   });
+
+  it('refuses to cancel an invitation that expired while the request waited for its row lock (issue #304)', async () => {
+    const expiryOwner = await makeUser('invitations-expiry-cancel-owner');
+    const expiryAgencyId = await createAgency('Invitations expiry cancel agency', expiryOwner.id);
+    const cookie = await loginCookie(expiryOwner);
+    const invitation = await insertInvitation({ agencyId: expiryAgencyId, email: `expiry-cancel-${randomUUID()}@example.test` });
+
+    const response = await expireInvitationWhileRequestWaits(invitation.invitationId, () => app.app.inject({
+      method: 'DELETE',
+      url: `/agencies/${expiryAgencyId}/invitations/${invitation.invitationId}`,
+      headers: { ...origin, cookie }
+    }));
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error: { code: 'INVITATION_NOT_PENDING' } });
+    await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('revoked_at')).resolves.toEqual({ revoked_at: null });
+  }, 20_000);
+
+  it('refuses to resend an invitation that expired while the request waited for its row lock (issue #304)', async () => {
+    const expiryOwner = await makeUser('invitations-expiry-resend-owner');
+    const expiryAgencyId = await createAgency('Invitations expiry resend agency', expiryOwner.id);
+    const cookie = await loginCookie(expiryOwner);
+    const invitation = await insertInvitation({ agencyId: expiryAgencyId, email: `expiry-resend-${randomUUID()}@example.test` });
+
+    const response = await expireInvitationWhileRequestWaits(invitation.invitationId, () => app.app.inject({
+      method: 'POST',
+      url: `/agencies/${expiryAgencyId}/invitations/${invitation.invitationId}/resend`,
+      headers: { ...origin, cookie }
+    }));
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error: { code: 'INVITATION_NOT_PENDING' } });
+    // The expired invitation is not revoked and no replacement is created.
+    const rows = await owner.knex('invitations').where({ agency_id: expiryAgencyId }).select('id', 'revoked_at');
+    expect(rows).toEqual([{ id: invitation.invitationId, revoked_at: null }]);
+  }, 20_000);
+
+  it('rejects an acceptance whose invitation expired while the request waited for its row lock (issue #304)', async () => {
+    const expiryOwner = await makeUser('invitations-expiry-accept-owner');
+    const expiryAgencyId = await createAgency('Invitations expiry accept agency', expiryOwner.id);
+    const invited = await makeUser('invitations-expiry-accept-invitee');
+    // Issue #68: logging in requires a context of their own, unrelated to the invitation.
+    await createAgency('Invitations expiry invitee home agency', invited.id);
+    const cookie = await loginCookie(invited);
+    const invitation = await insertInvitation({ agencyId: expiryAgencyId, email: invited.email });
+
+    const response = await expireInvitationWhileRequestWaits(invitation.invitationId, () => app.app.inject({
+      method: 'POST',
+      url: `/invitations/${invitation.token}/accept`,
+      headers: { ...origin, cookie }
+    }));
+
+    expect(response.statusCode).toBe(410);
+    expect(response.json().error).toEqual({ code: 'INVALID_LINK', message: 'Este link não é mais válido.' });
+    await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('used_at')).resolves.toEqual({ used_at: null });
+  }, 20_000);
 
   it.each([
     ['missing', () => `missing-${randomUUID()}`],
@@ -897,6 +1027,48 @@ describe('invitation HTTP module', () => {
         if (!invitationsReleased) await holdInvitations.rollback();
       }
     }, 20_000);
+
+    it('serves a non-empty page with a single statement, so the counter cannot come from a second snapshot (issue #304)', async () => {
+      const singleOwner = await makeUser('invitations-single-snapshot-owner');
+      const singleAgencyId = await createAgency('Single snapshot agency', singleOwner.id);
+      await insertInvitation({ agencyId: singleAgencyId, email: `single-${randomUUID()}@example.test` });
+      const cookie = await loginCookie(singleOwner);
+
+      recordedStatements.length = 0;
+      const response = await app.app.inject({ method: 'GET', url: `/agencies/${singleAgencyId}/invitations`, headers: { ...origin, cookie } });
+      expect(response.statusCode).toBe(200);
+      const invitationStatements = recordedStatements.filter((statement) => statement.includes('from public.invitations'));
+      expect(invitationStatements).toHaveLength(1);
+      expect(invitationStatements[0]).toContain('count(*) over ()');
+      expect(response.json<{ meta: { totalItems: number } }>().meta.totalItems).toBe(1);
+    });
+
+    it('answers an empty first page from its own snapshot, without a fallback count (issue #304)', async () => {
+      const emptyOwner = await makeUser('invitations-empty-first-page-owner');
+      const emptyAgencyId = await createAgency('Empty first page agency', emptyOwner.id);
+      const cookie = await loginCookie(emptyOwner);
+
+      recordedStatements.length = 0;
+      const response = await app.app.inject({ method: 'GET', url: `/agencies/${emptyAgencyId}/invitations`, headers: { ...origin, cookie } });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ data: [], meta: { page: 1, totalItems: 0, totalPages: 0 } });
+      expect(recordedStatements.filter((statement) => statement.includes('from public.invitations'))).toHaveLength(1);
+    });
+
+    it('keeps the real total for an empty page past the first, where the fallback count is the contract (issue #304)', async () => {
+      const beyondOwner = await makeUser('invitations-beyond-page-owner');
+      const beyondAgencyId = await createAgency('Beyond page agency', beyondOwner.id);
+      await insertInvitation({ agencyId: beyondAgencyId, email: `beyond-a-${randomUUID()}@example.test` });
+      await insertInvitation({ agencyId: beyondAgencyId, email: `beyond-b-${randomUUID()}@example.test` });
+      const cookie = await loginCookie(beyondOwner);
+
+      recordedStatements.length = 0;
+      const response = await app.app.inject({ method: 'GET', url: `/agencies/${beyondAgencyId}/invitations?page=3&pageSize=1`, headers: { ...origin, cookie } });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ data: [], meta: { page: 3, pageSize: 1, totalItems: 2, totalPages: 2 } });
+      // The page and its fallback count: the offset page is where the second statement is the contract.
+      expect(recordedStatements.filter((statement) => statement.includes('from public.invitations'))).toHaveLength(2);
+    });
 
     it('returns 200 for a role with only colaborador.convidar, and 403 for one with only cliente.convidar_usuario, convite.reenviar, or convite.cancelar', async () => {
       const scopedOwner = await makeUser('invitations-pending-scoped-owner');
