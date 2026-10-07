@@ -19,6 +19,7 @@ import {
 } from '@ageniza/contracts';
 import { raw, type DatabaseClient, type SqlBinding } from '@ageniza/database';
 
+import { foldTextSql } from '../../plugins/infra/sql-text.js';
 import { latestCommentSideSql, openThreadSql } from './thread-state.js';
 
 export type ClientTransaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
@@ -271,23 +272,6 @@ export interface ClientListPage {
  * backslash escape character is the one declared next to every `like` clause below.
  */
 const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, (character) => `\\${character}`);
-
-// The combining marks `normalize(..., NFD)` decomposes accented letters into (U+0300..U+036F).
-const COMBINING_MARKS_PATTERN = '[\u0300-\u036f]';
-
-/**
- * Case- and accent-insensitive form of a text expression (SPEC §6 listagem: search matches name,
- * razão social and @ "sem diferenciar maiúsculas nem acento"). `normalize(..., NFD)` decomposes a
- * composed accented letter (NFC), the regexp removes the combining marks, and `lower()` handles
- * the remaining ASCII -- so the fold covers uppercase and NFD input and does not depend on the
- * database locale. The database has no `unaccent` extension, and adding one is a migration, which
- * the contribution rules keep in its own change; both the column and the search term go through
- * this exact expression so they can never diverge.
- *
- * The argument is always a fixed column or bind placeholder chosen here, never a request value.
- */
-const foldTextSql = (expression: string): string =>
-  `lower(regexp_replace(normalize(${expression}, NFD), '${COMBINING_MARKS_PATTERN}', '', 'g'))`;
 
 /**
  * Lists one page of an agency's clients (issue #125). The query starts from `public.clients`
