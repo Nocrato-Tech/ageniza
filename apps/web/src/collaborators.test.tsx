@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { PROFILE_PHOTO_MAX_BYTES } from '@ageniza/contracts';
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
+import { inviteLinkDays } from './invite-collaborator.js';
 import { pendingInviteExpiryLabel } from './pending-invitations.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
@@ -45,8 +46,20 @@ interface TestRole {
 
 const ADMIN_ROLE: TestRole = { key: 'admin', name: 'Admin' };
 
-const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[], role: TestRole) => ({
-  agencyId, agencyName, isOwner: false, role, permissions
+/** Mirrors `GET /agencies/:agencyId/roles` (#287): key order, admin only for the Owner. */
+const SYSTEM_ROLES = [
+  { id: '0a000000-0000-4000-8000-000000000001', key: 'account_manager', name: 'Gestor de conta' },
+  { id: '0a000000-0000-4000-8000-000000000002', key: 'admin', name: 'Admin' },
+  { id: '0a000000-0000-4000-8000-000000000003', key: 'finance', name: 'Financeiro' },
+  { id: '0a000000-0000-4000-8000-000000000004', key: 'production', name: 'Produção' },
+  { id: '0a000000-0000-4000-8000-000000000005', key: 'sales', name: 'Vendas' }
+] as const;
+const PRODUCTION_ROLE_ID = SYSTEM_ROLES[3].id;
+const ADMIN_ROLE_ID = SYSTEM_ROLES[1].id;
+const rolesFor = (isOwner: boolean) => json({ data: isOwner ? SYSTEM_ROLES : SYSTEM_ROLES.filter((role) => role.key !== 'admin') });
+
+const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[], role: TestRole, isOwner: boolean) => ({
+  agencyId, agencyName, isOwner, role, permissions
 });
 const agencyDisplayName = (agencyId: string): string => agencyId === AGENCY_B ? 'Agência Dois' : 'Agência Um';
 
@@ -95,11 +108,14 @@ interface Scenario {
   readonly authenticated?: boolean;
   readonly role?: TestRole;
   readonly permissions?: readonly string[];
+  readonly isOwner?: boolean;
   readonly session?: () => Response | Promise<Response>;
   readonly collaborators?: (query: URLSearchParams, agencyId: string) => Response | Promise<Response>;
   readonly jobTitles?: () => Response | Promise<Response>;
+  readonly roles?: (agencyId: string) => Response | Promise<Response>;
   readonly detail?: (membershipId: string, agencyId: string) => Response | Promise<Response>;
   readonly invitations?: (query: URLSearchParams, agencyId: string) => Response | Promise<Response>;
+  readonly createInvitation?: (body: unknown, agencyId: string) => Response | Promise<Response>;
   readonly resend?: (invitationId: string, agencyId: string) => Response | Promise<Response>;
   readonly cancel?: (invitationId: string, agencyId: string) => Response | Promise<Response>;
   readonly updateProfile?: (body: unknown) => Response | Promise<Response>;
@@ -112,6 +128,7 @@ const makeFetch = (scenario: Scenario = {}) => {
   const requests: string[] = [];
   const authenticated = scenario.authenticated ?? true;
   const role = scenario.role ?? ADMIN_ROLE;
+  const isOwner = scenario.isOwner ?? false;
   const permissions = scenario.permissions ?? ['colaborador.visualizar', 'colaborador.convidar', 'convite.reenviar', 'convite.cancelar'];
   const impl: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
@@ -130,7 +147,19 @@ const makeFetch = (scenario: Scenario = {}) => {
       return scenario.uploadPhoto(JSON.parse(String(init.body)));
     }
     const me = /\/agencies\/([^/]+)\/me$/.exec(path);
-    if (me !== null) return json(agencyMe(me[1]!, agencyDisplayName(me[1]!), permissions, role));
+    if (me !== null) return json(agencyMe(me[1]!, agencyDisplayName(me[1]!), permissions, role, isOwner));
+    const roles = /\/agencies\/([^/]+)\/roles$/.exec(path);
+    if (roles !== null && method === 'GET') {
+      if (!permissions.includes('colaborador.convidar') && !permissions.includes('colaborador.alterar_papel')) {
+        return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
+      }
+      return scenario.roles?.(roles[1]!) ?? rolesFor(isOwner);
+    }
+    const createInvitation = /\/agencies\/([^/]+)\/invitations\/collaborators$/.exec(path);
+    if (createInvitation !== null && method === 'POST') {
+      if (!permissions.includes('colaborador.convidar')) return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
+      return scenario.createInvitation?.(JSON.parse(String(init?.body)), createInvitation[1]!) ?? json({ invitationId: inviteAna.id, expiresAt: inviteAna.expiresAt }, 201);
+    }
     const resend = /\/agencies\/([^/]+)\/invitations\/([^/]+)\/resend$/.exec(path);
     if (resend !== null && method === 'POST') {
       if (!permissions.includes('convite.reenviar')) return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
@@ -671,17 +700,18 @@ describe('pending invitations (#106)', () => {
     expect(await screen.findByText('Ana Prado')).toBeTruthy();
   });
 
-  it('offers the invite action when no invitation is pending', async () => {
+  it('offers the invite action in the empty state, and it opens the invite modal', async () => {
     const { impl } = makeFetch({ invitations: (query) => invitationsResponse([], query) });
     renderCollaborators(impl);
 
     const region = await invitesRegion();
     expect(await within(region).findByText('Nenhum convite aguardando aceite')).toBeTruthy();
     const invite = within(region).getByRole('button', { name: 'Convidar' });
-    expect(invite.hasAttribute('disabled')).toBe(true);
-    // A `title` on a disabled button is not read; the explanation is visible text.
-    expect(within(region).getByText('O convite chega na próxima entrega.')).toBeTruthy();
+    expect(invite.hasAttribute('disabled')).toBe(false);
     expect(region.querySelector('.invites__count')?.textContent).toBe('0');
+
+    fireEvent.click(invite);
+    expect(await screen.findByRole('dialog', { name: 'Convidar colaborador' })).toBeTruthy();
   });
 
   it('offers a retry when the invitations listing fails, without echoing the API message', async () => {
@@ -1028,6 +1058,345 @@ describe('pending invitations (#106)', () => {
     const alert = await within(region).findByRole('alert');
     expect(alert.textContent).toContain('Não foi possível reenviar o convite.');
     expect(screen.queryByText('live-credential')).toBeNull();
+  });
+});
+
+describe('invite collaborator modal (#107)', () => {
+  const invitesRegion = () => screen.findByRole('region', { name: 'Convites aguardando aceite' });
+
+  const openInvite = async (container: HTMLElement): Promise<HTMLElement> => {
+    const header = container.querySelector('.collaborators__header');
+    if (header === null) throw new Error('The collaborators header was not rendered.');
+    fireEvent.click(within(header as HTMLElement).getByRole('button', { name: /Convidar/ }));
+    return await screen.findByRole('dialog', { name: 'Convidar colaborador' });
+  };
+
+  const fillInvite = async (dialog: HTMLElement, email: string, roleId: string = PRODUCTION_ROLE_ID): Promise<void> => {
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'E-mail' }), { target: { value: email } });
+    await within(dialog).findByRole('option', { name: 'Produção' });
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: roleId } });
+  };
+
+  it('opens with the e-mail and role fields, the role hint and no cargo or remuneration', async () => {
+    const { impl } = makeFetch();
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+
+    const dialog = await openInvite(container);
+    expect(within(dialog).getByRole('textbox', { name: 'E-mail' })).toBeTruthy();
+    expect(within(dialog).getByRole('combobox', { name: 'Papel' })).toBeTruthy();
+    expect(within(dialog).getByText('Define o que a pessoa poderá fazer.')).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: 'Enviar convite' }).hasAttribute('disabled')).toBe(true);
+    expect(within(dialog).queryByText(/cargo|remunera/i)).toBeNull();
+    expect(dialog.querySelectorAll('input, select')).toHaveLength(2);
+  });
+
+  it('offers Admin only to the Owner, even if the roles response leaks it', async () => {
+    const { impl } = makeFetch({ isOwner: true });
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const ownerDialog = await openInvite(container);
+    await within(ownerDialog).findByRole('option', { name: 'Admin' });
+    const ownerSelect = within(ownerDialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement;
+    expect(Array.from(ownerSelect.options).map((option) => option.textContent)).toEqual([
+      'Selecione', 'Gestor de conta', 'Admin', 'Financeiro', 'Produção', 'Vendas'
+    ]);
+    cleanup();
+
+    // The API hides `admin` from a non-owner (#287); the screen has to hide it too, so this
+    // response deliberately leaks it.
+    const leaked = makeFetch({ roles: () => json({ data: SYSTEM_ROLES }) });
+    const leakedRender = renderCollaborators(leaked.impl);
+    await screen.findByText('Ana Prado');
+    const leakedDialog = await openInvite(leakedRender.container);
+    await within(leakedDialog).findByRole('option', { name: 'Gestor de conta' });
+    const leakedSelect = within(leakedDialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement;
+    expect(Array.from(leakedSelect.options).map((option) => option.textContent)).toEqual([
+      'Selecione', 'Gestor de conta', 'Financeiro', 'Produção', 'Vendas'
+    ]);
+    expect(Array.from(leakedSelect.options).some((option) => option.value === ADMIN_ROLE_ID)).toBe(false);
+  });
+
+  it('keeps Enviar convite disabled until e-mail and role are both filled', async () => {
+    const { impl } = makeFetch();
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const dialog = await openInvite(container);
+    const submit = within(dialog).getByRole('button', { name: 'Enviar convite' });
+    const email = within(dialog).getByRole('textbox', { name: 'E-mail' });
+    const role = within(dialog).getByRole('combobox', { name: 'Papel' });
+
+    expect(submit.hasAttribute('disabled')).toBe(true);
+    fireEvent.change(email, { target: { value: 'nova@exemplo.com' } });
+    expect(submit.hasAttribute('disabled')).toBe(true);
+    await within(dialog).findByRole('option', { name: 'Produção' });
+    fireEvent.change(role, { target: { value: PRODUCTION_ROLE_ID } });
+    expect(submit.hasAttribute('disabled')).toBe(false);
+    fireEvent.change(email, { target: { value: '' } });
+    expect(submit.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('refuses a malformed e-mail next to the field, preserving what was typed and sending nothing', async () => {
+    const { impl, calls } = makeFetch();
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const dialog = await openInvite(container);
+    await fillInvite(dialog, 'nao-e-email');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+
+    expect(await within(dialog).findByText('Informe um e-mail válido.')).toBeTruthy();
+    expect((within(dialog).getByRole('textbox', { name: 'E-mail' }) as HTMLInputElement).value).toBe('nao-e-email');
+    expect(calls.some((call) => call.startsWith('POST /agencies/'))).toBe(false);
+  });
+
+  it('refuses an empty form even if the disabled button is bypassed', async () => {
+    const { impl, calls } = makeFetch();
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const dialog = await openInvite(container);
+    const form = dialog.querySelector('form');
+    if (form === null) throw new Error('The invite form was not rendered.');
+
+    fireEvent.submit(form);
+    expect(await within(dialog).findByText('Informe o e-mail.')).toBeTruthy();
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'E-mail' }), { target: { value: 'nova@exemplo.com' } });
+    fireEvent.submit(form);
+    expect(await within(dialog).findByText('Selecione um papel.')).toBeTruthy();
+    expect(calls.some((call) => call.startsWith('POST /agencies/'))).toBe(false);
+  });
+
+  it('sends e-mail and role, shows the 7-day confirmation and adds the invite to the pending list without reloading', async () => {
+    const created = { ...inviteAna, id: 'abababab-abab-4bab-8bab-abababababab', email: 'nova@exemplo.com', expiresAt: expiryInDays(7) };
+    let pending = [inviteAna];
+    const bodies: unknown[] = [];
+    const { impl, calls } = makeFetch({
+      invitations: (query) => invitationsResponse(pending, query),
+      createInvitation: (body) => {
+        bodies.push(body);
+        pending = [...pending, { ...created, email: (body as { email: string }).email }];
+        return json({ invitationId: created.id, expiresAt: created.expiresAt }, 201);
+      }
+    });
+    const { container, probe } = renderCollaborators(impl);
+    const region = await invitesRegion();
+    await within(region).findByText('ana@exemplo.com');
+    const dialog = await openInvite(container);
+    await fillInvite(dialog, 'Nova@Exemplo.com');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+
+    expect(await within(dialog).findByText('Convite enviado para nova@exemplo.com. O link vale por 7 dias.')).toBeTruthy();
+    // The creation invalidates the pending list, so the new invite appears behind the modal.
+    expect(await within(region).findByText('nova@exemplo.com')).toBeTruthy();
+    expect(region.querySelector('.invites__count')?.textContent).toBe('2');
+    expect(bodies).toEqual([{ email: 'nova@exemplo.com', roleId: PRODUCTION_ROLE_ID }]);
+    expect(calls).toContain(`POST /agencies/${AGENCY_A}/invitations/collaborators`);
+    expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/colaboradores`);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('warns that the previous pending invitation stopped working when the e-mail already had one', async () => {
+    const created = { ...inviteJulia, id: 'abababab-abab-4bab-8bab-abababababab', email: 'ana@exemplo.com', expiresAt: expiryInDays(7) };
+    let pending = [inviteAna, invitePaulo];
+    const { impl } = makeFetch({
+      invitations: (query) => invitationsResponse(pending, query),
+      createInvitation: () => {
+        pending = [invitePaulo, created];
+        return json({ invitationId: created.id, expiresAt: created.expiresAt }, 201);
+      }
+    });
+    const { container } = renderCollaborators(impl);
+    const region = await invitesRegion();
+    await within(region).findByText('expira em 5 dias');
+    const dialog = await openInvite(container);
+    await fillInvite(dialog, 'ana@exemplo.com');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+
+    expect(await within(dialog).findByText('Convite enviado para ana@exemplo.com. O link vale por 7 dias.')).toBeTruthy();
+    expect(within(dialog).getByText('O convite anterior para este e-mail deixou de valer.')).toBeTruthy();
+    // One invitation for that e-mail, with the renewed deadline, in the list behind the modal.
+    expect(await within(region).findByText('expira em 7 dias')).toBeTruthy();
+    expect(within(region).getAllByText('ana@exemplo.com')).toHaveLength(1);
+  });
+
+  it('shows its own message when the e-mail already belongs to the team, preserving the typed value', async () => {
+    const { impl } = makeFetch({
+      createInvitation: () => json({ error: { code: 'MEMBERSHIP_EXISTS', message: 'private diagnostic' } }, 409)
+    });
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const dialog = await openInvite(container);
+    await fillInvite(dialog, 'ana@exemplo.com');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+
+    expect(await within(dialog).findByText('Esta pessoa já faz parte da equipe.')).toBeTruthy();
+    expect(dialog.textContent).not.toContain('private diagnostic');
+    expect((within(dialog).getByRole('textbox', { name: 'E-mail' }) as HTMLInputElement).value).toBe('ana@exemplo.com');
+    expect(within(dialog).getByRole('button', { name: 'Enviar convite' }).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('explains a 403 without leaking the API message', async () => {
+    const { impl } = makeFetch({
+      createInvitation: () => json({ error: { code: 'FORBIDDEN', message: 'private diagnostic' } }, 403)
+    });
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const dialog = await openInvite(container);
+    await fillInvite(dialog, 'nova@exemplo.com');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+
+    expect(await within(dialog).findByText('Você não tem permissão para convidar para esta agência.')).toBeTruthy();
+    expect(dialog.textContent).not.toContain('private diagnostic');
+  });
+
+  it.each([400, 422])('marks the field the API refused on a %i, without echoing the API message', async (status) => {
+    const { impl } = makeFetch({
+      createInvitation: () => json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'private diagnostic',
+          details: { issues: [{ path: 'email', code: 'invalid_string', message: 'private issue message' }] }
+        }
+      }, status)
+    });
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const dialog = await openInvite(container);
+    await fillInvite(dialog, 'nova@exemplo.com');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+
+    expect(await within(dialog).findByText('Informe um e-mail válido.')).toBeTruthy();
+    expect((within(dialog).getByRole('textbox', { name: 'E-mail' }) as HTMLInputElement).value).toBe('nova@exemplo.com');
+    expect(dialog.textContent).not.toContain('private');
+  });
+
+  it('marks the role field when the API refuses the chosen role', async () => {
+    const { impl } = makeFetch({
+      createInvitation: () => json({ error: { code: 'INVALID_ROLE', message: 'private diagnostic' } }, 400)
+    });
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const dialog = await openInvite(container);
+    await fillInvite(dialog, 'nova@exemplo.com');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+
+    expect(await within(dialog).findByText('Escolha um papel da lista.')).toBeTruthy();
+    expect((within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement).value).toBe(PRODUCTION_ROLE_ID);
+    expect(dialog.textContent).not.toContain('private diagnostic');
+  });
+
+  it('shows a form-level message for a validation failure that names no field', async () => {
+    const { impl } = makeFetch({
+      createInvitation: () => json({ error: { code: 'VALIDATION_ERROR', message: 'private diagnostic' } }, 400)
+    });
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const dialog = await openInvite(container);
+    await fillInvite(dialog, 'nova@exemplo.com');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+
+    expect(await within(dialog).findByText('Revise os dados do convite.')).toBeTruthy();
+    expect(dialog.textContent).not.toContain('private diagnostic');
+  });
+
+  // The API commits the invitation before sending the e-mail: a 502 leaves a real invitation
+  // behind, so the list must refetch and show it even though the modal reports the failure.
+  it('refreshes the pending list even when the send fails after the invitation was stored', async () => {
+    const created = { ...inviteJulia, id: 'abababab-abab-4bab-8bab-abababababab', email: 'nova@exemplo.com', expiresAt: expiryInDays(7) };
+    let pending = [inviteAna];
+    const { impl, calls } = makeFetch({
+      invitations: (query) => invitationsResponse(pending, query),
+      createInvitation: () => {
+        pending = [...pending, created];
+        return json({ error: { code: 'EMAIL_DELIVERY_FAILED', message: 'private diagnostic' } }, 502);
+      }
+    });
+    const { container } = renderCollaborators(impl);
+    const region = await invitesRegion();
+    const dialog = await openInvite(container);
+    await fillInvite(dialog, 'nova@exemplo.com');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+
+    expect(await within(dialog).findByText('Não foi possível enviar o convite. Tente de novo.')).toBeTruthy();
+    expect(dialog.textContent).not.toContain('private diagnostic');
+    expect(await within(region).findByText('nova@exemplo.com')).toBeTruthy();
+    expect(calls.filter((call) => call === `POST /agencies/${AGENCY_A}/invitations/collaborators`)).toHaveLength(1);
+  });
+
+  it('offers a retry when the roles fail to load, without breaking the modal', async () => {
+    let attempts = 0;
+    const { impl } = makeFetch({
+      roles: () => {
+        attempts += 1;
+        return attempts <= 2
+          ? json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500)
+          : rolesFor(false);
+      }
+    });
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const dialog = await openInvite(container);
+
+    const alert = await within(dialog).findByRole('alert', undefined, { timeout: 5000 });
+    expect(alert.textContent).toContain('Não foi possível carregar os papéis.');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tentar de novo' }));
+    await waitFor(() => expect((within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement).disabled).toBe(false));
+    expect(Array.from((within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement).options).map((option) => option.textContent)).toContain('Produção');
+  });
+
+  it('keeps the busy state on the send button, not on the whole modal', async () => {
+    let finish: (value: Response) => void = () => undefined;
+    const deferred = new Promise<Response>((resolve) => { finish = resolve; });
+    const { impl } = makeFetch({ createInvitation: () => deferred });
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const dialog = await openInvite(container);
+    await fillInvite(dialog, 'nova@exemplo.com');
+    const submit = within(dialog).getByRole('button', { name: 'Enviar convite' });
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(submit.getAttribute('aria-busy')).toBe('true'));
+    expect(submit.hasAttribute('disabled')).toBe(true);
+    expect((within(dialog).getByRole('textbox', { name: 'E-mail' }) as HTMLInputElement).disabled).toBe(false);
+    await act(async () => { finish(json({ invitationId: inviteAna.id, expiresAt: expiryInDays(7) }, 201)); });
+    expect(await within(dialog).findByText(/Convite enviado para nova@exemplo.com/)).toBeTruthy();
+  });
+
+  it('closes on Escape and returns the focus to the Convidar button', async () => {
+    const { impl } = makeFetch();
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const header = container.querySelector('.collaborators__header');
+    if (header === null) throw new Error('The collaborators header was not rendered.');
+    const invite = within(header as HTMLElement).getByRole('button', { name: /Convidar/ });
+    invite.focus();
+    fireEvent.click(invite);
+    const dialog = await screen.findByRole('dialog', { name: 'Convidar colaborador' });
+
+    fireEvent(dialog, new Event('cancel', { bubbles: false, cancelable: true }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(document.activeElement).toBe(invite);
+  });
+
+  it('is not reachable without colaborador.convidar', async () => {
+    const { impl, calls } = makeFetch({ permissions: ['colaborador.visualizar'] });
+    renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+
+    expect(screen.queryByRole('button', { name: /Convidar/ })).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(calls.some((call) => call.includes('/roles'))).toBe(false);
+  });
+});
+
+describe('inviteLinkDays (#107)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  it('reads the deadline from the API expiry instead of a screen constant', () => {
+    const now = new Date(2026, 9, 7, 12);
+    expect(inviteLinkDays(new Date(now.getTime() + 7 * DAY).toISOString(), now)).toBe(7);
+    expect(inviteLinkDays(new Date(now.getTime() + 5 * DAY).toISOString(), now)).toBe(5);
+    expect(inviteLinkDays(new Date(now.getTime() - 1000).toISOString(), now)).toBe(1);
   });
 });
 
