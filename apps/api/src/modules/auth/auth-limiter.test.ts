@@ -132,4 +132,27 @@ describe('in-memory auth limiter', () => {
     // The 51st distinct IP is blocked purely by the email-global window, not by ip-email.
     expect(limiter.check('login', '203.0.113.99', email)).toBe(false);
   });
+
+  // Issue #338: the e-mail-global windows (login 50/h, recovery 10/h) are pinned by behavior, with
+  // an injected clock so the one-hour window is not waited out in real time.
+  it('pins the e-mail-global windows: login 50 per hour and recovery 10 per hour', () => {
+    let now = 0;
+    const limiter = createAuthLimiter({ now: () => now });
+
+    // Recovery: 10 distinct IPs for one e-mail are allowed, the 11th is blocked.
+    for (let ipIndex = 0; ipIndex < 10; ipIndex += 1) {
+      expect(limiter.check('forgot', `203.0.113.${ipIndex}`, 'window-forgot@example.test')).toBe(true);
+    }
+    expect(limiter.check('forgot', '203.0.113.98', 'window-forgot@example.test')).toBe(false);
+    now = 60 * 60 * 1_000 + 1;
+    expect(limiter.check('forgot', '203.0.113.97', 'window-forgot@example.test')).toBe(true);
+
+    // Login: the 51st distinct IP is blocked and the same one-hour window reopens it.
+    for (let ipIndex = 0; ipIndex < 50; ipIndex += 1) {
+      limiter.check('login', `203.0.114.${ipIndex}`, 'window-login@example.test');
+    }
+    expect(limiter.check('login', '203.0.114.98', 'window-login@example.test')).toBe(false);
+    now = 2 * 60 * 60 * 1_000 + 1;
+    expect(limiter.check('login', '203.0.114.97', 'window-login@example.test')).toBe(true);
+  });
 });

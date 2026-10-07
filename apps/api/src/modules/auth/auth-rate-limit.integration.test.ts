@@ -195,4 +195,47 @@ describe('auth rate limiting (#12)', () => {
     // Neither 429 leaks any of the informative rate-limit headers at all (B6).
     expect(relevantHeaders(perIp429.headers)).toEqual({});
   }, 20_000);
+
+  // Issue #338: the SPEC section 6 numbers have to be pinned by a test, not only by the small
+  // limits this suite injects; the injected clock advances the window without a real wait.
+  describe('the real policy values (issue #338)', () => {
+    const realPolicyApp = async (): Promise<{ app: TestApp; advance: (milliseconds: number) => void }> => {
+      let now = Date.now();
+      const app = await buildTestApp({ limiterOptions: { now: () => now } });
+      openApps.push(app);
+      return { app, advance: (milliseconds) => { now += milliseconds; } };
+    };
+
+    it('blocks the 11th login for one IP+e-mail and reopens after the real 15-minute window', async () => {
+      const { app, advance } = await realPolicyApp();
+      const email = uniqueTestEmail('rl-real-login');
+      const ip = '203.0.113.61';
+
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        expect((await login(app, email, ip)).statusCode).toBe(401);
+      }
+      const overLimit = await login(app, email, ip);
+      expect(overLimit.statusCode).toBe(429);
+      expect(overLimit.json()).toMatchObject(rateLimitedBody);
+
+      advance(15 * 60_000 + 1);
+      expect((await login(app, email, ip)).statusCode).toBe(401);
+    }, 20_000);
+
+    it('blocks the 4th recovery request for one IP+e-mail and reopens after the real 15-minute window', async () => {
+      const { app, advance } = await realPolicyApp();
+      const email = uniqueTestEmail('rl-real-forgot');
+      const ip = '203.0.113.62';
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        expect((await forgot(app, email, ip)).statusCode).toBe(202);
+      }
+      const overLimit = await forgot(app, email, ip);
+      expect(overLimit.statusCode).toBe(429);
+      expect(overLimit.json()).toMatchObject(rateLimitedBody);
+
+      advance(15 * 60_000 + 1);
+      expect((await forgot(app, email, ip)).statusCode).toBe(202);
+    }, 20_000);
+  });
 });
