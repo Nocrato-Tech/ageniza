@@ -271,9 +271,10 @@ describe('AUTH-20B database RLS and invitation functions', () => {
     await expect(asUser(userA, (transaction) => transaction('agencies').where({ id: agencyB }).update({ name: 'Should not change' }))).resolves.toBe(0);
     // CLIENTS module (#122) revokes DELETE on clients outright: no route deletes a business entity.
     await expect(asUser(userA, (transaction) => transaction('clients').where({ id: clientB }).delete())).rejects.toThrow(/permission denied/);
-    await expect(asUser(userA, (transaction) => transaction('agency_memberships').where({ agency_id: agencyB }).delete())).resolves.toBe(0);
+    // Issue #356 revokes DELETE on agency_memberships and invitations: the privilege layer answers before the RLS.
+    await expect(asUser(userA, (transaction) => transaction('agency_memberships').where({ agency_id: agencyB }).delete())).rejects.toThrow(/permission denied for table agency_memberships/);
     await expect(asUser(userA, (transaction) => transaction('client_memberships').where({ client_id: clientB }).delete())).resolves.toBe(0);
-    await expect(asUser(userA, (transaction) => transaction('invitations').where({ id: invitationB }).delete())).resolves.toBe(0);
+    await expect(asUser(userA, (transaction) => transaction('invitations').where({ id: invitationB }).delete())).rejects.toThrow(/permission denied for table invitations/);
     // Issue #343 revokes INSERT, UPDATE and DELETE on legal_acceptances: the privilege layer answers before the RLS.
     await expect(asUser(userA, (transaction) => transaction('legal_acceptances').where({ user_id: userB }).delete())).rejects.toThrow(/permission denied for table legal_acceptances/);
     await expect(asUser(userA, (transaction) => transaction('permissions').where({ key: 'colaborador.convidar' }).update({ description: 'Should not change' }))).resolves.toBe(0);

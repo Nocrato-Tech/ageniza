@@ -1753,6 +1753,33 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 
 ---
 
+## 2026-10-07 — A lista de colaboradores ordena sem distinguir acento nem maiúsculas
+
+**Contexto.** A SPEC de colaboradores (§6) e o aceite da #89 pedem a lista "ordenada por nome ascendente", alfabética. A consulta ordena pelo nome sem fixar a ordenação, ou seja, pela do banco de cada ambiente, e o único teste de ordem usa nomes ASCII capitalizados. Em português o caso comum tem acento e caixa mista: com a ordenação por código de caractere, `Zelia` vem antes de `ana` e `Álvaro` vem depois de `bruno`. Achado da auditoria de fechamento do módulo, issue #355.
+
+**Decisão.** A ordem da lista é alfabética **sem distinguir acento nem maiúsculas**: `Álvaro`, `ana`, `bruno`, `Éder`, `Zelia`. É regra do produto, garantida pela consulta e provada por teste com nomes acentuados e de caixa mista, em vez de depender do que cada banco entrega. O mecanismo (por exemplo, uma ordenação ICU em pt-BR) é escolha da implementação da #355.
+
+**Consequência.** A SPEC (§6 e §7) passa a dizer isto. Nenhuma rota, tabela, policy, permissão ou formato de resposta muda; o contrato de paginação é o mesmo. O aceite da #355 (teste que afirma a ordem e mutação que a desfaz ficando vermelha) fica de pé.
+
+**Origem.** Issue #355, decisão do maestro em 2026-10-07. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-07 — Criar e reenviar convite travam na mesma ordem, e o deadlock vira 409 TRY_AGAIN
+
+**Contexto.** A revisão de segurança do PR #330 (#304) observou, num defeito que já existia, que criar convite trava o slot dos convites equivalentes e depois a linha, e reenviar trava a linha e depois o slot. Com o mesmo destinatário ao mesmo tempo, o resultado era deadlock (`40P01`), que não era traduzido e virava `500`. Sem impacto de segurança, porque nada é gravado. Issue #335. Registrada aqui depois do código, porque a issue não gerou entrada.
+
+**Decisão.**
+
+1. Criar e reenviar travam **na mesma ordem**: o slot antes da linha do convite, também no reenvio. A regra da #304 se mantém: a pendência só é decidida depois da última trava.
+2. `40P01` e `40001` nas rotas de escrita de convite viram `409 TRY_AGAIN`, sem detalhe do banco, como já valia para a troca de e-mail (#325).
+
+**Consequência.** Só código da API e o OpenAPI: nenhuma tabela, policy, permissão ou migration muda, e nenhum fluxo legítimo muda. Vale a lição já registrada: função que trava mais de uma linha trava sempre na mesma ordem, em todos os caminhos.
+
+**Origem.** Issue #335, decisão do maestro. Entrada acrescentada na #358.
+
+---
+
 ## 2026-10-07 — O modal do próprio perfil mostra a data de entrada, como o wireframe
 
 **Contexto.** A §7 de `specs/colaboradores.md` desenha "Na agência desde <data>" no cabeçalho do modal, sem exceção, e o ramo do próprio perfil só mostrava a foto e a nota de que a foto é global (issue #357, achado da auditoria de fechamento do módulo).
@@ -1762,3 +1789,17 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 **Consequência.** O ramo do próprio perfil ganha a linha da data, que já vinha no item da API; um teste novo cobre o próprio perfil e fica vermelho se a linha sair. Nenhum contrato, rota ou dado muda.
 
 **Origem.** Issue #357, decisão do maestro com autonomia dada pelo dono do produto em 2026-10-07. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-07 — `ageniza_app` não tem DELETE em `agency_memberships` nem em `invitations`
+
+**Contexto.** A regra 11 da SPEC de colaboradores diz que remover não apaga a linha de `agency_memberships`, e `docs/security-review.md` manda não dar DELETE físico de entidade de negócio a `ageniza_app`. A migration `20260919000000` concedia `select, insert, update, delete` nas duas tabelas, e o que impedia o DELETE era só a **ausência de policy** de DELETE sob RLS forçada. Uma policy `for delete using (…)` criada por engano apagaria vínculos e convites sem que nenhum teste de privilégio avisasse; `tenancy.integration.test.ts` até fixava que `delete from agency_memberships` "resolve" com zero linhas, o que só era verdade enquanto o privilégio existia e a policy não (achado da auditoria de fechamento do módulo, issue #356). É o mesmo desenho que a #343 achou em `legal_acceptances`.
+
+**Decisão.** Opção (a): uma migration nova (`20261007000600`) revoga `delete` de `ageniza_app` em `public.agency_memberships` e em `public.invitations`, no precedente da #347. Nenhum caminho legítimo apaga: remover e reativar são `UPDATE` de `status`, cancelar convite é `UPDATE` de `revoked_at`, e as funções `security definer` rodam como o dono do esquema, que o revoke não toca. Os testes esperam `42501` com `permission denied for table …` (distinta de `row-level security`), um teste de catálogo afirma `has_table_privilege` falso para `delete` e `truncate` com `select` verdadeiro, e um teste cria uma policy de DELETE permissiva por engano numa transação revertida e afirma que o privilégio sozinho ainda recusa. A opção (b), aceitar a RLS como única barreira, foi descartada porque deixaria as duas tabelas dependentes de uma barreira só.
+
+**Escopo.** Entram agora só as duas tabelas da regra 11. `agencies`, `agency_storage_quotas`, `client_memberships`, `media_assets`, `permissions`, `role_permissions` e `roles` seguem com `delete` concedido e protegidas só pela RLS: cada uma pede a própria decisão e a própria prova, e misturá-las aqui esconderia o que muda em cada módulo. Ficam para uma issue própria, que esta mudança não abre.
+
+**Consequência.** Mexe em grant de tabela que já existe, por isso o gate de CI trata a migration como estrutural e este registro vai junto; pelos cinco critérios não é estrutural: nenhuma tabela, coluna, policy, formato de resposta ou forma de autorização muda, e não há backfill. Nenhum código de produção usava a escrita direta. Quem precisar um dia de apagar uma dessas linhas (purga de retenção, LGPD) cria uma função `security definer` de escopo único, como a #343 já previu, e não devolve o grant.
+
+**Origem.** Issue #356, decisão do maestro com autonomia dada pelo dono do produto em 2026-10-07. **Pendente de validação** pelo dono do produto.
