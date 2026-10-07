@@ -17,6 +17,11 @@ from the tenancy module so the invitation module does not duplicate tenant guard
   accepts the invitation.
 - `POST /invitations/:token/accept` accepts an invitation for the matching authenticated e-mail.
 
+Handing out the `admin` role takes `colaborador.atribuir_admin`, which no preset holds and only the
+Owner passes by ownership. The rule applies to creating a collaborator invitation and to resending one
+that carries `admin`; both answer `403` before writing anything, and the `invitations_insert` policy
+is the second barrier (issue #97, `specs/colaboradores.md` §5, rule 3).
+
 Public token reads use `app_private.invitation_by_token_hash`, a `security definer` function that
 returns only the invitation preview fields and a validity bit. Acceptance uses
 `app_private.accept_invitation`, also `security definer`, which locks and revalidates the token,
