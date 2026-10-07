@@ -324,19 +324,18 @@ const createCollaboratorInvitation = async (
       if (memberResult.rows[0] !== undefined) throw membershipExists();
 
       await lockPendingInvitationSlot(transaction, agencyId, 'collaborator_invite', email, null);
-      const revoked = await raw<RawRows<{ id: string }>>(transaction, `
+      const revoked = await raw<RawRows<{ id: string; was_pending: boolean }>>(transaction, `
         update public.invitations
            set revoked_at = now()
          where agency_id = ?::uuid and purpose = 'collaborator_invite' and email = ?
            and used_at is null and revoked_at is null
-        returning id
+         returning id, expires_at > pg_catalog.statement_timestamp() as was_pending
       `, [agencyId, email]);
       for (const old of revoked.rows) {
         await auditInTransaction(transaction, { action: 'invitation.revoked', actorUserId: auth.userId, agencyId, targetId: old.id });
       }
-      // At most one equivalent pending invitation exists (the partial unique index guarantees it),
-      // and the revoking UPDATE is scoped to this agency, so the id can only be this agency's.
-      const supersededInvitationId = revoked.rows[0]?.id ?? null;
+      // At most one equivalent unrevoked row exists; an expired one is revoked too but is no longer a link.
+      const supersededInvitationId = revoked.rows.find((row) => row.was_pending)?.id ?? null;
 
       const result = await raw<RawRows<{ id: string; expires_at: Date }>>(transaction, `
         insert into public.invitations

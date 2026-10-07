@@ -1410,5 +1410,35 @@ describe('invitation HTTP module', () => {
       await expect(owner.knex('invitations').where({ id: mine.invitationId }).first('revoked_at')).resolves.toMatchObject({ revoked_at: expect.any(Date) });
       await expect(owner.knex('invitations').where({ id: other.invitationId }).first('revoked_at')).resolves.toEqual({ revoked_at: null });
     });
+
+    it('answers null when the revoked previous invitation had already expired', async () => {
+      const targetEmail = `expired-superseded-${randomUUID()}@example.test`;
+      const expired = await insertInvitation({ agencyId, email: targetEmail, expiresAt: new Date(Date.now() - 60_000) });
+
+      const created = await invite(await loginFromTestIp(), targetEmail);
+      expect(created.statusCode).toBe(201);
+      expect(created.body.supersededInvitationId).toBeNull();
+      // The expired row is still revoked, so the partial index frees the slot for the new one.
+      await expect(owner.knex('invitations').where({ id: expired.invitationId }).first('revoked_at')).resolves.toMatchObject({ revoked_at: expect.any(Date) });
+      await expect(owner.knex('invitations').where({ agency_id: agencyId, email: targetEmail }).select('id', 'revoked_at')).resolves.toHaveLength(2);
+    });
+
+    it('answers null when an expired previous invitation was already revoked', async () => {
+      const targetEmail = `expired-revoked-${randomUUID()}@example.test`;
+      const alreadyRevoked = await insertInvitation({
+        agencyId,
+        email: targetEmail,
+        expiresAt: new Date(Date.now() - 120_000),
+        revokedAt: new Date(Date.now() - 30_000)
+      });
+      const before = await owner.knex('invitations').where({ id: alreadyRevoked.invitationId }).first('revoked_at');
+
+      const created = await invite(await loginFromTestIp(), targetEmail);
+      expect(created.statusCode).toBe(201);
+      expect(created.body.supersededInvitationId).toBeNull();
+      // The revoke only touches rows with `revoked_at is null`, so this one is left as it was.
+      const after = await owner.knex('invitations').where({ id: alreadyRevoked.invitationId }).first('revoked_at');
+      expect(after?.revoked_at).toEqual(before?.revoked_at);
+    });
   });
 });

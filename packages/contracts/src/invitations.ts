@@ -101,12 +101,7 @@ export const InvitationCreatedResponseSchema = z.object({
   expiresAt: z.string().datetime()
 }).strict();
 
-/**
- * Collaborator creation also answers the pending invitation it revoked, if any: the screen must be
- * able to warn that the previous link stopped working even when the revoked invitation is not among
- * the loaded pages (issue #333). `null` means there was nothing to revoke. Only this route carries
- * the field; the shared creation/resend contract above stays unchanged.
- */
+/** Collaborator creation answers the still-valid invitation it superseded, if any (issue #333). */
 export const CollaboratorInvitationCreatedResponseSchema = InvitationCreatedResponseSchema.extend({
   supersededInvitationId: z.string().uuid().nullable()
 }).strict();
