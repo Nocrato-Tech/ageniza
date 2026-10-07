@@ -44,6 +44,10 @@ import {
   CreateMediaUploadRequestSchema,
   CreatePersonaRequestSchema,
   CreateMediaUploadResponseSchema,
+  EmailChangeConfirmRequestSchema,
+  EmailChangeConfirmResponseSchema,
+  EmailChangeRequestResponseSchema,
+  EmailChangeRequestSchema,
   HealthResponseSchema,
   InvitationAcceptNewAccountRequestSchema,
   InvitationAcceptNewAccountResponseSchema,
@@ -81,7 +85,7 @@ import {
  * schema at generation time; secret-shaped values are angle-bracket placeholders on purpose.
  */
 
-export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'collaborators' | 'media' | 'profile';
+export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'collaborators' | 'media' | 'profile' | 'email-change';
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
@@ -149,7 +153,8 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto.',
   collaborators: 'A equipe da agência: listagem com paginação, busca e filtros.',
   media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.',
-  profile: 'Edição do próprio nome e da própria foto de perfil.'
+  profile: 'Edição do próprio nome e da própria foto de perfil.',
+  'email-change': 'Pedido de troca do e-mail da conta, aprovado pela operação, e a confirmação pelo link enviado ao e-mail novo.'
 };
 
 export const ERROR_MESSAGES: Record<string, string> = {
@@ -173,6 +178,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   INVALID_ROLE: 'O papel informado não é válido para esta agência.',
   CLIENT_NAME_IN_USE: 'Já existe um cliente ativo com este nome.',
   CLIENT_ARCHIVED: 'Cliente arquivado não pode ser editado.',
+  INVALID_PASSWORD: 'A senha atual não confere.',
+  SAME_EMAIL: 'Informe um e-mail diferente do atual.',
   EMAIL_DELIVERY_FAILED: 'Não foi possível entregar o e-mail.',
   QUOTA_EXCEEDED: 'This agency has reached its storage quota.',
   UPLOAD_NOT_PENDING: 'This upload is not pending confirmation.',
@@ -1402,6 +1409,73 @@ path: '/agencies/:agencyId/roles',
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 415, code: 'UNSUPPORTED_MEDIA_TYPE' }
+    ]
+  },
+
+  {
+    method: 'post',
+    path: '/me/email-change',
+    operationId: 'requestEmailChange',
+    module: 'email-change',
+    summary: 'Pede a troca do e-mail da própria conta',
+    description: [
+      'A pessoa não troca o e-mail sozinha: ela pede, e a operação da plataforma aprova pelo CLI',
+      '(`cli:email-change`), porque a conta é global e o pedido não pertence a nenhuma agência. O',
+      'corpo traz só o e-mail novo e a senha atual; a conta é sempre a da sessão. Há um pedido',
+      'aberto por conta, e um novo substitui o anterior. O endereço atual recebe um aviso.',
+      'A resposta é a mesma 202 vazia quando o e-mail novo já pertence a outra conta: a rota não',
+      'revela quais e-mails têm conta. O teto é de 5 pedidos por hora e por conta.'
+    ].join('\n'),
+    access: 'Sessão',
+    permission: null,
+    body: EmailChangeRequestSchema,
+    requestExample: { newEmail: 'novo.endereco@exemplo.test', currentPassword: '<senha-do-exemplo>' },
+    responses: [{
+      status: 202,
+      description: 'Pedido registrado; o endereço atual foi avisado.',
+      schema: EmailChangeRequestResponseSchema,
+      example: {}
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'SAME_EMAIL' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'INVALID_PASSWORD' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/email-change/confirm',
+    operationId: 'confirmEmailChange',
+    module: 'email-change',
+    summary: 'Confirma a troca de e-mail pelo link enviado ao e-mail novo',
+    description: [
+      'Pública: quem prova que lê o e-mail novo é o token do link, de uso único. Troca o e-mail,',
+      'encerra todas as sessões da conta e os links de redefinição de senha pendentes, e avisa o',
+      'endereço antigo. Link usado, vencido, substituído, ou cujo e-mail já pertence a outra conta',
+      'respondem todos o mesmo 400 `INVALID_LINK`.'
+    ].join('\n'),
+    access: 'Pública, pelo token do link',
+    permission: null,
+    body: EmailChangeConfirmRequestSchema,
+    requestExample: { token: '<token-do-link>' },
+    responses: [{
+      status: 200,
+      description: 'E-mail trocado e sessões encerradas.',
+      schema: EmailChangeConfirmResponseSchema,
+      example: {}
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'INVALID_LINK' },
+      { status: 429, code: 'RATE_LIMITED' }
     ]
   }
 ];

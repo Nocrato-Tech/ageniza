@@ -2,6 +2,8 @@ import { captureUnexpectedError, type CoreLogger } from '@ageniza/core';
 import {
   clientInvitationEmail,
   collaboratorInvitationEmail,
+  emailChangedEmail,
+  emailChangeRequestedEmail,
   maskEmailAddress,
   passwordResetEmail,
   type EmailSender
@@ -36,9 +38,17 @@ export interface SendClientInvitationEmailInput extends SendInvitationEmailInput
   readonly clientName: string;
 }
 
+export interface SendAccountNoticeInput {
+  readonly to: string;
+}
+
 export interface EmailService {
   /** Schedules delivery and returns without waiting for the email transport. */
   sendPasswordReset(input: SendPasswordResetInput): void;
+  /** To the address the account has now, when a change of address is requested. Detached like a reset. */
+  sendEmailChangeRequested(input: SendAccountNoticeInput): void;
+  /** To the old address, after the swap. Detached like a reset. */
+  sendEmailChanged(input: SendAccountNoticeInput): void;
   /** Sends an administrative collaborator invitation and waits for SMTP delivery. */
   sendCollaboratorInvitation(input: SendInvitationEmailInput): Promise<void>;
   /** Sends an administrative client invitation and waits for SMTP delivery. */
@@ -114,6 +124,28 @@ export const createEmailService = (options: CreateEmailServiceOptions): EmailSer
     }
   };
 
+  /** Same fire-and-forget delivery as a reset: the response never depends on SMTP latency. */
+  const sendNotice = (to: string, message: ReturnType<typeof emailChangedEmail>, template: string): void => {
+    let delivery: Promise<void>;
+    try {
+      delivery = options.sender.send({ ...message, to, template });
+    } catch (error) {
+      delivery = Promise.reject(error);
+    }
+    const trackedDelivery = delivery.catch(() => {
+      options.logger.error({
+        operation: `auth.${template}_email`,
+        status: 'failed',
+        recipient: maskEmailAddress(to),
+        error: { name: 'EmailDeliveryError', code: 'EMAIL_DELIVERY_FAILED' }
+      }, 'Account notice email delivery failed');
+    });
+    pendingEmails.add(trackedDelivery);
+    void trackedDelivery.finally(() => {
+      pendingEmails.delete(trackedDelivery);
+    }).catch(() => undefined);
+  };
+
   const drain = async (): Promise<void> => {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<void>((resolve) => {
@@ -156,6 +188,12 @@ export const createEmailService = (options: CreateEmailServiceOptions): EmailSer
       }).catch(() => {
         // The rejection is already handled above; keep cleanup detached and safe.
       });
+    },
+    sendEmailChangeRequested(input): void {
+      sendNotice(input.to, emailChangeRequestedEmail(), 'email-change-requested');
+    },
+    sendEmailChanged(input): void {
+      sendNotice(input.to, emailChangedEmail(), 'email-changed');
     },
     sendCollaboratorInvitation(input): Promise<void> {
       return sendInvitation(input, collaboratorInvitationEmail({

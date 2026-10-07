@@ -21,6 +21,7 @@ import type { CollaboratorModuleDependencies } from './modules/collaborators/rou
 import { createMediaJobDispatcher } from './modules/media/job-dispatcher.js';
 import type { MediaModuleDependencies } from './modules/media/routes.js';
 import { createMediaStorageClient } from './modules/media/storage-client.js';
+import type { EmailChangeModuleDependencies } from './modules/email-change/routes.js';
 import type { ProfileModuleDependencies } from './modules/profile/routes.js';
 
 /** Dedicated to Better Auth (and, since it shares the same `ageniza_app` role and connection
@@ -114,6 +115,8 @@ export const startApi = async (): Promise<void> => {
     }
   };
 
+  const emailChangeDependencies: EmailChangeModuleDependencies = { database, auth, emailService };
+
   const readiness = createReadiness(false);
   const dependencyChecks: readonly HealthCheck[] = [
     { name: 'auth-database', check: async () => { await authPool.query('select 1'); } }
@@ -130,7 +133,8 @@ export const startApi = async (): Promise<void> => {
     clients: clientDependencies,
     collaborators: collaboratorDependencies,
     media: mediaDependencies,
-    profile: profileDependencies
+    profile: profileDependencies,
+    emailChange: emailChangeDependencies
   });
 
   const shutdown = createShutdownManager();

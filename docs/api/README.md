@@ -1372,6 +1372,60 @@ Envia a própria foto de perfil.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `413 PAYLOAD_TOO_LARGE` · `415 UNSUPPORTED_MEDIA_TYPE` · `500 INTERNAL_ERROR`
 
+### email-change — Pedido de troca do e-mail da conta, aprovado pela operação, e a confirmação pelo link enviado ao e-mail novo.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `POST` | `/me/email-change` | Sessão | — | Pede a troca do e-mail da própria conta |
+| `POST` | `/email-change/confirm` | Pública, pelo token do link | — | Confirma a troca de e-mail pelo link enviado ao e-mail novo |
+
+#### `POST /me/email-change`
+
+Pede a troca do e-mail da própria conta.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "newEmail": "novo.endereco@exemplo.test",
+  "currentPassword": "<senha-do-exemplo>"
+}
+```
+
+**Resposta `202`** — Pedido registrado; o endereço atual foi avisado.
+
+```json
+{}
+```
+
+**Erros:** `400 SAME_EMAIL` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 INVALID_PASSWORD` · `413 PAYLOAD_TOO_LARGE` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `POST /email-change/confirm`
+
+Confirma a troca de e-mail pelo link enviado ao e-mail novo.
+
+- Acesso: Pública, pelo token do link.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "token": "<token-do-link>"
+}
+```
+
+**Resposta `200`** — E-mail trocado e sessões encerradas.
+
+```json
+{}
+```
+
+**Erros:** `400 INVALID_LINK` · `400 VALIDATION_ERROR` · `403 CSRF_REJECTED` · `413 PAYLOAD_TOO_LARGE` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
 ## Catálogo de códigos de erro
 
 | código | mensagem padrão |
@@ -1396,6 +1450,8 @@ Envia a própria foto de perfil.
 | `INVALID_ROLE` | O papel informado não é válido para esta agência. |
 | `CLIENT_NAME_IN_USE` | Já existe um cliente ativo com este nome. |
 | `CLIENT_ARCHIVED` | Cliente arquivado não pode ser editado. |
+| `INVALID_PASSWORD` | A senha atual não confere. |
+| `SAME_EMAIL` | Informe um e-mail diferente do atual. |
 | `EMAIL_DELIVERY_FAILED` | Não foi possível entregar o e-mail. |
 | `QUOTA_EXCEEDED` | This agency has reached its storage quota. |
 | `UPLOAD_NOT_PENDING` | This upload is not pending confirmation. |
