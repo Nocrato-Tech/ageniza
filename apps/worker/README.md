@@ -52,15 +52,25 @@ On `SIGTERM` the queue stops fetching, waits up to 45 seconds for running jobs, 
 
 This is the answer to [ADR 0010](../../docs/adr/0010-vps-edge-and-production-deployment.md)'s condition on duplicate consumption during the worker handoff; see its durable-queue amendment.
 
+### Scheduled jobs
+
+A definition may carry `schedule: { cron, timeZone }`. The queue registers it at every start as an upsert in `pgboss.schedule` keyed by the job name, so restarting the worker, or running two, never adds a second schedule, and pg-boss's cron monitor (on, in the worker only; the API's producer keeps it off) sends the job when it is due. One worker wins each pass of the monitor and the send is deduplicated per minute, so a due tick makes one job. **A tick missed while no worker runs is not replayed**: the next tick is the next run, so a job that must not lose a day has to be written to catch up by itself, as `clients.archive-due` does by archiving everything already past.
+
 ### Schema and upgrades
 
 The `pgboss` schema is created by a Knex migration in [`packages/database/migrations`](../../packages/database/migrations), owned by the migration role, and holds the frozen pg-boss construction SQL. The worker runs pg-boss with `migrate` and `createSchema` disabled and connects as `ageniza_app`, which has data access to that schema but no `CREATE`. Queues are created without partitions and index maintenance (`REINDEX`) is disabled for the same reason, so the running worker never executes DDL.
 
 If the installed pg-boss expects a different schema version, the worker refuses to start and never becomes ready. To upgrade pg-boss, pin the new exact version and add a new forward-only migration built from `getMigrationPlans('pgboss', <current version>)`. `src/queue.test.ts` fails until the migrations create the schema version the installed package expects.
 
+## Closing ended contracts (issue #133)
+
+`src/archive-due-clients-job.ts` registers `clients.archive-due`, the first scheduled business job: every day at 00:10 in `America/Sao_Paulo` it runs `select app_private.archive_due_clients()` and logs how many clients it archived, and nothing else. All of the rule is in that function, which archives exactly what the archive route archives (portal closed, pending portal invitations revoked, links kept, audited) for each client whose `closing_date` is already past. The worker calls it as `ageniza_app`, with no user and no wider access: this is the single-purpose `security definer` exception in [`docs/business/structural-changes.md`](../../docs/business/structural-changes.md), safe because the function can do nothing else, whoever calls it.
+
+The handler is idempotent (a second run the same day archives none) and lets a database error through, so a lost race with a concurrent change of the client's invitations is retried by the queue. The log carries the queue, job id, attempt and `archived`, no client, no person. To fire it by hand locally see [`docs/local-environment.md`](../../docs/local-environment.md). Decision: `docs/business/decisions/2026-10-07-o-job-diario-de-encerramento-liga-o-agendamento-do-worker.md`.
+
 ## Video processing (issue #24)
 
-`src/media-video-job.ts` registers the only durable job the worker currently ships,
+`src/media-video-job.ts` registers the durable video job,
 `media.process-video` (name shared with the API's producer through `@ageniza/contracts`'s
 `MEDIA_VIDEO_PROCESSING_JOB_NAME`), whenever `createWorkerRuntime` is given object storage
 (`R2_*`/`config.storage`; see `packages/config/src/server.ts`'s `WorkerStorageConfig` and
@@ -100,7 +110,7 @@ pnpm db:start && pnpm db:migrate && pnpm storage:start
 pnpm --filter @ageniza/worker test:integration   # queue + video processing against local PostgreSQL/MinIO
 ```
 
-The queue integration suite covers a job surviving a worker restart, backoff retries, a permanent failure reaching its dead letter queue, draining on shutdown, and a job that outlives the drain being completed by the next worker.
+The queue integration suite covers a job surviving a worker restart, backoff retries, a permanent failure reaching its dead letter queue, draining on shutdown, and a job that outlives the drain being completed by the next worker. `archive-due-clients-job.integration.test.ts` covers the daily job against the real function (yesterday archived, today not, none the second time), its retry after a lost deadlock, the single schedule across restarts, and the cron monitor turning a due schedule into a running job.
 
 The video processing suite requires a real `ffmpeg`/`ffprobe` on `PATH` (issue #24) -- there is no
 useful way to fake process spawning without losing coverage of real timeouts, exit codes, and the

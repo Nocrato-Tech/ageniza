@@ -44,6 +44,12 @@ export interface DurableJobDefinition<TPayload extends object> {
    * global setting to suit it would throttle every unrelated job too.
    */
   readonly concurrency?: number;
+  /**
+   * Sends the job on a cron schedule, in the given IANA time zone. Registered again at every start,
+   * as an upsert keyed by the job name, so a restart never adds a second schedule. A tick missed
+   * while no worker runs is not replayed: the next tick is the next run.
+   */
+  readonly schedule?: { readonly cron: string; readonly timeZone: string };
 }
 
 export interface DurableQueue {
@@ -62,6 +68,7 @@ export interface CreateDurableQueueOptions {
   /** Test hooks; production uses the defaults. */
   readonly shutdownTimeoutMs?: number;
   readonly superviseIntervalSeconds?: number;
+  readonly cronMonitorIntervalSeconds?: number;
   readonly pollingIntervalSeconds?: number;
 }
 
@@ -124,9 +131,12 @@ export const createDurableQueue = (options: CreateDurableQueueOptions): DurableQ
     // Supervision expires jobs abandoned by a crash so they are retried; it needs only data access.
     supervise: true,
     ...(options.superviseIntervalSeconds === undefined ? {} : { superviseIntervalSeconds: options.superviseIntervalSeconds }),
+    ...(options.cronMonitorIntervalSeconds === undefined ? {} : { cronMonitorIntervalSeconds: options.cronMonitorIntervalSeconds }),
     // REINDEX needs index ownership, which the application role deliberately lacks.
     reindex: false,
-    schedule: false,
+    // The cron monitor sends the jobs that declare a `schedule`; it writes only rows of the pgboss
+    // schema the role already has data access to, and one worker at a time wins each pass.
+    schedule: true,
     useListenNotify: false,
     persistWarnings: false,
     persistQueueStats: false
@@ -169,6 +179,9 @@ export const createDurableQueue = (options: CreateDurableQueueOptions): DurableQ
         // createQueue ignores an existing queue, so apply changed retry settings explicitly.
         await boss.createQueue(definition.name, queueOptions);
         await boss.updateQueue(definition.name, queueOptions);
+        if (definition.schedule !== undefined) {
+          await boss.schedule(definition.name, definition.schedule.cron, {}, { tz: definition.schedule.timeZone });
+        }
         // includeMetadata stays a literal so the handler is typed with retryCount, which gives the attempt.
         const workOptions = {
           batchSize: 1,

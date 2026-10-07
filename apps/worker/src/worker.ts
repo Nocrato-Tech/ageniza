@@ -16,6 +16,7 @@ import {
 } from '@ageniza/core';
 import { createDatabaseClient, type DatabaseClient } from '@ageniza/database';
 
+import { archiveDueClientsJob } from './archive-due-clients-job.js';
 import { createJobProcessor, type JobProcessor } from './jobs.js';
 import { mediaVideoProcessingJob } from './media-video-job.js';
 import { createMediaProcessingStorageClient } from './media-storage.js';
@@ -90,6 +91,9 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
   const queue = options.queue ?? (options.config.smokeJob
     ? undefined
     : createDurableQueue({ connectionString: options.config.databaseUrl, logger, concurrency: options.config.concurrency }));
+  // The daily closing of ended contracts (issue #133) needs only the database, so it is registered
+  // whenever the queue exists; smoke mode has no queue and no database.
+  if (queue !== undefined) queue.register(archiveDueClientsJob({ database }));
   // Video processing (issue #24): registered whenever object storage is configured, exactly like
   // the API only mounts its media routes when `config.storage` is present. Registration must
   // happen before `queue.start()` (enforced by `queue.register` itself).
