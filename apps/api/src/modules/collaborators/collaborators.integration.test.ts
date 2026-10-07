@@ -888,6 +888,20 @@ describe('collaborators module (issue #95)', () => {
       ].sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     });
 
+    it('lets the Owner with owner_user_id and no membership row at all read the list (issue #313)', async () => {
+      // `createAgencyWithOwner` always attaches the `admin` preset, so the ownership bypass of
+      // `requireAnyPermission` had no HTTP case: this caller has no membership row, hence no role
+      // and no permission, and still reads the list -- admin included -- by possession.
+      const bareOwner = await makeUser('roles-bare-owner');
+      const agencyId = await createAgency('Papéis Owner Sem Vínculo', bareOwner.id);
+
+      const response = await getRoles(await loginCookie(bareOwner), agencyId);
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual(
+        [...systemPresets(true)].sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
+      );
+    });
+
     it('hides the admin role from everyone but the Owner, even an admin-preset member', async () => {
       const { agencyId } = await createAgencyWithOwner('Papéis Admin', 'roles-admin');
       const adminMember = await addMember(agencyId, { name: 'Pessoa Admin Papéis', emailLabel: 'roles-admin-member', roleId: presetRoleIds.admin });

@@ -2,25 +2,37 @@ import { z } from 'zod';
 
 import { AuthEmailSchema } from './auth.js';
 import { createPaginatedResponseSchema, PaginationInputSchema } from './pagination.js';
-import { NO_CONTROL_CHARACTERS, SearchTextSchema } from './search.js';
+import { createDisplayNameSchema } from './display-name.js';
+import { SearchTextSchema } from './search.js';
 
 /** Longest job title, counted in UTF-16 units like every `max` of this contract. */
 export const COLLABORATOR_JOB_TITLE_MAX_LENGTH = 256;
 
 /**
- * A job title a request may write: trimmed, 1 to 256 characters, and free of control characters.
- * The control rule is the one `jobTitle` of the listing filter applies (`SearchTextSchema`), so a
- * title this schema accepts is always one the filter can select -- a title the database stores but
- * the filter refuses (400) could never be filtered by.
+ * A job title a request may write: the shared display-name rule (#200, issue #324) with a cap of 256
+ * UTF-16 units. A job title is text the screen shows about a person, so it refuses what a name
+ * refuses: control, bidi-override and invisible characters (RLO, LRI, ZWSP, BOM, NEL, U+2028, the
+ * Hangul fillers) that make a title render as something other than what is stored, and a value with
+ * no letter or number. The filter-only rule of the listing (`SearchTextSchema`, C0 and DEL) is not
+ * enough for displayed data.
  *
  * The length is checked here, before the statement reaches the database: the database measures it
- * with a per-character function that is quadratic in the input.
+ * with a per-character function that is quadratic in the input. Every title this schema accepts is
+ * one the listing filter can select (the filter accepts a superset), which a test pins.
  */
-export const CollaboratorJobTitleSchema = z.string()
-  .trim()
-  .min(1)
-  .max(COLLABORATOR_JOB_TITLE_MAX_LENGTH)
-  .regex(NO_CONTROL_CHARACTERS, 'Job title cannot contain control characters');
+export const CollaboratorJobTitleSchema = createDisplayNameSchema(COLLABORATOR_JOB_TITLE_MAX_LENGTH);
+
+/**
+ * The `jobTitle` of the update body: `null` clears the title, and so does a blank value (empty or
+ * only whitespace, by the same trim the title uses), which becomes `null` like `legalName` does in
+ * the client contract. Anything else must be a valid title. A value of only invisible characters is
+ * not blank -- it is not whitespace -- and is refused, so it can never be stored as a title that
+ * shows nothing.
+ */
+export const CollaboratorJobTitleInputSchema = z.string()
+  .nullable()
+  .transform((value) => (value === null || value.trim() === '' ? null : value))
+  .pipe(z.union([z.null(), CollaboratorJobTitleSchema]));
 
 /** Access role of a collaborator: the system/agency role that grants authorization. */
 export const CollaboratorRoleSchema = z.object({
@@ -74,11 +86,11 @@ export const CollaboratorListResponseSchema = createPaginatedResponseSchema(Coll
 /**
  * Body of `PATCH /agencies/:agencyId/collaborators/:membershipId` (issue #97). Either field, or
  * both; the permission each one needs is decided from the fields that are present, not from the
- * route. `jobTitle: null` clears the title. An empty body is a validation error, never a 200 that
- * changed nothing.
+ * route. `jobTitle: null` or a blank one clears the title. An empty body is a validation error,
+ * never a 200 that changed nothing.
  */
 export const UpdateCollaboratorRequestSchema = z.object({
-  jobTitle: CollaboratorJobTitleSchema.nullable().optional(),
+  jobTitle: CollaboratorJobTitleInputSchema.optional(),
   roleId: z.string().uuid().optional()
 }).strict().refine(
   (body) => body.jobTitle !== undefined || body.roleId !== undefined,

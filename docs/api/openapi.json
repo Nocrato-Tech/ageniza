@@ -1342,10 +1342,7 @@
             "type": [
               "string",
               "null"
-            ],
-            "minLength": 1,
-            "maxLength": 256,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+            ]
           },
           "roleId": {
             "type": "string",
@@ -5488,7 +5485,7 @@
       "patch": {
         "operationId": "updateCollaborator",
         "summary": "Altera o cargo e/ou o papel de um colaborador",
-        "description": "Aceita `jobTitle` (texto de 1 a 256 caracteres, sem caracteres de controle, ou `null` para limpar),\n`roleId`, ou os dois; corpo vazio é 400. Basta uma das duas permissões para chegar à rota, mas a exigida\né a de cada campo presente:\n`jobTitle` pede `colaborador.alterar_funcao`, `roleId` pede `colaborador.alterar_papel`, e os dois pedem\nas duas. Se o papel for `admin`, pede também `colaborador.atribuir_admin`, que só o Owner tem.\nO papel do Owner não muda e ninguém altera o próprio papel (403). Um vínculo de outra agência,\ninexistente, malformado ou removido devolve o mesmo 404. Devolve o vínculo atualizado, no\nmesmo contrato do detalhe; nunca há 200 sem uma linha alterada.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.alterar_funcao` ou `colaborador.alterar_papel`.",
+        "description": "Aceita `jobTitle` (até 256 caracteres, com ao menos uma letra ou número e sem caracteres de controle,\nde formato, invisíveis nem separadores de linha, como o nome de uma pessoa; `null` ou texto em branco\nlimpam o cargo),\n`roleId`, ou os dois; corpo vazio é 400. Basta uma das duas permissões para chegar à rota, mas a exigida\né a de cada campo presente:\n`jobTitle` pede `colaborador.alterar_funcao`, `roleId` pede `colaborador.alterar_papel`, e os dois pedem\nas duas. Se o papel for `admin`, pede também `colaborador.atribuir_admin`, que só o Owner tem.\nO papel do Owner não muda e ninguém altera o próprio papel (403). Um vínculo de outra agência,\ninexistente, malformado ou removido devolve o mesmo 404. Devolve o vínculo atualizado, no\nmesmo contrato do detalhe; nunca há 200 sem uma linha alterada.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.alterar_funcao` ou `colaborador.alterar_papel`.",
         "tags": [
           "collaborators"
         ],

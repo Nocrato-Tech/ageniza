@@ -855,7 +855,9 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     module: 'collaborators',
     summary: 'Altera o cargo e/ou o papel de um colaborador',
     description: [
-      'Aceita `jobTitle` (texto de 1 a 256 caracteres, sem caracteres de controle, ou `null` para limpar),',
+      'Aceita `jobTitle` (até 256 caracteres, com ao menos uma letra ou número e sem caracteres de controle,',
+      'de formato, invisíveis nem separadores de linha, como o nome de uma pessoa; `null` ou texto em branco',
+      'limpam o cargo),',
       '`roleId`, ou os dois; corpo vazio é 400. Basta uma das duas permissões para chegar à rota, mas a exigida',
       'é a de cada campo presente:',
       '`jobTitle` pede `colaborador.alterar_funcao`, `roleId` pede `colaborador.alterar_papel`, e os dois pedem',
