@@ -3,6 +3,10 @@ import { z } from 'zod';
 /** Longest free-text filter a listing accepts before a route tightens it further. */
 export const SEARCH_TEXT_MAX_LENGTH = 320;
 
+/** No control characters (U+0000-U+001F and U+007F): the one rule filter values and the labels they match share. */
+// eslint-disable-next-line no-control-regex -- the control range is exactly what this rule rejects
+export const NO_CONTROL_CHARACTERS = /^[^\u0000-\u001F\u007F]*$/;
+
 /**
  * Free-text filter of a listing: trimmed, never empty, capped, and free of control characters
  * (U+0000-U+001F and U+007F). A NUL byte reaches the driver fine as a JavaScript string but the
@@ -16,5 +20,4 @@ export const SearchTextSchema = z.string()
   .trim()
   .min(1)
   .max(SEARCH_TEXT_MAX_LENGTH)
-  // eslint-disable-next-line no-control-regex -- the control range is exactly what this rule rejects
-  .regex(/^[^\u0000-\u001F\u007F]*$/, 'Search text cannot contain control characters');
+  .regex(NO_CONTROL_CHARACTERS, 'Search text cannot contain control characters');

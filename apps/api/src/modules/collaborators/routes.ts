@@ -9,6 +9,7 @@ import {
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
   CollaboratorSchema,
+  UpdateCollaboratorRequestSchema,
   buildPaginationMetadata,
   resolvePagination,
   type Collaborator
@@ -21,9 +22,20 @@ import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
-import { COLLABORATOR_ROLES_READ_PERMISSIONS } from './permissions.js';
-import { getCollaborator, listAgencyJobTitles, listAgencyRoles, listCollaborators, type CollaboratorRow } from './service.js';
+import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
+import { isInsufficientPrivilegeError, tenantHolds } from '../tenancy/guards.js';
+import { COLLABORATOR_ROLES_READ_PERMISSIONS, COLLABORATOR_UPDATE_PERMISSIONS } from './permissions.js';
+import { COLLABORATOR_PERMISSIONS, permissionsRequiredByChange } from './policy.js';
+import {
+  findAssignableRole,
+  getCollaborator,
+  listAgencyJobTitles,
+  listAgencyRoles,
+  listCollaborators,
+  lockActiveMembership,
+  updateMembership,
+  type CollaboratorRow
+} from './service.js';
 
 export type CollaboratorPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
@@ -50,6 +62,23 @@ const agencyNotFound = (): HttpError => new HttpError({ statusCode: 404, code: '
 // The one 404 the detail route returns: a membership of another agency, a nonexistent one, a
 // malformed one and a removed one are indistinguishable on purpose.
 const collaboratorNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Collaborator not found.' });
+
+const forbidden = (message = 'You do not have permission to perform this action.'): HttpError =>
+  new HttpError({ statusCode: 403, code: 'FORBIDDEN', message });
+
+// The route's own refusals say what is missing. A 42501 that reaches the catch below comes from the
+// database barrier and keeps the generic message, so the two layers can be told apart.
+const MISSING_PERMISSION_MESSAGES: Readonly<Record<string, string>> = {
+  [COLLABORATOR_PERMISSIONS.changeJobTitle]: 'Você não tem permissão para alterar o cargo.',
+  [COLLABORATOR_PERMISSIONS.changeRole]: 'Você não tem permissão para alterar o papel.',
+  [COLLABORATOR_PERMISSIONS.grantAdmin]: 'Só o Owner da agência pode conceder o papel de Admin.'
+};
+
+const invalidRole = (): HttpError => new HttpError({
+  statusCode: 400,
+  code: 'INVALID_ROLE',
+  message: 'O papel informado não é válido para esta agência.'
+});
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -137,7 +166,20 @@ const agencyRolesDocs = {
   schemas: { params: AgencyPathParamsSchema, query: AgencyRolesQuerySchema, response: AgencyRolesResponseSchema }
 } satisfies DocumentedRouteConfig;
 
-/** Registers the collaborator routes of one agency: the listing (#95), job titles (#218) and the detail (#96). */
+// The permission depends on which fields the body carries. The metadata and the guard name the two
+// that can change anything at all (either one is enough to enter), and the handler then demands the
+// one of each field present once the body is parsed (`policy.ts`, issue #97).
+const collaboratorUpdateDocs = {
+  permission: COLLABORATOR_UPDATE_PERMISSIONS,
+  responseStatus: 200,
+  schemas: {
+    params: AgencyCollaboratorPathParamsSchema,
+    body: UpdateCollaboratorRequestSchema,
+    response: CollaboratorSchema
+  }
+} satisfies DocumentedRouteConfig;
+
+/** Registers the collaborator routes of one agency: the listing (#95), job titles (#218), roles (#287), the detail (#96) and the update (#97). */
 export const registerCollaboratorModule = (app: FastifyInstance, dependencies: CollaboratorModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
 
@@ -244,5 +286,59 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     // row", and answer the same 404.
     if (row === undefined) throw collaboratorNotFound();
     return reply.send(routeResponse(collaboratorDetailDocs, request, await collaboratorFromRow(dependencies, row, request.log)));
+  });
+
+  app.patch('/agencies/:agencyId/collaborators/:membershipId', {
+    preHandler: [
+      requireSession,
+      dependencies.requireAgencyAccess,
+      dependencies.requireAnyPermission(collaboratorUpdateDocs.permission)
+    ],
+    config: collaboratorUpdateDocs
+  }, async (request, reply) => {
+    const auth = request.auth;
+    if (auth === undefined) throw unauthenticated();
+    const tenant = request.tenant;
+    if (tenant === undefined) throw agencyNotFound();
+
+    const params = routeParams(collaboratorUpdateDocs, request);
+    const body = routeBody(collaboratorUpdateDocs, request);
+
+    const assertHolds = (grantsAdmin: boolean): void => {
+      for (const key of permissionsRequiredByChange(body, grantsAdmin)) {
+        if (!tenantHolds(tenant, key)) throw forbidden(MISSING_PERMISSION_MESSAGES[key]);
+      }
+    };
+
+    // Before anything is read: a caller without the permission learns nothing about the role or
+    // the person, not even that the membership id is malformed.
+    assertHolds(false);
+    if (!uuidPattern.test(params.membershipId)) throw collaboratorNotFound();
+
+    let row: CollaboratorRow | undefined;
+    try {
+      row = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+        const target = await lockActiveMembership(transaction, tenant.agencyId, params.membershipId);
+        if (target === undefined) throw collaboratorNotFound();
+
+        if (body.roleId !== undefined) {
+          const role = await findAssignableRole(transaction, tenant.agencyId, body.roleId);
+          if (role === undefined) throw invalidRole();
+          assertHolds(role.isAdmin);
+          if (target.is_owner) throw forbidden('O papel do Owner da agência não pode ser alterado.');
+          if (target.user_id === auth.userId) throw forbidden('Ninguém altera o próprio papel.');
+        }
+
+        // Zero rows means a policy filtered the row, which Postgres reports as success; answering
+        // 200 for it would claim a change that never happened.
+        if (!await updateMembership(transaction, tenant.agencyId, params.membershipId, body)) throw forbidden();
+        return getCollaborator(transaction, tenant.agencyId, params.membershipId);
+      });
+    } catch (error) {
+      if (isInsufficientPrivilegeError(error)) throw forbidden();
+      throw error;
+    }
+    if (row === undefined) throw new Error('The updated membership could not be read back.');
+    return reply.send(routeResponse(collaboratorUpdateDocs, request, await collaboratorFromRow(dependencies, row, request.log)));
   });
 };

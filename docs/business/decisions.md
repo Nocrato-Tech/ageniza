@@ -1510,6 +1510,50 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 
 ---
 
+## 2026-10-07 — PATCH do vínculo: o corpo, a ordem das recusas e o que o cargo aceita
+
+**Contexto.** A #97 implementa na API a regra estrutural de 2026-09-24 (só o Owner concede `admin`): o `PATCH` de cargo e papel e a mesma regra na criação e no reenvio de convite. A SPEC fixa as permissões por campo e as proteções, mas não o nome dos campos do corpo, o status de cada recusa, a ordem em que as checagens respondem, nem o que um cargo pode conter. Nada abaixo muda tabela, policy ou formato de resposta já usado por outra rota.
+
+**Decisão.**
+
+1. **Corpo em camelCase**, como o resto da API: `jobTitle` e `roleId` (a issue os chama pelos nomes das colunas). A resposta é o contrato do detalhe (`CollaboratorSchema`).
+2. **A porta e a permissão por campo.** Para chegar à rota basta uma de `colaborador.alterar_funcao` ou `colaborador.alterar_papel` (a guarda é derivada de `docs.permission`, que o catálogo e o `x-permission` repetem). Lido o corpo, a permissão exigida é a de cada campo presente e, quando o papel é `admin`, também `colaborador.atribuir_admin`. A ordem das respostas é: 401, 404 da agência, 403 da porta, 400 do corpo, 403 por campo, 404 do vínculo (de outra agência, inexistente, malformado ou removido: o mesmo), 400 `INVALID_ROLE`, 403 de `atribuir_admin` quando o papel é `admin`, 403 do Owner e do próprio papel. Quem não pode não descobre nada antes do 403.
+3. **Toda recusa de autorização é `403 FORBIDDEN`**, com mensagem própria para as três que a pessoa precisa entender: falta de `colaborador.atribuir_admin` ao conceder `admin`, papel do Owner e papel próprio. Um `42501` vindo do banco (policy ou trigger) também é `403`, nunca `500`, e um `UPDATE` que não altera nenhuma linha é `403`, nunca `200`: a policy filtra em silêncio, e responder sucesso afirmaria uma mudança que não houve.
+4. **A permissão pedida para `admin` é `atribuir_admin`, não a posse.** O Owner passa por curto-circuito, inclusive o Owner sem vínculo (só `agencies.owner_user_id`); um papel personalizado que a receba também passa. O papel é `admin` pela função do banco `app_private.is_admin_role`, a mesma do trigger e da policy de `invitations`, para API e banco não divergirem sobre o que é "admin".
+5. **A regra vale no convite.** Criar convite de colaborador com o papel `admin` e reenviar um convite que o carrega exigem `colaborador.atribuir_admin` (`403`). Sem isso o reenvio devolvia `500`, porque a policy `invitations_insert` o recusa no banco.
+6. **O cargo aceita 1 a 256 unidades UTF-16 depois do `trim`, sem caracteres de controle**, e `null` limpa. O limite é aplicado pelo schema antes de a instrução chegar ao banco, porque `app_private.utf16_length` (#225) é quadrático no tamanho. A regra de controle é a do filtro `jobTitle` da listagem: um cargo que o banco aceita (a `CHECK` só olha tamanho e forma) e o filtro recusa com `400` nunca poderia ser filtrado. **Pendente de validação:** a SPEC não diz o que um cargo contém; bidi e caracteres invisíveis, que o nome de pessoa recusa, ficam de fora porque a SPEC não pede.
+7. **Editar o próprio cargo é permitido** a quem tem `colaborador.alterar_funcao`, e o cargo do Owner também. As regras invioláveis 4 e 5 falam só do papel, e o banco não restringe o cargo. **Pendente de validação:** a SPEC chama a permissão de "editar o cargo de outro" e o modal mostra o cargo como leitura para a própria pessoa; se o dono do produto quiser recusar a edição do próprio cargo, é uma condição na rota, sem migration.
+
+**Consequência.** As duas barreiras continuam: a da API devolve o `403` com mensagem, a do banco é a que sobra se alguém esquecer a da API, e um teste confirma que as duas concordam, para cada ator e cada alteração. Os grants da migration do cargo passam a ser afirmados por teste (`has_function_privilege`): `ageniza_app` executa só `normalize_job_title` e `utf16_length`, e nem ele nem `PUBLIC` executam `backfill_job_title` e `set_job_title`.
+
+**Origem.** Issue #97 e achados das revisões dos PRs #220 e #232. As decisões 6 e 7 estão **pendentes de validação** pelo dono do produto.
+
+---
+
+## 2026-10-07 — Remuneração fica fora do MVP
+
+**Contexto.** A #109 perguntava se, e como, a remuneração aparece no crachá e no modal de colaboradores. A decisão de 2026-09-24 ("Remuneração pertence ao Financeiro, que entra no MVP depois de Tarefas") já tirou o salário de Colaboradores e deixou o espaço reservado para quando o Financeiro existisse.
+
+**Decisão.** A remuneração fica **fora do MVP**. É dado sensível (LGPD), exige regra própria de quem vê e não é necessária para operar a agência agora. Hoje ela não aparece em lugar nenhum, e `apps/web/src/collaborators.test.tsx` garante que o modal não mostra salário nem remuneração. Volta como módulo próprio (financeiro), com SPEC, quando o dono pedir. As três regras pré-decididas em 2026-09-24 (quem lê, tabela própria, histórico) continuam como ponto de partida e não são redecididas do zero.
+
+**Consequência.** A linha "Remuneração no crachá e no modal" da seção 10 de `specs/colaboradores.md` segue listada, mas o gatilho passa a ser o pedido do dono, e não a entrevista do Financeiro; a SPEC não foi reescrita neste PR, e esta entrada prevalece sobre ela. Esta decisão restringe a de 2026-09-24 só na parte da remuneração: se o Financeiro básico continua no MVP depois de Tarefas não é tratado aqui e fica a cargo do dono.
+
+**Origem.** Decisão do maestro, com autonomia dada pelo dono em 2026-10-07, registrada no fechamento da issue #109. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-07 — As abas Performance e Entregas ficam desabilitadas, com o motivo, até o Conteúdo
+
+**Contexto.** A #110 perguntava o que as abas `Performance` e `Entregas` do modal de colaborador mostram. Não há o que contar: entregas e pendências pressupõem tarefas atribuídas a pessoas, e nem Conteúdo nem Tarefas foram implementados. Qualquer métrica definida agora seria inventada.
+
+**Decisão.** As duas abas ficam como estão no MVP: **visíveis, desabilitadas e com o motivo à vista**, que é o que a tela já faz (`specs/colaboradores.md`, seção 7). O conteúdo delas depende do módulo Conteúdo (entregas e subtarefas). Quando o Conteúdo existir, uma issue nova define as métricas a partir dos dados reais.
+
+**Consequência.** Nenhuma rota, coluna ou tela nova. O modal não é redesenhado quando o conteúdo chegar, porque a estrutura de abas já existe. A linha "Conteúdo das abas Performance e Entregas" da seção 10 de `specs/colaboradores.md` segue listada, mas o gatilho passa a ser a issue aberta quando o Conteúdo existir, e não "a primeira entrevista que criar tarefa atribuível a colaborador"; a SPEC não foi reescrita neste PR, e esta entrada prevalece sobre ela.
+
+**Origem.** Decisão do maestro, com autonomia dada pelo dono em 2026-10-07, registrada no fechamento da issue #110. **Pendente de validação** pelo dono do produto.
+
+---
+
 ## 2026-10-07 — ESTRUTURAL: Termos e Privacidade mudam de versão sem forçar o reaceite, e o aceite depois do cadastro é por documento
 
 **Contexto.** A decisão de 2026-09-24 sobre Termos e Privacidade deixou o reaceite em aberto, com gatilho: a primeira alteração de um dos documentos depois de existir gente com conta. O contrato de aceite era um só (`acceptTerms: true`, que grava as duas versões), então uma conta não tinha como aceitar um documento sem o outro. Issue #81.
