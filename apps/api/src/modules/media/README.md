@@ -22,8 +22,8 @@ neither the file nor a proxy passes through the VPS.
    marks it `confirmed`. Reusing an unexpired upload URL can only mutate staging, never the
    confirmed original. Quota decisions take a transaction-scoped advisory lock keyed by
    `media-quota:<canonical agency UUID>`, so concurrent confirmations cannot consume the same
-   remaining bytes/object slot. It is advisory rather than a row lock because `agencies` has RLS
-   without an UPDATE policy; `SELECT ... FOR UPDATE` would silently match no rows for `ageniza_app`.
+   remaining bytes/object slot. It is advisory rather than a row lock because `ageniza_app` has no
+   UPDATE on `agencies`, and `SELECT ... FOR UPDATE` needs it (issue #296).
 5. `GET /agencies/:agencyId/media/:assetId/download-url?variant=original|thumbnail|preview` issues
    a short-lived signed `GET`, meant to be requested only at the moment it is actually needed
    (a social network's API fetching the original, or the app displaying a preview). `variant`
@@ -51,6 +51,18 @@ uploads both back under the asset's own key prefix, and records the outcome
 (`thumbnail_object_key`, `preview_object_key`, `video_duration_seconds`, sizes, or a short
 `video_processing_error`). The original is never transcoded.
 See `apps/worker/src/media-video-job.ts` and its README/tests for the worker side in full.
+
+## What the database holds (issues #295, #296)
+
+`ageniza_app` inserts and updates `media_assets` only through column grants, and has no DELETE: the
+identity columns (`id`, `agency_id`, `category`, the declared values, the object keys,
+`created_by_user_id`) are never written by an UPDATE, and no row is inserted with a state. A
+`BEFORE UPDATE` trigger lets `status` move only from `pending` to `confirmed` or `rejected`, and
+the outcome (`confirmed_size_bytes`, `confirmed_content_type`, `confirmed_at`, `rejected_reason`)
+is written once, with the status. A new column is not writable until a migration grants it.
+The API and the worker connect as `ageniza_app` for the user, so the database holds the shape of
+the transition, not the proof that the content was validated; that proof stays in the `complete`
+route.
 
 ## Environment variables
 

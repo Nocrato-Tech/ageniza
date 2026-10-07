@@ -58,16 +58,22 @@ afterAll(async () => {
 });
 
 describe('media quota advisory lock', () => {
-  it('proves the old row lock was filtered by RLS', async () => {
+  // Issue #296 took UPDATE away from ageniza_app on agencies. A row lock needs UPDATE on some column, so the
+  // lock that RLS used to filter to zero rows is now refused outright; either way it locks nothing, which is
+  // why the quota is serialized by the advisory lock below.
+  it('proves a row lock on agencies is not available to the application role', async () => {
     await expect(asUser(async (transaction) => {
       const visible = await raw<{ rows: readonly { id: string }[] }>(transaction, `
         select id from public.agencies where id = ?::uuid
       `, [agencyId]);
-      const forUpdate = await raw<{ rows: readonly { id: string }[] }>(transaction, `
+      return visible.rows.length;
+    })).resolves.toBe(1);
+
+    await expect(asUser(async (transaction) => {
+      await raw(transaction, `
         select id from public.agencies where id = ?::uuid for update
       `, [agencyId]);
-      return { visibleCount: visible.rows.length, forUpdateCount: forUpdate.rows.length };
-    })).resolves.toEqual({ visibleCount: 1, forUpdateCount: 0 });
+    })).rejects.toMatchObject({ code: '42501', message: expect.stringContaining('permission denied for table agencies') });
   });
 
   it('serializes application transactions with the advisory lock', async () => {
