@@ -1592,3 +1592,34 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 **Consequência.** Nenhuma rota muda. O marcador do login vive só no `state` da navegação, como o destino da sessão, nunca na URL — que carregaria o token no histórico e no referer. O destino é o contexto que a própria resposta do aceite carrega (`{ agencyId, clientId }`), nunca o que a sessão resolveria: sem isso, quem tem vínculo em mais de uma agência aceitava o convite de uma e caía na área de outra, com o aviso nomeando a agência errada (achado da revisão de segurança do PR #317). A comparação de e-mail acontece na tela, entre a sessão e o preview, e o `403 INVITATION_ACCOUNT_MISMATCH` da API continua como segunda barreira no aceite manual. O aceite automático não vale para quem abre o link já com sessão, nem para o `signedIn` da redefinição de senha, que continuam exigindo o clique.
 
 **Origem.** Issue #184, decidida pelo maestro com autonomia dada pelo dono em 2026-10-07. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-07 — Remover e reativar: quem vê removidos, o estado errado é 409, e a sessão não é encerrada
+
+**Contexto.** A #98 implementa `POST …/remove` e `POST …/reactivate`. A SPEC fixa as permissões, as proteções e que a reativação exige o papel no corpo; não fixa qual permissão é "administrativa" para revelar vínculos removidos (regra inviolável 9, e "apenas para Admin e Owner" em 2026-09-24), nem o que acontece ao remover quem já está removido (a issue deixa a escolha), nem o que a remoção faz com a sessão da pessoa. Nada abaixo muda tabela, policy ou formato de resposta usado por outra rota.
+
+**Decisão.**
+
+1. **Quem vê vínculos `removed` é quem tem `colaborador.remover` ou `colaborador.alterar_papel`, além do Owner por posse.** O critério é a tarefa, não o nome do papel: quem pode remover ou reativar precisa encontrar a pessoa para fazê-lo, e uma agência pode montar um papel personalizado de administração do quadro sem usar o preset `admin`. `?status=removed` sem nenhuma das duas é `403` (depois da guarda e da validação, antes de qualquer leitura) e o detalhe de um removido é `404`; a listagem padrão e `status=active` nunca mostram removidos. É um desvio deliberado de "apenas para Admin e Owner" (2026-09-24), que assumia os presets: o `account_manager`, que edita cargo mas não papel, não vê removidos.
+2. **O estado errado é `409`, nos dois sentidos.** Remover quem já está removido (`COLLABORATOR_ALREADY_REMOVED`) e reativar quem não está removido (`COLLABORATOR_NOT_REMOVED`) são rejeitados, e nada muda, nem `updated_at`. A alternativa descartada foi a remoção idempotente (`200` sem escrita): ela responde sucesso sem uma linha alterada, o mesmo defeito que a #97 recusa, e reativar com um papel no corpo não tem como ser idempotente.
+3. **Remover não encerra sessão.** A sessão é global (Better Auth) e não existe sessão por agência; o acesso à agência é decidido a cada requisição por `requireAgencyAccess`, que só enxerga vínculo `active`. A pessoa perde a agência na requisição seguinte, com o mesmo cookie, e continua com as outras agências. Confirmado por teste; a SPEC não pede mais que isso.
+4. **Reativar com o papel `admin` exige `colaborador.atribuir_admin` na rota**, como a troca de papel e o convite (decisão de 2026-10-07 sobre o `PATCH`). A mesma checagem vale para quem foi Admin e volta como Admin.
+
+**Consequência.** A remoção continua sem regra de "último Admin" (2026-09-24). A segunda barreira do banco tinha uma lacuna exatamente no caminho de reativação que esta task cria; ela é fechada neste mesmo PR, pela decisão estrutural seguinte.
+
+**Origem.** Issue #98. As decisões 1 e 2 estão **pendentes de validação** pelo dono do produto; a 1 foi proposta antes, para a #98, em branch antiga que não chegou a PR. A 3 foi confirmada pelo maestro (a sessão é global e o acesso cai na requisição seguinte).
+
+---
+
+## 2026-10-07 — ESTRUTURAL: o trigger do vínculo também exige `atribuir_admin` quando o vínculo volta a `active` com papel `admin`
+
+**Esta é uma mudança estrutural**, por um dos cinco critérios de [structural-changes.md](structural-changes.md): muda **como a autorização é avaliada** (uma regra que depende do valor concedido, de 2026-09-24) num ponto que ela não alcançava. Registrada junto da migration, no mesmo PR, a pedido do maestro.
+
+**Contexto.** `app_private.check_agency_membership_update` (migration `20260928000000`) pede `colaborador.atribuir_admin` só quando `role_id` **muda** para o papel `admin`. Reativar um vínculo removido muda `status` e não `role_id`: quem foi Admin e volta como Admin mantém o mesmo `role_id` e passava pelo trigger sem a permissão, o que é justamente o que a regra "só o Owner concede Admin" existe para impedir. Hoje só a rota o impedia; um `UPDATE` direto de um Admin como `ageniza_app` era aceito. Achado ao implementar a #98, que cria esse caminho.
+
+**Decisão.** Migration nova `20261007000100_reactivation_admin_grant` (a antiga não é editada): o mesmo trigger, substituído no lugar, passa a exigir `colaborador.atribuir_admin` também na transição `removed` → `active` com o papel `admin`, mude o `role_id` ou não, com mensagem própria do trigger (`colaborador.atribuir_admin is required to bring back a link with the admin role.`, `42501`). Só essa transição: editar o cargo de um Admin ativo, removê-lo ou reativar com papel comum não muda. O dono do schema e as funções `security definer` que ele possui (`accept_invitation`) continuam fora do trigger, como antes.
+
+**Consequência.** A rota e o banco passam a recusar o mesmo caso, e um teste confere que concordam para cada ator. Nenhuma tabela, coluna, policy ou grant muda, e não há backfill: vínculos já ativos não são reavaliados. O reaceite de convite por quem foi removido segue pelo `accept_invitation`, que não passa por este trigger.
+
+**Origem.** Issue #98, achado da implementação, decidido pelo maestro. **Pendente de validação** pelo dono do produto.

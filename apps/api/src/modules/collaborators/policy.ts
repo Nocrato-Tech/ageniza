@@ -4,6 +4,17 @@ export const COLLABORATOR_PERMISSIONS = {
   grantAdmin: 'colaborador.atribuir_admin'
 } as const;
 
+export const COLLABORATOR_REMOVE_PERMISSION = 'colaborador.remover';
+
+/**
+ * Who sees removed links: whoever can remove or reactivate, plus the Owner by ownership. The
+ * criterion is the task, not the name of the role, so a custom role built for managing the team
+ * works (`decisions.md`, 2026-10-07, pending validation); `account_manager` edits job titles only
+ * and does not see them.
+ */
+export const canSeeRemovedLinks = (tenant: { readonly isOwner: boolean; readonly permissions: ReadonlySet<string> }): boolean =>
+  tenant.isOwner || tenant.permissions.has(COLLABORATOR_REMOVE_PERMISSION) || tenant.permissions.has(COLLABORATOR_PERMISSIONS.changeRole);
+
 /**
  * The permissions a membership change needs, decided from the fields present in the body and not
  * from the route (`specs/colaboradores.md` §6): the job title needs `alterar_funcao`, the role needs

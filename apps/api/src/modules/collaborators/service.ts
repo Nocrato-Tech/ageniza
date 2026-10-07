@@ -154,21 +154,22 @@ export const listAgencyJobTitles = async (
  * exactly like the listing, so a membership that belongs to another agency is not a row here: the
  * caller gets the same 404 as for a nonexistent id, never a 403 that would reveal it exists.
  *
- * Only `active` links are returned. `specs/colaboradores.md` §4 keeps `removed` links in the
- * database, and §5 rule 9 keeps them out of the listing by default; until the removal task (#98)
- * adds the administrative view of removed links, the detail treats them as not found too.
+ * Only `active` links are returned unless `includeRemoved` is set (issue #98), which the route sets
+ * only for a caller who may see removed links (`specs/colaboradores.md` §5, rule 9): for everyone
+ * else a removed link is as absent as a foreign one.
  */
 export const getCollaborator = async (
   transaction: CollaboratorTransaction,
   agencyId: string,
-  membershipId: string
+  membershipId: string,
+  options: { readonly includeRemoved?: boolean } = {}
 ): Promise<CollaboratorRow | undefined> => {
   const result = await raw<RawRows<CollaboratorRow>>(transaction, `
     select${COLLABORATOR_COLUMNS}${COLLABORATOR_FROM}
     where membership.agency_id = ?::uuid
       and membership.id = ?::uuid
-      and membership.status = 'active'
-  `, [agencyId, membershipId]);
+      and (membership.status = 'active' or ?::boolean)
+  `, [agencyId, membershipId, options.includeRemoved === true]);
   return result.rows[0];
 };
 
@@ -297,5 +298,74 @@ export const updateMembership = async (
        and status = 'active'
     returning id
   `, [...bindings, agencyId, membershipId]);
+  return result.rows.length === 1;
+};
+
+export interface LockedMembership extends MembershipTarget {
+  readonly status: 'active' | 'removed';
+}
+
+/**
+ * Reads and locks a membership of the route's agency in any status (issue #98), for the two routes
+ * that move a link between `active` and `removed`: they must tell "not there" (404) from "there,
+ * in the wrong state" (409), which `lockActiveMembership` cannot. Another agency's link and a
+ * nonexistent one are both "no row".
+ */
+export const lockMembership = async (
+  transaction: CollaboratorTransaction,
+  agencyId: string,
+  membershipId: string
+): Promise<LockedMembership | undefined> => {
+  const result = await raw<RawRows<LockedMembership>>(transaction, `
+    select
+      membership.user_id as user_id,
+      app_private.is_agency_owner(membership.agency_id, membership.user_id) as is_owner,
+      membership.status as status
+    from public.agency_memberships as membership
+    where membership.agency_id = ?::uuid
+      and membership.id = ?::uuid
+    for update of membership
+  `, [agencyId, membershipId]);
+  return result.rows[0];
+};
+
+/**
+ * Moves an `active` link to `removed`; the row stays (`specs/colaboradores.md` §4). Returns whether
+ * a row changed, because a policy that filters the row answers success with zero rows.
+ */
+export const removeMembership = async (
+  transaction: CollaboratorTransaction,
+  agencyId: string,
+  membershipId: string
+): Promise<boolean> => {
+  const result = await raw<RawRows<{ id: string }>>(transaction, `
+    update public.agency_memberships
+       set status = 'removed', updated_at = now()
+     where agency_id = ?::uuid
+       and id = ?::uuid
+       and status = 'active'
+    returning id
+  `, [agencyId, membershipId]);
+  return result.rows.length === 1;
+};
+
+/**
+ * Moves a `removed` link back to `active` in the same row, with the role the caller names and never
+ * the previous one (`specs/colaboradores.md` §4). Returns whether a row changed.
+ */
+export const reactivateMembership = async (
+  transaction: CollaboratorTransaction,
+  agencyId: string,
+  membershipId: string,
+  roleId: string
+): Promise<boolean> => {
+  const result = await raw<RawRows<{ id: string }>>(transaction, `
+    update public.agency_memberships
+       set role_id = ?::uuid, status = 'active', updated_at = now()
+     where agency_id = ?::uuid
+       and id = ?::uuid
+       and status = 'removed'
+    returning id
+  `, [roleId, agencyId, membershipId]);
   return result.rows.length === 1;
 };
