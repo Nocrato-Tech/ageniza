@@ -82,10 +82,14 @@ filtra em silêncio) nunca vira 200: vira 403. Um `42501` do banco (policy ou tr
 não 500. As duas barreiras continuam: a da API devolve a mensagem, a do banco é a que sobra se alguém
 esquecer a da API.
 
-`jobTitle` tem de 1 a 256 caracteres depois do `trim`, sem caracteres de controle (mesma regra do
-filtro `jobTitle` da listagem, para todo cargo gravado ser filtrável), e `null` limpa. O limite é
-aplicado pelo schema antes de a requisição chegar ao banco, que mede o tamanho com uma função
-quadrática.
+`jobTitle` segue a regra de caracteres do nome exibido (#200, issue #324), com teto de 256 unidades
+UTF-16: recusa controle, sobreposição bidi (RLO, LRI), invisíveis (ZWSP, BOM, o preenchimento Hangul),
+NEL, CSI e U+2028/U+2029, e exige uma letra ou número, porque cargo é texto mostrado sobre uma pessoa e
+o filtro só de C0 da busca não basta para dado exibido. `null` e texto em branco (só espaço, tabulação,
+NBSP ou BOM, pelo mesmo `trim`) limpam o cargo; um valor só de invisíveis não é branco e é recusado, nunca
+gravado. O limite é aplicado pelo schema antes de a requisição chegar ao banco, que mede o tamanho com
+uma função quadrática. O banco continua mais permissivo que a escrita de propósito (a `CHECK` só olha
+forma e tamanho, e um cargo legado com esses caracteres segue legível): quem barra é a API.
 
 ## Remover e reativar (`POST`, issue #98)
 
