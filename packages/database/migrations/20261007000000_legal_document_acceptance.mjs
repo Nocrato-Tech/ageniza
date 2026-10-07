@@ -14,7 +14,8 @@
 //
 // Stable error codes, so the API can translate them without parsing messages:
 //   A0030 -> no actor is bound to the transaction
-//   A0031 -> the document or the version is not one the table accepts
+//   A0031 -> the document or the version is not one the table accepts: an unknown document, a
+//            version that is not a real `YYYY-MM-DD` date, or one later than today
 
 export async function up(knex) {
   await knex.raw(`
@@ -27,6 +28,7 @@ export async function up(knex) {
     declare
       v_user_id uuid := app_private.current_user_id();
       v_recorded integer;
+      v_version_date date;
     begin
       if v_user_id is null then
         raise exception using errcode = 'A0030', message = 'An authenticated user is required.';
@@ -36,6 +38,18 @@ export async function up(knex) {
          or p_version is null or p_version !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
       then
         raise exception using errcode = 'A0031', message = 'Unknown legal document or malformed version.';
+      end if;
+
+      -- The shape is not enough: 2026-02-30 and 2026-99-99 match it, and a version in the future
+      -- would make the never-regresses rule below suppress every real version for good. The date
+      -- is checked for real, and it cannot be later than today in the product's time zone.
+      begin
+        v_version_date := p_version::date;
+      exception when datetime_field_overflow or invalid_datetime_format then
+        raise exception using errcode = 'A0031', message = 'The version is not a real date.';
+      end;
+      if v_version_date > (pg_catalog.now() at time zone 'America/Sao_Paulo')::date then
+        raise exception using errcode = 'A0031', message = 'The version is in the future.';
       end if;
 
       -- Never regresses: a version older than, or equal to, one the account already accepted for

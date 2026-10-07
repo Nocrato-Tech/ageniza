@@ -18,6 +18,7 @@ const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:age
 
 const actorA = randomUUID();
 const actorB = randomUUID();
+const actorC = randomUUID();
 
 let owner: DatabaseClient | undefined;
 let application: DatabaseClient | undefined;
@@ -50,13 +51,14 @@ beforeAll(async () => {
   application = createLocalTestDatabaseClient(applicationUrl);
   await getOwner().knex('auth.user').insert([
     { id: actorA, name: 'Legal A', email: `legal-a-${actorA}@example.test`, emailVerified: true },
-    { id: actorB, name: 'Legal B', email: `legal-b-${actorB}@example.test`, emailVerified: true }
+    { id: actorB, name: 'Legal B', email: `legal-b-${actorB}@example.test`, emailVerified: true },
+    { id: actorC, name: 'Legal C', email: `legal-c-${actorC}@example.test`, emailVerified: true }
   ]);
 });
 
 afterAll(async () => {
-  await getOwner().knex('legal_acceptances').whereIn('user_id', [actorA, actorB]).delete();
-  await getOwner().knex('auth.user').whereIn('id', [actorA, actorB]).delete();
+  await getOwner().knex('legal_acceptances').whereIn('user_id', [actorA, actorB, actorC]).delete();
+  await getOwner().knex('auth.user').whereIn('id', [actorA, actorB, actorC]).delete();
   await application?.close();
   await owner?.close();
 });
@@ -131,6 +133,33 @@ describe('app_private.accept_legal_document (issue #81)', () => {
     }
 
     await expect(rowsOf(actorA)).resolves.toEqual(before);
+  });
+
+  it('refuses a version that is not a real date or lies in the future, recording nothing', async () => {
+    const before = await rowsOf(actorA);
+    const sao = await raw<{ rows: { today: string; tomorrow: string }[] }>(getOwner().knex, `
+      select ((now() at time zone 'America/Sao_Paulo')::date)::text as today,
+             ((now() at time zone 'America/Sao_Paulo')::date + 1)::text as tomorrow
+    `, []);
+    const { tomorrow } = sao.rows[0]!;
+
+    for (const version of ['2026-02-30', '2025-02-29', '2026-99-99', '2026-13-01', '2026-00-10', '2026-04-31', '0000-01-01', '9999-12-31', tomorrow]) {
+      await expect(accept(actorA, 'terms', version), version).rejects.toMatchObject({ code: 'A0031' });
+      await expect(accept(actorA, 'privacy', version), version).rejects.toMatchObject({ code: 'A0031' });
+    }
+
+    await expect(rowsOf(actorA)).resolves.toEqual(before);
+  });
+
+  it('accepts today in the product time zone and a leap day, the two edges of the rule', async () => {
+    const actor = actorC;
+    const sao = await raw<{ rows: { today: string }[] }>(getOwner().knex, `select ((now() at time zone 'America/Sao_Paulo')::date)::text as today`, []);
+    const { today } = sao.rows[0]!;
+
+    await expect(accept(actor, 'privacy', '2024-02-29')).resolves.toBe(true);
+    await expect(accept(actor, 'terms', today)).resolves.toBe(true);
+
+    await expect(rowsOf(actor)).resolves.toEqual([{ document: 'privacy', version: '2024-02-29' }, { document: 'terms', version: today }]);
   });
 
   it('is executable by ageniza_app and not by PUBLIC, and the table still refuses a direct insert', async () => {
