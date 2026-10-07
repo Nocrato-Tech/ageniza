@@ -1,11 +1,13 @@
 <!--
-Um PR, um assunto. API e interface são PRs separados; migration vem sozinha.
+Um PR, um assunto: pode juntar issues do mesmo tema e da mesma camada, cada uma com o seu `Closes #N` e o aceite item a item, até ~800 linhas de diff de código. API e interface são PRs separados; migration não vem com código de API nem de tela.
 O fluxo completo está em CONTRIBUTING.md.
 -->
 
 ## Por quê
 
-<!-- O problema que este PR resolve. Se houver issue, linke; se a razão não estiver nela, escreva aqui. -->
+<!-- O problema que este PR resolve. Se houver issue, linke; se o PR agrupa issues do mesmo tema e da mesma camada, cada uma leva a sua linha `Closes #N`. Se a razão não estiver na issue, escreva aqui. -->
+
+<!-- Closes #N — uma linha por issue agrupada; a palavra-chave tem de vir imediatamente antes do número. -->
 
 ## O que muda
 
