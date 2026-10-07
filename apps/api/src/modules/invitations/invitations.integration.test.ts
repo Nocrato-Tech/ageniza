@@ -1076,4 +1076,62 @@ describe('invitation HTTP module', () => {
     expect(logs).not.toContain(logInvitee.email);
     await logApp.close();
   });
+
+  // Issue #333: the creation response carries the pending invitation it revoked, so the screen no
+  // longer guesses it from the loaded pages of the invitations list.
+  describe('POST /agencies/:agencyId/invitations/collaborators superseded id', () => {
+    const invite = async (cookie: string, email: string, targetAgency = agencyId): Promise<{ statusCode: number; body: { invitationId: string; supersededInvitationId: string | null } }> => {
+      const response = await app.app.inject({
+        method: 'POST',
+        url: `/agencies/${targetAgency}/invitations/collaborators`,
+        // A distinct source IP keeps these logins and creations out of the shared per-IP buckets
+        // the rest of the suite runs against, like the client-invite strict-body test above.
+        remoteAddress: '127.0.0.3',
+        headers: { ...origin, cookie },
+        payload: { email, roleId: productionRoleId }
+      });
+      return { statusCode: response.statusCode, body: response.json() };
+    };
+    const loginFromTestIp = async (): Promise<string> => {
+      const login = await app.app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        remoteAddress: '127.0.0.3',
+        headers: origin,
+        payload: { email: admin.email, password: admin.password }
+      });
+      expect(login.statusCode).toBe(200);
+      return sessionCookieHeader(login.cookies);
+    };
+
+    it('answers the revoked pending invitation id, and null when there was none', async () => {
+      const targetEmail = `superseded-${randomUUID()}@example.test`;
+      const cookie = await loginFromTestIp();
+
+      const first = await invite(cookie, targetEmail);
+      expect(first.statusCode).toBe(201);
+      expect(first.body.supersededInvitationId).toBeNull();
+
+      const second = await invite(cookie, targetEmail);
+      expect(second.statusCode).toBe(201);
+      expect(second.body.supersededInvitationId).toBe(first.body.invitationId);
+      expect(second.body.invitationId).not.toBe(first.body.invitationId);
+      await expect(owner.knex('invitations').where({ id: first.body.invitationId }).first('revoked_at')).resolves.toMatchObject({ revoked_at: expect.any(Date) });
+    });
+
+    it('never answers an invitation id from another agency for the same e-mail', async () => {
+      const targetEmail = `cross-agency-${randomUUID()}@example.test`;
+      const otherAgency = await createAgency('Superseded other agency', admin.id);
+      const other = await insertInvitation({ agencyId: otherAgency, email: targetEmail });
+      const mine = await insertInvitation({ agencyId, email: targetEmail });
+
+      const created = await invite(await loginFromTestIp(), targetEmail);
+      expect(created.statusCode).toBe(201);
+      expect(created.body.supersededInvitationId).toBe(mine.invitationId);
+      expect(created.body.supersededInvitationId).not.toBe(other.invitationId);
+      // Only this agency's pending invitation was revoked; the other agency's is untouched.
+      await expect(owner.knex('invitations').where({ id: mine.invitationId }).first('revoked_at')).resolves.toMatchObject({ revoked_at: expect.any(Date) });
+      await expect(owner.knex('invitations').where({ id: other.invitationId }).first('revoked_at')).resolves.toEqual({ revoked_at: null });
+    });
+  });
 });

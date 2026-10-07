@@ -5,6 +5,7 @@ import {
   AgencyInvitationPathParamsSchema,
   AgencyPathParamsSchema,
   ClientInvitationRequestSchema,
+  CollaboratorInvitationCreatedResponseSchema,
   CollaboratorInvitationRequestSchema,
   InvitationAcceptNewAccountRequestSchema,
   InvitationAcceptNewAccountResponseSchema,
@@ -280,7 +281,7 @@ const createCollaboratorInvitation = async (
   email: string,
   roleId: string,
   agencyId: string
-): Promise<{ invitationId: string; expiresAt: Date; token: InvitationToken; agencyName: string }> => {
+): Promise<{ invitationId: string; expiresAt: Date; token: InvitationToken; agencyName: string; supersededInvitationId: string | null }> => {
   const auth = request.auth;
   if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
   const tenant = request.tenant;
@@ -319,6 +320,9 @@ const createCollaboratorInvitation = async (
       for (const old of revoked.rows) {
         await auditInTransaction(transaction, { action: 'invitation.revoked', actorUserId: auth.userId, agencyId, targetId: old.id });
       }
+      // At most one equivalent pending invitation exists (the partial unique index guarantees it),
+      // and the revoking UPDATE is scoped to this agency, so the id can only be this agency's.
+      const supersededInvitationId = revoked.rows[0]?.id ?? null;
 
       const result = await raw<RawRows<{ id: string; expires_at: Date }>>(transaction, `
         insert into public.invitations
@@ -329,7 +333,7 @@ const createCollaboratorInvitation = async (
       const row = result.rows[0];
       if (row === undefined) throw new Error('Invitation insert did not return a row.');
       await auditInTransaction(transaction, { action: 'invitation.sent', actorUserId: auth.userId, agencyId, targetId: row.id });
-      return { invitationId: row.id, expiresAt: new Date(row.expires_at), token, agencyName: agency.agencyName };
+      return { invitationId: row.id, expiresAt: new Date(row.expires_at), token, agencyName: agency.agencyName, supersededInvitationId };
     });
   } catch (error) {
     if (isInsufficientPrivilegeError(error)) throw forbidden();
@@ -624,7 +628,7 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
   const collaboratorDocs = {
     permission: 'colaborador.convidar',
     responseStatus: 201,
-    schemas: { params: AgencyPathParamsSchema, body: CollaboratorInvitationRequestSchema, response: InvitationCreatedResponseSchema }
+    schemas: { params: AgencyPathParamsSchema, body: CollaboratorInvitationRequestSchema, response: CollaboratorInvitationCreatedResponseSchema }
   } satisfies DocumentedRouteConfig;
   const clientInviteDocs = {
     permission: 'cliente.convidar_usuario',
@@ -682,7 +686,11 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     } catch {
       throw emailDeliveryFailed();
     }
-    return reply.status(201).send(routeResponse(collaboratorDocs, request, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
+    return reply.status(201).send(routeResponse(collaboratorDocs, request, {
+      invitationId: result.invitationId,
+      expiresAt: result.expiresAt.toISOString(),
+      supersededInvitationId: result.supersededInvitationId
+    }));
   });
 
   app.post('/agencies/:agencyId/clients/:clientId/invitations', authenticated(clientInviteDocs), async (request, reply) => {
