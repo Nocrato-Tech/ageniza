@@ -37,6 +37,7 @@ interface CollaboratorJson {
   readonly jobTitle: string | null;
   readonly role: { key: string; name: string };
   readonly isOwner: boolean;
+  readonly isSelf: boolean;
   readonly status: 'active' | 'removed';
 }
 
@@ -286,7 +287,8 @@ describe('POST /agencies/:agencyId/collaborators/:membershipId/remove (issue #98
     const response = await remove(admin.cookie, fx.agencyId, target.membershipId);
 
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ membershipId: target.membershipId, status: 'removed', jobTitle: 'Vendedor', role: { key: 'sales' } });
+    // Nobody removes themselves (below), so the item this route answers is always someone else's link: `isSelf` false (issue #286).
+    expect(response.body).toMatchObject({ membershipId: target.membershipId, status: 'removed', jobTitle: 'Vendedor', role: { key: 'sales' }, isSelf: false });
     const after = await membershipRow(target.membershipId);
     expect(after).toMatchObject({ id: target.membershipId, status: 'removed', role_id: presetRoleIds.sales, job_title: 'Vendedor' });
     expect(after.updated_at.getTime()).toBeGreaterThan(before.updated_at.getTime());
@@ -566,7 +568,8 @@ describe('POST /agencies/:agencyId/collaborators/:membershipId/reactivate (issue
     const response = await reactivate(admin.cookie, fx.agencyId, target.membershipId, { roleId: presetRoleIds.production });
 
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ membershipId: target.membershipId, status: 'active', jobTitle: 'Vendedor', role: { key: 'production' } });
+    // A removed person has no session to reactivate themselves with, so the answered link is someone else's: `isSelf` false (issue #286).
+    expect(response.body).toMatchObject({ membershipId: target.membershipId, status: 'active', jobTitle: 'Vendedor', role: { key: 'production' }, isSelf: false });
     expect(await membershipRow(target.membershipId)).toMatchObject({ id: target.membershipId, status: 'active', role_id: presetRoleIds.production, job_title: 'Vendedor' });
     expect(await membershipCount(fx.agencyId)).toBe(rowsBefore);
   });

@@ -1089,6 +1089,7 @@ Lista a equipe da agência.
         "name": "Gestor de conta"
       },
       "isOwner": false,
+      "isSelf": false,
       "status": "active",
       "joinedAt": "2026-03-12T12:00:00.000Z"
     }
@@ -1125,6 +1126,7 @@ Devolve um colaborador da agência.
     "name": "Gestor de conta"
   },
   "isOwner": false,
+  "isSelf": false,
   "status": "active",
   "joinedAt": "2026-03-12T12:00:00.000Z"
 }
@@ -1162,6 +1164,7 @@ Altera o cargo e/ou o papel de um colaborador.
     "name": "Produção"
   },
   "isOwner": false,
+  "isSelf": false,
   "status": "active",
   "joinedAt": "2026-03-12T12:00:00.000Z"
 }
@@ -1190,6 +1193,7 @@ Remove um colaborador do quadro.
     "name": "Produção"
   },
   "isOwner": false,
+  "isSelf": false,
   "status": "removed",
   "joinedAt": "2026-03-12T12:00:00.000Z"
 }
@@ -1226,6 +1230,7 @@ Reativa um colaborador removido.
     "name": "Produção"
   },
   "isOwner": false,
+  "isSelf": false,
   "status": "active",
   "joinedAt": "2026-03-12T12:00:00.000Z"
 }

@@ -50,6 +50,10 @@ export const CollaboratorRoleSchema = z.object({
  *
  * `photoUrl` is a short-lived signed URL (`identity-storage`), or null when the person has no
  * photo: `auth."user".image` holds the storage key, never a public address.
+ *
+ * `isSelf` (issue #286) says whether this link is the signed-in person's own. The server computes it
+ * from the session, so the screen does not guess from the e-mail (which the operation can change)
+ * and nobody else's `userId` is exposed. Every response that carries the item carries it.
  */
 export const CollaboratorSchema = z.object({
   membershipId: z.string().uuid(),
@@ -59,6 +63,7 @@ export const CollaboratorSchema = z.object({
   jobTitle: z.string().trim().min(1).max(256).nullable(),
   role: CollaboratorRoleSchema,
   isOwner: z.boolean(),
+  isSelf: z.boolean(),
   status: z.enum(['active', 'removed']),
   joinedAt: z.string().datetime()
 }).strict();

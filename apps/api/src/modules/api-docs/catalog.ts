@@ -800,6 +800,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
           jobTitle: 'Gestora de contas',
           role: { key: 'account_manager', name: 'Gestor de conta' },
           isOwner: false,
+          isSelf: false,
           status: 'active',
           joinedAt: '2026-03-12T12:00:00.000Z'
         }],
@@ -843,6 +844,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
         jobTitle: 'Gestora de contas',
         role: { key: 'account_manager', name: 'Gestor de conta' },
         isOwner: false,
+        isSelf: false,
         status: 'active',
         joinedAt: '2026-03-12T12:00:00.000Z'
       }
@@ -891,6 +893,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
         jobTitle: 'Editor de Vídeo',
         role: { key: 'production', name: 'Produção' },
         isOwner: false,
+        isSelf: false,
         status: 'active',
         joinedAt: '2026-03-12T12:00:00.000Z'
       }
@@ -933,6 +936,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
         jobTitle: 'Editor de Vídeo',
         role: { key: 'production', name: 'Produção' },
         isOwner: false,
+        isSelf: false,
         status: 'removed',
         joinedAt: '2026-03-12T12:00:00.000Z'
       }
@@ -978,6 +982,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
         jobTitle: 'Editor de Vídeo',
         role: { key: 'production', name: 'Produção' },
         isOwner: false,
+        isSelf: false,
         status: 'active',
         joinedAt: '2026-03-12T12:00:00.000Z'
       }
