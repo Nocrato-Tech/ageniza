@@ -11,6 +11,8 @@ const MenuContext = React.createContext<MenuContextValue | null>(null);
 
 export interface MenuProps {
   label: string;
+  /** Accessible name of the trigger when its content is only a glyph, empty in the a11y tree. */
+  triggerLabel?: string;
   trigger: ReactNode;
   children: ReactNode;
   /** Notifies the owner when the menu opens or closes, so it can load data or reset its panels. */
@@ -25,7 +27,7 @@ export interface MenuProps {
 const menuItems = (menu: HTMLElement): HTMLElement[] =>
   Array.from(menu.querySelectorAll<HTMLElement>('[role=menuitem]:not([disabled]):not([aria-disabled=true])'));
 
-export function Menu({ label, trigger, children, onOpenChange, activePanel }: MenuProps) {
+export function Menu({ label, triggerLabel, trigger, children, onOpenChange, activePanel }: MenuProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -94,6 +96,7 @@ export function Menu({ label, trigger, children, onOpenChange, activePanel }: Me
         ref={triggerRef}
         type='button'
         className='ui-menu__trigger'
+        aria-label={triggerLabel}
         aria-haspopup='menu'
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
