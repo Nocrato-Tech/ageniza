@@ -8,7 +8,7 @@ Uma plataforma de operação para **agências** que gerenciam conteúdo de redes
 
 Não é um produto de autoatendimento. Não existe cadastro público, e uma agência só passa a existir quando alguém da operação cria por comando interno. O produto atende a nossa agência e parceiros.
 
-**Cobrança ainda não existe no sistema, mas está prevista.** Trial e cobrança por volume — clientes, colaboradores, armazenamento — são intenção registrada e não desenhada, e a nossa própria agência é isenta. Nada disso está implementado; ver a entrada correspondente em [decisions.md](decisions.md) antes de projetar qualquer coisa que dependa de plano.
+**Cobrança ainda não existe no sistema, mas está prevista.** Trial e cobrança por volume — clientes, colaboradores, armazenamento — são intenção registrada e não desenhada, e a nossa própria agência é isenta. Nada disso está implementado; ver a entrada correspondente em [decisions/](decisions/) antes de projetar qualquer coisa que dependa de plano.
 
 ## Os dois lados
 
@@ -68,7 +68,7 @@ Cada agência tem uma **quota** de armazenamento. Arquivo fora do tipo permitido
 
 ## Onde as regras vivem
 
-- Regras e decisões de negócio: [decisions.md](decisions.md) e as issues do GitHub.
+- Regras e decisões de negócio: [decisions/](decisions/) e as issues do GitHub.
 - Decisões técnicas com consequência de longo prazo: [ADRs](../adr/).
 - Invariantes que todo agente e toda pessoa deve respeitar: [`AGENTS.md`](../../AGENTS.md).
 

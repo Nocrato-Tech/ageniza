@@ -21,7 +21,7 @@ Na dúvida, faça a pergunta ao contrário: *se decidirmos o oposto daqui a seis
 ## O que fazer quando encontrar uma
 
 1. **Pare antes de implementar.** Não resolva no meio de outra tarefa.
-2. **Registre em [decisions.md](decisions.md)** — contexto, decisão, consequência — e diga explicitamente que é estrutural.
+2. **Registre em um arquivo novo em [decisions/](decisions/)** — contexto, decisão, consequência — e diga explicitamente que é estrutural.
 3. **Escreva a issue** com o alcance real, incluindo o que precisa ser migrado ou reescrito.
 4. Só então implemente.
 
@@ -51,6 +51,6 @@ Nenhuma precisa ser resolvida agora. Estão aqui para serem reconhecidas quando 
 
 ## O gate
 
-Isto não depende de boa vontade. `scripts/ci/verify-structural-decisions.mjs` roda no CI e reprova a mudança quando uma migration alcança algo já implantado sem que [decisions.md](decisions.md) tenha sido tocado junto.
+Isto não depende de boa vontade. `scripts/ci/verify-structural-decisions.mjs` roda no CI e reprova a mudança quando uma migration alcança algo já implantado sem que um arquivo de [decisions/](decisions/) tenha sido tocado junto.
 
 Ele cobre o banco, que é onde mudar de ideia custa mais caro. Mudança estrutural que vive só na API — um formato de resposta que os próximos módulos vão copiar, por exemplo — continua dependendo de quem revisa reconhecer o caso.

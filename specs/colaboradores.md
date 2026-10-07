@@ -395,7 +395,7 @@ O formato da **listagem** não estava marcado: ela aplica o contrato que a sess�
 
 Os dois pontos tinham as issues [#109](https://github.com/Nocrato-Tech/ageniza/issues/109) e [#110](https://github.com/Nocrato-Tech/ageniza/issues/110), hoje fechadas com essas decisões. Se o Financeiro básico continua no MVP depois de Tarefas não é tratado aqui: fica a cargo do dono.
 
-**Decisões à espera do dono:** todas as marcadas "pendente de validação" acima estão reunidas na issue [#359](https://github.com/Nocrato-Tech/ageniza/issues/359). Quando o dono responder, a marca sai desta SPEC e da entrada de `decisions.md`.
+**Decisões à espera do dono:** todas as marcadas "pendente de validação" acima estão reunidas na issue [#359](https://github.com/Nocrato-Tech/ageniza/issues/359). Quando o dono responder, a marca sai desta SPEC e a linha `**Validação.**` de cada decisão, em [`docs/business/decisions/`](../docs/business/decisions/), passa a `Validada pelo dono em AAAA-MM-DD.` — a única edição permitida num arquivo de decisão já registrado (README, "Como registrar").
 
 ## 11. Decisões registradas
 

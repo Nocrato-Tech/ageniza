@@ -50,7 +50,7 @@ body:
     id: estrutural
     attributes:
       label: Verificação estrutural
-      description: "Ver docs/business/structural-changes.md. Se marcar, a decisão precisa estar em decisions.md antes de implementar."
+      description: "Ver docs/business/structural-changes.md. Se marcar, a decisão precisa estar em docs/business/decisions/ antes de implementar."
       options:
         - label: altera tabela que já existe
         - label: muda formato de resposta que outras rotas copiam

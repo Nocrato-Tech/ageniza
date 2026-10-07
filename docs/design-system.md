@@ -291,7 +291,7 @@ As curvas de easing (`motion/easing/standard`, `motion/easing/exit`) não têm v
 
 ## 13. Estratégia de componentes — shadcn + Ageniza
 
-Este projeto **não usa shadcn/ui nem Tailwind hoje**. O dono do produto decidiu em 2026-09-28 (ver `decisions.md`) que a parte B adota shadcn/ui, copiado para o repositório como base de mecânica e acessibilidade, com as variáveis do shadcn como ponte para os tokens Ageniza (seção 15). Até a parte B entrar, vale a estratégia original:
+Este projeto **não usa shadcn/ui nem Tailwind hoje**. O dono do produto decidiu em 2026-09-28 (ver [`business/decisions/2026-09-28-o-repositorio-e-a-fonte-do-design-system-com-documento-e.md`](business/decisions/2026-09-28-o-repositorio-e-a-fonte-do-design-system-com-documento-e.md)) que a parte B adota shadcn/ui, copiado para o repositório como base de mecânica e acessibilidade, com as variáveis do shadcn como ponte para os tokens Ageniza (seção 15). Até a parte B entrar, vale a estratégia original:
 
 - shadcn/ui como base mecânica e de acessibilidade; o código copiado para o repositório, adaptável sem criar dependência visual;
 - Ageniza define tokens, aparência, semântica e API pública;
@@ -504,6 +504,6 @@ Uma entrega visual de uma task `escopo:web` só está concluída quando:
 - [ ] acessibilidade básica validada (seção 20);
 - [ ] componente novo foi criado só quando não existia equivalente reutilizável.
 
-Paridade entre Figma e código **não** é critério de aceite aqui: entra no refino de cada tela, depois que ela está no ar, com o designer (ver `decisions.md`).
+Paridade entre Figma e código **não** é critério de aceite aqui: entra no refino de cada tela, depois que ela está no ar, com o designer (ver [`business/decisions/2026-09-28-a-tela-e-implementada-a-partir-do-esboco-e-o-designer.md`](business/decisions/2026-09-28-a-tela-e-implementada-a-partir-do-esboco-e-o-designer.md)).
 
 > A meta não é construir um design system gigantesco antes do produto. A meta é garantir que cada nova tela aumente um sistema consistente, em vez de criar uma nova linguagem visual a cada implementação.
