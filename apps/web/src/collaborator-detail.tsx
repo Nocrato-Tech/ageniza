@@ -264,6 +264,11 @@ function ReadOnlyField({ label, value, note }: { label: string; value: string; n
   </div>;
 }
 
+/** SPEC §7: the modal header shows the agency entry date, for the own profile too (#357). */
+function AgencySince({ joinedAt }: { joinedAt: string }) {
+  return <p>Na agência desde <time dateTime={joinedAt}>{new Intl.DateTimeFormat('pt-BR').format(new Date(joinedAt))}</time></p>;
+}
+
 interface AdminEditFieldsProps {
   readonly collaborator: Collaborator;
   readonly membershipId: string;
@@ -481,6 +486,7 @@ function CollaboratorDetails({ collaborator, isSelf, onRemoved }: { collaborator
         {/* The name is already the modal heading; repeating it here would show it twice. */}
         <div className="collaborator-detail__self">
           <p className="form-hint">{PHOTO_IS_GLOBAL}</p>
+          <AgencySince joinedAt={collaborator.joinedAt} />
         </div>
       </div>
       : <div className="collaborator-detail__identity">
@@ -488,7 +494,7 @@ function CollaboratorDetails({ collaborator, isSelf, onRemoved }: { collaborator
         <div>
           <p>{[collaborator.jobTitle, collaborator.role.name].filter(Boolean).join(' · ')}</p>
           <p>{collaborator.email}</p>
-          <p>Na agência desde <time dateTime={collaborator.joinedAt}>{new Intl.DateTimeFormat('pt-BR').format(new Date(collaborator.joinedAt))}</time></p>
+          <AgencySince joinedAt={collaborator.joinedAt} />
         </div>
       </div>}
     <div className="collaborator-detail__tabs" role="tablist" aria-label="Informações do colaborador">
