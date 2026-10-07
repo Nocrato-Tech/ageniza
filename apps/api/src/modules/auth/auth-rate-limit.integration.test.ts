@@ -218,7 +218,14 @@ describe('auth rate limiting (#12)', () => {
       expect(overLimit.statusCode).toBe(429);
       expect(overLimit.json()).toMatchObject(rateLimitedBody);
 
-      advance(15 * 60_000 + 1);
+      // The window is 15 minutes: one millisecond before it lapses the attempt is still blocked.
+      advance(15 * 60_000 - 1);
+      const stillBlocked = await login(app, email, ip);
+      expect(stillBlocked.statusCode).toBe(429);
+      expect(stillBlocked.json()).toMatchObject(rateLimitedBody);
+
+      // One millisecond later the window reopens.
+      advance(1);
       expect((await login(app, email, ip)).statusCode).toBe(401);
     }, 20_000);
 
@@ -234,7 +241,14 @@ describe('auth rate limiting (#12)', () => {
       expect(overLimit.statusCode).toBe(429);
       expect(overLimit.json()).toMatchObject(rateLimitedBody);
 
-      advance(15 * 60_000 + 1);
+      // The window is 15 minutes: one millisecond before it lapses the request is still blocked.
+      advance(15 * 60_000 - 1);
+      const stillBlocked = await forgot(app, email, ip);
+      expect(stillBlocked.statusCode).toBe(429);
+      expect(stillBlocked.json()).toMatchObject(rateLimitedBody);
+
+      // One millisecond later the window reopens.
+      advance(1);
       expect((await forgot(app, email, ip)).statusCode).toBe(202);
     }, 20_000);
   });
