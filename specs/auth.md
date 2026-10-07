@@ -105,7 +105,7 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 8a. Redefinir senha **sempre autentica** quem redefiniu, pelo mesmo mecanismo do login — **salvo** quando a conta tem zero contextos e não há `inviteToken` válido para o mesmo e-mail: nesse caso a senha é trocada, mas nenhuma sessão é criada, e a resposta diz o motivo (`signedIn: false, reason: 'NO_CONTEXT_ACCESS'`), para a tela levar a `/sem-acesso` (2026-09-29, substitui o comportamento anterior de `204` sem sessão fora do fluxo de convite). Contagem de contextos e sessão nova nessa ordem: primeiro conta, só então assina — assim uma conta confirmada em zero contextos nunca chega a ter sessão para revogar. Fora do caso confirmado de zero, qualquer outra falha em criar a sessão pós-reset — a conta não ser encontrada, a contagem falhar, ou o `signInEmail` falhar (inclusive dois links de reset válidos da mesma conta disputando a senha) — usa um motivo diferente, `signedIn: false, reason: 'SIGN_IN_REQUIRED'`, para a tela levar a `/entrar` em vez de `/sem-acesso`: `NO_CONTEXT_ACCESS` só quando o zero foi de fato confirmado (achado da revisão de segurança do PR #176, 2026-09-29).
 9. Trocar de contexto grava a preferência e **não** recria a sessão.
 10. `401` em qualquer requisição leva ao login preservando o destino, e nunca deixa dado antigo na tela.
-11. Quem tem sessão válida e abre uma tela deste módulo é levado ao seu contexto, em vez de logar de novo.
+11. Quem tem sessão válida e abre uma tela deste módulo é levado ao seu contexto, em vez de logar de novo — **exceto** as telas que precisam abrir para qualquer sessão: `/convite/:token` (quem já está logado aceita o convite pelo fluxo da §7, Convite), `/senha/redefinir` e `/email/confirmar` (o link chega por e-mail e pode ser de outra conta, inclusive para quem já tem sessão) e `/termos` e `/privacidade` (páginas públicas de conteúdo). As demais telas do módulo (`/entrar`, `/sem-acesso`, `/senha/esquecida`) continuam redirecionando ao contexto ativo, e cada exceção tem teste próprio de que a tela abre com sessão válida sem redirecionar (issue #342, 2026-10-07, pendente de validação).
 12. A pessoa **não troca o próprio e-mail**: ela pede, pelo menu de conta, informando o e-mail novo e a **senha atual**, e a **operação** aprova pelo CLI (`cli:email-change`), porque a conta é global e o pedido não pertence a nenhuma agência (2026-10-07, pendente de validação). Senha errada não cria pedido. Há **um pedido aberto por conta**; um novo substitui o anterior. O endereço **atual** recebe o aviso "pediram a troca do e-mail desta conta; se não foi você, troque a senha".
 13. Aprovado o pedido, um link de **uso único**, válido por 48 horas, vai ao e-mail **novo**. Pedido não aprovado nunca troca nada.
 14. Confirmar o link troca o e-mail (marcando-o como verificado), **encerra todas as sessões** da conta e os links de redefinição de senha pendentes, e avisa o endereço **antigo**. Link usado, vencido, substituído ou recusado, e e-mail que outra conta passou a usar, respondem o mesmo `INVALID_LINK`.
@@ -154,7 +154,7 @@ Foi **mudança de contrato numa rota implantada**: os testes de integração de 
 
 1. `GET /me/legal-acceptances` lê as linhas da própria conta (a policy `legal_acceptances_select` já as limita ao ator) e compara a versão mais nova de cada documento com a em vigor (`AUTH_TERMS_VERSION`, `AUTH_PRIVACY_VERSION`). `pending` é verdadeiro quando a conta nunca aceitou o documento ou aceitou uma versão mais velha.
 2. `POST /me/legal-acceptances` chama `app_private.accept_legal_document(document, version)`, uma função `security definer` de escopo único que toma o usuário do ator da transação, nunca de um argumento. Recusa (`A0031`) um documento desconhecido e uma versão que não seja uma data real nem posterior a hoje (no fuso do produto, `America/Sao_Paulo`), e a configuração das versões recusa o mesmo no boot. Retorna sem gravar quando a conta já aceitou aquela versão ou uma mais nova, então é idempotente e nunca regride.
-3. `ageniza_app` continua **sem INSERT direto** em `legal_acceptances`: a tabela é prova de consentimento, e os únicos caminhos de escrita são o aceite de convite (cadastro) e esta função.
+3. `ageniza_app` só **lê** `legal_acceptances`: a tabela é prova de consentimento, e a migration `20261007000500` (issue #343) revoga `insert`, `update` e `delete` do papel, de modo que a escrita direta é recusada pelo privilégio (`permission denied`, `42501`) antes de a RLS ser consultada. Os únicos caminhos de escrita são o aceite de convite (cadastro) e esta função, ambos `security definer`.
 
 O cadastro (`accept-new-account`) não muda: continua gravando as duas versões em vigor, com o checkbox único. Conta anterior a esta entrega sem linha para um documento aparece como pendente; não há backfill.
 
@@ -391,7 +391,7 @@ Tela pública do link que a aprovação envia ao e-mail novo. **Pede um clique**
 | **Carregando** | skeleton na primeira carga; o botão de cada formulário mostra progresso e fica desabilitado, sem travar a tela |
 | **Erro de rede** | a mensagem oferece repetir a ação, nunca só informa |
 | **Sessão expirada** | leva ao login preservando o destino, e devolve a pessoa ao mesmo lugar depois |
-| **Já autenticado** | qualquer tela deste módulo redireciona ao contexto ativo |
+| **Já autenticado** | qualquer tela deste módulo redireciona ao contexto ativo, **exceto** `/convite/:token`, `/senha/redefinir`, `/email/confirmar`, `/termos` e `/privacidade`, que abrem com qualquer sessão (regra 11) |
 
 ### Idioma
 
@@ -413,7 +413,7 @@ Nada novo. O e-mail transacional de convite e de recuperação já existe (issue
 
 1. **`POST /auth/login` muda de contrato** — passa a negar credencial correta sem contexto, e um código de erro novo aparece. Rota implantada, testes de integração alterados junto. Não é estrutural pelos critérios, e não é gratuito.
 2. **Vincular identidades seria estrutural** e foi descartado nesta sessão: mudaria o significado de `User`, atravessando RLS, `current_user_id()` e toda tabela que referencia usuário.
-3. **O aceite por documento (2026-10-07, pendente de validação)** muda o contrato de aceite e abre um segundo caminho de escrita em dado pessoal, a função `app_private.accept_legal_document`. Nenhuma tabela, coluna, grant ou policy de `legal_acceptances` muda, e não há backfill; o registro está em `decisions.md`.
+3. **O aceite por documento (2026-10-07, pendente de validação)** muda o contrato de aceite e abre um segundo caminho de escrita em dado pessoal, a função `app_private.accept_legal_document`. Nenhuma tabela, coluna ou policy de `legal_acceptances` muda, e não há backfill; o registro está em `decisions.md`. Os grants de escrita sobre a tabela foram revogados depois, pela issue #343 (decisão de 2026-10-07, também pendente de validação).
 4. **A troca de e-mail por pedido (2026-10-07, pendente de validação)** cria uma tabela, duas rotas e um e-mail transacional, e abre um caminho de escrita sobre o e-mail em `auth."user"` por função `security definer`. Não altera tabela que já existe e não precisa de backfill; o registro está em `decisions.md`.
 
 ## 10. Em aberto
@@ -433,6 +433,8 @@ Em [`docs/business/decisions.md`](../docs/business/decisions.md), 2026-09-24:
 E, 2026-10-07 (**pendente de validação**): Termos e Privacidade mudam de versão sem forçar o reaceite, e o aceite depois do cadastro é por documento — fecha o ponto em aberto sobre o reaceite.
 
 E, 2026-10-07 (**pendente de validação**): a troca de e-mail da conta é um pedido aprovado pela operação, não uma edição — fecha o ponto em aberto sobre a troca de e-mail.
+
+E, 2026-10-07 (**pendente de validação**): a regra 11 tem exceções — convite, redefinir senha, confirmar e-mail, Termos e Privacidade abrem com sessão válida sem redirecionar; as demais telas do módulo redirecionam ao contexto ativo (issue #342).
 
 E, 2026-10-07 (**pendente de validação**): a sessão vale 7 dias sem uso, é renovada a cada 24 h de uso e tem teto absoluto de 30 dias — alinha a SPEC ao que o código e os testes já faziam (issue #341).
 
@@ -456,7 +458,7 @@ E, herdadas de [`autorizacao.md`](autorizacao.md): "sem permissão" não é tela
 
 **Em aberto:** nenhum.
 
-**Decididas em 2026-10-07:** [#81](https://github.com/Nocrato-Tech/ageniza/issues/81), reaceite de Termos — aviso não bloqueante com aceite por documento (seção 7, regra 7a); e [#80](https://github.com/Nocrato-Tech/ageniza/issues/80), troca de e-mail — pedido aprovado pela operação (seção 5, regras 12 a 18).
+**Decididas em 2026-10-07:** [#81](https://github.com/Nocrato-Tech/ageniza/issues/81), reaceite de Termos — aviso não bloqueante com aceite por documento (seção 7, regra 7a); [#80](https://github.com/Nocrato-Tech/ageniza/issues/80), troca de e-mail — pedido aprovado pela operação (seção 5, regras 12 a 18); e [#342](https://github.com/Nocrato-Tech/ageniza/issues/342), as exceções da regra 11 — telas que abrem com sessão válida (seção 5, regra 11, e seção 7).
 
 A [#54](https://github.com/Nocrato-Tech/ageniza/issues/54), que registrava a dívida de "as telas nunca foram desenhadas", foi fechada por este recorte.
 
