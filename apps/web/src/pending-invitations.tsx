@@ -20,7 +20,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const LIST_ERROR = 'Não foi possível carregar os convites. Tente de novo.';
 const RESEND_ERROR = 'Não foi possível reenviar o convite. Tente de novo.';
 const CANCEL_ERROR = 'Não foi possível cancelar o convite. Tente de novo.';
-const INVITE_UNAVAILABLE = 'O convite chega na próxima entrega.';
 
 /**
  * The relative deadline (`specs/colaboradores.md` §7): "expira em 5 dias", "expira amanhã". The
@@ -50,6 +49,8 @@ export interface PendingInvitationsSectionProps {
   /** 1-based page of the invitations list, owned by the URL like the team list's. */
   page: number;
   onPageChange: (page: number) => void;
+  /** Opens the invite modal owned by the page; the empty state offers the same action as the header. */
+  onInvite: () => void;
 }
 
 /**
@@ -59,7 +60,7 @@ export interface PendingInvitationsSectionProps {
  * the list is invalidated and the deadline is renewed in place; cancelling asks for confirmation
  * first. No response field carries the invitation token, and none is rendered.
  */
-export function PendingInvitationsSection({ page, onPageChange }: PendingInvitationsSectionProps) {
+export function PendingInvitationsSection({ page, onPageChange, onInvite }: PendingInvitationsSectionProps) {
   const agency = useAgencyContext();
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
@@ -136,8 +137,7 @@ export function PendingInvitationsSection({ page, onPageChange }: PendingInvitat
   } else if (data.data.length === 0) {
     body = <div className="invites__empty">
       <p>Nenhum convite aguardando aceite</p>
-      <Button disabled><span aria-hidden="true">+</span> Convidar</Button>
-      <p className="form-hint">{INVITE_UNAVAILABLE}</p>
+      <Button onClick={onInvite}><span aria-hidden="true">+</span> Convidar</Button>
     </div>;
   } else {
     body = <>

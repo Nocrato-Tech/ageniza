@@ -1410,6 +1410,81 @@ Envia a própria foto de perfil.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `413 PAYLOAD_TOO_LARGE` · `415 UNSUPPORTED_MEDIA_TYPE` · `500 INTERNAL_ERROR`
 
+### legal — Versão dos Termos e da Privacidade que a conta aceitou, e o aceite de um documento por vez.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `GET` | `/me/legal-acceptances` | Sessão | — | Consulta a versão aceita dos Termos e da Privacidade |
+| `POST` | `/me/legal-acceptances` | Sessão | — | Aceita um documento legal, na versão em vigor |
+
+#### `GET /me/legal-acceptances`
+
+Consulta a versão aceita dos Termos e da Privacidade.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Resposta `200`** — Situação dos dois documentos.
+
+```json
+{
+  "documents": [
+    {
+      "document": "terms",
+      "currentVersion": "2026-01-01",
+      "acceptedVersion": "2026-01-01",
+      "pending": false
+    },
+    {
+      "document": "privacy",
+      "currentVersion": "2026-10-01",
+      "acceptedVersion": "2026-02-01",
+      "pending": true
+    }
+  ]
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `500 INTERNAL_ERROR`
+
+#### `POST /me/legal-acceptances`
+
+Aceita um documento legal, na versão em vigor.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "document": "privacy"
+}
+```
+
+**Resposta `200`** — Situação dos dois documentos depois do aceite.
+
+```json
+{
+  "documents": [
+    {
+      "document": "terms",
+      "currentVersion": "2026-01-01",
+      "acceptedVersion": "2026-01-01",
+      "pending": false
+    },
+    {
+      "document": "privacy",
+      "currentVersion": "2026-10-01",
+      "acceptedVersion": "2026-02-01",
+      "pending": true
+    }
+  ]
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
 ## Catálogo de códigos de erro
 
 | código | mensagem padrão |
