@@ -1507,3 +1507,27 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 **Consequência.** O `PATCH` passa a responder `400` para razão social fora da regra, e a edição do cadastro é o caminho para corrigir um valor antigo. Não há backfill.
 
 **Origem.** Issues #213 e #299. **Pendente de validação pelo dono do produto.**
+
+---
+
+## 2026-10-07 — O aviso de `already_member` aparece uma vez no destino
+
+**Contexto.** `specs/auth.md` §7 dizia que `already_member` "não é erro" e levava ao contexto, mas não dizia onde nem como a pessoa sabia que o acesso já existia — e a descrição do PR #178 dizia o contrário. A re-revisão de #177/#178 (#184) deixou o ponto esperando decisão de produto.
+
+**Decisão.** O aceite de um convite por quem já tem o vínculo segue normalmente até o destino escolhido pelo `resolve` (a agência ou o portal). No topo de onde a pessoa cai, um aviso discreto diz: "Você já fazia parte de `<Agência>`. Nada mudou no seu acesso." O aviso aparece **uma vez**: some ao ser fechado ou quando a pessoa navega, e não volta por histórico nem por recarregar — ele viaja no `state` da navegação e é consumido na primeira renderização, nunca na URL, no `localStorage` ou no `sessionStorage`. O convite fica marcado como usado.
+
+**Consequência.** Nenhuma rota, tabela ou formato de resposta muda: o aviso usa o `status: 'already_member'` que `POST /invitations/:token/accept` já devolve e o nome da agência que o preview já carrega. **Nota de implementação:** o `already_member` de hoje responde **sem** consumir o token (`used_at` continua nulo; o teste de integração do PR #187 fixa isso de propósito). Marcar o convite como usado exigiria uma migration sobre `app_private.accept_invitation` e mudar um teste existente; não entrou neste PR e fica para o dono decidir.
+
+**Origem.** Issue #184, decidida pelo maestro com autonomia dada pelo dono em 2026-10-07. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-07 — O convite é aceito automaticamente depois do login pelo link, só para o e-mail do convite
+
+**Contexto.** Quem recebia um convite para uma conta que já existia clicava em "Aceitar convite", era levado ao login com o token, entrava e precisava clicar de novo em "Aceitar convite" na volta. A #184 deixou o comportamento automático em aberto; a decisão de produto veio em 2026-10-07.
+
+**Decisão.** Depois do login, o aceite acontece **sem novo clique** apenas quando as duas condições valem: a pessoa chegou ao login pelo link do convite (o token viajou no `state` da navegação até o login) e o e-mail da conta autenticada é o mesmo do convite. Nesse caso a tela do convite aceita sozinha e a pessoa cai no destino. Se o e-mail for diferente, **nada é aceito**: a tela do convite explica que o convite foi enviado para outro endereço e oferece sair e entrar com a conta certa. Convite vencido ou revogado continua com o mesmo `INVALID_LINK`, sem revelar qual dos casos ocorreu.
+
+**Consequência.** Nenhuma rota muda. O marcador do login vive só no `state` da navegação, como o destino da sessão, nunca na URL — que carregaria o token no histórico e no referer. A comparação de e-mail acontece na tela, entre a sessão e o preview, e o `403 INVITATION_ACCOUNT_MISMATCH` da API continua como segunda barreira no aceite manual. O aceite automático não vale para quem abre o link já com sessão, nem para o `signedIn` da redefinição de senha, que continuam exigindo o clique.
+
+**Origem.** Issue #184, decidida pelo maestro com autonomia dada pelo dono em 2026-10-07. **Pendente de validação** pelo dono do produto.

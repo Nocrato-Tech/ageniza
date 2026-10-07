@@ -239,7 +239,9 @@ Uma rota, dois estados, escolhidos por `accountExists`.
 └────────────────────────────────────────┘
 ```
 
-`POST /invitations/:token/accept`. `already_member` não é erro: leva ao contexto dizendo que o acesso já existia.
+`POST /invitations/:token/accept`. `already_member` não é erro: o aceite segue normalmente até o destino (a agência ou o portal) e, no topo de onde a pessoa cai, um aviso discreto diz "Você já fazia parte de `<Agência>`. Nada mudou no seu acesso." O aviso aparece uma vez e some ao ser fechado ou quando a pessoa navega (2026-10-07, pendente de validação).
+
+**Aceite automático depois do login.** Quem clica em "Aceitar convite" sem sessão vai para `/entrar` levando o token. Depois do login, quando o e-mail da conta é o do convite, o aceite acontece **sem novo clique** e a pessoa cai no destino. Quando o e-mail é outro, **nada é aceito**: a tela do convite explica que ele foi enviado para outro endereço e oferece sair e entrar com a conta certa. Convite vencido ou revogado continua o mesmo `INVALID_LINK` de sempre (2026-10-07, pendente de validação).
 
 **Estado B — não tem conta:**
 
@@ -364,6 +366,8 @@ Em [`docs/business/decisions.md`](../docs/business/decisions.md), 2026-09-24:
 - Termos e Privacidade são conteúdo estático versionado, com aceite único
 
 E, 2026-09-29 (**pendente de validação**): o login aceita o token do convite para quem tem zero contextos, complementando a decisão de 2026-09-24 sobre credencial correta sem contexto.
+
+E, 2026-10-07 (**pendente de validação**): o aviso de `already_member` aparece uma vez no destino, e o aceite automático depois do login vale só para o e-mail do convite — com outra conta conectada, nada é aceito e a tela explica.
 
 E, herdadas de [`autorizacao.md`](autorizacao.md): "sem permissão" não é tela, os três tratamentos de carregamento, e mutação invalidando as queries que afeta.
 
