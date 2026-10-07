@@ -109,8 +109,7 @@ describe('media storage RLS isolation (issue #21)', () => {
       extension: 'png',
       object_key: `${agencyB}/${foreignAssetId}/original.png`,
       upload_object_key: `${agencyB}/${foreignAssetId}/upload.png`,
-      declared_size_bytes: 1_024,
-      created_by_user_id: userA
+      declared_size_bytes: 1_024
     }))).rejects.toThrow(/row-level security/);
   });
 

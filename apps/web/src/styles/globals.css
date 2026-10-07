@@ -503,6 +503,166 @@ input:focus-visible {
   justify-self: start;
 }
 
+/* Client roster: specs/clientes.md section 7. One full-width card per client, in the server's
+   order; the card carries the triage badges and the reserved indicator strip. */
+.clients {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.clients__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.clients__header h1 {
+  margin: 0;
+}
+
+.clients__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+}
+
+.clients__filters > .ui-text-input {
+  flex: 1 1 20rem;
+}
+
+.clients__filters > .ui-field {
+  flex: 0 1 12rem;
+}
+
+.clients__list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.clients__card-link {
+  display: block;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+/* Hover feedback by border, never by background: the attention badge uses `text/link`, and the
+   design system forbids that color over `bg/hover` (docs/design-system.md 20.1). */
+.clients__card-link:hover .clients__card {
+  border-color: var(--focus-ring);
+}
+
+.clients__card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.clients__card .ui-avatar {
+  grid-row: span 2;
+}
+
+.clients__card-body {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.clients__card-name {
+  margin: 0;
+  font: var(--label-md);
+  overflow-wrap: anywhere;
+}
+
+.clients__card-handle {
+  margin: 0;
+  color: var(--text-muted);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.clients__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.clients__badges:empty {
+  display: none;
+}
+
+.clients__badge {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  font: var(--label-sm);
+}
+
+/* The triage signal of the MVP, the one that has to stand out (specs/clientes.md section 7). */
+.clients__badge--attention {
+  border-color: var(--focus-ring);
+  color: var(--text-link);
+}
+
+/* Reserved area for pending, in review and late; the MVP shows no number at all. */
+.clients__indicators {
+  grid-column: 2;
+  margin: 0;
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border-default);
+  color: var(--text-muted);
+  font: var(--caption);
+}
+
+/* Archived roster: dimmed and without badges; the only destination is the read-only detail. */
+.clients__card--archived {
+  opacity: 0.55;
+}
+
+.clients__card-skeleton {
+  height: 6.5rem;
+  border-radius: var(--radius-md);
+}
+
+.clients__empty,
+.clients__error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  padding: var(--space-6) 0;
+}
+
+.clients__error {
+  color: var(--text-danger);
+}
+
+/* Detail route placeholder (issue #135); the real screen is #136. */
+.client-detail {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.client-detail__back {
+  font: var(--label-md);
+}
+
 .ui-modal {
   width: min(calc(100% - var(--space-8)), 40rem);
   max-height: calc(100dvh - var(--space-8));

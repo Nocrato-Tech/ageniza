@@ -84,17 +84,17 @@ export interface PendingAssetInput {
   readonly objectKey: string;
   readonly uploadObjectKey: string;
   readonly declaredSizeBytes: number;
-  readonly createdByUserId: string;
 }
 
+/** `created_by_user_id` is not written here: the database stamps it with the actor bound to the transaction. */
 export const insertPendingAsset = async (transaction: Transaction, input: PendingAssetInput): Promise<void> => {
   await raw(transaction, `
     insert into public.media_assets
-      (id, agency_id, category, declared_content_type, extension, object_key, upload_object_key, declared_size_bytes, created_by_user_id)
-    values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, agency_id, category, declared_content_type, extension, object_key, upload_object_key, declared_size_bytes)
+    values (?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     input.id, input.agencyId, input.category, input.declaredContentType, input.extension,
-    input.objectKey, input.uploadObjectKey, input.declaredSizeBytes, input.createdByUserId
+    input.objectKey, input.uploadObjectKey, input.declaredSizeBytes
   ]);
 };
 
@@ -149,7 +149,6 @@ export const markAssetConfirmed = async (
       status = 'confirmed',
       confirmed_size_bytes = ?,
       confirmed_content_type = ?,
-      confirmed_at = now(),
       updated_at = now(),
       video_processing_status = case when ? = 'video' then 'pending' else video_processing_status end
     where id = ?::uuid
