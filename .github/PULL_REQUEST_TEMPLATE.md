@@ -7,6 +7,8 @@ O fluxo completo está em CONTRIBUTING.md.
 
 <!-- O problema que este PR resolve. Se houver issue, linke; se o PR agrupa issues do mesmo tema e da mesma camada, cada uma leva a sua linha `Closes #N`. Se a razão não estiver na issue, escreva aqui. -->
 
+<!-- Closes #N — uma linha por issue agrupada; a palavra-chave tem de vir imediatamente antes do número. -->
+
 ## O que muda
 
 <!-- O que passa a ser verdade depois do merge. Não liste arquivos: o diff já faz isso. -->
