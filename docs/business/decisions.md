@@ -1750,3 +1750,15 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 **Consequência.** Só texto: SPEC, README do módulo e este registro. Nenhum código, teste, tabela, policy ou formato de resposta muda, e não há backfill. SPEC, código e testes dizem o mesmo número (30), e os testes o travam: desligar a conferência de `session-guard.ts`, remover o recorte do hook ou trocar a constante por 7, 29 ou 31 deixa a suíte de autenticação vermelha. Reabre quem quiser outro teto: é uma constante, o teste correspondente e a SPEC.
 
 **Origem.** Issue #341, decisão do maestro com autonomia dada pelo dono do produto em 2026-10-07. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-07 — O modal do próprio perfil mostra a data de entrada, como o wireframe
+
+**Contexto.** A §7 de `specs/colaboradores.md` desenha "Na agência desde <data>" no cabeçalho do modal, sem exceção, e o ramo do próprio perfil só mostrava a foto e a nota de que a foto é global (issue #357, achado da auditoria de fechamento do módulo).
+
+**Decisão.** A data de entrada aparece também no modal do próprio perfil: não há motivo para esconder da pessoa a própria data de entrada, e a tela passa a seguir o wireframe sem exceção.
+
+**Consequência.** O ramo do próprio perfil ganha a linha da data, que já vinha no item da API; um teste novo cobre o próprio perfil e fica vermelho se a linha sair. Nenhum contrato, rota ou dado muda.
+
+**Origem.** Issue #357, decisão do maestro com autonomia dada pelo dono do produto em 2026-10-07. **Pendente de validação** pelo dono do produto.
