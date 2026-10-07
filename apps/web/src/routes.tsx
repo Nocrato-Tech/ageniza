@@ -4,8 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 
 import type { AuthSessionSnapshot } from './auth.js';
 import { AccountMenu } from './account-menu.js';
-import { AgencyAreaLayout, AgencyHomePage, AgencyModulePlaceholder, AgencyPermissionRoute } from './agency.js';
+import { AgencyAreaLayout, AgencyHomePage, AgencyPermissionRoute } from './agency.js';
 import { LiveStatus } from '@ageniza/ui';
+import { ClientDetailPage } from './client-detail.js';
+import { ClientsPage } from './clients.js';
 import { CollaboratorsPage } from './collaborators.js';
 import { ContextSelectPage } from './contexts.js';
 import { ConfirmEmailChangePage } from './email-change.js';
@@ -70,7 +72,13 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       } />
       <Route path="clientes" element={
         <AgencyPermissionRoute permission="cliente.visualizar">
-          <AgencyModulePlaceholder title="Clientes" description="Esta área recebe a carteira, o estudo de marca e as conversas nas próximas entregas." />
+          <ClientsPage />
+        </AgencyPermissionRoute>
+      } />
+      {/* The detail screen is #136; until it lands, this route exists so a `201` has a destination. */}
+      <Route path="clientes/:clienteId/geral" element={
+        <AgencyPermissionRoute permission="cliente.visualizar">
+          <ClientDetailPage />
         </AgencyPermissionRoute>
       } />
       <Route path="*" element={<NotFoundPage as="section" />} />
