@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 
@@ -72,6 +72,14 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
   const [roleError, setRoleError] = useState<string | undefined>();
   const [formError, setFormError] = useState<string | undefined>();
   const [sent, setSent] = useState<SentInvite | null>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // `autoFocus` would run before `Modal` captures the previous focus and break the focus return; focusing from an effect runs after that capture.
+  useEffect(() => {
+    if (sent === null) emailRef.current?.focus();
+    else closeRef.current?.focus();
+  }, [sent]);
 
   const roles = useQuery({
     queryKey: ['agency', agency.agencyId, 'roles'],
@@ -100,7 +108,7 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
     if (error.code === 'MEMBERSHIP_EXISTS') { setEmailError(EMAIL_ALREADY_MEMBER); return; }
     if (error.code === 'INVALID_ROLE') { setRoleError(ROLE_INVALID); return; }
     if (error.code === 'FORBIDDEN' || error.status === 403) { setFormError(NO_PERMISSION); return; }
-    if (error.status === 400 || error.status === 422) {
+    if (error.status === 400) {
       const field = refusedField(error.details);
       if (field === 'email') setEmailError(EMAIL_INVALID);
       else if (field === 'roleId') setRoleError(ROLE_INVALID);
@@ -143,7 +151,7 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
         <LiveStatus>Convite enviado para {sent.email}. O link vale por {sent.days} dias.</LiveStatus>
         {sent.superseded && <p className="form-hint">{SUPERSEDED_NOTE}</p>}
         <div className="form-actions">
-          <Button onClick={onClose}>Fechar</Button>
+          <Button ref={closeRef} onClick={onClose}>Fechar</Button>
         </div>
       </div>
     </Modal>;
@@ -154,6 +162,7 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
       <div className="form-field">
         <label htmlFor={emailId}>E-mail</label>
         <TextInput
+          ref={emailRef}
           id={emailId}
           name="email"
           type="email"

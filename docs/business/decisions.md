@@ -1626,6 +1626,49 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 
 ---
 
+## 2026-10-07 — O cargo segue a regra de caracteres do nome exibido
+
+**Contexto.** A revisão de segurança do PR #320 (issue #324, severidade baixa) achou que `job_title` só recusava C0 e DEL: a API gravava um cargo com RLO (o texto "Analista", o caractere U+202E e "nimda" aparece na tela como "Analista admin"), LRI, espaço de largura zero, cargo só de espaço de largura zero (invisível, e não vira `null`), BOM, NEL e CSI (C1), U+2028 e o preenchimento Hangul. Cargo é texto mostrado sobre uma pessoa, como o nome (#200).
+
+**Decisão.**
+
+1. O cargo usa a mesma regra do nome exibido (`createDisplayNameSchema`, #200) com o teto de 256 unidades UTF-16: recusa caracteres de controle, de formato (exceto os dois joiners entre letras, marcas ou pictogramas), invisíveis, separadores de linha e de parágrafo e os preenchimentos Hangul, e exige ao menos uma letra ou número. **Consequência visível:** um cargo só de emoji ou só de pontuação deixa de ser aceito, como já vale para o nome.
+2. `null` e texto em branco limpam o cargo. "Branco" é o que o `trim` do JavaScript remove (espaço, tabulação, NBSP, BOM nas bordas), o mesmo conjunto que o banco normaliza; vira `null` como a razão social do cliente (2026-10-06). Isto muda o `PATCH` da #97, em que um cargo em branco era `400`. **Um valor só de invisíveis** (espaço de largura zero, preenchimento Hangul) **não é branco**, não é espaço para o `trim`, e é recusado com `400`: assim não dá para gravar nem para apagar o cargo com algo invisível. A issue diz as duas coisas ("só-invisível vira `null`" e "400 e nada gravado"); esta é a leitura que cumpre as duas.
+3. **Sem migration.** O banco continua com a `CHECK` de forma e tamanho (#225) e não recusa esses caracteres: uma `CHECK` mais estrita exigiria backfill de cargos legados que tenham algum deles, para não quebrar qualquer `UPDATE` de vínculo (remover, reativar, trocar papel) de quem o tem, e a regra é de exibição, não de integridade. O contrato de **resposta** continua aceitando qualquer cargo não vazio de até 256 unidades, para um legado nunca derrubar a leitura da agência com 500. O filtro `jobTitle` da listagem segue só com C0 e DEL: aceita um superconjunto do que a escrita aceita, e um teste pina que todo cargo gravado é filtrável.
+
+**Consequência.** Todo texto exibido de pessoa (nome, cargo, contato) segue a mesma regra de caracteres do #200; o filtro só de C0 da busca não basta para dado exibido. Cargos legados com esses caracteres continuam existindo e sendo lidos; são corrigidos pelo `PATCH`, que agora recusa o novo valor se tiver algum deles.
+
+**Origem.** Issue #324, ressalva da revisão de segurança do #320. **Pendente de validação** pelo dono do produto: o item 2 (branco limpa em vez de 400) e o item 3 (sem migration nem backfill).
+
+---
+
+## 2026-10-07 — Link com `?status=removed` sem permissão cai nos ativos, com aviso
+
+**Contexto.** A decisão de 2026-10-07 sobre remover e reativar fixou o `403` da API para `?status=removed` sem `colaborador.remover`, `colaborador.alterar_papel` ou posse, mas a SPEC §7 dizia que "sem ele, só `active` é devolvido" — o `403` explícito nunca chegou à SPEC, que foi corrigida neste mesmo PR. Na web, esse `403` caía no mesmo "não encontrado" de um recurso inexistente e derrubava a página inteira: quem recebia um link compartilhado com o filtro não via nem a lista de ativos, que lhe é permitida.
+
+**Decisão.** A tela nunca pede `status=removed` a quem não pode vê-lo: o parâmetro é ignorado nesse caso, a listagem cai no filtro de ativos (o padrão da API) e um aviso diz "Você não tem permissão para ver colaboradores removidos. Mostrando os ativos." O `403` da API continua sendo a barreira; a tela apenas não o provoca, em vez de transformá-lo em "não encontrado" para a página toda.
+
+**Consequência.** Nenhuma rota, tabela, formato de resposta, permissão ou policy muda. O aviso não revela a existência de vínculo removido nenhum — só que o filtro pedido não se aplica —, então a decisão de 2026-09-24 ("sem permissão" não é uma tela) continua valendo: a tela não nega a lista, que é permitida, nem confirma o recurso escondido. A alternativa descartada é o "não encontrado" da página inteira, que reaparece se alguém fizer a tela voltar a pedir o filtro proibido.
+
+**Origem.** Issue #322 (ressalva da revisão do PR #327), decidida pelo maestro. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-07 — A pendência do convite é decidida no fim da espera pela trava, não no início da transação
+
+**Contexto.** A revisão de segurança do PR #298 (#165) mostrou que reenviar, cancelar e aceitar decidiam "pendente" com o relógio do início da transação: se outra transação segurava a linha e o convite vencia durante a espera, a decisão já estava tomada sobre uma versão que o destrave tornava velha — um cancelamento que esperou 3 s cancelava um convite já vencido pelo relógio de parede. Achado Baixa, registrado na #304; a semântica antiga não dava poder novo, mas as três superfícies decidiam antes de saber com que versão da linha estavam lidando.
+
+**Decisão.** A pendência passa a ser decidida **depois** da trava, quando a versão final da linha já é conhecida:
+
+- Nas rotas de reenvio e cancelamento, o `select … for update` só trava e lê os campos; a pendência vem de uma **segunda instrução** (`expires_at > statement_timestamp()`), que só começa quando a trava já foi obtida.
+- Em `app_private.accept_invitation` (migration nova `20261007000300_invitation_pending_after_lock`), a validade usa `clock_timestamp()` no lugar de `now()`: dentro de uma única chamada de função, `statement_timestamp()` não avança durante a espera (verificado no banco), então `clock_timestamp()` é o relógio que representa "depois das duas travas" e mantém as três superfícies iguais na propriedade que importa — decidir sob a trava, sobre a versão que a operação vai usar.
+
+**Consequência.** Um convite que vence enquanto a requisição espera uma trava que outra transação segura (a linha do convite ou o slot de convites equivalentes) passa a ser visto como vencido: reenvio e cancelamento respondem `409`, a aceitação responde `410`, e nada é escrito. Nenhuma tabela, coluna, policy ou grant muda; a migration substitui a função no lugar, sem backfill. O relógio do processo continua fora da decisão (o teste de #165 que adianta o `Date` da API segue valendo): a borda exata é do relógio do banco, no fim da espera.
+
+**Origem.** Issue #304, achado 3 da revisão do PR #298. Decidido pelo maestro.
+
+---
+
 ## 2026-10-07 — ESTRUTURAL: a troca de e-mail da conta é um pedido aprovado pela operação, não uma edição
 
 **Contexto.** `auth."user"` é global: a mesma conta pode estar em várias agências, e para o Owner o e-mail amarra a assinatura. Por isso a decisão de 2026-09-24 deixou a troca de e-mail fora do MVP, com gatilho: o primeiro colaborador ou cliente real pedir a troca. Issue #80.
@@ -1645,19 +1688,3 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 **Consequência.** Estrutural: tabela nova, duas rotas (`POST /me/email-change`, `POST /email-change/confirm`), três e-mails transacionais e um caminho de escrita sobre o e-mail em `auth."user"`. Sem backfill e sem alterar tabela que já existe. Limitações aceitas: recusar não avisa a pessoa (a operação fala com ela fora do produto); a operação descobre os pedidos por `list`, sem notificação; quem perdeu o acesso ao e-mail antigo e à senha continua sem caminho, porque recuperação de conta fica fora do MVP; o teto de pedidos (5 por hora e por conta) é em memória, como os demais limites de autenticação. Trocar o e-mail por edição direta, ou aprovar por tela, reabre esta decisão.
 
 **Origem.** Issue #80, decisão do maestro com autonomia dada pelo dono do produto em 2026-10-07. **Pendente de validação pelo dono do produto.**
-
----
-
-## 2026-10-07 — O cargo segue a regra de caracteres do nome exibido
-
-**Contexto.** A revisão de segurança do PR #320 (issue #324, severidade baixa) achou que `job_title` só recusava C0 e DEL: a API gravava um cargo com RLO (o texto "Analista", o caractere U+202E e "nimda" aparece na tela como "Analista admin"), LRI, espaço de largura zero, cargo só de espaço de largura zero (invisível, e não vira `null`), BOM, NEL e CSI (C1), U+2028 e o preenchimento Hangul. Cargo é texto mostrado sobre uma pessoa, como o nome (#200).
-
-**Decisão.**
-
-1. O cargo usa a mesma regra do nome exibido (`createDisplayNameSchema`, #200) com o teto de 256 unidades UTF-16: recusa caracteres de controle, de formato (exceto os dois joiners entre letras, marcas ou pictogramas), invisíveis, separadores de linha e de parágrafo e os preenchimentos Hangul, e exige ao menos uma letra ou número. **Consequência visível:** um cargo só de emoji ou só de pontuação deixa de ser aceito, como já vale para o nome.
-2. `null` e texto em branco limpam o cargo. "Branco" é o que o `trim` do JavaScript remove (espaço, tabulação, NBSP, BOM nas bordas), o mesmo conjunto que o banco normaliza; vira `null` como a razão social do cliente (2026-10-06). Isto muda o `PATCH` da #97, em que um cargo em branco era `400`. **Um valor só de invisíveis** (espaço de largura zero, preenchimento Hangul) **não é branco**, não é espaço para o `trim`, e é recusado com `400`: assim não dá para gravar nem para apagar o cargo com algo invisível. A issue diz as duas coisas ("só-invisível vira `null`" e "400 e nada gravado"); esta é a leitura que cumpre as duas.
-3. **Sem migration.** O banco continua com a `CHECK` de forma e tamanho (#225) e não recusa esses caracteres: uma `CHECK` mais estrita exigiria backfill de cargos legados que tenham algum deles, para não quebrar qualquer `UPDATE` de vínculo (remover, reativar, trocar papel) de quem o tem, e a regra é de exibição, não de integridade. O contrato de **resposta** continua aceitando qualquer cargo não vazio de até 256 unidades, para um legado nunca derrubar a leitura da agência com 500. O filtro `jobTitle` da listagem segue só com C0 e DEL: aceita um superconjunto do que a escrita aceita, e um teste pina que todo cargo gravado é filtrável.
-
-**Consequência.** Todo texto exibido de pessoa (nome, cargo, contato) segue a mesma regra de caracteres do #200; o filtro só de C0 da busca não basta para dado exibido. Cargos legados com esses caracteres continuam existindo e sendo lidos; são corrigidos pelo `PATCH`, que agora recusa o novo valor se tiver algum deles.
-
-**Origem.** Issue #324, ressalva da revisão de segurança do #320. **Pendente de validação** pelo dono do produto: o item 2 (branco limpa em vez de 400) e o item 3 (sem migration nem backfill).

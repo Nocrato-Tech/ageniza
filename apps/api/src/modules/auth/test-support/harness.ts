@@ -175,6 +175,11 @@ export interface TestAppOptions {
   readonly countValidContexts?: (userId: string) => Promise<number>;
   /** Test-only route observer, forwarded to `buildApp` (issue #182 route-inventory test). */
   readonly onRoute?: ApiAppOptions['onRoute'];
+  /**
+   * Test-only wrapper around the harness's application-role client, so a test can observe the
+   * statements a module sends through it (issue #304). Never used by production code.
+   */
+  readonly wrapDatabase?: (database: DatabaseClient) => DatabaseClient;
 }
 
 /** Real prehandler builders, wired to this test app's own `auth`/`database`, for `registerExtraRoutes`. */
@@ -202,7 +207,8 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   assertLocalDatabaseUrl(APPLICATION_DATABASE_URL);
   const config = buildTestConfig(options.config);
   const pool = new Pool({ connectionString: APPLICATION_DATABASE_URL, max: 4 });
-  const database = createLocalTestDatabaseClient(APPLICATION_DATABASE_URL);
+  const localDatabase = createLocalTestDatabaseClient(APPLICATION_DATABASE_URL);
+  const database = options.wrapDatabase === undefined ? localDatabase : options.wrapDatabase(localDatabase);
   const logger = options.logger ?? createLogger({ enabled: false });
   const sender = options.sender ?? createFakeEmailSender();
   const emailService = createEmailService({ sender, config: { appPublicUrl: config.appPublicUrl }, logger });
