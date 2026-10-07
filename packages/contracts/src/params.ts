@@ -38,6 +38,19 @@ export const AgencyMediaAssetPathParamsSchema = z.object({
 
 // The writable keys are the enum so the generated OpenAPI lists the six values; `personas` is a
 // fixed section but not writable, and the route still answers its own 400 for it.
+export const AgencyClientMediaFolderPathParamsSchema = z.object({
+  agencyId: z.string().uuid(),
+  clientId: z.string().uuid(),
+  folderId: z.string().uuid()
+}).strict();
+
+export const AgencyClientMediaFolderAssetPathParamsSchema = z.object({
+  agencyId: z.string().uuid(),
+  clientId: z.string().uuid(),
+  folderId: z.string().uuid(),
+  assetId: z.string().uuid()
+}).strict();
+
 export const AgencyClientSectionPathParamsSchema = z.object({
   agencyId: z.string().uuid(),
   clientId: z.string().uuid(),
@@ -79,6 +92,8 @@ export type AgencyInvitationPathParams = z.infer<typeof AgencyInvitationPathPara
 export type AgencyClientPathParams = z.infer<typeof AgencyClientPathParamsSchema>;
 export type AgencyCollaboratorPathParams = z.infer<typeof AgencyCollaboratorPathParamsSchema>;
 export type AgencyMediaAssetPathParams = z.infer<typeof AgencyMediaAssetPathParamsSchema>;
+export type AgencyClientMediaFolderPathParams = z.infer<typeof AgencyClientMediaFolderPathParamsSchema>;
+export type AgencyClientMediaFolderAssetPathParams = z.infer<typeof AgencyClientMediaFolderAssetPathParamsSchema>;
 export type AgencyClientSectionPathParams = z.infer<typeof AgencyClientSectionPathParamsSchema>;
 export type AgencyClientPersonaPathParams = z.infer<typeof AgencyClientPersonaPathParamsSchema>;
 export type AgencyClientThreadPathParams = z.infer<typeof AgencyClientThreadPathParamsSchema>;

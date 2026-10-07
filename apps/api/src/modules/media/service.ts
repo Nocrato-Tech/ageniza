@@ -45,21 +45,12 @@ export const readQuotaSnapshot = async (
   `, [agencyId]);
   const override = overrideResult.rows[0];
 
+  // The sum is the database's, over the whole agency: a plain select would count only what the
+  // caller's RLS lets it read, and a role that uploads does not read the media of a client.
   const usageResult = await raw<RawRows<UsageRow>>(transaction, `
-    select
-      coalesce(sum(case
-        when status = 'confirmed' then confirmed_size_bytes
-        when status = 'pending' then declared_size_bytes
-      end), 0) as used_bytes,
-      count(*) as used_object_count
-    from public.media_assets
-    where agency_id = ?::uuid
-      and id <> coalesce(?::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
-      and (
-        status = 'confirmed'
-        or (status = 'pending' and updated_at >= now() - (?::integer * interval '1 second'))
-      )
-  `, [agencyId, options.excludeAssetId ?? null, options.pendingReservationSeconds]);
+    select used_bytes, used_object_count
+    from app_private.agency_media_usage(?::uuid, ?::integer, ?::uuid)
+  `, [agencyId, options.pendingReservationSeconds, options.excludeAssetId ?? null]);
   const usage = usageResult.rows[0];
 
   return {
@@ -84,17 +75,20 @@ export interface PendingAssetInput {
   readonly objectKey: string;
   readonly uploadObjectKey: string;
   readonly declaredSizeBytes: number;
+  /** Set together, for a media of a client's folder; the database checks the pair and the agency. */
+  readonly clientId?: string;
+  readonly folderId?: string;
 }
 
 /** `created_by_user_id` is not written here: the database stamps it with the actor bound to the transaction. */
 export const insertPendingAsset = async (transaction: Transaction, input: PendingAssetInput): Promise<void> => {
   await raw(transaction, `
     insert into public.media_assets
-      (id, agency_id, category, declared_content_type, extension, object_key, upload_object_key, declared_size_bytes)
-    values (?, ?, ?, ?, ?, ?, ?, ?)
+      (id, agency_id, category, declared_content_type, extension, object_key, upload_object_key, declared_size_bytes, client_id, folder_id)
+    values (?, ?, ?, ?, ?, ?, ?, ?, ?::uuid, ?::uuid)
   `, [
     input.id, input.agencyId, input.category, input.declaredContentType, input.extension,
-    input.objectKey, input.uploadObjectKey, input.declaredSizeBytes
+    input.objectKey, input.uploadObjectKey, input.declaredSizeBytes, input.clientId ?? null, input.folderId ?? null
   ]);
 };
 

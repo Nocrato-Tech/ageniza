@@ -13,18 +13,23 @@ import {
   RequestMediaUploadPartsResponseSchema
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
-import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+import { isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
+import { tryAgain } from '../../plugins/infra/conflict.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
+import { tenantHolds } from '../tenancy/guards.js';
+import { clientScopeOf, folderFunctionRefusal, lockFolder } from './folder-service.js';
+import { registerMediaFolderRoutes } from './folder-routes.js';
 import type { MediaJobDispatcher } from './job-dispatcher.js';
 import {
   describeMediaContentType,
   maxBytesForCategory,
   MEDIA_RATE_LIMITS,
+  MEDIA_UPLOAD_PERMISSIONS,
   multipartPlan,
   usesMultipartUpload,
   type MediaLimits
@@ -60,6 +65,7 @@ export interface MediaModuleDependencies {
   readonly config: MediaModuleConfig;
   readonly requireAgencyAccess: MediaPreHandler;
   readonly requirePermission: (key: string) => MediaPreHandler;
+  readonly requireAnyPermission: (keys: readonly string[]) => MediaPreHandler;
   /** Undefined only in tests that never confirm a video upload; queues the worker's thumbnail/
    * preview job (issue #24) right after a video's `HeadObject` confirms it. */
   readonly jobs?: MediaJobDispatcher;
@@ -67,6 +73,9 @@ export interface MediaModuleDependencies {
 
 const unauthenticated = (): HttpError => new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
 const assetNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Media asset not found.' });
+const forbidden = (): HttpError => new HttpError({ statusCode: 403, code: 'FORBIDDEN', message: 'You do not have permission to perform this action.' });
+const folderNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Folder not found.' });
+const clientArchived = (): HttpError => new HttpError({ statusCode: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode ser editado.' });
 const unsupportedType = (): HttpError => new HttpError({
   statusCode: 415,
   code: 'UNSUPPORTED_MEDIA_TYPE',
@@ -88,6 +97,16 @@ const variantProcessingFailed = (reason: string | null): HttpError => new HttpEr
       : 'Video processing failed.',
   details: { reason: reason ?? 'processing_failed' }
 });
+
+/** What the folder lock, the client's gate and a lost race raise while a media of a client is born. */
+const translateClientMediaError = (error: unknown): HttpError | undefined => {
+  if (isRetryableConflict(error)) return tryAgain();
+  switch (folderFunctionRefusal(error)) {
+    case 'not-found': return folderNotFound();
+    case 'client-archived': return clientArchived();
+    default: return undefined;
+  }
+};
 
 type CompletionResult = {
   readonly ok: true;
@@ -119,10 +138,14 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
   const { database, storage, config } = dependencies;
   const requireSession = createRequireSession({ auth: dependencies.auth });
   const guarded = (
-    docs: DocumentedRouteConfig & { permission: string },
+    docs: DocumentedRouteConfig & { permission: string | readonly [string, ...string[]] },
     extraConfig: Record<string, unknown> = {}
   ) => ({
-    preHandler: [requireSession, dependencies.requireAgencyAccess, dependencies.requirePermission(docs.permission)],
+    preHandler: [
+      requireSession,
+      dependencies.requireAgencyAccess,
+      typeof docs.permission === 'string' ? dependencies.requirePermission(docs.permission) : dependencies.requireAnyPermission(docs.permission)
+    ],
     config: { permission: docs.permission, responseStatus: docs.responseStatus, schemas: docs.schemas, ...extraConfig }
   });
   const uploadUrlRateLimit = {
@@ -136,17 +159,17 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
   // Declared once per route: the same object is the documentation metadata and the source of the
   // schemas the handler validates with.
   const uploadDocs = {
-    permission: 'midia.enviar',
+    permission: MEDIA_UPLOAD_PERMISSIONS,
     responseStatus: 201,
     schemas: { params: AgencyPathParamsSchema, body: CreateMediaUploadRequestSchema, response: CreateMediaUploadResponseSchema }
   } satisfies DocumentedRouteConfig;
   const partsDocs = {
-    permission: 'midia.enviar',
+    permission: MEDIA_UPLOAD_PERMISSIONS,
     responseStatus: 200,
     schemas: { params: AgencyMediaAssetPathParamsSchema, body: RequestMediaUploadPartsRequestSchema, response: RequestMediaUploadPartsResponseSchema }
   } satisfies DocumentedRouteConfig;
   const completeDocs = {
-    permission: 'midia.enviar',
+    permission: MEDIA_UPLOAD_PERMISSIONS,
     responseStatus: 200,
     schemas: { params: AgencyMediaAssetPathParamsSchema, body: CompleteMediaUploadRequestSchema, response: CompleteMediaUploadResponseSchema }
   } satisfies DocumentedRouteConfig;
@@ -160,6 +183,12 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     const auth = requireAuth(request);
     const params = routeParams(uploadDocs, request);
     const body = routeBody(uploadDocs, request);
+    const tenant = request.tenant;
+    // One guard cannot say this: a media of a client needs both reading and writing of Conteúdo, because with
+    // `operar` alone the role would insert a media it cannot see, lock, or complete, and its pending reservation would count.
+    if (tenant === undefined || !(body.clientId === undefined
+      ? tenantHolds(tenant, 'midia.enviar')
+      : tenantHolds(tenant, 'conteudo.operar') && tenantHolds(tenant, 'conteudo.visualizar'))) throw forbidden();
 
     const descriptor = describeMediaContentType(body.contentType);
     if (descriptor === undefined) throw unsupportedType();
@@ -171,6 +200,13 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     const expiresAt = new Date(Date.now() + config.uploadUrlExpirySeconds * 1_000).toISOString();
 
     const upload = await withAuthenticatedUserTransaction(database, auth.claims, async (transaction) => {
+      if (body.clientId !== undefined && body.folderId !== undefined) {
+        const scope = await clientScopeOf(transaction, params.agencyId, body.clientId);
+        if (scope === 'not-found') throw folderNotFound();
+        if (scope === 'archived') throw clientArchived();
+        const folder = await lockFolder(transaction, body.folderId);
+        if (folder.client_id !== body.clientId) throw folderNotFound();
+      }
       await lockAgencyStorageQuota(transaction, params.agencyId);
       const quota = await readQuotaSnapshot(transaction, params.agencyId, {
         quotaBytes: config.quotaDefaultBytes,
@@ -187,7 +223,8 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
         extension: descriptor.extension,
         objectKey,
         uploadObjectKey,
-        declaredSizeBytes: body.declaredSizeBytes
+        declaredSizeBytes: body.declaredSizeBytes,
+        ...(body.clientId === undefined || body.folderId === undefined ? {} : { clientId: body.clientId, folderId: body.folderId })
       });
 
       if (usesMultipartUpload(config, body.declaredSizeBytes)) {
@@ -201,6 +238,8 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       const url = await storage.presignPutObject({ key: uploadObjectKey, contentType: body.contentType, expiresInSeconds: config.uploadUrlExpirySeconds });
       await auditMediaEvent(transaction, { action: 'media.upload_initiated', actorUserId: auth.userId, agencyId: params.agencyId, targetId: assetId });
       return { type: 'single' as const, url };
+    }).catch((error: unknown) => {
+      throw translateClientMediaError(error) ?? error;
     });
 
     return reply.status(201).send(routeResponse(uploadDocs, request, {
@@ -393,4 +432,6 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     const expiresAt = new Date(Date.now() + config.downloadUrlExpirySeconds * 1_000).toISOString();
     return reply.send(routeResponse(downloadDocs, request, { url, expiresAt }));
   });
+
+  registerMediaFolderRoutes(app, dependencies);
 };

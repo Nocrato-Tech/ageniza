@@ -2072,21 +2072,25 @@ Lista os papéis atribuíveis na agência.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
-### media — Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.
+### media — Upload direto ao armazenamento, confirmação e URLs assinadas de mídia; as pastas de mídia de um cliente, a listagem do que há nelas e a remoção.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
-| `POST` | `/agencies/:agencyId/media/uploads` | Sessão + vínculo com a agência | `midia.enviar` | Inicia um upload de mídia |
-| `POST` | `/agencies/:agencyId/media/uploads/:assetId/parts` | Sessão + vínculo com a agência | `midia.enviar` | Pede URLs assinadas de partes do multipart |
-| `POST` | `/agencies/:agencyId/media/uploads/:assetId/complete` | Sessão + vínculo com a agência | `midia.enviar` | Confirma o upload e valida o objeto |
+| `POST` | `/agencies/:agencyId/media/uploads` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.operar` | Inicia um upload de mídia |
+| `POST` | `/agencies/:agencyId/media/uploads/:assetId/parts` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.operar` | Pede URLs assinadas de partes do multipart |
+| `POST` | `/agencies/:agencyId/media/uploads/:assetId/complete` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.operar` | Confirma o upload e valida o objeto |
 | `GET` | `/agencies/:agencyId/media/:assetId/download-url` | Sessão + vínculo com a agência | `midia.enviar` | Emite uma URL assinada de leitura |
+| `GET` | `/agencies/:agencyId/clients/:clientId/media-folders` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista as pastas de mídia de um cliente |
+| `POST` | `/agencies/:agencyId/clients/:clientId/media-folders` | Sessão + vínculo com a agência | `conteudo.operar` | Cria uma pasta de mídia do cliente |
+| `GET` | `/agencies/:agencyId/clients/:clientId/media-folders/:folderId/assets` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista as mídias de uma pasta |
+| `POST` | `/agencies/:agencyId/clients/:clientId/media-folders/:folderId/assets/:assetId/remove` | Sessão + vínculo com a agência | `conteudo.operar` | Remove uma mídia da pasta |
 
 #### `POST /agencies/:agencyId/media/uploads`
 
 Inicia um upload de mídia.
 
 - Acesso: Sessão + vínculo com a agência.
-- Permissão: `midia.enviar`.
+- Permissão: `midia.enviar` ou `conteudo.operar`.
 
 **Requisição** (`application/json`):
 
@@ -2113,14 +2117,14 @@ Inicia um upload de mídia.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 QUOTA_EXCEEDED` · `413 PAYLOAD_TOO_LARGE` · `415 UNSUPPORTED_MEDIA_TYPE` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 QUOTA_EXCEEDED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `415 UNSUPPORTED_MEDIA_TYPE` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/media/uploads/:assetId/parts`
 
 Pede URLs assinadas de partes do multipart.
 
 - Acesso: Sessão + vínculo com a agência.
-- Permissão: `midia.enviar`.
+- Permissão: `midia.enviar` ou `conteudo.operar`.
 
 **Requisição** (`application/json`):
 
@@ -2154,7 +2158,7 @@ Pede URLs assinadas de partes do multipart.
 Confirma o upload e valida o objeto.
 
 - Acesso: Sessão + vínculo com a agência.
-- Permissão: `midia.enviar`.
+- Permissão: `midia.enviar` ou `conteudo.operar`.
 
 **Requisição** (`application/json`):
 
@@ -2207,6 +2211,133 @@ Emite uma URL assinada de leitura.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 VARIANT_NOT_READY` · `409 VARIANT_PROCESSING_FAILED` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/media-folders`
+
+Lista as pastas de mídia de um cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1
+}
+```
+
+**Resposta `200`** — Página de pastas.
+
+```json
+{
+  "data": [
+    {
+      "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "parentId": null,
+      "name": "Vídeos",
+      "isDefault": true,
+      "createdAt": "2026-10-07T12:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 100,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/media-folders`
+
+Cria uma pasta de mídia do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "name": "Lançamento de outubro",
+  "parentId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+}
+```
+
+**Resposta `201`** — Pasta criada.
+
+```json
+{
+  "id": "12121212-1212-4121-8121-121212121212",
+  "parentId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "name": "Lançamento de outubro",
+  "isDefault": false,
+  "createdAt": "2026-10-07T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/media-folders/:folderId/assets`
+
+Lista as mídias de uma pasta.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1
+}
+```
+
+**Resposta `200`** — Página de mídias.
+
+```json
+{
+  "data": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "category": "image",
+      "contentType": "image/png",
+      "sizeBytes": 1048576,
+      "videoProcessingStatus": "not_applicable",
+      "createdAt": "2026-10-07T12:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 48,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/media-folders/:folderId/assets/:assetId/remove`
+
+Remove uma mídia da pasta.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Resposta `200`** — Mídia removida da pasta.
+
+```json
+{
+  "assetId": "44444444-4444-4444-8444-444444444444",
+  "removed": true
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 MEDIA_IN_USE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 ### profile — Edição do próprio nome e da própria foto de perfil.
 
@@ -2419,6 +2550,7 @@ Confirma a troca de e-mail pelo link enviado ao e-mail novo.
 | `INVALID_ROLE` | O papel informado não é válido para esta agência. |
 | `CLIENT_NAME_IN_USE` | Já existe um cliente ativo com este nome. |
 | `CLIENT_ARCHIVED` | Cliente arquivado não pode ser editado. |
+| `MEDIA_IN_USE` | Esta mídia está em um conteúdo enviado para aprovação, aprovado ou publicado e não pode ser removida. |
 | `CLIENT_NOT_ARCHIVED` | Este cliente já está ativo. |
 | `CLOSING_DATE_NOT_SET` | Este cliente não tem encerramento agendado. |
 | `PERSONA_ARCHIVED` | Persona arquivada: a conversa é somente leitura. |

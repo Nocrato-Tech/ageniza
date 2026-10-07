@@ -1,9 +1,12 @@
 import type { z } from 'zod';
 
 import { COLLABORATOR_ROLES_READ_PERMISSIONS, COLLABORATOR_UPDATE_PERMISSIONS } from '../collaborators/permissions.js';
+import { MEDIA_UPLOAD_PERMISSIONS } from '../media/policy.js';
 import type { RoutePermission } from '../../plugins/infra/route-metadata.js';
 import {
   AcceptLegalDocumentRequestSchema,
+  AgencyClientMediaFolderAssetPathParamsSchema,
+  AgencyClientMediaFolderPathParamsSchema,
   AgencyClientMemberPathParamsSchema,
   AgencyClientPathParamsSchema,
   AgencyClientPersonaPathParamsSchema,
@@ -57,6 +60,7 @@ import {
   CreateCommentRequestSchema,
   CreateThreadRequestSchema,
   CreateThreadResponseSchema,
+  CreateMediaFolderRequestSchema,
   CreateMediaUploadRequestSchema,
   CreatePersonaRequestSchema,
   CreateMediaUploadResponseSchema,
@@ -74,6 +78,11 @@ import {
   LegalAcceptancesResponseSchema,
   MeContextsResponseSchema,
   MediaDownloadUrlQuerySchema,
+  MediaFolderAssetListQuerySchema,
+  MediaFolderAssetListResponseSchema,
+  MediaFolderListQuerySchema,
+  MediaFolderListResponseSchema,
+  MediaFolderSchema,
   MediaDownloadUrlResponseSchema,
   PaginationInputSchema,
   PendingInvitationListResponseSchema,
@@ -87,6 +96,7 @@ import {
   ThreadListQuerySchema,
   ThreadListResponseSchema,
   ThreadSchema,
+  RemoveMediaAssetResponseSchema,
   RequestMediaUploadPartsRequestSchema,
   RequestMediaUploadPartsResponseSchema,
   UpdateClientRequestSchema,
@@ -178,7 +188,7 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
   clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; agendar, desmarcar, arquivar e reativar o contrato; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.',
   collaborators: 'A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.',
-  media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.',
+  media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia; as pastas de mídia de um cliente, a listagem do que há nelas e a remoção.',
   profile: 'Edição do próprio nome e da própria foto de perfil.',
   legal: 'Versão dos Termos e da Privacidade que a conta aceitou, e o aceite de um documento por vez.',
   'email-change': 'Pedido de troca do e-mail da conta, aprovado pela operação, e a confirmação pelo link enviado ao e-mail novo.'
@@ -205,6 +215,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   INVALID_ROLE: 'O papel informado não é válido para esta agência.',
   CLIENT_NAME_IN_USE: 'Já existe um cliente ativo com este nome.',
   CLIENT_ARCHIVED: 'Cliente arquivado não pode ser editado.',
+  MEDIA_IN_USE: 'Esta mídia está em um conteúdo enviado para aprovação, aprovado ou publicado e não pode ser removida.',
   CLIENT_NOT_ARCHIVED: 'Este cliente já está ativo.',
   CLOSING_DATE_NOT_SET: 'Este cliente não tem encerramento agendado.',
   PERSONA_ARCHIVED: 'Persona arquivada: a conversa é somente leitura.',
@@ -238,6 +249,7 @@ const clientId = '77777777-7777-4777-8777-777777777777';
 const personaId = '88888888-8888-4888-8888-888888888888';
 const threadId = '99999999-9999-4999-8999-999999999999';
 const commentId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const folderId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 const agencyContextExample = {
   type: 'agency',
@@ -2042,9 +2054,14 @@ path: '/agencies/:agencyId/roles',
     operationId: 'createMediaUpload',
     module: 'media',
     summary: 'Inicia um upload de mídia',
-    description: 'Devolve a URL assinada de PUT ou o plano de multipart; o tipo real é validado no fim, pelo conteúdo.',
+    description: [
+      'Devolve a URL assinada de PUT ou o plano de multipart; o tipo real é validado no fim, pelo conteúdo.',
+      'Sem `clientId` e `folderId` a mídia é da agência e exige `midia.enviar`. Com os dois, é a mídia de uma pasta do',
+      'cliente e exige `conteudo.operar` **e** `conteudo.visualizar`: o servidor confere que a pasta é do cliente e o',
+      'cliente é da agência (cliente de outra agência e pasta de outro cliente dão o mesmo 404), e a cota soma a agência inteira.'
+    ].join('\n'),
     access: 'Sessão + vínculo com a agência',
-    permission: 'midia.enviar',
+    permission: MEDIA_UPLOAD_PERMISSIONS,
     params: AgencyPathParamsSchema,
     body: CreateMediaUploadRequestSchema,
     requestExample: { fileName: 'foto.png', contentType: 'image/png', declaredSizeBytes: 1048576 },
@@ -2067,6 +2084,9 @@ path: '/agencies/:agencyId/roles',
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 404, code: 'NOT_FOUND', message: 'Folder not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'TRY_AGAIN' },
       { status: 409, code: 'QUOTA_EXCEEDED' },
       { status: 415, code: 'UNSUPPORTED_MEDIA_TYPE' }
     ]
@@ -2079,7 +2099,7 @@ path: '/agencies/:agencyId/roles',
     summary: 'Pede URLs assinadas de partes do multipart',
     description: 'Repetível para retomar um upload interrompido; pede só os números que ainda faltam.',
     access: 'Sessão + vínculo com a agência',
-    permission: 'midia.enviar',
+    permission: MEDIA_UPLOAD_PERMISSIONS,
     params: AgencyMediaAssetPathParamsSchema,
     body: RequestMediaUploadPartsRequestSchema,
     requestExample: { partNumbers: [1, 2] },
@@ -2108,7 +2128,7 @@ path: '/agencies/:agencyId/roles',
     summary: 'Confirma o upload e valida o objeto',
     description: 'Valida tipo e tamanho pelo conteúdo observado no armazenamento; rejeição vira 422 e fica registrada.',
     access: 'Sessão + vínculo com a agência',
-    permission: 'midia.enviar',
+    permission: MEDIA_UPLOAD_PERMISSIONS,
     params: AgencyMediaAssetPathParamsSchema,
     body: CompleteMediaUploadRequestSchema,
     requestExample: { parts: [{ partNumber: 1, eTag: '"exemplo-de-etag"' }] },
@@ -2157,6 +2177,137 @@ path: '/agencies/:agencyId/roles',
       { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
       { status: 409, code: 'VARIANT_NOT_READY' },
       { status: 409, code: 'VARIANT_PROCESSING_FAILED' }
+    ]
+  },
+
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/media-folders',
+    operationId: 'listClientMediaFolders',
+    module: 'media',
+    summary: 'Lista as pastas de mídia de um cliente',
+    description: [
+      'As quatro pastas padrão e as da agência, as de primeiro nível antes das de trabalho; cem por página.',
+      'Cliente arquivado continua legível; cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientPathParamsSchema,
+    query: MediaFolderListQuerySchema,
+    requestExample: { page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página de pastas.',
+      schema: MediaFolderListResponseSchema,
+      example: {
+        data: [{ id: folderId, parentId: null, name: 'Vídeos', isDefault: true, createdAt: '2026-10-07T12:00:00.000Z' }],
+        meta: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/media-folders',
+    operationId: 'createClientMediaFolder',
+    module: 'media',
+    summary: 'Cria uma pasta de mídia do cliente',
+    description: [
+      'No primeiro nível, ou dentro de uma pasta de primeiro nível do mesmo cliente (`parentId`): há só dois níveis.',
+      'Exige `conteudo.operar` e também `conteudo.visualizar`, porque a resposta é uma leitura. O nome não aceita',
+      'caracteres de controle, invisíveis nem os dois joiners, e tem até 80 caracteres.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientPathParamsSchema,
+    body: CreateMediaFolderRequestSchema,
+    requestExample: { name: 'Lançamento de outubro', parentId: folderId },
+    responses: [{
+      status: 201,
+      description: 'Pasta criada.',
+      schema: MediaFolderSchema,
+      example: { id: '12121212-1212-4121-8121-121212121212', parentId: folderId, name: 'Lançamento de outubro', isDefault: false, createdAt: '2026-10-07T12:00:00.000Z' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/media-folders/:folderId/assets',
+    operationId: 'listMediaFolderAssets',
+    module: 'media',
+    summary: 'Lista as mídias de uma pasta',
+    description: [
+      'Só a mídia confirmada e não removida, a mais recente primeiro; quarenta e oito por página. Nunca devolve chave de',
+      'objeto. Cliente de outra agência, pasta de outro cliente e id inválido devolvem o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientMediaFolderPathParamsSchema,
+    query: MediaFolderAssetListQuerySchema,
+    requestExample: { page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página de mídias.',
+      schema: MediaFolderAssetListResponseSchema,
+      example: {
+        data: [{ id: assetId, category: 'image', contentType: 'image/png', sizeBytes: 1048576, videoProcessingStatus: 'not_applicable', createdAt: '2026-10-07T12:00:00.000Z' }],
+        meta: { page: 1, pageSize: 48, totalItems: 1, totalPages: 1 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Folder not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/media-folders/:folderId/assets/:assetId/remove',
+    operationId: 'removeMediaFolderAsset',
+    module: 'media',
+    summary: 'Remove uma mídia da pasta',
+    description: [
+      'Remoção lógica: o arquivo sai da pasta e não pode mais ser escolhido em conteúdo, mas continua contando na cota',
+      'até a retenção apagá-lo. Recusa (409 `MEDIA_IN_USE`) a mídia de um conteúdo aguardando aprovação, aprovado ou',
+      'publicado, arquivo ou capa. Exige `conteudo.operar` e também `conteudo.visualizar`. Repetir a chamada não é erro.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientMediaFolderAssetPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'Mídia removida da pasta.',
+      schema: RemoveMediaAssetResponseSchema,
+      example: { assetId, removed: true }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'MEDIA_IN_USE' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
 
