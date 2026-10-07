@@ -271,6 +271,9 @@ evento em `audit.events`. Todas respondem o cliente (`200`), no mesmo formato do
   arquivar trava o cliente e depois os convites. Duas transações reais podem se cruzar (`40P01`) e uma
   perde. A rota que perde responde `409 TRY_AGAIN`, sem detalhe do banco e sem nada gravado, e repetir
   funciona; o reenvio já fazia o mesmo (#335).
+- **Convite criado ou reenviado enquanto o cliente é arquivado**: o gatilho da `20261006000400` trava o cliente e,
+  achando-o arquivado depois da espera, levanta `A0020`. As duas rotas de convite (`invitations/routes.ts`) o
+  traduzem para `409 CLIENT_ARCHIVED` e nada é criado; antes era `500`.
 - O `404` é um só para cliente inexistente, de outra agência ou com id que não é UUID. Se a função
   recusar depois das checagens (permissão perdida no meio, cliente arquivado no meio), a recusa é relida
   numa transação nova e vira o `403`, o `404` ou o `409` que a checagem teria dado.

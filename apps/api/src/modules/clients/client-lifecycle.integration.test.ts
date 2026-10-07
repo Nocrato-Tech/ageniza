@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import { createVerifiedUserClaims, raw, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -12,6 +13,9 @@ import {
   type TestApp,
   type TestUserFixture
 } from '../auth/test-support/harness.js';
+import { registerErrorHandling } from '../../plugins/infra/errors.js';
+import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../tenancy/guards.js';
+import { registerClientModule } from './routes.js';
 
 // Issues #131 and #133 (the route half). `status`, `archived_at` and `closing_date` are out of every
 // grant of `ageniza_app`, so what these routes do is exactly what `app_private.set_client_closing_date`,
@@ -47,6 +51,8 @@ const cRaceOne = randomUUID();
 const cRaceTwo = randomUUID();
 const cRaceArchive = randomUUID();
 const cRaceResend = randomUUID();
+const cRaceCreate = randomUUID();
+const cRaceResendArchive = randomUUID();
 const cInB = randomUUID();
 const cNoClosing = randomUUID();
 
@@ -308,6 +314,8 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
     await insertClient(cRaceTwo, `ciclo  corrida ${cNameActive.slice(0, 8)}`, { status: 'archived', archived_at: new Date() });
     await insertClient(cRaceArchive, `Ciclo Disputa Arquivar ${cRaceArchive}`);
     await insertClient(cRaceResend, `Ciclo Disputa Reenviar ${cRaceResend}`);
+    await insertClient(cRaceCreate, `Ciclo Disputa Convidar ${cRaceCreate}`);
+    await insertClient(cRaceResendArchive, `Ciclo Disputa Reenviar Arquivando ${cRaceResendArchive}`);
     await insertClient(cNoClosing, `Ciclo Sem Data ${cNoClosing}`);
     await insertClient(cInB, `Ciclo Agência B ${cInB}`, { closing_date: await brasiliaDay(30) }, agencyB);
 
@@ -334,6 +342,7 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
     invitations.parityOne = await seedInvitation({ purpose: 'client_invite', clientId: cParity, email: 'paridade@ciclo.test' });
     invitations.raceArchive = await seedInvitation({ purpose: 'client_invite', clientId: cRaceArchive, email: 'corrida-arquivar@ciclo.test' });
     invitations.raceResend = await seedInvitation({ purpose: 'client_invite', clientId: cRaceResend, email: 'corrida-reenviar@ciclo.test' });
+    invitations.raceResendArchive = await seedInvitation({ purpose: 'client_invite', clientId: cRaceResendArchive, email: 'corrida-reenviar-arquivando@ciclo.test' });
 
     for (const key of ['admin', 'manager', 'production', 'sales', 'finance', 'ownerUser', 'archiveOnly', 'operateOnly', 'otherAdmin', 'portalOne', 'dual', 'dualBare', 'crossDual']) {
       cookies[key] = await login(users[key]!);
@@ -831,5 +840,183 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
         if (!released) await holder.rollback();
       }
     }, 30_000);
+  });
+
+  describe('a race with the archive of the same client', () => {
+    // The holder plays an archive that has changed the client and not yet committed. The invitation
+    // insert passes its policy on the snapshot where the client is active and then waits on the client
+    // row in the trigger of 20261006000400; when the holder commits, the trigger finds the client
+    // archived and raises A0020, which the route must answer as the archived client it now is.
+    const archiveWhileRouteWaits = async (start: () => Promise<Reply>, clientId: string): Promise<Reply> => {
+      const holder = await owner.knex.transaction();
+      let released = false;
+      try {
+        await raw(holder, "update public.clients set status = 'archived', archived_at = now() where id = ?::uuid", [clientId]);
+        const holderPid = await backendPid(holder);
+        const pending = start();
+        await waitForBackendBlockedBy(holderPid);
+        await holder.commit();
+        released = true;
+        return await pending;
+      } finally {
+        if (!released) await holder.rollback();
+      }
+    };
+
+    it('answers 409 CLIENT_ARCHIVED, and not 500, to an invitation created while the client is being archived', async () => {
+      const before = await owner.knex('invitations').where({ client_id: cRaceCreate }).select('id');
+      const response = await archiveWhileRouteWaits(
+        () => call('POST', invitationsUrl(cRaceCreate), cookies.racer, { email: 'chegou-tarde@ciclo.test' }, '127.0.0.31'),
+        cRaceCreate
+      );
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error).toEqual({ code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode receber convites.' });
+      expect(JSON.stringify(response.json())).not.toMatch(NO_DATABASE_DETAIL);
+      expect(await clientRow(cRaceCreate)).toMatchObject({ status: 'archived' });
+      expect(await owner.knex('invitations').where({ client_id: cRaceCreate }).select('id')).toEqual(before);
+    }, 30_000);
+
+    it('answers 409 CLIENT_ARCHIVED to the resend of an invitation of a client being archived, leaving the invitation as it was', async () => {
+      const response = await archiveWhileRouteWaits(
+        () => call('POST', `/agencies/${agencyA}/invitations/${invitations.raceResendArchive}/resend`, cookies.racer, undefined, '127.0.0.31'),
+        cRaceResendArchive
+      );
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error.code).toBe('CLIENT_ARCHIVED');
+      expect(JSON.stringify(response.json())).not.toMatch(NO_DATABASE_DETAIL);
+      expect(await revokedAtOf(invitations.raceResendArchive)).toBeNull();
+      expect(await owner.knex('invitations').where({ client_id: cRaceResendArchive }).select('id')).toHaveLength(1);
+    }, 30_000);
+  });
+
+  describe('when the function refuses after the checks of the route', () => {
+    // The world changes after the route read the client and before the function runs, which is the only
+    // way the function can refuse what the route let through. The refusal is read back in a new
+    // transaction and must become the answer the check would have given.
+    // Only the call of the lifecycle function: the transaction opens with its own app_private call, and a change made there would be seen by the route's own checks.
+    const LIFECYCLE_FUNCTION_CALL = /^select app_private\.(set_client_closing_date|archive_client|reactivate_client)\(/;
+
+    const withRacingApp = async <T>(beforeFunction: () => Promise<void>, run: (racingApp: FastifyInstance) => Promise<T>): Promise<T> => {
+      const racingApp = Fastify();
+      registerErrorHandling(racingApp);
+      let changed = false;
+      registerClientModule(racingApp, {
+        database: {
+          ...app.database,
+          transaction: (work: Parameters<DatabaseClient['transaction']>[0]) =>
+            app.database.transaction((transaction) => {
+              const racing = new Proxy(transaction, {
+                get(target, property, receiver) {
+                  if (property === 'raw') {
+                    return async (statement: string, bindings?: readonly unknown[]) => {
+                      if (!changed && LIFECYCLE_FUNCTION_CALL.test(statement.trim())) {
+                        changed = true;
+                        await beforeFunction();
+                      }
+                      return target.raw(statement, bindings as never);
+                    };
+                  }
+                  return Reflect.get(target, property, receiver);
+                }
+              });
+              return work(racing as typeof transaction);
+            })
+        } as DatabaseClient,
+        auth: app.auth,
+        requireAgencyAccess: createRequireAgencyAccess({ database: app.database }),
+        requirePermission,
+        requireClientAccess: createRequireClientAccess({ database: app.database }),
+        photoUrlExpirySeconds: 300
+      });
+      await racingApp.ready();
+      try {
+        return await run(racingApp);
+      } finally {
+        await racingApp.close();
+      }
+    };
+
+    const send = async (target: FastifyInstance, method: Method, url: string, cookie: string, payload?: unknown): Promise<Reply> =>
+      (await target.inject({ method, url, headers: { ...origin, cookie }, ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }) })) as unknown as Reply;
+
+    /** A caller whose role holds cliente.arquivar alone and can lose it in the middle of the request. */
+    const makeLoser = async (label: string): Promise<{ cookie: string; losePermission: () => Promise<void> }> => {
+      await makeUser(label, `Perde a Permissão ${label}`);
+      const roleId = randomUUID();
+      createdCustomRoleIds.push(roleId);
+      await owner.knex('roles').insert({ id: roleId, agency_id: agencyA, key: `only-${roleId}`, name: 'Só arquivar, por pouco tempo', is_system: false });
+      await owner.knex('role_permissions').insert({ role_id: roleId, permission_key: 'cliente.arquivar' });
+      await owner.knex('agency_memberships').insert({ agency_id: agencyA, user_id: users[label]!.id, role_id: roleId });
+      return {
+        cookie: await login(users[label]!),
+        losePermission: async () => { await owner.knex('role_permissions').where({ role_id: roleId }).delete(); }
+      };
+    };
+
+    const freshClient = async (name: string, extra: Record<string, unknown> = {}): Promise<string> => {
+      const id = randomUUID();
+      await insertClient(id, `${name} ${id}`, extra);
+      return id;
+    };
+
+    it('answers 404 when the client is gone', async () => {
+      const gone = await freshClient('Some Antes da Função');
+      const response = await withRacingApp(
+        async () => { await owner.knex('clients').where({ id: gone }).delete(); },
+        (racing) => send(racing, 'PUT', closingUrl(gone), cookies.admin!, { closingDate: '2099-12-31' })
+      );
+      expect(response.statusCode).toBe(404);
+      expect(response.json().error).toEqual({ code: 'NOT_FOUND', message: 'Client not found.' });
+    });
+
+    it('answers 404 to a reactivation of a client that is gone', async () => {
+      const gone = await freshClient('Some Antes de Reativar', { status: 'archived', archived_at: new Date() });
+      const response = await withRacingApp(
+        async () => { await owner.knex('clients').where({ id: gone }).delete(); },
+        (racing) => send(racing, 'POST', reactivateUrl(gone), cookies.admin!)
+      );
+      expect(response.statusCode).toBe(404);
+      expect(response.json().error.code).toBe('NOT_FOUND');
+    });
+
+    it('answers 409 CLIENT_ARCHIVED when the client was archived after the route read it as active, changing nothing', async () => {
+      const client = await freshClient('Arquivado no Meio');
+      const response = await withRacingApp(
+        async () => { await owner.knex('clients').where({ id: client }).update({ status: 'archived', archived_at: new Date() }); },
+        (racing) => send(racing, 'PUT', closingUrl(client), cookies.admin!, { closingDate: '2099-12-31' })
+      );
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error).toEqual({ code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: a única ação possível é reativar.' });
+      expect(await closingOf(client)).toBeNull();
+      expect(await auditActions(client)).toEqual([]);
+    });
+
+    it('answers 403 when the caller lost cliente.arquivar after the guard, on a schedule and on an archive, and the client does not change', async () => {
+      const routes = [
+        { label: 'schedule', method: 'PUT' as const, url: closingUrl, payload: { closingDate: '2099-12-31' } },
+        { label: 'archive', method: 'POST' as const, url: archiveUrl, payload: undefined }
+      ];
+      for (const route of routes) {
+        const client = await freshClient(`Sem Permissão ${route.label}`);
+        const loser = await makeLoser(`loser${route.label}`);
+        const before = await clientRow(client);
+        const response = await withRacingApp(loser.losePermission, (racing) => send(racing, route.method, route.url(client), loser.cookie, route.payload));
+        expect(response.statusCode, route.label).toBe(403);
+        expect(response.json().error.code, route.label).toBe('FORBIDDEN');
+        expect(await clientRow(client), route.label).toEqual(before);
+      }
+    });
+
+    it('answers 403, and not that the client is archived, when the caller lost the permission to reactivate an archived client', async () => {
+      const client = await freshClient('Reativar Sem Permissão', { status: 'archived', archived_at: new Date() });
+      const loser = await makeLoser('loserreactivate');
+      const response = await withRacingApp(loser.losePermission, (racing) => send(racing, 'POST', reactivateUrl(client), loser.cookie));
+      expect(response.statusCode).toBe(403);
+      expect(response.json().error.code).toBe('FORBIDDEN');
+      expect(await clientRow(client)).toMatchObject({ status: 'archived' });
+      expect(await auditActions(client)).toEqual([]);
+    });
   });
 });

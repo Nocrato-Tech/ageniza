@@ -5418,7 +5418,7 @@
       "post": {
         "operationId": "resendInvitation",
         "summary": "Reenvia um convite pendente",
-        "description": "Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403).\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `convite.reenviar`.",
+        "description": "Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). O reenvio de convite de portal de um cliente que acabou de ser arquivado responde 409 `CLIENT_ARCHIVED` e o convite segue como estava.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `convite.reenviar`.",
         "tags": [
           "invitations"
         ],
@@ -5516,7 +5516,7 @@
             }
           },
           "409": {
-            "description": "INVITATION_NOT_PENDING: O convite não está pendente. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "description": "INVITATION_NOT_PENDING: O convite não está pendente. | CLIENT_ARCHIVED: Cliente arquivado não pode receber convites. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {

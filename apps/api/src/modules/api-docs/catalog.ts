@@ -625,7 +625,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'resendInvitation',
     module: 'invitations',
     summary: 'Reenvia um convite pendente',
-    description: 'Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403).',
+    description: 'Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). O reenvio de convite de portal de um cliente que acabou de ser arquivado responde 409 `CLIENT_ARCHIVED` e o convite segue como estava.',
     access: 'Sessão + vínculo com a agência',
     permission: 'convite.reenviar',
     params: AgencyInvitationPathParamsSchema,
@@ -642,6 +642,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Invitation not found.' },
       { status: 409, code: 'INVITATION_NOT_PENDING' },
+      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode receber convites.' },
       { status: 409, code: 'TRY_AGAIN' },
       { status: 502, code: 'EMAIL_DELIVERY_FAILED' }
     ]
