@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { evaluate, recordsDecision, structuralReasons } from './verify-structural-decisions.mjs';
+import { addedFilesFrom, evaluate, recordsDecision, structuralReasons } from './verify-structural-decisions.mjs';
 
 const NEW_TABLE_MIGRATION = `
   create table public.widgets (id uuid primary key, agency_id uuid not null);
@@ -51,10 +51,25 @@ describe('gate', () => {
     )).toMatchObject({ satisfied: true });
   });
 
-  it('recognises a decision file in the decisions directory', () => {
+  it('recognises an added decision file and nothing weaker', () => {
     expect(recordsDecision(['docs/business/decisions/2026-10-07-uma-decisao-por-arquivo.md'])).toBe(true);
-    expect(recordsDecision(['docs/business/structural-changes.md'])).toBe(false);
+    expect(recordsDecision(['docs/business/decisions/2026-10-07-notas.txt'])).toBe(false);
+    expect(recordsDecision(['docs/business/decisions/notas.md'])).toBe(false);
+    expect(recordsDecision(['docs/business/decisions/2026-10-7-dia-invalido.md'])).toBe(false);
+    expect(recordsDecision(['docs/business/decisions/2026-10-07-uma/arquivo.md'])).toBe(false);
+    expect(recordsDecision(['docs/business/decisions/2026-10-07-MAIUSCULO.md'])).toBe(false);
     expect(recordsDecision(['docs/business/decisions.md'])).toBe(false);
+    expect(recordsDecision(['docs/business/structural-changes.md'])).toBe(false);
+  });
+
+  it('counts an added file, never an edited or deleted one', () => {
+    const added = 'A\tdocs/business/decisions/2026-10-07-uma-decisao-por-arquivo.md';
+    expect(recordsDecision(addedFilesFrom(added))).toBe(true);
+    expect(recordsDecision(addedFilesFrom('M\tdocs/business/decisions/2026-09-15-entrada.md'))).toBe(false);
+    expect(recordsDecision(addedFilesFrom('D\tdocs/business/decisions/2026-09-15-entrada.md'))).toBe(false);
+    expect(recordsDecision(addedFilesFrom(
+      'R100\tdocs/business/decisions/2026-09-15-antiga.md\tdocs/business/decisions/2026-10-07-nova.md'
+    ))).toBe(false);
   });
 });
 

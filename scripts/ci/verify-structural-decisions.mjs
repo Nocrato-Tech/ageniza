@@ -4,6 +4,9 @@ import { execFileSync } from 'node:child_process';
 // An instruction alone does not hold: this turns it into a gate, so the expensive decisions cannot
 // be settled quietly inside a pull request that was about something else.
 const DECISIONS_DIRECTORY = 'docs/business/decisions/';
+// Only an added file registers a decision: editing or deleting an existing one must not satisfy the
+// gate, or the "never edit another decision's file" rule would have no enforcement at all.
+const DECISION_FILE = /^docs\/business\/decisions\/\d{4}-\d{2}-\d{2}-[a-z0-9-]+\.md$/;
 
 /** SQL that reaches something already deployed, as opposed to creating new objects. */
 const STRUCTURAL_SQL = [
@@ -34,15 +37,21 @@ export const structuralReasons = (sql) => {
   return touchesExisting ? ['alters an existing table', ...reasons] : reasons;
 };
 
-/** True when the change records a decision alongside the migration. */
-export const recordsDecision = (changedFiles) =>
-  changedFiles.some((file) => file.startsWith(DECISIONS_DIRECTORY));
+/** Files with git status `A` (added) in a `git diff --name-status` output. */
+export const addedFilesFrom = (nameStatus) =>
+  nameStatus
+    .split('\n')
+    .filter((line) => line.startsWith('A\t'))
+    .map((line) => line.slice(2).trim());
 
-export const evaluate = (migrations, changedFiles) => {
+/** True when the change adds a decision file alongside the migration. */
+export const recordsDecision = (addedFiles) => addedFiles.some((file) => DECISION_FILE.test(file));
+
+export const evaluate = (migrations, addedFiles) => {
   const structural = migrations
     .map((migration) => ({ file: migration.file, reasons: structuralReasons(migration.sql) }))
     .filter((migration) => migration.reasons.length > 0);
-  return { structural, satisfied: structural.length === 0 || recordsDecision(changedFiles) };
+  return { structural, satisfied: structural.length === 0 || recordsDecision(addedFiles) };
 };
 
 const git = (args) => execFileSync('git', args, { encoding: 'utf8' });
@@ -55,12 +64,13 @@ const argument = (name, fallback) => {
 if (process.argv[1]?.endsWith('verify-structural-decisions.mjs')) {
   const base = argument('base', 'origin/develop');
   const head = argument('head', 'HEAD');
-  const changedFiles = git(['diff', '--name-only', `${base}...${head}`]).split('\n').filter(Boolean);
+  const nameStatus = git(['diff', '--name-status', `${base}...${head}`]);
+  const changedFiles = nameStatus.split('\n').filter(Boolean).map((line) => line.split('\t').pop());
   const migrations = changedFiles
     .filter((file) => file.startsWith('packages/database/migrations/') && file.endsWith('.mjs'))
     .map((file) => ({ file, sql: git(['show', `${head}:${file}`]) }));
 
-  const { structural, satisfied } = evaluate(migrations, changedFiles);
+  const { structural, satisfied } = evaluate(migrations, addedFilesFrom(nameStatus));
 
   if (structural.length === 0) {
     console.log('No structural migration in this change.');
@@ -70,13 +80,14 @@ if (process.argv[1]?.endsWith('verify-structural-decisions.mjs')) {
 
   if (!satisfied) {
     console.error(
-      `\nThis change carries a structural migration but records no decision in ${DECISIONS_DIRECTORY}.\n` +
+      `\nThis change carries a structural migration but adds no decision file in ${DECISIONS_DIRECTORY}\n` +
+      '(an added `AAAA-MM-DD-<slug>.md`, never an edit to an existing one).\n' +
       'Read docs/business/structural-changes.md, then record the decision — context, decision and\n' +
       'consequence — in the same change. If this is a false positive, say so in the entry and keep it:\n' +
       'a recorded non-decision costs one paragraph, an unrecorded one costs a retrofit.'
     );
     process.exitCode = 1;
   } else if (structural.length > 0) {
-    console.log(`\nStructural change recorded in ${DECISIONS_DIRECTORY}.`);
+    console.log(`\nStructural change recorded in an added file under ${DECISIONS_DIRECTORY}.`);
   }
 }
