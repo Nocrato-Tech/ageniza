@@ -85,7 +85,6 @@ interface InvitationRow {
   readonly client_id: string | null;
   readonly client_name: string | null;
   readonly role_id: string | null;
-  readonly is_pending: boolean;
 }
 
 interface InvitationLookupRow {
@@ -190,6 +189,21 @@ const lockPendingInvitationSlot = async (
   await raw(transaction, 'select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(?, 0))', [
     `${agencyId}:${purpose}:${email}:${clientId ?? NIL_UUID}`
   ]);
+};
+
+/** Second statement, after the caller's `for update`: `now()` freezes before the wait and would
+ * keep an invitation that expired during it looking pending (issue #304). */
+const isInvitationPending = async (
+  transaction: InvitationTransaction,
+  agencyId: string,
+  invitationId: string
+): Promise<boolean> => {
+  const result = await raw<RawRows<{ is_pending: boolean }>>(transaction, `
+    select (used_at is null and revoked_at is null and expires_at > pg_catalog.statement_timestamp()) as is_pending
+    from public.invitations
+    where id = ?::uuid and agency_id = ?::uuid
+  `, [invitationId, agencyId]);
+  return result.rows[0]?.is_pending === true;
 };
 
 // specs/colaboradores.md §6, "Convites pendentes": 24 per page, created_at ascending. The route
@@ -415,12 +429,10 @@ const resendInvitation = async (
   if (tenant === undefined) throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Agency not found.' });
   const token = tokenForInsert(dependencies.config.appPublicUrl);
   return withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
-    // Pendingness is a database-clock decision, like the listing and `app_private.accept_invitation`
-    // (issue #165): the application clock can drift from the server's.
+    // The row is locked first; pendingness is a second statement, after the lock wait (issue #304).
     const currentResult = await raw<RawRows<InvitationRow>>(transaction, `
       select invitation.id, invitation.purpose, invitation.email, invitation.agency_id, agency.name as agency_name,
-             invitation.client_id, client.name as client_name, invitation.role_id,
-             (invitation.used_at is null and invitation.revoked_at is null and invitation.expires_at > now()) as is_pending
+             invitation.client_id, client.name as client_name, invitation.role_id
       from public.invitations invitation
       join public.agencies agency on agency.id = invitation.agency_id
       left join public.clients client on client.id = invitation.client_id
@@ -437,9 +449,10 @@ const resendInvitation = async (
       `, [current.role_id, agencyId]);
       if (adminResult.rows[0]?.is_admin === true) throw adminGrantForbidden();
     }
-    if (!current.is_pending) throw invitationNotPending();
-
+    // Slot lock before the pendingness read: an invitation that expires while waiting for it must
+    // not be resent (issue #304 review).
     await lockPendingInvitationSlot(transaction, agencyId, current.purpose, current.email, current.client_id);
+    if (!(await isInvitationPending(transaction, agencyId, invitationId))) throw invitationNotPending();
     const revoked = await raw<RawRows<{ id: string }>>(transaction, `
       update public.invitations set revoked_at = now() where id = ?::uuid returning id
     `, [invitationId]);
@@ -479,17 +492,17 @@ const cancelInvitation = async (
   const auth = request.auth;
   if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
   await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
-    // Same database-clock rule as the resend check above (issue #165).
-    const currentResult = await raw<RawRows<Pick<InvitationRow, 'id' | 'purpose' | 'is_pending'>>>(transaction, `
-      select id, purpose,
-             (used_at is null and revoked_at is null and expires_at > now()) as is_pending
+    // Same two-step pendingness rule as the resend: lock the row, then read the clock after the
+    // wait (issue #304).
+    const currentResult = await raw<RawRows<Pick<InvitationRow, 'id' | 'purpose'>>>(transaction, `
+      select id, purpose
       from public.invitations
       where id = ?::uuid and agency_id = ?::uuid
       for update
     `, [invitationId, agencyId]);
     const current = currentResult.rows[0];
     if (current === undefined || current.purpose === 'agency_activation') throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Invitation not found.' });
-    if (!current.is_pending) throw invitationNotPending();
+    if (!(await isInvitationPending(transaction, agencyId, invitationId))) throw invitationNotPending();
     const revoked = await raw<RawRows<{ id: string }>>(transaction, `
       update public.invitations set revoked_at = now() where id = ?::uuid returning id
     `, [invitationId]);
@@ -548,8 +561,8 @@ const listPendingCollaboratorInvitations = async (
   if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
   return withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
     // `count(*) over ()` rides the page query's own snapshot, so the counter and the list cannot
-    // describe two different states of the table (issue #165). The separate count only runs when
-    // the page is empty, where `totalItems` is allowed to exceed the empty `data` anyway.
+    // describe two different states of the table (issue #165). The separate count only runs for an
+    // empty page past the first, where `totalItems` is allowed to exceed the empty `data` anyway.
     const itemsResult = await raw<RawRows<PendingInvitationRow>>(transaction, `
       select
         invitation.id,
@@ -570,6 +583,11 @@ const listPendingCollaboratorInvitations = async (
     `, [agencyId, pagination.pageSize, pagination.offset]);
     if (itemsResult.rows.length > 0) {
       return { items: itemsResult.rows, totalItems: Number(itemsResult.rows[0]?.total ?? 0) };
+    }
+    // An empty first page is the whole truth: no row exists before it, so a second count could
+    // only answer from another snapshot and show `data: []` with `totalItems: 1` (issue #304).
+    if (pagination.offset === 0) {
+      return { items: itemsResult.rows, totalItems: 0 };
     }
 
     const countResult = await raw<RawRows<{ total: string | number }>>(transaction, `
