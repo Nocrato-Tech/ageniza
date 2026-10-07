@@ -58,16 +58,15 @@ export const CollaboratorSchema = z.object({
  * keeps the rule that a parameter the SPEC does not declare does not exist.
  *
  * `q`, `role` and `jobTitle` use `SearchTextSchema`, which rejects control characters (a NUL byte
- * would otherwise become a 500). `status` accepts only `active`: revealing `removed` requires an
- * administrative permission (SPEC §5, rule 9), and that value plus its guard arrive with the
- * removal task (#98/#105). Until then `?status=removed` is a 400, and the route always lists
- * active links.
+ * would otherwise become a 500). `status` is `active` by default; `removed` is a valid value, but
+ * the schema cannot grant it: revealing removed links requires an administrative permission (SPEC
+ * §5, rule 9), which the route checks against the caller (issue #98, decisions.md 2026-10-07).
  */
 export const CollaboratorListQuerySchema = PaginationInputSchema.extend({
   q: SearchTextSchema.optional(),
   role: SearchTextSchema.max(128).optional(),
   jobTitle: SearchTextSchema.max(COLLABORATOR_JOB_TITLE_MAX_LENGTH).optional(),
-  status: z.literal('active').optional()
+  status: z.enum(['active', 'removed']).optional()
 }).strict();
 
 export const CollaboratorListResponseSchema = createPaginatedResponseSchema(CollaboratorSchema);
@@ -85,6 +84,16 @@ export const UpdateCollaboratorRequestSchema = z.object({
   (body) => body.jobTitle !== undefined || body.roleId !== undefined,
   { message: 'Send at least one of jobTitle or roleId.' }
 );
+
+/**
+ * Body of `POST /agencies/:agencyId/collaborators/:membershipId/reactivate` (issue #98). The role is
+ * required and never defaults to the previous one: whoever comes back may come back in another
+ * function, and inheriting the old authorization silently is what the rule exists to prevent
+ * (`specs/autorizacao.md`, `specs/colaboradores.md` §4 and §5 rule 7).
+ */
+export const ReactivateCollaboratorRequestSchema = z.object({
+  roleId: z.string().uuid()
+}).strict();
 
 /**
  * Query of `GET /agencies/:agencyId/collaborators/:membershipId` (issue #226). The detail declares
@@ -136,6 +145,7 @@ export const AgencyRolesResponseSchema = z.object({
 export type CollaboratorRole = z.infer<typeof CollaboratorRoleSchema>;
 export type Collaborator = z.infer<typeof CollaboratorSchema>;
 export type UpdateCollaboratorRequest = z.infer<typeof UpdateCollaboratorRequestSchema>;
+export type ReactivateCollaboratorRequest = z.infer<typeof ReactivateCollaboratorRequestSchema>;
 export type CollaboratorListQuery = z.infer<typeof CollaboratorListQuerySchema>;
 export type CollaboratorListResponse = z.infer<typeof CollaboratorListResponseSchema>;
 export type CollaboratorDetailQuery = z.infer<typeof CollaboratorDetailQuerySchema>;

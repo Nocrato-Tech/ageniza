@@ -396,30 +396,37 @@ describe('collaborators module (issue #95)', () => {
     expect(names(searchAlphaOwn.body)).toEqual(['Ana Alfa']);
   });
 
-  it('#95: status=removed is refused for every role and removed links never appear by default', async () => {
+  it('#95/#98: removed links never appear by default, and status=removed is for whoever may remove or reactivate', async () => {
     const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Removed', 'removed', 'Owner Removed');
     const production = await addMember(agencyId, { name: 'Pessoa Produção', emailLabel: 'removed-production', roleId: presetRoleIds.production });
     const onlyVisualizar = await createCustomRole(agencyId, ['colaborador.visualizar']);
     const customRole = await addMember(agencyId, { name: 'Pessoa Papel Personalizado', emailLabel: 'removed-custom', roleId: onlyVisualizar });
     await addMember(agencyId, { name: 'Pessoa Removida', emailLabel: 'removed-gone', roleId: presetRoleIds.production, status: 'removed' });
 
-    // Owner, Produção and a custom role that only holds `colaborador.visualizar`: revealing removed
-    // links requires an administrative permission (SPEC §5, rule 9), so all three are refused until
-    // the removal task (#98) adds the value together with that guard.
-    for (const user of [ownerUser, production, customRole]) {
+    // Produção and a custom role that only holds `colaborador.visualizar` may not reveal removed
+    // links (SPEC §5, rule 9): 403, and the default and `active` lists never show them either. The
+    // Owner may, and so may the roles of the removal suite (`collaborators-removal.integration.test.ts`).
+    for (const user of [production, customRole]) {
       const cookie = await loginCookie(user);
       const defaultList = await getCollaborators(cookie, agencyId);
       expect(defaultList.status).toBe(200);
       expect(names(defaultList.body)).not.toContain('Pessoa Removida');
 
       const refused = await getCollaborators(cookie, agencyId, { status: 'removed' });
-      expect(refused.status).toBe(400);
-      expect(refused.body.error.code).toBe('VALIDATION_ERROR');
+      expect(refused.status).toBe(403);
+      expect(refused.body.error.code).toBe('FORBIDDEN');
 
       const active = await getCollaborators(cookie, agencyId, { status: 'active' });
       expect(active.status).toBe(200);
       expect(names(active.body)).not.toContain('Pessoa Removida');
     }
+
+    const ownerCookie = await loginCookie(ownerUser);
+    const ownerDefault = await getCollaborators(ownerCookie, agencyId);
+    expect(names(ownerDefault.body)).not.toContain('Pessoa Removida');
+    const ownerRemoved = await getCollaborators(ownerCookie, agencyId, { status: 'removed' });
+    expect(ownerRemoved.status).toBe(200);
+    expect(names(ownerRemoved.body)).toEqual(['Pessoa Removida']);
   });
 
   it('#95: a NUL byte or a control character in a filter is a 400, never a logged 500', async () => {
@@ -650,12 +657,20 @@ describe('collaborators module (issue #95)', () => {
     expect(JSON.stringify(foreign.body)).not.toContain('Pessoa Alvo');
   });
 
-  it('#96: a removed link is not revealed by the detail', async () => {
+  it('#96/#98: a removed link is not revealed by the detail to whoever may not see removed links', async () => {
     const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Detail Removed', 'detail-removed', 'Owner Detail Removed');
     const removed = await addMember(agencyId, { name: 'Pessoa Removida Detalhe', emailLabel: 'detail-removed-person', roleId: presetRoleIds.production, status: 'removed' });
-    const response = await getCollaboratorDetail(await loginCookie(ownerUser), agencyId, await membershipIdOf(agencyId, removed.id));
-    expect(response.status).toBe(404);
-    expect(response.body.error).toEqual({ code: 'NOT_FOUND', message: 'Collaborator not found.' });
+    const production = await addMember(agencyId, { name: 'Pessoa Produção Detalhe', emailLabel: 'detail-removed-production', roleId: presetRoleIds.production });
+    const membershipId = await membershipIdOf(agencyId, removed.id);
+
+    const hidden = await getCollaboratorDetail(await loginCookie(production), agencyId, membershipId);
+    expect(hidden.status).toBe(404);
+    expect(hidden.body.error).toEqual({ code: 'NOT_FOUND', message: 'Collaborator not found.' });
+
+    // The Owner sees it, with the status that says it is removed.
+    const revealed = await getCollaboratorDetail(await loginCookie(ownerUser), agencyId, membershipId);
+    expect(revealed.status).toBe(200);
+    expect(revealed.body).toMatchObject({ membershipId, status: 'removed' });
   });
 
   it('#96: without colaborador.visualizar the detail answers 403', async () => {

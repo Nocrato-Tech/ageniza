@@ -9,6 +9,7 @@ import {
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
   CollaboratorSchema,
+  ReactivateCollaboratorRequestSchema,
   UpdateCollaboratorRequestSchema,
   buildPaginationMetadata,
   resolvePagination,
@@ -25,7 +26,7 @@ import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.j
 import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { isInsufficientPrivilegeError, tenantHolds } from '../tenancy/guards.js';
 import { COLLABORATOR_ROLES_READ_PERMISSIONS, COLLABORATOR_UPDATE_PERMISSIONS } from './permissions.js';
-import { COLLABORATOR_PERMISSIONS, permissionsRequiredByChange } from './policy.js';
+import { COLLABORATOR_PERMISSIONS, COLLABORATOR_REMOVE_PERMISSION, canSeeRemovedLinks, permissionsRequiredByChange } from './policy.js';
 import {
   findAssignableRole,
   getCollaborator,
@@ -33,6 +34,9 @@ import {
   listAgencyRoles,
   listCollaborators,
   lockActiveMembership,
+  lockMembership,
+  reactivateMembership,
+  removeMembership,
   updateMembership,
   type CollaboratorRow
 } from './service.js';
@@ -73,6 +77,23 @@ const MISSING_PERMISSION_MESSAGES: Readonly<Record<string, string>> = {
   [COLLABORATOR_PERMISSIONS.changeRole]: 'Você não tem permissão para alterar o papel.',
   [COLLABORATOR_PERMISSIONS.grantAdmin]: 'Só o Owner da agência pode conceder o papel de Admin.'
 };
+
+const OWNER_ROLE_PROTECTED_MESSAGE = 'O papel do Owner da agência não pode ser alterado.';
+const SELF_ROLE_PROTECTED_MESSAGE = 'Ninguém altera o próprio papel.';
+const OWNER_REMOVAL_PROTECTED_MESSAGE = 'O Owner da agência não pode ser removido.';
+const SELF_REMOVAL_PROTECTED_MESSAGE = 'Ninguém remove a si mesmo.';
+
+const alreadyRemoved = (): HttpError => new HttpError({
+  statusCode: 409,
+  code: 'COLLABORATOR_ALREADY_REMOVED',
+  message: 'O colaborador já foi removido.'
+});
+
+const notRemoved = (): HttpError => new HttpError({
+  statusCode: 409,
+  code: 'COLLABORATOR_NOT_REMOVED',
+  message: 'O colaborador não está removido.'
+});
 
 const invalidRole = (): HttpError => new HttpError({
   statusCode: 400,
@@ -179,7 +200,22 @@ const collaboratorUpdateDocs = {
   }
 } satisfies DocumentedRouteConfig;
 
-/** Registers the collaborator routes of one agency: the listing (#95), job titles (#218), roles (#287), the detail (#96) and the update (#97). */
+// Remove and reactivate answer with the same item schema as the detail, so the badge reflects the
+// new state without a second request (issue #98). The permission is the route's own: removing needs
+// `colaborador.remover`, reactivating `colaborador.alterar_papel` (and `atribuir_admin` for admin).
+const collaboratorRemoveDocs = {
+  permission: COLLABORATOR_REMOVE_PERMISSION,
+  responseStatus: 200,
+  schemas: { params: AgencyCollaboratorPathParamsSchema, response: CollaboratorSchema }
+} satisfies DocumentedRouteConfig;
+
+const collaboratorReactivateDocs = {
+  permission: COLLABORATOR_PERMISSIONS.changeRole,
+  responseStatus: 200,
+  schemas: { params: AgencyCollaboratorPathParamsSchema, body: ReactivateCollaboratorRequestSchema, response: CollaboratorSchema }
+} satisfies DocumentedRouteConfig;
+
+/** Registers the collaborator routes of one agency: the listing (#95), job titles (#218), roles (#287), the detail (#96), the update (#97), and remove and reactivate (#98). */
 export const registerCollaboratorModule = (app: FastifyInstance, dependencies: CollaboratorModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
 
@@ -198,10 +234,14 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
 
     const query = routeQuery(collaboratorListDocs, request);
     const pagination = resolvePagination(query, COLLABORATOR_DEFAULT_PAGE_SIZE);
+    const status = query.status ?? 'active';
+    // After the guard and the validation, before any read: the filter that reveals removed links is
+    // never applied for a caller who may not see them (issue #98, lesson of #199).
+    if (status === 'removed' && !canSeeRemovedLinks(tenant)) throw forbidden();
 
     const page = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
       listCollaborators(transaction, tenant.agencyId, {
-        status: query.status ?? 'active',
+        status,
         q: query.q,
         role: query.role,
         jobTitle: query.jobTitle
@@ -280,10 +320,10 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     if (!uuidPattern.test(params.membershipId)) throw collaboratorNotFound();
 
     const row = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
-      getCollaborator(transaction, tenant.agencyId, params.membershipId)
+      getCollaborator(transaction, tenant.agencyId, params.membershipId, { includeRemoved: canSeeRemovedLinks(tenant) })
     );
-    // A membership of another agency, a nonexistent one and a removed one all reach here as "no
-    // row", and answer the same 404.
+    // A membership of another agency and a nonexistent one reach here as "no row" and answer the
+    // same 404, and so does a removed one for a caller who may not see removed links.
     if (row === undefined) throw collaboratorNotFound();
     return reply.send(routeResponse(collaboratorDetailDocs, request, await collaboratorFromRow(dependencies, row, request.log)));
   });
@@ -325,8 +365,8 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
           const role = await findAssignableRole(transaction, tenant.agencyId, body.roleId);
           if (role === undefined) throw invalidRole();
           assertHolds(role.isAdmin);
-          if (target.is_owner) throw forbidden('O papel do Owner da agência não pode ser alterado.');
-          if (target.user_id === auth.userId) throw forbidden('Ninguém altera o próprio papel.');
+          if (target.is_owner) throw forbidden(OWNER_ROLE_PROTECTED_MESSAGE);
+          if (target.user_id === auth.userId) throw forbidden(SELF_ROLE_PROTECTED_MESSAGE);
         }
 
         // Zero rows means a policy filtered the row, which Postgres reports as success; answering
@@ -340,5 +380,88 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     }
     if (row === undefined) throw new Error('The updated membership could not be read back.');
     return reply.send(routeResponse(collaboratorUpdateDocs, request, await collaboratorFromRow(dependencies, row, request.log)));
+  });
+
+  app.post('/agencies/:agencyId/collaborators/:membershipId/remove', {
+    preHandler: [
+      requireSession,
+      dependencies.requireAgencyAccess,
+      dependencies.requirePermission(collaboratorRemoveDocs.permission)
+    ],
+    config: collaboratorRemoveDocs
+  }, async (request, reply) => {
+    const auth = request.auth;
+    if (auth === undefined) throw unauthenticated();
+    const tenant = request.tenant;
+    if (tenant === undefined) throw agencyNotFound();
+
+    const params = routeParams(collaboratorRemoveDocs, request);
+    if (!uuidPattern.test(params.membershipId)) throw collaboratorNotFound();
+
+    let row: CollaboratorRow | undefined;
+    try {
+      row = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+        const target = await lockMembership(transaction, tenant.agencyId, params.membershipId);
+        if (target === undefined) throw collaboratorNotFound();
+        if (target.is_owner) throw forbidden(OWNER_REMOVAL_PROTECTED_MESSAGE);
+        if (target.user_id === auth.userId) throw forbidden(SELF_REMOVAL_PROTECTED_MESSAGE);
+        if (target.status === 'removed') throw alreadyRemoved();
+
+        // Zero rows means a policy filtered the row; answering 200 would claim a removal that
+        // never happened.
+        if (!await removeMembership(transaction, tenant.agencyId, params.membershipId)) throw forbidden();
+        return getCollaborator(transaction, tenant.agencyId, params.membershipId, { includeRemoved: true });
+      });
+    } catch (error) {
+      if (isInsufficientPrivilegeError(error)) throw forbidden();
+      throw error;
+    }
+    if (row === undefined) throw new Error('The removed membership could not be read back.');
+    return reply.send(routeResponse(collaboratorRemoveDocs, request, await collaboratorFromRow(dependencies, row, request.log)));
+  });
+
+  app.post('/agencies/:agencyId/collaborators/:membershipId/reactivate', {
+    preHandler: [
+      requireSession,
+      dependencies.requireAgencyAccess,
+      dependencies.requirePermission(collaboratorReactivateDocs.permission)
+    ],
+    config: collaboratorReactivateDocs
+  }, async (request, reply) => {
+    const auth = request.auth;
+    if (auth === undefined) throw unauthenticated();
+    const tenant = request.tenant;
+    if (tenant === undefined) throw agencyNotFound();
+
+    const params = routeParams(collaboratorReactivateDocs, request);
+    const body = routeBody(collaboratorReactivateDocs, request);
+    if (!uuidPattern.test(params.membershipId)) throw collaboratorNotFound();
+
+    let row: CollaboratorRow | undefined;
+    try {
+      row = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+        const target = await lockMembership(transaction, tenant.agencyId, params.membershipId);
+        if (target === undefined) throw collaboratorNotFound();
+        if (target.is_owner) throw forbidden(OWNER_ROLE_PROTECTED_MESSAGE);
+        if (target.user_id === auth.userId) throw forbidden(SELF_ROLE_PROTECTED_MESSAGE);
+        if (target.status === 'active') throw notRemoved();
+
+        const role = await findAssignableRole(transaction, tenant.agencyId, body.roleId);
+        if (role === undefined) throw invalidRole();
+        // The trigger asks for the same grant when a link comes back holding the admin role (issue
+        // #98), so the database refuses too; this check is the one that answers with a message.
+        if (role.isAdmin && !tenantHolds(tenant, COLLABORATOR_PERMISSIONS.grantAdmin)) {
+          throw forbidden(MISSING_PERMISSION_MESSAGES[COLLABORATOR_PERMISSIONS.grantAdmin]);
+        }
+
+        if (!await reactivateMembership(transaction, tenant.agencyId, params.membershipId, body.roleId)) throw forbidden();
+        return getCollaborator(transaction, tenant.agencyId, params.membershipId, { includeRemoved: true });
+      });
+    } catch (error) {
+      if (isInsufficientPrivilegeError(error)) throw forbidden();
+      throw error;
+    }
+    if (row === undefined) throw new Error('The reactivated membership could not be read back.');
+    return reply.send(routeResponse(collaboratorReactivateDocs, request, await collaboratorFromRow(dependencies, row, request.log)));
   });
 };
