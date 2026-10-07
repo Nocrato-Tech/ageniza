@@ -2,6 +2,8 @@ import { raw, type DatabaseClient, type SqlBinding } from '@ageniza/database';
 
 import type { ResolvedPagination } from '@ageniza/contracts';
 
+import { foldTextSql } from '../../plugins/infra/sql-text.js';
+
 type CollaboratorTransaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
 
 interface RawRows<TResult> {
@@ -115,7 +117,7 @@ export const listCollaborators = async (
   const itemsResult = await raw<RawRows<CollaboratorRow>>(transaction, `
     select${COLLABORATOR_COLUMNS}${COLLABORATOR_FROM}
     where ${where}
-    order by member.name asc, membership.id asc
+    order by ${foldTextSql('member.name')} collate "C" asc, membership.id asc
     limit ? offset ?
   `, [...bindings, pagination.pageSize, pagination.offset]);
 

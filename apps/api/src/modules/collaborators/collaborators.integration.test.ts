@@ -315,6 +315,51 @@ describe('collaborators module (issue #95)', () => {
     expect(names(response.body)).toEqual(['Ana Alves', 'Bruno Costa', 'Zelia Prado']);
   });
 
+  // Issue #355: the order folds accents and case before comparing, and compares the folded text
+  // byte by byte (`collate "C"`), so spaces, hyphens and digits order the same in every database;
+  // ties are held by the membership id.
+  it('#355: orders by the folded name byte by byte, with the membership id as tie-break', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Ordering Accents', 'ordering-accents', 'Owner Ordering Accent');
+    const membershipId = (suffix: number): string => `00000000-0000-4000-8000-${String(suffix).padStart(12, '0')}`;
+    const people = [
+      { name: 'Ágata', suffix: 1 },
+      { name: 'álvaro', suffix: 2 },
+      { name: 'Beatriz', suffix: 3 },
+      { name: 'Édson', suffix: 4 },
+      { name: 'eduardo', suffix: 5 },
+      { name: 'Ana Maria', suffix: 8 },
+      { name: 'Anabela', suffix: 9 },
+      { name: 'Ana-Lúcia', suffix: 10 },
+      { name: 'Anaïs', suffix: 11 },
+      { name: 'Ana Zélia', suffix: 12 },
+      { name: 'Ana2', suffix: 13 },
+      // The `ana`/`Ana` tie is inserted in descending id order, so the heap order is the reverse
+      // of the expected id tie-break: dropping the tie-break cannot pass by accident.
+      { name: 'ana', suffix: 7 },
+      { name: 'Ana', suffix: 6 }
+    ];
+    for (const person of people) {
+      await addMemberWithMembershipId(agencyId, {
+        membershipId: membershipId(person.suffix),
+        name: person.name,
+        emailLabel: `ordering-accents-${person.suffix}`,
+        roleId: presetRoleIds.production
+      });
+    }
+
+    const response = await getCollaborators(await loginCookie(ownerUser), agencyId);
+    expect(response.status).toBe(200);
+    // Folded text compared byte by byte (collate "C"): agata, alvaro, ana, ana, ana maria,
+    // ana zelia, ana-lucia, ana2, anabela, anais, beatriz, edson, eduardo, owner ordering accent.
+    // The database collation (en_US) would put `ana2`, `ana maria` and `Anabela` elsewhere, and
+    // without the accent removal `Anaïs` would not fold to `anais`.
+    expect(names(response.body)).toEqual([
+      'Ágata', 'álvaro', 'Ana', 'ana',
+      'Ana Maria', 'Ana Zélia', 'Ana-Lúcia', 'Ana2', 'Anabela', 'Anaïs',
+      'Beatriz', 'Édson', 'eduardo', 'Owner Ordering Accent'
+    ]);
+  });
+
   it('#95: q finds by part of the name and part of the email, case-insensitively, and escapes wildcards', async () => {
     const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Search', 'search', 'Owner Search');
     await addMember(agencyId, { name: 'Fernanda Alves', emailLabel: 'avatar.principal', roleId: presetRoleIds.production });
