@@ -12,6 +12,7 @@ import type { AuthInstance } from '../auth/better-auth.js';
 import type { EmailService } from '../auth/email-service.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import { hashInvitationToken } from '../invitations/tokens.js';
+import { tryAgain } from '../../plugins/infra/conflict.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeResponse } from '../../plugins/infra/zod.js';
 import { EMAIL_CHANGE_CONFIRM_RATE_LIMIT, EMAIL_CHANGE_REQUEST_RATE_LIMIT } from './policy.js';
@@ -41,9 +42,6 @@ const invalidPassword = (): HttpError =>
   new HttpError({ statusCode: 403, code: 'INVALID_PASSWORD', message: 'A senha atual não confere.' });
 const sameAddress = (): HttpError =>
   new HttpError({ statusCode: 400, code: 'SAME_EMAIL', message: 'Informe um e-mail diferente do atual.' });
-/** A lost race, never a 500 and never any detail of what raced: repeating the call is the answer. */
-const tryAgain = (): HttpError =>
-  new HttpError({ statusCode: 409, code: 'TRY_AGAIN', message: 'Houve um conflito momentâneo. Tente de novo.' });
 const invalidLink = (): HttpError =>
   new HttpError({ statusCode: 400, code: 'INVALID_LINK', message: 'Este link não é mais válido.' });
 

@@ -351,7 +351,7 @@ Cancela um convite pendente.
 
 **Resposta `204`** — Convite cancelado.
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 INVITATION_NOT_PENDING` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 INVITATION_NOT_PENDING` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /invitations/:token`
 
@@ -426,7 +426,7 @@ Aceita o convite com a conta já autenticada.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 INVITATION_ACCOUNT_MISMATCH` · `410 INVALID_LINK` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 INVITATION_ACCOUNT_MISMATCH` · `409 TRY_AGAIN` · `410 INVALID_LINK` · `500 INTERNAL_ERROR`
 
 ### contexts — Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.
 

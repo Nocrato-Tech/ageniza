@@ -36,6 +36,7 @@ import { createRequireSession } from '../auth/session-guard.js';
 import type { EmailService } from '../auth/email-service.js';
 import { AUTH_RATE_LIMITS } from '../auth/policy.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
+import { tryAgain } from '../../plugins/infra/conflict.js';
 import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { isInsufficientPrivilegeError, tenantHolds } from '../tenancy/guards.js';
 
@@ -165,13 +166,6 @@ const emailDeliveryFailed = (): HttpError => new HttpError({
   statusCode: 502,
   code: 'EMAIL_DELIVERY_FAILED',
   message: 'Não foi possível entregar o e-mail.'
-});
-
-/** A lost race, never a 500 and never any detail of what raced: repeating the call is the answer. */
-const tryAgain = (): HttpError => new HttpError({
-  statusCode: 409,
-  code: 'TRY_AGAIN',
-  message: 'Houve um conflito momentâneo. Tente de novo.'
 });
 
 const isDuplicateUserError = (error: unknown): boolean =>
@@ -523,6 +517,9 @@ const cancelInvitation = async (
     // A silently filtered UPDATE would otherwise report 204 while the invitation stays live.
     if (revoked.rows[0] === undefined) throw invitationNotPending();
     await auditInTransaction(transaction, { action: 'invitation.revoked', actorUserId: auth.userId, agencyId, targetId: invitationId });
+  }).catch((error: unknown) => {
+    if (isRetryableConflict(error)) throw tryAgain();
+    throw error;
   });
 };
 
@@ -546,6 +543,8 @@ const acceptInvitation = async (
     ]);
     return rows.rows[0];
   }).catch((error: unknown) => {
+    // A lost race is not an invalid link and must be repeatable (issue #335).
+    if (isRetryableConflict(error)) throw tryAgain();
     // The security-definer function uses private PostgreSQL error codes for invalid links. Its
     // message is intentionally discarded so every invalid state has one public response.
     if (typeof error === 'object' && error !== null && 'code' in error && String((error as { code?: unknown }).code).startsWith('A')) {

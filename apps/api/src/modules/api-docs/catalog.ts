@@ -582,7 +582,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Invitation not found.' },
-      { status: 409, code: 'INVITATION_NOT_PENDING' }
+      { status: 409, code: 'INVITATION_NOT_PENDING' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
   {
@@ -657,6 +658,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       COMMON_ERRORS.internal,
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'INVITATION_ACCOUNT_MISMATCH' },
+      { status: 409, code: 'TRY_AGAIN' },
       { status: 410, code: 'INVALID_LINK' }
     ]
   },
