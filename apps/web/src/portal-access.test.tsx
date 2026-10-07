@@ -305,19 +305,28 @@ describe('portal access tab (#140)', () => {
     expect(calls.some((call) => call.includes('/invitations?page=2'))).toBe(true);
   });
 
-  it('keeps the roster address when the clamp moves an out-of-range page back', async () => {
+  it('keeps the roster address when the clamp moves an out-of-range page back, on every list', async () => {
     const rosterUrl = `/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`;
-    // The URL asks for page 2 of a list that shrank to a single page: the clamp writes the
+    // The URL asks for page 2 of lists that shrank to a single page: every clamp writes the
     // address back and must carry the roster address with it (review of #390 r2).
     const { impl } = makeFetch({
-      members: (status) => (status === 'removed' ? json(pageOf([])) : json(pageOf([maria]))),
-      clientInvitations: () => json(pageOf([]))
+      members: (status) => (status === 'removed' ? json(pageOf([pedro])) : json(pageOf([maria]))),
+      clientInvitations: () => json(pageOf([carla]))
     });
-    const { probe } = renderAccess(impl, { pathname: accessUrl, search: '?membros=2', state: { clientListUrl: rosterUrl } });
+    const { probe } = renderAccess(impl, {
+      pathname: accessUrl,
+      search: '?membros=2&convites=2&removidas=2',
+      state: { clientListUrl: rosterUrl }
+    });
+    const back = (): HTMLElement => screen.getByRole('link', { name: '← Clientes' });
 
     await screen.findByText('Maria Souza');
     await waitFor(() => expect(probe.search).not.toContain('membros=2'));
-    expect(screen.getByRole('link', { name: '← Clientes' }).getAttribute('href')).toBe(rosterUrl);
+    expect(back().getAttribute('href')).toBe(rosterUrl);
+    await waitFor(() => expect(probe.search).not.toContain('convites=2'));
+    expect(back().getAttribute('href')).toBe(rosterUrl);
+    await waitFor(() => expect(probe.search).not.toContain('removidas=2'));
+    expect(back().getAttribute('href')).toBe(rosterUrl);
   });
 
   it('invites with only the e-mail, keeping the failure on the field and updating the roster badge', async () => {
