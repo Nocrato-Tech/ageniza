@@ -67,6 +67,7 @@ const anaPrado = { membershipId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: '
 const marioCosta = { membershipId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'Mário Costa', email: 'mario@example.test', photoUrl: null, jobTitle: 'Copywriter', role: { key: 'production', name: 'Produção' }, isOwner: false, status: 'active', joinedAt: '2026-03-13T12:00:00.000Z' };
 const juliaReis = { membershipId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', name: 'Júlia Reis', email: 'julia@example.test', photoUrl: 'https://storage.test/julia.png', jobTitle: 'Social Media', role: { key: 'account_manager', name: 'Gestor de conta' }, isOwner: false, status: 'active', joinedAt: '2026-03-14T12:00:00.000Z' };
 const biancaSouza = { membershipId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Bianca Souza', email: 'bianca@example.test', photoUrl: null, jobTitle: 'Redatora', role: { key: 'production', name: 'Produção' }, isOwner: false, status: 'active', joinedAt: '2026-03-15T12:00:00.000Z' };
+const pauloLima = { membershipId: '12121212-1212-4212-8212-121212121212', name: 'Paulo Lima', email: 'paulo@example.test', photoUrl: null, jobTitle: 'Motion', role: { key: 'production', name: 'Produção' }, isOwner: false, status: 'removed', joinedAt: '2026-02-10T12:00:00.000Z' };
 
 const meta = (page: number, totalItems: number, totalPages: number) => ({ page, pageSize: 24, totalItems, totalPages });
 const listResponse = (data: readonly unknown[], page = 1) => json({ data, meta: meta(page, data.length, data.length === 0 ? 0 : 1) });
@@ -116,6 +117,7 @@ interface Scenario {
   readonly detail?: (membershipId: string, agencyId: string) => Response | Promise<Response>;
   readonly updateCollaborator?: (membershipId: string, body: unknown, agencyId: string) => Response | Promise<Response>;
   readonly removeCollaborator?: (membershipId: string, agencyId: string) => Response | Promise<Response>;
+  readonly reactivate?: (membershipId: string, body: unknown, agencyId: string) => Response | Promise<Response>;
   readonly invitations?: (query: URLSearchParams, agencyId: string) => Response | Promise<Response>;
   readonly createInvitation?: (body: unknown, agencyId: string) => Response | Promise<Response>;
   readonly resend?: (invitationId: string, agencyId: string) => Response | Promise<Response>;
@@ -152,7 +154,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     if (me !== null) return json(agencyMe(me[1]!, agencyDisplayName(me[1]!), permissions, role, isOwner));
     const roles = /\/agencies\/([^/]+)\/roles$/.exec(path);
     if (roles !== null && method === 'GET') {
-      if (!permissions.includes('colaborador.convidar') && !permissions.includes('colaborador.alterar_papel')) {
+      if (!isOwner && !permissions.includes('colaborador.convidar') && !permissions.includes('colaborador.alterar_papel')) {
         return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
       }
       return scenario.roles?.(roles[1]!) ?? rolesFor(isOwner);
@@ -183,6 +185,14 @@ const makeFetch = (scenario: Scenario = {}) => {
       if (!permissions.includes('colaborador.remover')) return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
       if (scenario.removeCollaborator === undefined) throw new Error(`unexpected POST ${url}`);
       return scenario.removeCollaborator(remove[2]!, remove[1]!);
+    }
+    const reactivate = /\/agencies\/([^/]+)\/collaborators\/([^/]+)\/reactivate$/.exec(path);
+    if (reactivate !== null && method === 'POST') {
+      if (!isOwner && !permissions.includes('colaborador.alterar_papel')) {
+        return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
+      }
+      if (scenario.reactivate === undefined) throw new Error(`unexpected POST ${url}`);
+      return scenario.reactivate(reactivate[2]!, JSON.parse(String(init?.body)), reactivate[1]!);
     }
     const detail = /\/agencies\/([^/]+)\/collaborators\/([^/]+)$/.exec(path);
     if (detail !== null) {
@@ -2088,5 +2098,247 @@ describe('collaborators grid columns (#228)', () => {
 
   it('keeps the gap on the spacing scale', () => {
     expect(globalsCss).toMatch(/\.collaborators__grid\s*\{[^}]*gap:\s*var\(--space-4\)/);
+  });
+});
+
+// Issue #105: removed links are a filter of the same grid, and reactivation starts with no role.
+describe('removed filter and reactivation (#105)', () => {
+  const reactivatePermissions = ['colaborador.visualizar', 'colaborador.remover', 'colaborador.alterar_papel'];
+  const removedOnly = (query: URLSearchParams): readonly unknown[] =>
+    query.get('status') === 'removed' ? [pauloLima] : [anaPrado, marioCosta, juliaReis];
+
+  it('shows the status filter only to those who can see removed links', async () => {
+    const without = makeFetch({ permissions: ['colaborador.visualizar'] });
+    renderCollaborators(without.impl);
+    await screen.findByText('Ana Prado');
+    expect(screen.queryByRole('combobox', { name: 'Status' })).toBeNull();
+    cleanup();
+
+    const withRemove = makeFetch({ permissions: ['colaborador.visualizar', 'colaborador.remover'] });
+    renderCollaborators(withRemove.impl);
+    expect(await screen.findByRole('combobox', { name: 'Status' })).toBeTruthy();
+    cleanup();
+
+    const withChangeRole = makeFetch({ permissions: ['colaborador.visualizar', 'colaborador.alterar_papel'] });
+    renderCollaborators(withChangeRole.impl);
+    expect(await screen.findByRole('combobox', { name: 'Status' })).toBeTruthy();
+    cleanup();
+
+    const owner = makeFetch({ permissions: ['colaborador.visualizar'], isOwner: true });
+    renderCollaborators(owner.impl);
+    expect(await screen.findByRole('combobox', { name: 'Status' })).toBeTruthy();
+  });
+
+  it('writes the removed filter to the URL and asks the server for removed links only', async () => {
+    const queries: string[] = [];
+    const { impl } = makeFetch({
+      permissions: reactivatePermissions,
+      collaborators: (query) => { queries.push(query.toString()); return listResponse(removedOnly(query)); }
+    });
+    const { container, probe } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: 'removed' } });
+
+    await screen.findByText('Paulo Lima');
+    expect(badgeNames(container)).toEqual(['Paulo Lima']);
+    expect(probe.search).toContain('status=removed');
+    expect(queries.some((query) => query.includes('status=removed'))).toBe(true);
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: 'active' } });
+    await screen.findByText('Ana Prado');
+    expect(probe.search).not.toContain('status=');
+  });
+
+  it('marks the removed badge as ended', async () => {
+    const { impl } = makeFetch({
+      permissions: reactivatePermissions,
+      collaborators: (query) => listResponse(removedOnly(query))
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+    expect(screen.getByText('removido')).toBeTruthy();
+  });
+
+  it('starts the reactivation with no role chosen and the button disabled until one is chosen', async () => {
+    const bodies: unknown[] = [];
+    const { impl } = makeFetch({
+      permissions: reactivatePermissions,
+      collaborators: (query) => listResponse(removedOnly(query)),
+      roles: () => rolesFor(false),
+      reactivate: (membershipId, body) => {
+        bodies.push({ membershipId, body });
+        return json({ ...pauloLima, status: 'active' });
+      }
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar Paulo Lima' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reativar Paulo Lima' });
+    const role = within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement;
+    const confirm = within(dialog).getByRole('button', { name: 'Reativar' }) as HTMLButtonElement;
+    // Paulo's previous role was Produção, and the select still starts empty.
+    expect(role.value).toBe('');
+    expect(confirm.disabled).toBe(true);
+
+    await within(dialog).findByRole('option', { name: 'Produção' });
+    fireEvent.change(role, { target: { value: PRODUCTION_ROLE_ID } });
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(bodies).toEqual([{ membershipId: pauloLima.membershipId, body: { roleId: PRODUCTION_ROLE_ID } }]));
+  });
+
+  it('offers Admin in the reactivation roles only to the Owner', async () => {
+    // A regressed API that returns admin to everyone: the screen must still hide it.
+    const nonOwner = makeFetch({
+      permissions: reactivatePermissions,
+      collaborators: (query) => listResponse(removedOnly(query)),
+      roles: () => json({ data: SYSTEM_ROLES })
+    });
+    renderCollaborators(nonOwner.impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar Paulo Lima' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reativar Paulo Lima' });
+    await within(dialog).findByRole('option', { name: 'Produção' });
+    expect(within(dialog).getAllByRole('option').map((option) => option.textContent)).not.toContain('Admin');
+    cleanup();
+
+    const owner = makeFetch({
+      permissions: ['colaborador.visualizar'],
+      isOwner: true,
+      collaborators: (query) => listResponse(removedOnly(query)),
+      roles: () => json({ data: SYSTEM_ROLES })
+    });
+    renderCollaborators(owner.impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar Paulo Lima' }));
+    const ownerDialog = await screen.findByRole('dialog', { name: 'Reativar Paulo Lima' });
+    expect(await within(ownerDialog).findByRole('option', { name: 'Admin' })).toBeTruthy();
+  });
+
+  it('moves the reactivated person to the active list without a reload', async () => {
+    let people: Array<{ membershipId: string; status: string }> = [anaPrado, marioCosta, juliaReis, pauloLima];
+    const { impl } = makeFetch({
+      permissions: reactivatePermissions,
+      collaborators: (query) => listResponse(people.filter((person) => person.status === (query.get('status') === 'removed' ? 'removed' : 'active'))),
+      roles: () => rolesFor(false),
+      reactivate: (membershipId, body) => {
+        people = people.map((person) => person.membershipId === membershipId ? { ...person, status: 'active' } : person);
+        expect(body).toEqual({ roleId: PRODUCTION_ROLE_ID });
+        return json(people.find((person) => person.membershipId === membershipId)!);
+      }
+    });
+    const { probe } = renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar Paulo Lima' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reativar Paulo Lima' });
+    await within(dialog).findByRole('option', { name: 'Produção' });
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: PRODUCTION_ROLE_ID } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reativar' }));
+
+    // The removed query was invalidated: he leaves the filter without a reload.
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Reativar Paulo Lima' })).toBeNull());
+    expect(await screen.findByText('Ninguém foi removido desta agência')).toBeTruthy();
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: 'active' } });
+    expect(await screen.findByText('Paulo Lima')).toBeTruthy();
+    expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/colaboradores`);
+  });
+
+  it('gives the removed filter its own empty state, not the search one', async () => {
+    const { impl } = makeFetch({
+      permissions: reactivatePermissions,
+      collaborators: () => listResponse([])
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    expect(await screen.findByText('Ninguém foi removido desta agência')).toBeTruthy();
+    expect(screen.queryByText(/Nenhuma pessoa encontrada/)).toBeNull();
+    cleanup();
+
+    const searchFilter = makeFetch({ permissions: reactivatePermissions, collaborators: () => listResponse([]) });
+    renderCollaborators(searchFilter.impl, `/agencia/${AGENCY_A}/colaboradores?status=removed&q=paulo`);
+    expect(await screen.findByText('Nenhuma pessoa encontrada para "paulo"')).toBeTruthy();
+    expect(screen.queryByText('Ninguém foi removido desta agência')).toBeNull();
+  });
+
+  it('hides the reactivate action from someone who sees removed but cannot change roles', async () => {
+    const { impl } = makeFetch({
+      permissions: ['colaborador.visualizar', 'colaborador.remover'],
+      collaborators: (query) => listResponse(removedOnly(query))
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+    expect(screen.getByText('removido')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Reativar Paulo Lima' })).toBeNull();
+  });
+
+  it('shows its own message when the reactivation answers 409, and refreshes the list', async () => {
+    const { impl, calls } = makeFetch({
+      permissions: reactivatePermissions,
+      collaborators: (query) => listResponse(removedOnly(query)),
+      roles: () => rolesFor(false),
+      reactivate: () => json({ error: { code: 'COLLABORATOR_NOT_REMOVED', message: 'the api private message' } }, 409)
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+    const removedCalls = (): number => calls.filter((call) => call.includes('status=removed')).length;
+    const before = removedCalls();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar Paulo Lima' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reativar Paulo Lima' });
+    await within(dialog).findByRole('option', { name: 'Produção' });
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: PRODUCTION_ROLE_ID } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reativar' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert.textContent).toBe('Este vínculo já está ativo. A lista foi atualizada.');
+    expect(dialog.textContent).not.toContain('the api private message');
+    await waitFor(() => expect(removedCalls()).toBeGreaterThan(before));
+  });
+
+  it('shows its own message when the API refuses the reactivation with 403', async () => {
+    const { impl } = makeFetch({
+      permissions: reactivatePermissions,
+      collaborators: (query) => listResponse(removedOnly(query)),
+      roles: () => rolesFor(false),
+      reactivate: () => json({ error: { code: 'FORBIDDEN', message: 'the api private message' } }, 403)
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar Paulo Lima' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reativar Paulo Lima' });
+    await within(dialog).findByRole('option', { name: 'Produção' });
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: PRODUCTION_ROLE_ID } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reativar' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert.textContent).toBe('Você não tem permissão para reativar com esse papel.');
+    expect(dialog.textContent).not.toContain('the api private message');
+  });
+
+  it('keeps the dialog open and offers a retry when the roles fail to load', async () => {
+    let attempts = 0;
+    const { impl } = makeFetch({
+      permissions: reactivatePermissions,
+      collaborators: (query) => listResponse(removedOnly(query)),
+      roles: () => {
+        attempts += 1;
+        // The query client retries a 5xx once; the third attempt is the manual retry.
+        return attempts <= 2 ? json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500) : rolesFor(false);
+      }
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar Paulo Lima' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reativar Paulo Lima' });
+    // The query client retries a 5xx after its delay, so the error state arrives later.
+    expect(await within(dialog).findByText('Não foi possível carregar os papéis. Tente de novo.', undefined, { timeout: 5000 })).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tentar de novo' }));
+    await waitFor(() => expect((within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement).disabled).toBe(false));
   });
 });
