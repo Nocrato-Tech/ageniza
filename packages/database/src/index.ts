@@ -110,6 +110,19 @@ export const raw = <TResult = unknown>(
   bindings: readonly SqlBinding[]
 ): Knex.Raw<TResult> => executor.raw<TResult>(statement, bindings);
 
+/** SQLSTATE of a thrown database error, when it carries one; never the message, which may leak detail. */
+export const databaseErrorCode = (error: unknown): string | undefined =>
+  typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: unknown }).code) : undefined;
+
+/**
+ * Deadlock (40P01) and serialization failure (40001) are not bugs and not the caller's fault: the
+ * statement lost a race with another transaction and can simply be repeated.
+ */
+export const isRetryableConflict = (error: unknown): boolean => {
+  const code = databaseErrorCode(error);
+  return code === '40P01' || code === '40001';
+};
+
 const isLoopbackHost = (hostname: string): boolean => {
   const normalized = hostname.replace(/^\[/, '').replace(/\]$/, '').toLowerCase();
   return normalized === 'localhost' || normalized === '::1' || (isIP(normalized) === 4 && normalized.startsWith('127.'));
