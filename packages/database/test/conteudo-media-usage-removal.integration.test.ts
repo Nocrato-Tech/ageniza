@@ -509,6 +509,17 @@ describe('removal against a cover swap that races it (issue #396)', () => {
     expect(await coverOf(content)).toBe(cover);
   });
 
+  it('does not send a content whose cover was removed, and leaves it in production', async () => {
+    const cover = await w.seedAsset(ids.clientA1, folderImages);
+    const file = await w.seedAsset(ids.clientA1, folderImages);
+    const content = await w.seedContent(ids.clientA1, { format: 'image', folderId: folderImages, coverAssetId: cover });
+    await w.attach(content, [file]);
+    await removeAs(operarAndVisualizar, cover, folderImages);
+
+    await expect(submitAs(ids.productionA, content)).rejects.toMatchObject({ code: 'A0065', message: expect.stringContaining('cover') });
+    expect((await w.contentRow(content)).status).toBe('in_production');
+  });
+
   it('does not publish a content whose cover was removed', async () => {
     const cover = await w.seedAsset(ids.clientA1, folderImages);
     const file = await w.seedAsset(ids.clientA1, folderImages);

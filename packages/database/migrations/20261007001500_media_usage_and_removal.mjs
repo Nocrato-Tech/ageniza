@@ -33,7 +33,7 @@
 // The cover (#396): `contents_guard` reads `removed_at` of a cover without locking it, so a cover set at the instant
 // the media is removed could keep a removed file. `0_contents_lock_cover` (BEFORE, so it sorts ahead of the guard)
 // takes the media FOR SHARE: in READ COMMITTED it waits for a removal in flight and the guard then reads the new
-// `removed_at` (A0069); in REPEATABLE READ it fails with 40001. `publish_content` also refuses a removed cover (A0065).
+// `removed_at` (A0069); in REPEATABLE READ it fails with 40001. `submit_content` and `publish_content` also refuse a removed cover (A0065).
 //
 // The lock on the client of an INSERT (a folder or a media born while the client is being archived) is
 // not here: it is the AFTER INSERT trigger of 20261007001400.
@@ -249,6 +249,11 @@ export async function up(knex) {
       end if;
       if not app_private.content_media_is_complete(p_content_id, v_content.format) then
         raise exception using errcode = 'A0065', message = 'The media is not complete for the format.';
+      end if;
+      if exists (
+        select 1 from public.media_assets asset where asset.id = v_content.cover_asset_id and asset.removed_at is not null
+      ) then
+        raise exception using errcode = 'A0065', message = 'The cover of a content was removed.';
       end if;
       if exists (select 1 from public.content_tasks task where task.content_id = p_content_id and task.status <> 'approved') then
         raise exception using errcode = 'A0066', message = 'Every subtask is approved before the content is sent.';
