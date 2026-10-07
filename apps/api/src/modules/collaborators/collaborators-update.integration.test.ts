@@ -41,6 +41,7 @@ interface CollaboratorJson {
   readonly jobTitle: string | null;
   readonly role: { key: string; name: string };
   readonly isOwner: boolean;
+  readonly isSelf: boolean;
   readonly status: 'active' | 'removed';
 }
 
@@ -434,6 +435,34 @@ describe('PATCH /agencies/:agencyId/collaborators/:membershipId (issue #97)', { 
     expect(title.status).toBe(200);
     expect(title.body.isOwner).toBe(true);
     expect((await membershipRow(fx.ownerMembershipId)).job_title).toBe('Fundadora');
+  });
+
+  it('#286: the answer says isSelf true on the own link and false on a peer, with a role of one permission and a person in two agencies', async () => {
+    const fx = await createAgency('isself');
+    const other = await createAgency('isself-other');
+    const titleOnly = await createCustomRole(fx.agencyId, ['colaborador.alterar_funcao']);
+    const viewer = await addMember(fx.agencyId, 'isself-viewer', titleOnly, { jobTitle: 'Antes' });
+    const viewerInOther = await linkExistingUser(other.agencyId, viewer, await createCustomRole(other.agencyId, ['colaborador.alterar_funcao']));
+    const peer = await addMember(fx.agencyId, 'isself-peer', presetRoleIds.production, { jobTitle: 'Colega', acts: false });
+
+    const own = await patch(viewer.cookie, fx.agencyId, viewer.membershipId, { jobTitle: 'Depois' });
+    expect(own.status).toBe(200);
+    expect(own.body.membershipId).toBe(viewer.membershipId);
+    expect(own.body.isSelf).toBe(true);
+    expect((await membershipRow(viewer.membershipId)).job_title).toBe('Depois');
+
+    const other1 = await patch(viewer.cookie, fx.agencyId, peer.membershipId, { jobTitle: 'Alterado' });
+    expect(other1.status).toBe(200);
+    expect(other1.body.isSelf).toBe(false);
+
+    // The same person's link in the other agency is theirs there, and only there.
+    const ownElsewhere = await patch(viewer.cookie, other.agencyId, viewerInOther, { jobTitle: 'Outra agência' });
+    expect(ownElsewhere.status).toBe(200);
+    expect(ownElsewhere.body.isSelf).toBe(true);
+    const ownerOfOther = await patch(viewer.cookie, other.agencyId, other.ownerMembershipId, { jobTitle: 'Dona' });
+    expect(ownerOfOther.status).toBe(200);
+    expect(ownerOfOther.body.isOwner).toBe(true);
+    expect(ownerOfOther.body.isSelf).toBe(false);
   });
 
   it('nobody changes their own role, not even an Admin, while changing a peer is allowed', async () => {

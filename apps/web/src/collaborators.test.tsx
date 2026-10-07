@@ -63,11 +63,15 @@ const agencyMe = (agencyId: string, agencyName: string, permissions: readonly st
 });
 const agencyDisplayName = (agencyId: string): string => agencyId === AGENCY_B ? 'Agência Dois' : 'Agência Um';
 
-const anaPrado = { membershipId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'Ana Prado', email: 'ana@example.test', photoUrl: null, jobTitle: 'Editora', role: { key: 'production', name: 'Produção' }, isOwner: false, status: 'active', joinedAt: '2026-03-12T12:00:00.000Z' };
-const marioCosta = { membershipId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'Mário Costa', email: 'mario@example.test', photoUrl: null, jobTitle: 'Copywriter', role: { key: 'production', name: 'Produção' }, isOwner: false, status: 'active', joinedAt: '2026-03-13T12:00:00.000Z' };
-const juliaReis = { membershipId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', name: 'Júlia Reis', email: 'julia@example.test', photoUrl: 'https://storage.test/julia.png', jobTitle: 'Social Media', role: { key: 'account_manager', name: 'Gestor de conta' }, isOwner: false, status: 'active', joinedAt: '2026-03-14T12:00:00.000Z' };
-const biancaSouza = { membershipId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Bianca Souza', email: 'bianca@example.test', photoUrl: null, jobTitle: 'Redatora', role: { key: 'production', name: 'Produção' }, isOwner: false, status: 'active', joinedAt: '2026-03-15T12:00:00.000Z' };
-const pauloLima = { membershipId: '12121212-1212-4212-8212-121212121212', name: 'Paulo Lima', email: 'paulo@example.test', photoUrl: null, jobTitle: 'Motion', role: { key: 'production', name: 'Produção' }, isOwner: false, status: 'removed', joinedAt: '2026-02-10T12:00:00.000Z' };
+const anaPrado = { membershipId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'Ana Prado', email: 'ana@example.test', photoUrl: null, jobTitle: 'Editora', role: { key: 'production', name: 'Produção' }, isOwner: false, isSelf: false, status: 'active', joinedAt: '2026-03-12T12:00:00.000Z' };
+/** Ana as the signed-in person sees her own link: the API says so with `isSelf`, never the e-mail. */
+const anaSelf = { ...anaPrado, isSelf: true };
+/** The session e-mail of the signed-in person, deliberately not Ana's link e-mail (the operation changed it). */
+const sessionEmailAfterChange = 'ana.nova@example.test';
+const marioCosta = { membershipId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'Mário Costa', email: 'mario@example.test', photoUrl: null, jobTitle: 'Copywriter', role: { key: 'production', name: 'Produção' }, isOwner: false, isSelf: false, status: 'active', joinedAt: '2026-03-13T12:00:00.000Z' };
+const juliaReis = { membershipId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', name: 'Júlia Reis', email: 'julia@example.test', photoUrl: 'https://storage.test/julia.png', jobTitle: 'Social Media', role: { key: 'account_manager', name: 'Gestor de conta' }, isOwner: false, isSelf: false, status: 'active', joinedAt: '2026-03-14T12:00:00.000Z' };
+const biancaSouza = { membershipId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Bianca Souza', email: 'bianca@example.test', photoUrl: null, jobTitle: 'Redatora', role: { key: 'production', name: 'Produção' }, isOwner: false, isSelf: false, status: 'active', joinedAt: '2026-03-15T12:00:00.000Z' };
+const pauloLima = { membershipId: '12121212-1212-4212-8212-121212121212', name: 'Paulo Lima', email: 'paulo@example.test', photoUrl: null, jobTitle: 'Motion', role: { key: 'production', name: 'Produção' }, isOwner: false, isSelf: false, status: 'removed', joinedAt: '2026-02-10T12:00:00.000Z' };
 
 const meta = (page: number, totalItems: number, totalPages: number) => ({ page, pageSize: 24, totalItems, totalPages });
 const listResponse = (data: readonly unknown[], page = 1) => json({ data, meta: meta(page, data.length, data.length === 0 ? 0 : 1) });
@@ -230,13 +234,13 @@ interface SelfFetchOptions {
 const makeSelfFetch = (options: SelfFetchOptions = {}) => {
   // `photoUrl` starts null and becomes a signed URL after the upload, like the real person row.
   type SelfPerson = Omit<typeof anaPrado, 'photoUrl'> & { photoUrl: string | null };
-  let person: SelfPerson = { ...anaPrado, photoUrl: null };
+  let person: SelfPerson = { ...anaSelf, photoUrl: null };
   let sessionName = person.name;
   const profileBodies: unknown[] = [];
   const photoBodies: unknown[] = [];
   const uploadSuccessUrl = options.uploadImageUrl ?? 'https://storage.test/ana-nova.png';
   const fetch = makeFetch({
-    session: () => json({ user: { id: sessionBody.user.id, name: sessionName, email: anaPrado.email }, session: sessionBody.session }),
+    session: () => json({ user: { id: sessionBody.user.id, name: sessionName, email: sessionEmailAfterChange }, session: sessionBody.session }),
     collaborators: () => json({ data: [person, marioCosta, juliaReis], meta: meta(1, 3, 1) }),
     detail: (membershipId) => membershipId === person.membershipId
       ? json(person)
@@ -848,9 +852,10 @@ describe('collaborator admin actions (#104)', () => {
 
   it('does not let the person edit the own cargo or role in this modal', async () => {
     const { impl } = makeFetch({
-      session: () => json({ user: { id: sessionBody.user.id, name: anaPrado.name, email: anaPrado.email }, session: sessionBody.session }),
+      session: () => json({ user: { id: sessionBody.user.id, name: anaPrado.name, email: sessionEmailAfterChange }, session: sessionBody.session }),
       permissions: OWNER_PERMISSIONS,
-      isOwner: true
+      isOwner: true,
+      detail: () => json(anaSelf)
     });
     renderCollaborators(impl, detailUrl(anaPrado.membershipId));
     const dialog = await screen.findByRole('dialog', { name: 'Ana Prado' });
@@ -859,6 +864,38 @@ describe('collaborator admin actions (#104)', () => {
     expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
     expect(within(dialog).queryByRole('combobox')).toBeNull();
     expect(within(dialog).queryByRole('button', { name: 'Remover do quadro' })).toBeNull();
+  });
+
+  // The e-mail heuristic is gone (#286): the session e-mail equals the link's, yet the API says the
+  // link is not the signed-in person's own, so the modal must not offer to edit name and photo.
+  it('does not treat a link as the own one just because the session e-mail matches', async () => {
+    const { impl } = makeFetch({
+      session: () => json({ user: { id: sessionBody.user.id, name: 'Pessoa', email: anaPrado.email }, session: sessionBody.session }),
+      permissions: OWNER_PERMISSIONS,
+      isOwner: true,
+      detail: () => json(anaPrado)
+    });
+    renderCollaborators(impl, detailUrl(anaPrado.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Ana Prado' });
+
+    expect(within(dialog).queryByRole('textbox', { name: 'Nome' })).toBeNull();
+    expect(dialog.querySelector('input[type="file"]')).toBeNull();
+    expect(within(dialog).getByRole('textbox', { name: 'Cargo' })).toBeTruthy();
+  });
+
+  it('lets the person edit name and photo when the API says the link is the own one, whatever the session e-mail', async () => {
+    const { impl } = makeFetch({
+      session: () => json({ user: { id: sessionBody.user.id, name: anaPrado.name, email: sessionEmailAfterChange }, session: sessionBody.session }),
+      permissions: OWNER_PERMISSIONS,
+      isOwner: true,
+      detail: () => json(anaSelf)
+    });
+    renderCollaborators(impl, detailUrl(anaPrado.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Ana Prado' });
+
+    expect(within(dialog).getByRole('textbox', { name: 'Nome' })).toBeTruthy();
+    expect(dialog.querySelector('input[type="file"]')).not.toBeNull();
+    expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
   });
 
   it('offers no remove and no role edit on the Owner, for anyone', async () => {
@@ -1992,12 +2029,12 @@ describe('self profile editing (#108)', () => {
     const detailKey = ['agency', AGENCY_A, 'collaborators', 'detail', anaPrado.membershipId];
 
     // Another tab (or a revalidation) brought a newer name; the untouched field follows it.
-    act(() => { queryClient.setQueryData(detailKey, { ...anaPrado, name: 'Ana Atualizada' }); });
+    act(() => { queryClient.setQueryData(detailKey, { ...anaSelf, name: 'Ana Atualizada' }); });
     await waitFor(() => expect(name.value).toBe('Ana Atualizada'));
 
     // A typed draft is not overwritten by the same external update.
     fireEvent.change(name, { target: { value: 'Rascunho local' } });
-    act(() => { queryClient.setQueryData(detailKey, { ...anaPrado, name: 'Outra Externa' }); });
+    act(() => { queryClient.setQueryData(detailKey, { ...anaSelf, name: 'Outra Externa' }); });
     expect(name.value).toBe('Rascunho local');
   });
 
@@ -2112,12 +2149,12 @@ describe('self profile editing (#108)', () => {
     const newPhoto = 'https://storage.test/ana-global.png';
     let photoUrl: string | null = null;
     const personFor = (agencyId: string) => ({
-      ...anaPrado,
+      ...anaSelf,
       membershipId: agencyId === AGENCY_B ? membershipB : anaPrado.membershipId,
       photoUrl
     });
     const { impl } = makeFetch({
-      session: () => json({ user: { id: sessionBody.user.id, name: anaPrado.name, email: anaPrado.email }, session: sessionBody.session }),
+      session: () => json({ user: { id: sessionBody.user.id, name: anaPrado.name, email: sessionEmailAfterChange }, session: sessionBody.session }),
       collaborators: (_query, agencyId) => json({ data: [personFor(agencyId)], meta: meta(1, 1, 1) }),
       detail: (membershipId, agencyId) => membershipId === membershipB || membershipId === anaPrado.membershipId
         ? json(personFor(agencyId))
@@ -2157,12 +2194,12 @@ describe('self profile editing (#108)', () => {
     const membershipB = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
     let displayName = anaPrado.name;
     const personFor = (agencyId: string) => ({
-      ...anaPrado,
+      ...anaSelf,
       name: displayName,
       membershipId: agencyId === AGENCY_B ? membershipB : anaPrado.membershipId
     });
     const { impl } = makeFetch({
-      session: () => json({ user: { id: sessionBody.user.id, name: displayName, email: anaPrado.email }, session: sessionBody.session }),
+      session: () => json({ user: { id: sessionBody.user.id, name: displayName, email: sessionEmailAfterChange }, session: sessionBody.session }),
       collaborators: (_query, agencyId) => json({ data: [personFor(agencyId)], meta: meta(1, 1, 1) }),
       detail: (membershipId, agencyId) => membershipId === membershipB || membershipId === anaPrado.membershipId
         ? json(personFor(agencyId))

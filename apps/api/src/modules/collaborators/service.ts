@@ -26,6 +26,8 @@ export interface CollaboratorRow {
   readonly role_key: string;
   readonly role_name: string;
   readonly is_owner: boolean;
+  /** Whether the link belongs to the session user, decided in SQL from the actor the database bound. */
+  readonly is_self: boolean;
   readonly status: 'active' | 'removed';
   readonly created_at: string | Date;
 }
@@ -52,6 +54,7 @@ const COLLABORATOR_COLUMNS = `
       role.key as role_key,
       role.name as role_name,
       app_private.is_agency_owner(membership.agency_id, membership.user_id) as is_owner,
+      (membership.user_id = app_private.current_user_id()) as is_self,
       membership.status as status,
       membership.created_at as created_at`;
 

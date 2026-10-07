@@ -1221,6 +1221,9 @@
                 "isOwner": {
                   "type": "boolean"
                 },
+                "isSelf": {
+                  "type": "boolean"
+                },
                 "status": {
                   "type": "string",
                   "enum": [
@@ -1241,6 +1244,7 @@
                 "jobTitle",
                 "role",
                 "isOwner",
+                "isSelf",
                 "status",
                 "joinedAt"
               ],
@@ -1336,6 +1340,9 @@
           "isOwner": {
             "type": "boolean"
           },
+          "isSelf": {
+            "type": "boolean"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -1356,6 +1363,7 @@
           "jobTitle",
           "role",
           "isOwner",
+          "isSelf",
           "status",
           "joinedAt"
         ],
@@ -5245,6 +5253,7 @@
                         "name": "Gestor de conta"
                       },
                       "isOwner": false,
+                      "isSelf": false,
                       "status": "active",
                       "joinedAt": "2026-03-12T12:00:00.000Z"
                     }
@@ -5406,6 +5415,7 @@
                     "name": "Gestor de conta"
                   },
                   "isOwner": false,
+                  "isSelf": false,
                   "status": "active",
                   "joinedAt": "2026-03-12T12:00:00.000Z"
                 }
@@ -5574,6 +5584,7 @@
                     "name": "Produção"
                   },
                   "isOwner": false,
+                  "isSelf": false,
                   "status": "active",
                   "joinedAt": "2026-03-12T12:00:00.000Z"
                 }
@@ -5727,6 +5738,7 @@
                     "name": "Produção"
                   },
                   "isOwner": false,
+                  "isSelf": false,
                   "status": "removed",
                   "joinedAt": "2026-03-12T12:00:00.000Z"
                 }
@@ -5912,6 +5924,7 @@
                     "name": "Produção"
                   },
                   "isOwner": false,
+                  "isSelf": false,
                   "status": "active",
                   "joinedAt": "2026-03-12T12:00:00.000Z"
                 }

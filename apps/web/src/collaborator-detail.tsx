@@ -19,7 +19,7 @@ import { Avatar, Button, ConfirmDialog, FieldMessage, LiveStatus, Modal, Select,
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
-import { useAuthSession, useOptionalAuthSessionStore, type AuthSessionStore } from './auth.js';
+import { useOptionalAuthSessionStore } from './auth.js';
 import { HttpClientError, useApiClient } from './http.js';
 
 const NAME_REQUIRED = 'Informe o seu nome.';
@@ -45,15 +45,6 @@ const REMOVE_NOT_FOUND = 'Colaborador não encontrado.';
 const REMOVE_FAILED = 'Não foi possível remover este colaborador. Tente de novo.';
 const REMOVE_DESCRIPTION = 'A pessoa perde o acesso a esta agência na próxima requisição. O registro é mantido, e ela pode ser reativada depois — com um papel escolhido de novo.';
 const ROLES_FAILED = 'Não foi possível carregar os papéis. Tente de novo.';
-
-const fallbackAuthSnapshot = { status: 'ready' as const, isAuthenticated: false, user: null };
-const fallbackAuthStore: AuthSessionStore = {
-  subscribe: () => () => undefined,
-  getSnapshot: () => fallbackAuthSnapshot,
-  refresh: async () => undefined,
-  end: () => undefined,
-  dispose: () => undefined
-};
 
 const detailQueryKey = (agencyId: string, membershipId: string) =>
   ['agency', agencyId, 'collaborators', 'detail', membershipId] as const;
@@ -532,8 +523,6 @@ function CollaboratorDetails({ collaborator, isSelf, onRemoved }: { collaborator
 export function CollaboratorDetailDialog({ membershipId, onClose }: { membershipId: string; onClose: () => void }) {
   const agency = useAgencyContext();
   const httpClient = useApiClient();
-  const authStore = useOptionalAuthSessionStore();
-  const session = useAuthSession(authStore ?? fallbackAuthStore);
   const normalizedId = membershipId.toLowerCase();
   const validId = CollaboratorSchema.shape.membershipId.safeParse(normalizedId).success;
   const detail = useQuery({
@@ -548,11 +537,9 @@ export function CollaboratorDetailDialog({ membershipId, onClose }: { membership
   });
   const notFound = !validId || (detail.error instanceof HttpClientError && [403, 404].includes(detail.error.status ?? 0));
   const collaborator = !notFound && detail.data?.membershipId.toLowerCase() === normalizedId ? detail.data : undefined;
-  // Name and photo belong to the global user; the only identity the membership detail carries is
-  // the e-mail, and the session owns the same canonical e-mail for the signed-in person. The
-  // comparison is provisional: the API will say whether the link is the signed-in person's own
-  // (#286), and this e-mail heuristic leaves with it.
-  const isSelf = collaborator !== undefined && session.user !== null && session.user.email === collaborator.email;
+  // Name and photo belong to the global user, so only the signed-in person's own link edits them;
+  // the API says which link that is.
+  const isSelf = collaborator?.isSelf === true;
 
   return <Modal title={collaborator?.name ?? 'Detalhe do colaborador'} closeLabel="Fechar detalhe do colaborador" onClose={onClose}>
     {notFound ? <div className="collaborator-detail__status">
