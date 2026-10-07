@@ -143,7 +143,7 @@ pnpm docker:down   # preserva o volume do banco
 
 ## Disparando o job diário de arquivamento
 
-O worker registra sozinho o `clients.archive-due` quando sobe (`pnpm dev` ou `pnpm docker:up`): todo dia às 00:10 em `America/Sao_Paulo` ele arquiva os clientes cujo `closing_date` já passou, e é só isso que ele faz. Para testar sem esperar a virada do dia, com o worker no ar:
+O worker registra sozinho o `clients.archive-due` quando sobe (`pnpm dev` ou `pnpm docker:up`): ele arquiva os clientes cujo `closing_date` já passou, e é só isso que ele faz. Roda uma vez cada vez que o worker sobe e depois de hora em hora (aos 10 minutos, em `America/Sao_Paulo`, o que inclui as 00:10), então basta subir o worker de novo para ele rodar. Para testar sem esperar a virada do dia, com o worker no ar:
 
 1. **Deixe um cliente vencido.** A rota recusa data de ontem de propósito, então localmente isso é uma linha de SQL como dono do banco (troque o `<uuid>` pelo id do cliente):
 
@@ -165,7 +165,7 @@ O worker registra sozinho o `clients.archive-due` quando sobe (`pnpm dev` ou `pn
    docker exec ageniza-local-postgres-1 psql -U postgres -d ageniza -c "select name, cron, timezone from pgboss.schedule"
    ```
 
-Sem worker, `select app_private.archive_due_clients();` faz a mesma coisa e devolve a quantidade: o job é só o relógio. Rodar duas vezes seguidas arquiva zero na segunda. Uma virada em que o worker estava parado não é reposta; o dia seguinte arquiva tudo o que já passou.
+Sem worker, `select app_private.archive_due_clients();` faz a mesma coisa e devolve a quantidade: o job é só o relógio. Rodar duas vezes seguidas arquiva zero na segunda. Uma virada em que o worker estava parado é reposta quando ele sobe de novo, porque o job roda na inicialização.
 
 ## Rodando os testes
 

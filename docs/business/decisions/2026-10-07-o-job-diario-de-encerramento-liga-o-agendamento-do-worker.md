@@ -1,4 +1,4 @@
-# O job diário de encerramento liga o agendamento do worker, e uma virada perdida não é reposta
+# O job de encerramento liga o agendamento do worker
 
 **Data.** 2026-10-07
 
@@ -8,8 +8,8 @@
 
 1. O worker liga o monitor de cron do pg-boss (`schedule: true`). A API continua só enviando, com o agendamento desligado. Uma instância por vez vence cada passada do monitor, e o envio é deduplicado por nome e por minuto, então dois workers não duplicam o job.
 2. Um job declara `schedule: { cron, timeZone }` na própria definição, e a fila o registra a cada inicialização por um *upsert* em `pgboss.schedule` (chave: o nome do job). Reiniciar o worker, ou subir dois, mantém uma linha só.
-3. `clients.archive-due` roda todo dia às 00:10 em `America/Sao_Paulo` (`10 0 * * *`), registrado sempre que a fila existe. O job só chama `select app_private.archive_due_clients()` e registra no log quantos arquivou, sem cliente nem pessoa. Falha lança o erro e o pg-boss retenta com o recuo padrão.
-4. Uma virada em que nenhum worker estava no ar não é reposta. O dia seguinte arquiva tudo o que já passou, porque a função arquiva `closing_date` anterior a hoje, não só a de ontem: o atraso é de um dia no pior caso, e rodar o job a cada inicialização para cobrir isso foi descartado por mudar o que a issue pede ("nada mais, o job é só o relógio").
+3. `clients.archive-due` é registrado sempre que a fila existe; a hora e a repetição estão na decisão `2026-10-07-o-job-de-encerramento-roda-na-inicializacao-e-de-hora-em-hora`. O job só chama `select app_private.archive_due_clients()` e registra no log quantos arquivou, sem cliente nem pessoa. Falha lança o erro e o pg-boss retenta com o recuo padrão.
+4. Um tick perdido enquanto nenhum worker estava no ar não é reposto pelo pg-boss: o próximo tick é a próxima execução. O que cobre isso para este job está na decisão citada acima.
 
 **Consequência.** Não há migration nem *grant* novo para o job. Qualquer job futuro agendado, como a publicação agendada de Conteúdo, declara o `schedule` da mesma forma. O monitor de cron do worker lê `pgboss.schedule` inteira e envia o que estiver no horário, de qualquer fila: por isso o teste de integração usa um nome de fila próprio e o apaga ao final, e a linha de agendamento vai junto, sem tocar na fila real de quem roda o worker localmente. O ambiente local dispara o job à mão como `docs/local-environment.md` explica.
 
