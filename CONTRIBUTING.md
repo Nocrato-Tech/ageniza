@@ -55,9 +55,9 @@ Todo PR vai para `develop`, exceto promoção de release e hotfix.
 
 O corpo responde três coisas: **por que** existe, **o que muda**, e **como foi verificado**. O template preenche isso. O que ele cobra, e o revisor também:
 
-- **Um PR, um assunto.** Se o título precisa de "e", provavelmente são dois PRs.
+- **Um PR, um assunto — que pode juntar issues do mesmo tema e da mesma camada.** Um PR pode agrupar issues que falam da mesma coisa e da mesma camada, cada uma com o seu `Closes #N` e o aceite item a item no corpo, até **~800 linhas de diff de código**; acima disso, dividir. Se o título precisa de "e" para juntar temas ou camadas diferentes, são dois PRs.
 - **API e interface não vêm juntas.** São tasks separadas de propósito; PR que mistura as duas não tem revisão possível.
-- **Migration vem sozinha.** É o único tipo de mudança que não dá para desfazer.
+- **Migration não vem com código de API nem de tela.** É o único tipo de mudança que não dá para desfazer. Duas issues de banco do mesmo tema podem dividir a mesma migration; a rota e a tela que a consomem ficam nos PRs delas.
 - **Verificação real.** "Testado" não é verificação; qual comando rodou e o que ele disse, é.
 
 Antes de abrir:
