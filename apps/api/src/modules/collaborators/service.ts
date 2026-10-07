@@ -117,7 +117,7 @@ export const listCollaborators = async (
   const itemsResult = await raw<RawRows<CollaboratorRow>>(transaction, `
     select${COLLABORATOR_COLUMNS}${COLLABORATOR_FROM}
     where ${where}
-    order by ${foldTextSql('member.name')} asc, membership.id asc
+    order by ${foldTextSql('member.name')} collate "C" asc, membership.id asc
     limit ? offset ?
   `, [...bindings, pagination.pageSize, pagination.offset]);
 
