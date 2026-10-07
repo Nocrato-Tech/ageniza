@@ -48,6 +48,8 @@ const definition = (overrides: Partial<DurableJobDefinition<Record<string, never
   ...archiveDueClientsJob({ database: getApplication() }),
   name: jobName,
   retryDelaySeconds: 1,
+  // Off unless a test is about it: a run at every start would add to the counts the tests read.
+  runOnStart: false,
   ...overrides
 });
 
@@ -276,10 +278,10 @@ describe('clients.archive-due on the durable queue', { timeout: 60_000 }, () => 
 });
 
 describe('the schedule of clients.archive-due', { timeout: 60_000 }, () => {
-  it('registers one daily schedule at ten past midnight in Brasília', async () => {
+  it('registers one schedule, at ten past every hour, in Brasília', async () => {
     const queue = await openQueue([definition()], captureLogs());
     const rows = await scheduleRows();
-    expect(rows).toEqual([{ name: jobName, cron: '10 0 * * *', timezone: 'America/Sao_Paulo', data: {} }]);
+    expect(rows).toEqual([{ name: jobName, cron: '10 * * * *', timezone: 'America/Sao_Paulo', data: {} }]);
     expect(rows[0]).toMatchObject({ cron: ARCHIVE_DUE_CLIENTS_SCHEDULE.cron, timezone: ARCHIVE_DUE_CLIENTS_SCHEDULE.timeZone });
     await closeQueue(queue);
   });
@@ -294,8 +296,41 @@ describe('the schedule of clients.archive-due', { timeout: 60_000 }, () => {
     const restarted = await openQueue([definition()], captureLogs());
     const rows = await scheduleRows();
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ cron: '10 0 * * *', timezone: 'America/Sao_Paulo' });
+    expect(rows[0]).toMatchObject({ cron: '10 * * * *', timezone: 'America/Sao_Paulo' });
     await closeQueue(restarted);
+  });
+
+  it('runs at every start of the worker, so a turn of the day missed while it was down is caught up at once', async () => {
+    const first = await insertClient('Venceu com o worker parado', { closing_date: await brasiliaDay(-1) });
+    const before = (await jobStates()).length;
+    const captured = captureLogs();
+    const started = await openQueue([definition({ runOnStart: true })], captured);
+    await vi.waitFor(async () => {
+      expect((await statusOf(first)).status).toBe('archived');
+    }, { timeout: 20_000, interval: 250 });
+    await vi.waitFor(async () => expect((await jobStates()).slice(before)).toEqual(['completed']), { timeout: 20_000, interval: 250 });
+    await closeQueue(started);
+
+    // The worker is down; another contract ends; the next start archives it without a tick or a manual job.
+    const second = await insertClient('Venceu depois', { closing_date: await brasiliaDay(-1) });
+    expect((await statusOf(second)).status).toBe('active');
+    const restarted = await openQueue([definition({ runOnStart: true })], captureLogs());
+    await vi.waitFor(async () => {
+      expect((await statusOf(second)).status).toBe('archived');
+    }, { timeout: 20_000, interval: 250 });
+    await closeQueue(restarted);
+  });
+
+  it('does not run at start unless the definition asks for it', async () => {
+    const waiting = await insertClient('Espera o relógio', { closing_date: await brasiliaDay(-1) });
+    const before = (await jobStates()).length;
+    const queue = await openQueue([definition()], captureLogs());
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    expect((await jobStates()).length).toBe(before);
+    expect((await statusOf(waiting)).status).toBe('active');
+    await closeQueue(queue);
+    // Leaves no overdue client behind for the tests that count.
+    await raw(getApplication().knex, 'select app_private.archive_due_clients()', []);
   });
 
   it('is what sends the job: a schedule that is due is turned into a job and the job runs', async () => {

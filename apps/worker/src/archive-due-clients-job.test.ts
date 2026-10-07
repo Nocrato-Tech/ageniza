@@ -33,11 +33,12 @@ const run = async (definition: ReturnType<typeof archiveDueClientsJob>, logger: 
 };
 
 describe('clients.archive-due', () => {
-  it('is named and scheduled as the SPEC says: daily, ten past midnight, in Brasília', () => {
+  it('is named and scheduled as decided: ten past every hour in Brasília, which includes 00:10, and once at every start', () => {
     const definition = archiveDueClientsJob(databaseReturning(async () => ({ rows: [{ archived: 0 }] })));
     expect(definition.name).toBe('clients.archive-due');
-    expect(definition.schedule).toEqual({ cron: '10 0 * * *', timeZone: 'America/Sao_Paulo' });
-    expect(ARCHIVE_DUE_CLIENTS_SCHEDULE).toEqual({ cron: '10 0 * * *', timeZone: 'America/Sao_Paulo' });
+    expect(definition.schedule).toEqual({ cron: '10 * * * *', timeZone: 'America/Sao_Paulo' });
+    expect(ARCHIVE_DUE_CLIENTS_SCHEDULE).toEqual({ cron: '10 * * * *', timeZone: 'America/Sao_Paulo' });
+    expect(definition.runOnStart).toBe(true);
   });
 
   it('asks the database function for the work and logs only how many it archived', async () => {

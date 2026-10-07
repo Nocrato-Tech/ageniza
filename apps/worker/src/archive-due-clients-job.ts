@@ -4,8 +4,12 @@ import type { DurableJob, DurableJobContext, DurableJobDefinition } from './queu
 
 export const ARCHIVE_DUE_CLIENTS_JOB_NAME = 'clients.archive-due';
 
-/** 00:10 every day, in the time zone the contract date is read in (specs/clientes.md section 8). */
-export const ARCHIVE_DUE_CLIENTS_SCHEDULE = { cron: '10 0 * * *', timeZone: 'America/Sao_Paulo' } as const;
+/**
+ * Ten past every hour, in the time zone the contract date is read in, which includes 00:10 (specs/clientes.md
+ * section 8). Hourly, and again at every start of the worker, because a turn of the day missed while no
+ * worker ran would leave the portal of an ended contract open for a day; the function is idempotent.
+ */
+export const ARCHIVE_DUE_CLIENTS_SCHEDULE = { cron: '10 * * * *', timeZone: 'America/Sao_Paulo' } as const;
 
 export interface ArchiveDueClientsJobDependencies {
   readonly database: DatabaseClient;
@@ -19,8 +23,8 @@ export interface ArchiveDueClientsJobDependencies {
  * that is safe because the function can do nothing else, whoever calls it (the single-purpose
  * `security definer` exception in docs/business/structural-changes.md).
  *
- * Idempotent, as every durable job must be: a second run the same day finds nothing due and archives
- * none. A failure, such as a lost race with a concurrent change of the client's invitations, throws
+ * Idempotent, as every durable job must be: a run that finds nothing due archives none, so it can run
+ * hourly and at every start. A failure, such as a lost race with a concurrent change of the client's invitations, throws
  * and the queue retries it. The log carries the number archived and no client or person.
  */
 export const archiveDueClientsJob = (
@@ -28,6 +32,7 @@ export const archiveDueClientsJob = (
 ): DurableJobDefinition<Record<string, never>> => ({
   name: ARCHIVE_DUE_CLIENTS_JOB_NAME,
   schedule: ARCHIVE_DUE_CLIENTS_SCHEDULE,
+  runOnStart: true,
   async handler(_job: DurableJob<Record<string, never>>, context: DurableJobContext): Promise<void> {
     const result = await raw<{ rows: ReadonlyArray<{ archived: number | string }> }>(
       dependencies.database.knex,

@@ -47,9 +47,15 @@ export interface DurableJobDefinition<TPayload extends object> {
   /**
    * Sends the job on a cron schedule, in the given IANA time zone. Registered again at every start,
    * as an upsert keyed by the job name, so a restart never adds a second schedule. A tick missed
-   * while no worker runs is not replayed: the next tick is the next run.
+   * while no worker runs is not replayed: the next tick is the next run, or `runOnStart`.
    */
   readonly schedule?: { readonly cron: string; readonly timeZone: string };
+  /**
+   * Sends one job every time the queue starts, after the handler is registered. For a job whose schedule
+   * can be missed while no worker runs and that is idempotent, so a restart catches up at once instead of
+   * waiting for the next tick. Two workers starting together send two, which the handler must tolerate.
+   */
+  readonly runOnStart?: boolean;
 }
 
 export interface DurableQueue {
@@ -192,6 +198,7 @@ export const createDurableQueue = (options: CreateDurableQueueOptions): DurableQ
         await boss.work<object, void, typeof workOptions>(definition.name, workOptions, async (jobs) => {
           for (const job of jobs) await runDurableJob(definition, job, logger);
         });
+        if (definition.runOnStart === true) await boss.send(definition.name, {});
       }
       logger.info({ queues: [...definitions.keys()], concurrency: options.concurrency }, 'Durable queue started');
     },
