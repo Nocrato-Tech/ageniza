@@ -89,6 +89,24 @@
         ],
         "additionalProperties": false
       },
+      "invitationCreatedResponse": {
+        "type": "object",
+        "properties": {
+          "invitationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "invitationId",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
       "getHealthResponse": {
         "type": "object",
         "properties": {
@@ -446,24 +464,6 @@
         "required": [
           "email",
           "roleId"
-        ],
-        "additionalProperties": false
-      },
-      "createClientInvitationResponse": {
-        "type": "object",
-        "properties": {
-          "invitationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "invitationId",
-          "expiresAt"
         ],
         "additionalProperties": false
       },
@@ -3846,7 +3846,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/createClientInvitationResponse"
+                  "$ref": "#/components/schemas/invitationCreatedResponse"
                 },
                 "example": {
                   "invitationId": "33333333-3333-4333-8333-333333333333",
@@ -4026,7 +4026,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/createClientInvitationResponse"
+                  "$ref": "#/components/schemas/invitationCreatedResponse"
                 },
                 "example": {
                   "invitationId": "33333333-3333-4333-8333-333333333333",
