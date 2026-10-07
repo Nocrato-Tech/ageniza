@@ -137,7 +137,7 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 | `POST` | `/me/email-change` | corpo `{ newEmail, currentPassword }`, e nada mais (`.strict()`); `202 {}`. Senha errada é `403 INVALID_PASSWORD` (403, e não 401, que a interface lê como sessão encerrada); o e-mail igual ao atual é `400 SAME_EMAIL`; 5 pedidos por hora e por conta |
 | `POST` | `/email-change/confirm` | pública, corpo `{ token }`; `200 {}`, ou `400 INVALID_LINK` para qualquer link que não pode trocar o e-mail |
 
-Limites de tentativa já aplicados por IP, por IP+e-mail e por e-mail global (`policy.ts`): login 10 por 15 min no par IP+e-mail, recuperação 3.
+Limites de tentativa já aplicados por IP, por IP+e-mail e por e-mail global (`policy.ts`): login 10 por 15 min no par IP+e-mail e 50 por hora por e-mail; recuperação 3 por 15 min no par IP+e-mail e 10 por hora por e-mail.
 
 ### Implementado (issue #68, PR #164)
 

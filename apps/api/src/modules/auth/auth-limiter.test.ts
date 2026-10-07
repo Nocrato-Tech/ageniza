@@ -132,4 +132,37 @@ describe('in-memory auth limiter', () => {
     // The 51st distinct IP is blocked purely by the email-global window, not by ip-email.
     expect(limiter.check('login', '203.0.113.99', email)).toBe(false);
   });
+
+  // Issue #338: the e-mail-global windows (login 50/h, recovery 10/h) are pinned by behavior, with
+  // an injected clock so the one-hour window is not waited out in real time. Each window is checked
+  // at both edges: still closed one millisecond before it lapses, open one millisecond later.
+  it('pins the e-mail-global windows: login 50 per hour and recovery 10 per hour', () => {
+    let now = 0;
+    const limiter = createAuthLimiter({ now: () => now });
+
+    // Recovery: 10 distinct IPs for one e-mail are allowed, the 11th is blocked...
+    for (let ipIndex = 0; ipIndex < 10; ipIndex += 1) {
+      expect(limiter.check('forgot', `203.0.113.${ipIndex}`, 'window-forgot@example.test')).toBe(true);
+    }
+    expect(limiter.check('forgot', '203.0.113.98', 'window-forgot@example.test')).toBe(false);
+    // ...still blocked one millisecond before the hour lapses...
+    now = 60 * 60 * 1_000 - 1;
+    expect(limiter.check('forgot', '203.0.113.97', 'window-forgot@example.test')).toBe(false);
+    // ...and open one millisecond later.
+    now += 1;
+    expect(limiter.check('forgot', '203.0.113.96', 'window-forgot@example.test')).toBe(true);
+
+    // Login: 50 distinct IPs are allowed...
+    now = 0;
+    for (let ipIndex = 0; ipIndex < 50; ipIndex += 1) {
+      expect(limiter.check('login', `203.0.114.${ipIndex}`, 'window-login@example.test')).toBe(true);
+    }
+    // ...the 51st is blocked, still blocked one millisecond before the hour lapses...
+    expect(limiter.check('login', '203.0.114.98', 'window-login@example.test')).toBe(false);
+    now = 60 * 60 * 1_000 - 1;
+    expect(limiter.check('login', '203.0.114.97', 'window-login@example.test')).toBe(false);
+    // ...and open one millisecond later.
+    now += 1;
+    expect(limiter.check('login', '203.0.114.96', 'window-login@example.test')).toBe(true);
+  });
 });
