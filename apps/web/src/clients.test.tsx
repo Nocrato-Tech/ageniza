@@ -116,6 +116,20 @@ const createdClient = {
   archivedAt: null
 };
 
+/** The detail answer of `GET .../clients/:clientId` for the fixtures (SPEC section 6). */
+const detailOf = (listItem: Record<string, unknown>): Record<string, unknown> => ({
+  ...Object.fromEntries(Object.entries(listItem).filter(([key]) => !['threadsAwaitingAgency', 'pendingInvitations'].includes(key))),
+  legalName: null,
+  taxId: null,
+  segment: null,
+  website: null,
+  contactName: null,
+  contactPhone: null,
+  contactEmail: null,
+  archivedAt: null,
+  summary: { brandStudyFilled: 0, threadsAwaitingAgency: 2, threadsAnsweredByAgency: 0, activePortalMembers: 0 }
+});
+
 const meta = (page: number, totalItems: number, totalPages: number) => ({ page, pageSize: 20, totalItems, totalPages });
 const listResponse = (data: readonly unknown[], page = 1, totals?: { totalItems: number; totalPages: number }): Response =>
   json({ data, meta: meta(page, totals?.totalItems ?? data.length, totals?.totalPages ?? (data.length === 0 ? 0 : 1)) });
@@ -125,6 +139,7 @@ interface Scenario {
   readonly permissions?: readonly string[];
   readonly clients?: (query: URLSearchParams, agencyId: string) => Response | Promise<Response>;
   readonly createClient?: (body: unknown, agencyId: string) => Response | Promise<Response>;
+  readonly detail?: (clientId: string, agencyId: string) => Response | Promise<Response>;
 }
 
 /** Behaves like the real API: 401 without a session, the guard's 403 and the listing contract. */
@@ -150,6 +165,14 @@ const makeFetch = (scenario: Scenario = {}) => {
       if (!permissions.includes('cliente.cadastrar')) return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
       if (scenario.createClient === undefined) throw new Error(`unexpected POST ${url}`);
       return scenario.createClient(JSON.parse(String(init?.body)), clients[1]!);
+    }
+    const detail = /\/agencies\/([^/]+)\/clients\/([^/]+)$/.exec(path);
+    if (detail !== null && method === 'GET') {
+      if (!permissions.includes('cliente.visualizar')) return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
+      const fixture = [padaria, academia, barbearia, confeitaria, mercado, createdClient].find((client) => client.id === detail[2]);
+      return scenario.detail?.(detail[2]!, detail[1]!) ?? (fixture === undefined
+        ? json({ error: { code: 'NOT_FOUND', message: 'Not found' } }, 404)
+        : json(detailOf(fixture)));
     }
     throw new Error(`unexpected ${method} ${url}`);
   };
@@ -467,7 +490,9 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
 
     fireEvent.click(await screen.findByRole('link', { name: 'Padaria Central' }));
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${padaria.id}/geral`));
-    expect(screen.getByRole('heading', { name: 'Cliente' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Padaria Central' })).toBeTruthy();
+    // The real detail (issue #136) renders the tab bar with Geral active.
+    expect(screen.getByRole('link', { name: 'Geral' }).getAttribute('aria-current')).toBe('page');
   });
 
   it('renders an archived card dimmed and without any badge or indicator strip', async () => {
@@ -624,6 +649,7 @@ describe('create client modal (#135)', () => {
     expect(bodies).toEqual([{ name: 'Padaria Nova' }]);
     expect(calls).toContain(`POST /agencies/${AGENCY_A}/clients`);
     expect(screen.queryByRole('dialog')).toBeNull();
+    expect(await screen.findByRole('heading', { name: 'Padaria Nova' })).toBeTruthy();
   });
 
   it('refreshes the roster after the creation without a reload', async () => {

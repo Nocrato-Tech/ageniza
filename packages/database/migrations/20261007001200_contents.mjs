@@ -28,7 +28,7 @@
 //    saw, so a caption edited between the reading and the click is refused instead of approved unseen.
 //  - Published and cancelled contents are not edited at all; a date moves in every other state.
 //  - Day rules (a publication is not in the future, an undo happens on the day of the publication) use
-//    `app_private.sao_paulo_date`, never the server's zone, so they are tested at fixed instants.
+//    `app_private.sao_paulo_date` (20261007001000), never the server's zone, so they are tested at fixed instants.
 //
 // `content_media` is written only by `app_private.set_content_media` (the whole ordered list at once), which
 // is how a media leaves a content without a DELETE for `ageniza_app`. Composite foreign keys tie the media to
@@ -62,17 +62,6 @@ const OPEN_TO_CLIENT = "('awaiting_approval', 'adjusting', 'approved', 'publishe
 
 export async function up(knex) {
   await knex.raw(`
-    create function app_private.sao_paulo_date(p_at timestamptz)
-    returns date
-    language sql
-    stable
-    set search_path = ''
-    as $function$
-      select (p_at at time zone 'America/Sao_Paulo')::date
-    $function$;
-    revoke all on function app_private.sao_paulo_date(timestamptz) from public;
-    grant execute on function app_private.sao_paulo_date(timestamptz) to ageniza_app;
-
     create function app_private.agency_user_can(p_agency_id uuid, p_user_id uuid, p_permission text)
     returns boolean
     language sql

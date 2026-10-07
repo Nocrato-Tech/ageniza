@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
 import { ClientListResponseSchema, type ClientListItem } from '@ageniza/contracts';
 import { Avatar, Button, Pagination, Select, Skeleton, TextInput } from '@ageniza/ui';
@@ -93,6 +93,7 @@ export function ClientsPage() {
   const canSeeInvitations = useCan('cliente.convidar_usuario');
   const [createOpen, setCreateOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
   useDocumentTitle('Clientes — Ageniza');
 
   const rawSearch = searchParams.get('search') ?? '';
@@ -205,6 +206,9 @@ export function ClientsPage() {
                 <Link
                   className="clients__card-link"
                   to={`/agencia/${agency.agencyId}/clientes/${client.id}/geral`}
+                  // The detail's "← Clientes" restores this exact address (filters and page
+                  // included) through the navigation state (specs/clientes.md §7, review of #379).
+                  state={{ clientListUrl: location.pathname + location.search }}
                   aria-labelledby={`client-${client.id}-name`}
                 >
                   <ClientCard client={client} canSeeInvitations={canSeeInvitations} />
