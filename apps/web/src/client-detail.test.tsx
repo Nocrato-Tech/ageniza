@@ -113,6 +113,8 @@ interface Scenario {
   readonly patch?: (body: unknown) => Response | Promise<Response>;
   readonly putPhoto?: (body: unknown) => Response | Promise<Response>;
   readonly deletePhoto?: () => Response | Promise<Response>;
+  readonly members?: () => Response | Promise<Response>;
+  readonly clientInvitations?: () => Response | Promise<Response>;
 }
 
 /** Behaves like the real API: 401 without a session, one 404 for every hidden client. */
@@ -136,6 +138,12 @@ const makeFetch = (scenario: Scenario = {}) => {
       if (method === 'PUT') return scenario.putPhoto?.(JSON.parse(String(init?.body))) ?? json({ photoUrl: 'https://storage.test/nova.png' });
       if (method === 'DELETE') return scenario.deletePhoto?.() ?? noContent();
     }
+    // The Acessos tab of #140 reads its own endpoints; the tests here only need them to answer so
+    // the tab renders.
+    const members = /\/agencies\/([^/]+)\/clients\/([^/]+)\/members$/.exec(path);
+    if (members !== null) return scenario.members?.() ?? json({ data: [], meta: { page: 1, pageSize: 20, totalItems: 0, totalPages: 0 } });
+    const clientInvitations = /\/agencies\/([^/]+)\/clients\/([^/]+)\/invitations$/.exec(path);
+    if (clientInvitations !== null) return scenario.clientInvitations?.() ?? json({ data: [], meta: { page: 1, pageSize: 20, totalItems: 0, totalPages: 0 } });
     const detail = /\/agencies\/([^/]+)\/clients\/([^/]+)$/.exec(path);
     if (detail !== null) {
       if (method === 'PATCH') {
@@ -266,9 +274,18 @@ describe('client detail (#136)', () => {
     const { probe } = renderClientDetail(impl);
     await screen.findByRole('heading', { name: 'Padaria Central' });
 
-    for (const [label, slug] of [['Conteúdos', 'conteudos'], ['Tarefas', 'tarefas'], ['Estudo de marca', 'estudo-de-marca'], ['Relatórios', 'relatorios'], ['Acessos', 'acessos']] as const) {
+    // Every tab's own content heading; the Acessos tab of #140 renders its real area instead of
+    // the skeleton sentence.
+    const tabHeadings = [
+      ['Conteúdos', 'conteudos', 'Conteúdos'],
+      ['Tarefas', 'tarefas', 'Tarefas'],
+      ['Estudo de marca', 'estudo-de-marca', 'Estudo de marca'],
+      ['Relatórios', 'relatorios', 'Relatórios'],
+      ['Acessos', 'acessos', 'Pessoas com acesso ao portal']
+    ] as const;
+    for (const [label, slug, heading] of tabHeadings) {
       fireEvent.click(screen.getByRole('link', { name: label }));
-      expect(await screen.findByRole('heading', { name: label })).toBeTruthy();
+      expect(await screen.findByRole('heading', { name: heading })).toBeTruthy();
       expect(probe.pathname).toBe(clientUrl(CLIENT_ID, slug));
       expect(screen.getByRole('link', { name: label }).getAttribute('aria-current')).toBe('page');
     }
@@ -327,7 +344,7 @@ describe('client detail (#136)', () => {
     const general = container.querySelector<HTMLElement>('.client-general');
     if (general === null) throw new Error('The General tab was not rendered.');
     fireEvent.click(within(general).getByRole('link', { name: /Portal/ }));
-    expect(await screen.findByRole('heading', { name: 'Acessos' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Pessoas com acesso ao portal' })).toBeTruthy();
     expect(probe.pathname).toBe(clientUrl(CLIENT_ID, 'acessos'));
 
     const back = screen.getByRole('link', { name: '← Clientes' });
@@ -387,7 +404,7 @@ describe('client detail (#136)', () => {
     expect(await screen.findByRole('heading', { name: 'Cadastro' })).toBeTruthy();
 
     fireEvent.click(within(general()).getByRole('link', { name: /Portal/ }));
-    expect(await screen.findByRole('heading', { name: 'Acessos' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Pessoas com acesso ao portal' })).toBeTruthy();
     expect(probe.pathname).toBe(clientUrl(CLIENT_ID, 'acessos'));
   });
 
@@ -470,7 +487,7 @@ describe('client detail (#136)', () => {
     const { probe } = renderClientDetail(admin.impl);
     await screen.findByRole('heading', { name: 'Padaria Central' });
     fireEvent.click(screen.getByRole('link', { name: 'Acessos' }));
-    expect(await screen.findByRole('heading', { name: 'Acessos' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Pessoas com acesso ao portal' })).toBeTruthy();
     expect(probe.pathname).toBe(clientUrl(CLIENT_ID, 'acessos'));
     cleanup();
 
@@ -500,8 +517,7 @@ describe('client detail (#136)', () => {
     ['conteudos', 'Conteúdos', 'Aqui vai ficar o calendário editorial deste cliente, com os posts, a prévia do feed e as aprovações.'],
     ['tarefas', 'Tarefas', 'Aqui vão ficar as tarefas deste cliente, com prazos e responsáveis.'],
     ['relatorios', 'Relatórios', 'Aqui vai ficar o relatório deste cliente, com os resultados do trabalho.'],
-    ['estudo-de-marca', 'Estudo de marca', 'Aqui vão ficar as seções da marca, as personas e as conversas.'],
-    ['acessos', 'Acessos', 'Aqui vão ficar as pessoas com acesso ao portal e os convites pendentes.']
+    ['estudo-de-marca', 'Estudo de marca', 'Aqui vão ficar as seções da marca, as personas e as conversas.']
   ])('draws %s as its name and its sentence, with no extra control', async (tab, title, sentence) => {
     const { impl } = makeFetch();
     const { container } = renderClientDetail(impl, clientUrl(CLIENT_ID, tab));

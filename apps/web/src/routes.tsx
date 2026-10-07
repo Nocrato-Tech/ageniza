@@ -20,6 +20,7 @@ import { privacyPolicy } from './legal/privacy.js';
 import { termsOfUse } from './legal/terms.js';
 import { LoginPage } from './login.js';
 import { NoAccessPage } from './no-access.js';
+import { ClientAccessTab } from './portal-access.js';
 import { PortalAreaLayout, PortalHomePage } from './portal.js';
 import { ResetPasswordPage } from './reset-password.js';
 import { LoadingPage, NotFoundPage, SessionGate } from './status-pages.js';
@@ -91,7 +92,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
           <Route path="relatorios" element={<ClientSkeletonTab title="Relatórios" description="Aqui vai ficar o relatório deste cliente, com os resultados do trabalho." />} />
           {/* The permission gate lives in ClientDetailPage: without it the whole address is the
               ordinary not-found, header included, not a not-found inside a visible client page. */}
-          <Route path="acessos" element={<ClientSkeletonTab title="Acessos" description="Aqui vão ficar as pessoas com acesso ao portal e os convites pendentes." />} />
+          <Route path="acessos" element={<ClientAccessTab />} />
           <Route path="*" element={<NotFoundPage as="section" />} />
         </Route>
       </Route>
