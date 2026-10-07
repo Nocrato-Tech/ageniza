@@ -1128,3 +1128,58 @@ input:focus-visible {
     flex-direction: column;
   }
 }
+
+.legal-notice {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  max-width: 72rem;
+  margin: var(--space-4) auto 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--body-md);
+}
+
+.legal-notice__list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legal-notice__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.legal-notice__text {
+  margin: 0;
+}
+
+.legal-notice__text a {
+  color: var(--text-link);
+}
+
+.legal-notice__error {
+  margin: 0;
+  color: var(--text-danger);
+}
+
+/* Inside `main`, which already carries the page padding. */
+.app-shell > main > .legal-notice {
+  margin: 0 auto var(--space-6);
+}
+
+@media (max-width: 47.99rem) {
+  .legal-notice {
+    margin-inline: var(--space-4);
+    flex-direction: column;
+  }
+}

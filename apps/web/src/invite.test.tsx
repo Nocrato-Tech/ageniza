@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
@@ -13,20 +13,25 @@ import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
 afterEach(cleanup);
 
 const AGENCY_A = '11111111-1111-4111-8111-111111111111';
+const CLIENT_A = '33333333-3333-4333-8333-333333333333';
 const agencyA = { type: 'agency', agencyId: AGENCY_A, agencyName: 'Agência Um', roleKey: 'admin', roleName: 'Admin', isOwner: true };
-const sessionBody = { user: { id: '11111111-1111-4111-8111-111111111111', name: 'Pessoa', email: 'pessoa@example.test' }, session: { expiresAt: '2026-01-01T00:00:00.000Z' } };
+const clientA = { type: 'client', clientId: CLIENT_A, clientName: 'Cliente Um', agencyId: AGENCY_A, agencyName: 'Agência Um', onboardingPending: false };
+const sessionUser = { id: '11111111-1111-4111-8111-111111111111', name: 'Pessoa', email: 'pessoa@example.test' };
+const sessionBody = { user: sessionUser, session: { expiresAt: '2026-01-01T00:00:00.000Z' } };
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const noContent = (): Response => new Response(null, { status: 204 });
 const unauthenticated = (): Response => json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication is required.' } }, 401);
 
-const previewBody = (accountExists: boolean, client: { name: string } | null = null) => ({
-  purpose: 'collaborator_invite', email: 'pessoa@example.test', agency: { name: 'Agência Um' }, client, accountExists
+const previewBody = (accountExists: boolean, client: { name: string } | null = null, email = sessionUser.email) => ({
+  purpose: 'collaborator_invite', email, agency: { name: 'Agência Um' }, client, accountExists
 });
 
 interface Scenario {
   readonly authenticated?: boolean;
+  /** The authenticated account; a different address is what the API answers 403 for. */
+  readonly sessionEmail?: string;
   readonly preview?: () => Response;
   readonly accept?: () => Response;
   readonly acceptError?: Response;
@@ -40,6 +45,7 @@ const makeFetch = (scenario: Scenario = {}) => {
   const calls: string[] = [];
   const loginBodies: Array<Record<string, unknown>> = [];
   const lastContextBodies: unknown[] = [];
+  const currentUser = { ...sessionUser, email: scenario.sessionEmail ?? sessionUser.email };
   let serverLoggedIn = scenario.authenticated ?? false;
   const impl: typeof fetch = async (input, init) => {
     const url = String(input);
@@ -57,8 +63,8 @@ const makeFetch = (scenario: Scenario = {}) => {
       return scenario.accept?.() ?? json({ status: 'accepted', context: { agencyId: AGENCY_A, clientId: null } });
     }
     if (url.includes('/invitations/')) { calls.push('preview'); return scenario.preview?.() ?? json(previewBody(false)); }
-    if (url.endsWith('/auth/session')) return serverLoggedIn ? json(sessionBody) : unauthenticated();
-    if (url.endsWith('/auth/login')) { calls.push('login'); loginBodies.push(JSON.parse(String(init?.body))); serverLoggedIn = true; return json({ user: sessionBody.user }); }
+    if (url.endsWith('/auth/session')) return serverLoggedIn ? json({ ...sessionBody, user: currentUser }) : unauthenticated();
+    if (url.endsWith('/auth/login')) { calls.push('login'); loginBodies.push(JSON.parse(String(init?.body))); serverLoggedIn = true; return json({ user: currentUser }); }
     if (url.endsWith('/me/contexts/resolve')) {
       calls.push('resolve');
       if (!serverLoggedIn) return unauthenticated();
@@ -83,8 +89,17 @@ function Harness({ store }: { store: AuthSessionStore }) {
   const session = useAuthSession(store);
   return <ApplicationRoutes session={session} />;
 }
-function LocationProbe({ probe }: { probe: { pathname: string } }) {
-  probe.pathname = useLocation().pathname;
+interface Probe {
+  pathname: string;
+  back: () => void;
+  navigate: (to: string) => void;
+}
+function LocationProbe({ probe }: { probe: Probe }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  probe.pathname = location.pathname;
+  probe.back = () => navigate(-1);
+  probe.navigate = (to: string) => navigate(to);
   return null;
 }
 function SessionProbe({ store, probe }: { store: AuthSessionStore; probe: { sessionStatus: string } }) {
@@ -92,17 +107,19 @@ function SessionProbe({ store, probe }: { store: AuthSessionStore; probe: { sess
   return null;
 }
 
-const renderInvite = (impl: typeof fetch) => {
+const renderInvite = (impl: typeof fetch, options: { state?: unknown; path?: string } = {}) => {
   const sessionEnd = createSessionEndSignal();
   const client = new HttpClient('http://127.0.0.1:3001', impl, { onSessionEnded: sessionEnd.notify });
   const queryClient = createQueryClient();
   const store = createAuthSessionStore(client, { onSessionStarted: () => queryClient.clear() });
-  const probe = { pathname: '', sessionStatus: '' };
+  const probe: Probe & { sessionStatus: string } = { pathname: '', back: () => undefined, navigate: () => undefined, sessionStatus: '' };
+  const path = options.path ?? '/convite/invite-token';
+  const entry = options.state === undefined ? path : { pathname: path, state: options.state };
   render(
     <AuthSessionProvider store={store}>
       <QueryClientProvider client={queryClient}>
         <ApiClientProvider client={client}>
-          <MemoryRouter initialEntries={['/convite/invite-token']}>
+          <MemoryRouter initialEntries={[entry]}>
             <SessionEndRedirect signal={sessionEnd} authStore={store} />
             <LocationProbe probe={probe} />
             <SessionProbe store={store} probe={probe} />
@@ -159,7 +176,7 @@ describe('InvitationPage (/convite/:token)', () => {
     expect(calls).not.toContain('create');
   });
 
-  it('creates the account, then accepts before resolving, and records the context it enters', async () => {
+  it('creates the account and enters the invitation context directly, recording it', async () => {
     const { impl, calls, lastContextBodies } = makeFetch({ preview: () => json(previewBody(false)) });
     const { probe } = renderInvite(impl);
     await screen.findByRole('heading', { name: 'Você foi convidado' });
@@ -167,31 +184,19 @@ describe('InvitationPage (/convite/:token)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Criar conta e entrar' }));
 
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
-    expect(calls.indexOf('create')).toBeLessThan(calls.indexOf('resolve'));
+    expect(calls).toContain('create');
+    // The accepted context comes from the response; nothing is resolved (review of PR #317).
+    expect(calls).not.toContain('resolve');
     expect(lastContextBodies).toEqual([{ type: 'agency', agencyId: AGENCY_A }]);
   });
 
-  it('offers a resolve-only retry when the resolve fails after creating the account', async () => {
-    const { impl, calls } = makeFetch({ preview: () => json(previewBody(false)), resolveError: true });
-    renderInvite(impl);
-    await screen.findByRole('heading', { name: 'Você foi convidado' });
-    fillNewAccount();
-    fireEvent.click(screen.getByRole('button', { name: 'Criar conta e entrar' }));
-
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('O convite foi aceito');
-    // Never shows the invalid-invitation state to someone already logged in.
-    expect(screen.queryByRole('heading', { name: 'Este convite não é mais válido' })).toBeNull();
-    expect(calls.filter((call) => call === 'resolve')).toHaveLength(1);
-  });
-
-  it('accepts for an authenticated existing account, then resolves, and records the context it enters', async () => {
+  it('accepts for an authenticated existing account and enters the invitation context directly', async () => {
     const { impl, calls, lastContextBodies } = makeFetch({ authenticated: true, preview: () => json(previewBody(true)) });
     const { probe } = renderInvite(impl);
     await screen.findByRole('heading', { name: 'Você foi convidado' });
     fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
-    expect(calls.indexOf('accept')).toBeLessThan(calls.indexOf('resolve'));
+    expect(calls).not.toContain('resolve');
     expect(lastContextBodies).toEqual([{ type: 'agency', agencyId: AGENCY_A }]);
   });
 
@@ -210,8 +215,9 @@ describe('InvitationPage (/convite/:token)', () => {
   });
 
   it('explains the account mismatch and offers "Entrar com outra conta", without a retry', async () => {
-    const { impl } = makeFetch({
+    const { impl, calls } = makeFetch({
       authenticated: true,
+      sessionEmail: 'outra@example.test',
       preview: () => json(previewBody(true)),
       acceptError: json({ error: { code: 'INVITATION_ACCOUNT_MISMATCH', message: 'x' } }, 403)
     });
@@ -223,6 +229,7 @@ describe('InvitationPage (/convite/:token)', () => {
     expect(alert.textContent).toContain('Você está conectado com outra conta');
     expect(screen.getByRole('button', { name: 'Entrar com outra conta' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Tentar de novo' })).toBeNull();
+    expect(calls).toContain('accept');
   });
 
   it('logs out on the server when entering with another account', async () => {
@@ -234,7 +241,7 @@ describe('InvitationPage (/convite/:token)', () => {
     expect(calls).toContain('logout');
   });
 
-  it('treats already_member as success', async () => {
+  it('treats already_member as success and shows the notice at the destination', async () => {
     const { impl } = makeFetch({
       authenticated: true,
       preview: () => json(previewBody(true)),
@@ -244,7 +251,181 @@ describe('InvitationPage (/convite/:token)', () => {
     await screen.findByRole('heading', { name: 'Você foi convidado' });
     fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+
+    const notice = await screen.findByRole('status');
+    expect(notice.textContent).toContain('Você já fazia parte de Agência Um. Nada mudou no seu acesso.');
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('does not bring the already-member notice back after closing it and leaving the area', async () => {
+    const { impl } = makeFetch({
+      authenticated: true,
+      preview: () => json(previewBody(true)),
+      accept: () => json({ status: 'already_member', context: { agencyId: AGENCY_A, clientId: null } })
+    });
+    const { probe } = renderInvite(impl);
+    await screen.findByRole('heading', { name: 'Você foi convidado' });
+    fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+
+    const notice = await screen.findByRole('status');
+    expect(notice.textContent).toContain('Você já fazia parte de Agência Um.');
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar' }));
+    expect(screen.queryByRole('status')).toBeNull();
+
+    // Leaving the area unmounts the shell, and coming back through history must not revive it.
+    act(() => probe.navigate('/'));
+    await screen.findByRole('heading', { name: 'Ageniza' });
+    act(() => probe.back());
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+    await screen.findByRole('heading', { name: 'Agência Um' });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('shows the already-member notice at the portal destination', async () => {
+    const { impl } = makeFetch({
+      authenticated: true,
+      preview: () => json(previewBody(true, { name: 'Cliente Um' })),
+      accept: () => json({ status: 'already_member', context: { agencyId: AGENCY_A, clientId: CLIENT_A } })
+    });
+    const { probe } = renderInvite(impl);
+    await screen.findByRole('heading', { name: 'Você foi convidado' });
+    fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
+    await waitFor(() => expect(probe.pathname).toBe(`/portal/${CLIENT_A}`));
+
+    const notice = await screen.findByRole('status');
+    expect(notice.textContent).toContain('Você já fazia parte de Agência Um. Nada mudou no seu acesso.');
+  });
+
+  it('enters the invitation context, not the one the session would resolve', async () => {
+    const { impl, calls, lastContextBodies } = makeFetch({
+      authenticated: true,
+      preview: () => json(previewBody(true)),
+      accept: () => json({ status: 'accepted', context: { agencyId: AGENCY_A, clientId: null } }),
+      resolve: { decision: 'enter', context: clientA }
+    });
+    const { probe } = renderInvite(impl);
+    await screen.findByRole('heading', { name: 'Você foi convidado' });
+    fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
+
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+    await screen.findByRole('heading', { name: 'Agência Um' });
+    expect(calls).not.toContain('resolve');
+    expect(lastContextBodies).toEqual([{ type: 'agency', agencyId: AGENCY_A }]);
+  });
+
+  it('hides the notice when the person navigates to another route of the agency', async () => {
+    const { impl } = makeFetch({
+      authenticated: true,
+      preview: () => json(previewBody(true)),
+      accept: () => json({ status: 'already_member', context: { agencyId: AGENCY_A, clientId: null } })
+    });
+    const { probe } = renderInvite(impl);
+    await screen.findByRole('heading', { name: 'Você foi convidado' });
+    fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+    await screen.findByRole('status');
+
+    // The agency shell does not unmount on a subroute change, so the notice leaves on its own.
+    fireEvent.click(screen.getByRole('link', { name: 'Clientes' }));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes`));
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('does not revive the notice through history when it was never closed', async () => {
+    const { impl } = makeFetch({
+      authenticated: true,
+      preview: () => json(previewBody(true)),
+      accept: () => json({ status: 'already_member', context: { agencyId: AGENCY_A, clientId: null } })
+    });
+    const { probe } = renderInvite(impl);
+    await screen.findByRole('heading', { name: 'Você foi convidado' });
+    fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+    await screen.findByRole('status');
+
+    act(() => probe.navigate('/'));
+    await screen.findByRole('heading', { name: 'Ageniza' });
+    act(() => probe.back());
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+    await screen.findByRole('heading', { name: 'Agência Um' });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('does not show the notice on /contextos, only at the agency or the portal', async () => {
+    const { impl } = makeFetch({ authenticated: true, resolve: { decision: 'select', contexts: [agencyA], highlighted: null } });
+    renderInvite(impl, { path: '/contextos', state: { invitationNotice: { agencyName: 'Agência Um' } } });
+
+    // Wait for the choice list; the loading state has its own LiveStatus.
+    await screen.findByRole('button', { name: /Agência Um/ });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('does not show the notice on the not-found route', async () => {
+    const { impl } = makeFetch({ authenticated: true });
+    renderInvite(impl, { path: '/endereco-inexistente', state: { invitationNotice: { agencyName: 'Agência Um' } } });
+    await screen.findByRole('heading', { name: 'Page not found' });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('accepts without another click when the login carried the invite and the account matches', async () => {
+    const { impl, calls } = makeFetch({ authenticated: true, preview: () => json(previewBody(true)) });
+    const { probe } = renderInvite(impl, { state: { inviteLogin: true } });
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+    await screen.findByRole('heading', { name: 'Agência Um' });
+
+    expect(calls).toContain('accept');
+    expect(calls).not.toContain('resolve');
+    // The status was `accepted`, not `already_member`: nothing to announce at the destination.
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('does not take the auto-accept marker from the URL', async () => {
+    const { impl, calls } = makeFetch({ authenticated: true, preview: () => json(previewBody(true)) });
+    renderInvite(impl, { path: '/convite/invite-token?inviteLogin=true' });
+
+    await screen.findByRole('button', { name: 'Aceitar convite' });
+    expect(calls).not.toContain('accept');
+  });
+
+  it('does not accept on its own when the session did not come from the invite login', async () => {
+    const { impl, calls } = makeFetch({ authenticated: true, preview: () => json(previewBody(true)) });
+    renderInvite(impl);
+    await screen.findByRole('button', { name: 'Aceitar convite' });
+    expect(calls).not.toContain('accept');
+  });
+
+  it('accepts nothing after a login with another account, and explains the invited e-mail', async () => {
+    const { impl, calls } = makeFetch({
+      authenticated: true,
+      sessionEmail: 'outra@example.test',
+      preview: () => json(previewBody(true))
+    });
+    const { probe } = renderInvite(impl, { state: { inviteLogin: true } });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('pessoa@example.test');
+    expect(screen.getByRole('button', { name: 'Entrar com outra conta' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Aceitar convite' })).toBeNull();
+    expect(calls).not.toContain('accept');
+    expect(probe.pathname).toBe('/convite/invite-token');
+  });
+
+  it('shows the invalid state when the automatic accept answers 410', async () => {
+    const invalid = (): Response => json({ error: { code: 'INVALID_LINK', message: 'Este link não é mais válido.' } }, 410);
+    let expired = false;
+    const { impl } = makeFetch({
+      authenticated: true,
+      preview: () => expired ? invalid() : json(previewBody(true)),
+      acceptError: invalid()
+    });
+    renderInvite(async (input, init) => {
+      if ((init?.method ?? 'GET') === 'POST' && String(input).endsWith('/accept')) expired = true;
+      return impl(input, init);
+    }, { state: { inviteLogin: true } });
+
+    await screen.findByRole('heading', { name: 'Este convite não é mais válido' });
+    expect(screen.getByText('Convites valem por 7 dias e só podem ser usados uma vez.')).toBeTruthy();
   });
 
   it('moves to the existing-account state on ACCOUNT_EXISTS', async () => {
@@ -267,49 +448,52 @@ describe('InvitationPage (/convite/:token)', () => {
     await screen.findByRole('button', { name: 'Aceitar convite' });
   });
 
-  it('clears the previous account cache on accept, so no old context reaches /contextos', async () => {
+  it('clears the previous account cache on accept, so the old shell never renders for the new account', async () => {
     // The previous session was authenticated, so `onSessionStarted` does not fire on refresh: only
-    // the explicit queryClient.clear() of the acceptance keeps account X's cache off /contextos.
-    const oldContext = { type: 'agency', agencyId: '22222222-2222-4222-8222-222222222222', agencyName: 'Agência ANTIGA', roleKey: 'admin', roleName: 'Admin', isOwner: true };
-    const newContext = { type: 'agency', agencyId: AGENCY_A, agencyName: 'Agência NOVA', roleKey: 'admin', roleName: 'Admin', isOwner: true };
-    const { impl, calls } = makeFetch({
-      authenticated: true,
-      preview: () => json(previewBody(true)),
-      resolve: { decision: 'select', contexts: [newContext], highlighted: null }
-    });
-    const { probe, queryClient } = renderInvite(impl);
+    // the explicit queryClient.clear() of the acceptance keeps account X's cached shell out of the
+    // destination. The agency fetch stays pending, so cached data would be the only thing on screen.
+    const { impl } = makeFetch({ authenticated: true, preview: () => json(previewBody(true)) });
+    let accepted = false;
+    const gated: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (accepted && url.endsWith(`/agencies/${AGENCY_A}/me`)) return new Promise<Response>(() => undefined);
+      if ((init?.method ?? 'GET') === 'POST' && url.endsWith('/accept')) accepted = true;
+      return impl(input, init);
+    };
+    const { probe, queryClient } = renderInvite(gated);
     await screen.findByRole('heading', { name: 'Você foi convidado' });
     await waitFor(() => expect(probe.sessionStatus).toBe('ready'));
-    queryClient.setQueryData(['contexts', 'resolve', null], { decision: 'select', contexts: [oldContext], highlighted: null });
+    queryClient.setQueryData(['agency', AGENCY_A, 'me'], {
+      agencyId: AGENCY_A, agencyName: 'Agência ANTIGA', isOwner: true, role: { key: 'admin', name: 'Admin' }, permissions: []
+    });
 
     fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
 
-    await waitFor(() => expect(probe.pathname).toBe('/contextos'));
-    await screen.findByText('Agência NOVA');
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
     expect(screen.queryByText('Agência ANTIGA')).toBeNull();
-    expect(calls.filter((call) => call === 'resolve')).toHaveLength(2);
   });
 
-  it('clears the previous account cache when creating a new account, so no old context reaches /contextos', async () => {
-    const oldContext = { type: 'agency', agencyId: '22222222-2222-4222-8222-222222222222', agencyName: 'Agência ANTIGA', roleKey: 'admin', roleName: 'Admin', isOwner: true };
-    const newContext = { type: 'agency', agencyId: AGENCY_A, agencyName: 'Agência NOVA', roleKey: 'admin', roleName: 'Admin', isOwner: true };
-    const { impl, calls } = makeFetch({
-      authenticated: true,
-      preview: () => json(previewBody(false)),
-      resolve: { decision: 'select', contexts: [newContext], highlighted: null }
-    });
-    const { probe, queryClient } = renderInvite(impl);
+  it('clears the previous account cache when creating a new account, so the old shell never renders', async () => {
+    const { impl } = makeFetch({ authenticated: true, preview: () => json(previewBody(false)) });
+    let created = false;
+    const gated: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (created && url.endsWith(`/agencies/${AGENCY_A}/me`)) return new Promise<Response>(() => undefined);
+      if ((init?.method ?? 'GET') === 'POST' && url.endsWith('/accept-new-account')) created = true;
+      return impl(input, init);
+    };
+    const { probe, queryClient } = renderInvite(gated);
     await screen.findByRole('heading', { name: 'Você foi convidado' });
     await waitFor(() => expect(probe.sessionStatus).toBe('ready'));
-    queryClient.setQueryData(['contexts', 'resolve', null], { decision: 'select', contexts: [oldContext], highlighted: null });
+    queryClient.setQueryData(['agency', AGENCY_A, 'me'], {
+      agencyId: AGENCY_A, agencyName: 'Agência ANTIGA', isOwner: true, role: { key: 'admin', name: 'Admin' }, permissions: []
+    });
 
     fillNewAccount();
     fireEvent.click(screen.getByRole('button', { name: 'Criar conta e entrar' }));
 
-    await waitFor(() => expect(probe.pathname).toBe('/contextos'));
-    await screen.findByText('Agência NOVA');
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
     expect(screen.queryByText('Agência ANTIGA')).toBeNull();
-    expect(calls.filter((call) => call === 'resolve')).toHaveLength(2);
   });
 
   it('moves to the invalid state when the accept answers 410, using the API error body', async () => {

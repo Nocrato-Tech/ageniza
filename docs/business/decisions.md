@@ -1554,6 +1554,47 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 
 ---
 
+## 2026-10-07 — ESTRUTURAL: Termos e Privacidade mudam de versão sem forçar o reaceite, e o aceite depois do cadastro é por documento
+
+**Contexto.** A decisão de 2026-09-24 sobre Termos e Privacidade deixou o reaceite em aberto, com gatilho: a primeira alteração de um dos documentos depois de existir gente com conta. O contrato de aceite era um só (`acceptTerms: true`, que grava as duas versões), então uma conta não tinha como aceitar um documento sem o outro. Issue #81.
+
+**Decisão.** O dono decidiu **não forçar** o reaceite.
+
+1. Quando a versão em vigor de Termos ou de Privacidade é mais nova que a última aceita pela conta, um aviso **não bloqueante** aparece no topo da casca da agência e do portal, com link para o texto e o botão "Li e aceito". Fechar sem aceitar é permitido; o aviso volta no próximo login.
+2. O aceite é **por documento e por versão**: `POST /me/legal-acceptances` com `{ document: 'terms' | 'privacy' }`. A versão gravada é sempre a em vigor no servidor (`AUTH_TERMS_VERSION`, `AUTH_PRIVACY_VERSION`), **nunca** uma que o cliente envie; repetir é idempotente; aceitar uma versão que a conta já superou não grava nada. Aceitar a Privacidade não marca os Termos.
+3. Nenhuma funcionalidade fica bloqueada por falta do aceite novo. A conta continua vinculada à última versão aceita de cada documento, e `GET /me/legal-acceptances` a devolve.
+4. O cadastro (aceite de convite com conta nova) continua aceitando as duas versões em vigor, com o checkbox único.
+
+**Consequência.** É estrutural porque muda o contrato de aceite e abre um segundo caminho de escrita em dado pessoal: `app_private.accept_legal_document(document, version)`, função `security definer` de escopo único que toma o usuário do ator da transação, nunca de um argumento. Tabela, colunas, grants e policies de `legal_acceptances` não mudam: `ageniza_app` continua sem INSERT direto, como o teste de tenancy já fixava. Não há backfill: conta sem linha para um documento aparece como pendente. As rotas ficam num módulo próprio, `legal`, sem permissão nomeada, por paridade com `/me/profile`: o aceite é da conta, não de um tenant. A versão de um documento é a data em que o texto passou a valer: uma data de verdade e nunca futura, conferida pela função e pela configuração (`AUTH_TERMS_VERSION`, `AUTH_PRIVACY_VERSION`), porque uma versão futura gravada como aceite suprimiria para sempre toda versão real depois dela (achado da revisão de segurança do PR #318). Negar o login ou uma rota por falta de aceite é o oposto desta decisão e a reabre.
+
+**Origem.** Issue #81, decisão do maestro com autonomia dada pelo dono do produto em 2026-10-07. **Pendente de validação pelo dono do produto.**
+
+---
+
+## 2026-10-07 — O aviso de `already_member` aparece uma vez no destino
+
+**Contexto.** `specs/auth.md` §7 dizia que `already_member` "não é erro" e levava ao contexto, mas não dizia onde nem como a pessoa sabia que o acesso já existia — e a descrição do PR #178 dizia o contrário. A re-revisão de #177/#178 (#184) deixou o ponto esperando decisão de produto.
+
+**Decisão.** O aceite de um convite por quem já tem o vínculo segue normalmente até o destino do próprio convite (a agência ou o portal). No topo de onde a pessoa cai, um aviso discreto diz: "Você já fazia parte de `<Agência>`. Nada mudou no seu acesso." O aviso aparece **uma vez**: some ao ser fechado ou quando a pessoa navega, e não volta por histórico nem por recarregar — ele viaja no `state` da navegação e é consumido na primeira renderização, nunca na URL, no `localStorage` ou no `sessionStorage`. O convite **não** é consumido no `already_member`: `used_at` continua nulo, como fixa o teste de integração do PR #187 (correção do maestro na #184, 2026-10-07).
+
+**Consequência.** Nenhuma rota, tabela ou formato de resposta muda: o aviso usa o `status: 'already_member'` que `POST /invitations/:token/accept` já devolve e o nome da agência que o preview já carrega. Consumir o convite nesse caso não teria ganho real — o link só serviria a quem já é membro, e mudá-lo exigiria migration sobre `app_private.accept_invitation`.
+
+**Origem.** Issue #184, decidida pelo maestro com autonomia dada pelo dono em 2026-10-07. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-07 — O convite é aceito automaticamente depois do login pelo link, só para o e-mail do convite
+
+**Contexto.** Quem recebia um convite para uma conta que já existia clicava em "Aceitar convite", era levado ao login com o token, entrava e precisava clicar de novo em "Aceitar convite" na volta. A #184 deixou o comportamento automático em aberto; a decisão de produto veio em 2026-10-07.
+
+**Decisão.** Depois do login, o aceite acontece **sem novo clique** apenas quando as duas condições valem: a pessoa chegou ao login pelo link do convite (o token viajou no `state` da navegação até o login) e o e-mail da conta autenticada é o mesmo do convite. Nesse caso a tela do convite aceita sozinha e a pessoa cai na agência ou no portal **do convite**. Se o e-mail for diferente, **nada é aceito**: a tela do convite explica que o convite foi enviado para outro endereço e oferece sair e entrar com a conta certa. Convite vencido ou revogado continua com o mesmo `INVALID_LINK`, sem revelar qual dos casos ocorreu.
+
+**Consequência.** Nenhuma rota muda. O marcador do login vive só no `state` da navegação, como o destino da sessão, nunca na URL — que carregaria o token no histórico e no referer. O destino é o contexto que a própria resposta do aceite carrega (`{ agencyId, clientId }`), nunca o que a sessão resolveria: sem isso, quem tem vínculo em mais de uma agência aceitava o convite de uma e caía na área de outra, com o aviso nomeando a agência errada (achado da revisão de segurança do PR #317). A comparação de e-mail acontece na tela, entre a sessão e o preview, e o `403 INVITATION_ACCOUNT_MISMATCH` da API continua como segunda barreira no aceite manual. O aceite automático não vale para quem abre o link já com sessão, nem para o `signedIn` da redefinição de senha, que continuam exigindo o clique.
+
+**Origem.** Issue #184, decidida pelo maestro com autonomia dada pelo dono em 2026-10-07. **Pendente de validação** pelo dono do produto.
+
+---
+
 ## 2026-10-07 — Remover e reativar: quem vê removidos, o estado errado é 409, e a sessão não é encerrada
 
 **Contexto.** A #98 implementa `POST …/remove` e `POST …/reactivate`. A SPEC fixa as permissões, as proteções e que a reativação exige o papel no corpo; não fixa qual permissão é "administrativa" para revelar vínculos removidos (regra inviolável 9, e "apenas para Admin e Owner" em 2026-09-24), nem o que acontece ao remover quem já está removido (a issue deixa a escolha), nem o que a remoção faz com a sessão da pessoa. Nada abaixo muda tabela, policy ou formato de resposta usado por outra rota.
