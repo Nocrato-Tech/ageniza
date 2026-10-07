@@ -1776,3 +1776,15 @@ A ordem inversa já estava correta e fica coberta por teste: se o convite é ins
 **Consequência.** Mexe em grant de tabela que já existe, por isso o gate de CI trata a migration como estrutural e este registro vai junto; pelos cinco critérios não é estrutural: nenhuma tabela, coluna, policy, formato de resposta ou forma de autorização muda, e não há backfill. Nenhum código de produção usava a escrita direta. Quem precisar um dia de apagar uma dessas linhas (purga de retenção, LGPD) cria uma função `security definer` de escopo único, como a #343 já previu, e não devolve o grant.
 
 **Origem.** Issue #356, decisão do maestro com autonomia dada pelo dono do produto em 2026-10-07. **Pendente de validação** pelo dono do produto.
+
+---
+
+## 2026-10-07 — A lista de colaboradores ordena por nome dobrado, sem acento nem caixa, e não pelo collation do banco
+
+**Contexto.** A SPEC §6 e o aceite da #89 pedem a lista "ordenada por nome ascendente". `listCollaborators` ordenava por `member.name asc` cru, isto é, pela ordenação do banco: o collation do PostgreSQL decide acento e caixa, o banco de produção não fixa collation no repositório, e nenhum teste prendia o caso comum em português. A carteira de clientes (#291) já resolve o mesmo problema dobrando o texto na consulta (`foldTextSql`), e a auditoria (#355) mostrou que fixar `collate "C"` deixava os testes verdes.
+
+**Decisão.** A lista de colaboradores ordena por `foldTextSql(member.name)` ascendente, desempate por `membership.id`, o mesmo critério da lista de clientes: `normalize(..., NFD)` decompõe o acento, o regexp remove as marcas combinantes e `lower()` cobre maiúsculas, sem `unaccent` e sem depender do collation. `Ágata`, `álvaro`, `Beatriz`, `Édson`, `eduardo` saem nessa ordem em qualquer banco; nomes que dobram para o mesmo texto (`Ana` e `ana`) ficam na ordem do id do vínculo. O helper saiu do service de clientes para `plugins/infra/sql-text.ts`, para os dois módulos usarem a mesma expressão.
+
+**Consequência.** A ordem deixa de depender do collation do banco (inclusive em produção, que não o fixa). Muda apenas a ordem de exibição em nomes com acento ou maiúsculas, inclusive entre páginas; busca (`q`) e filtros não mudam. Ordenar pelo nome cru ou por `collate "C"` reabre esta decisão.
+
+**Origem.** Issue #355 (auditoria de fechamento de Colaboradores, épico #88), decidida pelo maestro. **Pendente de validação** pelo dono do produto.
