@@ -455,16 +455,21 @@ describe('client detail (#136)', () => {
     expect(await openEditDialog()).toBeTruthy();
   });
 
-  it('shows no closing action before its own task lands (#139)', async () => {
+  it('shows the closing actions only for cliente.arquivar', async () => {
+    const manager = makeFetch({ permissions: MANAGER_PERMISSIONS });
+    renderClientDetail(manager.impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    expect(screen.queryByRole('button', { name: 'Ações do cliente' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reativar' })).toBeNull();
+    cleanup();
+
     const admin = makeFetch();
     renderClientDetail(admin.impl);
     await screen.findByRole('heading', { name: 'Padaria Central' });
-    expect(screen.queryByRole('button', { name: 'Ações de encerramento' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Reativar' })).toBeNull();
-    expect(within(screen.getByRole('heading', { name: 'Padaria Central' }).closest('header') as HTMLElement).queryByText('⋯')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Ações do cliente' })).toBeTruthy();
   });
 
-  it('never shows Editar on an archived client, not even a Reativar before #139', async () => {
+  it('never shows Editar on an archived client; Reativar is the only lifecycle action (#139)', async () => {
     const admin = makeFetch({ client: () => json(archivedClient) });
     renderClientDetail(admin.impl);
     await screen.findByRole('heading', { name: 'Padaria Central' });
@@ -474,7 +479,8 @@ describe('client detail (#136)', () => {
     // still not appear (the mutation that ignores `active` dies here).
     expect(screen.queryByText(/encerra em/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Editar' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Reativar' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Ações do cliente' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Reativar' })).toBeTruthy();
     cleanup();
 
     const manager = makeFetch({ permissions: MANAGER_PERMISSIONS, client: () => json(archivedClient) });
