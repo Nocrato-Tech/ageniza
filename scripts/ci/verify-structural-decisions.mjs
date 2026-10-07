@@ -73,13 +73,13 @@ if (process.argv[1]?.endsWith('verify-structural-decisions.mjs')) {
 
   if (!satisfied) {
     console.error(
-      `\nThis change carries a structural migration but does not touch ${DECISIONS_FILE}.\n` +
+      `\nThis change carries a structural migration but does not touch ${DECISIONS_FILE} or add a file under ${DECISIONS_DIRECTORY}.\n` +
       'Read docs/business/structural-changes.md, then record the decision — context, decision and\n' +
       'consequence — in the same change. If this is a false positive, say so in the entry and keep it:\n' +
       'a recorded non-decision costs one paragraph, an unrecorded one costs a retrofit.'
     );
     process.exitCode = 1;
   } else if (structural.length > 0) {
-    console.log(`\nStructural change recorded in ${DECISIONS_FILE}.`);
+    console.log('\nStructural change recorded in the decisions record.');
   }
 }
