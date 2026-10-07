@@ -21,7 +21,7 @@ import {
   type ResolvedPagination
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
-import { raw, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+import { raw, isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import {
   createInvitationToken,
   hashInvitationToken,
@@ -36,6 +36,7 @@ import { createRequireSession } from '../auth/session-guard.js';
 import type { EmailService } from '../auth/email-service.js';
 import { AUTH_RATE_LIMITS } from '../auth/policy.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
+import { tryAgain } from '../../plugins/infra/conflict.js';
 import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { isInsufficientPrivilegeError, tenantHolds } from '../tenancy/guards.js';
 
@@ -349,6 +350,7 @@ const createCollaboratorInvitation = async (
       return { invitationId: row.id, expiresAt: new Date(row.expires_at), token, agencyName: agency.agencyName, supersededInvitationId };
     });
   } catch (error) {
+    if (isRetryableConflict(error)) throw tryAgain();
     if (isInsufficientPrivilegeError(error)) throw forbidden();
     if (error instanceof HttpError || !isDuplicateUserError(error)) throw error;
     throw new Error('Invitation could not be created.', { cause: error });
@@ -413,6 +415,9 @@ const createClientInvitation = async (
       agencyName: client.agency_name,
       clientName: client.client_name
     };
+  }).catch((error: unknown) => {
+    if (isRetryableConflict(error)) throw tryAgain();
+    throw error;
   });
 };
 
@@ -428,7 +433,9 @@ const resendInvitation = async (
   if (tenant === undefined) throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Agency not found.' });
   const token = tokenForInsert(dependencies.config.appPublicUrl);
   return withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
-    // The row is locked first; pendingness is a second statement, after the lock wait (issue #304).
+    // The identity fields never change, so they can be read without the row lock; the slot lock
+    // must come before it, the order the creation also uses, or the two transactions deadlock
+    // (issue #335). Pendingness is still decided after the last lock (issue #304).
     const currentResult = await raw<RawRows<InvitationRow>>(transaction, `
       select invitation.id, invitation.purpose, invitation.email, invitation.agency_id, agency.name as agency_name,
              invitation.client_id, client.name as client_name, invitation.role_id
@@ -436,7 +443,6 @@ const resendInvitation = async (
       join public.agencies agency on agency.id = invitation.agency_id
       left join public.clients client on client.id = invitation.client_id
       where invitation.id = ?::uuid and invitation.agency_id = ?::uuid
-      for update of invitation
     `, [invitationId, agencyId]);
     const current = currentResult.rows[0];
     if (current === undefined || current.purpose === 'agency_activation') throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Invitation not found.' });
@@ -448,9 +454,11 @@ const resendInvitation = async (
       `, [current.role_id, agencyId]);
       if (adminResult.rows[0]?.is_admin === true) throw adminGrantForbidden();
     }
-    // Slot lock before the pendingness read: an invitation that expires while waiting for it must
-    // not be resent (issue #304 review).
     await lockPendingInvitationSlot(transaction, agencyId, current.purpose, current.email, current.client_id);
+    const locked = await raw<RawRows<{ id: string }>>(transaction, `
+      select id from public.invitations where id = ?::uuid and agency_id = ?::uuid for update
+    `, [invitationId, agencyId]);
+    if (locked.rows[0] === undefined) throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Invitation not found.' });
     if (!(await isInvitationPending(transaction, agencyId, invitationId))) throw invitationNotPending();
     const revoked = await raw<RawRows<{ id: string }>>(transaction, `
       update public.invitations set revoked_at = now() where id = ?::uuid returning id
@@ -477,6 +485,7 @@ const resendInvitation = async (
       email: current.email
     };
   }).catch((error: unknown) => {
+    if (isRetryableConflict(error)) throw tryAgain();
     if (isInsufficientPrivilegeError(error)) throw forbidden();
     throw error;
   });
@@ -508,6 +517,9 @@ const cancelInvitation = async (
     // A silently filtered UPDATE would otherwise report 204 while the invitation stays live.
     if (revoked.rows[0] === undefined) throw invitationNotPending();
     await auditInTransaction(transaction, { action: 'invitation.revoked', actorUserId: auth.userId, agencyId, targetId: invitationId });
+  }).catch((error: unknown) => {
+    if (isRetryableConflict(error)) throw tryAgain();
+    throw error;
   });
 };
 
@@ -531,6 +543,8 @@ const acceptInvitation = async (
     ]);
     return rows.rows[0];
   }).catch((error: unknown) => {
+    // A lost race is not an invalid link and must be repeatable (issue #335).
+    if (isRetryableConflict(error)) throw tryAgain();
     // The security-definer function uses private PostgreSQL error codes for invalid links. Its
     // message is intentionally discarded so every invalid state has one public response.
     if (typeof error === 'object' && error !== null && 'code' in error && String((error as { code?: unknown }).code).startsWith('A')) {
