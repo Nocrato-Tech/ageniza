@@ -30,11 +30,6 @@ const isBlank = (column) =>
 
 const OPEN_TO_CLIENT = "('awaiting_approval', 'adjusting', 'approved', 'published')";
 
-const contentConversationOpen = (contentId) => `exists (
-            select 1 from public.contents content
-            where content.id = ${contentId} and content.status in ${OPEN_TO_CLIENT}
-          )`;
-
 export async function up(knex) {
   await knex.raw(`
     alter table public.client_threads
@@ -46,6 +41,26 @@ export async function up(knex) {
     create unique index client_threads_content_key on public.client_threads (content_id) where content_id is not null;
 
     grant insert (content_id) on public.client_threads to ageniza_app;
+
+    -- The agency writes in the conversation of a content when the content is open to the client and the caller may operate and
+    -- read it. It is one function so that no rule depends on what a sub-select reads under the policies of another table.
+    create function app_private.content_open_to_agency_writer(p_content_id uuid)
+    returns boolean
+    language sql
+    stable
+    security definer
+    set search_path = ''
+    as $function$
+      select exists (
+        select 1 from public.contents content
+        where content.id = p_content_id
+          and content.status in ${OPEN_TO_CLIENT}
+          and app_private.has_agency_permission(app_private.client_agency_id(content.client_id), 'conteudo.operar')
+          and app_private.has_agency_permission(app_private.client_agency_id(content.client_id), 'conteudo.visualizar')
+      )
+    $function$;
+    revoke all on function app_private.content_open_to_agency_writer(uuid) from public;
+    grant execute on function app_private.content_open_to_agency_writer(uuid) to ageniza_app;
 
     drop policy client_threads_select on public.client_threads;
     drop policy client_threads_insert on public.client_threads;
@@ -92,12 +107,7 @@ export async function up(knex) {
           or (
             content_id is not null
             and (
-              (
-                opened_side = 'agency'
-                and app_private.has_agency_permission(app_private.client_agency_id(client_id), 'conteudo.operar')
-                and app_private.has_agency_permission(app_private.client_agency_id(client_id), 'conteudo.visualizar')
-                and ${contentConversationOpen('content_id')}
-              )
+              (opened_side = 'agency' and app_private.content_open_to_agency_writer(content_id))
               or (opened_side = 'client' and app_private.content_open_to_client(content_id))
             )
           )
@@ -162,12 +172,7 @@ export async function up(knex) {
                     thread.content_id is null
                     and app_private.has_agency_permission(app_private.client_agency_id(client_thread_comments.client_id), 'cliente.operar')
                   )
-                  or (
-                    thread.content_id is not null
-                    and app_private.has_agency_permission(app_private.client_agency_id(client_thread_comments.client_id), 'conteudo.operar')
-                    and app_private.has_agency_permission(app_private.client_agency_id(client_thread_comments.client_id), 'conteudo.visualizar')
-                    and ${contentConversationOpen('thread.content_id')}
-                  )
+                  or (thread.content_id is not null and app_private.content_open_to_agency_writer(thread.content_id))
                 )
               )
               or (

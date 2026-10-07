@@ -467,6 +467,24 @@ describe('request changes: awaiting approval to adjusting, with a comment (issue
     expect((await w.contentRow(archived)).status).toBe('awaiting_approval');
   });
 
+  it('waits for an edit that holds the row, then refuses the revision the person saw', async () => {
+    const id = await w.seedContent(ids.clientA1, { status: 'awaiting_approval' });
+    const editor = await w.openTransactionAs(ids.productionA);
+    let asking: Promise<unknown> | undefined;
+
+    try {
+      await editor('contents').where({ id }).update({ caption: 'Legenda nova' });
+      asking = requestChanges(ids.portalA1, id, 1, 'Pedido sobre a legenda antiga').catch((error: unknown) => error);
+      await w.waitUntilSomeoneWaitsOnALock();
+    } finally {
+      await editor.commit();
+    }
+
+    expect(await asking).toMatchObject({ code: 'A0063' });
+    expect(await w.contentRow(id)).toMatchObject({ status: 'awaiting_approval', revision: 2 });
+    expect(await w.getOwner().knex('client_threads').where({ content_id: id }).select('id')).toHaveLength(0);
+  });
+
   it('waits for the agency that is opening the conversation of the same content, then uses that one', async () => {
     const id = await w.seedContent(ids.clientA1, { status: 'awaiting_approval' });
     const agency = await w.openTransactionAs(ids.productionA);
