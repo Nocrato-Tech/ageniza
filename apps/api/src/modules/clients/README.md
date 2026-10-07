@@ -1,4 +1,4 @@
-# Módulo `clients` (issues #124, #125, #126, #127, #128, #129, #130 e #132)
+# Módulo `clients` (issues #124, #125, #126, #127, #128, #129, #130, #131 e #132)
 
 Cadastrar, ler, editar e listar os clientes da agência, mais o estudo de marca, as personas e a
 conversa em thread com o cliente (as rotas dela estão na seção "Conversa", abaixo).
@@ -19,6 +19,8 @@ de RLS da tabela também exige:
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/personas/:personaId` | `cliente.operar` |
 | `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/archive` | `cliente.operar` |
 | `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive` | `cliente.operar` |
+
+As quatro rotas de encerrar, arquivar e reativar o cliente têm a sua seção, abaixo.
 
 O `POST` aceita só `{ name }`. O `PATCH` aceita qualquer subconjunto dos campos de cadastro da
 seção 3 da SPEC, e `null` limpa um campo. Contratos em `packages/contracts/src/clients.ts`.
@@ -236,7 +238,50 @@ CLIENT_ARCHIVED` para cliente arquivado da própria agência (antes, o `404` gen
 
 Decisão: `2026-10-07-acessos-ao-portal-remover-e-reativar-pessoa-sao-idempotentes`.
 
+## Encerrar o contrato, arquivar e reativar (#131; o job é a #133)
+
+| método | rota | permissão |
+|---|---|---|
+| `PUT` | `/agencies/:agencyId/clients/:clientId/closing` | `cliente.arquivar` |
+| `DELETE` | `/agencies/:agencyId/clients/:clientId/closing` | `cliente.arquivar` |
+| `POST` | `/agencies/:agencyId/clients/:clientId/archive` | `cliente.arquivar` |
+| `POST` | `/agencies/:agencyId/clients/:clientId/reactivate` | `cliente.arquivar` |
+
+Em `lifecycle-routes.ts` e `lifecycle-service.ts`. `status`, `archived_at` e `closing_date` estão fora de
+todo *grant* de `ageniza_app`: o único escritor são as funções `app_private.set_client_closing_date`,
+`archive_client` e `reactivate_client`, que conferem `cliente.arquivar` na agência do próprio cliente
+(a rota é a segunda barreira, não a primeira). O job diário chama `archive_due_clients`, que faz o que
+`archive_client` faz para cada cliente vencido, então rota e job têm o mesmo efeito: portal fechado na
+requisição seguinte, convites de portal pendentes revogados, vínculos preservados, `closing_date` limpa,
+evento em `audit.events`. Todas respondem o cliente (`200`), no mesmo formato do `PATCH`.
+
+- **Encerramento**: corpo `{ closingDate: 'YYYY-MM-DD' }`, dia que existe no calendário; "hoje ou depois"
+  é a regra da função, em `America/Sao_Paulo` (`app_private.sao_paulo_date`), e ontem é `400` com
+  `details.issues[0].path = closingDate`. Hoje é aceito e o cliente segue `active`, com o portal aberto: o
+  job só arquiva `closing_date` anterior a hoje. Agendar de novo troca a data. O `PATCH` do cadastro não
+  alcança a coluna (`.strict()` na rota, sem *grant* no banco).
+- **Desmarcar** (`DELETE`): sem encerramento agendado é `409 CLOSING_DATE_NOT_SET`.
+- **Arquivar** sem pré-condição; cliente já arquivado é `409 CLIENT_ARCHIVED`, e nas outras três rotas
+  também (a única ação de um cliente arquivado é reativar).
+- **Reativar**: cliente ativo é `409 CLIENT_NOT_ARCHIVED`; nome em uso entre os ativos (a função compara
+  como o índice único: sem maiúsculas, com espaços internos e NBSP normalizados) é `409
+  CLIENT_NAME_IN_USE` e o cliente segue arquivado. Os convites revogados no arquivamento não voltam, e as
+  pessoas com vínculo entram de novo sem convite.
+- **Disputa com convite do mesmo cliente**: reenviar um convite trava a linha dele e depois o cliente;
+  arquivar trava o cliente e depois os convites. Duas transações reais podem se cruzar (`40P01`) e uma
+  perde. A rota que perde responde `409 TRY_AGAIN`, sem detalhe do banco e sem nada gravado, e repetir
+  funciona; o reenvio já fazia o mesmo (#335).
+- **Convite criado ou reenviado enquanto o cliente é arquivado**: o gatilho da `20261006000400` trava o cliente e,
+  achando-o arquivado depois da espera, levanta `A0020`. As duas rotas de convite (`invitations/routes.ts`) o
+  traduzem para `409 CLIENT_ARCHIVED` e nada é criado; antes era `500`.
+- O `404` é um só para cliente inexistente, de outra agência ou com id que não é UUID. Se a função
+  recusar depois das checagens (permissão perdida no meio, cliente arquivado no meio), a recusa é relida
+  numa transação nova e vira o `403`, o `404` ou o `409` que a checagem teria dado.
+
+Decisões: `2026-10-07-a-data-de-encerramento-do-cliente-vem-de-uma-funcao-pura-do-fuso` e
+`2026-10-07-encerrar-arquivar-e-reativar-cliente-o-que-a-rota-recusa-e-como-responde`.
+
 ## O que ficou de fora
 
-- Arquivar/reativar e encerramento (`#131`).
+- A aba Geral e as ações no detalhe (telas).
 - O portal do cliente e a aba Acessos (telas).
