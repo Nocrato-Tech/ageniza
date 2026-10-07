@@ -458,7 +458,7 @@ describe('PATCH /agencies/:agencyId/collaborators/:membershipId (issue #97)', { 
     const astral = '😀'.repeat(129);
     const bodies: unknown[] = [
       {}, { jobTitle: undefined }, { unknown: 1 }, { jobTitle: 'X', extra: true }, { roleId: null }, { roleId: 'nope' }, { roleId: 7 },
-      { jobTitle: '' }, { jobTitle: '   ' }, { jobTitle: 5 }, { jobTitle: 'a'.repeat(257) }, { jobTitle: huge },
+      { jobTitle: 5 }, { jobTitle: 'a'.repeat(257) }, { jobTitle: huge },
       { jobTitle: astral }, { jobTitle: 'Edi\ntor' }, { jobTitle: 'Edi\u0000tor' }, { jobTitle: 'Edi\ttor' }, { jobTitle: '\u007F' }
     ];
     for (const payload of bodies) {
@@ -481,6 +481,67 @@ describe('PATCH /agencies/:agencyId/collaborators/:membershipId (issue #97)', { 
     const boundary = await patch(fx.ownerCookie, fx.agencyId, target.membershipId, { jobTitle: 'b'.repeat(256) });
     expect(boundary.status).toBe(200);
     expect((await membershipRow(target.membershipId)).job_title).toBe('b'.repeat(256));
+  });
+
+  // Issue #324. The job title follows the display-name rule of #200: each class the review of #320
+  // found is a 400 and nothing is stored, `updated_at` included.
+  it.each([
+    ['right-to-left override', 'Analista ‮nimda'],
+    ['left-to-right isolate', 'Analista ⁦admin'],
+    ['zero-width space', 'Ana​lista'],
+    ['zero-width space only', '​'],
+    ['word joiner', 'Ana⁠lista'],
+    ['byte order mark', 'Ana﻿lista'],
+    ['NEL', 'Ana\u0085lista'],
+    ['CSI', 'Ana\u009Blista'],
+    ['line separator', 'Ana lista'],
+    ['paragraph separator', 'Ana lista'],
+    ['Hangul filler', 'Anaㅤlista'],
+    ['Hangul filler only', 'ᅟ'],
+    ['no letter or number', '...']
+  ])('refuses a job title with %s: 400, and nothing is stored', async (_label, title) => {
+    const fx = await createAgency('title-chars');
+    const target = await addMember(fx.agencyId, 'title-chars-target', presetRoleIds.production, { jobTitle: 'Editor', acts: false });
+    const before = await owner.knex('agency_memberships').where({ id: target.membershipId }).first('job_title', 'role_id', 'updated_at');
+
+    const alone = await patch(fx.ownerCookie, fx.agencyId, target.membershipId, { jobTitle: title });
+    const withRole = await patch(fx.ownerCookie, fx.agencyId, target.membershipId, { jobTitle: title, roleId: presetRoleIds.sales });
+
+    for (const response of [alone, withRole]) {
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    }
+    // The role in the second body is not applied either: the body is refused as a whole.
+    expect(await owner.knex('agency_memberships').where({ id: target.membershipId }).first('job_title', 'role_id', 'updated_at')).toEqual(before);
+  });
+
+  it('a blank job title clears it, like null, and an invisible-only one is refused instead of cleared', async () => {
+    const fx = await createAgency('title-blank');
+    const target = await addMember(fx.agencyId, 'title-blank-target', presetRoleIds.production, { jobTitle: 'Editor', acts: false });
+
+    for (const blank of ['', '   ', '\t', ' ', '﻿']) {
+      await owner.knex('agency_memberships').where({ id: target.membershipId }).update({ job_title: 'Editor' });
+      const response = await patch(fx.ownerCookie, fx.agencyId, target.membershipId, { jobTitle: blank });
+      expect(response.status, JSON.stringify(blank)).toBe(200);
+      expect(response.body.jobTitle).toBeNull();
+      expect((await membershipRow(target.membershipId)).job_title, JSON.stringify(blank)).toBeNull();
+    }
+
+    await owner.knex('agency_memberships').where({ id: target.membershipId }).update({ job_title: 'Editor' });
+    const invisible = await patch(fx.ownerCookie, fx.agencyId, target.membershipId, { jobTitle: '​​' });
+    expect(invisible.status).toBe(400);
+    expect((await membershipRow(target.membershipId)).job_title).toBe('Editor');
+  });
+
+  it('the titles people actually have are stored exactly, joiners between letters included', async () => {
+    const fx = await createAgency('title-accepted');
+    const target = await addMember(fx.agencyId, 'title-accepted-target', presetRoleIds.production, { acts: false });
+
+    for (const title of ['Gestor de Operação', 'Editor de Vídeo', '3D Artist', 'می‌خواهم', 'Designer \u{1F469}‍\u{1F4BB}']) {
+      const response = await patch(fx.ownerCookie, fx.agencyId, target.membershipId, { jobTitle: title });
+      expect(response.status, title).toBe(200);
+      expect((await membershipRow(target.membershipId)).job_title, title).toBe(title);
+    }
   });
 
   it('every title the route stores can be found by the job title filter of the listing', async () => {
