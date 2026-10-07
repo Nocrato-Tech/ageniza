@@ -398,6 +398,24 @@ describe('an over-long path parameter answers 414 inside the envelope (#217)', (
     const health = await app.app.inject({ method: 'GET', url: '/health', headers: origin });
     expect(health.statusCode).toBe(200);
 
+    // Review of #321 (issue #309): the equality above cannot see a regression that changes the
+    // header in BOTH replies -- they come from the same `SECURITY_HEADER_OPTIONS` -- so the whole
+    // reference set is pinned by value too, in one assertion (full CSP, full HSTS, the rest).
+    expect(securityHeadersOf(health)).toEqual({
+      'content-security-policy': "default-src 'none';base-uri 'none';font-src 'self' https: data:;form-action 'self';frame-ancestors 'none';img-src 'self' data:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' https: 'unsafe-inline';upgrade-insecure-requests",
+      'cross-origin-opener-policy': 'same-origin',
+      'cross-origin-resource-policy': 'same-origin',
+      'origin-agent-cluster': '?1',
+      'referrer-policy': 'no-referrer',
+      'strict-transport-security': 'max-age=31536000; includeSubDomains',
+      'x-content-type-options': 'nosniff',
+      'x-dns-prefetch-control': 'off',
+      'x-download-options': 'noopen',
+      'x-frame-options': 'SAMEORIGIN',
+      'x-permitted-cross-domain-policies': 'none',
+      'x-xss-protection': '0'
+    });
+
     const overlongResponse = await app.app.inject({ method: 'GET', url: `/invitations/${overlong}`, headers: origin });
     expect(overlongResponse.statusCode).toBe(414);
     expectRouterErrorHeaders(overlongResponse, health);
