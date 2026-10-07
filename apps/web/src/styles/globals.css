@@ -622,11 +622,6 @@ input:focus-visible {
   margin: 0;
 }
 
-.collaborator-detail__identity .collaborator-detail__self-name {
-  color: var(--text-primary);
-  font: var(--heading-md);
-}
-
 .self-profile {
   display: grid;
   gap: var(--space-4);
@@ -639,6 +634,11 @@ input:focus-visible {
 
 .self-profile__readonly p {
   margin: 0;
+}
+
+.self-profile__label {
+  color: var(--text-secondary);
+  font: var(--label-sm);
 }
 
 .collaborators__empty,
