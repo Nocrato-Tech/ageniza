@@ -1640,27 +1640,24 @@ describe('self profile editing (#108)', () => {
     expect(modal.querySelector('progress')).toBeNull();
   });
 
-  it('refreshes the name and photo cached for another agency, because both belong to the user', async () => {
+  // Split on purpose (review of #288): each global field has its own invalidation call in
+  // `SelfProfilePhoto` and `SelfProfileFields`. A test that changes both only proves the pair,
+  // not either call, so the photo and the name are exercised apart from each other.
+  it('refreshes the photo cached for another agency when only the photo changes', async () => {
     const membershipB = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
     const newPhoto = 'https://storage.test/ana-global.png';
-    let displayName = anaPrado.name;
     let photoUrl: string | null = null;
     const personFor = (agencyId: string) => ({
       ...anaPrado,
-      name: displayName,
       membershipId: agencyId === AGENCY_B ? membershipB : anaPrado.membershipId,
       photoUrl
     });
     const { impl } = makeFetch({
-      session: () => json({ user: { id: sessionBody.user.id, name: displayName, email: anaPrado.email }, session: sessionBody.session }),
+      session: () => json({ user: { id: sessionBody.user.id, name: anaPrado.name, email: anaPrado.email }, session: sessionBody.session }),
       collaborators: (_query, agencyId) => json({ data: [personFor(agencyId)], meta: meta(1, 1, 1) }),
       detail: (membershipId, agencyId) => membershipId === membershipB || membershipId === anaPrado.membershipId
         ? json(personFor(agencyId))
         : json({ error: { code: 'NOT_FOUND', message: 'Not found' } }, 404),
-      updateProfile: (body) => {
-        displayName = (body as { name: string }).name;
-        return json({ id: sessionBody.user.id, name: displayName });
-      },
       uploadPhoto: () => { photoUrl = newPhoto; return json({ imageUrl: newPhoto }); }
     });
     const { container, probe } = renderCollaborators(impl);
@@ -1671,27 +1668,70 @@ describe('self profile editing (#108)', () => {
 
     // Agency A: Ana's badge starts with her name and initials, no photo.
     await waitFor(() => expect(badgeName()).toBe('Ana Prado'));
-    // Agency B: the same global person, cached there before any change.
+    // Agency B: the same global person, cached there before the upload.
     await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/colaboradores`); });
     await waitFor(() => expect(badgeName()).toBe('Ana Prado'));
     expect(container.querySelector('.collaborators__grid img.ui-avatar__photo')).toBeNull();
 
-    // Back to A, change the name and upload a photo from the own profile.
+    // Back to A, upload a photo from the own profile without touching the name.
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_A}/colaboradores`); });
+    fireEvent.click(await screen.findByRole('link', { name: 'Ver detalhes de Ana Prado' }));
+    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    fireEvent.change(modal.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [new File([pngBytes], 'foto.png', { type: 'image/png' })] }
+    });
+    await waitFor(() => expect(modal.querySelector('img.ui-avatar__photo')?.getAttribute('src')).toBe(newPhoto), { timeout: 5000 });
+
+    // B's cache predates the upload; the photo must be there without a reload. The name never
+    // changed, so only the photo invalidation can have carried anything across.
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/colaboradores`); });
+    await waitFor(() => expect(container.querySelector('.collaborators__grid img.ui-avatar__photo')?.getAttribute('src')).toBe(newPhoto), { timeout: 5000 });
+    expect(badgeName()).toBe('Ana Prado');
+  });
+
+  it('refreshes the name cached for another agency when only the name changes', async () => {
+    const membershipB = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    let displayName = anaPrado.name;
+    const personFor = (agencyId: string) => ({
+      ...anaPrado,
+      name: displayName,
+      membershipId: agencyId === AGENCY_B ? membershipB : anaPrado.membershipId
+    });
+    const { impl } = makeFetch({
+      session: () => json({ user: { id: sessionBody.user.id, name: displayName, email: anaPrado.email }, session: sessionBody.session }),
+      collaborators: (_query, agencyId) => json({ data: [personFor(agencyId)], meta: meta(1, 1, 1) }),
+      detail: (membershipId, agencyId) => membershipId === membershipB || membershipId === anaPrado.membershipId
+        ? json(personFor(agencyId))
+        : json({ error: { code: 'NOT_FOUND', message: 'Not found' } }, 404),
+      updateProfile: (body) => {
+        displayName = (body as { name: string }).name;
+        return json({ id: sessionBody.user.id, name: displayName });
+      }
+    });
+    const { container, probe } = renderCollaborators(impl);
+
+    // The account menu shows the same person's name; scope the badge, or the query matches twice.
+    const badgeName = (): string | null | undefined =>
+      container.querySelector('.collaborators__grid .ui-badge-card__name')?.textContent;
+
+    // Agency A, then B: the same global person cached under both, still named "Ana Prado".
+    await waitFor(() => expect(badgeName()).toBe('Ana Prado'));
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/colaboradores`); });
+    await waitFor(() => expect(badgeName()).toBe('Ana Prado'));
+
+    // Back to A, save a new name without uploading a photo.
     await act(async () => { probe.navigate(`/agencia/${AGENCY_A}/colaboradores`); });
     fireEvent.click(await screen.findByRole('link', { name: 'Ver detalhes de Ana Prado' }));
     const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
     fireEvent.change(within(modal).getByRole('textbox', { name: 'Nome' }), { target: { value: 'Ana Prado Silva' } });
     fireEvent.click(within(modal).getByRole('button', { name: 'Salvar' }));
     await screen.findByRole('dialog', { name: 'Ana Prado Silva' });
-    fireEvent.change(modal.querySelector('input[type="file"]') as HTMLInputElement, {
-      target: { files: [new File([pngBytes], 'foto.png', { type: 'image/png' })] }
-    });
-    await waitFor(() => expect(modal.querySelector('img.ui-avatar__photo')?.getAttribute('src')).toBe(newPhoto), { timeout: 5000 });
 
-    // B's cache predates both changes; name and photo must be there without a reload.
+    // B's cache predates the save; the name must be there without a reload. No photo was uploaded,
+    // so only the name invalidation can have carried anything across.
     await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/colaboradores`); });
     await waitFor(() => expect(badgeName()).toBe('Ana Prado Silva'));
-    await waitFor(() => expect(container.querySelector('.collaborators__grid img.ui-avatar__photo')?.getAttribute('src')).toBe(newPhoto), { timeout: 5000 });
+    expect(container.querySelector('.collaborators__grid img.ui-avatar__photo')).toBeNull();
   });
 
   it('keeps another person\'s name and photo read-only', async () => {
