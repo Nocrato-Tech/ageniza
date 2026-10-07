@@ -328,6 +328,18 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
     expect(calls.some((call) => call === `GET /agencies/${AGENCY_A}/collaborators?page=1&pageSize=24`)).toBe(true);
   });
 
+  it('shows the page count with the total from the contract, even when the page is smaller (#357)', async () => {
+    const pagePeople = Array.from({ length: 24 }, (_value, index) => ({
+      ...anaPrado,
+      membershipId: `20000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      name: `Pessoa ${index + 1}`
+    }));
+    const { impl } = makeFetch({ collaborators: () => json({ data: pagePeople, meta: meta(1, 61, 3) }) });
+    renderCollaborators(impl);
+
+    expect(await screen.findByText('24 de 61 pessoas')).toBeTruthy();
+  });
+
   it('shows the invite button only with colaborador.convidar', async () => {
     const without = makeFetch({ permissions: ['colaborador.visualizar'] });
     renderCollaborators(without.impl);
@@ -546,6 +558,28 @@ describe('collaborator detail (#103)', () => {
     expect(probe.search).toBe('?role=production');
   });
 
+  it('closes the modal opened from the list by going back, leaving the detail ahead in history (#357)', async () => {
+    const { impl } = makeFetch();
+    const { probe } = renderCollaborators(impl);
+    fireEvent.click(await screen.findByRole('link', { name: 'Ver detalhes de Mário Costa' }));
+    await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar detalhe do colaborador' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // A close that replaced the entry or added another would leave nothing ahead to reopen.
+    await act(async () => { await probe.navigate(1); });
+    expect(await screen.findByRole('dialog', { name: 'Mário Costa' })).toBeTruthy();
+  });
+
+  it('shows the agency entry date on the own profile modal, as the wireframe draws it (#357)', async () => {
+    const { impl } = makeFetch({ detail: () => json(anaSelf) });
+    renderCollaborators(impl, detailUrl());
+    const dialog = await screen.findByRole('dialog', { name: 'Ana Prado' });
+
+    expect(within(dialog).getByText(/Na agência desde/)).toBeTruthy();
+    expect(within(dialog).getByText('12/03/2026')).toBeTruthy();
+  });
+
   it('only closes on a gesture that both starts and ends outside the modal', async () => {
     const { impl } = makeFetch();
     renderCollaborators(impl, detailUrl());
@@ -727,6 +761,18 @@ describe('collaborator admin actions (#104)', () => {
 
     // The role is not theirs to change, so the request carries only the cargo.
     await waitFor(() => expect(bodies).toEqual([{ jobTitle: 'Editora' }]));
+  });
+
+  it.each([
+    ['Admin', ADMIN_PERMISSIONS],
+    ['Gestor de conta', MANAGER_PERMISSIONS]
+  ] as const)('shows the e-mail as read-only with its note in the %s editing modal (#357)', async (_label, permissions) => {
+    const { impl } = makeFetch({ permissions });
+    renderCollaborators(impl, detailUrl(marioCosta.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    expect(within(dialog).getByText('A troca de e-mail é feita pela operação.')).toBeTruthy();
+    expect(within(dialog).queryByRole('textbox', { name: 'E-mail' })).toBeNull();
   });
 
   it.each([
@@ -1133,6 +1179,14 @@ describe('pending invitations (#106)', () => {
     await screen.findByText('Ana Prado');
     expect(screen.queryByRole('region', { name: 'Convites aguardando aceite' })).toBeNull();
     expect(invitationsCalls(calls)).toEqual([]);
+  });
+
+  it('asks the first invitations page with 24 per page (#357)', async () => {
+    const { impl, calls } = makeFetch();
+    renderCollaborators(impl);
+
+    await invitesRegion();
+    expect(invitationsCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/invitations?page=1&pageSize=24`]);
   });
 
   it('lists e-mail, role and relative deadline, with the count in its own header', async () => {
