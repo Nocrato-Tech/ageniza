@@ -52,17 +52,28 @@ uploads both back under the asset's own key prefix, and records the outcome
 `video_processing_error`). The original is never transcoded.
 See `apps/worker/src/media-video-job.ts` and its README/tests for the worker side in full.
 
-## What the database holds (issues #295, #296)
+## What the database holds (issues #295, #296, #371, #247)
 
 `ageniza_app` inserts and updates `media_assets` only through column grants, and has no DELETE: the
-identity columns (`id`, `agency_id`, `category`, the declared values, the object keys,
-`created_by_user_id`) are never written by an UPDATE, and no row is inserted with a state. A
-`BEFORE UPDATE` trigger lets `status` move only from `pending` to `confirmed` or `rejected`, and
-the outcome (`confirmed_size_bytes`, `confirmed_content_type`, `confirmed_at`, `rejected_reason`)
-is written once, with the status. A new column is not writable until a migration grants it.
+identity columns (`id`, `agency_id`, `category`, the declared values, the object keys) are never
+written by an UPDATE, and no row is inserted with a state. `created_by_user_id` is not written at
+all: the database stamps it with the actor bound to the transaction. A `BEFORE UPDATE` trigger lets
+`status` move only from `pending` to `confirmed` or `rejected`, stamps `confirmed_at` on the
+confirmation, and writes the outcome (`confirmed_size_bytes`, `confirmed_content_type`,
+`confirmed_at`, `rejected_reason`) once, with the status. It also holds the direction of
+`video_processing_status` (`pending` -> `processing` -> `ready` or `failed`, retry back to
+`pending`), the video results written once with `ready`, and `multipart_upload_id` set once while
+the upload is pending. A new column is not writable until a migration grants it.
 The API and the worker connect as `ageniza_app` for the user, so the database holds the shape of
 the transition, not the proof that the content was validated; that proof stays in the `complete`
 route.
+
+A media may belong to a client and to one of that client's folders (`client_id`, `folder_id`,
+`removed_at`, issue #247). A media with no client is read and written with `midia.enviar`, as
+before; a media of a client is read with `conteudo.visualizar` and written with `conteudo.operar`.
+No route writes the client columns yet, and the storage quota still counts through the caller's
+RLS: the Conteúdo upload route must count the agency's whole usage before it opens (see
+`docs/business/decisions/2026-10-07-conteudo-pastas-de-midia-e-midia-com-cliente-no-banco.md`).
 
 ## Environment variables
 

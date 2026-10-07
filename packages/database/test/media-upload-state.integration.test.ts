@@ -31,11 +31,11 @@ const deniedByGrant = { code: '42501', message: expect.stringContaining('permiss
 // Literal on purpose: the catalog is compared with this list in both directions, so a column added
 // to the grant later, or one dropped from it, turns the test red.
 const INSERTABLE = [
-  'agency_id', 'category', 'created_by_user_id', 'declared_content_type', 'declared_size_bytes', 'extension',
+  'agency_id', 'category', 'client_id', 'declared_content_type', 'declared_size_bytes', 'extension', 'folder_id',
   'id', 'object_key', 'upload_object_key'
 ];
 const UPDATABLE = [
-  'confirmed_at', 'confirmed_content_type', 'confirmed_size_bytes', 'multipart_upload_id', 'preview_object_key',
+  'confirmed_content_type', 'confirmed_size_bytes', 'multipart_upload_id', 'preview_object_key',
   'rejected_reason', 'status', 'thumbnail_object_key', 'updated_at', 'video_duration_seconds',
   'video_preview_size_bytes', 'video_processed_at', 'video_processing_error', 'video_processing_status',
   'video_thumbnail_size_bytes'
@@ -175,7 +175,10 @@ describe('the grants on media_assets (issue #295)', () => {
     ['upload_object_key', () => 'forged'],
     ['declared_size_bytes', () => 1],
     ['created_by_user_id', () => ownerUserId],
-    ['created_at', () => new Date(0)]
+    ['created_at', () => new Date(0)],
+    ['client_id', () => randomUUID()],
+    ['folder_id', () => randomUUID()],
+    ['removed_at', () => new Date()]
   ] as const)('refuses an UPDATE of %s at the privilege layer, leaving the row', async (column, value) => {
     const id = await seed('pending');
 
@@ -197,7 +200,11 @@ describe('the grants on media_assets (issue #295)', () => {
     ['confirmed_at', new Date()],
     ['rejected_reason', 'forged'],
     ['video_processing_status', 'pending'],
-    ['multipart_upload_id', 'forged']
+    ['multipart_upload_id', 'forged'],
+    ['video_processed_at', new Date()],
+    ['thumbnail_object_key', 'forged'],
+    ['created_by_user_id', ownerUserId],
+    ['removed_at', new Date()]
   ] as const)('refuses an INSERT that sets %s, so no row is born with a state', async (column, value) => {
     const id = randomUUID();
     assetIds.push(id);
@@ -212,7 +219,6 @@ describe('the grants on media_assets (issue #295)', () => {
       object_key: `${agencyId}/${id}/original.${extension}`,
       upload_object_key: `staging/${agencyId}/${id}/upload.${extension}`,
       declared_size_bytes: HUNDRED_MB,
-      created_by_user_id: uploaderId,
       [column]: value
     }))).rejects.toMatchObject(deniedByGrant);
 
@@ -246,7 +252,7 @@ describe('the upload state only moves forward (issue #295)', () => {
     const id = await seed('rejected');
 
     await expect(asUploader((transaction) => transaction('media_assets').where({ id }).update({
-      status: 'confirmed', rejected_reason: null, confirmed_size_bytes: 1, confirmed_content_type: 'image/png', confirmed_at: new Date()
+      status: 'confirmed', rejected_reason: null, confirmed_size_bytes: 1, confirmed_content_type: 'image/png'
     }))).rejects.toMatchObject(trigger(MOVE_FORWARD_ONLY));
     await expect(asUploader((transaction) => transaction('media_assets').where({ id }).update({ status: 'confirmed' })))
       .rejects.toMatchObject(trigger(MOVE_FORWARD_ONLY));
@@ -296,7 +302,6 @@ describe('the upload state only moves forward (issue #295)', () => {
 
   it.each([
     ['confirmed_content_type', 'image/jpeg'],
-    ['confirmed_at', new Date(0)],
     ['confirmed_content_type', null],
     ['confirmed_size_bytes', null]
   ] as const)('refuses to change %s of a confirmed upload', async (column, value) => {
@@ -315,7 +320,6 @@ describe('the upload state only moves forward (issue #295)', () => {
     for (const change of [
       { confirmed_size_bytes: 1 },
       { confirmed_content_type: 'image/png' },
-      { confirmed_at: new Date() },
       { rejected_reason: 'forged' }
     ]) {
       await expect(asUploader((transaction) => transaction('media_assets').where({ id }).update(change)), Object.keys(change)[0])
@@ -327,13 +331,12 @@ describe('the upload state only moves forward (issue #295)', () => {
 
   it('refuses a confirmation that lacks a confirmed column or carries a rejection', async () => {
     const id = await seed('pending');
-    const complete = { confirmed_size_bytes: 1_000, confirmed_content_type: 'image/png', confirmed_at: new Date() };
+    const complete = { confirmed_size_bytes: 1_000, confirmed_content_type: 'image/png' };
 
     for (const change of [
       { status: 'confirmed' },
       { status: 'confirmed', ...complete, confirmed_size_bytes: null },
       { status: 'confirmed', ...complete, confirmed_content_type: null },
-      { status: 'confirmed', ...complete, confirmed_at: null },
       { status: 'confirmed', ...complete, rejected_reason: 'forged' }
     ]) {
       await expect(asUploader((transaction) => transaction('media_assets').where({ id }).update(change)), JSON.stringify(change))
@@ -350,8 +353,7 @@ describe('the upload state only moves forward (issue #295)', () => {
       { status: 'rejected' },
       { status: 'rejected', rejected_reason: '   ' },
       { status: 'rejected', rejected_reason: 'too_large', confirmed_size_bytes: 1 },
-      { status: 'rejected', rejected_reason: 'too_large', confirmed_content_type: 'image/png' },
-      { status: 'rejected', rejected_reason: 'too_large', confirmed_at: new Date() }
+      { status: 'rejected', rejected_reason: 'too_large', confirmed_content_type: 'image/png' }
     ]) {
       await expect(asUploader((transaction) => transaction('media_assets').where({ id }).update(change)), JSON.stringify(change))
         .rejects.toMatchObject(trigger(REJECTED_SHAPE));
@@ -422,8 +424,7 @@ describe('the upload flow still works for a role holding only midia.enviar (issu
         extension: 'mp4',
         object_key: objectKey,
         upload_object_key: `staging/${agencyId}/${id}/upload.mp4`,
-        declared_size_bytes: HUNDRED_MB,
-        created_by_user_id: uploaderId
+        declared_size_bytes: HUNDRED_MB
       });
       expect(await transaction('media_assets').where({ id }).update({ multipart_upload_id: 'upload-1', updated_at: new Date() })).toBe(1);
       expect(await transaction('media_assets').where({ id }).update({ updated_at: new Date() })).toBe(1);
@@ -432,7 +433,7 @@ describe('the upload flow still works for a role holding only midia.enviar (issu
 
     await asUploader(async (transaction) => {
       expect(await transaction('media_assets').where({ id }).update({
-        status: 'confirmed', confirmed_size_bytes: 52_428_800, confirmed_content_type: 'video/mp4', confirmed_at: new Date(),
+        status: 'confirmed', confirmed_size_bytes: 52_428_800, confirmed_content_type: 'video/mp4',
         updated_at: new Date(), video_processing_status: 'pending'
       })).toBe(1);
     });
@@ -442,6 +443,7 @@ describe('the upload flow still works for a role holding only midia.enviar (issu
     await asUploader(async (transaction) => {
       expect(await transaction('media_assets').where({ id }).update({ video_processing_status: 'processing', video_processing_error: null, updated_at: new Date() })).toBe(1);
       expect(await transaction('media_assets').where({ id }).update({ video_processing_status: 'pending', video_processed_at: null, updated_at: new Date() })).toBe(1);
+      expect(await transaction('media_assets').where({ id }).update({ video_processing_status: 'processing', video_processing_error: null, updated_at: new Date() })).toBe(1);
       expect(await transaction('media_assets').where({ id }).update({
         video_processing_status: 'ready',
         thumbnail_object_key: `${agencyId}/${id}/thumbnail.jpg`,

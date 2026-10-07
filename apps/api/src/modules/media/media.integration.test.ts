@@ -162,6 +162,8 @@ describe('media upload HTTP module (issue #21)', () => {
     expect(body.objectKey).toBe(`${agencyId}/${body.assetId}/original.png`);
     await expect(owner.knex('media_assets').where({ id: body.assetId }).first('upload_object_key'))
       .resolves.toEqual({ upload_object_key: `staging/${agencyId}/${body.assetId}/upload.png` });
+    await expect(owner.knex('media_assets').where({ id: body.assetId }).first('created_by_user_id'))
+      .resolves.toEqual({ created_by_user_id: admin.id });
 
     await putToPresignedUrl(body.upload.url, smallPng, 'image/png');
 
@@ -173,6 +175,8 @@ describe('media upload HTTP module (issue #21)', () => {
     });
     expect(completed.statusCode).toBe(200);
     expect(completed.json()).toMatchObject({ assetId: body.assetId, status: 'confirmed', sizeBytes: smallPng.length, contentType: 'image/png' });
+    const confirmed = await owner.knex('media_assets').where({ id: body.assetId }).first('confirmed_at');
+    expect(confirmed?.confirmed_at).toBeInstanceOf(Date);
 
     // The original presigned URL may remain cryptographically valid until expiry, but it points
     // only at a staging key. Reusing it after confirmation cannot mutate the canonical object.

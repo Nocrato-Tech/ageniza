@@ -250,10 +250,11 @@ describe('AUTH-20B database RLS and invitation functions', () => {
     // readable by every authenticated user, while all tenant-bearing rows remain RLS-scoped.
     // These counts include both migration sets: the collaborator permissions and admin grant
     // (#94 review) plus the CLIENTS module catalog (#122): cliente.visualizar, cliente.operar,
-    // cliente.cadastrar, cliente.arquivar and cliente.remover_usuario, with their preset grants.
-    await expect(asUser(userA, (transaction) => transaction('permissions').select('key'))).resolves.toHaveLength(15);
+    // cliente.cadastrar, cliente.arquivar and cliente.remover_usuario, with their preset grants, plus the
+    // five conteudo.* permissions (#247): 5 + 5 + 3 preset grants for Admin, Account Manager and Production.
+    await expect(asUser(userA, (transaction) => transaction('permissions').select('key'))).resolves.toHaveLength(20);
     await expect(asUser(userA, (transaction) => transaction('roles').whereNull('agency_id').select('key'))).resolves.toHaveLength(5);
-    await expect(asUser(userA, (transaction) => transaction('role_permissions').select('permission_key'))).resolves.toHaveLength(25);
+    await expect(asUser(userA, (transaction) => transaction('role_permissions').select('permission_key'))).resolves.toHaveLength(38);
 
     await expect(asUser(userA, (transaction) => transaction('agencies').insert({ id: randomUUID(), name: 'Denied' }))).rejects.toThrow(/row-level security/);
     await expect(asUser(userA, (transaction) => transaction('clients').insert({ id: randomUUID(), agency_id: agencyB, name: 'Denied' }))).rejects.toThrow(/row-level security/);
