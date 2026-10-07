@@ -685,19 +685,25 @@ describe('invitation HTTP module', () => {
       expect(login.statusCode).toBe(200);
       return sessionCookieHeader(login.cookies);
     };
-    /** Waits until a backend is blocked running one of the patterns, so the race is sequenced by locks. */
-    const waitUntilBlockedStatement = async (patterns: readonly string[]): Promise<void> => {
+    /** The pid of one backend currently blocked by the given database backend, in this database. */
+    const backendBlockedBy = async (blockerPid: number): Promise<number | undefined> => {
+      const result = await raw<{ rows: Array<{ pid: number }> }>(owner.knex, `
+        select activity.pid
+        from pg_catalog.pg_stat_activity activity
+        where activity.datname = pg_catalog.current_database()
+          and pg_catalog.pg_blocking_pids(activity.pid) @> array[?::int]
+        limit 1
+      `, [blockerPid]);
+      return result.rows[0]?.pid;
+    };
+    /** Waits until a backend is blocked by the given backend, so the race is sequenced by locks. */
+    const waitForBackendBlockedBy = async (blockerPid: number): Promise<number> => {
       for (let attempt = 0; attempt < 400; attempt += 1) {
-        const result = await raw<{ rows: Array<{ waiting: number }> }>(owner.knex, `
-          select count(*)::int as waiting
-          from pg_catalog.pg_stat_activity
-          where datname = pg_catalog.current_database() and wait_event_type = 'Lock'
-            and (${patterns.map(() => 'query ilike ?').join(' or ')})
-        `, [...patterns]);
-        if ((result.rows[0]?.waiting ?? 0) > 0) return;
+        const pid = await backendBlockedBy(blockerPid);
+        if (pid !== undefined) return pid;
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
-      throw new Error(`No backend ever waited on a lock for ${patterns.join(' or ')}.`);
+      throw new Error(`No backend ever waited on a lock held by ${blockerPid}.`);
     };
 
     it('serializes a create and a resend of the same recipient instead of deadlocking', async () => {
@@ -714,15 +720,15 @@ describe('invitation HTTP module', () => {
         if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one invitation.');
         const holderPid = await backendPid(holder);
 
-        // The resend takes the slot and lines up on the row; the create then waits on the slot
-        // (same order) or on the row (the old order, where the two deadlocked).
+        // The resend takes the slot and lines up on the row; the create then waits on the slot the
+        // resend holds (the same order); only that wait releases the holder.
         const resent = app.app.inject({
           method: 'POST',
           url: `/agencies/${raceAgencyId}/invitations/${invitation.invitationId}/resend`,
           remoteAddress: LOCK_ORDER_IP,
           headers: { ...origin, cookie }
         });
-        await waitForBlockedQueryStart(owner, holderPid);
+        const resendPid = await waitForBackendBlockedBy(holderPid);
         const created = app.app.inject({
           method: 'POST',
           url: `/agencies/${raceAgencyId}/invitations/collaborators`,
@@ -730,7 +736,7 @@ describe('invitation HTTP module', () => {
           headers: { ...origin, cookie },
           payload: { email, roleId: productionRoleId }
         });
-        await waitUntilBlockedStatement(['%pg_advisory_xact_lock%', '%update public.invitations%']);
+        await waitForBackendBlockedBy(resendPid);
         await holder.commit();
         released = true;
 
@@ -840,6 +846,147 @@ describe('invitation HTTP module', () => {
           payload: { email, roleId: productionRoleId }
         });
         expect(retried.statusCode).toBe(201);
+      } finally {
+        if (!released) await holder.rollback();
+      }
+    }, 20_000);
+
+    it('answers 409 TRY_AGAIN when a client-invitation creation loses a deadlock, and changes nothing', async () => {
+      const raceOwner = await makeUser('invitations-deadlock-client-owner');
+      const raceAgencyId = await createAgency('Invitations deadlock client agency', raceOwner.id);
+      const raceClientId = randomUUID();
+      createdClientIds.push(raceClientId);
+      await owner.knex('clients').insert({ id: raceClientId, agency_id: raceAgencyId, name: 'Deadlock client' });
+      const cookie = await loginFromLockOrderIp(raceOwner);
+      const email = `deadlock-client-${randomUUID()}@example.test`;
+      const invitation = await insertInvitation({ agencyId: raceAgencyId, purpose: 'client_invite', clientId: raceClientId, roleId: null, email });
+
+      const holder = await owner.knex.transaction();
+      let released = false;
+      try {
+        // Same cycle as the collaborator creation, and the client slot key carries the clientId.
+        const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.invitations where id = ?::uuid for update', [invitation.invitationId]);
+        if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one invitation.');
+        const holderPid = await backendPid(holder);
+        const created = app.app.inject({
+          method: 'POST',
+          url: `/agencies/${raceAgencyId}/clients/${raceClientId}/invitations`,
+          remoteAddress: LOCK_ORDER_IP,
+          headers: { ...origin, cookie },
+          payload: { email }
+        });
+        await waitForBlockedQueryStart(owner, holderPid);
+        await holder.raw('select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(?, 0))', [
+          `${raceAgencyId}:client_invite:${email}:${raceClientId}`
+        ]);
+        await holder.commit();
+        released = true;
+
+        const response = await created;
+        expect(response.statusCode).toBe(409);
+        expect(response.json().error?.code).toBe('TRY_AGAIN');
+        expect(JSON.stringify(response.json())).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
+        await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('revoked_at')).resolves.toEqual({ revoked_at: null });
+        await expect(owner.knex('invitations').where({ agency_id: raceAgencyId }).select('id')).resolves.toHaveLength(1);
+
+        const retried = await app.app.inject({
+          method: 'POST',
+          url: `/agencies/${raceAgencyId}/clients/${raceClientId}/invitations`,
+          remoteAddress: LOCK_ORDER_IP,
+          headers: { ...origin, cookie },
+          payload: { email }
+        });
+        expect(retried.statusCode).toBe(201);
+      } finally {
+        if (!released) await holder.rollback();
+      }
+    }, 20_000);
+
+    it('answers 409 TRY_AGAIN when a cancellation loses a deadlock, and the invitation stays pending', async () => {
+      const raceOwner = await makeUser('invitations-deadlock-cancel-owner');
+      const raceAgencyId = await createAgency('Invitations deadlock cancel agency', raceOwner.id);
+      const cookie = await loginFromLockOrderIp(raceOwner);
+      const email = `deadlock-cancel-${randomUUID()}@example.test`;
+      const invitation = await insertInvitation({ agencyId: raceAgencyId, email });
+
+      const holder = await owner.knex.transaction();
+      let released = false;
+      try {
+        // The audit insert is the cancellation's last target: holding that table makes it wait
+        // there while it holds the invitation row, and the holder then asks for that row.
+        await holder.raw('lock table audit.events in access exclusive mode');
+        const holderPid = await backendPid(holder);
+        const canceled = app.app.inject({
+          method: 'DELETE',
+          url: `/agencies/${raceAgencyId}/invitations/${invitation.invitationId}`,
+          remoteAddress: LOCK_ORDER_IP,
+          headers: { ...origin, cookie }
+        });
+        await waitForBlockedQueryStart(owner, holderPid);
+        await raw(holder, 'select id from public.invitations where id = ?::uuid for update', [invitation.invitationId]);
+        await holder.commit();
+        released = true;
+
+        const response = await canceled;
+        expect(response.statusCode).toBe(409);
+        expect(response.json().error?.code).toBe('TRY_AGAIN');
+        expect(JSON.stringify(response.json())).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
+        await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('revoked_at')).resolves.toEqual({ revoked_at: null });
+
+        const retried = await app.app.inject({
+          method: 'DELETE',
+          url: `/agencies/${raceAgencyId}/invitations/${invitation.invitationId}`,
+          remoteAddress: LOCK_ORDER_IP,
+          headers: { ...origin, cookie }
+        });
+        expect(retried.statusCode).toBe(204);
+      } finally {
+        if (!released) await holder.rollback();
+      }
+    }, 20_000);
+
+    it('answers 409 TRY_AGAIN when an acceptance loses a deadlock, and the link still works afterwards', async () => {
+      const raceOwner = await makeUser('invitations-deadlock-accept-owner');
+      const raceAgencyId = await createAgency('Invitations deadlock accept agency', raceOwner.id);
+      const invited = await makeUser('invitations-deadlock-accept-invitee');
+      // Issue #68: logging in requires a context of their own, unrelated to the invitation.
+      await createAgency('Invitations deadlock accept home agency', invited.id);
+      const cookie = await loginFromLockOrderIp(invited);
+      const invitation = await insertInvitation({ agencyId: raceAgencyId, email: invited.email });
+
+      const holder = await owner.knex.transaction();
+      let released = false;
+      try {
+        // The acceptance locks the invitation row and then the agency; holding the agency makes it
+        // wait there while it holds the invitation row, and the holder then asks for that row.
+        const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.agencies where id = ?::uuid for update', [raceAgencyId]);
+        if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one agency.');
+        const holderPid = await backendPid(holder);
+        const accepted = app.app.inject({
+          method: 'POST',
+          url: `/invitations/${invitation.token}/accept`,
+          remoteAddress: '127.0.0.5',
+          headers: { ...origin, cookie }
+        });
+        await waitForBlockedQueryStart(owner, holderPid);
+        await raw(holder, 'select id from public.invitations where id = ?::uuid for update', [invitation.invitationId]);
+        await holder.commit();
+        released = true;
+
+        const response = await accepted;
+        expect(response.statusCode).toBe(409);
+        expect(response.json().error?.code).toBe('TRY_AGAIN');
+        expect(JSON.stringify(response.json())).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
+        await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('used_at')).resolves.toEqual({ used_at: null });
+        await expect(owner.knex('agency_memberships').where({ agency_id: raceAgencyId, user_id: invited.id }).first('id')).resolves.toBeUndefined();
+
+        const retried = await app.app.inject({
+          method: 'POST',
+          url: `/invitations/${invitation.token}/accept`,
+          remoteAddress: '127.0.0.5',
+          headers: { ...origin, cookie }
+        });
+        expect(retried.statusCode).toBe(200);
       } finally {
         if (!released) await holder.rollback();
       }
