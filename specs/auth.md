@@ -53,7 +53,7 @@ Tudo já existe. **Nenhuma tabela nova, nenhuma coluna nova.**
 | `auth."session"` | `expiresAt`, com teto absoluto imposto por hook de banco |
 | `auth."verification"` | os tokens de recuperação de senha |
 | `public.invitations` | guarda **só o hash** do token; nem a operação recupera o token depois de enviado |
-| `public.legal_acceptances` | versão de Termos e de Privacidade, com data e hora |
+| `public.legal_acceptances` | versão de Termos e de Privacidade, com data e hora. Uma linha por conta, documento e versão: o aceite é **por documento** (regra 7a) |
 | `public.user_context_preferences` | o último contexto usado, uma linha por usuário |
 
 ## 4. Estados e transições
@@ -97,7 +97,9 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 4. Token de convite consumido, expirado ou revogado devolve **o mesmo** `INVALID_LINK`, sem dizer qual dos três.
 5. A tela nunca exibe o e-mail do convite antes de o token ser validado pela API.
 6. Conta criada por aceite nasce com o e-mail **do convite**, nunca de um campo do formulário.
-7. Aceitar os Termos grava as **duas** versões, Termos e Privacidade, com data e hora.
+7. No cadastro, aceitar os Termos grava as **duas** versões, Termos e Privacidade, com data e hora.
+7a. Depois do cadastro, o aceite é **por documento e por versão** (2026-10-07, pendente de validação): aceitar a Privacidade nunca marca os Termos, e o contrário também. A versão gravada é sempre a **em vigor no servidor** — nunca uma que o cliente envie —, repetir o aceite não grava de novo e aceitar uma versão que a conta já superou não grava nada. A conta fica vinculada à última versão aceita de cada documento, e isso é consultável.
+7b. Uma versão mais nova que a aceita **não bloqueia nada**: nem o login, nem rota, nem tela. O único efeito é o aviso da seção 7.
 8. Redefinir senha encerra **todas** as sessões.
 8a. Redefinir senha **sempre autentica** quem redefiniu, pelo mesmo mecanismo do login — **salvo** quando a conta tem zero contextos e não há `inviteToken` válido para o mesmo e-mail: nesse caso a senha é trocada, mas nenhuma sessão é criada, e a resposta diz o motivo (`signedIn: false, reason: 'NO_CONTEXT_ACCESS'`), para a tela levar a `/sem-acesso` (2026-09-29, substitui o comportamento anterior de `204` sem sessão fora do fluxo de convite). Contagem de contextos e sessão nova nessa ordem: primeiro conta, só então assina — assim uma conta confirmada em zero contextos nunca chega a ter sessão para revogar. Fora do caso confirmado de zero, qualquer outra falha em criar a sessão pós-reset — a conta não ser encontrada, a contagem falhar, ou o `signInEmail` falhar (inclusive dois links de reset válidos da mesma conta disputando a senha) — usa um motivo diferente, `signedIn: false, reason: 'SIGN_IN_REQUIRED'`, para a tela levar a `/entrar` em vez de `/sem-acesso`: `NO_CONTEXT_ACCESS` só quando o zero foi de fato confirmado (achado da revisão de segurança do PR #176, 2026-09-29).
 9. Trocar de contexto grava a preferência e **não** recria a sessão.
@@ -122,6 +124,8 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 | `GET` | `/me/contexts` | `{ contexts }` |
 | `GET` | `/me/contexts/resolve` | `none` \| `enter` \| `select` |
 | `PUT` | `/me/last-context` | 204 |
+| `GET` | `/me/legal-acceptances` | `{ documents }`: um item por documento, Termos primeiro, com `currentVersion`, `acceptedVersion` (a mais nova que a conta aceitou, ou `null`) e `pending` |
+| `POST` | `/me/legal-acceptances` | corpo `{ document: 'terms' | 'privacy' }`, e nada mais (`.strict()`); responde o mesmo `{ documents }` |
 
 Limites de tentativa já aplicados por IP, por IP+e-mail e por e-mail global (`policy.ts`): login 10 por 15 min no par IP+e-mail, recuperação 3.
 
@@ -133,6 +137,16 @@ Limites de tentativa já aplicados por IP, por IP+e-mail e por e-mail global (`p
 2. `GET /me/contexts/resolve` — `decision: 'none'` encerra a sessão, em vez de devolver uma aplicação vazia.
 
 Foi **mudança de contrato numa rota implantada**: os testes de integração de login mudaram junto.
+
+### Implementado (issue #81)
+
+**Aceite por documento** (regra 7a), em um módulo próprio, `legal`, sem permissão nomeada — o aceite é da conta, não de um tenant, como em `/me/profile`:
+
+1. `GET /me/legal-acceptances` lê as linhas da própria conta (a policy `legal_acceptances_select` já as limita ao ator) e compara a versão mais nova de cada documento com a em vigor (`AUTH_TERMS_VERSION`, `AUTH_PRIVACY_VERSION`). `pending` é verdadeiro quando a conta nunca aceitou o documento ou aceitou uma versão mais velha.
+2. `POST /me/legal-acceptances` chama `app_private.accept_legal_document(document, version)`, uma função `security definer` de escopo único que toma o usuário do ator da transação, nunca de um argumento. Recusa (`A0031`) um documento desconhecido e uma versão que não seja uma data real nem posterior a hoje (no fuso do produto, `America/Sao_Paulo`), e a configuração das versões recusa o mesmo no boot. Retorna sem gravar quando a conta já aceitou aquela versão ou uma mais nova, então é idempotente e nunca regride.
+3. `ageniza_app` continua **sem INSERT direto** em `legal_acceptances`: a tabela é prova de consentimento, e os únicos caminhos de escrita são o aceite de convite (cadastro) e esta função.
+
+O cadastro (`accept-new-account`) não muda: continua gravando as duas versões em vigor, com o checkbox único. Conta anterior a esta entrega sem linha para um documento aparece como pendente; não há backfill.
 
 ### Implementado (issue #175)
 
@@ -302,6 +316,24 @@ Chega-se aqui com credencial **correta** e zero contextos. Não é erro de senha
 
 Páginas públicas de conteúdo estático versionado, com a versão visível. Alcançáveis pelos links do checkbox e diretamente pela URL.
 
+### Aviso de documento atualizado
+
+No topo da casca da agência e do portal, **não bloqueante**, quando a versão em vigor de Termos ou de Privacidade é mais nova que a última aceita pela conta. Um item por documento pendente:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ Atualizamos os Termos de Uso. Ler os Termos de Uso           │
+│ [Li e aceito]                                                │
+│ Atualizamos a Política de Privacidade. Ler a Política …      │
+│ [Li e aceito]                                       [Fechar] │
+└──────────────────────────────────────────────────────────────┘
+```
+
+- O link abre `/termos` ou `/privacidade` em outra aba, e **Li e aceito** registra só aquele documento; os outros itens ficam.
+- **Fechar** esconde o aviso sem aceitar nada. Ele volta no próximo login, porque o fechamento vive só no cache da sessão.
+- Quem já aceitou as versões em vigor não vê nada. Falha ao ler a situação não mostra aviso nem erro, e falha ao aceitar mantém o item e diz que não foi possível registrar.
+- Não aparece em `/contextos`, nas telas públicas nem em nenhuma outra: só nas duas cascas.
+
 ### Menu de conta
 
 Presente em toda tela autenticada, em todo o produto:
@@ -343,17 +375,17 @@ Nada novo. O e-mail transacional de convite e de recuperação já existe (issue
 - [ ] muda como a autorização é avaliada
 - [ ] exigiria backfill
 
-**Nenhum dos cinco.** Duas coisas a declarar de todo modo:
+**Nenhum dos cinco.** Três coisas a declarar de todo modo:
 
 1. **`POST /auth/login` muda de contrato** — passa a negar credencial correta sem contexto, e um código de erro novo aparece. Rota implantada, testes de integração alterados junto. Não é estrutural pelos critérios, e não é gratuito.
 2. **Vincular identidades seria estrutural** e foi descartado nesta sessão: mudaria o significado de `User`, atravessando RLS, `current_user_id()` e toda tabela que referencia usuário.
+3. **O aceite por documento (2026-10-07, pendente de validação)** muda o contrato de aceite e abre um segundo caminho de escrita em dado pessoal, a função `app_private.accept_legal_document`. Nenhuma tabela, coluna, grant ou policy de `legal_acceptances` muda, e não há backfill; o registro está em `decisions.md`.
 
 ## 10. Em aberto
 
 | ponto | gatilho | quem decide |
 |---|---|---|
 | Troca de e-mail da conta | o primeiro colaborador ou cliente real pedir a troca | Pedro Vidal |
-| Reaceite quando Termos ou Privacidade mudar de versão | a primeira alteração de um dos documentos depois de existir gente com conta | Pedro Vidal |
 
 ## 11. Decisões registradas
 
@@ -363,7 +395,9 @@ Em [`docs/business/decisions.md`](../docs/business/decisions.md), 2026-09-24:
 - A mesma pessoa com dois e-mails são duas contas, e identidades não se vinculam
 - Credencial correta sem nenhum contexto não cria sessão
 - Sete telas de autenticação, com o convite em uma rota e dois estados
-- Termos e Privacidade são conteúdo estático versionado, com aceite único
+- Termos e Privacidade são conteúdo estático versionado, com aceite único no cadastro
+
+E, 2026-10-07 (**pendente de validação**): Termos e Privacidade mudam de versão sem forçar o reaceite, e o aceite depois do cadastro é por documento — fecha o ponto em aberto sobre o reaceite.
 
 E, 2026-09-29 (**pendente de validação**): o login aceita o token do convite para quem tem zero contextos, complementando a decisão de 2026-09-24 sobre credencial correta sem contexto.
 
@@ -383,7 +417,9 @@ E, herdadas de [`autorizacao.md`](autorizacao.md): "sem permissão" não é tela
 | [#66](https://github.com/Nocrato-Tech/ageniza/issues/66) Escolher e trocar de contexto | [#77](https://github.com/Nocrato-Tech/ageniza/issues/77) tela `/contextos` · [#78](https://github.com/Nocrato-Tech/ageniza/issues/78) seletor no menu | web |
 | [#67](https://github.com/Nocrato-Tech/ageniza/issues/67) Negar acesso sem vínculo | [#68](https://github.com/Nocrato-Tech/ageniza/issues/68) zero contextos no login e no resolve · [#79](https://github.com/Nocrato-Tech/ageniza/issues/79) tela Acesso encerrado | api · web |
 
-**Em aberto:** [#80](https://github.com/Nocrato-Tech/ageniza/issues/80) troca de e-mail · [#81](https://github.com/Nocrato-Tech/ageniza/issues/81) reaceite de Termos.
+**Em aberto:** [#80](https://github.com/Nocrato-Tech/ageniza/issues/80) troca de e-mail
+
+**Decidida em 2026-10-07:** [#81](https://github.com/Nocrato-Tech/ageniza/issues/81), reaceite de Termos — aviso não bloqueante com aceite por documento (seção 7, regra 7a).
 
 A [#54](https://github.com/Nocrato-Tech/ageniza/issues/54), que registrava a dívida de "as telas nunca foram desenhadas", foi fechada por este recorte.
 

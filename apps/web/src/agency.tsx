@@ -10,6 +10,7 @@ import { apiPath } from './api-path.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InvitationNotice } from './invitation-notice.js';
+import { LegalNotice } from './legal-notice.js';
 import { NotFoundPage } from './status-pages.js';
 
 /**
@@ -129,6 +130,7 @@ export function AgencyAreaLayout() {
         {/* The account menu (#70) lives here. */}
         <AccountMenu activeContext={data.agencyName} />
       </header>
+      <LegalNotice />
       <div className="agency-layout">
         <AgencyNav agenciaId={agenciaId} />
         <main className="agency-content" id="main-content"><InvitationNotice /><Outlet /></main>
