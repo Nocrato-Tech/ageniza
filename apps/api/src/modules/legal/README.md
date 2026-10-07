@@ -21,8 +21,9 @@ the account, not a tenant.
 
 ## Where the write happens
 
-`public.legal_acceptances` has no INSERT policy for `ageniza_app`: it is evidence of consent. The
-only write paths are `app_private.accept_invitation` (signup) and
+`ageniza_app` can only read `public.legal_acceptances`: it is evidence of consent, so INSERT, UPDATE
+and DELETE are revoked (migration `20261007000500`) and the forced RLS has no write policy either.
+The only write paths are `app_private.accept_invitation` (signup) and
 `app_private.accept_legal_document(document, version)`, a `security definer` function that takes the
 user from the actor bound to the transaction, never from an argument. The reading of the account's
 own rows goes through the existing `legal_acceptances_select` policy.

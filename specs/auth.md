@@ -154,7 +154,7 @@ Foi **mudança de contrato numa rota implantada**: os testes de integração de 
 
 1. `GET /me/legal-acceptances` lê as linhas da própria conta (a policy `legal_acceptances_select` já as limita ao ator) e compara a versão mais nova de cada documento com a em vigor (`AUTH_TERMS_VERSION`, `AUTH_PRIVACY_VERSION`). `pending` é verdadeiro quando a conta nunca aceitou o documento ou aceitou uma versão mais velha.
 2. `POST /me/legal-acceptances` chama `app_private.accept_legal_document(document, version)`, uma função `security definer` de escopo único que toma o usuário do ator da transação, nunca de um argumento. Recusa (`A0031`) um documento desconhecido e uma versão que não seja uma data real nem posterior a hoje (no fuso do produto, `America/Sao_Paulo`), e a configuração das versões recusa o mesmo no boot. Retorna sem gravar quando a conta já aceitou aquela versão ou uma mais nova, então é idempotente e nunca regride.
-3. `ageniza_app` continua **sem INSERT direto** em `legal_acceptances`: a tabela é prova de consentimento, e os únicos caminhos de escrita são o aceite de convite (cadastro) e esta função.
+3. `ageniza_app` só **lê** `legal_acceptances`: a tabela é prova de consentimento, e a migration `20261007000500` (issue #343) revoga `insert`, `update` e `delete` do papel, de modo que a escrita direta é recusada pelo privilégio (`permission denied`, `42501`) antes de a RLS ser consultada. Os únicos caminhos de escrita são o aceite de convite (cadastro) e esta função, ambos `security definer`.
 
 O cadastro (`accept-new-account`) não muda: continua gravando as duas versões em vigor, com o checkbox único. Conta anterior a esta entrega sem linha para um documento aparece como pendente; não há backfill.
 
@@ -413,7 +413,7 @@ Nada novo. O e-mail transacional de convite e de recuperação já existe (issue
 
 1. **`POST /auth/login` muda de contrato** — passa a negar credencial correta sem contexto, e um código de erro novo aparece. Rota implantada, testes de integração alterados junto. Não é estrutural pelos critérios, e não é gratuito.
 2. **Vincular identidades seria estrutural** e foi descartado nesta sessão: mudaria o significado de `User`, atravessando RLS, `current_user_id()` e toda tabela que referencia usuário.
-3. **O aceite por documento (2026-10-07, pendente de validação)** muda o contrato de aceite e abre um segundo caminho de escrita em dado pessoal, a função `app_private.accept_legal_document`. Nenhuma tabela, coluna, grant ou policy de `legal_acceptances` muda, e não há backfill; o registro está em `decisions.md`.
+3. **O aceite por documento (2026-10-07, pendente de validação)** muda o contrato de aceite e abre um segundo caminho de escrita em dado pessoal, a função `app_private.accept_legal_document`. Nenhuma tabela, coluna ou policy de `legal_acceptances` muda, e não há backfill; o registro está em `decisions.md`. Os grants de escrita sobre a tabela foram revogados depois, pela issue #343 (decisão de 2026-10-07, também pendente de validação).
 4. **A troca de e-mail por pedido (2026-10-07, pendente de validação)** cria uma tabela, duas rotas e um e-mail transacional, e abre um caminho de escrita sobre o e-mail em `auth."user"` por função `security definer`. Não altera tabela que já existe e não precisa de backfill; o registro está em `decisions.md`.
 
 ## 10. Em aberto
