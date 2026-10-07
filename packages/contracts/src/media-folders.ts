@@ -4,15 +4,13 @@ import { createDisplayNameSchema } from './display-name.js';
 import { MediaCategorySchema } from './media.js';
 import { createPaginatedResponseSchema, PaginationInputSchema } from './pagination.js';
 
-/** The longest name a folder shows. The database holds 256 bytes, so the schema also counts bytes. */
+/** The longest name a folder shows. The database CHECK holds 256 bytes, and 80 UTF-16 units are at most 240. */
 export const MEDIA_FOLDER_NAME_MAX_LENGTH = 80;
-const MEDIA_FOLDER_NAME_MAX_BYTES = 256;
 
 // A folder name keeps the display-name rules (control, bidi and invisible characters, at least one
 // letter or number) and refuses the two joiners as well: the database CHECK accepts them.
 export const MediaFolderNameSchema = createDisplayNameSchema(MEDIA_FOLDER_NAME_MAX_LENGTH)
-  .refine((value) => !/[\u200C\u200D]/u.test(value), 'must not contain a zero-width joiner')
-  .refine((value) => new TextEncoder().encode(value).length <= MEDIA_FOLDER_NAME_MAX_BYTES, 'is too long once encoded');
+  .refine((value) => !/[\u200C\u200D]/u.test(value), 'must not contain a zero-width joiner');
 
 /** `POST /agencies/:agencyId/clients/:clientId/media-folders` request body. A folder is created at the first
  * level (no `parentId`) or inside a first-level folder of the same client. */

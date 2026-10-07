@@ -34,6 +34,7 @@ const userIds: string[] = [];
 const roleIds: string[] = [];
 const assetIds: string[] = [];
 const contentIds: string[] = [];
+const extraClientIds: string[] = [];
 const users: Record<string, TestUserFixture> = {};
 const cookies: Record<string, string> = {};
 
@@ -126,6 +127,39 @@ const mediaCount = async (agencyId: string): Promise<number> =>
 const auditCount = async (assetId: string): Promise<number> =>
   Number((await owner.knex('audit.events').where({ action: 'media.removed', target_id: assetId }).count<{ count: string }[]>('id as count'))[0]?.count);
 
+const waitUntilSomeoneWaitsOnALock = async (): Promise<void> => {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const waiting = await owner.knex.raw<{ rows: Array<{ count: string }> }>(
+      "select count(*) as count from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'"
+    );
+    if (Number(waiting.rows[0]?.count) >= 1) return;
+    if (Date.now() > deadline) throw new Error('Nothing ever queued behind the lock.');
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+};
+
+/**
+ * Runs a request while the archive of a fresh client is uncommitted: the request's snapshot still sees an active
+ * client, so only the AFTER INSERT lock of the client's children (#284) can refuse what it writes. Resolves with the
+ * reply and leaves the client archived and committed, as the archive left it.
+ */
+const duringArchiveOfAFreshClient = async (request: (clientId: string) => Promise<Reply>): Promise<{ clientId: string; reply: Reply }> => {
+  const clientId = randomUUID();
+  extraClientIds.push(clientId);
+  await owner.knex('clients').insert({ id: clientId, agency_id: agencyA, name: `Cliente em arquivamento ${clientId}` });
+  const archiving = await owner.knex.transaction();
+  let pending: Promise<Reply> | undefined;
+  try {
+    await archiving('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
+    pending = request(clientId);
+    await waitUntilSomeoneWaitsOnALock();
+  } finally {
+    await archiving.commit();
+  }
+  return { clientId, reply: await pending! };
+};
+
 beforeAll(async () => {
   owner = ownerClient();
   app = await buildTestApp();
@@ -177,7 +211,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const agencies = [agencyA, agencyB, agencyC];
-  const clients = [clientA1, clientA2, clientArchived, clientB, clientC];
+  const clients = [clientA1, clientA2, clientArchived, clientB, clientC, ...extraClientIds];
   await owner.knex('content_media').whereIn('client_id', clients).delete();
   await owner.knex('contents').whereIn('id', contentIds).delete();
   await owner.knex('audit.events').whereIn('agency_id', agencies).delete();
@@ -257,10 +291,10 @@ describe('creating a folder (issue #253)', () => {
     expect(await folderCount(clientA1)).toBe(before);
   });
 
-  it('refuses a name the database would accept: invisible, joiner, control, blank, long and too wide once encoded', async () => {
+  it('refuses a name the database would accept: invisible, joiner, control, blank and long', async () => {
     const before = await folderCount(clientA1);
     const names = [
-      'Zero​width', 'Liga‍ção', 'Nao‌join', 'Bell\u0007', 'Linha dois', '   ', ' \t', '😀😀', 'a'.repeat(81), `a${'😀'.repeat(64)}`, ''
+      'Zero​width', 'Liga‍ção', 'Nao‌join', 'Bell\u0007', 'Linha dois', '   ', ' \t', '😀😀', 'a'.repeat(81), `a${'😀'.repeat(40)}`, ''
     ];
 
     for (const name of names) {
@@ -288,6 +322,14 @@ describe('creating a folder (issue #253)', () => {
     expect(archived.statusCode).toBe(409);
     expect(archived.json().error.code).toBe('CLIENT_ARCHIVED');
     expect([await folderCount(clientA1), await folderCount(clientA2), await folderCount(clientArchived)]).toEqual(before);
+  });
+
+  it('loses the race with the archive of the client: 409 CLIENT_ARCHIVED, and the folder is not left behind', async () => {
+    const { clientId, reply } = await duringArchiveOfAFreshClient((id) => call('POST', foldersUrl(agencyA, id), 'opVis', { name: 'Chegou tarde' }));
+
+    expect(reply.statusCode).toBe(409);
+    expect(reply.json().error.code).toBe('CLIENT_ARCHIVED');
+    expect(await owner.knex('media_folders').where({ client_id: clientId, is_default: false })).toHaveLength(0);
   });
 });
 
@@ -465,6 +507,18 @@ describe('uploading a media into a folder of a client (issue #253)', () => {
     expect((await call('POST', uploadUrl(agencyA), 'opVis', body(clientA1))).statusCode).toBe(400);
     expect((await call('POST', uploadUrl(agencyA), 'opVis', body(undefined, folderA1))).statusCode).toBe(400);
     expect(await mediaCount(agencyA) + await mediaCount(agencyB)).toBe(before);
+  });
+
+  it('loses the race with the archive of the client: 409 CLIENT_ARCHIVED, and no media or reservation is left behind', async () => {
+    let folderId = '';
+    const { clientId, reply } = await duringArchiveOfAFreshClient(async (id) => {
+      folderId = await defaultFolder(id);
+      return call('POST', uploadUrl(agencyA), 'opVis', body(id, folderId));
+    });
+
+    expect(reply.statusCode).toBe(409);
+    expect(reply.json().error.code).toBe('CLIENT_ARCHIVED');
+    expect(await owner.knex('media_assets').where({ client_id: clientId })).toHaveLength(0);
   });
 
   it('counts the media of a client that the caller cannot read against the quota of the agency', async () => {
