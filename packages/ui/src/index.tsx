@@ -5,6 +5,7 @@ export { ConfirmDialog, Menu, MenuItem, MenuSeparator } from './menu.js';
 export { Modal, type ModalProps } from './modal.js';
 export { Pagination, paginationItems, type PaginationProps } from './pagination.js';
 export { Select, type SelectOption, type SelectProps } from './select.js';
+export { Textarea, type TextareaProps } from './textarea.js';
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   /** `secondary` is shadcn's `outline`; Ageniza never exposes `outline` itself (docs/design-system.md section 13). */

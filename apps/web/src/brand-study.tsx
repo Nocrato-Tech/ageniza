@@ -9,12 +9,13 @@ import {
   BrandStudySectionSchema,
   PersonaNameSchema,
   PersonaSchema,
+  utf8ByteLength,
   type BrandColor,
   type BrandStudyResponse,
   type ClientDetailResponse,
   type Persona
 } from '@ageniza/contracts';
-import { Button, ConfirmDialog, FieldMessage, Modal, Select, Skeleton, TextInput } from '@ageniza/ui';
+import { Button, ConfirmDialog, FieldMessage, Modal, Select, Skeleton, TextInput, Textarea } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -30,9 +31,12 @@ const NO_PERMISSION = 'Você não tem permissão para editar o estudo de marca.'
 const ARCHIVED_READ_ONLY = 'Cliente arquivado: o estudo de marca está somente leitura.';
 const NAME_REQUIRED = 'Informe o nome da persona.';
 const NAME_INVALID = 'O nome contém caracteres que não são aceitos.';
+const NAME_TOO_LONG = 'O nome da persona pode ter no máximo 120 caracteres.';
 const COLORS_INVALID = 'Cada cor precisa de um nome e de um código hexadecimal como #7A1F2B.';
 const PERSONA_ARCHIVE_DESCRIPTION = 'Ela some do portal e as conversas dela ficam somente leitura. Você pode desarquivar depois.';
-const CONVERSATIONS_RESERVED = 'As conversas com o cliente sobre cada parte da marca aparecem aqui.';
+const CONVERSATIONS_RESERVED = 'Aqui vão ficar as conversas sobre esta parte da marca.';
+const PERSONA_CONVERSATIONS_RESERVED = 'Aqui vão ficar as conversas sobre esta persona.';
+const PERSONA_NAME_MAX_BYTES = 120;
 
 /** `specs/clientes.md` §3: the seven fixed sections, always present and always in this order. */
 const SECTION_LABELS = {
@@ -81,6 +85,11 @@ const invalidateStudyWrites = (queryClient: ReturnType<typeof useQueryClient>, a
 function UpdatedBy({ section }: { section: { updatedBy: { name: string } | null; updatedAt: string | null } }) {
   if (section.updatedBy === null || section.updatedAt === null) return null;
   return <p className="brand-section__updated">editado por {section.updatedBy.name} · {formatAgencyDayMonth(section.updatedAt)}</p>;
+}
+
+/** A reserved line inside a section card (or the persona modal), filled by #142. */
+function ReservedConversations({ text }: { text: string }) {
+  return <p className="brand-section__reserved">{text}</p>;
 }
 
 /** The in-place editor of a free-text section (Branding, Tom de voz, Posicionamento, Observações). */
@@ -133,7 +142,7 @@ function TextSection({ client, sectionKey, section, canEdit }: {
     return <>
       <p className="brand-section__body">{empty ? EMPTY_SECTION : section.body}</p>
       <div className="brand-section__actions">
-        {canEdit && <Button size="sm" variant="secondary" onClick={startEditing}>{empty ? 'Preencher' : 'Editar'}</Button>}
+        {canEdit && <Button size="sm" variant="secondary" aria-label={`${empty ? 'Preencher' : 'Editar'} ${label}`} onClick={startEditing}>{empty ? 'Preencher' : 'Editar'}</Button>}
       </div>
     </>;
   }
@@ -148,11 +157,10 @@ function TextSection({ client, sectionKey, section, canEdit }: {
 
   return <form className="brand-section__editor" onSubmit={onSubmit} noValidate>
     <label className="brand-section__editor-label" htmlFor={`${sectionKey}-${client.id}`}>Editar {label}</label>
-    <textarea
+    <Textarea
       ref={textareaRef}
       id={`${sectionKey}-${client.id}`}
       name={sectionKey}
-      className="ui-textarea"
       value={draft}
       rows={6}
       onChange={(event) => { setDraft(event.target.value); setError(undefined); }}
@@ -219,7 +227,7 @@ function ColorsSection({ client, colors, canEdit }: { client: ClientDetailRespon
           </li>)}
         </ul>}
       <div className="brand-section__actions">
-        {canEdit && <Button size="sm" variant="secondary" onClick={startEditing}>{empty ? 'Preencher' : 'Editar'}</Button>}
+        {canEdit && <Button size="sm" variant="secondary" aria-label={`${empty ? 'Preencher' : 'Editar'} Cores`} onClick={startEditing}>{empty ? 'Preencher' : 'Editar'}</Button>}
       </div>
     </>;
   }
@@ -227,7 +235,9 @@ function ColorsSection({ client, colors, canEdit }: { client: ClientDetailRespon
   const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     const filled = draft.filter((color) => color.name.trim() !== '' || color.hex.trim() !== '');
-    if (filled.length === 0) { setError(COLORS_INVALID); return; }
+    // Removing every row is clearing the section: the contract accepts `colors: []` and the API
+    // reads it as not filled, so the last removal travels instead of getting stuck (review of #388).
+    if (filled.length === 0) { save.mutate([]); return; }
     if (filled.some((color) => color.name.trim() === '' || !HEX_PATTERN.test(color.hex.trim()))) { setError(COLORS_INVALID); return; }
     const normalized = filled.map((color) => ({ name: color.name.trim(), hex: color.hex.trim() }));
     save.mutate(normalized);
@@ -303,7 +313,7 @@ function ArchetypeSection({ client, archetype, canEdit }: { client: ClientDetail
     return <>
       <p className="brand-section__body">{label ?? EMPTY_SECTION}</p>
       <div className="brand-section__actions">
-        {canEdit && <Button size="sm" variant="secondary" onClick={() => { setDraft(archetype ?? ''); setError(undefined); setEditing(true); }}>{label === null ? 'Preencher' : 'Editar'}</Button>}
+        {canEdit && <Button size="sm" variant="secondary" aria-label={`${label === null ? 'Preencher' : 'Editar'} Arquétipo`} onClick={() => { setDraft(archetype ?? ''); setError(undefined); setEditing(true); }}>{label === null ? 'Preencher' : 'Editar'}</Button>}
       </div>
     </>;
   }
@@ -374,10 +384,9 @@ function PersonaFields({ draft, onChange, nameRef, nameError }: {
     {([['description', 'Descrição'], ['pains', 'Dores'], ['desires', 'Desejos'], ['objections', 'Objeções']] as const).map(([field, label]) => (
       <div key={field} className="form-field">
         <label htmlFor={`${field}-${nameId}`}>{label}</label>
-        <textarea
+        <Textarea
           id={`${field}-${nameId}`}
           name={field}
-          className="ui-textarea"
           rows={3}
           value={draft[field]}
           onChange={(event) => onChange({ [field]: event.target.value })}
@@ -439,6 +448,8 @@ function CreatePersonaDialog({ client, onClose }: { client: ClientDetailResponse
     event.preventDefault();
     const name = draft.name.trim();
     if (name === '') { setNameError(NAME_REQUIRED); return; }
+    // The schema's byte cap would otherwise surface as the generic invalid-characters message.
+    if (utf8ByteLength(name) > PERSONA_NAME_MAX_BYTES) { setNameError(NAME_TOO_LONG); return; }
     if (!PersonaNameSchema.safeParse(name).success) { setNameError(NAME_INVALID); return; }
     create.mutate();
   };
@@ -522,6 +533,7 @@ function PersonaDialog({ client, persona, onClose }: { client: ClientDetailRespo
     event.preventDefault();
     const name = draft.name.trim();
     if (name === '') { setNameError(NAME_REQUIRED); return; }
+    if (utf8ByteLength(name) > PERSONA_NAME_MAX_BYTES) { setNameError(NAME_TOO_LONG); return; }
     if (!PersonaNameSchema.safeParse(name).success) { setNameError(NAME_INVALID); return; }
     const body = personaChanges(persona, draft);
     if (Object.keys(body).length === 0) { setEditing(false); return; }
@@ -549,6 +561,7 @@ function PersonaDialog({ client, persona, onClose }: { client: ClientDetailRespo
           <dt>Desejos</dt><dd>{persona.desires ?? NOT_INFORMED}</dd>
           <dt>Objeções</dt><dd>{persona.objections ?? NOT_INFORMED}</dd>
         </dl>
+        <ReservedConversations text={PERSONA_CONVERSATIONS_RESERVED} />
         {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
         {canEdit && <div className="brand-persona__actions">
           <Button size="sm" variant="secondary" onClick={() => { setDraft(draftFromPersona(persona)); setEditing(true); setNameError(undefined); }}>Editar</Button>
@@ -597,14 +610,13 @@ function PersonasSection({ client, personas, canEdit }: { client: ClientDetailRe
 
   const active = personas.filter((persona) => persona.status === 'active');
   const archived = personas.filter((persona) => persona.status === 'archived');
-  // The open modal follows the refetched list, so a saved edit is what stays on screen.
+  // The open modal reads the persona from the refetched list, so it never shows a stale copy.
   const currentOpen = openPersona === null ? null : personas.find((persona) => persona.id === openPersona.id) ?? null;
 
-  return <section className="brand-personas" aria-labelledby="brand-personas-title">
-    <header className="brand-personas__header">
-      <h3 id="brand-personas-title">Personas</h3>
-      {canEdit && <Button size="sm" variant="secondary" onClick={() => setCreating(true)}><span aria-hidden="true">+</span> persona</Button>}
-    </header>
+  return <div className="brand-personas">
+    {canEdit && <div className="brand-personas__header">
+      <Button size="sm" variant="secondary" aria-label="Adicionar persona" onClick={() => setCreating(true)}><span aria-hidden="true">+</span> persona</Button>
+    </div>}
 
     {active.length === 0
       ? <p className="brand-section__body">Nenhuma persona ainda</p>
@@ -636,13 +648,14 @@ function PersonasSection({ client, personas, canEdit }: { client: ClientDetailRe
           </li>)}
         </ul>
       </section>
-      : <Button variant="ghost" onClick={() => setArchivedOpen(true)}>{`Arquivadas (${archived.length})`} <span aria-hidden="true">▾</span></Button>)}
+      : <Button variant="ghost" aria-expanded={archivedOpen} onClick={() => setArchivedOpen(true)}>{`Arquivadas (${archived.length})`} <span aria-hidden="true">▾</span></Button>)}
 
+    <ReservedConversations text={CONVERSATIONS_RESERVED} />
     {error !== undefined && <FieldMessage role="alert">{error}</FieldMessage>}
 
     {currentOpen !== null && <PersonaDialog client={client} persona={currentOpen} onClose={() => setOpenPersona(null)} />}
     {creating && <CreatePersonaDialog client={client} onClose={() => setCreating(false)} />}
-  </section>;
+  </div>;
 }
 
 /**
@@ -707,23 +720,21 @@ export function ClientBrandStudyTab() {
         return <div key={key} className="brand-section">
           {header}
           <ColorsSection client={client} colors={section?.colors ?? null} canEdit={canEdit} />
+          <ReservedConversations text={CONVERSATIONS_RESERVED} />
         </div>;
       }
       if (key === 'archetype') {
         return <div key={key} className="brand-section">
           {header}
           <ArchetypeSection client={client} archetype={section?.archetype ?? null} canEdit={canEdit} />
+          <ReservedConversations text={CONVERSATIONS_RESERVED} />
         </div>;
       }
       return <div key={key} className="brand-section">
         {header}
         <TextSection client={client} sectionKey={key} section={section ?? { body: null }} canEdit={canEdit} />
+        <ReservedConversations text={CONVERSATIONS_RESERVED} />
       </div>;
     })}
-
-    <section className="brand-study__reserved" aria-labelledby="brand-conversations-title">
-      <h3 id="brand-conversations-title">Conversas</h3>
-      <p>{CONVERSATIONS_RESERVED}</p>
-    </section>
   </div>;
 }

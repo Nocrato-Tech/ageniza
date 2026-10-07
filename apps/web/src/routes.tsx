@@ -9,7 +9,6 @@ import { LiveStatus } from '@ageniza/ui';
 import { ClientBrandStudyTab } from './brand-study.js';
 import { ClientDetailPage, ClientGeneralTab, ClientSkeletonTab } from './client-detail.js';
 import { ClientsPage } from './clients.js';
-import { ClientAccessTab } from './portal-access.js';
 import { CollaboratorsPage } from './collaborators.js';
 import { ContextSelectPage } from './contexts.js';
 import { ConfirmEmailChangePage } from './email-change.js';
@@ -92,7 +91,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
           <Route path="relatorios" element={<ClientSkeletonTab title="Relatórios" description="Aqui vai ficar o relatório deste cliente, com os resultados do trabalho." />} />
           {/* The permission gate lives in ClientDetailPage: without it the whole address is the
               ordinary not-found, header included, not a not-found inside a visible client page. */}
-          <Route path="acessos" element={<ClientAccessTab />} />
+          <Route path="acessos" element={<ClientSkeletonTab title="Acessos" description="Aqui vão ficar as pessoas com acesso ao portal e os convites pendentes." />} />
           <Route path="*" element={<NotFoundPage as="section" />} />
         </Route>
       </Route>

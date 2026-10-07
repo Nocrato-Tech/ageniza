@@ -102,11 +102,13 @@ const donaAposentada: PersonaFixture = {
 };
 
 const ANY_USER = { id: 'ffffffff-1111-4111-8111-111111111111', name: 'Ana' };
+// 01:30 UTC of the 13th is 22:30 of the 12th in São Paulo: the label must read 12/10.
+const BRANDING_EDITED_AT = '2026-10-13T01:30:00.000Z';
 
 const studyOf = (over: Partial<{ filled: number; sections: SectionFixture[]; personas: PersonaFixture[] }> = {}) => ({
   filled: 5,
   sections: [
-    sectionOf('branding', { body: 'Marca acolhedora do bairro', updatedBy: ANY_USER, updatedAt: '2026-10-12T12:00:00.000Z' }),
+    sectionOf('branding', { body: 'Marca acolhedora do bairro', updatedBy: ANY_USER, updatedAt: BRANDING_EDITED_AT }),
     sectionOf('tone_of_voice'),
     sectionOf('colors', { colors: [{ name: 'Vinho', hex: '#7A1F2B' }, { name: 'Creme', hex: '#F3E9DC' }] }),
     sectionOf('positioning'),
@@ -228,26 +230,49 @@ const sectionCard = (container: HTMLElement, title: string): HTMLElement => {
   return card;
 };
 
+const openPersona = async (name: string): Promise<HTMLElement> => {
+  fireEvent.click(await screen.findByRole('button', { name: new RegExp(name) }));
+  return await screen.findByRole('dialog', { name });
+};
+
 describe('brand study tab (#138)', () => {
-  it('renders the seven sections always present and in the SPEC order, with the counter', async () => {
+  it('renders the seven sections once each, in the SPEC order, with the counter and reserved lines', async () => {
     const { impl } = makeFetch();
     const { container } = renderStudy(impl);
 
     await screen.findByRole('heading', { name: 'Estudo de marca' });
     expect(screen.getByText('5 de 7 preenchidas')).toBeTruthy();
-    const headings = Array.from(container.querySelectorAll('.brand-section__header h3')).map((element) => element.textContent);
+    const panel = container.querySelector<HTMLElement>('.client-detail__panel');
+    if (panel === null) throw new Error('The tab panel was not rendered.');
+    // The heading list itself proves order and uniqueness: "Personas" appears once (#138 review).
+    const headings = within(panel).getAllByRole('heading', { level: 3 }).map((element) => element.textContent);
     expect(headings).toEqual(['Branding', 'Tom de voz', 'Cores', 'Posicionamento', 'Arquétipo', 'Personas', 'Observações']);
+    expect(screen.getAllByRole('heading', { name: 'Personas' })).toHaveLength(1);
+    // Every section reserves its own conversations area for #142; there is no fake control.
+    expect(screen.getAllByText('Aqui vão ficar as conversas sobre esta parte da marca.')).toHaveLength(7);
+    expect(screen.queryByRole('button', { name: /conversa/i })).toBeNull();
     // Empty sections say so instead of disappearing; Branding, Cores and Arquétipo are filled.
     expect(screen.getAllByText('Ainda não preenchida')).toHaveLength(3);
     expect(screen.getByText('Marca acolhedora do bairro')).toBeTruthy();
     expect(screen.getByText('Cuidador')).toBeTruthy();
     expect(screen.getByText('Vinho')).toBeTruthy();
     expect(screen.getByText('#7A1F2B')).toBeTruthy();
-    // "editado por" carries the last editor and the agency day, never a UTC-sliced date.
+    // "editado por" carries the last editor and the agency day: 01:30Z of the 13th is 12/10 in SP.
     expect(screen.getByText('editado por Ana · 12/10')).toBeTruthy();
-    // The conversations area of #142 is reserved, with no fake control or count.
-    expect(screen.getByRole('heading', { name: 'Conversas' })).toBeTruthy();
-    expect(screen.getByText('As conversas com o cliente sobre cada parte da marca aparecem aqui.')).toBeTruthy();
+  });
+
+  it('gives every edit control a name that says its target', async () => {
+    const { impl } = makeFetch();
+    renderStudy(impl);
+
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    expect(screen.getByRole('button', { name: 'Editar Branding' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Preencher Tom de voz' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Editar Cores' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Preencher Posicionamento' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Editar Arquétipo' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Adicionar persona' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Preencher Observações' })).toBeTruthy();
   });
 
   it('edits each section in place without reloading or closing the others', async () => {
@@ -255,11 +280,11 @@ describe('brand study tab (#138)', () => {
     const { container } = renderStudy(impl);
     await screen.findByRole('heading', { name: 'Estudo de marca' });
 
-    fireEvent.click(within(sectionCard(container, 'Branding')).getByRole('button', { name: 'Editar' }));
+    fireEvent.click(within(sectionCard(container, 'Branding')).getByRole('button', { name: 'Editar Branding' }));
     const branding = within(sectionCard(container, 'Branding')).getByRole('textbox', { name: 'Editar Branding' }) as HTMLTextAreaElement;
     expect(branding.value).toBe('Marca acolhedora do bairro');
 
-    fireEvent.click(within(sectionCard(container, 'Tom de voz')).getByRole('button', { name: 'Preencher' }));
+    fireEvent.click(within(sectionCard(container, 'Tom de voz')).getByRole('button', { name: 'Preencher Tom de voz' }));
     expect(within(sectionCard(container, 'Tom de voz')).getByRole('textbox', { name: 'Editar Tom de voz' })).toBeTruthy();
     // Both editors stay open, and opening them never refetches the study.
     expect(branding.value).toBe('Marca acolhedora do bairro');
@@ -272,13 +297,13 @@ describe('brand study tab (#138)', () => {
       putSection: (sectionKey, body) => {
         attempts += 1;
         if (attempts === 1) return json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, 500);
-        return json(sectionOf(sectionKey, { body: (body as { body: string }).body, updatedBy: ANY_USER, updatedAt: '2026-10-12T12:00:00.000Z' }));
+        return json(sectionOf(sectionKey, { body: (body as { body: string }).body, updatedBy: ANY_USER, updatedAt: BRANDING_EDITED_AT }));
       }
     });
     const { container } = renderStudy(impl);
     await screen.findByRole('heading', { name: 'Estudo de marca' });
 
-    fireEvent.click(within(sectionCard(container, 'Branding')).getByRole('button', { name: 'Editar' }));
+    fireEvent.click(within(sectionCard(container, 'Branding')).getByRole('button', { name: 'Editar Branding' }));
     const textarea = within(sectionCard(container, 'Branding')).getByRole('textbox', { name: 'Editar Branding' }) as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'Texto novo do branding' } });
     fireEvent.click(within(sectionCard(container, 'Branding')).getByRole('button', { name: 'Salvar' }));
@@ -292,6 +317,29 @@ describe('brand study tab (#138)', () => {
     expect(attempts).toBe(2);
   });
 
+  it('maps a 400 from the section save and a 409 of an archived client to their messages', async () => {
+    const { impl } = makeFetch({
+      putSection: (sectionKey, body) => {
+        if ((body as { body: string }).body === 'forcar 400') {
+          return json({ error: { code: 'VALIDATION_ERROR', message: 'private diagnostic' } }, 400);
+        }
+        return json({ error: { code: 'CLIENT_ARCHIVED', message: 'private diagnostic' } }, 409);
+      }
+    });
+    const { container } = renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+
+    fireEvent.click(within(sectionCard(container, 'Branding')).getByRole('button', { name: 'Editar Branding' }));
+    fireEvent.change(within(sectionCard(container, 'Branding')).getByRole('textbox', { name: 'Editar Branding' }), { target: { value: 'forcar 400' } });
+    fireEvent.click(within(sectionCard(container, 'Branding')).getByRole('button', { name: 'Salvar' }));
+    expect(await within(sectionCard(container, 'Branding')).findByText('Revise os dados informados.')).toBeTruthy();
+
+    fireEvent.change(within(sectionCard(container, 'Branding')).getByRole('textbox', { name: 'Editar Branding' }), { target: { value: 'outro texto' } });
+    fireEvent.click(within(sectionCard(container, 'Branding')).getByRole('button', { name: 'Salvar' }));
+    expect(await within(sectionCard(container, 'Branding')).findByText('Cliente arquivado: o estudo de marca está somente leitura.')).toBeTruthy();
+    expect(screen.queryByText('private diagnostic')).toBeNull();
+  });
+
   it('updates the counter and "editado por" without a reload, and invalidates the General tab', async () => {
     let studyData = studyOf();
     let detailData = padaria;
@@ -302,7 +350,7 @@ describe('brand study tab (#138)', () => {
         const updated = sectionOf(sectionKey, {
           body: (body as { body: string }).body,
           updatedBy: ANY_USER,
-          updatedAt: '2026-10-12T12:00:00.000Z'
+          updatedAt: BRANDING_EDITED_AT
         });
         studyData = { ...studyData, filled: 6, sections: studyData.sections.map((section) => (section.key === sectionKey ? updated : section)) };
         detailData = { ...detailData, summary: { ...detailData.summary, brandStudyFilled: 6 } };
@@ -313,7 +361,7 @@ describe('brand study tab (#138)', () => {
     await screen.findByRole('heading', { name: 'Estudo de marca' });
     expect(screen.getByText('5 de 7 preenchidas')).toBeTruthy();
 
-    fireEvent.click(within(sectionCard(container, 'Tom de voz')).getByRole('button', { name: 'Preencher' }));
+    fireEvent.click(within(sectionCard(container, 'Tom de voz')).getByRole('button', { name: 'Preencher Tom de voz' }));
     fireEvent.change(within(sectionCard(container, 'Tom de voz')).getByRole('textbox', { name: 'Editar Tom de voz' }), { target: { value: 'Falamos simples' } });
     fireEvent.click(within(sectionCard(container, 'Tom de voz')).getByRole('button', { name: 'Salvar' }));
 
@@ -325,37 +373,58 @@ describe('brand study tab (#138)', () => {
     expect(screen.getByText('6 de 7')).toBeTruthy();
   });
 
-  it('sends only the colors, refuses a bad hex without a request and round-trips the list', async () => {
+  it('refuses a bad hex without a request, sends colors: [] when every row is removed, and round-trips a save', async () => {
     const bodies: unknown[] = [];
+    let studyData = studyOf();
+    let detailData = padaria;
     const { impl, calls } = makeFetch({
+      client: () => json(detailData),
+      study: () => json(studyData),
       putSection: (sectionKey, body) => {
         bodies.push(body);
-        return json(sectionOf(sectionKey, { colors: (body as { colors: Array<{ name: string; hex: string }> }).colors }));
+        const colors = (body as { colors: Array<{ name: string; hex: string }> }).colors;
+        const updated = sectionOf(sectionKey, { colors, updatedBy: ANY_USER, updatedAt: BRANDING_EDITED_AT });
+        studyData = { ...studyData, filled: colors.length === 0 ? 4 : 5, sections: studyData.sections.map((section) => (section.key === sectionKey ? updated : section)) };
+        detailData = { ...detailData, summary: { ...detailData.summary, brandStudyFilled: studyData.filled } };
+        return json(updated);
       }
     });
     const { container } = renderStudy(impl);
     await screen.findByRole('heading', { name: 'Estudo de marca' });
 
-    fireEvent.click(within(sectionCard(container, 'Cores')).getByRole('button', { name: 'Editar' }));
+    fireEvent.click(within(sectionCard(container, 'Cores')).getByRole('button', { name: 'Editar Cores' }));
     fireEvent.change(within(sectionCard(container, 'Cores')).getByLabelText('Código da cor 1'), { target: { value: 'zzz' } });
     fireEvent.click(within(sectionCard(container, 'Cores')).getByRole('button', { name: 'Salvar' }));
     expect(await within(sectionCard(container, 'Cores')).findByText('Cada cor precisa de um nome e de um código hexadecimal como #7A1F2B.')).toBeTruthy();
     expect(bodies).toEqual([]);
     expect(calls.some((call) => call.startsWith('PUT'))).toBe(false);
 
+    // Fixing the hex saves and the editor closes over the new list, the last editor and the counter.
     fireEvent.change(within(sectionCard(container, 'Cores')).getByLabelText('Código da cor 1'), { target: { value: '#112233' } });
     fireEvent.click(within(sectionCard(container, 'Cores')).getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(bodies).toEqual([{ colors: [{ name: 'Vinho', hex: '#112233' }, { name: 'Creme', hex: '#F3E9DC' }] }]));
+    await waitFor(() => expect(within(sectionCard(container, 'Cores')).queryByLabelText('Nome da cor 1')).toBeNull());
+    expect(within(sectionCard(container, 'Cores')).getByText('#112233')).toBeTruthy();
+    expect(within(sectionCard(container, 'Cores')).getByText('editado por Ana · 12/10')).toBeTruthy();
+
+    // Removing every row is clearing the section: the last removal travels as colors: [].
+    fireEvent.click(within(sectionCard(container, 'Cores')).getByRole('button', { name: 'Editar Cores' }));
+    fireEvent.click(within(sectionCard(container, 'Cores')).getByRole('button', { name: 'Remover a cor 1' }));
+    fireEvent.click(within(sectionCard(container, 'Cores')).getByRole('button', { name: 'Remover a cor 1' }));
+    fireEvent.click(within(sectionCard(container, 'Cores')).getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toEqual({ colors: [] });
+    await waitFor(() => expect(within(sectionCard(container, 'Cores')).getByText('Ainda não preenchida')).toBeTruthy());
   });
 
-  it('edits the archetype by its Portuguese label and sends the key', async () => {
+  it('edits the archetype by its Portuguese label, sends the key and shows the new editor day', async () => {
     const bodies: unknown[] = [];
     let studyData = studyOf();
     const { impl } = makeFetch({
       study: () => json(studyData),
       putSection: (sectionKey, body) => {
         bodies.push(body);
-        const updated = sectionOf(sectionKey, { archetype: (body as { archetype: string }).archetype });
+        const updated = sectionOf(sectionKey, { archetype: (body as { archetype: string }).archetype, updatedBy: ANY_USER, updatedAt: BRANDING_EDITED_AT });
         studyData = { ...studyData, sections: studyData.sections.map((section) => (section.key === sectionKey ? updated : section)) };
         return json(updated);
       }
@@ -363,12 +432,14 @@ describe('brand study tab (#138)', () => {
     const { container } = renderStudy(impl);
     await screen.findByRole('heading', { name: 'Estudo de marca' });
 
-    fireEvent.click(within(sectionCard(container, 'Arquétipo')).getByRole('button', { name: 'Editar' }));
+    fireEvent.click(within(sectionCard(container, 'Arquétipo')).getByRole('button', { name: 'Editar Arquétipo' }));
     fireEvent.change(within(sectionCard(container, 'Arquétipo')).getByRole('combobox', { name: 'Arquétipo' }), { target: { value: 'hero' } });
     fireEvent.click(within(sectionCard(container, 'Arquétipo')).getByRole('button', { name: 'Salvar' }));
 
     await waitFor(() => expect(bodies).toEqual([{ archetype: 'hero' }]));
     expect(await within(sectionCard(container, 'Arquétipo')).findByText('Herói')).toBeTruthy();
+    expect(within(sectionCard(container, 'Arquétipo')).queryByRole('combobox')).toBeNull();
+    expect(within(sectionCard(container, 'Arquétipo')).getByText('editado por Ana · 12/10')).toBeTruthy();
   });
 
   it('keeps reading and opening personas for a reader role, with no editing control at all', async () => {
@@ -378,35 +449,43 @@ describe('brand study tab (#138)', () => {
     await screen.findByRole('heading', { name: 'Estudo de marca' });
     expect(screen.getByText('Marca acolhedora do bairro')).toBeTruthy();
     expect(screen.getAllByText('Ainda não preenchida').length).toBeGreaterThan(0);
-    expect(screen.queryByRole('button', { name: 'Editar' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Preencher' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'persona' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Editar/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Preencher/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Adicionar persona' })).toBeNull();
     // Reading the archived list is reading: the list opens, the Desarquivar action does not exist.
     fireEvent.click(screen.getByRole('button', { name: 'Arquivadas (1)' }));
     expect(screen.getByText('Dona Aposentada')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Desarquivar/ })).toBeNull();
 
     // Opening a persona is reading, not editing: the detail shows the fields without its actions.
-    fireEvent.click(screen.getByRole('button', { name: /Dona Maria/ }));
-    const dialog = await screen.findByRole('dialog', { name: 'Dona Maria' });
+    const dialog = await openPersona('Dona Maria');
     expect(within(dialog).getByText('Dona da padaria')).toBeTruthy();
+    expect(within(dialog).getByText('Aqui vão ficar as conversas sobre esta persona.')).toBeTruthy();
     expect(within(dialog).queryByRole('button', { name: 'Editar' })).toBeNull();
     expect(within(dialog).queryByRole('button', { name: 'Arquivar' })).toBeNull();
   });
 
-  it('shows no editing control on an archived client, for anyone', async () => {
+  it('shows no editing control on an archived client, even inside a persona and the archived list', async () => {
     const { impl } = makeFetch({ client: () => json({ ...padaria, status: 'archived', archivedAt: '2026-10-04T12:00:00.000Z' }) });
     renderStudy(impl);
 
     await screen.findByRole('heading', { name: 'Estudo de marca' });
     expect(screen.getByText('Cliente arquivado em 04/10')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Editar' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Preencher' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'persona' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Editar/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Preencher/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Adicionar persona' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Arquivadas (1)' }));
+    expect(screen.getByText('Dona Aposentada')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Desarquivar/ })).toBeNull();
+
+    const dialog = await openPersona('Dona Maria');
+    expect(within(dialog).getByText('Dona da padaria')).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: 'Editar' })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Arquivar' })).toBeNull();
   });
 
-  it('creates a persona from the modal, refusing an empty name first', async () => {
+  it('creates a persona from the modal, refusing an empty name and a name over 120 bytes first', async () => {
     const bodies: unknown[] = [];
     let studyData = studyOf({ personas: [] });
     const { impl } = makeFetch({
@@ -422,19 +501,64 @@ describe('brand study tab (#138)', () => {
     await screen.findByRole('heading', { name: 'Estudo de marca' });
     expect(screen.getByText('Nenhuma persona ainda')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'persona' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar persona' }));
     const dialog = await screen.findByRole('dialog', { name: 'Nova persona' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Criar persona' }));
     expect(await within(dialog).findByText('Informe o nome da persona.')).toBeTruthy();
     expect(bodies).toEqual([]);
 
-    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Nome' }), { target: { value: 'Dona Maria' } });
+    const name = within(dialog).getByRole('textbox', { name: 'Nome' });
+    fireEvent.change(name, { target: { value: 'x'.repeat(121) } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Criar persona' }));
+    expect(await within(dialog).findByText('O nome da persona pode ter no máximo 120 caracteres.')).toBeTruthy();
+    expect(bodies).toEqual([]);
+
+    fireEvent.change(name, { target: { value: 'Dona Maria' } });
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Descrição' }), { target: { value: 'Dona da padaria' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Criar persona' }));
 
     await waitFor(() => expect(bodies).toEqual([{ name: 'Dona Maria', description: 'Dona da padaria', pains: null, desires: null, objections: null }]));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await screen.findByRole('button', { name: /Dona Maria/ })).toBeTruthy();
+  });
+
+  it('keeps the create modal draft on server errors and maps 400, 403 and CLIENT_ARCHIVED', async () => {
+    const { impl } = makeFetch({
+      createPersona: (body) => {
+        const name = (body as { name: string }).name;
+        if (name === 'Nome ruim') {
+          return json({ error: { code: 'VALIDATION_ERROR', message: 'private diagnostic', details: { issues: [{ path: 'name', code: 'custom' }] } } }, 400);
+        }
+        if (name === 'Sem permissão') return json({ error: { code: 'FORBIDDEN', message: 'private diagnostic' } }, 403);
+        if (name === 'Cliente arquivado') return json({ error: { code: 'CLIENT_ARCHIVED', message: 'private diagnostic' } }, 409);
+        return json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, 500);
+      }
+    });
+    renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar persona' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Nova persona' });
+    const name = within(dialog).getByRole('textbox', { name: 'Nome' });
+
+    fireEvent.change(name, { target: { value: 'Nome ruim' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Criar persona' }));
+    expect(await within(dialog).findByText('O nome contém caracteres que não são aceitos.')).toBeTruthy();
+    expect(dialog.textContent).not.toContain('private diagnostic');
+
+    fireEvent.change(name, { target: { value: 'Sem permissão' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Criar persona' }));
+    expect(await within(dialog).findByText('Você não tem permissão para editar o estudo de marca.')).toBeTruthy();
+    expect(dialog.textContent).not.toContain('private diagnostic');
+
+    fireEvent.change(name, { target: { value: 'Cliente arquivado' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Criar persona' }));
+    expect(await within(dialog).findByText('Cliente arquivado: o estudo de marca está somente leitura.')).toBeTruthy();
+
+    fireEvent.change(name, { target: { value: 'Falha geral' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Criar persona' }));
+    expect(await within(dialog).findByText('Não foi possível salvar. Tente de novo.')).toBeTruthy();
+    // The typed name survives every refusal.
+    expect((within(dialog).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement).value).toBe('Falha geral');
   });
 
   it('opens a persona with its four fields, edits only what changed and archives with confirmation', async () => {
@@ -457,12 +581,12 @@ describe('brand study tab (#138)', () => {
     const { container } = renderStudy(impl);
     await screen.findByRole('heading', { name: 'Estudo de marca' });
 
-    fireEvent.click(screen.getByRole('button', { name: /Dona Maria/ }));
-    const dialog = await screen.findByRole('dialog', { name: 'Dona Maria' });
+    const dialog = await openPersona('Dona Maria');
     expect(within(dialog).getByText('Dona da padaria')).toBeTruthy();
     expect(within(dialog).getByText('Pouco tempo')).toBeTruthy();
     expect(within(dialog).getByText('Clientes fiéis')).toBeTruthy();
     expect(within(dialog).getByText('Preço')).toBeTruthy();
+    expect(within(dialog).getByText('Aqui vão ficar as conversas sobre esta persona.')).toBeTruthy();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Editar' }));
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Descrição' }), { target: { value: 'Dona da padaria e do bairro' } });
@@ -471,8 +595,7 @@ describe('brand study tab (#138)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
     // Archiving asks first, saying what happens to the portal and to the conversations.
-    fireEvent.click(await screen.findByRole('button', { name: /Dona Maria/ }));
-    const reopened = await screen.findByRole('dialog', { name: 'Dona Maria' });
+    const reopened = await openPersona('Dona Maria');
     fireEvent.click(within(reopened).getByRole('button', { name: 'Arquivar' }));
     const description = await screen.findByText('Ela some do portal e as conversas dela ficam somente leitura. Você pode desarquivar depois.');
     const confirm = description.closest('.ui-dialog');
@@ -481,8 +604,9 @@ describe('brand study tab (#138)', () => {
 
     // The active grid loses her; she moves into the collapsed Arquivadas list.
     await waitFor(() => expect(screen.queryByRole('button', { name: /Dona Maria/ })).toBeNull());
-    expect(screen.getByRole('button', { name: 'Arquivadas (2)' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Arquivadas (2)' }));
+    const archivedToggle = screen.getByRole('button', { name: 'Arquivadas (2)' });
+    expect(archivedToggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(archivedToggle);
     const archived = container.querySelector<HTMLElement>('.brand-personas__archived');
     if (archived === null) throw new Error('The archived list was not rendered.');
     expect(within(archived).getByText('Dona Maria')).toBeTruthy();
@@ -490,11 +614,68 @@ describe('brand study tab (#138)', () => {
     expect(within(archived).getByRole('button', { name: 'Desarquivar Dona Aposentada' })).toBeTruthy();
   });
 
-  it('reactivates an archived persona from the collapsed list', async () => {
+  it('keeps the edit draft on a persona save error, with the server message mapped', async () => {
+    const { impl } = makeFetch({
+      patchPersona: () => json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, 500)
+    });
+    renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+
+    const dialog = await openPersona('Dona Maria');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Editar' }));
+    const description = within(dialog).getByRole('textbox', { name: 'Descrição' }) as HTMLTextAreaElement;
+    fireEvent.change(description, { target: { value: 'Rascunho que não pode sumir' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    expect(await within(dialog).findByText('Não foi possível salvar. Tente de novo.')).toBeTruthy();
+    expect(description.value).toBe('Rascunho que não pode sumir');
+    expect(dialog.textContent).not.toContain('private diagnostic');
+    expect(screen.getByRole('dialog', { name: 'Dona Maria' })).toBe(dialog);
+  });
+
+  it('maps an archive refusal and keeps the retry available', async () => {
+    let attempts = 0;
+    let studyData = studyOf();
+    const { impl } = makeFetch({
+      study: () => json(studyData),
+      archivePersona: (personaId) => {
+        attempts += 1;
+        if (attempts === 1) return json({ error: { code: 'CLIENT_ARCHIVED', message: 'private diagnostic' } }, 409);
+        const updated = { ...donaMaria, status: 'archived' as const };
+        studyData = { ...studyData, personas: studyData.personas.map((persona) => (persona.id === personaId ? updated : persona)) };
+        return json(updated);
+      }
+    });
+    renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+
+    const dialog = await openPersona('Dona Maria');
+    const confirmArchive = async (): Promise<void> => {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Arquivar' }));
+      const description = await screen.findByText('Ela some do portal e as conversas dela ficam somente leitura. Você pode desarquivar depois.');
+      const confirm = description.closest('.ui-dialog');
+      if (confirm === null) throw new Error('The archive confirmation was not rendered.');
+      fireEvent.click(within(confirm as HTMLElement).getByRole('button', { name: 'Arquivar' }));
+    };
+    await confirmArchive();
+
+    expect(await within(dialog).findByText('Cliente arquivado: o estudo de marca está somente leitura.')).toBeTruthy();
+    expect(dialog.textContent).not.toContain('private diagnostic');
+
+    // The retry that lands archives the persona.
+    await confirmArchive();
+    await waitFor(() => expect(attempts).toBe(2));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Dona Maria/ })).toBeNull());
+  });
+
+  it('reactivates an archived persona and reports an unarchive failure in the section', async () => {
     let studyData = studyOf({ personas: [donaMaria, donaAposentada] });
+    let attempts = 0;
     const { impl } = makeFetch({
       study: () => json(studyData),
       unarchivePersona: (personaId) => {
+        attempts += 1;
+        if (attempts === 1) return json({ error: { code: 'FORBIDDEN', message: 'private diagnostic' } }, 403);
         const updated = { ...donaAposentada, status: 'active' as const };
         studyData = { ...studyData, personas: studyData.personas.map((persona) => (persona.id === personaId ? updated : persona)) };
         return json(updated);
@@ -505,8 +686,10 @@ describe('brand study tab (#138)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Arquivadas (1)' }));
     fireEvent.click(screen.getByRole('button', { name: 'Desarquivar Dona Aposentada' }));
+    expect(await screen.findByText('Você não tem permissão para editar o estudo de marca.')).toBeTruthy();
+    expect(screen.queryByText('private diagnostic')).toBeNull();
 
-    // Back in the active grid; the collapsed affordance disappears with the empty archived list.
+    fireEvent.click(screen.getByRole('button', { name: 'Desarquivar Dona Aposentada' }));
     expect(await screen.findByRole('button', { name: /Dona Aposentada/ })).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Arquivadas (1)' })).toBeNull());
   });
