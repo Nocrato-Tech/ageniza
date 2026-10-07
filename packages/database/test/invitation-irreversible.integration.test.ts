@@ -346,8 +346,9 @@ describe('invitation state only moves forward (#290)', () => {
   it('does not let a role delete the evidence either: a revoked invitation cannot be removed and re-created', async () => {
     const invitee = await makeInvitee();
     const invitation = await insertInvitation({ purpose: 'collaborator_invite', inviteeId: invitee, roleId: productionRoleId, revokedAt: new Date(Date.now() - 60_000) });
-    const removed = await asUser(cancellerUser, (transaction) => transaction('invitations').where({ id: invitation.id }).delete());
-    expect(removed).toBe(0);
+    // Issue #356 revokes DELETE on invitations: refused by the privilege, not by a RLS that filters to zero rows.
+    await expect(asUser(cancellerUser, (transaction) => transaction('invitations').where({ id: invitation.id }).delete()))
+      .rejects.toMatchObject({ code: '42501', message: expect.stringContaining('permission denied for table invitations') });
     expect(await getOwner().knex('invitations').where({ id: invitation.id }).select('id')).toHaveLength(1);
   });
 

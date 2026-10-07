@@ -101,7 +101,7 @@ Convite pendente **não é um estado do vínculo**: é uma linha em `invitations
 8. O Gestor de conta altera `job_title` e **nunca** `role_id`.
 9. Colaborador `removed` não aparece na listagem padrão, e o filtro que o revela exige permissão administrativa.
 10. `pageSize` nunca passa de 100; sem parâmetro, são 24.
-11. Remover não apaga a linha de `agency_memberships`.
+11. Remover não apaga a linha de `agency_memberships`. A regra vale também no banco: a migration `20261007000600` (issue #356, decisão de 2026-10-07 pendente de validação) revoga `delete` de `ageniza_app` em `agency_memberships` e em `invitations`, então uma policy de DELETE criada por engano não apaga vínculo nem convite, e remover e reativar continuam `UPDATE` de `status`.
 12. Editar o próprio nome ou a própria foto não exige permissão de módulo, e não permite alcançar outra pessoa.
 
 ## 6. Backend
