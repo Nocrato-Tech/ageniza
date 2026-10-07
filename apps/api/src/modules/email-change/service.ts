@@ -6,7 +6,11 @@ interface RawRows<TResult> {
   readonly rows: readonly TResult[];
 }
 
-/** Codes `app_private.request_email_change` and `app_private.confirm_email_change` raise. */
+/**
+ * Codes `app_private.request_email_change` and `app_private.confirm_email_change` raise. `invalidLink`
+ * is also what the request raises when the credential the password was verified against is no longer
+ * the account's.
+ */
 export const EMAIL_CHANGE_ERRORS = {
   malformedAddress: 'A0041',
   invalidLink: 'A0042',
@@ -39,13 +43,18 @@ export const loadCredentialHash = async (transaction: EmailChangeTransaction, us
   return result.rows[0]?.password ?? undefined;
 };
 
-/** Records the request for the bound actor; the previous address comes from the database. */
+/**
+ * Records the request for the bound actor; the previous address comes from the database. The hash is
+ * the one the password was just verified against: the request is recorded under that credential, and
+ * refused if the account's has moved since.
+ */
 export const requestEmailChange = async (
   transaction: EmailChangeTransaction,
-  newEmail: string
+  newEmail: string,
+  verifiedHash: string
 ): Promise<{ readonly requestId: string; readonly previousEmail: string }> => {
   const result = await raw<RawRows<{ request_id: string; previous_email: string }>>(transaction,
-    'select * from app_private.request_email_change(?)', [newEmail]);
+    'select * from app_private.request_email_change(?, ?)', [newEmail, verifiedHash]);
   const row = result.rows[0];
   if (row === undefined) throw new Error('The e-mail change request was not recorded.');
   return { requestId: row.request_id, previousEmail: row.previous_email };

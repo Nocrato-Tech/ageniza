@@ -93,15 +93,19 @@ export const registerEmailChangeModule = (app: FastifyInstance, dependencies: Em
     const hash = await dependencies.database.transaction((transaction) => loadCredentialHash(transaction, auth.userId));
     const verified = hash !== undefined
       && await (await dependencies.auth.$context).password.verify({ hash, password: body.currentPassword });
-    if (!verified) throw invalidPassword();
+    if (hash === undefined || !verified) throw invalidPassword();
 
     let recorded: Awaited<ReturnType<typeof requestEmailChange>>;
     try {
       recorded = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
-        requestEmailChange(transaction, body.newEmail)
+        // The hash that was verified, not whatever the account holds by now: the password check and
+        // this transaction are apart, and a reset in between must not pass for a request made after it.
+        requestEmailChange(transaction, body.newEmail, hash)
       );
     } catch (error) {
       if (databaseErrorCode(error) === EMAIL_CHANGE_ERRORS.sameAddress) throw sameAddress();
+      // The password the person typed is no longer the account's: the answer to a wrong password.
+      if (databaseErrorCode(error) === EMAIL_CHANGE_ERRORS.invalidLink) throw invalidPassword();
       if (isRetryableConflict(error)) throw tryAgain();
       throw error;
     }

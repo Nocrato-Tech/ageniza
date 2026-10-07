@@ -21,7 +21,8 @@
 //   A0040 -> no actor is bound to the transaction
 //   A0041 -> the new address is malformed
 //   A0042 -> the link is not valid (unknown, used, expired, superseded, or the swap is no longer
-//            possible); one error for all, so the response is never an oracle
+//            possible), or, on the request, the credential it was verified under is no longer the
+//            account's; one error for all, so the response is never an oracle
 //   A0043 -> the new address is the one the account already has
 //
 // A request is only as good as the credential that existed when it was made. The notice sent to the
@@ -32,6 +33,12 @@
 //   2. the request records a fingerprint of the credential, and both the approval (CLI) and
 //      confirm_email_change refuse a request whose fingerprint is no longer the account's, whether or
 //      not barrier 1 ran (a hook that failed, a password changed by a path that does not call it).
+// The fingerprint recorded is the one of the credential the CALLER VERIFIED the password against
+// (request_email_change receives that hash), never the account's credential at insert time: the
+// password is checked in one transaction and the request is written in another, and a reset landing
+// between the two would otherwise be recorded as if the request had been made under the new password
+// (security review of PR #325, second round). Under the account lock, the function also refuses the
+// request outright when the verified credential is no longer the current one.
 
 export async function up(knex) {
   await knex.raw(`
@@ -96,7 +103,7 @@ export async function up(knex) {
   `);
 
   await knex.raw(`
-    create function app_private.request_email_change(p_new_email text)
+    create function app_private.request_email_change(p_new_email text, p_verified_hash text)
     returns table (request_id uuid, previous_email text)
     language plpgsql
     security definer
@@ -106,6 +113,7 @@ export async function up(knex) {
       v_user_id uuid := app_private.current_user_id();
       v_current text;
       v_new text;
+      v_verified_fingerprint text;
       v_request_id uuid;
     begin
       if v_user_id is null then
@@ -127,6 +135,19 @@ export async function up(knex) {
         raise exception using errcode = 'A0040', message = 'An authenticated user is required.';
       end if;
 
+      -- The credential the caller checked the password against, in the format of
+      -- credential_fingerprint for one credential. With the account locked, it is still the account's
+      -- credential or it is not: a reset that landed after the check is refused here, and one that
+      -- lands after this lock is released is closed by barrier 1, which then finds this fingerprint
+      -- different from the new credential's. An account with no credential has nothing to verify.
+      if p_verified_hash is null or p_verified_hash = '' then
+        raise exception using errcode = 'A0042', message = 'The verified credential is no longer the account''s.';
+      end if;
+      v_verified_fingerprint := pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p_verified_hash, 'UTF8')), 'hex');
+      if v_verified_fingerprint is distinct from app_private.credential_fingerprint(v_user_id) then
+        raise exception using errcode = 'A0042', message = 'The verified credential is no longer the account''s.';
+      end if;
+
       if v_new = v_current then
         raise exception using errcode = 'A0043', message = 'The new e-mail address is the current one.';
       end if;
@@ -141,7 +162,7 @@ export async function up(knex) {
       -- The address is recorded whether or not another account already uses it: the answer to the
       -- person is the same either way, and the operation sees the collision when it approves.
       insert into public.email_change_requests (user_id, old_email, new_email, credential_fingerprint)
-      values (v_user_id, v_current, v_new, app_private.credential_fingerprint(v_user_id))
+      values (v_user_id, v_current, v_new, v_verified_fingerprint)
       returning id into v_request_id;
 
       insert into audit.events (action, actor_user_id, target_type, target_id)
@@ -150,8 +171,8 @@ export async function up(knex) {
       return query select v_request_id, v_current;
     end;
     $function$;
-    revoke all on function app_private.request_email_change(text) from public;
-    grant execute on function app_private.request_email_change(text) to ageniza_app;
+    revoke all on function app_private.request_email_change(text, text) from public;
+    grant execute on function app_private.request_email_change(text, text) to ageniza_app;
   `);
 
   await knex.raw(`

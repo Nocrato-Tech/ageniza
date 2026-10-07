@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -51,10 +51,21 @@ const insertSession = async (userId: string): Promise<void> => {
   });
 };
 
-const request = (userId: string, newEmail: string | null): Promise<{ request_id: string; previous_email: string }[]> =>
-  asUser(userId, async (transaction) => (await raw<{ rows: { request_id: string; previous_email: string }[] }>(
-    transaction, 'select * from app_private.request_email_change(?)', [newEmail]
+/**
+ * The route's side of a request: it asks with the hash it verified the password against. Unless the
+ * test names one, that is the credential the account holds right now (and an account that has none
+ * gets one, since a person with no password cannot ask).
+ */
+const request = async (
+  userId: string,
+  newEmail: string | null,
+  verifiedHash?: string | null
+): Promise<{ request_id: string; previous_email: string }[]> => {
+  const hash = verifiedHash !== undefined ? verifiedHash : (await credentialOf(userId)) ?? await insertCredential(userId);
+  return asUser(userId, async (transaction) => (await raw<{ rows: { request_id: string; previous_email: string }[] }>(
+    transaction, 'select * from app_private.request_email_change(?, ?)', [newEmail, hash]
   )).rows);
+};
 
 const confirm = (tokenHash: string | null): Promise<{ account_id: string; previous_email: string; next_email: string }[]> =>
   getApplication().transaction(async (transaction) => (await raw<{ rows: { account_id: string; previous_email: string; next_email: string }[] }>(
@@ -107,6 +118,11 @@ const makeOwner = async (userId: string): Promise<void> => {
   createdAgencies.push(id);
 };
 
+const credentialOf = async (userId: string): Promise<string | null> =>
+  (await getOwner().knex('auth.account').where({ userId, providerId: 'credential' }).first('password'))?.password ?? null;
+
+const sha256Hex = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex');
+
 const fingerprintOf = async (userId: string): Promise<string | null> =>
   (await raw<{ rows: { fingerprint: string | null }[] }>(getOwner().knex, 'select app_private.credential_fingerprint(?::uuid) as fingerprint', [userId])).rows[0]?.fingerprint ?? null;
 
@@ -134,6 +150,20 @@ const holdRequestLock = (requestId: string): { readonly locked: Promise<void>; r
   const locked = new Promise<void>((resolve) => { markLocked = resolve; });
   const done = getOwner().transaction(async (transaction) => {
     await raw(transaction, 'select id from public.email_change_requests where id = ? for update', [requestId]);
+    markLocked();
+    await released;
+  });
+  return { locked, release: () => release(), done };
+};
+
+/** Holds the row lock of the account itself, the first lock every path takes. */
+const holdAccountLock = (userId: string): { readonly locked: Promise<void>; release: () => void; readonly done: Promise<void> } => {
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => { release = resolve; });
+  let markLocked: () => void = () => undefined;
+  const locked = new Promise<void>((resolve) => { markLocked = resolve; });
+  const done = getOwner().transaction(async (transaction) => {
+    await raw(transaction, 'select id from auth."user" where id = ? for update', [userId]);
     markLocked();
     await released;
   });
@@ -216,11 +246,11 @@ describe('app_private.request_email_change (issue #80)', () => {
     const raw41 = ['', '   ', 'plain', 'a@b', 'a b@c.test', '<a>@b.test', 'a@b@c.test', `${'x'.repeat(320)}@c.test`];
 
     await expect(getApplication().transaction((transaction) =>
-      raw(transaction, "select * from app_private.request_email_change('someone@email-change.test')", [])
+      raw(transaction, "select * from app_private.request_email_change('someone@email-change.test', 'verified-hash')", [])
     )).rejects.toMatchObject({ code: 'A0040' });
     await expect(getApplication().transaction(async (transaction) => {
       await raw(transaction, "select set_config('app.user_id', ?, true)", [user.id]);
-      await raw(transaction, "select * from app_private.request_email_change('someone@email-change.test')", []);
+      await raw(transaction, "select * from app_private.request_email_change('someone@email-change.test', 'verified-hash')", []);
     })).rejects.toMatchObject({ code: 'A0040' });
     for (const candidate of [null, ...raw41]) {
       await expect(request(user.id, candidate), String(candidate).slice(0, 30)).rejects.toMatchObject({ code: 'A0041' });
@@ -355,19 +385,70 @@ describe('app_private.confirm_email_change (issue #80)', () => {
 });
 
 describe('a request does not outlive the credential it was made under (issue #80, security review of PR #325)', () => {
-  it('records a fingerprint of the credential, not the credential, and none for an account without one', async () => {
+  it('records a fingerprint of the credential it was verified under, not the credential', async () => {
     const withPassword = await insertUser('fingerprinted');
     const password = await insertCredential(withPassword.id);
-    const withoutPassword = await insertUser('no-credential');
 
-    const [requested] = await request(withPassword.id, unique('fingerprint-new'));
-    await request(withoutPassword.id, unique('no-credential-new'));
+    const [requested] = await request(withPassword.id, unique('fingerprint-new'), password);
 
     const stored = await getOwner().knex('email_change_requests').where({ id: requested?.request_id }).first('credential_fingerprint');
-    expect(stored.credential_fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    // Computed here with node:crypto, not by the function under test.
+    expect(stored.credential_fingerprint).toBe(sha256Hex(password));
     expect(stored.credential_fingerprint).toBe(await fingerprintOf(withPassword.id));
     expect(stored.credential_fingerprint).not.toContain(password);
-    expect((await getOwner().knex('email_change_requests').where({ user_id: withoutPassword.id }).first('credential_fingerprint')).credential_fingerprint).toBeNull();
+  });
+
+  it('refuses a request with no verified credential, and one verified under a credential the account no longer holds, recording nothing', async () => {
+    const withoutPassword = await insertUser('no-credential');
+    const moved = await insertUser('credential-moved');
+    const oldHash = await insertCredential(moved.id);
+    const kept = await request(moved.id, unique('moved-first'), oldHash);
+    await changeCredential(moved.id);
+
+    for (const verified of [null, '']) {
+      await expect(request(withoutPassword.id, unique('no-credential-new'), verified), String(verified)).rejects.toMatchObject({ code: 'A0042' });
+    }
+    await expect(request(withoutPassword.id, unique('no-credential-new'), `hash-${randomUUID()}`)).rejects.toMatchObject({ code: 'A0042' });
+    await expect(request(moved.id, unique('moved-second'), oldHash)).rejects.toMatchObject({ code: 'A0042' });
+
+    expect(await requestsOf(withoutPassword.id)).toEqual([]);
+    // The refused request did not touch the open one: the person is told it failed, nothing else moves.
+    expect(await requestsOf(moved.id)).toEqual([expect.objectContaining({ id: kept[0]?.request_id, status: 'pending' })]);
+  });
+
+  it('does not record a request whose password was verified before a reset that landed while it waited for the account', async () => {
+    // The route verifies the password in one transaction and asks in another. The reset (the new
+    // credential, then the hook) lands in between, here lined up behind a lock held on the account so the
+    // order is fixed: the request first, then the hook. Recording the credential the account holds when
+    // the row is inserted would store the NEW one and slip through both barriers.
+    const victim = await insertUser('race-victim');
+    const verifiedHash = await insertCredential(victim.id);
+    const holder = holdAccountLock(victim.id);
+    await holder.locked;
+
+    const asking = request(victim.id, unique('race-attacker'), verifiedHash);
+    asking.catch(() => undefined);
+    await waitUntilBlocked('%request_email_change%');
+    await changeCredential(victim.id);
+    const hook = supersedeOpenRequests(victim.id);
+    await waitUntilBlocked('%supersede_email_change_requests%');
+    holder.release();
+    await holder.done;
+
+    await expect(asking).rejects.toMatchObject({ code: 'A0042' });
+    expect(await hook).toBe(0);
+    expect(await requestsOf(victim.id)).toEqual([]);
+  });
+
+  it('records the request under the credential it was verified under, so a reset right after it closes it', async () => {
+    const victim = await insertUser('race-after');
+    const verifiedHash = await insertCredential(victim.id);
+
+    await request(victim.id, unique('race-after-new'), verifiedHash);
+    await changeCredential(victim.id);
+
+    expect(await supersedeOpenRequests(victim.id)).toBe(1);
+    expect(await requestsOf(victim.id)).toEqual([expect.objectContaining({ status: 'superseded', token_hash: null })]);
   });
 
   it('closes the open requests of the account whose credential changed, kills their link and leaves the others alone', async () => {
