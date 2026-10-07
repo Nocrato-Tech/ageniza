@@ -162,7 +162,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     const createInvitation = /\/agencies\/([^/]+)\/invitations\/collaborators$/.exec(path);
     if (createInvitation !== null && method === 'POST') {
       if (!permissions.includes('colaborador.convidar')) return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
-      return scenario.createInvitation?.(JSON.parse(String(init?.body)), createInvitation[1]!) ?? json({ invitationId: inviteAna.id, expiresAt: inviteAna.expiresAt }, 201);
+      return scenario.createInvitation?.(JSON.parse(String(init?.body)), createInvitation[1]!) ?? json({ invitationId: inviteAna.id, expiresAt: inviteAna.expiresAt, supersededInvitationId: null }, 201);
     }
     const resend = /\/agencies\/([^/]+)\/invitations\/([^/]+)\/resend$/.exec(path);
     if (resend !== null && method === 'POST') {
@@ -1600,7 +1600,7 @@ describe('invite collaborator modal (#107)', () => {
       createInvitation: (body) => {
         bodies.push(body);
         pending = [...pending, { ...created, email: (body as { email: string }).email }];
-        return json({ invitationId: created.id, expiresAt: created.expiresAt }, 201);
+        return json({ invitationId: created.id, expiresAt: created.expiresAt, supersededInvitationId: null }, 201);
       }
     });
     const { container, probe } = renderCollaborators(impl);
@@ -1612,6 +1612,8 @@ describe('invite collaborator modal (#107)', () => {
 
     const confirmation = await within(dialog).findByRole('status');
     expect(confirmation.textContent).toBe('Convite enviado para nova@exemplo.com. O link vale por 7 dias.');
+    // With nothing superseded, the warning stays out.
+    expect(within(dialog).queryByText('O convite anterior para este e-mail deixou de valer.')).toBeNull();
     // The creation invalidates the pending list, so the new invite appears behind the modal.
     expect(await within(region).findByText('nova@exemplo.com')).toBeTruthy();
     expect(region.querySelector('.invites__count')?.textContent).toBe('2');
@@ -1623,28 +1625,32 @@ describe('invite collaborator modal (#107)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
-  it('warns that the previous pending invitation stopped working when the e-mail already had one', async () => {
+  it('warns from the response that the previous pending invitation stopped working, even when it is not on the loaded page', async () => {
+    const superseded = { ...inviteAna, id: 'cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd', email: 'ana@exemplo.com' };
     const created = { ...inviteJulia, id: 'abababab-abab-4bab-8bab-abababababab', email: 'ana@exemplo.com', expiresAt: expiryInDays(7) };
-    let pending = [inviteAna, invitePaulo];
+    // The invitation the creation revokes is not among the loaded pages; only the response knows it.
+    let pending = [invitePaulo];
     const { impl } = makeFetch({
       invitations: (query) => invitationsResponse(pending, query),
       createInvitation: () => {
         pending = [invitePaulo, created];
-        return json({ invitationId: created.id, expiresAt: created.expiresAt }, 201);
+        return json({ invitationId: created.id, expiresAt: created.expiresAt, supersededInvitationId: superseded.id }, 201);
       }
     });
     const { container } = renderCollaborators(impl);
     const region = await invitesRegion();
-    await within(region).findByText('expira em 5 dias');
+    await within(region).findByText('paulo@exemplo.com');
+    expect(within(region).queryByText('ana@exemplo.com')).toBeNull();
+
     const dialog = await openInvite(container);
     await fillInvite(dialog, 'ana@exemplo.com');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
 
     expect(await within(dialog).findByText('Convite enviado para ana@exemplo.com. O link vale por 7 dias.')).toBeTruthy();
     expect(within(dialog).getByText('O convite anterior para este e-mail deixou de valer.')).toBeTruthy();
-    // One invitation for that e-mail, with the renewed deadline, in the list behind the modal.
+    // The list behind refreshes with the new invitation.
     expect(await within(region).findByText('expira em 7 dias')).toBeTruthy();
-    expect(within(region).getAllByText('ana@exemplo.com')).toHaveLength(1);
+    expect(within(region).getByText('ana@exemplo.com')).toBeTruthy();
   });
 
   it('shows its own message when the e-mail already belongs to the team, preserving the typed value', async () => {
@@ -1805,7 +1811,7 @@ describe('invite collaborator modal (#107)', () => {
     await waitFor(() => expect(submit.getAttribute('aria-busy')).toBe('true'));
     expect(submit.hasAttribute('disabled')).toBe(true);
     expect((within(dialog).getByRole('textbox', { name: 'E-mail' }) as HTMLInputElement).disabled).toBe(false);
-    await act(async () => { finish(json({ invitationId: inviteAna.id, expiresAt: expiryInDays(7) }, 201)); });
+    await act(async () => { finish(json({ invitationId: inviteAna.id, expiresAt: expiryInDays(7), supersededInvitationId: null }, 201)); });
     expect(await within(dialog).findByText(/Convite enviado para nova@exemplo.com/)).toBeTruthy();
   });
 

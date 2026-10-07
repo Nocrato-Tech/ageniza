@@ -5,8 +5,7 @@ import { z } from 'zod';
 import {
   AgencyRolesResponseSchema,
   AuthEmailSchema,
-  InvitationCreatedResponseSchema,
-  type PendingInvitationListResponse
+  CollaboratorInvitationCreatedResponseSchema
 } from '@ageniza/contracts';
 import { Button, FieldMessage, LiveStatus, Modal, Select, TextInput } from '@ageniza/ui';
 
@@ -96,13 +95,6 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
     .filter((role) => agency.isOwner || role.key !== 'admin')
     .map((role) => ({ value: role.id, label: role.name }));
 
-  const pendingInvitationFor = (target: string): boolean => {
-    const normalized = target.trim().toLowerCase();
-    return queryClient
-      .getQueriesData<PendingInvitationListResponse>({ queryKey: ['agency', agency.agencyId, 'invitations'] })
-      .some(([, page]) => page?.data.some((invitation) => invitation.email.trim().toLowerCase() === normalized) === true);
-  };
-
   const applyError = (error: unknown): void => {
     if (!(error instanceof HttpClientError)) { setFormError(SEND_FAILED); return; }
     if (error.code === 'MEMBERSHIP_EXISTS') { setEmailError(EMAIL_ALREADY_MEMBER); return; }
@@ -119,14 +111,14 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
   };
 
   const send = useMutation({
-    mutationFn: ({ email: target, roleId: targetRole }: { email: string; roleId: string; superseded: boolean }) => httpClient.request({
+    mutationFn: ({ email: target, roleId: targetRole }: { email: string; roleId: string }) => httpClient.request({
       path: apiPath('/agencies/:agenciaId/invitations/collaborators', { agenciaId: agency.agencyId }),
       method: 'POST',
       body: { email: target, roleId: targetRole },
-      response: InvitationCreatedResponseSchema
+      response: CollaboratorInvitationCreatedResponseSchema
     }),
     onSuccess: (created, input) => {
-      setSent({ email: input.email, days: inviteLinkDays(created.expiresAt), superseded: input.superseded });
+      setSent({ email: input.email, days: inviteLinkDays(created.expiresAt), superseded: created.supersededInvitationId !== null });
     },
     onError: (error: unknown) => { applyError(error); },
     // The API commits the invitation before it sends the e-mail: a 502 leaves a real invitation
@@ -142,7 +134,7 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
     if (target === '') { setEmailError(EMAIL_REQUIRED); return; }
     if (!AuthEmailSchema.safeParse(target).success) { setEmailError(EMAIL_INVALID); return; }
     if (roleId === '') { setRoleError(ROLE_REQUIRED); return; }
-    send.mutate({ email: target, roleId, superseded: pendingInvitationFor(target) });
+    send.mutate({ email: target, roleId });
   };
 
   if (sent !== null) {
