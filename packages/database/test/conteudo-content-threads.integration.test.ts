@@ -519,7 +519,9 @@ describe('request changes: awaiting approval to adjusting, with a comment (issue
   });
 
   it('waits for the archiving of the client, then answers "not found" without moving the content or writing the comment', async () => {
-    const id = await w.seedContent(ids.clientA2, { status: 'awaiting_approval' });
+    // Planned today: the archive cancels what is planned after today (#251), and this content must stay as it was.
+    const planned = await w.getOwner().knex.raw<{ rows: Array<{ day: string }> }>("select ((now() at time zone 'America/Sao_Paulo')::date)::text as day");
+    const id = await w.seedContent(ids.clientA2, { status: 'awaiting_approval', publishOn: planned.rows[0]!.day });
     const archiving = await w.openTransactionAs(ids.adminA);
     let asking: Promise<unknown> | undefined;
 
