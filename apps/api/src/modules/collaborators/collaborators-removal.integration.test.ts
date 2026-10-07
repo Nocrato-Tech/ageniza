@@ -611,8 +611,9 @@ describe('POST /agencies/:agencyId/collaborators/:membershipId/reactivate (issue
     expect((await membershipRow(second.membershipId)).role_id).toBe(presetRoleIds.admin);
   });
 
-  // The database trigger asks for the grant only when role_id changes; a person who was an Admin
-  // and comes back as an Admin keeps the same role_id, so only the route's own check refuses.
+  // A person who was an Admin and comes back as an Admin keeps the same role_id, which the trigger
+  // used to let through (fixed by the migration of this issue): the route answers with its own
+  // message, and the database refuses it too (`collaborators-reactivation-grant.integration.test.ts`).
   it('an Admin cannot bring back a removed Admin as an Admin, though the role id would not change', async () => {
     const fx = await createAgency('reactivate-same-admin');
     const admin = await addMember(fx.agencyId, 'reactivate-same-admin-admin', presetRoleIds.admin);
@@ -776,7 +777,7 @@ describe('POST /agencies/:agencyId/collaborators/:membershipId/reactivate (issue
     });
   });
 
-  it('agrees with the database policy for a non-administrative role: whatever the API allows, the same update is allowed in SQL', async () => {
+  it('agrees with the database policy and trigger: whatever the API allows, the same update is allowed to that person in SQL', async () => {
     const fx = await createAgency('reactivate-coherence');
     const target = await addMember(fx.agencyId, 'reactivate-coherence-target', presetRoleIds.production, { status: 'removed', acts: false });
     const actors: Array<{ label: string; user: TestUserFixture; cookie: string }> = [
@@ -786,34 +787,43 @@ describe('POST /agencies/:agencyId/collaborators/:membershipId/reactivate (issue
       ['admin', presetRoleIds.admin],
       ['account_manager', presetRoleIds.account_manager],
       ['only remover', await createCustomRole(fx.agencyId, ['colaborador.remover'])],
-      ['only alterar_papel', await createCustomRole(fx.agencyId, ['colaborador.alterar_papel'])]
+      ['only alterar_papel', await createCustomRole(fx.agencyId, ['colaborador.alterar_papel'])],
+      ['alterar_papel + atribuir_admin', await createCustomRole(fx.agencyId, ['colaborador.alterar_papel', 'colaborador.atribuir_admin'])]
     ] as const) {
-      const member = await addMember(fx.agencyId, `reactivate-coherence-${label.replace(' ', '-')}`, roleId);
+      const member = await addMember(fx.agencyId, `reactivate-coherence-${label.replace(/[ +]/g, '-')}`, roleId);
       actors.push({ label, user: member.user, cookie: member.cookie });
     }
+    // The second scenario is the one the trigger used to miss: the role id does not change.
+    const scenarios = [
+      { label: 'to a non-administrative role', before: presetRoleIds.production, roleId: presetRoleIds.sales, sql: { status: 'active', role_id: presetRoleIds.sales } },
+      { label: 'a former Admin back as Admin', before: presetRoleIds.admin, roleId: presetRoleIds.admin, sql: { status: 'active' } }
+    ];
 
-    for (const actor of actors) {
-      await owner.knex('agency_memberships').where({ id: target.membershipId }).update({ status: 'removed', role_id: presetRoleIds.production });
-      const rollback = new Error('rollback');
-      let sqlAllowed = false;
-      await withAuthenticatedUserTransaction(app.database, createVerifiedUserClaims({ userId: actor.user.id }), async (transaction) => {
-        try {
-          sqlAllowed = await transaction('agency_memberships').where({ id: target.membershipId }).update({ status: 'active', role_id: presetRoleIds.sales }) === 1;
-        } catch (error) {
-          if ((error as { code?: string }).code !== '42501') throw error;
-        }
-        throw rollback;
-      }).catch((error: unknown) => {
-        if (error !== rollback) throw error;
-      });
+    for (const scenario of scenarios) {
+      for (const actor of actors) {
+        const label = `${actor.label} / ${scenario.label}`;
+        await owner.knex('agency_memberships').where({ id: target.membershipId }).update({ status: 'removed', role_id: scenario.before });
+        const rollback = new Error('rollback');
+        let sqlAllowed = false;
+        await withAuthenticatedUserTransaction(app.database, createVerifiedUserClaims({ userId: actor.user.id }), async (transaction) => {
+          try {
+            sqlAllowed = await transaction('agency_memberships').where({ id: target.membershipId }).update(scenario.sql) === 1;
+          } catch (error) {
+            if ((error as { code?: string }).code !== '42501') throw error;
+          }
+          throw rollback;
+        }).catch((error: unknown) => {
+          if (error !== rollback) throw error;
+        });
 
-      const response = await reactivate(actor.cookie, fx.agencyId, target.membershipId, { roleId: presetRoleIds.sales });
-      expect(response.status === 200, actor.label).toBe(sqlAllowed);
-      expect(await membershipRow(target.membershipId), actor.label).toMatchObject(
-        response.status === 200 ? { status: 'active', role_id: presetRoleIds.sales } : { status: 'removed', role_id: presetRoleIds.production }
-      );
+        const response = await reactivate(actor.cookie, fx.agencyId, target.membershipId, { roleId: scenario.roleId });
+        expect(response.status === 200, label).toBe(sqlAllowed);
+        expect(await membershipRow(target.membershipId), label).toMatchObject(
+          response.status === 200 ? { status: 'active', role_id: scenario.roleId } : { status: 'removed', role_id: scenario.before }
+        );
+      }
     }
-  }, 120_000);
+  }, 180_000);
 });
 
 describe('who sees removed links (issue #98, SPEC §5 rule 9)', { timeout: 60_000 }, () => {

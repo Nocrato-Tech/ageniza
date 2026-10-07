@@ -96,9 +96,9 @@ no corpo. As duas devolvem o vínculo no contrato do detalhe, já no novo estado
 - **A linha permanece.** Remover não apaga; reativar é o mesmo registro (`unique (agency_id, user_id)`
   impede outro). Nenhuma rota apaga fisicamente.
 - **Reativar nunca herda o papel anterior.** Sem `roleId` é `400`; o papel do corpo é o que vale. Se for
-  `admin`, exige também `colaborador.atribuir_admin` (403). Essa checagem é da rota **e precisa ser**: o
-  trigger do banco só pede a permissão quando o `role_id` muda, então quem foi Admin e volta como Admin
-  passaria por ele sem ela.
+  `admin`, exige também `colaborador.atribuir_admin` (403), inclusive para quem foi Admin e volta como
+  Admin sem o `role_id` mudar. A rota responde com a mensagem; o trigger do banco recusa o mesmo caso
+  (`20261007000100_reactivation_admin_grant`), e um teste confere que as duas camadas concordam.
 - **Proteções, todas `403` com mensagem própria:** o Owner não é removido (nem tem o vínculo
   reativado por aqui) e ninguém remove a si mesmo. "A agência não fica sem Admin" foi descartada de
   propósito (`decisions.md`, 2026-09-24): remover o último Admin é estado legítimo.

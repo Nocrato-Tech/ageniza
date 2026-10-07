@@ -448,8 +448,8 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
 
         const role = await findAssignableRole(transaction, tenant.agencyId, body.roleId);
         if (role === undefined) throw invalidRole();
-        // The database trigger only asks for the grant when the role changes, so it would let the
-        // very role the person had before come back unguarded: this check is the one that holds.
+        // The trigger asks for the same grant when a link comes back holding the admin role (issue
+        // #98), so the database refuses too; this check is the one that answers with a message.
         if (role.isAdmin && !tenantHolds(tenant, COLLABORATOR_PERMISSIONS.grantAdmin)) {
           throw forbidden(MISSING_PERMISSION_MESSAGES[COLLABORATOR_PERMISSIONS.grantAdmin]);
         }
