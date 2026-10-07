@@ -98,7 +98,8 @@ vínculo em `removed`; `POST …/reactivate` exige `colaborador.alterar_papel` e
 no corpo. As duas devolvem o vínculo no contrato do detalhe, já no novo estado.
 
 - **A linha permanece.** Remover não apaga; reativar é o mesmo registro (`unique (agency_id, user_id)`
-  impede outro). Nenhuma rota apaga fisicamente.
+  impede outro). Nenhuma rota apaga fisicamente, e `ageniza_app` não tem `DELETE` em `agency_memberships`
+  nem em `invitations` (migration `20261007000600`): remover e reativar são `UPDATE` de `status`.
 - **Reativar nunca herda o papel anterior.** Sem `roleId` é `400`; o papel do corpo é o que vale. Se for
   `admin`, exige também `colaborador.atribuir_admin` (403), inclusive para quem foi Admin e volta como
   Admin sem o `role_id` mudar. A rota responde com a mensagem; o trigger do banco recusa o mesmo caso
