@@ -83,6 +83,7 @@ import {
   PortalClientResponseSchema,
   PublicInvitationTokenPathParamsSchema,
   PutLastContextRequestSchema,
+  SetClientClosingRequestSchema,
   ThreadListQuerySchema,
   ThreadListResponseSchema,
   ThreadSchema,
@@ -175,7 +176,7 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   invitations: 'Convite de colaborador e de pessoa do portal, aceite e administração dos pendentes.',
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
-  clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.',
+  clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; agendar, desmarcar, arquivar e reativar o contrato; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.',
   collaborators: 'A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.',
   media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.',
   profile: 'Edição do próprio nome e da própria foto de perfil.',
@@ -204,6 +205,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   INVALID_ROLE: 'O papel informado não é válido para esta agência.',
   CLIENT_NAME_IN_USE: 'Já existe um cliente ativo com este nome.',
   CLIENT_ARCHIVED: 'Cliente arquivado não pode ser editado.',
+  CLIENT_NOT_ARCHIVED: 'Este cliente já está ativo.',
+  CLOSING_DATE_NOT_SET: 'Este cliente não tem encerramento agendado.',
   PERSONA_ARCHIVED: 'Persona arquivada: a conversa é somente leitura.',
   SECTION_NOT_FILLED: 'Esta seção ainda não foi preenchida pela agência.',
   TRY_AGAIN: 'Houve um conflito momentâneo. Tente de novo.',
@@ -1331,6 +1334,126 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' }
+    ]
+  },
+  {
+    method: 'put',
+    path: '/agencies/:agencyId/clients/:clientId/closing',
+    operationId: 'setClientClosing',
+    module: 'clients',
+    summary: 'Agenda o encerramento do contrato do cliente',
+    description: [
+      '`closingDate` é o último dia do contrato, `AAAA-MM-DD`, hoje ou depois no fuso `America/Sao_Paulo`;',
+      'ontem ou uma data que não existe respondem 400 e nada muda. Até o fim da data o cliente continua',
+      '`active` e o portal segue aberto; no dia seguinte o job diário arquiva. Agendar de novo troca a data.',
+      'A data só muda por esta rota e por `DELETE`: o `PATCH` do cadastro não a alcança. Cliente arquivado',
+      'responde 409.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.arquivar',
+    params: AgencyClientPathParamsSchema,
+    body: SetClientClosingRequestSchema,
+    requestExample: { closingDate: '2026-12-31' },
+    responses: [{
+      status: 200,
+      description: 'Cliente com a data de encerramento.',
+      schema: ClientSchema,
+      example: { ...clientExample, closingDate: '2026-12-31' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: a única ação possível é reativar.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'delete',
+    path: '/agencies/:agencyId/clients/:clientId/closing',
+    operationId: 'clearClientClosing',
+    module: 'clients',
+    summary: 'Desmarca o encerramento agendado do cliente',
+    description: [
+      'Limpa a data de encerramento enquanto o cliente ainda não foi arquivado. Cliente sem encerramento',
+      'agendado responde 409 e nada é gravado; cliente arquivado também responde 409.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.arquivar',
+    params: AgencyClientPathParamsSchema,
+    responses: [{ status: 200, description: 'Cliente sem data de encerramento.', schema: ClientSchema, example: clientExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: a única ação possível é reativar.' },
+      { status: 409, code: 'CLOSING_DATE_NOT_SET' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/archive',
+    operationId: 'archiveClient',
+    module: 'clients',
+    summary: 'Arquiva o cliente agora',
+    description: [
+      'É o mesmo efeito do job diário, porque os dois chamam a mesma função: o portal responde 404 na',
+      'requisição seguinte, os convites de portal pendentes são revogados, os vínculos das pessoas ficam',
+      'preservados, a data de encerramento é limpa e um evento de auditoria é gravado. Não há',
+      'pré-condição: arquiva-se com conversa aberta ou persona. Cliente arquivado fica somente leitura e',
+      'arquivá-lo de novo responde 409. Se a requisição perder uma disputa com a mudança de um convite do',
+      'mesmo cliente, responde 409 `TRY_AGAIN` e nada muda.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.arquivar',
+    params: AgencyClientPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'Cliente arquivado.',
+      schema: ClientSchema,
+      example: { ...clientExample, status: 'archived', archivedAt: '2026-10-07T12:00:00.000Z' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: a única ação possível é reativar.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/reactivate',
+    operationId: 'reactivateClient',
+    module: 'clients',
+    summary: 'Reativa um cliente arquivado',
+    description: [
+      'As pessoas que tinham vínculo voltam ao portal sem convite novo; os convites revogados no',
+      'arquivamento não voltam. Se outro cliente ativo da agência já usa o nome, sem diferenciar maiúsculas,',
+      'responde 409 e o cliente segue arquivado: renomeie um dos dois antes. Cliente que já está ativo',
+      'responde 409.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.arquivar',
+    params: AgencyClientPathParamsSchema,
+    responses: [{ status: 200, description: 'Cliente ativo.', schema: ClientSchema, example: clientExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'CLIENT_NAME_IN_USE', message: 'Já existe um cliente ativo com este nome. Renomeie um dos dois antes de reativar.' },
+      { status: 409, code: 'CLIENT_NOT_ARCHIVED' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
   {

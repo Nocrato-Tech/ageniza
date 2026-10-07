@@ -119,6 +119,28 @@ export const UpdateClientRequestSchema = z.object({
   contactEmail: ClientContactEmailSchema.nullable().optional()
 }).strict().refine((value) => Object.keys(value).length > 0, 'at least one field must be provided');
 
+const CALENDAR_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** A real day of the Gregorian calendar ('2026-02-30' and year 0000 are not), in the shape the `date` column prints. */
+const isCalendarDay = (value: string): boolean => {
+  const parts = CALENDAR_DAY.exec(value);
+  if (parts === null) return false;
+  const [year, month, day] = [Number(parts[1]), Number(parts[2]), Number(parts[3])];
+  if (year < 1) return false;
+  const parsed = new Date(0);
+  parsed.setUTCFullYear(year, month - 1, day);
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+};
+
+/**
+ * Body of `PUT .../clients/:clientId/closing`: the last day of the contract. That the day is today
+ * or later in `America/Sao_Paulo` is the database's rule (`app_private.set_client_closing_date`),
+ * so the route and the daily job never keep two clocks.
+ */
+export const SetClientClosingRequestSchema = z.object({
+  closingDate: z.string().refine(isCalendarDay, 'closingDate must be a real date in the form YYYY-MM-DD')
+}).strict();
+
 /** One client, as every route returns it. `photoUrl` is a signed read URL or null, never a key. */
 export const ClientSchema = z.object({
   id: z.string().uuid(),
@@ -207,6 +229,7 @@ export const ClientListResponseSchema = createPaginatedResponseSchema(ClientList
 export type ClientStatus = z.infer<typeof ClientStatusSchema>;
 export type CreateClientRequest = z.infer<typeof CreateClientRequestSchema>;
 export type UpdateClientRequest = z.infer<typeof UpdateClientRequestSchema>;
+export type SetClientClosingRequest = z.infer<typeof SetClientClosingRequestSchema>;
 export type UploadClientPhotoRequest = z.infer<typeof UploadClientPhotoRequestSchema>;
 export type UploadClientPhotoResponse = z.infer<typeof UploadClientPhotoResponseSchema>;
 export type Client = z.infer<typeof ClientSchema>;

@@ -561,7 +561,7 @@ Devolve as permissões efetivas do contexto de agência.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
-### clients — Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.
+### clients — Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; agendar, desmarcar, arquivar e reativar o contrato; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
@@ -571,6 +571,10 @@ Devolve as permissões efetivas do contexto de agência.
 | `PATCH` | `/agencies/:agencyId/clients/:clientId` | Sessão + vínculo com a agência | `cliente.operar` | Edita o cadastro do cliente |
 | `PUT` | `/agencies/:agencyId/clients/:clientId/photo` | Sessão + vínculo com a agência | `cliente.operar` | Envia a foto do cliente |
 | `DELETE` | `/agencies/:agencyId/clients/:clientId/photo` | Sessão + vínculo com a agência | `cliente.operar` | Remove a foto do cliente |
+| `PUT` | `/agencies/:agencyId/clients/:clientId/closing` | Sessão + vínculo com a agência | `cliente.arquivar` | Agenda o encerramento do contrato do cliente |
+| `DELETE` | `/agencies/:agencyId/clients/:clientId/closing` | Sessão + vínculo com a agência | `cliente.arquivar` | Desmarca o encerramento agendado do cliente |
+| `POST` | `/agencies/:agencyId/clients/:clientId/archive` | Sessão + vínculo com a agência | `cliente.arquivar` | Arquiva o cliente agora |
+| `POST` | `/agencies/:agencyId/clients/:clientId/reactivate` | Sessão + vínculo com a agência | `cliente.arquivar` | Reativa um cliente arquivado |
 | `GET` | `/agencies/:agencyId/clients/:clientId/brand-study` | Sessão + vínculo com a agência | `cliente.visualizar` | Lê o estudo de marca com as sete seções e as personas |
 | `PUT` | `/agencies/:agencyId/clients/:clientId/brand-study/sections/:sectionKey` | Sessão + vínculo com a agência | `cliente.operar` | Grava uma seção do estudo de marca (upsert) |
 | `POST` | `/agencies/:agencyId/clients/:clientId/personas` | Sessão + vínculo com a agência | `cliente.operar` | Cria uma persona do cliente |
@@ -787,6 +791,134 @@ Remove a foto do cliente.
 **Resposta `204`** — Foto removida.
 
 **Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+
+#### `PUT /agencies/:agencyId/clients/:clientId/closing`
+
+Agenda o encerramento do contrato do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.arquivar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "closingDate": "2026-12-31"
+}
+```
+
+**Resposta `200`** — Cliente com a data de encerramento.
+
+```json
+{
+  "id": "77777777-7777-4777-8777-777777777777",
+  "name": "Padaria Central",
+  "status": "active",
+  "photoUrl": null,
+  "legalName": "Padaria Central Ltda",
+  "taxId": "12345678000190",
+  "segment": "Alimentação",
+  "website": "https://padariacentral.exemplo.test",
+  "instagramHandle": "padariacentral",
+  "contactName": "Maria Souza",
+  "contactPhone": "+55 11 90000-0000",
+  "contactEmail": "maria@padariacentral.exemplo.test",
+  "closingDate": "2026-12-31",
+  "archivedAt": null
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `DELETE /agencies/:agencyId/clients/:clientId/closing`
+
+Desmarca o encerramento agendado do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.arquivar`.
+
+**Resposta `200`** — Cliente sem data de encerramento.
+
+```json
+{
+  "id": "77777777-7777-4777-8777-777777777777",
+  "name": "Padaria Central",
+  "status": "active",
+  "photoUrl": null,
+  "legalName": "Padaria Central Ltda",
+  "taxId": "12345678000190",
+  "segment": "Alimentação",
+  "website": "https://padariacentral.exemplo.test",
+  "instagramHandle": "padariacentral",
+  "contactName": "Maria Souza",
+  "contactPhone": "+55 11 90000-0000",
+  "contactEmail": "maria@padariacentral.exemplo.test",
+  "closingDate": null,
+  "archivedAt": null
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CLOSING_DATE_NOT_SET` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/archive`
+
+Arquiva o cliente agora.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.arquivar`.
+
+**Resposta `200`** — Cliente arquivado.
+
+```json
+{
+  "id": "77777777-7777-4777-8777-777777777777",
+  "name": "Padaria Central",
+  "status": "archived",
+  "photoUrl": null,
+  "legalName": "Padaria Central Ltda",
+  "taxId": "12345678000190",
+  "segment": "Alimentação",
+  "website": "https://padariacentral.exemplo.test",
+  "instagramHandle": "padariacentral",
+  "contactName": "Maria Souza",
+  "contactPhone": "+55 11 90000-0000",
+  "contactEmail": "maria@padariacentral.exemplo.test",
+  "closingDate": null,
+  "archivedAt": "2026-10-07T12:00:00.000Z"
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/reactivate`
+
+Reativa um cliente arquivado.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.arquivar`.
+
+**Resposta `200`** — Cliente ativo.
+
+```json
+{
+  "id": "77777777-7777-4777-8777-777777777777",
+  "name": "Padaria Central",
+  "status": "active",
+  "photoUrl": null,
+  "legalName": "Padaria Central Ltda",
+  "taxId": "12345678000190",
+  "segment": "Alimentação",
+  "website": "https://padariacentral.exemplo.test",
+  "instagramHandle": "padariacentral",
+  "contactName": "Maria Souza",
+  "contactPhone": "+55 11 90000-0000",
+  "contactEmail": "maria@padariacentral.exemplo.test",
+  "closingDate": null,
+  "archivedAt": null
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_NAME_IN_USE` · `409 CLIENT_NOT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/brand-study`
 
@@ -2287,6 +2419,8 @@ Confirma a troca de e-mail pelo link enviado ao e-mail novo.
 | `INVALID_ROLE` | O papel informado não é válido para esta agência. |
 | `CLIENT_NAME_IN_USE` | Já existe um cliente ativo com este nome. |
 | `CLIENT_ARCHIVED` | Cliente arquivado não pode ser editado. |
+| `CLIENT_NOT_ARCHIVED` | Este cliente já está ativo. |
+| `CLOSING_DATE_NOT_SET` | Este cliente não tem encerramento agendado. |
 | `PERSONA_ARCHIVED` | Persona arquivada: a conversa é somente leitura. |
 | `SECTION_NOT_FILLED` | Esta seção ainda não foi preenchida pela agência. |
 | `TRY_AGAIN` | Houve um conflito momentâneo. Tente de novo. |

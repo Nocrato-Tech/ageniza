@@ -28,7 +28,7 @@
     },
     {
       "name": "clients",
-      "description": "Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência."
+      "description": "Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; agendar, desmarcar, arquivar e reativar o contrato; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência."
     },
     {
       "name": "collaborators",
@@ -1886,6 +1886,18 @@
         },
         "required": [
           "imageBase64"
+        ],
+        "additionalProperties": false
+      },
+      "setClientClosingRequest": {
+        "type": "object",
+        "properties": {
+          "closingDate": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "closingDate"
         ],
         "additionalProperties": false
       },
@@ -8815,6 +8827,652 @@
                   "error": {
                     "code": "CLIENT_ARCHIVED",
                     "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/closing": {
+      "put": {
+        "operationId": "setClientClosing",
+        "summary": "Agenda o encerramento do contrato do cliente",
+        "description": "`closingDate` é o último dia do contrato, `AAAA-MM-DD`, hoje ou depois no fuso `America/Sao_Paulo`;\nontem ou uma data que não existe respondem 400 e nada muda. Até o fim da data o cliente continua\n`active` e o portal segue aberto; no dia seguinte o job diário arquiva. Agendar de novo troca a data.\nA data só muda por esta rota e por `DELETE`: o `PATCH` do cadastro não a alcança. Cliente arquivado\nresponde 409.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.arquivar`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.arquivar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/setClientClosingRequest"
+              },
+              "example": {
+                "closingDate": "2026-12-31"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cliente com a data de encerramento.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createClientResponse"
+                },
+                "example": {
+                  "id": "77777777-7777-4777-8777-777777777777",
+                  "name": "Padaria Central",
+                  "status": "active",
+                  "photoUrl": null,
+                  "legalName": "Padaria Central Ltda",
+                  "taxId": "12345678000190",
+                  "segment": "Alimentação",
+                  "website": "https://padariacentral.exemplo.test",
+                  "instagramHandle": "padariacentral",
+                  "contactName": "Maria Souza",
+                  "contactPhone": "+55 11 90000-0000",
+                  "contactEmail": "maria@padariacentral.exemplo.test",
+                  "closingDate": "2026-12-31",
+                  "archivedAt": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado: a única ação possível é reativar. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado: a única ação possível é reativar."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "clearClientClosing",
+        "summary": "Desmarca o encerramento agendado do cliente",
+        "description": "Limpa a data de encerramento enquanto o cliente ainda não foi arquivado. Cliente sem encerramento\nagendado responde 409 e nada é gravado; cliente arquivado também responde 409.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.arquivar`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.arquivar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cliente sem data de encerramento.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createClientResponse"
+                },
+                "example": {
+                  "id": "77777777-7777-4777-8777-777777777777",
+                  "name": "Padaria Central",
+                  "status": "active",
+                  "photoUrl": null,
+                  "legalName": "Padaria Central Ltda",
+                  "taxId": "12345678000190",
+                  "segment": "Alimentação",
+                  "website": "https://padariacentral.exemplo.test",
+                  "instagramHandle": "padariacentral",
+                  "contactName": "Maria Souza",
+                  "contactPhone": "+55 11 90000-0000",
+                  "contactEmail": "maria@padariacentral.exemplo.test",
+                  "closingDate": null,
+                  "archivedAt": null
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado: a única ação possível é reativar. | CLOSING_DATE_NOT_SET: Este cliente não tem encerramento agendado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado: a única ação possível é reativar."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/archive": {
+      "post": {
+        "operationId": "archiveClient",
+        "summary": "Arquiva o cliente agora",
+        "description": "É o mesmo efeito do job diário, porque os dois chamam a mesma função: o portal responde 404 na\nrequisição seguinte, os convites de portal pendentes são revogados, os vínculos das pessoas ficam\npreservados, a data de encerramento é limpa e um evento de auditoria é gravado. Não há\npré-condição: arquiva-se com conversa aberta ou persona. Cliente arquivado fica somente leitura e\narquivá-lo de novo responde 409. Se a requisição perder uma disputa com a mudança de um convite do\nmesmo cliente, responde 409 `TRY_AGAIN` e nada muda.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.arquivar`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.arquivar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cliente arquivado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createClientResponse"
+                },
+                "example": {
+                  "id": "77777777-7777-4777-8777-777777777777",
+                  "name": "Padaria Central",
+                  "status": "archived",
+                  "photoUrl": null,
+                  "legalName": "Padaria Central Ltda",
+                  "taxId": "12345678000190",
+                  "segment": "Alimentação",
+                  "website": "https://padariacentral.exemplo.test",
+                  "instagramHandle": "padariacentral",
+                  "contactName": "Maria Souza",
+                  "contactPhone": "+55 11 90000-0000",
+                  "contactEmail": "maria@padariacentral.exemplo.test",
+                  "closingDate": null,
+                  "archivedAt": "2026-10-07T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado: a única ação possível é reativar. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado: a única ação possível é reativar."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/reactivate": {
+      "post": {
+        "operationId": "reactivateClient",
+        "summary": "Reativa um cliente arquivado",
+        "description": "As pessoas que tinham vínculo voltam ao portal sem convite novo; os convites revogados no\narquivamento não voltam. Se outro cliente ativo da agência já usa o nome, sem diferenciar maiúsculas,\nresponde 409 e o cliente segue arquivado: renomeie um dos dois antes. Cliente que já está ativo\nresponde 409.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.arquivar`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.arquivar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cliente ativo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createClientResponse"
+                },
+                "example": {
+                  "id": "77777777-7777-4777-8777-777777777777",
+                  "name": "Padaria Central",
+                  "status": "active",
+                  "photoUrl": null,
+                  "legalName": "Padaria Central Ltda",
+                  "taxId": "12345678000190",
+                  "segment": "Alimentação",
+                  "website": "https://padariacentral.exemplo.test",
+                  "instagramHandle": "padariacentral",
+                  "contactName": "Maria Souza",
+                  "contactPhone": "+55 11 90000-0000",
+                  "contactEmail": "maria@padariacentral.exemplo.test",
+                  "closingDate": null,
+                  "archivedAt": null
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_NAME_IN_USE: Já existe um cliente ativo com este nome. Renomeie um dos dois antes de reativar. | CLIENT_NOT_ARCHIVED: Este cliente já está ativo. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_NAME_IN_USE",
+                    "message": "Já existe um cliente ativo com este nome. Renomeie um dos dois antes de reativar."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
