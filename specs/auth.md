@@ -50,7 +50,7 @@ Quase tudo já existe. **Uma tabela nova** (`email_change_requests`, issue #80, 
 |---|---|
 | `auth."user"` | `email` é **único**: é a identidade. `emailVerified` nasce `true` no aceite |
 | `auth."account"` | o hash da senha, provider `credential` |
-| `auth."session"` | `expiresAt`, com teto absoluto imposto por hook de banco |
+| `auth."session"` | `expiresAt`, com teto absoluto de 30 dias imposto pelo `databaseHooks` do Better Auth (JavaScript, não um gatilho do PostgreSQL) e conferido por `session-guard.ts` |
 | `auth."verification"` | os tokens de recuperação de senha |
 | `public.invitations` | guarda **só o hash** do token; nem a operação recupera o token depois de enviado |
 | `public.legal_acceptances` | versão de Termos e de Privacidade, com data e hora. Uma linha por conta, documento e versão: o aceite é **por documento** (regra 7a) |
@@ -63,8 +63,8 @@ Quase tudo já existe. **Uma tabela nova** (`email_change_requests`, issue #80, 
 
 ```
 sem sessão → ativa        # login com credencial válida E ao menos um contexto
-ativa      → ativa        # renovada a cada 24h de uso, até o teto de 7 dias
-ativa      → encerrada    # logout, logout-all, reset de senha, ou o teto vencido
+ativa      → ativa        # 7 dias sem uso, renovada a cada 24 h de uso, teto absoluto de 30 dias
+ativa      → encerrada    # logout, logout-all, reset de senha, 7 dias sem uso, ou o teto de 30 dias vencido
 ```
 
 Não há refresh token e não há nada em JavaScript: cookie httpOnly, `SameSite=lax`.
@@ -433,6 +433,8 @@ Em [`docs/business/decisions.md`](../docs/business/decisions.md), 2026-09-24:
 E, 2026-10-07 (**pendente de validação**): Termos e Privacidade mudam de versão sem forçar o reaceite, e o aceite depois do cadastro é por documento — fecha o ponto em aberto sobre o reaceite.
 
 E, 2026-10-07 (**pendente de validação**): a troca de e-mail da conta é um pedido aprovado pela operação, não uma edição — fecha o ponto em aberto sobre a troca de e-mail.
+
+E, 2026-10-07 (**pendente de validação**): a sessão vale 7 dias sem uso, é renovada a cada 24 h de uso e tem teto absoluto de 30 dias — alinha a SPEC ao que o código e os testes já faziam (issue #341).
 
 E, 2026-09-29 (**pendente de validação**): o login aceita o token do convite para quem tem zero contextos, complementando a decisão de 2026-09-24 sobre credencial correta sem contexto.
 
