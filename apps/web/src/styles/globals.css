@@ -1183,6 +1183,118 @@ a.client-general__block:hover {
   color: var(--text-danger);
 }
 
+/* Portal access tab: specs/clientes.md section 7, issue #140. */
+.portal-access {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.portal-access__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.portal-access__header h2 {
+  margin: 0;
+  font: var(--heading-md);
+}
+
+.portal-access__list {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.portal-access__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding-block: var(--space-3);
+  border-top: 1px solid var(--border-default);
+}
+
+.portal-access__row:first-child {
+  border-top: none;
+}
+
+.portal-access__name {
+  flex: 1 1 12rem;
+  font: var(--label-md);
+  overflow-wrap: anywhere;
+}
+
+.portal-access__email {
+  flex: 1 1 12rem;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.portal-access__since {
+  color: var(--text-muted);
+  font: var(--body-md);
+}
+
+.portal-access__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.portal-access__empty,
+.portal-access__error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  padding: var(--space-6) 0;
+}
+
+.portal-access__error {
+  color: var(--text-danger);
+}
+
+.portal-access__empty p {
+  margin: 0;
+}
+
+.portal-access__error-line {
+  margin: 0;
+  color: var(--text-danger);
+  font: var(--body-md);
+}
+
+.portal-access__removed {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.portal-access__removed-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.portal-access__removed-header h3,
+.portal-access__invites h3 {
+  margin: 0;
+  font: var(--label-md);
+  color: var(--text-secondary);
+}
+
+.portal-access__invites {
+  display: grid;
+  gap: var(--space-3);
+}
+
 /* Auth form layout: specs/auth.md section 7, the centred single column the auth screens share. */
 .form-panel {
   display: grid;
