@@ -8,6 +8,7 @@ import { AgencyAreaLayout, AgencyHomePage, AgencyModulePlaceholder, AgencyPermis
 import { LiveStatus } from '@ageniza/ui';
 import { CollaboratorsPage } from './collaborators.js';
 import { ContextSelectPage } from './contexts.js';
+import { ConfirmEmailChangePage } from './email-change.js';
 import { ForgotPasswordPage } from './forgot-password.js';
 import { getHealth } from './health.js';
 import { useApiClient } from './http.js';
@@ -56,6 +57,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="senha/esquecida" element={session.isAuthenticated ? <Navigate to="/app" replace /> : <ForgotPasswordPage />} />
       <Route path="senha/redefinir" element={<ResetPasswordPage />} />
       <Route path="convite/:token" element={<InvitationPage />} />
+      <Route path="email/confirmar" element={<ConfirmEmailChangePage />} />
       <Route path="termos" element={<LegalDocumentPage document={termsOfUse} sibling={{ title: 'Política de Privacidade', to: '/privacidade' }} />} />
       <Route path="privacidade" element={<LegalDocumentPage document={privacyPolicy} sibling={{ title: 'Termos de Uso', to: '/termos' }} />} />
     </Route>
