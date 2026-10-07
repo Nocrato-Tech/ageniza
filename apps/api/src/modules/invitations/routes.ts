@@ -190,13 +190,8 @@ const lockPendingInvitationSlot = async (
   ]);
 };
 
-/**
- * Decides whether an invitation is still pending **after** the caller's `for update` has returned.
- * `now()` is the transaction clock, frozen at the start of the request, so it would still call an
- * invitation pending when it expired while the request waited for the row lock. `statement_timestamp()`
- * belongs to this second statement, which only starts once the lock is held; `accept_invitation`
- * makes the same decision in the database, under the same locks (issue #304).
- */
+/** Second statement, after the caller's `for update`: `now()` freezes before the wait and would
+ * keep an invitation that expired during it looking pending (issue #304). */
 const isInvitationPending = async (
   transaction: InvitationTransaction,
   agencyId: string,
@@ -450,9 +445,10 @@ const resendInvitation = async (
       `, [current.role_id, agencyId]);
       if (adminResult.rows[0]?.is_admin === true) throw adminGrantForbidden();
     }
-    if (!(await isInvitationPending(transaction, agencyId, invitationId))) throw invitationNotPending();
-
+    // Slot lock before the pendingness read: an invitation that expires while waiting for it must
+    // not be resent (issue #304 review).
     await lockPendingInvitationSlot(transaction, agencyId, current.purpose, current.email, current.client_id);
+    if (!(await isInvitationPending(transaction, agencyId, invitationId))) throw invitationNotPending();
     const revoked = await raw<RawRows<{ id: string }>>(transaction, `
       update public.invitations set revoked_at = now() where id = ?::uuid returning id
     `, [invitationId]);

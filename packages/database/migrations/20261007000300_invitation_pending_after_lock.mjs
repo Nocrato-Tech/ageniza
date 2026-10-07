@@ -1,17 +1,7 @@
 /**
- * Issue #304, finding 3 (security review of PR #298, issue #165).
- *
- * `app_private.accept_invitation` decided "expired" with `now()`, the transaction clock frozen at
- * the start of the request. When the acceptance waited on the invitation row lock (`for update`)
- * and the invitation expired during that wait, the function still saw the invitation it had read
- * at the start and accepted it. The check now uses `clock_timestamp()`, evaluated after both
- * `for update` locks were taken, so the decision is made on the version of the row the acceptance
- * actually uses -- the same "decide after the wait" rule the resend and cancel routes apply with a
- * second `statement_timestamp()` read (see decisions.md, 2026-10-07).
- *
- * `create or replace` keeps the function's owner and privileges, so the existing grants to
- * `ageniza_app` stay untouched and the trigger/policies are not recreated; no table, column,
- * policy or grant changes.
+ * Issue #304: `app_private.accept_invitation` checked expiry with `now()`, frozen before the
+ * request waited on the row locks; the check now uses `clock_timestamp()`, after both locks.
+ * `create or replace` keeps owner and grants (decisions.md, 2026-10-07).
  */
 export async function up(knex) {
   await knex.raw(`
@@ -52,10 +42,7 @@ export async function up(knex) {
       where agency_row.id = invitation.agency_id
       for update;
 
-      -- clock_timestamp(), not now() nor statement_timestamp(): now() is the transaction
-      -- start, before both waits, and inside a single function call statement_timestamp() never
-      -- advances past them. This is the same "decide after the lock" rule the routes apply in a
-      -- second statement (issue #304).
+      -- After both locks: now() and statement_timestamp() would not see the wait pass (issue #304).
       if not found
          or invitation.used_at is not null
          or invitation.revoked_at is not null

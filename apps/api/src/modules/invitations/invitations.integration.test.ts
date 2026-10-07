@@ -23,9 +23,8 @@ type Transaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
 const recordedStatements: string[] = [];
 
 /**
- * Wraps the harness database so each `raw` the modules send is recorded before it runs. The
- * pending-invitations listing has to answer the counter and the page from one snapshot, which the
- * test proves by requiring a single statement against the invitations table (issue #304).
+ * Wraps the harness database so each `raw` the modules send is recorded first; the listing test
+ * proves the counter and the page are one statement this way (issue #304).
  */
 const recordStatements = (database: DatabaseClient): DatabaseClient => {
   const recordingTransaction = (transaction: Transaction): Transaction => new Proxy(transaction, {
@@ -142,36 +141,71 @@ const waitForRelationLockWait = async (database: DatabaseClient, relation: strin
   throw new Error(`No backend ever waited on the ${relation} lock.`);
 };
 
-/** Waits until some backend is blocked on another transaction's row lock, so a clock race is
- * sequenced by the lock, not by a sleep (issue #304). */
-const waitForRowLockWait = async (database: DatabaseClient): Promise<void> => {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
-    const result = await raw<{ rows: Array<{ waiting: number }> }>(database.knex, `
-      select count(*)::int as waiting
-      from pg_catalog.pg_locks
-      where not granted and locktype = 'transactionid'
-    `, []);
-    if ((result.rows[0]?.waiting ?? 0) > 0) return;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error('No backend ever waited for a row lock.');
+/** The backend pid of an open transaction, to scope a lock wait to this test's holder. */
+const backendPid = async (transaction: Transaction): Promise<number> => {
+  const result = await raw<{ rows: Array<{ pid: number }> }>(transaction, 'select pg_catalog.pg_backend_pid() as pid', []);
+  return Number(result.rows[0]?.pid);
 };
 
 /**
- * Holds the invitation row, starts the request so it blocks on its own `for update`, lets the
- * invitation expire (still under the lock) and only then releases it. The request's decision has
- * to see the expired version -- `data` stays untouched (issue #304).
+ * Waits until a backend of this database is blocked by the given holder and returns the
+ * `query_start` of the statement it blocks in -- the lock itself, never a sleep, and blind to
+ * waits in other databases (issue #304 review).
+ */
+const waitForBlockedQueryStart = async (database: DatabaseClient, holderPid: number): Promise<Date> => {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    const result = await raw<{ rows: Array<{ query_start: string | Date }> }>(database.knex, `
+      select activity.query_start
+      from pg_catalog.pg_stat_activity activity
+      join pg_catalog.pg_locks locks on locks.pid = activity.pid and not locks.granted
+      where activity.datname = pg_catalog.current_database()
+        and pg_catalog.pg_blocking_pids(activity.pid) @> array[?::int]
+      limit 1
+    `, [holderPid]);
+    const row = result.rows[0];
+    if (row !== undefined) return new Date(row.query_start);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error('No backend ever waited on the holder lock.');
+};
+
+/** Waits until the database clock passes the invitation's expiry, reading the row without locking
+ * it (the request may hold it) and never trusting the Node clock (issue #304). */
+const waitUntilInvitationExpires = async (database: DatabaseClient, invitationId: string): Promise<void> => {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    const result = await raw<{ rows: Array<{ expired: boolean }> }>(database.knex, `
+      select expires_at <= pg_catalog.now() as expired
+      from public.invitations
+      where id = ?::uuid
+    `, [invitationId]);
+    if (result.rows[0]?.expired === true) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error('The invitation never expired.');
+};
+
+/** Holds the invitation row, starts the request so it blocks on `for update`, expires the
+ * invitation one millisecond after the blocked statement started and releases it: the request's
+ * transaction clock always sees it pending, its post-lock read always sees it expired (issue #304).
  */
 const expireInvitationWhileRequestWaits = async (invitationId: string, start: () => Promise<Injection>): Promise<Injection> => {
   const holder = await owner.knex.transaction();
   let released = false;
   try {
-    await holder.raw('select id from public.invitations where id = ?::uuid for update', [invitationId]);
+    const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.invitations where id = ?::uuid for update', [invitationId]);
+    if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one invitation.');
+    const holderPid = await backendPid(holder);
     const responsePromise = start();
-    await waitForRowLockWait(owner);
-    // A moment in the past relative to the release, but later than the request's transaction
-    // start: the old transaction-clock check would still call the invitation pending.
-    await holder.raw('update public.invitations set expires_at = ? where id = ?::uuid', [new Date(Date.now() - 10), invitationId]);
+    const queryStart = await waitForBlockedQueryStart(owner, holderPid);
+    const expired = await raw<{ rows: Array<{ id: string }> }>(holder, `
+      update public.invitations
+      set expires_at = ?::timestamptz + interval '1 millisecond'
+      where id = ?::uuid
+      returning id
+    `, [queryStart, invitationId]);
+    if (expired.rows.length !== 1) throw new Error('The holder did not expire exactly one invitation.');
+    // Let the wall clock pass the expiry before releasing, so the post-lock read is past it.
+    await new Promise((resolve) => setTimeout(resolve, 50));
     await holder.commit();
     released = true;
     return await responsePromise;
@@ -546,6 +580,42 @@ describe('invitation HTTP module', () => {
     expect(rows).toEqual([{ id: invitation.invitationId, revoked_at: null }]);
   }, 20_000);
 
+  it('refuses to resend an invitation that expired while the request waited for the invitation slot (issue #304 review)', async () => {
+    const slotOwner = await makeUser('invitations-expiry-slot-owner');
+    const slotAgencyId = await createAgency('Invitations expiry slot agency', slotOwner.id);
+    const cookie = await loginCookie(slotOwner);
+    const email = `expiry-slot-${randomUUID()}@example.test`;
+    const invitation = await insertInvitation({ agencyId: slotAgencyId, email });
+    await owner.knex('invitations').where({ id: invitation.invitationId }).update({ expires_at: owner.knex.raw("pg_catalog.now() + interval '4 seconds'") });
+
+    const holder = await owner.knex.transaction();
+    let released = false;
+    try {
+      // The exact advisory key `lockPendingInvitationSlot` takes (clientId null -> nil uuid).
+      await holder.raw('select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(?, 0))', [
+        `${slotAgencyId}:collaborator_invite:${email}:00000000-0000-0000-0000-000000000000`
+      ]);
+      const holderPid = await backendPid(holder);
+      const responsePromise = app.app.inject({
+        method: 'POST',
+        url: `/agencies/${slotAgencyId}/invitations/${invitation.invitationId}/resend`,
+        headers: { ...origin, cookie }
+      });
+      await waitForBlockedQueryStart(owner, holderPid);
+      await waitUntilInvitationExpires(owner, invitation.invitationId);
+      await holder.commit();
+      released = true;
+
+      const response = await responsePromise;
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ error: { code: 'INVITATION_NOT_PENDING' } });
+      const rows = await owner.knex('invitations').where({ agency_id: slotAgencyId }).select('id', 'revoked_at');
+      expect(rows).toEqual([{ id: invitation.invitationId, revoked_at: null }]);
+    } finally {
+      if (!released) await holder.rollback();
+    }
+  }, 20_000);
+
   it('rejects an acceptance whose invitation expired while the request waited for its row lock (issue #304)', async () => {
     const expiryOwner = await makeUser('invitations-expiry-accept-owner');
     const expiryAgencyId = await createAgency('Invitations expiry accept agency', expiryOwner.id);
@@ -564,6 +634,41 @@ describe('invitation HTTP module', () => {
     expect(response.statusCode).toBe(410);
     expect(response.json().error).toEqual({ code: 'INVALID_LINK', message: 'Este link não é mais válido.' });
     await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('used_at')).resolves.toEqual({ used_at: null });
+  }, 20_000);
+
+  it('rejects an acceptance whose invitation expired while the request waited for the agency lock (issue #304 review)', async () => {
+    const agencyLockOwner = await makeUser('invitations-expiry-agency-owner');
+    const agencyLockAgencyId = await createAgency('Invitations expiry agency lock agency', agencyLockOwner.id);
+    const invited = await makeUser('invitations-expiry-agency-invitee');
+    // Issue #68: logging in requires a context of their own, unrelated to the invitation.
+    await createAgency('Invitations expiry agency invitee home agency', invited.id);
+    const cookie = await loginCookie(invited);
+    const invitation = await insertInvitation({ agencyId: agencyLockAgencyId, email: invited.email });
+    await owner.knex('invitations').where({ id: invitation.invitationId }).update({ expires_at: owner.knex.raw("pg_catalog.now() + interval '4 seconds'") });
+
+    const holder = await owner.knex.transaction();
+    let released = false;
+    try {
+      const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.agencies where id = ?::uuid for update', [agencyLockAgencyId]);
+      if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one agency.');
+      const holderPid = await backendPid(holder);
+      const responsePromise = app.app.inject({
+        method: 'POST',
+        url: `/invitations/${invitation.token}/accept`,
+        headers: { ...origin, cookie }
+      });
+      await waitForBlockedQueryStart(owner, holderPid);
+      await waitUntilInvitationExpires(owner, invitation.invitationId);
+      await holder.commit();
+      released = true;
+
+      const response = await responsePromise;
+      expect(response.statusCode).toBe(410);
+      expect(response.json().error).toEqual({ code: 'INVALID_LINK', message: 'Este link não é mais válido.' });
+      await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('used_at')).resolves.toEqual({ used_at: null });
+    } finally {
+      if (!released) await holder.rollback();
+    }
   }, 20_000);
 
   it.each([
