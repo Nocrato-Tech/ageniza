@@ -13,6 +13,8 @@ const { ids } = w;
 const NOT_FOUND = { code: 'A0080' };
 const IN_USE = { code: 'A0082' };
 
+const extraAgencies: Array<{ agencyId: string; clientId: string; userId: string }> = [];
+
 let folderVideos: string;
 let folderImages: string;
 let onlyOperar: string;
@@ -33,6 +35,13 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  for (const extra of extraAgencies) {
+    await w.getOwner().knex('media_assets').where({ agency_id: extra.agencyId }).delete();
+    await w.getOwner().knex('clients').where({ id: extra.clientId }).delete();
+    await w.getOwner().knex('agencies').where({ id: extra.agencyId }).update({ owner_user_id: null });
+    await w.getOwner().knex('agencies').where({ id: extra.agencyId }).delete();
+    await w.getOwner().knex('auth.user').where({ id: extra.userId }).delete();
+  }
   await w.getOwner().knex('media_assets').where({ agency_id: ids.agencyA }).whereNull('client_id').delete();
   await w.teardown();
 });
@@ -45,10 +54,10 @@ const submitAs = (user: string, contentId: string) => fn(user, 'submit_content(?
 const removedAt = async (assetId: string): Promise<Date | null> =>
   (await w.getOwner().knex('media_assets').where({ id: assetId }).first('removed_at'))?.removed_at as Date | null;
 
-const usageAs = async (user: string, windowSeconds: number | null, exclude: string | null = null): Promise<{ bytes: number; count: number }> => {
+const usageAs = async (user: string, windowSeconds: number | null, exclude: string | null = null, agency = ids.agencyA): Promise<{ bytes: number; count: number }> => {
   const result = await w.asUser(user, (transaction) => transaction.raw<{ rows: Array<{ used_bytes: string; used_object_count: string }> }>(
     'select used_bytes, used_object_count from app_private.agency_media_usage(?::uuid, ?::integer, ?::uuid)',
-    [ids.agencyA, windowSeconds, exclude] as never[]
+    [agency, windowSeconds, exclude] as never[]
   ));
   const row = result.rows[0];
   return { bytes: Number(row?.used_bytes), count: Number(row?.used_object_count) };
@@ -374,6 +383,248 @@ describe('locking the parent folder (issue #253)', () => {
 
     expect(await w.getOwner().knex('media_folders').where({ client_id: ids.clientA1, name: 'Lançamento' })).toHaveLength(0);
     await expect(lockAs(ids.adminA, folderVideos)).resolves.toMatchObject({ rows: [{ id: folderVideos }] });
+  });
+});
+
+describe('the sum belongs to the agency that asks (issue #253, review of #394)', () => {
+  it('measures the value of a fresh agency, which another agency\'s media does not move', async () => {
+    const userE = randomUUID();
+    const agencyE = randomUUID();
+    const clientE = randomUUID();
+    extraAgencies.push({ agencyId: agencyE, clientId: clientE, userId: userE });
+    await w.getOwner().knex('auth.user').insert({ id: userE, name: 'Owner E', email: `${userE}@conteudo-media-removal.test`, emailVerified: true });
+    await w.getOwner().knex('agencies').insert({ id: agencyE, name: `Agência E ${agencyE}`, owner_user_id: userE });
+    await w.getOwner().knex('clients').insert({ id: clientE, agency_id: agencyE, name: `Cliente E ${clientE}` });
+    const folderE = (await w.getOwner().knex('media_folders').where({ client_id: clientE, name: 'Imagens' }).first('id')).id as string;
+    const insertFor = async (size: number): Promise<void> => {
+      const id = randomUUID();
+      await w.getOwner().knex('media_assets').insert({
+        id, agency_id: agencyE, client_id: clientE, folder_id: folderE, category: 'image', declared_content_type: 'image/png', extension: 'png',
+        object_key: `${agencyE}/${id}/original.png`, upload_object_key: `staging/${agencyE}/${id}/upload.png`, declared_size_bytes: size,
+        created_by_user_id: userE, status: 'confirmed', confirmed_size_bytes: size, confirmed_content_type: 'image/png', confirmed_at: new Date()
+      });
+    };
+    const ofA = await usageAs(ids.adminA, 900);
+
+    await insertFor(300);
+    await insertFor(200);
+
+    // A's sum cannot depend on E's media, and E's is exactly its own two files, whatever A holds.
+    await expect(usageAs(ids.adminA, 900)).resolves.toEqual(ofA);
+    await expect(usageAs(userE, 900, null, agencyE)).resolves.toEqual({ bytes: 500, count: 2 });
+  });
+});
+
+describe('removal against a media swap that races it (issue #384, review of #394)', () => {
+  const awaitingWith = async (first: string): Promise<string> => {
+    const content = await w.seedContent(ids.clientA1, { status: 'awaiting_approval', format: 'image', folderId: folderImages });
+    await w.attach(content, [first]);
+    return content;
+  };
+  const setMedia = (tx: Awaited<ReturnType<typeof w.openTransactionAs>>, content: string, assets: string[]) =>
+    tx.raw('select app_private.set_content_media(?::uuid, ?::uuid[])', [content, assets]);
+
+  it('makes a swap to the media wait for the removal that holds it, then refuses the content that now has a removed file', async () => {
+    const first = await w.seedAsset(ids.clientA1, folderImages);
+    const swapped = await w.seedAsset(ids.clientA1, folderImages);
+    const content = await awaitingWith(first);
+    const remover = await w.openTransactionAs(operarAndVisualizar);
+    let swapping: Promise<unknown> | undefined;
+
+    try {
+      const locker = await remover.raw('select app_private.remove_media_asset(?::uuid, ?::uuid)', [swapped, folderImages]);
+      expect(locker.rows).toHaveLength(1);
+      swapping = w.asUser(ids.productionA, (tx) => setMedia(tx, content, [swapped])).catch((error: unknown) => error);
+      await w.waitUntilSomeoneWaitsOnALock();
+    } finally {
+      await remover.commit();
+    }
+
+    expect(await swapping).toMatchObject({ code: 'A0065' });
+    expect(await removedAt(swapped)).not.toBeNull();
+    expect(await w.getOwner().knex('content_media').where({ content_id: content }).pluck('asset_id')).toEqual([first]);
+  });
+
+  it('makes the removal wait for a swap that holds the media, then refuses a media that a waiting content now uses', async () => {
+    const first = await w.seedAsset(ids.clientA1, folderImages);
+    const swapped = await w.seedAsset(ids.clientA1, folderImages);
+    const content = await awaitingWith(first);
+    const swapper = await w.openTransactionAs(ids.productionA);
+    let removing: Promise<unknown> | undefined;
+
+    try {
+      const locker = await setMedia(swapper, content, [swapped]);
+      expect(locker.rows).toHaveLength(1);
+      removing = removeAs(operarAndVisualizar, swapped, folderImages).catch((error: unknown) => error);
+      await w.waitUntilSomeoneWaitsOnALock();
+    } finally {
+      await swapper.commit();
+    }
+
+    expect(await removing).toMatchObject(IN_USE);
+    expect(await removedAt(swapped)).toBeNull();
+    expect(await w.getOwner().knex('content_media').where({ content_id: content }).pluck('asset_id')).toEqual([swapped]);
+  });
+});
+
+describe('removal against a cover swap that races it (issue #396)', () => {
+  const coverOf = async (content: string): Promise<string | null> => (await w.contentRow(content)).cover_asset_id as string | null;
+
+  it('makes a cover swap wait for the removal that holds the media, then refuses the removed cover', async () => {
+    const cover = await w.seedAsset(ids.clientA1, folderImages);
+    const content = await w.seedContent(ids.clientA1, { status: 'awaiting_approval', folderId: folderImages });
+    const remover = await w.openTransactionAs(operarAndVisualizar);
+    let swapping: Promise<unknown> | undefined;
+
+    try {
+      const locker = await remover.raw('select app_private.remove_media_asset(?::uuid, ?::uuid)', [cover, folderImages]);
+      expect(locker.rows).toHaveLength(1);
+      swapping = w.asUser(ids.productionA, (tx) => tx('contents').where({ id: content }).update({ cover_asset_id: cover })).catch((error: unknown) => error);
+      await w.waitUntilSomeoneWaitsOnALock();
+    } finally {
+      await remover.commit();
+    }
+
+    expect(await swapping).toMatchObject({ code: 'A0069' });
+    expect(await removedAt(cover)).not.toBeNull();
+    expect(await coverOf(content)).toBeNull();
+  });
+
+  it('makes the removal wait for a cover swap that holds the media, then refuses the cover of a waiting content', async () => {
+    const cover = await w.seedAsset(ids.clientA1, folderImages);
+    const content = await w.seedContent(ids.clientA1, { status: 'awaiting_approval', folderId: folderImages });
+    const swapper = await w.openTransactionAs(ids.productionA);
+    let removing: Promise<unknown> | undefined;
+
+    try {
+      expect(await swapper('contents').where({ id: content }).update({ cover_asset_id: cover })).toBe(1);
+      removing = removeAs(operarAndVisualizar, cover, folderImages).catch((error: unknown) => error);
+      await w.waitUntilSomeoneWaitsOnALock();
+    } finally {
+      await swapper.commit();
+    }
+
+    expect(await removing).toMatchObject(IN_USE);
+    expect(await removedAt(cover)).toBeNull();
+    expect(await coverOf(content)).toBe(cover);
+  });
+
+  it('does not publish a content whose cover was removed', async () => {
+    const cover = await w.seedAsset(ids.clientA1, folderImages);
+    const file = await w.seedAsset(ids.clientA1, folderImages);
+    const content = await w.seedContent(ids.clientA1, { status: 'approved', format: 'image', folderId: folderImages, coverAssetId: cover });
+    await w.attach(content, [file]);
+    await w.getOwner().knex('media_assets').where({ id: cover }).update({ removed_at: new Date() });
+
+    await expect(fn(ids.productionA, 'publish_content(?::uuid, ?::date)', content, '2026-10-06')).rejects.toMatchObject({ code: 'A0065' });
+    expect((await w.contentRow(content)).status).toBe('approved');
+  });
+});
+
+describe('a snapshot older than the lock is refused, not trusted (review of #394)', () => {
+  const levels = ['repeatable read', 'serializable'] as const;
+  const staleFailure = { code: '40001', message: expect.stringContaining('READ COMMITTED') };
+
+  it.each(levels)('%s: the removal of a media that a waiting content got after the snapshot is refused, and the media stays', async (level) => {
+    const first = await w.seedAsset(ids.clientA1, folderImages);
+    const swapped = await w.seedAsset(ids.clientA1, folderImages);
+    const content = await w.seedContent(ids.clientA1, { status: 'awaiting_approval', format: 'image', folderId: folderImages });
+    await w.attach(content, [first]);
+    const stale = await w.openTransactionAs(operarAndVisualizar, level);
+
+    try {
+      await fn(ids.productionA, 'set_content_media(?::uuid, ?::uuid[])', content, [swapped]);
+      await expect(stale.raw('select app_private.remove_media_asset(?::uuid, ?::uuid)', [swapped, folderImages])).rejects.toMatchObject(staleFailure);
+    } finally {
+      await stale.rollback();
+    }
+    expect(await removedAt(swapped)).toBeNull();
+  });
+
+  it.each(levels)('%s: the removal of a media that a waiting content got as cover after the snapshot is refused', async (level) => {
+    const cover = await w.seedAsset(ids.clientA1, folderImages);
+    const content = await w.seedContent(ids.clientA1, { status: 'awaiting_approval', folderId: folderImages });
+    const stale = await w.openTransactionAs(operarAndVisualizar, level);
+
+    try {
+      await w.asUser(ids.productionA, (tx) => tx('contents').where({ id: content }).update({ cover_asset_id: cover }));
+      await expect(stale.raw('select app_private.remove_media_asset(?::uuid, ?::uuid)', [cover, folderImages])).rejects.toMatchObject(staleFailure);
+    } finally {
+      await stale.rollback();
+    }
+    expect(await removedAt(cover)).toBeNull();
+  });
+
+  it.each(levels)('%s: a cover set after the snapshot of a removal is refused by the lock on the media', async (level) => {
+    const cover = await w.seedAsset(ids.clientA1, folderImages);
+    const content = await w.seedContent(ids.clientA1, { status: 'awaiting_approval', folderId: folderImages });
+    const setter = await w.openTransactionAs(ids.productionA, level);
+
+    try {
+      await removeAs(operarAndVisualizar, cover, folderImages);
+      await expect(setter('contents').where({ id: content }).update({ cover_asset_id: cover })).rejects.toMatchObject({ code: expect.stringMatching(/^(40001|A0069)$/) });
+    } finally {
+      await setter.rollback();
+    }
+    expect(await w.contentRow(content)).toMatchObject({ cover_asset_id: null });
+  });
+
+  it.each(levels)('%s: a content is not sent or published, nor its folder locked, from a snapshot taken before', async (level) => {
+    const file = await w.seedAsset(ids.clientA1, folderVideos, { category: 'video' });
+    const inProduction = await w.seedContent(ids.clientA1, { folderId: folderVideos });
+    await w.attach(inProduction, [file]);
+    const approvedFile = await w.seedAsset(ids.clientA1, folderImages);
+    const approved = await w.seedContent(ids.clientA1, { status: 'approved', format: 'image', folderId: folderImages });
+    await w.attach(approved, [approvedFile]);
+    const cases: ReadonlyArray<readonly [string, unknown[], (() => Promise<unknown>) | undefined]> = [
+      // The media leaves the content in production after the snapshot of the sender, which could not see it.
+      ['select app_private.submit_content(?::uuid)', [inProduction], () => w.getOwner().knex('media_assets').where({ id: file }).update({ removed_at: new Date() })],
+      ['select app_private.publish_content(?::uuid, ?::date)', [approved, '2026-10-06'], undefined],
+      ['select * from app_private.lock_media_folder(?::uuid)', [folderVideos], undefined]
+    ];
+
+    for (const [sql, bindings, outside] of cases) {
+      const stale = await w.openTransactionAs(ids.adminA, level);
+      try {
+        await outside?.();
+        await expect(stale.raw(sql, bindings as never[])).rejects.toMatchObject({ code: '40001' });
+      } finally {
+        await stale.rollback();
+      }
+    }
+    expect((await w.contentRow(inProduction)).status).toBe('in_production');
+    expect((await w.contentRow(approved)).status).toBe('approved');
+  });
+});
+
+describe('who is not authorized does not wait on the lock of someone else (review of #394)', () => {
+  const lockTimeout = async (user: string, sql: string, bindings: unknown[]): Promise<unknown> =>
+    w.asUser(user, async (transaction) => {
+      await transaction.raw("set local lock_timeout = '250ms'");
+      return transaction.raw(sql, bindings as never[]);
+    });
+
+  it('answers A0080 to the removal and to the folder lock while the client, the media and the folder are locked by another', async () => {
+    const asset = await w.seedAsset(ids.clientA1, folderImages);
+    const holder = await w.getOwner().knex.transaction();
+
+    try {
+      await holder.raw('select 1 from public.clients where id = ? for update', [ids.clientA1]);
+      await holder.raw('select 1 from public.media_assets where id = ? for update', [asset]);
+      await holder.raw('select 1 from public.media_folders where id in (?, ?) for update', [folderImages, folderVideos]);
+
+      for (const outsider of [ids.adminB, ids.crossDual, ids.portalA1, ids.dualBare, ids.salesA, onlyOperar, onlyVisualizar, onlyMidia]) {
+        await expect(lockTimeout(outsider, 'select app_private.remove_media_asset(?::uuid, ?::uuid)', [asset, folderImages]))
+          .rejects.toMatchObject({ ...NOT_FOUND });
+        await expect(lockTimeout(outsider, 'select * from app_private.lock_media_folder(?::uuid)', [folderImages])).rejects.toMatchObject({ ...NOT_FOUND });
+      }
+      // The control: who is authorized does wait, so the answers above are not a lock that was never there.
+      await expect(lockTimeout(operarAndVisualizar, 'select app_private.remove_media_asset(?::uuid, ?::uuid)', [asset, folderImages])).rejects.toMatchObject({ code: '55P03' });
+      await expect(lockTimeout(operarAndVisualizar, 'select * from app_private.lock_media_folder(?::uuid)', [folderImages])).rejects.toMatchObject({ code: '55P03' });
+    } finally {
+      await holder.rollback();
+    }
+    expect(await removedAt(asset)).toBeNull();
   });
 });
 
