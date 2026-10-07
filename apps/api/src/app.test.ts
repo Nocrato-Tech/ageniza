@@ -80,6 +80,18 @@ describe('API application bootstrap', () => {
     expect(generated.statusCode).toBe(404);
     expect(generated.headers['x-request-id']).toMatch(/^[A-Za-z0-9._:-]+$/);
     expect(generated.json()).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' }, meta: { requestId: generated.headers['x-request-id'] } });
+
+    // Issue #309 (review of PR #230, M1): an invalid inbound correlation id is replaced, never
+    // echoed back -- on a normal reply and on the error envelope alike.
+    const hostile = '<img src=x onerror=1>';
+    const forged = await app.inject({ url: '/health', headers: { 'x-correlation-id': hostile } });
+    expect(forged.headers['x-correlation-id']).toMatch(/^[A-Za-z0-9._:-]+$/);
+    expect(forged.headers['x-correlation-id']).not.toBe(hostile);
+
+    const forgedError = await app.inject({ url: '/missing', headers: { 'x-correlation-id': hostile } });
+    expect(forgedError.statusCode).toBe(404);
+    expect(forgedError.headers['x-correlation-id']).toMatch(/^[A-Za-z0-9._:-]+$/);
+    expect(forgedError.headers['x-correlation-id']).not.toBe(hostile);
     await app.close();
   });
 

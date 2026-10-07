@@ -47,6 +47,47 @@ e-mail, sem diferenciar maiúsculas, com `%` e `_` escapados. `role` filtra por 
 `q`, `role` e `jobTitle` usam o `SearchTextSchema` compartilhado (`packages/contracts`), que recusa
 caracteres de controle: um byte NUL chega ao backend como parâmetro inválido (22021) e viraria 500.
 
+## Alterar cargo e papel (`PATCH`, issue #97)
+
+`PATCH /agencies/:agencyId/collaborators/:membershipId` aceita `jobTitle`, `roleId` ou os dois. A
+permissão exigida é a **de cada campo presente**, não a da rota. A guarda (`requireAnyPermission`, derivada
+de `docs.permission`) só barra quem não poderia mudar nada (`alterar_funcao` ou `alterar_papel`); o resto
+é decidido depois de ler o corpo, com `request.tenant` (`policy.ts`):
+
+| corpo | exige |
+|---|---|
+| só `jobTitle` | `colaborador.alterar_funcao` |
+| só `roleId` | `colaborador.alterar_papel` |
+| os dois | as duas |
+| `roleId` do papel `admin` | mais `colaborador.atribuir_admin` |
+
+O papel é `admin` pela mesma função do banco (`app_private.is_admin_role`) que o trigger de UPDATE e a
+policy de `invitations` usam: papel de sistema ou da agência com chave `admin`. A permissão é pedida,
+não a posse: o Owner passa por curto-circuito, e quem receber `atribuir_admin` num papel
+personalizado também passa. O mesmo vale em `POST …/invitations/collaborators` e no reenvio de um
+convite com papel `admin` (módulo `invitations`).
+
+Proteções, todas `403` com mensagem própria: o papel do **Owner** não muda, nem para o mesmo papel
+que ele já tem; **ninguém altera o próprio papel** (compara com `request.auth`, nunca com o corpo).
+O cargo do Owner e o do próprio usuário continuam editáveis pela permissão de cargo.
+
+Ordem das respostas: 401 sem sessão; 404 se a agência não é acessível; 403 se falta a permissão
+da porta; 400 do corpo; 403 se falta a permissão de algum campo presente (antes de qualquer leitura,
+então quem não pode não descobre nada, nem que o id é malformado); 404 para vínculo de outra agência,
+inexistente, malformado ou removido; 400 `INVALID_ROLE` para papel que não é de sistema nem da agência;
+403 se o papel é `admin` e falta `atribuir_admin`; 403 de Owner e de si mesmo.
+
+A linha é lida com `for update` e a escrita grava **só os campos presentes**, então duas mudanças
+simultâneas de campos diferentes não se sobrescrevem. `UPDATE` que não altera nenhuma linha (a policy
+filtra em silêncio) nunca vira 200: vira 403. Um `42501` do banco (policy ou trigger) também vira 403,
+não 500. As duas barreiras continuam: a da API devolve a mensagem, a do banco é a que sobra se alguém
+esquecer a da API.
+
+`jobTitle` tem de 1 a 256 caracteres depois do `trim`, sem caracteres de controle (mesma regra do
+filtro `jobTitle` da listagem, para todo cargo gravado ser filtrável), e `null` limpa. O limite é
+aplicado pelo schema antes de a requisição chegar ao banco, que mede o tamanho com uma função
+quadrática.
+
 ## O que ficou de fora
 
 - **O filtro de removidos chega com a #98.** A SPEC exige permissão administrativa para revelar
@@ -54,4 +95,6 @@ caracteres de controle: um byte NUL chega ao backend como parâmetro inválido (
   `?status=removed` é 400 e o detalhe de um removido é 404; a visão administrativa entra na
   #98/#105.
 - **Remuneração.** Não existe neste módulo; pertence ao Financeiro.
-- **Remoção, reativação, convites e edição de perfil.** São outras rotas do módulo.
+- **Remoção, reativação, convites e edição de perfil.** São outras rotas do módulo (#98 e seguintes).
+- **Auditoria da troca de papel.** `audit.events` não registra "quem mudou este campo"; ver
+  "Rastreio de alteração de dados" em `docs/business/structural-changes.md`.

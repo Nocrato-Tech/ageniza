@@ -1,8 +1,9 @@
 import type { z } from 'zod';
 
-import { COLLABORATOR_ROLES_READ_PERMISSIONS } from '../collaborators/permissions.js';
+import { COLLABORATOR_ROLES_READ_PERMISSIONS, COLLABORATOR_UPDATE_PERMISSIONS } from '../collaborators/permissions.js';
 import type { RoutePermission } from '../../plugins/infra/route-metadata.js';
 import {
+  AcceptLegalDocumentRequestSchema,
   AgencyClientPathParamsSchema,
   AgencyClientPersonaPathParamsSchema,
   AgencyClientSectionPathParamsSchema,
@@ -51,6 +52,7 @@ import {
   InvitationAcceptResponseSchema,
   InvitationCreatedResponseSchema,
   InvitationPreviewResponseSchema,
+  LegalAcceptancesResponseSchema,
   MeContextsResponseSchema,
   MediaDownloadUrlQuerySchema,
   MediaDownloadUrlResponseSchema,
@@ -62,6 +64,7 @@ import {
   RequestMediaUploadPartsRequestSchema,
   RequestMediaUploadPartsResponseSchema,
   UpdateClientRequestSchema,
+  UpdateCollaboratorRequestSchema,
   UpdateMyProfileRequestSchema,
   UpdateMyProfileResponseSchema,
   UpdatePersonaRequestSchema,
@@ -81,7 +84,7 @@ import {
  * schema at generation time; secret-shaped values are angle-bracket placeholders on purpose.
  */
 
-export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'collaborators' | 'media' | 'profile';
+export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'collaborators' | 'media' | 'profile' | 'legal';
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
@@ -147,9 +150,10 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
   clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto.',
-  collaborators: 'A equipe da agência: listagem com paginação, busca e filtros.',
+  collaborators: 'A equipe da agência: listagem com paginação, busca e filtros, detalhe e alteração de cargo e papel.',
   media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.',
-  profile: 'Edição do próprio nome e da própria foto de perfil.'
+  profile: 'Edição do próprio nome e da própria foto de perfil.',
+  legal: 'Versão dos Termos e da Privacidade que a conta aceitou, e o aceite de um documento por vez.'
 };
 
 export const ERROR_MESSAGES: Record<string, string> = {
@@ -207,7 +211,14 @@ const agencyContextExample = {
   isOwner: true
 } as const;
 
-const signedStorageUrl = 'https://storage.exemplo.test/arquivo.png?assinatura=ficticia';
+const legalAcceptancesExample = {
+  documents: [
+    { document: 'terms', currentVersion: '2026-01-01', acceptedVersion: '2026-01-01', pending: false },
+    { document: 'privacy', currentVersion: '2026-10-01', acceptedVersion: '2026-02-01', pending: true }
+  ]
+} as const;
+
+const signedStorageUrl ='https://storage.exemplo.test/arquivo.png?assinatura=ficticia';
 
 const clientExample = {
   id: clientId,
@@ -462,7 +473,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'createCollaboratorInvitation',
     module: 'invitations',
     summary: 'Convida uma pessoa para a agência',
-    description: 'O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail e o token só existe nele.',
+    description: 'O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail e o token só existe nele. Convidar com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403).',
     access: 'Sessão + vínculo com a agência',
     permission: 'colaborador.convidar',
     params: AgencyPathParamsSchema,
@@ -521,7 +532,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'resendInvitation',
     module: 'invitations',
     summary: 'Reenvia um convite pendente',
-    description: 'Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer.',
+    description: 'Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403).',
     access: 'Sessão + vínculo com a agência',
     permission: 'convite.reenviar',
     params: AgencyInvitationPathParamsSchema,
@@ -827,6 +838,54 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     }],
     errors: [
       COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+
+  {
+    method: 'patch',
+    path: '/agencies/:agencyId/collaborators/:membershipId',
+    operationId: 'updateCollaborator',
+    module: 'collaborators',
+    summary: 'Altera o cargo e/ou o papel de um colaborador',
+    description: [
+      'Aceita `jobTitle` (texto de 1 a 256 caracteres, sem caracteres de controle, ou `null` para limpar),',
+      '`roleId`, ou os dois; corpo vazio é 400. Basta uma das duas permissões para chegar à rota, mas a exigida',
+      'é a de cada campo presente:',
+      '`jobTitle` pede `colaborador.alterar_funcao`, `roleId` pede `colaborador.alterar_papel`, e os dois pedem',
+      'as duas. Se o papel for `admin`, pede também `colaborador.atribuir_admin`, que só o Owner tem.',
+      'O papel do Owner não muda e ninguém altera o próprio papel (403). Um vínculo de outra agência,',
+      'inexistente, malformado ou removido devolve o mesmo 404. Devolve o vínculo atualizado, no',
+      'mesmo contrato do detalhe; nunca há 200 sem uma linha alterada.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: COLLABORATOR_UPDATE_PERMISSIONS,
+    params: AgencyCollaboratorPathParamsSchema,
+    body: UpdateCollaboratorRequestSchema,
+    requestExample: { jobTitle: 'Editor de Vídeo', roleId },
+    responses: [{
+      status: 200,
+      description: 'O colaborador atualizado.',
+      schema: CollaboratorSchema,
+      example: {
+        membershipId,
+        name: 'Camila Nogueira',
+        email: 'camila@exemplo.test',
+        photoUrl: signedStorageUrl,
+        jobTitle: 'Editor de Vídeo',
+        role: { key: 'production', name: 'Produção' },
+        isOwner: false,
+        status: 'active',
+        joinedAt: '2026-03-12T12:00:00.000Z'
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'INVALID_ROLE' },
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
@@ -1402,6 +1461,61 @@ path: '/agencies/:agencyId/roles',
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 415, code: 'UNSUPPORTED_MEDIA_TYPE' }
+    ]
+  },
+
+  {
+    method: 'get',
+    path: '/me/legal-acceptances',
+    operationId: 'getMyLegalAcceptances',
+    module: 'legal',
+    summary: 'Consulta a versão aceita dos Termos e da Privacidade',
+    description: [
+      'Uma entrada por documento, Termos primeiro: a versão em vigor no servidor, a versão mais nova',
+      'que a conta aceitou (`null` se nunca aceitou) e se há aceite pendente. Pendente não bloqueia',
+      'nenhuma funcionalidade; só alimenta o aviso da interface.'
+    ].join('\n'),
+    access: 'Sessão',
+    permission: null,
+    responses: [{
+      status: 200,
+      description: 'Situação dos dois documentos.',
+      schema: LegalAcceptancesResponseSchema,
+      example: legalAcceptancesExample
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/me/legal-acceptances',
+    operationId: 'acceptLegalDocument',
+    module: 'legal',
+    summary: 'Aceita um documento legal, na versão em vigor',
+    description: [
+      'O corpo nomeia só o documento; a versão gravada é sempre a que está em vigor no servidor, e',
+      'o corpo `.strict()` recusa um campo `version`. O aceite é por documento: aceitar a Privacidade',
+      'não marca os Termos. É idempotente e nunca regride: repetir, ou aceitar uma versão que a conta',
+      'já superou, responde 200 sem gravar nada. A resposta traz a situação dos dois documentos.'
+    ].join('\n'),
+    access: 'Sessão',
+    permission: null,
+    body: AcceptLegalDocumentRequestSchema,
+    requestExample: { document: 'privacy' },
+    responses: [{
+      status: 200,
+      description: 'Situação dos dois documentos depois do aceite.',
+      schema: LegalAcceptancesResponseSchema,
+      example: legalAcceptancesExample
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' }
     ]
   }
 ];

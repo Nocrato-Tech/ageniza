@@ -1042,12 +1042,13 @@ Desarquiva uma persona.
 
 **Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
 
-### collaborators — A equipe da agência: listagem com paginação, busca e filtros.
+### collaborators — A equipe da agência: listagem com paginação, busca e filtros, detalhe e alteração de cargo e papel.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
 | `GET` | `/agencies/:agencyId/collaborators` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista a equipe da agência |
 | `GET` | `/agencies/:agencyId/collaborators/:membershipId` | Sessão + vínculo com a agência | `colaborador.visualizar` | Devolve um colaborador da agência |
+| `PATCH` | `/agencies/:agencyId/collaborators/:membershipId` | Sessão + vínculo com a agência | `colaborador.alterar_funcao` ou `colaborador.alterar_papel` | Altera o cargo e/ou o papel de um colaborador |
 | `GET` | `/agencies/:agencyId/collaborators/job-titles` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista os cargos que existem na agência |
 | `GET` | `/agencies/:agencyId/roles` | Sessão + vínculo com a agência | `colaborador.convidar` ou `colaborador.alterar_papel` | Lista os papéis atribuíveis na agência |
 
@@ -1128,6 +1129,43 @@ Devolve um colaborador da agência.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `PATCH /agencies/:agencyId/collaborators/:membershipId`
+
+Altera o cargo e/ou o papel de um colaborador.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `colaborador.alterar_funcao` ou `colaborador.alterar_papel`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "jobTitle": "Editor de Vídeo",
+  "roleId": "66666666-6666-4666-8666-666666666666"
+}
+```
+
+**Resposta `200`** — O colaborador atualizado.
+
+```json
+{
+  "membershipId": "22222222-2222-4222-8222-222222222222",
+  "name": "Camila Nogueira",
+  "email": "camila@exemplo.test",
+  "photoUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+  "jobTitle": "Editor de Vídeo",
+  "role": {
+    "key": "production",
+    "name": "Produção"
+  },
+  "isOwner": false,
+  "status": "active",
+  "joinedAt": "2026-03-12T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 INVALID_ROLE` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/collaborators/job-titles`
 
@@ -1371,6 +1409,81 @@ Envia a própria foto de perfil.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `413 PAYLOAD_TOO_LARGE` · `415 UNSUPPORTED_MEDIA_TYPE` · `500 INTERNAL_ERROR`
+
+### legal — Versão dos Termos e da Privacidade que a conta aceitou, e o aceite de um documento por vez.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `GET` | `/me/legal-acceptances` | Sessão | — | Consulta a versão aceita dos Termos e da Privacidade |
+| `POST` | `/me/legal-acceptances` | Sessão | — | Aceita um documento legal, na versão em vigor |
+
+#### `GET /me/legal-acceptances`
+
+Consulta a versão aceita dos Termos e da Privacidade.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Resposta `200`** — Situação dos dois documentos.
+
+```json
+{
+  "documents": [
+    {
+      "document": "terms",
+      "currentVersion": "2026-01-01",
+      "acceptedVersion": "2026-01-01",
+      "pending": false
+    },
+    {
+      "document": "privacy",
+      "currentVersion": "2026-10-01",
+      "acceptedVersion": "2026-02-01",
+      "pending": true
+    }
+  ]
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `500 INTERNAL_ERROR`
+
+#### `POST /me/legal-acceptances`
+
+Aceita um documento legal, na versão em vigor.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "document": "privacy"
+}
+```
+
+**Resposta `200`** — Situação dos dois documentos depois do aceite.
+
+```json
+{
+  "documents": [
+    {
+      "document": "terms",
+      "currentVersion": "2026-01-01",
+      "acceptedVersion": "2026-01-01",
+      "pending": false
+    },
+    {
+      "document": "privacy",
+      "currentVersion": "2026-10-01",
+      "acceptedVersion": "2026-02-01",
+      "pending": true
+    }
+  ]
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
 
 ## Catálogo de códigos de erro
 

@@ -32,7 +32,7 @@
     },
     {
       "name": "collaborators",
-      "description": "A equipe da agência: listagem com paginação, busca e filtros."
+      "description": "A equipe da agência: listagem com paginação, busca e filtros, detalhe e alteração de cargo e papel."
     },
     {
       "name": "media",
@@ -41,6 +41,10 @@
     {
       "name": "profile",
       "description": "Edição do próprio nome e da própria foto de perfil."
+    },
+    {
+      "name": "legal",
+      "description": "Versão dos Termos e da Privacidade que a conta aceitou, e o aceite de um documento por vez."
     }
   ],
   "components": {
@@ -1329,6 +1333,25 @@
           "status",
           "joinedAt"
         ],
+        "additionalProperties": false
+      },
+      "updateCollaboratorRequest": {
+        "type": "object",
+        "properties": {
+          "jobTitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+          },
+          "roleId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
         "additionalProperties": false
       },
       "listCollaboratorJobTitlesResponse": {
@@ -2650,6 +2673,67 @@
           "imageBase64"
         ],
         "additionalProperties": false
+      },
+      "getMyLegalAcceptancesResponse": {
+        "type": "object",
+        "properties": {
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "document": {
+                  "type": "string",
+                  "enum": [
+                    "terms",
+                    "privacy"
+                  ]
+                },
+                "currentVersion": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "acceptedVersion": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "pending": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "document",
+                "currentVersion",
+                "acceptedVersion",
+                "pending"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "documents"
+        ],
+        "additionalProperties": false
+      },
+      "acceptLegalDocumentRequest": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string",
+            "enum": [
+              "terms",
+              "privacy"
+            ]
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -3488,7 +3572,7 @@
       "post": {
         "operationId": "createCollaboratorInvitation",
         "summary": "Convida uma pessoa para a agência",
-        "description": "O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail e o token só existe nele.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.convidar`.",
+        "description": "O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail e o token só existe nele. Convidar com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403).\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.convidar`.",
         "tags": [
           "invitations"
         ],
@@ -3866,7 +3950,7 @@
       "post": {
         "operationId": "resendInvitation",
         "summary": "Reenvia um convite pendente",
-        "description": "Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `convite.reenviar`.",
+        "description": "Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403).\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `convite.reenviar`.",
         "tags": [
           "invitations"
         ],
@@ -5339,6 +5423,174 @@
                   "error": {
                     "code": "FORBIDDEN",
                     "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateCollaborator",
+        "summary": "Altera o cargo e/ou o papel de um colaborador",
+        "description": "Aceita `jobTitle` (texto de 1 a 256 caracteres, sem caracteres de controle, ou `null` para limpar),\n`roleId`, ou os dois; corpo vazio é 400. Basta uma das duas permissões para chegar à rota, mas a exigida\né a de cada campo presente:\n`jobTitle` pede `colaborador.alterar_funcao`, `roleId` pede `colaborador.alterar_papel`, e os dois pedem\nas duas. Se o papel for `admin`, pede também `colaborador.atribuir_admin`, que só o Owner tem.\nO papel do Owner não muda e ninguém altera o próprio papel (403). Um vínculo de outra agência,\ninexistente, malformado ou removido devolve o mesmo 404. Devolve o vínculo atualizado, no\nmesmo contrato do detalhe; nunca há 200 sem uma linha alterada.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.alterar_funcao` ou `colaborador.alterar_papel`.",
+        "tags": [
+          "collaborators"
+        ],
+        "x-permission": [
+          "colaborador.alterar_funcao",
+          "colaborador.alterar_papel"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true,
+            "name": "membershipId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/updateCollaboratorRequest"
+              },
+              "example": {
+                "jobTitle": "Editor de Vídeo",
+                "roleId": "66666666-6666-4666-8666-666666666666"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "O colaborador atualizado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getCollaboratorResponse"
+                },
+                "example": {
+                  "membershipId": "22222222-2222-4222-8222-222222222222",
+                  "name": "Camila Nogueira",
+                  "email": "camila@exemplo.test",
+                  "photoUrl": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+                  "jobTitle": "Editor de Vídeo",
+                  "role": {
+                    "key": "production",
+                    "name": "Produção"
+                  },
+                  "isOwner": false,
+                  "status": "active",
+                  "joinedAt": "2026-03-12T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "INVALID_ROLE: O papel informado não é válido para esta agência. | VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INVALID_ROLE",
+                    "message": "O papel informado não é válido para esta agência."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
@@ -8948,6 +9200,228 @@
                   "error": {
                     "code": "UNSUPPORTED_MEDIA_TYPE",
                     "message": "This content type is not accepted."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/legal-acceptances": {
+      "get": {
+        "operationId": "getMyLegalAcceptances",
+        "summary": "Consulta a versão aceita dos Termos e da Privacidade",
+        "description": "Uma entrada por documento, Termos primeiro: a versão em vigor no servidor, a versão mais nova\nque a conta aceitou (`null` se nunca aceitou) e se há aceite pendente. Pendente não bloqueia\nnenhuma funcionalidade; só alimenta o aviso da interface.\n\nAcesso: Sessão.",
+        "tags": [
+          "legal"
+        ],
+        "x-permission": null,
+        "responses": {
+          "200": {
+            "description": "Situação dos dois documentos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getMyLegalAcceptancesResponse"
+                },
+                "example": {
+                  "documents": [
+                    {
+                      "document": "terms",
+                      "currentVersion": "2026-01-01",
+                      "acceptedVersion": "2026-01-01",
+                      "pending": false
+                    },
+                    {
+                      "document": "privacy",
+                      "currentVersion": "2026-10-01",
+                      "acceptedVersion": "2026-02-01",
+                      "pending": true
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "acceptLegalDocument",
+        "summary": "Aceita um documento legal, na versão em vigor",
+        "description": "O corpo nomeia só o documento; a versão gravada é sempre a que está em vigor no servidor, e\no corpo `.strict()` recusa um campo `version`. O aceite é por documento: aceitar a Privacidade\nnão marca os Termos. É idempotente e nunca regride: repetir, ou aceitar uma versão que a conta\njá superou, responde 200 sem gravar nada. A resposta traz a situação dos dois documentos.\n\nAcesso: Sessão.",
+        "tags": [
+          "legal"
+        ],
+        "x-permission": null,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/acceptLegalDocumentRequest"
+              },
+              "example": {
+                "document": "privacy"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Situação dos dois documentos depois do aceite.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getMyLegalAcceptancesResponse"
+                },
+                "example": {
+                  "documents": [
+                    {
+                      "document": "terms",
+                      "currentVersion": "2026-01-01",
+                      "acceptedVersion": "2026-01-01",
+                      "pending": false
+                    },
+                    {
+                      "document": "privacy",
+                      "currentVersion": "2026-10-01",
+                      "acceptedVersion": "2026-02-01",
+                      "pending": true
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Request payload is too large"
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
