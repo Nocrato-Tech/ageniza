@@ -141,6 +141,32 @@ pnpm docker:down   # preserva o volume do banco
 
 `pnpm db:reset` recria o banco do zero a partir das migrations, e **apaga os dados locais** — inclusive a agência que você acabou de criar.
 
+## Disparando o job diário de arquivamento
+
+O worker registra sozinho o `clients.archive-due` quando sobe (`pnpm dev` ou `pnpm docker:up`): todo dia às 00:10 em `America/Sao_Paulo` ele arquiva os clientes cujo `closing_date` já passou, e é só isso que ele faz. Para testar sem esperar a virada do dia, com o worker no ar:
+
+1. **Deixe um cliente vencido.** A rota recusa data de ontem de propósito, então localmente isso é uma linha de SQL como dono do banco (troque o `<uuid>` pelo id do cliente):
+
+   ```sh
+   docker exec ageniza-local-postgres-1 psql -U postgres -d ageniza -c "update public.clients set closing_date = (now() at time zone 'America/Sao_Paulo')::date - 1 where id = '<uuid>' and status = 'active'"
+   ```
+
+2. **Dispare o job**, inserindo-o na fila como o agendamento faria:
+
+   ```sh
+   docker exec ageniza-local-postgres-1 psql -U postgres -d ageniza -c "insert into pgboss.job (name, data, retry_limit, retry_delay, retry_backoff, dead_letter) values ('clients.archive-due', '{}', 3, 10, true, 'clients.archive-due.dead')"
+   ```
+
+   Em poucos segundos o log do worker traz `Archived the clients whose contract ended` com `archived` (a quantidade, sem nome de cliente nem de pessoa) e `Durable job completed`. O cliente fica `archived`, com os convites de portal pendentes revogados e o portal respondendo 404; um evento `client.archived` com `request_id = 'job:clients.archive-due'` aparece em `audit.events`.
+
+3. **Confira o agendamento** (uma linha só, mesmo depois de reiniciar o worker):
+
+   ```sh
+   docker exec ageniza-local-postgres-1 psql -U postgres -d ageniza -c "select name, cron, timezone from pgboss.schedule"
+   ```
+
+Sem worker, `select app_private.archive_due_clients();` faz a mesma coisa e devolve a quantidade: o job é só o relógio. Rodar duas vezes seguidas arquiva zero na segunda. Uma virada em que o worker estava parado não é reposta; o dia seguinte arquiva tudo o que já passou.
+
 ## Rodando os testes
 
 Nem todo teste é igual, e os que dependem de infraestrutura falham de forma confusa quando ela não está no ar.
