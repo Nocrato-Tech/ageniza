@@ -198,6 +198,7 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
     await makeUser('portalB', 'Portal Outra Agência');
     await makeUser('portalRemoved', 'Portal Removido');
     await makeUser('dual', 'Pessoa Dupla');
+    await makeUser('dualBare', 'Pessoa Dupla Sem Cliente');
 
     const roles = await owner.knex('roles').whereNull('agency_id').select('id', 'key');
     const roleId = (key: string): string => {
@@ -221,6 +222,8 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
     };
     const viewOnlyRole = await customRole('cliente.visualizar');
     const operateOnlyRole = await customRole('cliente.operar');
+    // An agency role with no cliente.* key at all, for the collaborator who also has a client link.
+    const unrelatedRole = await customRole('midia.enviar');
 
     await owner.knex('agency_memberships').insert([
       { agency_id: agencyA, user_id: users.admin!.id, role_id: roleId('admin') },
@@ -233,7 +236,8 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
       { agency_id: agencyA, user_id: users.twoAgencies!.id, role_id: roleId('admin') },
       { agency_id: agencyB, user_id: users.twoAgencies!.id, role_id: roleId('admin') },
       { agency_id: agencyB, user_id: users.otherAdmin!.id, role_id: roleId('admin') },
-      { agency_id: agencyA, user_id: users.dual!.id, role_id: roleId('account_manager') }
+      { agency_id: agencyA, user_id: users.dual!.id, role_id: roleId('account_manager') },
+      { agency_id: agencyA, user_id: users.dualBare!.id, role_id: unrelatedRole }
     ]);
 
     await owner.knex('clients').insert([
@@ -247,6 +251,8 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
       { client_id: clientA1, user_id: users.portalOne!.id },
       { client_id: clientA1, user_id: users.portalTwo!.id },
       { client_id: clientA1, user_id: users.dual!.id },
+      { client_id: clientA1, user_id: users.dualBare!.id },
+      { client_id: clientArchived, user_id: users.dual!.id },
       { client_id: clientA1, user_id: users.portalRemoved!.id },
       { client_id: clientA2, user_id: users.portalOther!.id },
       { client_id: clientB1, user_id: users.portalB!.id },
@@ -859,6 +865,109 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
       expect([portalComment.json().side, agencyComment.json().side]).toEqual(['client', 'agency']);
       expect((await commentRows(viaAgency.json().thread.id)).map((row) => row.author_side)).toEqual(['agency', 'client']);
       expect((await commentRows(viaPortal.json().thread.id)).map((row) => row.author_side)).toEqual(['client', 'agency']);
+    });
+
+    // A person who is a collaborator AND has a client link crosses row-level security through its
+    // agency branch, so every portal rule that RLS would enforce for a plain portal person has to hold
+    // by the route's own filter as well. These tests run every portal route as that person.
+    const portalRoutesAs = async (cookie: string, clientId: string, threadId: string, subject: Record<string, unknown>): Promise<number[]> => [
+      (await call('GET', `${portalThreads(clientId)}?${new URLSearchParams(subject as Record<string, string>).toString()}`, cookie)).statusCode,
+      (await openAs(cookie, portalThreads(clientId), subject)).statusCode,
+      (await call('GET', `${portalThreads(clientId)}/${threadId}/comments`, cookie)).statusCode,
+      (await call('POST', `${portalThreads(clientId)}/${threadId}/comments`, cookie, { body: 'x' })).statusCode
+    ];
+
+    it('treats an archived persona as nonexistent for a collaborator with a client link too, on every portal route', async () => {
+      const threadId = await seedThread(clientA1, { personaId: personaArchived }, [{ author: 'manager', side: 'agency', at: '2026-01-09T10:00:00Z' }]);
+      const threadsBefore = await countThreads(clientA1);
+      const commentsBefore = await countComments(clientA1);
+      for (const key of ['dual', 'dualBare']) {
+        expect(await portalRoutesAs(cookies[key]!, clientA1, threadId, { personaId: personaArchived }), key).toEqual([404, 404, 404, 404]);
+      }
+      expect(await countThreads(clientA1)).toBe(threadsBefore);
+      expect(await countComments(clientA1)).toBe(commentsBefore);
+
+      // The same person, through the agency routes, is still the agency: it reads the archived persona.
+      expect((await call('GET', `${agencyThreads(agencyA, clientA1)}?personaId=${personaArchived}`, cookies.dual!)).json().data.map((item: { id: string }) => item.id)).toContain(threadId);
+      expect((await call('GET', `${agencyThreads(agencyA, clientA1)}/${threadId}/comments`, cookies.dual!)).statusCode).toBe(200);
+      expect((await call('POST', `${agencyThreads(agencyA, clientA1)}/${threadId}/comments`, cookies.dual!, { body: 'x' })).statusCode).toBe(409);
+    });
+
+    it('lets a collaborator whose role has no cliente permission act on the portal only as the client person', async () => {
+      const bare = cookies.dualBare!;
+      const opened = await openAs(bare, portalThreads(clientA1), { sectionKey: 'branding' }, 'Como cliente.');
+      expect(opened.statusCode).toBe(201);
+      expect(opened.json().comment.side).toBe('client');
+      const threadId = opened.json().thread.id as string;
+      expect((await call('POST', `${portalThreads(clientA1)}/${threadId}/comments`, bare, { body: 'De novo.' })).json().side).toBe('client');
+      expect((await call('GET', `${portalThreads(clientA1)}?${section('branding')}`, bare)).statusCode).toBe(200);
+      expect((await call('GET', `${portalThreads(clientA1)}/${threadId}/comments`, bare)).statusCode).toBe(200);
+      expect((await commentRows(threadId)).map((row) => row.author_side)).toEqual(['client', 'client']);
+      expect(await threadRow(threadId)).toMatchObject({ opened_side: 'client' });
+
+      // No agency permission leaks across: the agency routes still refuse every one of them.
+      const agency = agencyThreads(agencyA, clientA1);
+      expect((await call('GET', `${agency}?${section('branding')}`, bare)).statusCode).toBe(403);
+      expect((await call('GET', `${agency}/${threadId}/comments`, bare)).statusCode).toBe(403);
+      expect((await openAs(bare, agency, { sectionKey: 'branding' })).statusCode).toBe(403);
+      expect((await call('POST', `${agency}/${threadId}/comments`, bare, { body: 'x' })).statusCode).toBe(403);
+      expect((await call('POST', `${agency}/${threadId}/resolve`, bare)).statusCode).toBe(403);
+      expect((await commentRows(threadId))).toHaveLength(2);
+      expect(await threadRow(threadId)).toMatchObject({ resolved_at: null });
+    });
+
+    it('keeps the conversation of the client in the path for a collaborator who reads every client of the agency', async () => {
+      const ofA2 = await seedThread(clientA2, { sectionKey: 'branding' }, [{ author: 'manager', side: 'agency', at: '2026-01-10T10:00:00Z' }]);
+      const commentsBefore = await countComments(clientA2);
+      expect((await call('GET', `${portalThreads(clientA1)}/${ofA2}/comments`, cookies.dual!)).statusCode).toBe(404);
+      expect((await call('POST', `${portalThreads(clientA1)}/${ofA2}/comments`, cookies.dual!, { body: 'x' })).statusCode).toBe(404);
+      // Client A2 has no link for this person: the portal guard refuses it, the agency routes do not.
+      expect((await call('GET', `${portalThreads(clientA2)}?${section('branding')}`, cookies.dual!)).statusCode).toBe(404);
+      expect((await openAs(cookies.dual!, portalThreads(clientA2), { sectionKey: 'branding' })).statusCode).toBe(404);
+      expect((await call('GET', `${portalThreads(clientA2)}/${ofA2}/comments`, cookies.dual!)).statusCode).toBe(404);
+      expect((await call('POST', `${portalThreads(clientA2)}/${ofA2}/comments`, cookies.dual!, { body: 'x' })).statusCode).toBe(404);
+      expect(await countComments(clientA2)).toBe(commentsBefore);
+      expect((await call('GET', `${agencyThreads(agencyA, clientA2)}/${ofA2}/comments`, cookies.dual!)).statusCode).toBe(200);
+    });
+
+    it('answers a collaborator with a client link exactly what it answers a plain portal person, on the reads', async () => {
+      const threadId = (await openAs(cookies.manager!, agencyThreads(agencyA, clientA1), { sectionKey: 'observations' }, 'Para a cliente.')).json().thread.id as string;
+      await call('POST', `${portalThreads(clientA1)}/${threadId}/comments`, cookies.portalOne!, { body: 'Resposta.' });
+      for (const url of [`${portalThreads(clientA1)}?${section('observations')}&pageSize=100`, `${portalThreads(clientA1)}/${threadId}/comments`]) {
+        const plain = await call('GET', url, cookies.portalOne!);
+        for (const key of ['dual', 'dualBare']) {
+          const crossing = await call('GET', url, cookies[key]!);
+          expect(crossing.statusCode, `${key} ${url}`).toBe(200);
+          expect(crossing.json(), `${key} ${url}`).toEqual(plain.json());
+        }
+      }
+    });
+
+    it('answers 404 on every portal route once the link of a collaborator who also has one is removed, while the agency routes stay open', async () => {
+      const threadId = await seedThread(clientA1, { sectionKey: 'branding' }, [{ author: 'portalOne', side: 'client', at: '2026-01-11T10:00:00Z' }]);
+      expect(await portalRoutesAs(cookies.dual!, clientA1, threadId, { sectionKey: 'branding' })).toEqual([200, 201, 200, 201]);
+      await owner.knex('client_memberships').where({ client_id: clientA1, user_id: users.dual!.id }).update({ status: 'removed' });
+      try {
+        const threadsBefore = await countThreads(clientA1);
+        const commentsBefore = await countComments(clientA1);
+        expect(await portalRoutesAs(cookies.dual!, clientA1, threadId, { sectionKey: 'branding' })).toEqual([404, 404, 404, 404]);
+        expect(await countThreads(clientA1)).toBe(threadsBefore);
+        expect(await countComments(clientA1)).toBe(commentsBefore);
+        expect((await call('GET', `${agencyThreads(agencyA, clientA1)}?${section('branding')}`, cookies.dual!)).statusCode).toBe(200);
+      } finally {
+        await owner.knex('client_memberships').where({ client_id: clientA1, user_id: users.dual!.id }).update({ status: 'active' });
+      }
+    });
+
+    it('answers 404 on every portal route for an archived client to a collaborator who also has a link, while the agency still reads it', async () => {
+      const threadId = await seedThread(clientArchived, { sectionKey: 'branding' }, [{ author: 'manager', side: 'agency', at: '2026-01-12T10:00:00Z' }]);
+      const threadsBefore = await countThreads(clientArchived);
+      const commentsBefore = await countComments(clientArchived);
+      expect(await portalRoutesAs(cookies.dual!, clientArchived, threadId, { sectionKey: 'branding' })).toEqual([404, 404, 404, 404]);
+      expect(await countThreads(clientArchived)).toBe(threadsBefore);
+      expect(await countComments(clientArchived)).toBe(commentsBefore);
+      expect((await call('GET', `${agencyThreads(agencyA, clientArchived)}?${section('branding')}`, cookies.dual!)).statusCode).toBe(200);
+      expect((await call('GET', `${agencyThreads(agencyA, clientArchived)}/${threadId}/comments`, cookies.dual!)).statusCode).toBe(200);
     });
 
     it('answers 404 on the next request after the link is removed, without a new login', async () => {

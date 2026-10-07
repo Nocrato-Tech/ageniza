@@ -156,7 +156,11 @@ As do portal usam `requireSession` e `requireClientAccess`, sem permissão do ca
   50 comentários por página, o mais antigo primeiro. O total sai de `count(*) over ()`, no
   mesmo snapshot da página.
 - **404 indistinto**: cliente de outra agência, thread de outro cliente, persona de outro cliente e
-  id malformado respondem o mesmo 404. No portal a persona arquivada também.
+  id malformado respondem o mesmo 404. No portal a persona arquivada também, e isso é um filtro da
+  rota, não só da RLS: o **colaborador que também tem vínculo de cliente** atravessa a policy pelo
+  ramo de membro da agência, então toda regra do portal vale por filtro explícito (persona ativa,
+  cliente da URL, vínculo e cliente ativos na guarda). Pelo portal essa pessoa age só como cliente,
+  com qualquer papel na agência; cada rota do portal tem teste com ela.
 - **409**: `CLIENT_ARCHIVED` (cliente arquivado é só leitura), `PERSONA_ARCHIVED` (a agência abrindo,
   comentando ou resolvendo em persona arquivada) e `SECTION_NOT_FILLED` (o portal abrindo thread em
   seção que a agência não preencheu; a agência não tem essa restrição). A checagem vem **antes** da

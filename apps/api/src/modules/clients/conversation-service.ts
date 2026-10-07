@@ -168,17 +168,21 @@ interface SubjectPersonaRow {
 }
 
 /**
- * The persona of a subject, inside the client. Row-level security hides an archived persona from the
- * portal, so there it is "not found" exactly like a persona of another client; the agency sees it and
+ * The persona of a subject, inside the client. On the portal side an archived persona is "not found",
+ * exactly like a persona of another client, and that is filtered here and not left to row-level
+ * security: a collaborator who also has a client link reads archived personas through the agency
+ * branch of the policy, so the policy alone would show them one on the portal. The agency sees it and
  * tells the two apart by `status`.
  */
 const loadSubjectPersona = async (
   transaction: ClientTransaction,
-  input: { readonly clientId: string; readonly personaId: string }
+  scope: ConversationScope,
+  personaId: string
 ): Promise<SubjectPersonaRow | undefined> => {
   const result = await raw<RawRows<SubjectPersonaRow>>(transaction, `
-    select id, status from public.client_personas where id = ?::uuid and client_id = ?::uuid
-  `, [input.personaId, input.clientId]);
+    select id, status from public.client_personas
+    where id = ?::uuid and client_id = ?::uuid${scope.side === 'client' ? " and status = 'active'" : ''}
+  `, [personaId, scope.clientId]);
   return result.rows[0];
 };
 
@@ -215,7 +219,7 @@ const checkSubject = async (
   options: { readonly forWrite: boolean }
 ): Promise<ConversationRefusal | undefined> => {
   if ('personaId' in subject) {
-    const persona = await loadSubjectPersona(transaction, { clientId: scope.clientId, personaId: subject.personaId });
+    const persona = await loadSubjectPersona(transaction, scope, subject.personaId);
     if (persona === undefined) return 'subject-not-found';
     return options.forWrite && persona.status === 'archived' ? 'persona-archived' : undefined;
   }
@@ -279,7 +283,9 @@ interface ThreadContextRow {
 /**
  * The thread as the caller can reach it: inside the client, and for the agency inside the agency of
  * the route. Nothing is returned for a thread the caller cannot read, which covers another client's
- * thread, another agency's, a missing one and, for the portal, one about an archived persona.
+ * thread, another agency's, a missing one and, for the portal, one about an archived persona. That
+ * last case is filtered here, not left to row-level security, for the same reason as in
+ * `loadSubjectPersona`: a collaborator with a client link crosses the policy through its agency branch.
  */
 const loadThreadContext = async (
   transaction: ClientTransaction,
@@ -291,6 +297,8 @@ const loadThreadContext = async (
   if (scope.side === 'agency') {
     conditions.push('client.agency_id = ?::uuid');
     bindings.push(scope.agencyId);
+  } else {
+    conditions.push("(thread.persona_id is null or persona.status = 'active')");
   }
   const result = await raw<RawRows<ThreadContextRow>>(transaction, `
     select persona.status as persona_status, client.status as client_status
@@ -488,7 +496,7 @@ export const diagnoseConversationRefusal = async (
     return context?.persona_status === 'archived' ? 'persona-archived' : undefined;
   }
   if (target.personaId !== undefined) {
-    const persona = await loadSubjectPersona(transaction, { clientId: scope.clientId, personaId: target.personaId });
+    const persona = await loadSubjectPersona(transaction, scope, target.personaId);
     return persona?.status === 'archived' ? 'persona-archived' : undefined;
   }
   return undefined;
