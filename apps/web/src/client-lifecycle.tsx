@@ -48,12 +48,15 @@ const useClientWrite = (client: ClientDetailResponse) => {
   const queryClient = useQueryClient();
   const path = (suffix: string) =>
     apiPath(`/agencies/:agencyId/clients/:clientId${suffix}`, { agencyId: agency.agencyId, clientId: client.id });
+  const refreshAll = (): void => {
+    void queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'clients'] });
+  };
   const applyClient = (updated: Client): void => {
     queryClient.setQueryData<ClientDetailResponse>(clientDetailQueryKey(agency.agencyId, client.id), (current) =>
       current === undefined ? current : { ...current, ...updated });
-    void queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'clients'] });
+    refreshAll();
   };
-  return { path, applyClient };
+  return { path, applyClient, refreshAll };
 };
 
 /**
@@ -63,7 +66,7 @@ const useClientWrite = (client: ClientDetailResponse) => {
  */
 function CloseContractDialog({ client, onClose }: { client: ClientDetailResponse; onClose: () => void }) {
   const httpClient = useApiClient();
-  const { path, applyClient } = useClientWrite(client);
+  const { path, applyClient, refreshAll } = useClientWrite(client);
   const dateId = useId();
   const hintId = useId();
   const errorId = useId();
@@ -81,7 +84,9 @@ function CloseContractDialog({ client, onClose }: { client: ClientDetailResponse
     }),
     onSuccess: (updated) => { applyClient(updated); onClose(); },
     onError: (error: unknown) => {
-      if (error instanceof HttpClientError && error.code === 'CLIENT_ARCHIVED') { setFormError(lifecycleError(error, CLOSING_FAILED)); return; }
+      // The refusal means someone archived the client behind this screen: the detail on screen is
+      // stale, so it refreshes along with the message (the header stops offering the action).
+      if (error instanceof HttpClientError && error.code === 'CLIENT_ARCHIVED') { refreshAll(); setFormError(lifecycleError(error, CLOSING_FAILED)); return; }
       if (error instanceof HttpClientError && error.status === 400) {
         if (refusedClosingDate(error.details)) setFieldError(DATE_IN_THE_PAST);
         else setFormError(VALIDATION_FAILED);
@@ -131,13 +136,16 @@ function CloseContractDialog({ client, onClose }: { client: ClientDetailResponse
  */
 function ArchiveClientDialog({ client, onClose }: { client: ClientDetailResponse; onClose: () => void }) {
   const httpClient = useApiClient();
-  const { path, applyClient } = useClientWrite(client);
+  const { path, applyClient, refreshAll } = useClientWrite(client);
   const [error, setError] = useState<string | undefined>();
 
   const archive = useMutation({
     mutationFn: () => httpClient.request({ path: path('/archive'), method: 'POST', response: ClientSchema }),
     onSuccess: (updated) => { applyClient(updated); onClose(); },
-    onError: (archiveError: unknown) => { setError(lifecycleError(archiveError, ARCHIVE_FAILED)); }
+    onError: (archiveError: unknown) => {
+      if (archiveError instanceof HttpClientError && archiveError.code === 'CLIENT_ARCHIVED') refreshAll();
+      setError(lifecycleError(archiveError, ARCHIVE_FAILED));
+    }
   });
 
   return <Modal title={`Arquivar ${client.name} agora?`} closeLabel="Fechar arquivamento do cliente" onClose={onClose}>
@@ -162,7 +170,7 @@ function ArchiveClientDialog({ client, onClose }: { client: ClientDetailResponse
 export function ClientLifecycleActions({ client }: { client: ClientDetailResponse }) {
   const httpClient = useApiClient();
   const canArchive = useCan('cliente.arquivar');
-  const { path, applyClient } = useClientWrite(client);
+  const { path, applyClient, refreshAll } = useClientWrite(client);
   const [closingOpen, setClosingOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -171,11 +179,14 @@ export function ClientLifecycleActions({ client }: { client: ClientDetailRespons
     mutationFn: () => httpClient.request({ path: path('/closing'), method: 'DELETE', response: ClientSchema }),
     onSuccess: (updated) => { applyClient(updated); setError(undefined); },
     onError: (clearError: unknown) => {
+      // The cleared closing or the already-active client means the detail on screen is stale.
       if (clearError instanceof HttpClientError && clearError.code === 'CLOSING_DATE_NOT_SET') {
+        refreshAll();
         setError('Este cliente não tem encerramento agendado.');
         return;
       }
       if (clearError instanceof HttpClientError && clearError.code === 'CLIENT_NOT_ARCHIVED') {
+        refreshAll();
         setError('Este cliente já está ativo.');
         return;
       }
@@ -193,6 +204,7 @@ export function ClientLifecycleActions({ client }: { client: ClientDetailRespons
         return;
       }
       if (reactivateError instanceof HttpClientError && reactivateError.code === 'CLIENT_NOT_ARCHIVED') {
+        refreshAll();
         setError('Este cliente já está ativo.');
         return;
       }

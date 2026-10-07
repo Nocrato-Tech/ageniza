@@ -2,7 +2,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { agencyToday } from './client-lifecycle.js';
@@ -81,6 +81,7 @@ interface Scenario {
   readonly client?: () => Response | Promise<Response>;
   readonly clients?: () => Response | Promise<Response>;
   readonly members?: (status: string | null) => Response | Promise<Response>;
+  readonly invitations?: () => Response | Promise<Response>;
   readonly putClosing?: (body: unknown) => Response | Promise<Response>;
   readonly deleteClosing?: () => Response | Promise<Response>;
   readonly archive?: () => Response | Promise<Response>;
@@ -102,6 +103,8 @@ const makeFetch = (scenario: Scenario = {}) => {
     if (clients !== null) return scenario.clients?.() ?? json(pageOf([listItemOf(padaria)]));
     const members = /\/agencies\/([^/]+)\/clients\/([^/]+)\/members$/.exec(path);
     if (members !== null) return scenario.members?.(url.searchParams.get('status')) ?? json(pageOf([]));
+    const invitations = /\/agencies\/([^/]+)\/clients\/([^/]+)\/invitations$/.exec(path);
+    if (invitations !== null) return scenario.invitations?.() ?? json(pageOf([]));
     const closing = /\/agencies\/([^/]+)\/clients\/([^/]+)\/closing$/.exec(path);
     if (closing !== null) {
       if (method === 'PUT') {
@@ -219,24 +222,50 @@ describe('client lifecycle actions (#139)', () => {
     expect(screen.queryByRole('button', { name: 'Ações do cliente' })).toBeNull();
   });
 
-  it('opens the closing dialog with the date, the hint and the exact labels', async () => {
-    const { impl } = makeFetch();
-    renderLifecycle(impl);
+  it('shows the lifecycle controls for cliente.arquivar without cliente.operar, and never Editar', async () => {
+    const ARCHIVIST_PERMISSIONS = ['cliente.visualizar', 'cliente.arquivar'];
+    const active = makeFetch({ permissions: ARCHIVIST_PERMISSIONS });
+    renderLifecycle(active.impl);
     await screen.findByRole('heading', { name: 'Padaria Central' });
-    await openMenu();
-    // Without a scheduled closing there is nothing to clear, so the item does not exist.
-    expect(screen.getByRole('menuitem', { name: 'Encerrar contrato…' })).toBeTruthy();
-    expect(screen.queryByRole('menuitem', { name: 'Desmarcar encerramento' })).toBeNull();
-    expect(screen.getByRole('menuitem', { name: 'Arquivar agora…' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Encerrar contrato…' }));
-    const dialog = await screen.findByRole('dialog', { name: `Encerrar contrato de ${padaria.name}` });
+    expect(screen.getByRole('button', { name: 'Ações do cliente' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Editar' })).toBeNull();
+    cleanup();
 
-    expect(within(dialog).getByLabelText('Último dia do contrato')).toBeTruthy();
-    expect(within(dialog).getByText('Até essa data tudo continua funcionando, inclusive o portal do cliente. No dia seguinte o cliente é arquivado automaticamente. Você pode desmarcar até lá.')).toBeTruthy();
-    expect(within(dialog).getByRole('button', { name: 'Agendar encerramento' })).toBeTruthy();
-    expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toBeTruthy();
-    // The selector cannot offer a day before the agency's today (the API refuses it too).
-    expect((within(dialog).getByLabelText('Último dia do contrato') as HTMLInputElement).min).toBe(agencyToday());
+    const archived = makeFetch({ permissions: ARCHIVIST_PERMISSIONS, client: () => json(archivedClient) });
+    renderLifecycle(archived.impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    expect(screen.getByRole('button', { name: 'Reativar' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Ações do cliente' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Editar' })).toBeNull();
+  });
+
+  it('opens the closing dialog with the date floor in the agency timezone, the hint and the exact labels', async () => {
+    // 01:30 UTC is 22:30 of the previous day in São Paulo: with the clock pinned there, a UTC
+    // slice would answer 2026-10-08 and the floor below goes red (the `new Date().toISOString()`
+    // mutation). A test that read the real clock would only catch that after 21h in São Paulo.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-08T01:30:00Z'));
+    try {
+      const { impl } = makeFetch();
+      renderLifecycle(impl);
+      await screen.findByRole('heading', { name: 'Padaria Central' });
+      await openMenu();
+      // Without a scheduled closing there is nothing to clear, so the item does not exist.
+      expect(screen.getByRole('menuitem', { name: 'Encerrar contrato…' })).toBeTruthy();
+      expect(screen.queryByRole('menuitem', { name: 'Desmarcar encerramento' })).toBeNull();
+      expect(screen.getByRole('menuitem', { name: 'Arquivar agora…' })).toBeTruthy();
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Encerrar contrato…' }));
+      const dialog = await screen.findByRole('dialog', { name: `Encerrar contrato de ${padaria.name}` });
+
+      expect(within(dialog).getByLabelText('Último dia do contrato')).toBeTruthy();
+      expect(within(dialog).getByText('Até essa data tudo continua funcionando, inclusive o portal do cliente. No dia seguinte o cliente é arquivado automaticamente. Você pode desmarcar até lá.')).toBeTruthy();
+      expect(within(dialog).getByRole('button', { name: 'Agendar encerramento' })).toBeTruthy();
+      expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toBeTruthy();
+      // The selector cannot offer a day before the agency's today (the API refuses it too).
+      expect((within(dialog).getByLabelText('Último dia do contrato') as HTMLInputElement).min).toBe('2026-10-07');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('refuses a date before today on the field, sending nothing', async () => {
@@ -253,8 +282,22 @@ describe('client lifecycle actions (#139)', () => {
     expect((within(dialog).getByLabelText('Último dia do contrato') as HTMLInputElement).value).toBe('2020-01-01');
   });
 
+  it('requires the last day on the field, sending nothing', async () => {
+    const { impl, calls } = makeFetch();
+    renderLifecycle(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const dialog = await openClosingDialog();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Agendar encerramento' }));
+
+    expect(await within(dialog).findByText('Informe o último dia do contrato.')).toBeTruthy();
+    expect(calls.some((call) => call.startsWith('PUT'))).toBe(false);
+    const input = within(dialog).getByLabelText('Último dia do contrato') as HTMLInputElement;
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+  });
+
   it('maps the server refusal of a past date to the field, keeping the typed value', async () => {
-    const { impl } = makeFetch({
+    const { impl, calls } = makeFetch({
       putClosing: () => json({
         error: {
           code: 'VALIDATION_ERROR',
@@ -272,10 +315,102 @@ describe('client lifecycle actions (#139)', () => {
     fireEvent.change(input, { target: { value: agencyToday() } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Agendar encerramento' }));
 
+    // The PUT left: the message below proves the server's answer, not the client's guard.
+    await waitFor(() => expect(calls).toContain(`PUT /agencies/${AGENCY_A}/clients/${CLIENT_ID}/closing`));
     expect(await within(dialog).findByText('A data precisa ser hoje ou depois.')).toBeTruthy();
     expect(input.value).toBe(agencyToday());
     expect(dialog.textContent).not.toContain('private issue message');
     expect(input.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('maps a 400 without the closingDate issue to the form message, keeping the dialog open', async () => {
+    const { impl } = makeFetch({
+      putClosing: () => json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          details: { issues: [{ path: 'other', code: 'custom', message: 'private issue message' }] }
+        }
+      }, 400)
+    });
+    renderLifecycle(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const dialog = await openClosingDialog();
+    fireEvent.change(within(dialog).getByLabelText('Último dia do contrato'), { target: { value: agencyToday() } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Agendar encerramento' }));
+
+    expect(await within(dialog).findByText('Revise os dados informados.')).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: `Encerrar contrato de ${padaria.name}` })).toBe(dialog);
+    expect(dialog.textContent).not.toContain('private issue message');
+  });
+
+  it('maps the 403 of the closing and of the clearing to the permission message', async () => {
+    const forbidden = { error: { code: 'FORBIDDEN', message: 'private diagnostic' } };
+    const closing403 = makeFetch({ putClosing: () => json(forbidden, 403) });
+    renderLifecycle(closing403.impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const dialog = await openClosingDialog();
+    fireEvent.change(within(dialog).getByLabelText('Último dia do contrato'), { target: { value: agencyToday() } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Agendar encerramento' }));
+    expect(await within(dialog).findByText('Você não tem permissão para alterar este cliente.')).toBeTruthy();
+    expect(dialog.textContent).not.toContain('private diagnostic');
+    cleanup();
+
+    const clearing403 = makeFetch({
+      client: () => json({ ...padaria, closingDate: '2026-10-30' }),
+      deleteClosing: () => json(forbidden, 403)
+    });
+    renderLifecycle(clearing403.impl);
+    await screen.findByText('encerra em 30/10');
+    await openMenu();
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Desmarcar encerramento' }));
+    expect(await screen.findByText('Você não tem permissão para alterar este cliente.')).toBeTruthy();
+    expect(screen.queryByText('private diagnostic')).toBeNull();
+  });
+
+  it('maps the generic failures of clearing and of reactivating to their retry messages', async () => {
+    const internal = { error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } };
+    const clearing500 = makeFetch({
+      client: () => json({ ...padaria, closingDate: '2026-10-30' }),
+      deleteClosing: () => json(internal, 500)
+    });
+    renderLifecycle(clearing500.impl);
+    await screen.findByText('encerra em 30/10');
+    await openMenu();
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Desmarcar encerramento' }));
+    expect(await screen.findByText('Não foi possível desmarcar o encerramento. Tente de novo.')).toBeTruthy();
+    expect(screen.queryByText('private diagnostic')).toBeNull();
+    cleanup();
+
+    const reactivating500 = makeFetch({ client: () => json(archivedClient), reactivate: () => json(internal, 500) });
+    renderLifecycle(reactivating500.impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Reativar' }));
+    expect(await screen.findByText('Não foi possível reativar o cliente. Tente de novo.')).toBeTruthy();
+    expect(screen.queryByText('private diagnostic')).toBeNull();
+    expect(screen.getByText(/Cliente arquivado em/)).toBeTruthy();
+  });
+
+  it('says the client is already active on CLIENT_NOT_ARCHIVED, from the clearing and from the reactivating', async () => {
+    const alreadyActive = { error: { code: 'CLIENT_NOT_ARCHIVED', message: 'private diagnostic' } };
+    const clearing = makeFetch({
+      client: () => json({ ...padaria, closingDate: '2026-10-30' }),
+      deleteClosing: () => json(alreadyActive, 409)
+    });
+    renderLifecycle(clearing.impl);
+    await screen.findByText('encerra em 30/10');
+    await openMenu();
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Desmarcar encerramento' }));
+    expect(await screen.findByText('Este cliente já está ativo.')).toBeTruthy();
+    expect(screen.queryByText('private diagnostic')).toBeNull();
+    cleanup();
+
+    const reactivating = makeFetch({ client: () => json(archivedClient), reactivate: () => json(alreadyActive, 409) });
+    renderLifecycle(reactivating.impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Reativar' }));
+    expect(await screen.findByText('Este cliente já está ativo.')).toBeTruthy();
+    expect(screen.queryByText('private diagnostic')).toBeNull();
   });
 
   it('shows the API message when reactivating hits a name conflict, changing nothing', async () => {
@@ -302,9 +437,10 @@ describe('client lifecycle actions (#139)', () => {
   it('schedules the closing and shows both badges without a reload', async () => {
     const target = agencyToday();
     let current: typeof padaria = { ...padaria };
+    let detailGets = 0;
     const { impl, calls } = makeFetch({
       clients: () => json(pageOf([listItemOf(current)])),
-      client: () => json(current),
+      client: () => { detailGets += 1; return json(current); },
       putClosing: (body) => {
         current = { ...current, closingDate: (body as { closingDate: string }).closingDate };
         return json(registrationOf(current));
@@ -316,6 +452,7 @@ describe('client lifecycle actions (#139)', () => {
     await waitFor(() => expect(probe.pathname).toBe(clientUrl()));
     await screen.findByRole('heading', { name: 'Padaria Central' });
     expect(screen.queryByText(/encerra em/)).toBeNull();
+    expect(detailGets).toBe(1);
 
     const dialog = await openClosingDialog();
     fireEvent.change(within(dialog).getByLabelText('Último dia do contrato'), { target: { value: target } });
@@ -325,6 +462,8 @@ describe('client lifecycle actions (#139)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await screen.findByText(`encerra em ${dayMonthOf(target)}`)).toBeTruthy();
     expect(calls).toContain(`PUT /agencies/${AGENCY_A}/clients/${CLIENT_ID}/closing`);
+    // The detail itself was invalidated and read back from the server, not only patched in cache.
+    await waitFor(() => expect(detailGets).toBe(2));
     // The roster behind carries the badge too, from the invalidated list.
     fireEvent.click(screen.getByRole('link', { name: '← Clientes' }));
     const card = await screen.findByRole('link', { name: 'Padaria Central' });
@@ -333,9 +472,10 @@ describe('client lifecycle actions (#139)', () => {
 
   it('clears the scheduled closing from the menu, removing both badges', async () => {
     let current: typeof padaria = { ...padaria, closingDate: '2026-10-30' };
+    let detailGets = 0;
     const { impl } = makeFetch({
       clients: () => json(pageOf([listItemOf(current)])),
-      client: () => json(current),
+      client: () => { detailGets += 1; return json(current); },
       deleteClosing: () => { current = { ...current, closingDate: null }; return json(registrationOf(current)); }
     });
     const { probe } = renderLifecycle(impl, rosterUrl);
@@ -343,6 +483,7 @@ describe('client lifecycle actions (#139)', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
     await waitFor(() => expect(probe.pathname).toBe(clientUrl()));
     expect(await screen.findByText('encerra em 30/10')).toBeTruthy();
+    expect(detailGets).toBe(1);
 
     await openMenu();
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Desmarcar encerramento' }));
@@ -350,6 +491,8 @@ describe('client lifecycle actions (#139)', () => {
     // No extra confirmation: the badge leaves the header as the menu closes.
     await waitFor(() => expect(screen.queryByText('encerra em 30/10')).toBeNull());
     expect(screen.queryByRole('menu')).toBeNull();
+    // The detail was invalidated and read back from the server.
+    await waitFor(() => expect(detailGets).toBe(2));
     fireEvent.click(screen.getByRole('link', { name: '← Clientes' }));
     const card = await screen.findByRole('link', { name: 'Padaria Central' });
     await waitFor(() => expect(within(card).queryByText(/encerra em/)).toBeNull());
@@ -358,10 +501,13 @@ describe('client lifecycle actions (#139)', () => {
   it('archives with the three effects spelled out, leaving the detail read-only with Reativar', async () => {
     let current: typeof padaria = { ...padaria };
     let membersGets = 0;
+    let invitationsGets = 0;
+    let detailGets = 0;
     const { impl, calls } = makeFetch({
       clients: () => json(pageOf(current.status === 'active' ? [listItemOf(current)] : [])),
-      client: () => json(current),
+      client: () => { detailGets += 1; return json(current); },
       members: (status) => { if (status !== 'removed') membersGets += 1; return json(pageOf([])); },
+      invitations: () => { invitationsGets += 1; return json(pageOf([])); },
       archive: () => {
         current = { ...current, status: 'archived', archivedAt: ARCHIVED_AT, closingDate: null };
         return json(registrationOf(current));
@@ -372,11 +518,13 @@ describe('client lifecycle actions (#139)', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
     await waitFor(() => expect(probe.pathname).toBe(clientUrl()));
     await screen.findByRole('heading', { name: 'Padaria Central' });
+    expect(detailGets).toBe(1);
 
-    // Visiting Acessos once proves the archive invalidates its list too.
+    // Visiting Acessos once proves the archive invalidates its lists too.
     fireEvent.click(screen.getByRole('link', { name: 'Acessos' }));
     await screen.findByRole('heading', { name: 'Pessoas com acesso ao portal' });
     expect(membersGets).toBe(1);
+    expect(invitationsGets).toBe(1);
     fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
     await screen.findByRole('heading', { name: 'Padaria Central' });
 
@@ -394,11 +542,14 @@ describe('client lifecycle actions (#139)', () => {
     expect(screen.queryByRole('button', { name: 'Ações do cliente' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Reativar' })).toBeTruthy();
     expect(calls).toContain(`POST /agencies/${AGENCY_A}/clients/${CLIENT_ID}/archive`);
+    // The detail was invalidated and read back from the server.
+    await waitFor(() => expect(detailGets).toBe(2));
 
-    // Acessos was invalidated: revisiting refetches it (the cache would otherwise be fresh).
+    // Acessos and Convites were invalidated: revisiting refetches both (the cache would be fresh).
     fireEvent.click(screen.getByRole('link', { name: 'Acessos' }));
     await screen.findByRole('heading', { name: 'Pessoas com acesso ao portal' });
     expect(membersGets).toBe(2);
+    await waitFor(() => expect(invitationsGets).toBe(2));
 
     // The roster behind lost the client from the default list.
     fireEvent.click(screen.getByRole('link', { name: '← Clientes' }));
@@ -408,25 +559,170 @@ describe('client lifecycle actions (#139)', () => {
 
   it('reactivates an archived client, bringing it back to the roster', async () => {
     let current: typeof padaria = { ...archivedClient };
+    let detailGets = 0;
     const { impl, calls } = makeFetch({
       clients: () => json(pageOf(current.status === 'active' ? [listItemOf(current)] : [])),
-      client: () => json(current),
+      client: () => { detailGets += 1; return json(current); },
       reactivate: () => { current = { ...current, status: 'active', archivedAt: null }; return json(registrationOf(current)); }
     });
     const { probe } = renderLifecycle(impl);
     await screen.findByRole('heading', { name: 'Padaria Central' });
     expect(screen.getByText(/Cliente arquivado em/)).toBeTruthy();
+    expect(detailGets).toBe(1);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Reativar' }));
     await waitFor(() => expect(screen.queryByText(/Cliente arquivado/)).toBeNull());
     expect(await screen.findByRole('button', { name: 'Editar' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Ações do cliente' })).toBeTruthy();
     expect(calls).toContain(`POST /agencies/${AGENCY_A}/clients/${CLIENT_ID}/reactivate`);
+    // The detail was invalidated and read back from the server.
+    await waitFor(() => expect(detailGets).toBe(2));
 
     fireEvent.click(screen.getByRole('link', { name: '← Clientes' }));
     const card = await screen.findByRole('link', { name: 'Padaria Central' });
     expect(within(card).getByText('Padaria Central')).toBeTruthy();
     expect(probe.pathname).toBe(rosterUrl);
+  });
+
+  it('keeps the roster query of the address after archiving from a filtered page', async () => {
+    const filteredRoster = `/agencia/${AGENCY_A}/clientes?status=active&page=2`;
+    let current: typeof padaria = { ...padaria };
+    const { impl } = makeFetch({
+      clients: () => json({ data: [listItemOf(current)], meta: { page: 2, pageSize: 20, totalItems: 21, totalPages: 2 } }),
+      client: () => json(current),
+      archive: () => {
+        current = { ...current, status: 'archived', archivedAt: ARCHIVED_AT, closingDate: null };
+        return json(registrationOf(current));
+      }
+    });
+    const { probe } = renderLifecycle(impl, filteredRoster);
+    await screen.findByText('Padaria Central');
+    fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
+    await waitFor(() => expect(probe.pathname).toBe(clientUrl()));
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+
+    const dialog = await openArchiveDialog();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Arquivar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    // The way back is the address the roster handed over, query included.
+    const back = screen.getByRole('link', { name: '← Clientes' });
+    expect(back.getAttribute('href')).toBe(filteredRoster);
+    fireEvent.click(back);
+    await waitFor(() => expect(probe.search).toBe('?status=active&page=2'));
+  });
+
+  it('keeps the roster query of the address after reactivating from a filtered page', async () => {
+    const filteredRoster = `/agencia/${AGENCY_A}/clientes?status=archived&page=2`;
+    let current: typeof padaria = { ...archivedClient };
+    const { impl } = makeFetch({
+      clients: () => json({ data: [listItemOf(current)], meta: { page: 2, pageSize: 20, totalItems: 21, totalPages: 2 } }),
+      client: () => json(current),
+      reactivate: () => { current = { ...current, status: 'active', archivedAt: null }; return json(registrationOf(current)); }
+    });
+    const { probe } = renderLifecycle(impl, filteredRoster);
+    await screen.findByText('Padaria Central');
+    fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
+    await waitFor(() => expect(probe.pathname).toBe(clientUrl()));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Reativar' }));
+    await waitFor(() => expect(screen.queryByText(/Cliente arquivado/)).toBeNull());
+
+    const back = screen.getByRole('link', { name: '← Clientes' });
+    expect(back.getAttribute('href')).toBe(filteredRoster);
+    fireEvent.click(back);
+    await waitFor(() => expect(probe.search).toBe('?status=archived&page=2'));
+  });
+
+  it('keeps the archive dialog open on a server error and lets the same click retry', async () => {
+    let attempts = 0;
+    let current: typeof padaria = { ...padaria };
+    const { impl } = makeFetch({
+      clients: () => json(pageOf(current.status === 'active' ? [listItemOf(current)] : [])),
+      client: () => json(current),
+      archive: () => {
+        attempts += 1;
+        if (attempts === 1) return json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, 500);
+        current = { ...current, status: 'archived', archivedAt: ARCHIVED_AT, closingDate: null };
+        return json(registrationOf(current));
+      }
+    });
+    renderLifecycle(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const dialog = await openArchiveDialog();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Arquivar' }));
+
+    expect(await within(dialog).findByText('Não foi possível arquivar o cliente. Tente de novo.')).toBeTruthy();
+    expect(dialog.textContent).not.toContain('private diagnostic');
+    expect(screen.getByRole('dialog', { name: `Arquivar ${padaria.name} agora?` })).toBe(dialog);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Arquivar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(attempts).toBe(2);
+    expect(await screen.findByText('Cliente arquivado em 07/10')).toBeTruthy();
+  });
+
+  it('refreshes the stale detail when the server refuses the closing for an archived client', async () => {
+    let current: typeof padaria = { ...padaria };
+    let detailGets = 0;
+    const { impl } = makeFetch({
+      client: () => { detailGets += 1; return json(current); },
+      putClosing: () => {
+        current = { ...current, status: 'archived', archivedAt: ARCHIVED_AT, closingDate: null };
+        return json({ error: { code: 'CLIENT_ARCHIVED', message: 'private diagnostic' } }, 409);
+      }
+    });
+    renderLifecycle(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const dialog = await openClosingDialog();
+    fireEvent.change(within(dialog).getByLabelText('Último dia do contrato'), { target: { value: agencyToday() } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Agendar encerramento' }));
+
+    expect(await within(dialog).findByText('Cliente arquivado: a única ação possível é reativar.')).toBeTruthy();
+    // The detail was refetched: the header now offers exactly what the message points to.
+    await waitFor(() => expect(detailGets).toBe(2));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reativar' })).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'Ações do cliente' })).toBeNull();
+  });
+
+  it('refreshes the stale detail when the server says the client is already active', async () => {
+    let current: typeof padaria = { ...archivedClient };
+    let detailGets = 0;
+    const { impl } = makeFetch({
+      client: () => { detailGets += 1; return json(current); },
+      reactivate: () => {
+        current = { ...current, status: 'active', archivedAt: null };
+        return json({ error: { code: 'CLIENT_NOT_ARCHIVED', message: 'private diagnostic' } }, 409);
+      }
+    });
+    renderLifecycle(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Reativar' }));
+
+    expect(await screen.findByText('Este cliente já está ativo.')).toBeTruthy();
+    await waitFor(() => expect(detailGets).toBe(2));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Editar' })).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'Reativar' })).toBeNull();
+  });
+
+  it('refreshes the stale detail when the closing to clear is already gone', async () => {
+    let current: typeof padaria = { ...padaria, closingDate: '2026-10-30' };
+    let detailGets = 0;
+    const { impl } = makeFetch({
+      client: () => { detailGets += 1; return json(current); },
+      deleteClosing: () => {
+        current = { ...current, closingDate: null };
+        return json({ error: { code: 'CLOSING_DATE_NOT_SET', message: 'private diagnostic' } }, 409);
+      }
+    });
+    renderLifecycle(impl);
+    await screen.findByText('encerra em 30/10');
+    await openMenu();
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Desmarcar encerramento' }));
+
+    expect(await screen.findByText('Este cliente não tem encerramento agendado.')).toBeTruthy();
+    await waitFor(() => expect(detailGets).toBe(2));
+    await waitFor(() => expect(screen.queryByText('encerra em 30/10')).toBeNull());
   });
 
   it('keeps the closing dialog open on a server error, preserving the date for the retry', async () => {
@@ -499,6 +795,42 @@ describe('client lifecycle actions (#139)', () => {
 
     await act(async () => { resolveArchive?.(json({ ...registrationOf(padaria), status: 'archived', archivedAt: ARCHIVED_AT })); });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('shows the busy state on the closing confirmation and on Reativar', async () => {
+    let resolveClosing: ((response: Response) => void) | undefined;
+    const pendingClosing = new Promise<Response>((resolve) => { resolveClosing = resolve; });
+    const closing = makeFetch({ putClosing: () => pendingClosing });
+    renderLifecycle(closing.impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const dialog = await openClosingDialog();
+    fireEvent.change(within(dialog).getByLabelText('Último dia do contrato'), { target: { value: agencyToday() } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Agendar encerramento' }));
+
+    const schedule = within(dialog).getByRole('button', { name: 'Agendar encerramento' });
+    await waitFor(() => expect(schedule.hasAttribute('aria-busy')).toBe(true));
+    expect(schedule.hasAttribute('disabled')).toBe(true);
+    expect(within(dialog).getByRole('button', { name: 'Cancelar' }).hasAttribute('disabled')).toBe(true);
+    await act(async () => { resolveClosing?.(json({ ...registrationOf(padaria), closingDate: agencyToday() })); });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    cleanup();
+
+    let resolveReactivate: ((response: Response) => void) | undefined;
+    const pendingReactivate = new Promise<Response>((resolve) => { resolveReactivate = resolve; });
+    let reactivated: typeof padaria = { ...archivedClient };
+    const reactivating = makeFetch({ client: () => json(reactivated), reactivate: () => pendingReactivate });
+    renderLifecycle(reactivating.impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar' }));
+
+    const reactivateButton = screen.getByRole('button', { name: 'Reativar' });
+    await waitFor(() => expect(reactivateButton.hasAttribute('aria-busy')).toBe(true));
+    expect(reactivateButton.hasAttribute('disabled')).toBe(true);
+    await act(async () => {
+      reactivated = { ...reactivated, status: 'active', archivedAt: null };
+      resolveReactivate?.(json(registrationOf(reactivated)));
+    });
+    await waitFor(() => expect(screen.queryByText(/Cliente arquivado/)).toBeNull());
   });
 });
 
