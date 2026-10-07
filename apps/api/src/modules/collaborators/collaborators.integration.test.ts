@@ -315,6 +315,37 @@ describe('collaborators module (issue #95)', () => {
     expect(names(response.body)).toEqual(['Ana Alves', 'Bruno Costa', 'Zelia Prado']);
   });
 
+  // Issue #355: the order folds accents and case before comparing, so it does not depend on the
+  // database collation; ties are held by the membership id, as everywhere else in the listing.
+  it('#355: orders by name ignoring accents and case, with the membership id as tie-break', async () => {
+    const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Ordering Accents', 'ordering-accents', 'Owner Ordering Accent');
+    const membershipId = (suffix: number): string => `00000000-0000-4000-8000-${String(suffix).padStart(12, '0')}`;
+    const people = [
+      { name: 'Ágata', suffix: 1 },
+      { name: 'álvaro', suffix: 2 },
+      { name: 'Beatriz', suffix: 3 },
+      { name: 'Édson', suffix: 4 },
+      { name: 'eduardo', suffix: 5 },
+      // `Ana` folds to the same `ana` as `ana`; the id (06 < 07) is what holds their order, where
+      // the raw database collation would put `ana` first — which is exactly what this test refuses.
+      { name: 'Ana', suffix: 6 },
+      { name: 'ana', suffix: 7 }
+    ];
+    for (const person of people) {
+      await addMemberWithMembershipId(agencyId, {
+        membershipId: membershipId(person.suffix),
+        name: person.name,
+        emailLabel: `ordering-accents-${person.suffix}`,
+        roleId: presetRoleIds.production
+      });
+    }
+
+    const response = await getCollaborators(await loginCookie(ownerUser), agencyId);
+    expect(response.status).toBe(200);
+    // Folded: agata, alvaro, ana, ana, beatriz, edson, eduardo, owner ordering accent.
+    expect(names(response.body)).toEqual(['Ágata', 'álvaro', 'Ana', 'ana', 'Beatriz', 'Édson', 'eduardo', 'Owner Ordering Accent']);
+  });
+
   it('#95: q finds by part of the name and part of the email, case-insensitively, and escapes wildcards', async () => {
     const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Search', 'search', 'Owner Search');
     await addMember(agencyId, { name: 'Fernanda Alves', emailLabel: 'avatar.principal', roleId: presetRoleIds.production });
