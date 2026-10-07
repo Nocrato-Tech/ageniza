@@ -1,7 +1,8 @@
 # ESTRUTURAL: os campos do cliente entram como colunas em `clients`
+
 **Data.** 2026-09-26
 
-**Esta é uma mudança estrutural**, pelo primeiro critério de [structural-changes.md](structural-changes.md): altera uma tabela que já existe. Registrada antes de qualquer implementação.
+**Esta é uma mudança estrutural**, pelo primeiro critério de [structural-changes.md](../structural-changes.md): altera uma tabela que já existe. Registrada antes de qualquer implementação.
 
 **Contexto.** O cadastro decidido nesta entrevista — empresa, contato do dono, @ do Instagram, foto —, a data de encerramento, o "quem alterou por último" e a unicidade de nome entre ativos não cabem nas duas colunas atuais de `clients`. A alternativa era uma tabela 1:1, `client_profiles`, para não tocar a tabela implantada.
 

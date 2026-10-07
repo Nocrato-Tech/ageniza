@@ -1,4 +1,5 @@
 # `archived` e `removed` coexistem, e nenhuma rota exclui entidade de negócio
+
 **Data.** 2026-09-24
 
 **Contexto.** `clients.status` usa `active | archived` e `agency_memberships.status` usa `active | removed`. Dois vocabulários já conviviam sem regra escrita, e `structural-changes.md` registrava que definir exclusão depois de vários módulos escreverem o próprio jeito é o caminho mais caro.

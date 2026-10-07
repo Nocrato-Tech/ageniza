@@ -1,4 +1,5 @@
 # A pendência do convite é decidida no fim da espera pela trava, não no início da transação
+
 **Data.** 2026-10-07
 
 **Contexto.** A revisão de segurança do PR #298 (#165) mostrou que reenviar, cancelar e aceitar decidiam "pendente" com o relógio do início da transação: se outra transação segurava a linha e o convite vencia durante a espera, a decisão já estava tomada sobre uma versão que o destrave tornava velha — um cancelamento que esperou 3 s cancelava um convite já vencido pelo relógio de parede. Achado Baixa, registrado na #304; a semântica antiga não dava poder novo, mas as três superfícies decidiam antes de saber com que versão da linha estavam lidando.

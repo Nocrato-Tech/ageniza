@@ -1,4 +1,5 @@
 # Regras invioláveis de clientes, garantidas pelo banco
+
 **Data.** 2026-09-26
 
 **Contexto.** O módulo abre a primeira superfície em que uma pessoa de fora da agência — o cliente — lê e escreve. Regra que vive só na rota é furada pela primeira rota nova que a esquecer, e Conteúdo vai criar várias.

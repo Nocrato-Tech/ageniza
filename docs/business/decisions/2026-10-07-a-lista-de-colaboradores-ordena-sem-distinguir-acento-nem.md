@@ -1,4 +1,5 @@
 # A lista de colaboradores ordena sem distinguir acento nem maiúsculas
+
 **Data.** 2026-10-07
 
 **Contexto.** A SPEC de colaboradores (§6) e o aceite da #89 pedem a lista "ordenada por nome ascendente", alfabética. A consulta ordena pelo nome sem fixar a ordenação, ou seja, pela do banco de cada ambiente, e o único teste de ordem usa nomes ASCII capitalizados. Em português o caso comum tem acento e caixa mista: com a ordenação por código de caractere, `Zelia` vem antes de `ana` e `Álvaro` vem depois de `bruno`. Achado da auditoria de fechamento do módulo, issue #355.

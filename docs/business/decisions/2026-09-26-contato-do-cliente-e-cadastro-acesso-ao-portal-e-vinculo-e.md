@@ -1,4 +1,5 @@
 # Contato do cliente é cadastro; acesso ao portal é vínculo, e pode haver vários
+
 **Data.** 2026-09-26
 
 **Contexto.** Na conversa, "o cliente" significava ao mesmo tempo a empresa, o contato do dono e a conta que entra no portal. O sistema já trata o acesso como vínculo por pessoa — `client_memberships` com `unique (client_id, user_id)` —, e nada limitava a um.

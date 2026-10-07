@@ -1,4 +1,5 @@
 # Escopo dos módulos iniciais é definido no repositório, não no Notion
+
 **Data.** 2026-09-23
 
 **Contexto.** Parte do escopo dos próximos módulos — colaboradores, clientes, configurações — já havia sido rascunhada no Notion.

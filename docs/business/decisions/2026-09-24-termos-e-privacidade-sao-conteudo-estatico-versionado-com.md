@@ -1,4 +1,5 @@
 # Termos e Privacidade são conteúdo estático versionado, com aceite único
+
 **Data.** 2026-09-24
 
 **Contexto.** O banco registra as versões de Termos e de Privacidade separadamente, o contrato de aceite pede um único `acceptTerms: true`, e nenhuma rota entrega os documentos ao navegador.

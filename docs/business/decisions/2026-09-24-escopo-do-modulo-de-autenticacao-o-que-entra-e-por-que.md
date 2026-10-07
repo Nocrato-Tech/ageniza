@@ -1,4 +1,5 @@
 # Escopo do módulo de autenticação: o que entra, e por que verificação de e-mail já está resolvida
+
 **Data.** 2026-09-24
 
 **Contexto.** O backend de autenticação, convites e contextos está implementado desde as issues #31, #32 e #33, sem nunca ter passado por uma SPEC. Ao fechar o escopo, três capacidades foram levantadas como faltantes: verificação de e-mail, alteração de senha por quem está logado, e troca de e-mail.

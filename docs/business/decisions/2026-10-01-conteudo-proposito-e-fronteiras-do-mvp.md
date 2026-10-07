@@ -1,4 +1,5 @@
 # Conteúdo: propósito e fronteiras do MVP
+
 **Data.** 2026-10-01
 
 **Contexto.** Bloco 1 da entrevista de Conteúdo. A integração com a Meta está fora do MVP (2026-09-26), então a plataforma não publica em rede social.

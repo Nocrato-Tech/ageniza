@@ -1,4 +1,5 @@
 # Owner é propriedade da agência, não papel
+
 **Data.** 2026-09-15
 
 **Contexto.** Seria natural modelar "owner" como mais um papel ao lado de Admin.

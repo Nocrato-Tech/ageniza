@@ -1,4 +1,5 @@
 # A lista de colaboradores ordena por nome dobrado, sem acento nem caixa, e não pelo collation do banco
+
 **Data.** 2026-10-07
 
 **Contexto.** A SPEC §6 e o aceite da #89 pedem a lista "ordenada por nome ascendente". `listCollaborators` ordenava por `member.name asc` cru, isto é, pela ordenação do banco: o collation do PostgreSQL decide acento e caixa, o banco de produção não fixa collation no repositório, e nenhum teste prendia o caso comum em português. A carteira de clientes (#291) já resolve o mesmo problema dobrando o texto na consulta (`foldTextSql`), e a auditoria (#355) mostrou que fixar `collate "C"` deixava os testes verdes.
@@ -8,3 +9,4 @@
 **Consequência.** A ordem da lista passa a ser o texto dobrado comparado byte a byte: acento, caixa, espaço, hífen e dígito ordenam do mesmo jeito em qualquer banco, sem depender do collation do banco de produção (que não é fixado no repositório). Muda apenas a ordem de exibição em nomes com acento, maiúsculas ou várias palavras, inclusive entre páginas; busca (`q`) e filtros não mudam. Ordenar pelo nome cru, dobrar sem `collate "C"` ou comparar pela collation do banco reabre esta decisão.
 
 **Origem.** Issue #355 (auditoria de fechamento de Colaboradores, épico #88), decidida pelo maestro. **Pendente de validação** pelo dono do produto.
+

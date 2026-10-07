@@ -1,4 +1,5 @@
 # A foto do cliente vive no armazenamento de identidade
+
 **Data.** 2026-09-26
 
 **Contexto.** O armazenamento de identidade, decidido em Colaboradores, é separado da mídia, não consome quota e já previa servir a identidade visual de portal.

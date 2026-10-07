@@ -1,4 +1,5 @@
 # Conteúdo: impacto estrutural
+
 **Data.** 2026-10-01
 
 **Esta é uma mudança estrutural.** Confrontado item por item com `structural-changes.md`, Conteúdo altera tabelas existentes, mexe em RLS de mais de um módulo, muda como a autorização é avaliada, cria formatos que outros módulos vão copiar e exige backfill.

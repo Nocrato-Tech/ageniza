@@ -1,4 +1,5 @@
 # Nenhum módulo abre antes de o anterior estar fechado e recortado
+
 **Data.** 2026-09-24
 
 **Contexto.** `module-process.md` descrevia as quatro fases sem dizer que elas são um portão. Com mais desenvolvedores entrando, "a SPEC sai depois" é exatamente como a implementação volta a preceder a decisão.

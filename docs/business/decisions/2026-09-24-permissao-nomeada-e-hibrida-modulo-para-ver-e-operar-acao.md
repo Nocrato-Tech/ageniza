@@ -1,4 +1,5 @@
 # Permissão nomeada é híbrida: módulo para ver e operar, ação para o administrativo
+
 **Data.** 2026-09-24
 
 **Contexto.** O catálogo de permissões já existe desde a migration `20260919000000_tenancy_and_invitations.mjs`, com `permissions`, `roles`, `role_permissions` e `app_private.has_agency_permission` resolvendo por permissão nomeada — não era decisão nova, era decisão de conteúdo. O Notion propunha uma permissão por módulo **e** uma por ação, o que chegaria a cerca de quarenta linhas quando todos os módulos existissem, a maioria sem ninguém que as diferenciasse.

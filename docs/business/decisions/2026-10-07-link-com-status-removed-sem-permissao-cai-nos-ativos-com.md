@@ -1,4 +1,5 @@
 # Link com `?status=removed` sem permissão cai nos ativos, com aviso
+
 **Data.** 2026-10-07
 
 **Contexto.** A decisão de 2026-10-07 sobre remover e reativar fixou o `403` da API para `?status=removed` sem `colaborador.remover`, `colaborador.alterar_papel` ou posse, mas a SPEC §7 dizia que "sem ele, só `active` é devolvido" — o `403` explícito nunca chegou à SPEC, que foi corrigida neste mesmo PR. Na web, esse `403` caía no mesmo "não encontrado" de um recurso inexistente e derrubava a página inteira: quem recebia um link compartilhado com o filtro não via nem a lista de ativos, que lhe é permitida.

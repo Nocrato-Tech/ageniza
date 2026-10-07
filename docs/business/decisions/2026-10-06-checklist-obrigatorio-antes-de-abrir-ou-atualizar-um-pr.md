@@ -1,4 +1,5 @@
 # Checklist obrigatório antes de abrir ou atualizar um PR
+
 **Data.** 2026-10-06
 
 **Contexto.** As revisões de código e de segurança repetem os mesmos achados entre implementadores de vários modelos: teste que continua verde sem a regra que deveria proteger, cenário que a RLS escondeu a falta do filtro, mudança de contrato que mescla limpo e quebra em runtime, aceite do tipo "não acontece" sem checagem automatizada.

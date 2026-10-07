@@ -1,4 +1,5 @@
 # Conteúdo: atores e autorização
+
 **Data.** 2026-10-01
 
 **Contexto.** Bloco 2 da entrevista de Conteúdo. Diferente de Clientes, Produção é quem produz o conteúdo.

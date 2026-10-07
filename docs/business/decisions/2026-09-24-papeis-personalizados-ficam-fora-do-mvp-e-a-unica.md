@@ -1,4 +1,5 @@
 # Papéis personalizados ficam fora do MVP, e a única capacidade não delegável hoje é a posse
+
 **Data.** 2026-09-24
 
 **Contexto.** O schema já suporta papel por agência — `roles.agency_id` com `is_system`, aceito tanto pela RLS quanto pelo guard da API. O que falta é tela de criar, duplicar e atribuir, e a regra do que nunca pode entrar num papel personalizado. Mas o catálogo tem quatro permissões: não há combinação a montar.

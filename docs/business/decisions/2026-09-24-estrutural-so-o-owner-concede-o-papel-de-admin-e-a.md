@@ -1,7 +1,8 @@
 # ESTRUTURAL: só o Owner concede o papel de Admin, e a autorização passa a depender do valor
+
 **Data.** 2026-09-24
 
-**Esta é uma mudança estrutural**, por dois dos cinco critérios de [structural-changes.md](structural-changes.md): mexe em policies de RLS de **mais de um módulo**, e muda **como a autorização é avaliada**. Registrada antes de qualquer implementação.
+**Esta é uma mudança estrutural**, por dois dos cinco critérios de [structural-changes.md](../structural-changes.md): mexe em policies de RLS de **mais de um módulo**, e muda **como a autorização é avaliada**. Registrada antes de qualquer implementação.
 
 **Contexto.** Até aqui toda autorização do sistema responde uma pergunta só: *tem a chave?*. `app_private.has_agency_permission(agency_id, permission)` recebe uma permissão e devolve sim ou não. A regra "quem pode atribuir outros Admins é o Owner" pergunta outra coisa: *tem a chave **e** qual valor está sendo concedido?*. E ela tem um segundo ponto de fuga: se só o Owner promove a Admin mas o Admin pode **convidar** alguém já como Admin, a regra não existe.
 

@@ -1,4 +1,5 @@
 # Preset de clientes: o Gestor opera e cadastra, só o Admin arquiva e gerencia o portal
+
 **Data.** 2026-09-26
 
 **Contexto.** A linha de preset do módulo é obrigatória na SPEC. O ponto sensível era o acesso ao portal: dar ao Gestor de conta as permissões de convite de cliente daria a ele, pelas policies atuais, leitura e cancelamento de convites de colaborador.

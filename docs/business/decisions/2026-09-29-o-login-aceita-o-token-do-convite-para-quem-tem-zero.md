@@ -1,4 +1,5 @@
 # O login aceita o token do convite para quem tem zero contextos
+
 **Data.** 2026-09-29
 
 **Contexto.** A entrada de 2026-09-24 ("Credencial correta sem nenhum contexto não cria sessão") diz que a conta continua existindo depois de perder todo contexto, e que "um convite novo para o mesmo e-mail volta a funcionar pelo fluxo de conta existente — não é exclusão, é acesso sem vínculo". Esse fluxo (`POST /invitations/:token/accept`, estado "já tem conta" da tela de convite) exige sessão via `requireSession`, e essa sessão só existe hoje se `POST /auth/login` a criar antes — exatamente o que a mesma entrada de 2026-09-24 passou a negar para quem tem zero contextos. O furo foi encontrado na implementação da issue #68 (PR #164): sem um mecanismo à parte, a própria decisão de 2026-09-24 se contradiz para quem foi removido de tudo e reconvidado.

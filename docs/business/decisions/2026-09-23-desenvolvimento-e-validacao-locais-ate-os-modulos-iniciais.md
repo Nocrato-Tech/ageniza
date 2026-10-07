@@ -1,4 +1,5 @@
 # Desenvolvimento e validação locais até os módulos iniciais ficarem prontos
+
 **Data.** 2026-09-23
 
 **Contexto.** A infraestrutura está escrita e com CI verde, mas nunca rodou num deploy real. A alternativa era contratar a VPS agora, ou ao menos apontar um Cloudflare Tunnel gratuito para a máquina de desenvolvimento e exercitar o R2 real antes de seguir. Nenhuma das duas era necessária para continuar construindo.

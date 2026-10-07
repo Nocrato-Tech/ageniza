@@ -1,4 +1,5 @@
 # Contexto de tenant explícito na rota, nunca na sessão
+
 **Data.** 2026-09-15
 
 **Contexto.** O padrão comum é guardar a "agência ativa" na sessão depois do login.

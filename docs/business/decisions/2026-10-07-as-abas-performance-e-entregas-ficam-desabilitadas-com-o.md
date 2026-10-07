@@ -1,4 +1,5 @@
 # As abas Performance e Entregas ficam desabilitadas, com o motivo, até o Conteúdo
+
 **Data.** 2026-10-07
 
 **Contexto.** A #110 perguntava o que as abas `Performance` e `Entregas` do modal de colaborador mostram. Não há o que contar: entregas e pendências pressupõem tarefas atribuídas a pessoas, e nem Conteúdo nem Tarefas foram implementados. Qualquer métrica definida agora seria inventada.

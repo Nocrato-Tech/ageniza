@@ -1,4 +1,5 @@
 # ESTRUTURAL: o estado do convite só anda para frente, e quem garante é o banco
+
 **Data.** 2026-10-06
 
 **Contexto.** A re-revisão de segurança do PR #202 (Vigia) provou, fora do diff dele e já em `develop`, que um papel com **só** `convite.cancelar` executa `update invitations set revoked_at = null`: a policy `invitations_update` confere a permissão e o *grant* `UPDATE(revoked_at)` deixa a coluna, e nada confere a **direção** da mudança. O caminho completo foi executado: convite de **admin** revogado, des-revogado, aceito com o link original, e um vínculo admin nasce sem ninguém ter `colaborador.atribuir_admin`. O mesmo vale para o convite de portal que o arquivamento revoga (regra 15 de `specs/clientes.md`): ele volta a pendente. `accept_invitation` confia na linha: quem decide quem pode virar admin é a criação do convite, e uma criação revogada tem de continuar morta.

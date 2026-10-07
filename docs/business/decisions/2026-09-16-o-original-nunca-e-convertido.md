@@ -1,4 +1,5 @@
 # O original nunca é convertido
+
 **Data.** 2026-09-16
 
 **Contexto.** Seria tentador padronizar todo vídeo num formato só.

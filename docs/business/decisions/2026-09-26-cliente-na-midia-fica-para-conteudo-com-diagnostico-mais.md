@@ -1,4 +1,5 @@
 # Cliente na mídia fica para Conteúdo, com diagnóstico mais grave que o registrado
+
 **Data.** 2026-09-26
 
 **Contexto.** A estrutural conhecida dizia que `media_assets` é escopado só por agência. A leitura das policies mostra mais: o `SELECT` de `media_assets` exige `midia.enviar`, então **o portal não vê mídia nenhuma**, nem a própria. E Clientes não usa `media_assets` — a foto do cliente vai para o armazenamento de identidade.

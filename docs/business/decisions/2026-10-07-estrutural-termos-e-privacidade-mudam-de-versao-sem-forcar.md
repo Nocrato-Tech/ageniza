@@ -1,4 +1,5 @@
 # ESTRUTURAL: Termos e Privacidade mudam de versão sem forçar o reaceite, e o aceite depois do cadastro é por documento
+
 **Data.** 2026-10-07
 
 **Contexto.** A decisão de 2026-09-24 sobre Termos e Privacidade deixou o reaceite em aberto, com gatilho: a primeira alteração de um dos documentos depois de existir gente com conta. O contrato de aceite era um só (`acceptTerms: true`, que grava as duas versões), então uma conta não tinha como aceitar um documento sem o outro. Issue #81.

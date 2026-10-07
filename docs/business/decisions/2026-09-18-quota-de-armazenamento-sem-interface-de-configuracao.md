@@ -1,4 +1,5 @@
 # Quota de armazenamento sem interface de configuração
+
 **Data.** 2026-09-18
 
 **Contexto.** Nenhuma issue pediu administração de quota.

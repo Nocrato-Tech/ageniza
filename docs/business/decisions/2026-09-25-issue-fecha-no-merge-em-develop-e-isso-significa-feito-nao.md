@@ -1,4 +1,5 @@
 # Issue fecha no merge em `develop`, e isso significa "feito", não "no ar"
+
 **Data.** 2026-09-25
 
 **Contexto.** O GitHub fecha uma issue referenciada apenas quando o pull request entra na **branch padrão**, que aqui é `main`. Todo pull request de trabalho vai para `develop`, então `Closes #123` **nunca disparou** neste repositório — a #85 foi implementada, mergeada, e continuou aberta sem ninguém notar. Com dezenas de tasks, o quadro mostraria como pendente um monte de trabalho pronto, e deixaria de ser confiável.

@@ -1,4 +1,5 @@
 # Carregamento tem três tratamentos, e escrita nunca deixa dado velho na tela
+
 **Data.** 2026-09-24
 
 **Contexto.** `apps/web/src/query.ts` usa `staleTime` de 30s, sem refazer busca ao focar a janela ou reconectar. Isso significa que voltar a uma tela em menos de meio minuto serve o cache: navegação não é o que atualiza a tela depois de uma escrita, ao contrário do que a intuição sugere. Sem uma convenção escrita, a primeira tela decidiria isso sozinha.

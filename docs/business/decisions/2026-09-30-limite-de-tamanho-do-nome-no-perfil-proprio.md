@@ -1,4 +1,5 @@
 # Limite de tamanho do nome no perfil próprio
+
 **Data.** 2026-09-30
 
 **Contexto.** A SPEC de colaboradores (`specs/colaboradores.md`, §§3, 5 e 6) exige que o nome do próprio perfil seja obrigatório, não vazio e com **limite de tamanho**, mas não fixa um número. A task #101 precisava de um valor para validar `PATCH /me/profile`.

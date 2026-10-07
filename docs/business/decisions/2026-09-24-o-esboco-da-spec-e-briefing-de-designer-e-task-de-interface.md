@@ -1,4 +1,5 @@
 # O esboço da SPEC é briefing de designer, e task de interface espera a tela
+
 **Data.** 2026-09-24
 
 **Contexto.** O processo dizia que o bloco de UX produz esboço de baixa fidelidade, sem dizer para quem. Sem isso, "esboço" poderia ser lido como permissão para codificar a tela direto a partir dele — que é como a interface passa a ser desenhada por quem está implementando.

@@ -1,4 +1,5 @@
 # `ageniza_app` não tem DELETE em `agency_memberships` nem em `invitations`
+
 **Data.** 2026-10-07
 
 **Contexto.** A regra 11 da SPEC de colaboradores diz que remover não apaga a linha de `agency_memberships`, e `docs/security-review.md` manda não dar DELETE físico de entidade de negócio a `ageniza_app`. A migration `20260919000000` concedia `select, insert, update, delete` nas duas tabelas, e o que impedia o DELETE era só a **ausência de policy** de DELETE sob RLS forçada. Uma policy `for delete using (…)` criada por engano apagaria vínculos e convites sem que nenhum teste de privilégio avisasse; `tenancy.integration.test.ts` até fixava que `delete from agency_memberships` "resolve" com zero linhas, o que só era verdade enquanto o privilégio existia e a policy não (achado da auditoria de fechamento do módulo, issue #356). É o mesmo desenho que a #343 achou em `legal_acceptances`.

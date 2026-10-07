@@ -1,4 +1,5 @@
 # A foto do cliente herda a #100 e fecha três lacunas que a SPEC não cobria
+
 **Data.** 2026-10-06
 
 **Contexto.** A task #126 manda reutilizar transporte, limites e nome de objeto da foto de perfil (#100/#101). Ao reutilizar, apareceram três pontos que nem a SPEC de clientes nem a #100 decidem: o que fazer quando o cliente é arquivado entre a checagem e o commit, o que impede que uma referência `photo_key` adulterada vire um `DELETE` em objeto alheio, e se a rota de envio tem teto por conta.

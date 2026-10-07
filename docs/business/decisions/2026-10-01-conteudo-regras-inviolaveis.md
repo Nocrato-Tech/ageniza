@@ -1,4 +1,5 @@
 # Conteúdo: regras invioláveis
+
 **Data.** 2026-10-01
 
 **Contexto.** Bloco 5 da entrevista de Conteúdo. Cada regra vira teste e é garantida no banco, não só na tela.

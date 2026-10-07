@@ -50,7 +50,7 @@ Sete blocos, nesta ordem — que é a ordem do custo de errar. Não pule para o 
 
 ## Registrar durante a sessão
 
-**Decisão fechada é escrita na hora**, em um arquivo novo em `docs/business/decisions/` (`AAAA-MM-DD-<slug>.md`), com `# Título`, `**Data.**`, contexto, decisão, consequência e origem. Marque **pendente de validação** quando ninguém tiver validado ainda.
+**Decisão fechada é escrita na hora**, em um arquivo novo em `docs/business/decisions/` (`AAAA-MM-DD-<slug>.md`), com `# Título`, `**Data.**`, contexto, decisão, consequência e origem. Decisão que ninguém validou ainda leva a linha `**Validação.** Pendente de validação do dono.`; quando o dono validar, só essa linha muda para `**Validação.** Validada pelo dono em AAAA-MM-DD.`
 
 Se o bloco 7 acusar mudança estrutural, **pare o assunto ali**: registre a decisão dizendo explicitamente que é estrutural, antes de qualquer conversa de implementação.
 

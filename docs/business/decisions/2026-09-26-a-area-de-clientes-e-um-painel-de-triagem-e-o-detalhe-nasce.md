@@ -1,4 +1,5 @@
 # A área de clientes é um painel de triagem, e o detalhe nasce com todas as abas
+
 **Data.** 2026-09-26
 
 **Contexto.** Quem abre Clientes na agência é, tipicamente, o Gestor de conta com oito a vinte clientes, várias vezes por dia, perguntando "qual cliente precisa de mim agora?". No MVP, porém, os sinais que responderiam isso — pendente, em revisão, atrasado — só existem depois de Conteúdo e Tarefas.

@@ -1,7 +1,8 @@
 # ESTRUTURAL: o item de colaborador diz se o vínculo é da própria pessoa (`isSelf`)
+
 **Data.** 2026-10-07
 
-**Esta é uma mudança estrutural**, por um dos cinco critérios de [structural-changes.md](structural-changes.md): muda o **formato de resposta** que outras rotas já usam. O `CollaboratorSchema` é o item da listagem, do detalhe, do `PATCH`, de remover e de reativar, e a listagem é a referência que as próximas copiam. Registrada antes da implementação, no mesmo PR, a pedido do maestro (issue #286).
+**Esta é uma mudança estrutural**, por um dos cinco critérios de [structural-changes.md](../structural-changes.md): muda o **formato de resposta** que outras rotas já usam. O `CollaboratorSchema` é o item da listagem, do detalhe, do `PATCH`, de remover e de reativar, e a listagem é a referência que as próximas copiam. Registrada antes da implementação, no mesmo PR, a pedido do maestro (issue #286).
 
 **Contexto.** A tela do modal do colaborador (#108) decide se a pessoa está vendo o próprio vínculo (e então edita nome e foto) comparando o e-mail canônico da sessão com o e-mail do vínculo, porque o contrato não traz o `userId`. Não é risco de segurança (`PATCH /me/profile` e `POST /me/photo` agem sempre no usuário da sessão), mas a operação pode trocar o e-mail, e aí o modal fica sem edição até a sessão ser relida.
 

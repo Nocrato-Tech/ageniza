@@ -1,4 +1,5 @@
 # A sessão vale 7 dias sem uso, renova a cada 24 h de uso e tem teto absoluto de 30 dias
+
 **Data.** 2026-10-07
 
 **Contexto.** A SPEC (§4) dizia "renovada a cada 24h de uso, até o teto de 7 dias", e a §3 chamava o teto de "hook de banco". O código faz outra coisa, desde a primeira entrega: a sessão expira com **7 dias sem uso** (`expiresIn`, `better-auth.ts`), é renovada a cada **24 h** de uso (`updateAge`) e tem **teto absoluto de 30 dias** desde `createdAt` (`AUTH_SESSION_MAX_AGE_DAYS = 30`, `policy.ts`), imposto por `session-guard.ts` e pelo `databaseHooks.session.update.before` do Better Auth, que é JavaScript e não um gatilho do PostgreSQL. Os testes seguem o código (sessão de 31 dias recusada, renovação de uma sessão de 29 dias limitada a `createdAt + 30 dias`). Achado da auditoria de fechamento do módulo, issue #341.

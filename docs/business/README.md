@@ -33,15 +33,17 @@ Não registre aqui: detalhe de implementação que o código já expressa, decis
 
 Crie um arquivo novo em [decisions/](decisions/), no mesmo commit ou PR que implementa a decisão. O nome é a data mais um slug do título — `AAAA-MM-DD-<slug>.md`, minúsculo, sem acento, só `[a-z0-9]` e hífen, cortado em fronteira de palavra com no máximo 60 caracteres; duas decisões do mesmo dia ganham sufixo `-2`, `-3`. O arquivo tem:
 
-- `# Título` na primeira linha — o que foi decidido, em uma linha;
+- `# Título` na primeira linha, seguido de uma linha em branco — o que foi decidido, em uma linha;
 - `**Data.** AAAA-MM-DD`;
 - **contexto** — o que motivou a decisão e quais alternativas existiam;
 - **decisão** — o que vale, de forma que dê para verificar;
 - **consequência** — o que isso custa, impede ou exige depois;
 - **origem** — issue, PR ou "decidido em sessão", para quem quiser o histórico completo.
 
-Decisão que o maestro ou um agente tomou entra com a linha:
+O arquivo termina com uma linha em branco. Decisão que ninguém validou ainda entra com a linha:
 
 > **Validação.** Pendente de validação do dono.
+
+Quando o dono validar — respondendo na issue ou por mensagem ao maestro —, troque **somente** a linha `**Validação.**` por `**Validação.** Validada pelo dono em AAAA-MM-DD.` Essa é a única edição permitida num arquivo de decisão já registrado: corpo, data e título nunca mudam.
 
 **Nunca edite o arquivo de outra decisão para registrar uma nova.** Para reverter uma decisão, crie um arquivo novo que cita a antiga. É melhor registrar uma decisão provisória e marcá-la do que deixá-la só na cabeça de quem implementou.

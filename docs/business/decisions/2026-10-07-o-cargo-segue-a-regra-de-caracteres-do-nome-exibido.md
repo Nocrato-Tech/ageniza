@@ -1,4 +1,5 @@
 # O cargo segue a regra de caracteres do nome exibido
+
 **Data.** 2026-10-07
 
 **Contexto.** A revisão de segurança do PR #320 (issue #324, severidade baixa) achou que `job_title` só recusava C0 e DEL: a API gravava um cargo com RLO (o texto "Analista", o caractere U+202E e "nimda" aparece na tela como "Analista admin"), LRI, espaço de largura zero, cargo só de espaço de largura zero (invisível, e não vira `null`), BOM, NEL e CSI (C1), U+2028 e o preenchimento Hangul. Cargo é texto mostrado sobre uma pessoa, como o nome (#200).

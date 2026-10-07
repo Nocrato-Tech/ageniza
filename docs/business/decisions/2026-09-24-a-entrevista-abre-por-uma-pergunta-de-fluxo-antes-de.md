@@ -1,4 +1,5 @@
 # A entrevista abre por uma pergunta de fluxo, antes de qualquer rodada
+
 **Data.** 2026-09-24
 
 **Contexto.** O roteiro põe UX no sétimo lugar, de propósito: tela desenhada antes de estado definido inventa estado. Mas a entrevista de autenticação mostrou o efeito colateral. As capacidades que o backend não tinha — troca de senha por quem está logado, troca de e-mail — só apareceram quando a conversa chegou perto das telas, depois de a sessão já ter decidido escopo em cima do que existia. Quem conduz gastou a sessão inteira raciocinando sobre o implementado, e o que faltava chegou atrasado.

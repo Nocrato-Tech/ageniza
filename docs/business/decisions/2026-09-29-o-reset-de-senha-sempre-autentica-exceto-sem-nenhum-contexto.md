@@ -1,4 +1,5 @@
 # O reset de senha sempre autentica, exceto sem nenhum contexto
+
 **Data.** 2026-09-29
 
 **Contexto.** `specs/auth.md` (§7, "Redefinir senha") já decidia que, ao final do reset, a pessoa **já está autenticada** — segue para o aceite do convite quando houver um, ou para o `resolve`. A API só cumpria isso no ramo **com** `inviteToken`: `POST /auth/password/reset` sem convite respondia `204` sem cookie, e não havia como a tela cumprir esse aceite. A divergência foi achada pela #73, ao tentar implementar a tela de reset contra o contrato real.

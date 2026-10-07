@@ -1,4 +1,5 @@
 # O portal nasce com navegação de celular, tour do que funciona e sem notificação
+
 **Data.** 2026-09-26
 
 **Contexto.** O portal não tem tela nenhuma, e a única rota de cliente é a que marca o onboarding como visto. O sistema só envia e-mail de autenticação; não existe notificação de nenhum tipo.

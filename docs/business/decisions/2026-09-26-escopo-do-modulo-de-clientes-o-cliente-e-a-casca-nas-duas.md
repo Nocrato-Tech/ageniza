@@ -1,4 +1,5 @@
 # Escopo do módulo de clientes: o cliente e a casca, nas duas frentes
+
 **Data.** 2026-09-26
 
 **Contexto.** O bloco 0 da entrevista levantou, para a área da agência, uma listagem em cards e um detalhe com abas — Geral, Conteúdos, Tarefas, Estudo de marca e Relatórios —, e para o portal um cliente dono do negócio que entra para acompanhar o calendário, aprovar, comentar, ver relatório e o estudo da própria marca. A maior parte disso depende de entidades que não existem: não há conteúdo, tarefa, atribuição nem comentário no banco, e `ClientAssignment`, citado em decisões anteriores, também não existe em nenhuma migration. Ao mesmo tempo, `clients` só tem policy de `SELECT`: hoje não há como criar um cliente pelo produto, embora a rota de convidar usuário de cliente já exista.

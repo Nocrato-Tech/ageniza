@@ -1,4 +1,5 @@
 # O convite é aceito automaticamente depois do login pelo link, só para o e-mail do convite
+
 **Data.** 2026-10-07
 
 **Contexto.** Quem recebia um convite para uma conta que já existia clicava em "Aceitar convite", era levado ao login com o token, entrava e precisava clicar de novo em "Aceitar convite" na volta. A #184 deixou o comportamento automático em aberto; a decisão de produto veio em 2026-10-07.

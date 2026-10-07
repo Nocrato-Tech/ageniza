@@ -1,4 +1,5 @@
 # Conteúdo: pastas de mídia, estados e transições
+
 **Data.** 2026-10-01
 
 **Contexto.** Blocos 3 (fim) e 4 da entrevista de Conteúdo.

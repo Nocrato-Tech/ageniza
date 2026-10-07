@@ -1,4 +1,5 @@
 # A listagem de colaboradores estreia o contrato de listagem
+
 **Data.** 2026-09-24
 
 **Contexto.** Nenhuma rota do produto lista nada. Esta é a primeira, e a sessão 0 fixou teto global de 100 com tamanho padrão declarado por rota.

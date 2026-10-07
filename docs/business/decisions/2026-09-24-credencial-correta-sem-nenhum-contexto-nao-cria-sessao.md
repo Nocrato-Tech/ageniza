@@ -1,4 +1,5 @@
 # Credencial correta sem nenhum contexto não cria sessão
+
 **Data.** 2026-09-24
 
 **Contexto.** Hoje `POST /auth/login` cria sessão para qualquer credencial válida, e `GET /me/contexts/resolve` responde `none` quando a pessoa não tem agência nem cliente — o que acontece com quem foi removido de todas as agências. O resultado é alguém autenticado dentro de uma aplicação sem nada.

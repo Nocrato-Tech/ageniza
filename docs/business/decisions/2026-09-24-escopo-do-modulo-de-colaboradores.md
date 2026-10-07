@@ -1,4 +1,5 @@
 # Escopo do módulo de colaboradores
+
 **Data.** 2026-09-24
 
 **Contexto.** Primeira entrevista conduzida pelo bloco 0, a pergunta aberta de fluxo. Ela levantou cinco capacidades que o backend não tem — foto de perfil, remuneração, estatísticas do colaborador, edição do próprio nome e solicitação de troca de e-mail — e três delas mudavam o tamanho do módulo.

@@ -1,4 +1,5 @@
 # `ageniza_app` só lê `legal_acceptances`: insert, update e delete são revogados
+
 **Data.** 2026-10-07
 
 **Contexto.** A SPEC (§6, issue #81, item 3) diz que `ageniza_app` "continua sem INSERT direto" em `legal_acceptances`. A migration `20260919000000` concedia `select, insert, update, delete` à tabela inteira, e quem barrava a escrita era só a RLS forçada, sem policy de escrita: os testes esperavam `row-level security`, não `permission denied`. Texto e código discordavam, e uma camada só separava a prova de consentimento de uma escrita direta (achado da auditoria de fechamento do módulo, issue #343). A mutação "conceder INSERT" era sem efeito, mas conceder INSERT **e** criar uma policy abria a tabela.

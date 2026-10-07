@@ -1,4 +1,5 @@
 # A mesma pessoa com dois e-mails são duas contas, e identidades não se vinculam
+
 **Data.** 2026-09-24
 
 **Contexto.** `auth."user".email` é único e o `User` é a identidade global. Perguntou-se o que acontece quando alguém é owner de uma agência com um endereço e colaborador de outra com endereço diferente.

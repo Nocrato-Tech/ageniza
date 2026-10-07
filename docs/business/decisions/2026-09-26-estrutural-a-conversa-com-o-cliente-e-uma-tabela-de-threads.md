@@ -1,4 +1,5 @@
 # ESTRUTURAL: a conversa com o cliente é uma tabela de threads por cliente, com assunto tipado
+
 **Data.** 2026-09-26
 
 **Esta é uma mudança estrutural**, pelo critério de formato que outras rotas copiam: é o primeiro mecanismo de conversa entre cliente e equipe, e Conteúdo vai reaproveitá-lo.

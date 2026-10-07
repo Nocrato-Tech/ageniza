@@ -1,4 +1,5 @@
 # Tipos de mídia aceitos definidos em código
+
 **Data.** 2026-09-18
 
 **Contexto.** A issue não especificava quais formatos aceitar.

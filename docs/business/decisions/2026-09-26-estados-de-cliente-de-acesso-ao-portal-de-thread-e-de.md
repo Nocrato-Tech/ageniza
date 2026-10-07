@@ -1,4 +1,5 @@
 # Estados de cliente, de acesso ao portal, de thread e de persona
+
 **Data.** 2026-09-26
 
 **Contexto.** O banco já corta o portal de cliente arquivado — `requireClientAccess` devolve 404 — e já recusa o aceite de convite de cliente arquivado. Não mexe nos vínculos ao arquivar, e um convite aceito por alguém removido reativa o vínculo antigo.

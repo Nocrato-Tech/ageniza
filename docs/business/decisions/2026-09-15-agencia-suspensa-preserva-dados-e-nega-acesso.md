@@ -1,4 +1,5 @@
 # Agência suspensa preserva dados e nega acesso
+
 **Data.** 2026-09-15
 
 **Contexto.** Era preciso um estado para interromper uma agência sem destruir nada.

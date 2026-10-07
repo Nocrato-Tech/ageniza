@@ -1,4 +1,5 @@
 # Mídia vai direto do navegador para o armazenamento
+
 **Data.** 2026-09-16
 
 **Contexto.** O produto gerencia vídeo longo e Reels em volume. Passar os arquivos pelo servidor esbarraria no limite de 100 MB da borda e encheria o disco da VPS.

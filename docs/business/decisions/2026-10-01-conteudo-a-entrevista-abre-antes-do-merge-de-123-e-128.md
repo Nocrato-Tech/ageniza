@@ -1,4 +1,5 @@
 # Conteúdo: a entrevista abre antes do merge de #123 e #128
+
 **Data.** 2026-10-01
 
 **Contexto.** A ordem de módulos decidida em 2026-09-24 é Colaboradores, Clientes, Conteúdo, Tarefas, Financeiro básico, Dashboard. A regra de orquestração exigia #122, #123 e #128 mergeadas antes da entrevista de Conteúdo, e #123 (funções de ciclo de vida do cliente) e #128 (conversa do lado da agência) estavam prontas em branch, esperando revisão. Tarefas foi cogitada para ir antes e descartada: tarefa nasce ligada a conteúdo, e o bloco 0 de Conteúdo já registra "tarefas por conteúdo".

@@ -1,4 +1,5 @@
 # Permissões de clientes: todos veem todos, e cadastrar é administrativo
+
 **Data.** 2026-09-26
 
 **Contexto.** O v1 diz que todo colaborador enxerga Clientes. A alternativa era restringir cada colaborador aos clientes atribuídos a ele — mas a tabela de atribuição não existe, e `clients_select` libera leitura a qualquer membro da agência.

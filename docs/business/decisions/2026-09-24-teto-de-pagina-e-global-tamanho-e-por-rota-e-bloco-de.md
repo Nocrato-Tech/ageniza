@@ -1,4 +1,5 @@
 # Teto de página é global, tamanho é por rota, e bloco de resumo não pagina
+
 **Data.** 2026-09-24
 
 **Contexto.** A decisão de paginar por página não dizia tamanho nem ordem, e tratar isso como um número único não serve: o dashboard mostra quatro itens com um "ver mais", enquanto a listagem de clientes mostra dezenas. São dois papéis diferentes no mesmo parâmetro — um é segurança, o outro é interface.

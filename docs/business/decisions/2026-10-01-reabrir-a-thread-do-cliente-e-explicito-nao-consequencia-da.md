@@ -1,4 +1,5 @@
 # Reabrir a thread do cliente é explícito, não consequência da ordem de `now()`
+
 **Data.** 2026-10-01
 
 **Contexto.** Achado 1 da revisão de segurança do PR #206 (#124). O `created_at` do comentário e o `resolved_at` da thread usam `now()`, que é o início da transação, não o commit. Um comentário do portal cuja transação começa antes de a agência resolver a thread e confirma depois fica com data anterior ao `resolved_at`; a definição derivada de `thread-state.ts` ("aberta = `resolved_at` anterior ao último comentário") então considera a thread resolvida, e a pergunta nova sai de "aguardando a agência". `thread-state.ts` é a definição única que a listagem (#125), o portal (#129) e as rotas de conversa (#128, #130) reusam.

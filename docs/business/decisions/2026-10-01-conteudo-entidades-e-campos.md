@@ -1,4 +1,5 @@
 # Conteúdo: entidades e campos
+
 **Data.** 2026-10-01
 
 **Contexto.** Bloco 3 da entrevista de Conteúdo.

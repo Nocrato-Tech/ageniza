@@ -1,4 +1,5 @@
 # Remuneração pertence ao Financeiro, que entra no MVP depois de Tarefas
+
 **Data.** 2026-09-24
 
 **Contexto.** A descrição inicial do módulo colocava o salário no crachá, visível para Owner e Financeiro e **não** para o Admin. Isso abria três problemas: RLS no PostgreSQL é por linha e não por coluna, então proteger um campo dentro de `agency_memberships` é frágil; quem convida é o Admin, que não poderia ler o dado que definiria; e a própria descrição vinculava remuneração à "saúde financeira da agência", que é outro módulo.

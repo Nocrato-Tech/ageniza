@@ -1,4 +1,5 @@
 # Criar e reenviar convite travam na mesma ordem, e o deadlock vira 409 TRY_AGAIN
+
 **Data.** 2026-10-07
 
 **Contexto.** A revisão de segurança do PR #330 (#304) observou, num defeito que já existia, que criar convite trava o slot dos convites equivalentes e depois a linha, e reenviar trava a linha e depois o slot. Com o mesmo destinatário ao mesmo tempo, o resultado era deadlock (`40P01`), que não era traduzido e virava `500`. Sem impacto de segurança, porque nada é gravado. Issue #335. Registrada aqui depois do código, porque a issue não gerou entrada.

@@ -1,4 +1,5 @@
 # "Sem permissão" não é uma tela: a interface espelha o 404 do backend
+
 **Data.** 2026-09-24
 
 **Contexto.** `apps/api/src/modules/tenancy/guards.ts` devolve **404** indistintamente para agência inexistente, suspensa e inacessível — de propósito, para nunca revelar existência. Faltava dizer o que a interface faz com isso, antes que a primeira tela decidisse sozinha.

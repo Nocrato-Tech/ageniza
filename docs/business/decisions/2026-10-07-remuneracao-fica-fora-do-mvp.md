@@ -1,4 +1,5 @@
 # Remuneração fica fora do MVP
+
 **Data.** 2026-10-07
 
 **Contexto.** A #109 perguntava se, e como, a remuneração aparece no crachá e no modal de colaboradores. A decisão de 2026-09-24 ("Remuneração pertence ao Financeiro, que entra no MVP depois de Tarefas") já tirou o salário de Colaboradores e deixou o espaço reservado para quando o Financeiro existisse.

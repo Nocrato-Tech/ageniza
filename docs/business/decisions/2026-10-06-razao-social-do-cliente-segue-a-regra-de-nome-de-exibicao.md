@@ -1,4 +1,5 @@
 # Razão social do cliente segue a regra de nome de exibição
+
 **Data.** 2026-10-06
 
 **Contexto.** A #213 fez o nome do cliente e os campos de contato usarem a regra compartilhada de nome de exibição (#200); a SPEC (`specs/clientes.md`, seção 3) chama `legal_name` só de "razão social", texto livre, e não fixa essa regra para o campo.

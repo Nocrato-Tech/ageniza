@@ -1,4 +1,5 @@
 # O cliente sugere sobre a marca por conversa em thread, e esse é o modelo de conversa do produto
+
 **Data.** 2026-09-26
 
 **Contexto.** O cliente precisa sugerir alterações no estudo da própria marca já no MVP. Conteúdo vai precisar da mesma capacidade para o cliente conversar com a equipe sobre um post, e o primeiro módulo a resolver isso define o formato que o segundo copia.

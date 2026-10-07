@@ -1,4 +1,5 @@
 # O modal do próprio perfil mostra a data de entrada, como o wireframe
+
 **Data.** 2026-10-07
 
 **Contexto.** A §7 de `specs/colaboradores.md` desenha "Na agência desde <data>" no cabeçalho do modal, sem exceção, e o ramo do próprio perfil só mostrava a foto e a nota de que a foto é global (issue #357, achado da auditoria de fechamento do módulo).

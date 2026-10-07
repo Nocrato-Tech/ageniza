@@ -1,4 +1,5 @@
 # Foto de perfil vive em armazenamento de identidade, separado do módulo de mídia
+
 **Data.** 2026-09-24
 
 **Contexto.** `auth."user".image` já existe, mas não há fluxo de upload. E há um conflito de escopo: o **usuário é global** e a **mídia é por agência, com quota**. A foto de quem trabalha em duas agências não pertence a nenhuma delas.

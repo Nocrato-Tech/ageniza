@@ -1,4 +1,5 @@
 # Quem lê a lista de papéis atribuíveis (`GET /agencies/:agencyId/roles`)
+
 **Data.** 2026-10-06
 
 **Contexto.** O convite de colaborador (#107), a troca de papel (#97) e a reativação (#98) recebem `roleId` (uuid), mas os papéis de sistema são semeados com `gen_random_uuid()` e nenhuma rota em develop devolvia papel com id. A SPEC de colaboradores (`specs/colaboradores.md` §7) já pressupõe a lista — "Admin só aparece na lista de papéis para o Owner" —, mas não diz **quem** pode ler a lista, nem o catálogo tem uma permissão própria para isso.

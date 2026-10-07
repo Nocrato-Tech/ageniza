@@ -1,4 +1,5 @@
 # Conteúdo: telas (esboço)
+
 **Data.** 2026-10-01
 
 **Contexto.** Bloco 6 da entrevista de Conteúdo. Esboço de telas; aparência vem do design system e do refino do designer.

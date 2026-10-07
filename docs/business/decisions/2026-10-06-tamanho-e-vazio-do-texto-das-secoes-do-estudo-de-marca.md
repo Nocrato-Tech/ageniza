@@ -1,4 +1,5 @@
 # Tamanho e vazio do texto das seções do estudo de marca
+
 **Data.** 2026-10-06
 
 **Contexto.** A #127 implementa as rotas do estudo de marca. A SPEC (`specs/clientes.md`, seção 3) define as seções como "texto livre" e **não** fixa limite de tamanho nem regra de vazio para `client_brand_sections.body`. A coluna existe desde a #122 com `octet_length(body) <= 20000`, e o preenchimento (`filled`) já ignora texto só com espaços (`btrim`). Sem validação na rota, um texto multibyte acima do teto da coluna viraria 500, e só espaços gravaria uma linha que nenhuma leitura conta como conteúdo.

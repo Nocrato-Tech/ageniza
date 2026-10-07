@@ -1,4 +1,5 @@
 # Mídia é escopada por agência, sem vínculo com cliente
+
 **Data.** 2026-09-18
 
 **Contexto.** As issues de mídia não mencionam relação entre arquivo e cliente.

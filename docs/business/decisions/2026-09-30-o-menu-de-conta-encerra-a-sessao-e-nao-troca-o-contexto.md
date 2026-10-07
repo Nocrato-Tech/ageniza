@@ -1,4 +1,5 @@
 # O menu de conta encerra a sessão e não troca o contexto
+
 **Data.** 2026-09-30
 
 **Contexto.** A issue #70 leva para a interface as ações de sessão que já existem na API e exige o menu em toda tela autenticada. A troca de contexto tem fluxo próprio na issue #78 e não deve ser antecipada pelo menu desta issue.

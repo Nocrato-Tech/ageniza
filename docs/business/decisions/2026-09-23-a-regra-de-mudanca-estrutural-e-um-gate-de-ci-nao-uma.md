@@ -1,4 +1,5 @@
 # A regra de mudança estrutural é um gate de CI, não uma recomendação
+
 **Data.** 2026-09-23
 
 **Contexto.** `structural-changes.md` pedia que uma mudança estrutural fosse registrada antes de ser implementada, mas era só instrução: nada impedia agente ou pessoa de seguir adiante. Rodando a verificação contra o histórico, as PRs #40 e #41 teriam sido barradas — as duas alteraram tabelas existentes e revogaram privilégios sem registrar a decisão, e foi revisão manual que pegou.

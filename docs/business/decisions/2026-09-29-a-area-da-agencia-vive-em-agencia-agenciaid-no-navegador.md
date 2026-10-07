@@ -1,4 +1,5 @@
 # A área da agência vive em `/agencia/:agenciaId/...` no navegador
+
 **Data.** 2026-09-29
 
 **Contexto.** A decisão de 2026-09-15 manda o contexto na rota e nunca na sessão, mas ela falava da API (`/agencies/:agencyId/...`). No navegador, as SPECs de colaboradores e clientes usavam `/colaboradores` e `/clientes/:clienteId` sem contexto, e depois do login a pessoa caía em `/app`, um stub. A casca da área da agência (#181) não podia começar sem essa forma definida.

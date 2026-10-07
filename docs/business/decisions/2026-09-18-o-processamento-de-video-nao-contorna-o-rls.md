@@ -1,4 +1,5 @@
 # O processamento de vídeo não contorna o RLS
+
 **Data.** 2026-09-18
 
 **Contexto.** O worker precisa ler e gravar dados de uma agência sem haver requisição de usuário.

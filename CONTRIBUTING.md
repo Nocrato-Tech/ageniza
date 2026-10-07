@@ -85,7 +85,7 @@ Ele existe para responder duas perguntas que uma lista de issues responde mal: *
 |---|---|
 | **Backlog** | reconhecido, sem estar pronto para começar |
 | **Refinamento** | o escopo não fechou. Raro aqui, porque task nasce de SPEC aprovada — existe para o caso em que alguém pega uma task e descobre um buraco |
-| **Design** | telas **já mergeadas** em `develop`, esperando o refino do designer (label `refino-design`). É a fila dele, visível como coluna. O fluxo do card depois do merge está pendente: ver a entrada de 2026-09-28 em [`decisions.md`](docs/business/decisions.md) |
+| **Design** | telas **já mergeadas** em `develop`, esperando o refino do designer (label `refino-design`). É a fila dele, visível como coluna. O fluxo do card depois do merge está pendente: ver [`decisions/2026-09-28-a-tela-e-implementada-a-partir-do-esboco-e-o-designer.md`](docs/business/decisions/2026-09-28-a-tela-e-implementada-a-partir-do-esboco-e-o-designer.md) |
 | **Design review** | refino entregue, aguardando aprovação |
 | **Pronto para dev** | sem bloqueio e sem responsável: **pode ser pego agora** |
 | **Em andamento** | alguém se atribuiu |
@@ -100,7 +100,7 @@ As duas últimas espelham o modelo de branch: `develop` é integração, `main` 
 | campo | para que serve |
 |---|---|
 | **Onda** | a camada de dependência. Onda 1 pode começar hoje; onda 2 depende da 1 ter entrado. **É o campo que diz onde quatro pessoas trabalham sem fila** |
-| **Bloqueio** | `dependência` espera outra task, `decisão` espera o dono do produto. Design não entra aqui: tela não espera o designer. Enquanto a fundação do design system não existir no código, toda task de tela fica com `decisão`, e a dependência técnica continua só em **Depende de**: ver a entrada de 2026-09-28 em [`decisions.md`](docs/business/decisions.md) |
+| **Bloqueio** | `dependência` espera outra task, `decisão` espera o dono do produto. Design não entra aqui: tela não espera o designer. Enquanto a fundação do design system não existir no código, toda task de tela fica com `decisão`, e a dependência técnica continua só em **Depende de**: ver [`decisions/2026-09-28-a-tela-e-implementada-a-partir-do-esboco-e-o-designer.md`](docs/business/decisions/2026-09-28-a-tela-e-implementada-a-partir-do-esboco-e-o-designer.md) |
 | **Módulo** | de qual módulo é o trabalho |
 | **Escopo** | `db`, `api`, `web`, `infra`, `docs` — qual disciplina pega |
 | **Tipo** | épico, history, task, em aberto, débito, bug |

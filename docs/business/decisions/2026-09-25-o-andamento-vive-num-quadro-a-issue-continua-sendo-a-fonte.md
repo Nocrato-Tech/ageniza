@@ -1,4 +1,5 @@
 # O andamento vive num quadro; a issue continua sendo a fonte
+
 **Data.** 2026-09-25
 
 **Contexto.** Com quarenta e seis issues abertas em três módulos, a lista deixou de responder as duas perguntas que importam para um time de quatro pessoas: **o que dá para fazer em paralelo agora** e **o que está esperando o quê**. Label não expressa dependência, e menção no texto não expressa parentesco.

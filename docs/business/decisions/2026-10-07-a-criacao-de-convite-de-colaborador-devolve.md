@@ -1,4 +1,5 @@
 # A criação de convite de colaborador devolve `supersededInvitationId`
+
 **Data.** 2026-10-07
 
 **Contexto.** A tela avisava "o convite anterior deixou de valer" por uma heurística sobre o cache das páginas de convites já carregadas (24 por página), apontada na revisão do #327: com mais de uma página, ou cache velho, a criação revogava o convite anterior em silêncio (issue #333, item que ficou de fora do #322). A rota de criação já revoga o pendente equivalente dentro da mesma transação; o dado existia só no banco.

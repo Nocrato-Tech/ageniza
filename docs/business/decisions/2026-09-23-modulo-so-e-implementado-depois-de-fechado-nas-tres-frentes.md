@@ -1,9 +1,10 @@
 # Módulo só é implementado depois de fechado nas três frentes, com SPEC no repositório
+
 **Data.** 2026-09-23
 
 **Contexto.** A decisão anterior tirou o escopo dos módulos do Notion, mas não disse como ele seria produzido aqui. O repositório mostra o resultado de não ter esse fluxo: a API tem cinco módulos implementados e `apps/web/src` não tem uma tela — backend inteiro primeiro, interface depois, com o modelo de dados nunca confrontado por uma tela. A própria leitura das páginas do Notion deixou claro que decisão de produto espalhada entre issue, comentário e conversa não sobrevive à entrada de mais gente no time.
 
-**Decisão.** Todo módulo passa por quatro fases, descritas em [module-process.md](module-process.md): entrevista de escopo em sete blocos, consolidação numa SPEC em `specs/<modulo>.md`, recorte em issues (*history* + *tasks* por frente) e fechamento com a SPEC corrigida no mesmo PR que divergir dela. A SPEC cobre backend, frontend e UX no mesmo documento, e nenhum módulo novo começa a ser implementado sem ela — `AGENTS.md` passa a exigir isso.
+**Decisão.** Todo módulo passa por quatro fases, descritas em [module-process.md](../module-process.md): entrevista de escopo em sete blocos, consolidação numa SPEC em `specs/<modulo>.md`, recorte em issues (*history* + *tasks* por frente) e fechamento com a SPEC corrigida no mesmo PR que divergir dela. A SPEC cobre backend, frontend e UX no mesmo documento, e nenhum módulo novo começa a ser implementado sem ela — `AGENTS.md` passa a exigir isso.
 
 Três regras sustentam o fluxo:
 

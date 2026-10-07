@@ -1,4 +1,5 @@
 # O aviso de `already_member` aparece uma vez no destino
+
 **Data.** 2026-10-07
 
 **Contexto.** `specs/auth.md` §7 dizia que `already_member` "não é erro" e levava ao contexto, mas não dizia onde nem como a pessoa sabia que o acesso já existia — e a descrição do PR #178 dizia o contrário. A re-revisão de #177/#178 (#184) deixou o ponto esperando decisão de produto.

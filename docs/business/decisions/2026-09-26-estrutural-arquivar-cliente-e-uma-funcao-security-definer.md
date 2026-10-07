@@ -1,4 +1,5 @@
 # ESTRUTURAL: arquivar cliente é uma função `security definer` de escopo único, usada pelo job e pela rota
+
 **Data.** 2026-09-26
 
 **Esta é uma mudança estrutural**, por mudar **como a autorização é avaliada** para trabalho sem requisição: abre uma exceção à decisão de 18/09 de que o worker age como um usuário e não contorna a RLS.

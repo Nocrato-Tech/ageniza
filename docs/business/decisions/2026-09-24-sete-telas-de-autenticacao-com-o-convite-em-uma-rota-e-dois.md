@@ -1,4 +1,5 @@
 # Sete telas de autenticação, com o convite em uma rota e dois estados
+
 **Data.** 2026-09-24
 
 **Contexto.** O módulo não tem nenhuma tela, e o backend já decide mais do que a interface costuma assumir: `GET /me/contexts/resolve` devolve `none`, `enter` ou `select`, e `GET /invitations/:token` devolve `accountExists`.

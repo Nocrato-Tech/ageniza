@@ -1,11 +1,12 @@
 # O repositório é a fonte do design system, com documento e página viva
+
 **Data.** 2026-09-28
 
 **Contexto.** A entrada anterior deixou pendente a fundação do design system no código, que precisa existir antes da primeira task de tela. O design system estava especificado numa página do Notion, ["UI System — Figma, Design Tokens & CSS"](https://app.notion.com/p/3d886d2ba8b08172a3fbcc31e1548c31), e o `AGENTS.md` trata o Notion como insumo histórico, nunca como fonte de verdade: a tela seria obrigada a seguir um documento que o próprio repositório não reconhece. No código havia 20 linhas de CSS com as cores escritas direto e um `Button` com `tone`, onde a página definia `variant`.
 
 **Decisão.** O design system **sai do Notion e passa a viver no repositório**, que vira a fonte de verdade dele. Ele tem duas formas:
 
-- um **documento**, [`docs/design-system.md`](../design-system.md), com o conteúdo migrado da página e adaptado aos caminhos e à stack reais;
+- um **documento**, [`docs/design-system.md`](../../design-system.md), com o conteúdo migrado da página e adaptado aos caminhos e à stack reais;
 - uma **página no próprio app** que mostra os tokens e os componentes ao vivo.
 
 A entrega sai em duas partes: a **parte A** traz o documento, os tokens em CSS em `apps/web/src/styles/` e o `Button` de `packages/ui` no vocabulário do documento (`variant`, `size`, `loading`); a **parte B** traz a página viva.

@@ -1,4 +1,5 @@
 # O portal nunca mostra o trabalho interno, e quem garante é a RLS
+
 **Data.** 2026-09-26
 
 **Contexto.** O cliente entra no portal para ver o que agrega valor a ele — calendário, aprovação, relatório, marca —, não o andamento bruto da equipe.

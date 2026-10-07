@@ -1,4 +1,5 @@
 # Campos do cliente e forma do estudo de marca
+
 **Data.** 2026-09-26
 
 **Contexto.** `clients` tem apenas `name` e `status`. O bloco 0 pediu dados da empresa, contato do dono, foto e um estudo de marca "quanto mais detalhado, melhor", com personas múltiplas e sugestão do cliente por thread.

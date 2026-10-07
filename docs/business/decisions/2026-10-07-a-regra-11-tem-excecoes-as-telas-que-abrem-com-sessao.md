@@ -1,4 +1,5 @@
 # A regra 11 tem exceções: as telas que abrem com sessão válida sem redirecionar
+
 **Data.** 2026-10-07
 
 **Contexto.** A regra 11 e a tabela da §7 diziam "qualquer tela deste módulo redireciona ao contexto ativo", sem exceção escrita, e o código nunca redirecionou `/senha/redefinir`, `/convite/:token` e `/email/confirmar` — a divergência foi achada na auditoria de fechamento do módulo (issue #342). Cada uma dessas telas precisa abrir justamente para quem já tem sessão: o convite é aceito por quem está logado (§7, Convite, com o aceite automático decidido em 2026-10-07), e os links de redefinir senha e de confirmar e-mail chegam por e-mail e podem ser de outra conta — inclusive de uma sessão aberta no mesmo navegador. As páginas de Termos e Privacidade são públicas por definição.

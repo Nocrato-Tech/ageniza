@@ -1,4 +1,5 @@
 # Entrada de agências apenas por comando interno
+
 **Data.** 2026-09-15
 
 **Contexto.** O produto atende a nossa agência e parceiros. Um cadastro público exigiria billing, trial e verificação de identidade, nada disso no escopo.

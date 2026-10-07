@@ -11,3 +11,4 @@
 **Origem.** As issues citadas, decidido em sessão.
 
 **Validação.** Pendente de validação do dono.
+

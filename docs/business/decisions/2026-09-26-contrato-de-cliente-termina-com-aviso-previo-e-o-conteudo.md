@@ -1,4 +1,5 @@
 # Contrato de cliente termina com aviso prévio, e o conteúdo além da data é cancelado
+
 **Data.** 2026-09-26
 
 **Contexto.** Ao pré-decidir o que acontece com conteúdo agendado de cliente arquivado, a regra dada foi "só publica até o começo da desativação; o que vier depois se cancela". Isso pressupõe uma desativação com data futura, que a decisão de estados não previa — ali, arquivar era sempre imediato.

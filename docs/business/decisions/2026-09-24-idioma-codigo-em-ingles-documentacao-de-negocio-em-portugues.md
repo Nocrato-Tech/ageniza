@@ -1,4 +1,5 @@
 # Idioma: código em inglês, documentação de negócio em português
+
 **Data.** 2026-09-24
 
 **Contexto.** O repositório já misturava os dois sem regra escrita: código, identificadores e comentários em inglês; `docs/business/` e as SPECs em português; mensagens ao usuário em português. Os commits eram em inglês com escopo (`feat(api):`) até 23/09 e passaram a português sem escopo a partir da sessão seguinte — mudança feita sem registro, e percebida só na auditoria de documentação.

@@ -1,4 +1,5 @@
 # Permissões de colaboradores: o Gestor edita cargo, nunca papel
+
 **Data.** 2026-09-24
 
 **Contexto.** Faltava definir o que separa o Admin do Gestor de conta. O modelo não tem hierarquia entre colaboradores — `ClientAssignment` liga colaborador a cliente, nunca colaborador a colaborador —, então qualquer poder administrativo do Gestor é poder sobre **todos**, inclusive sobre Admins.

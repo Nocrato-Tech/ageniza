@@ -1,4 +1,5 @@
 # Proteções de integridade do quadro, e a que não deve existir
+
 **Data.** 2026-09-24
 
 **Contexto.** O material do Notion listava quatro proteções para a tela de colaboradores. Uma delas custa caro e protege algo que já está garantido.

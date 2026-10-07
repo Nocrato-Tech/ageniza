@@ -1,4 +1,5 @@
 # Remover e reativar: quem vê removidos, o estado errado é 409, e a sessão não é encerrada
+
 **Data.** 2026-10-07
 
 **Contexto.** A #98 implementa `POST …/remove` e `POST …/reactivate`. A SPEC fixa as permissões, as proteções e que a reativação exige o papel no corpo; não fixa qual permissão é "administrativa" para revelar vínculos removidos (regra inviolável 9, e "apenas para Admin e Owner" em 2026-09-24), nem o que acontece ao remover quem já está removido (a issue deixa a escolha), nem o que a remoção faz com a sessão da pessoa. Nada abaixo muda tabela, policy ou formato de resposta usado por outra rota.

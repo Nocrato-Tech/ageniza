@@ -1,4 +1,5 @@
 # Listagem é paginada por página, com filtro e ordenação nomeados por rota
+
 **Data.** 2026-09-24
 
 **Contexto.** Nenhuma rota lista nada ainda, e `packages/contracts/src/pagination.ts` já contratava `{ data, meta }` com `page`, `pageSize`, `totalItems` e `totalPages` sem nunca ter sido usado. A primeira listagem define o padrão que todas as outras copiam.

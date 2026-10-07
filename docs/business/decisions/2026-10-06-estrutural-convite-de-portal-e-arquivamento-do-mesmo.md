@@ -1,4 +1,5 @@
 # ESTRUTURAL: convite de portal e arquivamento do mesmo cliente se serializam por trava de linha
+
 **Data.** 2026-10-06
 
 **Contexto.** A re-revisão de segurança do PR #202 (#123) executou, com duas transações reais, o cenário em que um convite de portal sobrevive ao arquivamento do cliente. T1 arquiva e mantém o commit pendente; T2 insere o convite, a policy `invitations_insert` ainda enxerga o cliente `active` (a visão de T2 não inclui a escrita não confirmada de T1) e o `INSERT` espera pela chave estrangeira. Quando T1 confirma, o `INSERT` conclui: o cliente fica `archived` com um convite pendente, contra as regras 6 e 15 da SPEC de clientes. A policy não resolve sozinha: ela avalia o estado de uma visão que o commit concorrente já tornou velha, e `archive_client` não enxerga uma linha que ainda não existe.

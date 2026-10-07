@@ -1,4 +1,5 @@
 # A #123 implementa a estrutural de arquivar cliente e substitui `invitations_insert`
+
 **Data.** 2026-09-30
 
 **Contexto.** A decisão de 2026-09-26 ("ESTRUTURAL: arquivar cliente é uma função `security definer` de escopo único, usada pelo job e pela rota") deixou a implementação para a issue #123, e a de 2026-09-18 ("O processamento de vídeo não contorna o RLS") é a regra a que aquela abre exceção. A #123 também tem de substituir a policy `invitations_insert` que o PR #159 deixou, porque ela aceita convite de portal para cliente arquivado, contra a regra 6 da SPEC.

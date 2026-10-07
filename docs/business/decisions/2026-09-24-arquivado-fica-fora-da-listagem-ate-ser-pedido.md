@@ -1,4 +1,5 @@
 # Arquivado fica fora da listagem até ser pedido
+
 **Data.** 2026-09-24
 
 **Contexto.** Com `archived` definido como estado terminal reversível de entidade de negócio, faltava dizer se ele aparece nas listagens.

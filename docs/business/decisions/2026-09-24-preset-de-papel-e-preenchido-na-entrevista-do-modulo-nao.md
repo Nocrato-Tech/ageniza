@@ -1,4 +1,5 @@
 # Preset de papel é preenchido na entrevista do módulo, não antecipadamente
+
 **Data.** 2026-09-24
 
 **Contexto.** Existem cinco papéis de sistema, e quatro deles — `account_manager`, `production`, `sales` e `finance` — estão com **zero permissões**: hoje não podem fazer nada. Preencher todos agora exigiria decidir permissões de Pipeline e Financeiro, que o próprio material do Notion tirou do MVP.

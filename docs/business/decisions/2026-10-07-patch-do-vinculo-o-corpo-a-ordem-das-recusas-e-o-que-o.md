@@ -1,4 +1,5 @@
 # PATCH do vínculo: o corpo, a ordem das recusas e o que o cargo aceita
+
 **Data.** 2026-10-07
 
 **Contexto.** A #97 implementa na API a regra estrutural de 2026-09-24 (só o Owner concede `admin`): o `PATCH` de cargo e papel e a mesma regra na criação e no reenvio de convite. A SPEC fixa as permissões por campo e as proteções, mas não o nome dos campos do corpo, o status de cada recusa, a ordem em que as checagens respondem, nem o que um cargo pode conter. Nada abaixo muda tabela, policy ou formato de resposta já usado por outra rota.

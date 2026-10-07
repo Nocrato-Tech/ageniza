@@ -1,4 +1,5 @@
 # ESTRUTURAL: a troca de e-mail da conta é um pedido aprovado pela operação, não uma edição
+
 **Data.** 2026-10-07
 
 **Contexto.** `auth."user"` é global: a mesma conta pode estar em várias agências, e para o Owner o e-mail amarra a assinatura. Por isso a decisão de 2026-09-24 deixou a troca de e-mail fora do MVP, com gatilho: o primeiro colaborador ou cliente real pedir a troca. Issue #80.
