@@ -90,7 +90,7 @@ export const ThreadSchema = z.object({
   openedBy: z.object({ name: z.string().nullable(), side: ConversationSideSchema }).strict(),
   lastComment: z.object({ side: ConversationSideSchema, at: z.string(), excerpt: z.string() }).strict(),
   commentCount: z.number().int().positive(),
-  /** Only the agency resolves; the name is `null` when the resolver never commented on the thread. */
+  /** Only the agency resolves; the name is `null` only for an owner with no agency link row to read it from. */
   resolvedBy: z.object({ name: z.string().nullable() }).strict().nullable(),
   resolvedAt: z.string().nullable()
 }).strict();

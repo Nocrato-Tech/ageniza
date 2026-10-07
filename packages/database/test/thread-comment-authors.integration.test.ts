@@ -42,8 +42,10 @@ const threadActivePersona = randomUUID();
 const threadArchivedPersona = randomUUID();
 const threadOtherClient = randomUUID();
 const threadMixedSides = randomUUID();
+const resolverOnly = randomUUID();
+const threadResolved = randomUUID();
 
-const allUsers = [ownerA, ownerB, adminA, adminB, portalOne, portalTwo, portalOtherClient, bothSides, outsider];
+const allUsers = [ownerA, ownerB, adminA, adminB, portalOne, portalTwo, portalOtherClient, bothSides, outsider, resolverOnly];
 
 type Rows<T> = { readonly rows: readonly T[] };
 type Transaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
@@ -107,6 +109,7 @@ beforeAll(async () => {
       user(portalTwo, 'Portal Two'),
       user(portalOtherClient, 'Portal Other'),
       user(bothSides, 'Both Sides'),
+      user(resolverOnly, 'Resolver Only', 'users/resolver.png'),
       user(outsider, 'Outsider')
     ]);
     await transaction('agencies').insert([
@@ -116,6 +119,7 @@ beforeAll(async () => {
     await transaction('agency_memberships').insert([
       { agency_id: agencyA, user_id: adminA, role_id: role.id },
       { agency_id: agencyA, user_id: bothSides, role_id: role.id },
+      { agency_id: agencyA, user_id: resolverOnly, role_id: role.id },
       { agency_id: agencyB, user_id: adminB, role_id: role.id }
     ]);
     await transaction('clients').insert([
@@ -139,7 +143,8 @@ beforeAll(async () => {
       { id: threadActivePersona, client_id: clientA, persona_id: activePersona, opened_by: portalOne, opened_side: 'client' },
       { id: threadArchivedPersona, client_id: clientA, persona_id: archivedPersona, opened_by: adminA, opened_side: 'agency' },
       { id: threadOtherClient, client_id: clientOther, section_key: 'branding', opened_by: adminA, opened_side: 'agency' },
-      { id: threadMixedSides, client_id: clientA, section_key: 'colors', opened_by: adminA, opened_side: 'agency' }
+      { id: threadMixedSides, client_id: clientA, section_key: 'colors', opened_by: adminA, opened_side: 'agency' },
+      { id: threadResolved, client_id: clientA, section_key: 'observations', opened_by: portalOne, opened_side: 'client' }
     ]);
     const comment = (thread: string, client: string, author: string, side: 'agency' | 'client') =>
       ({ thread_id: thread, client_id: client, author_user_id: author, author_side: side, body: `by ${side}` });
@@ -154,9 +159,14 @@ beforeAll(async () => {
       comment(threadOtherClient, clientOther, portalOtherClient, 'client'),
       // The same person writes from the two sides: each comment must resolve through its own link.
       comment(threadMixedSides, clientA, bothSides, 'agency'),
-      comment(threadMixedSides, clientA, bothSides, 'client')
+      comment(threadMixedSides, clientA, bothSides, 'client'),
+      comment(threadResolved, clientA, portalOne, 'client')
     ]);
   });
+
+  // Resolved by someone who never commented on it: the resolver is not a comment author. It is
+  // resolved after the fixture committed, because a client comment reopens its thread at commit.
+  await getOwner().knex('client_threads').where({ id: threadResolved }).update({ resolved_by: resolverOnly, resolved_at: new Date() });
 });
 
 afterAll(async () => {
@@ -269,6 +279,50 @@ describe('thread_comment_authors (#128, #130)', () => {
     ]);
   });
 
+  it('also returns who resolved the thread, on the agency side, even when they never commented', async () => {
+    const resolver = { author_user_id: resolverOnly, author_side: 'agency', name: 'Resolver Only', photo_key: 'users/resolver.png' };
+    expect(await authorsAs(adminA, threadResolved)).toEqual([resolver, portalOneAuthor]);
+    expect(await authorsAs(portalOne, threadResolved)).toEqual([resolver, portalOneAuthor]);
+    expect(await authorsAs(portalTwo, threadResolved)).toEqual([resolver, portalOneAuthor]);
+    // A thread nobody resolved has no resolver row.
+    expect(await authorsAs(adminA, threadSection)).toEqual([adminAuthor, portalOneAuthor, portalTwoAuthor]);
+  });
+
+  it('keeps the name of a resolver whose link was removed, and gives the resolver nothing once removed', async () => {
+    await getOwner().knex('agency_memberships').where({ agency_id: agencyA, user_id: resolverOnly }).update({ status: 'removed' });
+    try {
+      expect(await authorsAs(portalOne, threadResolved)).toEqual([
+        { author_user_id: resolverOnly, author_side: 'agency', name: 'Resolver Only', photo_key: 'users/resolver.png' },
+        portalOneAuthor
+      ]);
+      expect(await authorsAs(resolverOnly, threadResolved)).toEqual([]);
+    } finally {
+      await getOwner().knex('agency_memberships').where({ agency_id: agencyA, user_id: resolverOnly }).update({ status: 'active' });
+    }
+  });
+
+  it('hides the resolver from whoever cannot read the thread', async () => {
+    expect(await authorsAs(portalOtherClient, threadResolved)).toEqual([]);
+    expect(await authorsAs(adminB, threadResolved)).toEqual([]);
+    expect(await authorsAs(outsider, threadResolved)).toEqual([]);
+  });
+
+  it('resolves the resolver only through an agency link, never through a client link', async () => {
+    const stray = randomUUID();
+    await getOwner().knex('client_threads').insert({
+      id: stray, client_id: clientA, section_key: 'tone_of_voice', opened_by: adminA, opened_side: 'agency', resolved_by: portalTwo, resolved_at: new Date()
+    });
+    await getOwner().knex('client_thread_comments').insert({
+      thread_id: stray, client_id: clientA, author_user_id: adminA, author_side: 'agency', body: 'x'
+    });
+    try {
+      expect(await authorsAs(adminA, stray)).toEqual([adminAuthor]);
+    } finally {
+      await getOwner().knex('client_thread_comments').where({ thread_id: stray }).delete();
+      await getOwner().knex('client_threads').where({ id: stray }).delete();
+    }
+  });
+
   it('does not borrow the other side\'s link for a comment whose side the author never held', async () => {
     const stray = randomUUID();
     await getOwner().knex('client_threads').insert({
@@ -306,8 +360,8 @@ describe('thread_comment_authors (#128, #130)', () => {
   });
 
   it('reads a thread for exactly the callers the client_threads policy lets read it', async () => {
-    const callers = [adminA, ownerA, bothSides, portalOne, portalTwo, portalOtherClient, adminB, ownerB, outsider];
-    const threads = [threadSection, threadActivePersona, threadArchivedPersona, threadOtherClient, threadMixedSides];
+    const callers = [adminA, ownerA, bothSides, portalOne, portalTwo, portalOtherClient, adminB, ownerB, outsider, resolverOnly];
+    const threads = [threadSection, threadActivePersona, threadArchivedPersona, threadOtherClient, threadMixedSides, threadResolved];
     for (const caller of callers) {
       for (const thread of threads) {
         const byPolicy = await policyReadableAs(caller, thread);

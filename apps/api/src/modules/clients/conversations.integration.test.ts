@@ -354,7 +354,26 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
       // The owner has no link row to read a name from, so the author is unresolved rather than invented.
       expect(opened.json().comment.author).toBeNull();
       expect(opened.json().thread.openedBy).toEqual({ name: null, side: 'agency' });
-      expect((await call('POST', `${agencyThreads(agencyA, clientA1)}/${opened.json().thread.id}/resolve`, cookies.ownerUser!)).statusCode).toBe(200);
+      const resolved = await call('POST', `${agencyThreads(agencyA, clientA1)}/${opened.json().thread.id}/resolve`, cookies.ownerUser!);
+      expect(resolved.statusCode).toBe(200);
+      // The one case a resolver has no name: an owner with no link row to read it from.
+      expect(resolved.json()).toMatchObject({ state: 'resolved', resolvedBy: { name: null } });
+    });
+
+    it('names who resolved a thread even when they never commented on it, on both sides', async () => {
+      const threadId = await seedThread(clientA1, { sectionKey: 'positioning' }, [{ author: 'portalOne', side: 'client', at: '2026-01-01T10:00:00Z' }], '2026-01-02T10:00:00Z');
+      expect(await threadRow(threadId)).toMatchObject({ resolved_by: users.admin!.id });
+      const listedBy = async (url: string, cookie: string): Promise<unknown> =>
+        (await call('GET', `${url}?${section('positioning')}&state=resolved&pageSize=100`, cookie)).json().data.find((item: { id: string }) => item.id === threadId);
+
+      for (const listed of [
+        await listedBy(agencyThreads(agencyA, clientA1), cookies.manager!),
+        await listedBy(portalThreads(clientA1), cookies.portalOne!)
+      ]) {
+        expect(listed).toMatchObject({ state: 'resolved', resolvedBy: { name: ADMIN_NAME } });
+      }
+      const resolved = await call('POST', `${agencyThreads(agencyA, clientA1)}/${threadId}/resolve`, cookies.manager!);
+      expect(resolved.json()).toMatchObject({ state: 'resolved', resolvedBy: { name: ADMIN_NAME } });
     });
 
     it('refuses a side in the body and writes the agency side regardless', async () => {

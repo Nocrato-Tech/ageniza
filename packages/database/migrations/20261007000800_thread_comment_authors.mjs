@@ -10,8 +10,8 @@
 // to their owner or to the agency. So the agency and the portal could not share one author query.
 //
 // This function is the single read path both sides use. It is `security definer` and single
-// purpose: for one thread, the people who commented on it, as {user, side, name, photo key} and
-// nothing else. The access check repeats the `client_threads_select` predicate, built from the
+// purpose: for one thread, the people who commented on it and the one who resolved it (always on
+// the agency side), as {user, side, name, photo key} and nothing else. The access check repeats the `client_threads_select` predicate, built from the
 // same functions the policy calls (`is_agency_member`, `is_client_member`, `client_agency_id`) and
 // the same persona-active rule for the portal. A caller who cannot read the thread gets zero rows,
 // exactly like a thread that does not exist, so the function is not an existence oracle.
@@ -29,7 +29,7 @@ export async function up(knex) {
     set search_path = ''
     as $function$
       with readable_thread as (
-        select thread.id, thread.client_id
+        select thread.id, thread.client_id, thread.resolved_by
         from public.client_threads thread
         where thread.id = p_thread_id
           and (
@@ -47,9 +47,14 @@ export async function up(knex) {
           )
       ),
       authors as (
-        select distinct comment.author_user_id, comment.author_side, readable_thread.client_id
+        select comment.author_user_id, comment.author_side, readable_thread.client_id
         from readable_thread
         join public.client_thread_comments comment on comment.thread_id = readable_thread.id
+        union
+        -- Only the agency resolves (rule 9), so the resolver is read through the agency link.
+        select readable_thread.resolved_by, 'agency'::text, readable_thread.client_id
+        from readable_thread
+        where readable_thread.resolved_by is not null
       )
       select authors.author_user_id, authors.author_side, member.name, member.image
       from authors

@@ -165,7 +165,9 @@ As do portal usam `requireSession` e `requireClientAccess`, sem permissão do ca
 - **Autor**: nome e foto saem de `app_private.thread_comment_authors`, a função `security definer`
   que lê o vínculo do lado do comentário e só responde a quem lê a thread (decisão
   `2026-10-07-autor-do-comentario-pelo-vinculo`). `author` é `null` quando o lado do comentário não
-  tem vínculo de onde ler o nome, como o dono da agência sem linha de vínculo. A conversa nunca lê
+  tem vínculo de onde ler o nome, como o dono da agência sem linha de vínculo. A mesma função devolve
+  quem resolveu a thread, pelo vínculo de agência, então `resolvedBy.name` existe mesmo quando quem
+  resolveu nunca comentou (e só é `null` nesse mesmo caso do dono). A conversa nunca lê
   `auth."user"` por id.
 - **Texto do comentário**: aparado, não vazio, até 5.000 bytes UTF-8 (o teto da coluna).
 
