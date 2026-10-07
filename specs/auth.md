@@ -20,7 +20,7 @@ Deixar alguém entrar no produto, provar quem é, escolher em qual dos seus cont
 - **Cadastro público.** Não existe e não vai existir: conta nasce de convite (`disableSignUp: true` no Better Auth).
 - **Verificação de e-mail.** Já está satisfeita — a conta nasce `emailVerified = true` porque o convite chegou naquele endereço.
 - **Troca de senha por quem está logado.** Fora do MVP; a recuperação por link cobre quem perdeu o acesso.
-- **Troca de e-mail da conta.** Fora do MVP — seção 10.
+- **Troca de e-mail da conta pela própria pessoa.** A pessoa não troca sozinha: ela pede, e a operação aprova (regras 12 a 17 da seção 5).
 - **Vínculo entre identidades.** Dois e-mails são duas contas, e elas não se conhecem.
 - **Criação de agência.** É comando interno da operação, não fluxo de produto.
 - **Login social e segundo fator.** Nunca entraram em pauta.
@@ -44,7 +44,7 @@ Este módulo é a única parte do produto que atende **quem ainda não tem conte
 
 ## 3. Entidades e campos
 
-Tudo já existe. **Nenhuma tabela nova, nenhuma coluna nova.**
+Quase tudo já existe. **Uma tabela nova** (`email_change_requests`, issue #80, 2026-10-07) e nenhuma coluna nova nas que já existem.
 
 | tabela | o que importa aqui |
 |---|---|
@@ -55,6 +55,7 @@ Tudo já existe. **Nenhuma tabela nova, nenhuma coluna nova.**
 | `public.invitations` | guarda **só o hash** do token; nem a operação recupera o token depois de enviado |
 | `public.legal_acceptances` | versão de Termos e de Privacidade, com data e hora |
 | `public.user_context_preferences` | o último contexto usado, uma linha por usuário |
+| `public.email_change_requests` | o pedido de troca de e-mail: um aberto por conta, com o e-mail antigo e o novo, o estado (`pending`, `approved`, `rejected`, `completed`, `superseded`) e, só quando aprovado, o hash do link e a validade. A aplicação não lê nem escreve a tabela: só pelas duas funções da seção 6 |
 
 ## 4. Estados e transições
 
@@ -103,6 +104,12 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 9. Trocar de contexto grava a preferência e **não** recria a sessão.
 10. `401` em qualquer requisição leva ao login preservando o destino, e nunca deixa dado antigo na tela.
 11. Quem tem sessão válida e abre uma tela deste módulo é levado ao seu contexto, em vez de logar de novo.
+12. A pessoa **não troca o próprio e-mail**: ela pede, pelo menu de conta, informando o e-mail novo e a **senha atual**, e a **operação** aprova pelo CLI (`cli:email-change`), porque a conta é global e o pedido não pertence a nenhuma agência (2026-10-07, pendente de validação). Senha errada não cria pedido. Há **um pedido aberto por conta**; um novo substitui o anterior. O endereço **atual** recebe o aviso "pediram a troca do e-mail desta conta; se não foi você, troque a senha".
+13. Aprovado o pedido, um link de **uso único**, válido por 48 horas, vai ao e-mail **novo**. Pedido não aprovado nunca troca nada.
+14. Confirmar o link troca o e-mail (marcando-o como verificado), **encerra todas as sessões** da conta e os links de redefinição de senha pendentes, e avisa o endereço **antigo**. Link usado, vencido, substituído ou recusado, e e-mail que outra conta passou a usar, respondem o mesmo `INVALID_LINK`.
+15. E-mail novo que já pertence a outra conta recebe **a mesma resposta** de qualquer outro: a rota nunca revela quais e-mails têm conta. A operação vê a colisão ao listar e ao aprovar, e o aprovar é recusado.
+16. Conta que é **Owner** de alguma agência: o pedido existe igual, mas aprovar exige a operação confirmar a titularidade fora do produto (`--ownership-confirmed`), porque o e-mail do Owner amarra a assinatura.
+17. Convites pendentes endereçados ao e-mail antigo **não mudam**: convite é por e-mail, não por conta.
 
 ## 6. Backend
 
@@ -122,6 +129,8 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 | `GET` | `/me/contexts` | `{ contexts }` |
 | `GET` | `/me/contexts/resolve` | `none` \| `enter` \| `select` |
 | `PUT` | `/me/last-context` | 204 |
+| `POST` | `/me/email-change` | corpo `{ newEmail, currentPassword }`, e nada mais (`.strict()`); `202 {}`. Senha errada é `403 INVALID_PASSWORD` (403, e não 401, que a interface lê como sessão encerrada); o e-mail igual ao atual é `400 SAME_EMAIL`; 5 pedidos por hora e por conta |
+| `POST` | `/email-change/confirm` | pública, corpo `{ token }`; `200 {}`, ou `400 INVALID_LINK` para qualquer link que não pode trocar o e-mail |
 
 Limites de tentativa já aplicados por IP, por IP+e-mail e por e-mail global (`policy.ts`): login 10 por 15 min no par IP+e-mail, recuperação 3.
 
@@ -133,6 +142,19 @@ Limites de tentativa já aplicados por IP, por IP+e-mail e por e-mail global (`p
 2. `GET /me/contexts/resolve` — `decision: 'none'` encerra a sessão, em vez de devolver uma aplicação vazia.
 
 Foi **mudança de contrato numa rota implantada**: os testes de integração de login mudaram junto.
+
+### Implementado (issue #80)
+
+**Troca de e-mail por pedido** (regras 12 a 17), em um módulo próprio, `email-change`.
+
+**O mecanismo escolhido.** O `changeEmail` do Better Auth 1.7.5 foi avaliado e **não serve**: é autoatendimento (sem senha atual e sem aprovação de ninguém), o token é um JWT assinado que pode ser reapresentado até vencer, não grava pedido nenhum, e não encerra as sessões. Por isso o token é próprio, no mesmo formato do convite: 32 bytes aleatórios, só o hash no banco, uso único.
+
+1. `POST /me/email-change` confere a senha atual contra o hash da conta (`password.verify` do Better Auth) e só então chama `app_private.request_email_change(new_email)`, função `security definer` que toma a conta do ator da transação, nunca de argumento: normaliza o endereço, recusa o que a conta já tem, substitui o pedido aberto e grava o novo. O endereço atual é avisado, em segundo plano, como a redefinição de senha.
+2. A operação usa `cli:email-change`, que conecta como o dono do banco, como o `cli:agency`: `list` mostra os pedidos abertos (com a colisão de e-mail e se a conta é Owner), `approve --request-id <uuid> [--ownership-confirmed]` gera o link e o envia ao e-mail novo, `reject --request-id <uuid>` encerra o pedido. Aprovar de novo um pedido já aprovado e não usado emite um link novo e invalida o anterior, que é como se reenvia.
+3. `POST /email-change/confirm` chama `app_private.confirm_email_change(token_hash)`, que numa transação trava o pedido, confere que está aprovado e dentro da validade, que a conta ainda tem o e-mail do pedido e que ninguém passou a usar o novo, troca o e-mail, apaga as sessões e as verificações (links de redefinição) da conta, e fecha o pedido. A API então avisa o endereço antigo.
+4. `ageniza_app` não tem privilégio nenhum sobre `email_change_requests`: nem a pessoa lê o próprio pedido.
+
+**Limitações aceitas.** Recusar um pedido não avisa a pessoa (a operação fala com ela fora do produto). A operação descobre os pedidos rodando `list`; não há notificação. Quem perdeu o acesso ao e-mail antigo **e** à senha continua sem caminho: recuperação de conta fica fora do MVP. O teto de pedidos é em memória, como o dos demais limites de autenticação.
 
 ### Implementado (issue #175)
 
@@ -308,6 +330,7 @@ Presente em toda tela autenticada, em todo o produto:
 ┌─────────────────────────┐
 │ <Contexto ativo>        │
 │ Trocar de contexto      │
+│ Pedir troca de e-mail   │
 ├─────────────────────────┤
 │ Sair                    │
 │ Sair de todas as ses…   │
@@ -315,6 +338,14 @@ Presente em toda tela autenticada, em todo o produto:
 ```
 
 É o que torna `POST /auth/logout-all` alcançável, e é onde o seletor de contexto vive durante o uso. Não é tela de perfil — é o menu que a futura tela de perfil vai herdar.
+
+### Pedir troca de e-mail
+
+Item do menu de conta que abre uma janela com **Novo e-mail** e **Senha atual**. Confere o formato na tela e envia só os dois campos. Senha errada aparece no campo da senha; e-mail igual ao atual, no campo do e-mail; excesso de tentativas e falha de rede, como mensagem da janela, que pode ser repetida. Ao enviar, diz que o pedido foi feito, que o e-mail atual foi avisado e que a operação analisa; **não diz nada sobre o e-mail novo**, porque a resposta é a mesma quando outra conta já o usa.
+
+### Confirmar novo e-mail — `/email/confirmar?token=…`
+
+Tela pública do link que a aprovação envia ao e-mail novo. **Pede um clique** em vez de confirmar ao abrir: um leitor de e-mail que abre o link não pode gastá-lo. O token sai da barra de endereço assim que a tela o guarda. Ao confirmar, mostra que o e-mail mudou e que todas as sessões foram encerradas, descarta o estado local da sessão e leva a **Entrar**. Link inválido, usado ou vencido mostra o estado "Este link não é mais válido", com a validade de 48 horas.
 
 ### Estados de tela
 
@@ -341,16 +372,16 @@ Nada novo. O e-mail transacional de convite e de recuperação já existe (issue
 - [ ] muda como a autorização é avaliada
 - [ ] exigiria backfill
 
-**Nenhum dos cinco.** Duas coisas a declarar de todo modo:
+**Nenhum dos cinco.** Três coisas a declarar de todo modo:
 
 1. **`POST /auth/login` muda de contrato** — passa a negar credencial correta sem contexto, e um código de erro novo aparece. Rota implantada, testes de integração alterados junto. Não é estrutural pelos critérios, e não é gratuito.
 2. **Vincular identidades seria estrutural** e foi descartado nesta sessão: mudaria o significado de `User`, atravessando RLS, `current_user_id()` e toda tabela que referencia usuário.
+3. **A troca de e-mail por pedido (2026-10-07, pendente de validação)** cria uma tabela, duas rotas e um e-mail transacional, e abre um caminho de escrita sobre o e-mail em `auth."user"` por função `security definer`. Não altera tabela que já existe e não precisa de backfill; o registro está em `decisions.md`.
 
 ## 10. Em aberto
 
 | ponto | gatilho | quem decide |
 |---|---|---|
-| Troca de e-mail da conta | o primeiro colaborador ou cliente real pedir a troca | Pedro Vidal |
 | Reaceite quando Termos ou Privacidade mudar de versão | a primeira alteração de um dos documentos depois de existir gente com conta | Pedro Vidal |
 
 ## 11. Decisões registradas
@@ -362,6 +393,8 @@ Em [`docs/business/decisions.md`](../docs/business/decisions.md), 2026-09-24:
 - Credencial correta sem nenhum contexto não cria sessão
 - Sete telas de autenticação, com o convite em uma rota e dois estados
 - Termos e Privacidade são conteúdo estático versionado, com aceite único
+
+E, 2026-10-07 (**pendente de validação**): a troca de e-mail da conta é um pedido aprovado pela operação, não uma edição — fecha o ponto em aberto sobre a troca de e-mail.
 
 E, 2026-09-29 (**pendente de validação**): o login aceita o token do convite para quem tem zero contextos, complementando a decisão de 2026-09-24 sobre credencial correta sem contexto.
 
@@ -379,7 +412,9 @@ E, herdadas de [`autorizacao.md`](autorizacao.md): "sem permissão" não é tela
 | [#66](https://github.com/Nocrato-Tech/ageniza/issues/66) Escolher e trocar de contexto | [#77](https://github.com/Nocrato-Tech/ageniza/issues/77) tela `/contextos` · [#78](https://github.com/Nocrato-Tech/ageniza/issues/78) seletor no menu | web |
 | [#67](https://github.com/Nocrato-Tech/ageniza/issues/67) Negar acesso sem vínculo | [#68](https://github.com/Nocrato-Tech/ageniza/issues/68) zero contextos no login e no resolve · [#79](https://github.com/Nocrato-Tech/ageniza/issues/79) tela Acesso encerrado | api · web |
 
-**Em aberto:** [#80](https://github.com/Nocrato-Tech/ageniza/issues/80) troca de e-mail · [#81](https://github.com/Nocrato-Tech/ageniza/issues/81) reaceite de Termos.
+**Em aberto:** [#81](https://github.com/Nocrato-Tech/ageniza/issues/81) reaceite de Termos.
+
+**Decidida em 2026-10-07:** [#80](https://github.com/Nocrato-Tech/ageniza/issues/80), troca de e-mail — pedido aprovado pela operação (seção 5, regras 12 a 17).
 
 A [#54](https://github.com/Nocrato-Tech/ageniza/issues/54), que registrava a dívida de "as telas nunca foram desenhadas", foi fechada por este recorte.
 

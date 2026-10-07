@@ -217,6 +217,18 @@ docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-fil
 docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js resend-activation --agency-id <agency UUID>
 ```
 
+Account e-mail changes are operator-only too, with the same image and files. A person asks from the
+account menu; nothing notifies the operation, so `list` is how open requests are found. `approve`
+mails a single-use link, valid for 48 hours, to the **new** address and prints only the request id
+and the expiry. An account that owns an agency is approved only with `--ownership-confirmed`,
+after the operation confirmed the holder outside the product.
+
+```bash
+docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/email-change.js list
+docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/email-change.js approve --request-id <request UUID> [--ownership-confirmed]
+docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/email-change.js reject --request-id <request UUID>
+```
+
 The runtime file must also carry the independent legal-document versions used when the owner
 accepts the activation invitation. Both values are required and use `YYYY-MM-DD` format; changing
 one does not imply changing the other:
