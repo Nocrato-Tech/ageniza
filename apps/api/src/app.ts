@@ -11,6 +11,7 @@ import { registerCollaboratorModule, type CollaboratorModuleDependencies } from 
 import { registerContextModule, type ContextModuleDependencies } from './modules/contexts/routes.js';
 import { createInvitationTokenLookup, registerInvitationModule, type InvitationModuleDependencies } from './modules/invitations/routes.js';
 import { registerMediaModule, type MediaModuleDependencies } from './modules/media/routes.js';
+import { registerLegalModule, type LegalModuleDependencies } from './modules/legal/routes.js';
 import { registerProfileModule, type ProfileModuleDependencies } from './modules/profile/routes.js';
 import { applyCorrelationHeaders } from './plugins/infra/correlation.js';
 import { registerCors } from './plugins/infra/cors.js';
@@ -45,6 +46,8 @@ export interface ApiAppOptions {
   media?: MediaModuleDependencies;
   /** Profile dependencies are optional; undefined where identity storage is not configured. */
   profile?: ProfileModuleDependencies;
+  /** Legal acceptance dependencies are optional; undefined for tests that never touch the legal routes. */
+  legal?: LegalModuleDependencies;
   /**
    * Test-only observer for every registered route, fired by Fastify's `onRoute` hook before
    * `app.ready()`. The API documentation test uses it to prove the OpenAPI document covers the
@@ -182,6 +185,9 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   }
   if (options.profile !== undefined) {
     registerProfileModule(app, options.profile);
+  }
+  if (options.legal !== undefined) {
+    registerLegalModule(app, options.legal);
   }
   // Development-only API reference (issue #182). The dynamic import keeps the viewer and the
   // OpenAPI generator out of the production image, which prunes devDependencies. `containerLocal`

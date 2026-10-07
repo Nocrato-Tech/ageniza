@@ -1,4 +1,15 @@
+import { Outlet } from 'react-router-dom';
+
 import { useDocumentTitle } from './document-title.js';
+import { LegalNotice } from './legal-notice.js';
+
+/** The portal area: every portal screen sits under the legal notice (issue #81). */
+export function PortalAreaLayout() {
+  return <>
+    <LegalNotice />
+    <Outlet />
+  </>;
+}
 
 /**
  * Placeholder for the client portal shell (specs/clientes.md section 7). The destination after

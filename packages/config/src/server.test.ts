@@ -97,9 +97,24 @@ describe('server configuration', () => {
     expect(() => loadApiConfig({ ...localEnvironment, AUTH_PRIVACY_VERSION: undefined })).toThrow('AUTH_PRIVACY_VERSION');
     expect(() => loadApiConfig({ ...localEnvironment, AUTH_TERMS_VERSION: '2026-1-01' })).toThrow('YYYY-MM-DD');
     expect(() => loadApiConfig({ ...localEnvironment, AUTH_PRIVACY_VERSION: 'not-a-date' })).toThrow('YYYY-MM-DD');
-    expect(loadApiConfig({ ...localEnvironment, AUTH_TERMS_VERSION: '2027-12-31', AUTH_PRIVACY_VERSION: '2028-01-01' })).toMatchObject({
-      authTermsVersion: '2027-12-31', authPrivacyVersion: '2028-01-01'
+    expect(loadApiConfig({ ...localEnvironment, AUTH_TERMS_VERSION: '2025-12-31', AUTH_PRIVACY_VERSION: '2026-01-01' })).toMatchObject({
+      authTermsVersion: '2025-12-31', authPrivacyVersion: '2026-01-01'
     });
+  });
+
+  it('refuses a document version that is not a real date or lies in the future (issue #81 security review)', () => {
+    for (const name of ['AUTH_TERMS_VERSION', 'AUTH_PRIVACY_VERSION'] as const) {
+      for (const impossible of ['2026-02-30', '2026-99-99', '2026-13-01', '2026-00-10', '0000-01-01', '2025-02-29']) {
+        expect(() => loadApiConfig({ ...localEnvironment, [name]: impossible }), `${name} ${impossible}`).toThrow('real calendar date');
+      }
+      expect(() => loadApiConfig({ ...localEnvironment, [name]: '9999-12-31' }), name).toThrow('future');
+      const tomorrow = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+      expect(() => loadApiConfig({ ...localEnvironment, [name]: tomorrow }), name).toThrow('future');
+    }
+    // A leap day is a real date, and the day the product is in today is accepted.
+    expect(loadApiConfig({ ...localEnvironment, AUTH_TERMS_VERSION: '2024-02-29' })).toMatchObject({ authTermsVersion: '2024-02-29' });
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+    expect(loadApiConfig({ ...localEnvironment, AUTH_PRIVACY_VERSION: today })).toMatchObject({ authPrivacyVersion: today });
   });
 
   it('requires a sufficiently long Better Auth secret without exposing supplied values', () => {
