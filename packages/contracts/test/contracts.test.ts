@@ -100,6 +100,7 @@ describe('invitation contracts', () => {
       name: 'Person', password: '1234567890', acceptTerms: true
     });
     expect(() => InvitationAcceptNewAccountRequestSchema.parse({ name: 'Person', password: '1234567890', acceptTerms: false })).toThrow();
+    expect(() => InvitationAcceptNewAccountRequestSchema.parse({ name: 'Person', email: 'other@example.test', password: '1234567890', acceptTerms: true })).toThrow();
     expect(InvitationAcceptNewAccountResponseSchema.parse({ status: 'accepted', context })).toEqual({ status: 'accepted', context });
     expect(InvitationAcceptRequestSchema.parse(undefined)).toBeUndefined();
     expect(InvitationAcceptResponseSchema.parse({ status: 'already_member', context })).toEqual({ status: 'already_member', context });

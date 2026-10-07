@@ -372,6 +372,60 @@ describe('invitation HTTP module', () => {
     expect(legal).toHaveLength(2);
   });
 
+  it('creates the account with the invitation email, already verified, for every invitation purpose', async () => {
+    const activationAgency = await createAgency('Verified email activation agency', null);
+    const cases = [
+      { purpose: 'agency_activation' as const, agencyId: activationAgency, roleId: null, clientId: null },
+      { purpose: 'collaborator_invite' as const, agencyId, roleId: productionRoleId, clientId: null },
+      { purpose: 'client_invite' as const, agencyId, roleId: null, clientId }
+    ];
+    for (const item of cases) {
+      const email = `verified-${item.purpose}-${randomUUID()}@example.test`;
+      const invitation = await insertInvitation({ ...item, email });
+      const response = await app.app.inject({
+        method: 'POST',
+        url: `/invitations/${invitation.token}/accept-new-account`,
+        headers: origin,
+        payload: { name: 'Verified Invitee', password: 'a secure activation password', acceptTerms: true }
+      });
+      expect(response.statusCode, item.purpose).toBe(201);
+      const created = await owner.knex('auth.user').where({ email }).select('id', 'email', 'emailVerified');
+      expect(created, item.purpose).toHaveLength(1);
+      expect(created[0]).toMatchObject({ email, emailVerified: true });
+      createdUserIds.push(created[0]!.id as string);
+    }
+  });
+
+  it('rejects an email in the accept-new-account body with 400 and writes nothing', async () => {
+    const agency = await createAgency('Foreign email activation agency', null);
+    const email = `invited-${randomUUID()}@example.test`;
+    const foreignEmail = `foreign-${randomUUID()}@example.test`;
+    const invitation = await insertInvitation({ agencyId: agency, purpose: 'agency_activation', roleId: null, clientId: null, email });
+
+    const rejected = await app.app.inject({
+      method: 'POST',
+      url: `/invitations/${invitation.token}/accept-new-account`,
+      headers: origin,
+      payload: { name: 'Foreign Email', email: foreignEmail, password: 'a secure activation password', acceptTerms: true }
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+    await expect(owner.knex('auth.user').whereIn('email', [email, foreignEmail]).count({ count: '*' }).first()).resolves.toMatchObject({ count: '0' });
+    await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('used_at')).resolves.toEqual({ used_at: null });
+    await expect(owner.knex('agencies').where({ id: agency }).first('owner_user_id')).resolves.toEqual({ owner_user_id: null });
+
+    const recovered = await app.app.inject({
+      method: 'POST',
+      url: `/invitations/${invitation.token}/accept-new-account`,
+      headers: origin,
+      payload: { name: 'Foreign Email', password: 'a secure activation password', acceptTerms: true }
+    });
+    expect(recovered.statusCode).toBe(201);
+    const users = await owner.knex('auth.user').whereIn('email', [email, foreignEmail]).select('id', 'email');
+    expect(users.map((row) => row.email)).toEqual([email]);
+    createdUserIds.push(users[0]!.id as string);
+  });
+
   it('validates the invited name on accept-new-account: hostile names are 400 without an error log, international names succeed', async () => {
     const logs = captureLogs();
     const logSender = createFakeEmailSender();
