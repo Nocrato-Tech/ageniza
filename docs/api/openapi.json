@@ -4506,7 +4506,7 @@
             }
           },
           "409": {
-            "description": "ACCOUNT_EXISTS: Já existe uma conta para este endereço.",
+            "description": "ACCOUNT_EXISTS: Já existe uma conta para este endereço. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {

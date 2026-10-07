@@ -633,6 +633,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       COMMON_ERRORS.internal,
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 409, code: 'ACCOUNT_EXISTS' },
+      { status: 409, code: 'TRY_AGAIN' },
       { status: 410, code: 'INVALID_LINK' }
     ]
   },

@@ -991,6 +991,58 @@ describe('invitation HTTP module', () => {
         if (!released) await holder.rollback();
       }
     }, 20_000);
+
+    it('answers 409 TRY_AGAIN when an accept-new-account loses a deadlock, creates nothing, and the link still works afterwards', async () => {
+      const raceOwner = await makeUser('invitations-deadlock-new-account-owner');
+      const raceAgencyId = await createAgency('Invitations deadlock new account agency', raceOwner.id);
+      const email = `deadlock-new-account-${randomUUID()}@example.test`;
+      const invitation = await insertInvitation({ agencyId: raceAgencyId, email });
+      const payload = { name: 'Deadlock Invitee', password: 'a secure activation password', acceptTerms: true };
+
+      const holder = await owner.knex.transaction();
+      let released = false;
+      try {
+        // Same race as the existing-account acceptance: the call inserts the account, locks the
+        // invitation row and then waits for the agency the holder owns; the holder then asks for the row.
+        const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.agencies where id = ?::uuid for update', [raceAgencyId]);
+        if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one agency.');
+        const holderPid = await backendPid(holder);
+        const accepted = app.app.inject({
+          method: 'POST',
+          url: `/invitations/${invitation.token}/accept-new-account`,
+          remoteAddress: '127.0.0.6',
+          headers: origin,
+          payload
+        });
+        await waitForBlockedQueryStart(owner, holderPid);
+        await raw(holder, 'select id from public.invitations where id = ?::uuid for update', [invitation.invitationId]);
+        await holder.commit();
+        released = true;
+
+        const response = await accepted;
+        expect(response.statusCode).toBe(409);
+        expect(response.json().error).toEqual({ code: 'TRY_AGAIN', message: 'Houve um conflito momentâneo. Tente de novo.' });
+        expect(JSON.stringify(response.json())).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
+        expect(response.cookies).toEqual([]);
+        await expect(owner.knex('auth.user').where({ email }).first('id')).resolves.toBeUndefined();
+        await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('used_at')).resolves.toEqual({ used_at: null });
+        await expect(owner.knex('agency_memberships').where({ agency_id: raceAgencyId }).whereNot({ user_id: raceOwner.id }).first('id')).resolves.toBeUndefined();
+
+        const retried = await app.app.inject({
+          method: 'POST',
+          url: `/invitations/${invitation.token}/accept-new-account`,
+          remoteAddress: '127.0.0.6',
+          headers: origin,
+          payload
+        });
+        expect(retried.statusCode).toBe(201);
+        const created = await owner.knex('auth.user').where({ email }).select('id');
+        expect(created).toHaveLength(1);
+        createdUserIds.push(created[0]!.id as string);
+      } finally {
+        if (!released) await holder.rollback();
+      }
+    }, 20_000);
   });
 
   it.each([

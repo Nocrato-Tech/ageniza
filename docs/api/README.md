@@ -405,7 +405,7 @@ Cria a conta e aceita o convite.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `403 CSRF_REJECTED` · `409 ACCOUNT_EXISTS` · `410 INVALID_LINK` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `403 CSRF_REJECTED` · `409 ACCOUNT_EXISTS` · `409 TRY_AGAIN` · `410 INVALID_LINK` · `500 INTERNAL_ERROR`
 
 #### `POST /invitations/:token/accept`
 

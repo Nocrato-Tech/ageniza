@@ -815,6 +815,7 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
         if (result.rows[0] === undefined) throw new HttpError(INVITATION_INVALID);
       });
     } catch (error) {
+      if (isRetryableConflict(error)) throw tryAgain();
       if (isDuplicateUserError(error)) throw accountExists();
       if (typeof error === 'object' && error !== null && 'code' in error && String((error as { code?: unknown }).code).startsWith('A')) throw new HttpError(INVITATION_INVALID);
       throw error;
