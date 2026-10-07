@@ -138,9 +138,11 @@ export function LoginPage() {
     }
     if (inviteToken !== undefined) {
       // Rule 3a: a zero-context session created for an invitation must not call resolve, which
-      // would end it before the invitation is accepted. Go back to the invitation instead.
+      // would end it before the invitation is accepted. Go back to the invitation instead,
+      // marking that the login came from the invite link: the screen accepts on its own when the
+      // authenticated account is the invited one (decisions 2026-10-07).
       await authStore.refresh();
-      navigate(destination ?? `/convite/${encodeURIComponent(inviteToken)}`, { replace: true });
+      navigate(destination ?? `/convite/${encodeURIComponent(inviteToken)}`, { replace: true, state: { inviteLogin: true } });
       return;
     }
     await runResolve();

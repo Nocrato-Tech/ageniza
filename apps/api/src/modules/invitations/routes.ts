@@ -36,6 +36,7 @@ import type { EmailService } from '../auth/email-service.js';
 import { AUTH_RATE_LIMITS } from '../auth/policy.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
+import { isInsufficientPrivilegeError, tenantHolds } from '../tenancy/guards.js';
 
 /** The small public port used by auth/password routes to validate invitation continuation. */
 export interface InvitationTokenLookup {
@@ -130,6 +131,22 @@ const invalidRole = (): HttpError => new HttpError({
   statusCode: 400,
   code: 'INVALID_ROLE',
   message: 'O papel informado não é válido para esta agência.'
+});
+
+// Only the Owner passes `colaborador.atribuir_admin`. The same rule holds for a role change
+// (collaborators module): handing out admin through an invitation would otherwise be the way around it.
+const GRANT_ADMIN_PERMISSION = 'colaborador.atribuir_admin';
+
+const adminGrantForbidden = (): HttpError => new HttpError({
+  statusCode: 403,
+  code: 'FORBIDDEN',
+  message: 'Só o Owner da agência pode conceder o papel de Admin.'
+});
+
+const forbidden = (): HttpError => new HttpError({
+  statusCode: 403,
+  code: 'FORBIDDEN',
+  message: 'You do not have permission to perform this action.'
 });
 
 const accountExists = (): HttpError => new HttpError({
@@ -266,13 +283,18 @@ const createCollaboratorInvitation = async (
 ): Promise<{ invitationId: string; expiresAt: Date; token: InvitationToken; agencyName: string }> => {
   const auth = request.auth;
   if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
+  const tenant = request.tenant;
+  if (tenant === undefined) throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Agency not found.' });
   const token = tokenForInsert(dependencies.config.appPublicUrl);
   try {
   return await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
-      const roleResult = await raw<RawRows<{ id: string }>>(transaction, `
-        select id from public.roles where id = ?::uuid and (agency_id is null or agency_id = ?::uuid)
-      `, [roleId, agencyId]);
-      if (roleResult.rows[0] === undefined) throw invalidRole();
+      const roleResult = await raw<RawRows<{ id: string; is_admin: boolean }>>(transaction, `
+        select id, app_private.is_admin_role(id, ?::uuid) as is_admin
+        from public.roles where id = ?::uuid and (agency_id is null or agency_id = ?::uuid)
+      `, [agencyId, roleId, agencyId]);
+      const role = roleResult.rows[0];
+      if (role === undefined) throw invalidRole();
+      if (role.is_admin === true && !tenantHolds(tenant, GRANT_ADMIN_PERMISSION)) throw adminGrantForbidden();
 
       const agency = await agencyInvitationDetails(transaction, agencyId);
       if (agency === undefined) throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Agency not found.' });
@@ -310,6 +332,7 @@ const createCollaboratorInvitation = async (
       return { invitationId: row.id, expiresAt: new Date(row.expires_at), token, agencyName: agency.agencyName };
     });
   } catch (error) {
+    if (isInsufficientPrivilegeError(error)) throw forbidden();
     if (error instanceof HttpError || !isDuplicateUserError(error)) throw error;
     throw new Error('Invitation could not be created.', { cause: error });
   }
@@ -384,6 +407,8 @@ const resendInvitation = async (
 ): Promise<{ invitationId: string; expiresAt: Date; token: InvitationToken; agencyName: string; clientName: string | null; purpose: InvitationLookup['purpose']; email: string }> => {
   const auth = request.auth;
   if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
+  const tenant = request.tenant;
+  if (tenant === undefined) throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Agency not found.' });
   const token = tokenForInsert(dependencies.config.appPublicUrl);
   return withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
     // Pendingness is a database-clock decision, like the listing and `app_private.accept_invitation`
@@ -400,6 +425,14 @@ const resendInvitation = async (
     `, [invitationId, agencyId]);
     const current = currentResult.rows[0];
     if (current === undefined || current.purpose === 'agency_activation') throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Invitation not found.' });
+    // A resend inserts a new invitation, so it hands the role out again: `invitations_insert` refuses
+    // an admin one to anyone without the grant, and without this check that refusal is a 500.
+    if (current.role_id !== null && !tenantHolds(tenant, GRANT_ADMIN_PERMISSION)) {
+      const adminResult = await raw<RawRows<{ is_admin: boolean }>>(transaction, `
+        select app_private.is_admin_role(?::uuid, ?::uuid) as is_admin
+      `, [current.role_id, agencyId]);
+      if (adminResult.rows[0]?.is_admin === true) throw adminGrantForbidden();
+    }
     if (!current.is_pending) throw invitationNotPending();
 
     await lockPendingInvitationSlot(transaction, agencyId, current.purpose, current.email, current.client_id);
@@ -427,6 +460,9 @@ const resendInvitation = async (
       purpose: current.purpose,
       email: current.email
     };
+  }).catch((error: unknown) => {
+    if (isInsufficientPrivilegeError(error)) throw forbidden();
+    throw error;
   });
 };
 
