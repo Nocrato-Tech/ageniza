@@ -44,6 +44,6 @@ O arquivo termina com uma linha em branco. Decisão que ninguém validou ainda e
 
 > **Validação.** Pendente de validação do dono.
 
-Quando o dono validar — respondendo na issue ou por mensagem ao maestro —, troque **somente** a linha `**Validação.**` por `**Validação.** Validada pelo dono em AAAA-MM-DD.` Essa é a única edição permitida num arquivo de decisão já registrado: corpo, data e título nunca mudam.
+Quando o dono validar — respondendo na issue ou por mensagem ao maestro —, troque **somente a marca de pendência** por `Validada pelo dono em AAAA-MM-DD.` Nos arquivos novos ela é a linha `**Validação.** Pendente de validação do dono.`, que fica `**Validação.** Validada pelo dono em AAAA-MM-DD.`; nos migrados, a marca está no corpo, em formas como `**Pendente de validação.**`, `**Pendente de validação** pelo dono do produto` ou `**Pendente de validação** — <motivo>`, e vira `Validada pelo dono em AAAA-MM-DD.` Essa é a única edição permitida num arquivo de decisão já registrado: corpo, data e título nunca mudam.
 
 **Nunca edite o arquivo de outra decisão para registrar uma nova.** Para reverter uma decisão, crie um arquivo novo que cita a antiga. É melhor registrar uma decisão provisória e marcá-la do que deixá-la só na cabeça de quem implementou.
