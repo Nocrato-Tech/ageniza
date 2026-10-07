@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createContentWorld, type ContentStatus } from './support/content-world.js';
@@ -172,6 +174,7 @@ describe('the portal reads a content through app_private.portal_contents (issue 
       id: content.in_production, title: expect.any(String), platform: 'instagram', format: 'reels', publish_on: expect.any(Date), status: 'in_production',
       revision: null, publish_at_time: null, caption: null, cover_asset_id: null, published_on: null
     });
+    expect(await w.getOwner().knex('contents').where({ id: content.in_production }).first('publish_at_time')).toEqual({ publish_at_time: '18:30:00' });
   });
 
   it.each(people)('shows %s the caption, the cover and the revision from "awaiting approval" on, and no cancelled content', async (_label, user) => {
@@ -179,7 +182,7 @@ describe('the portal reads a content through app_private.portal_contents (issue 
 
     expect(rows.map((row) => row.status).sort()).toEqual(['adjusting', 'approved', 'awaiting_approval', 'in_production', 'published']);
     for (const status of OPEN) {
-      expect(rows.find((row) => row.id === content[status]), status).toMatchObject({ status, caption: `Legenda ${status}`, cover_asset_id: cover[status], revision: 1 });
+      expect(rows.find((row) => row.id === content[status]), status).toMatchObject({ status, caption: `Legenda ${status}`, cover_asset_id: cover[status], revision: 1, publish_at_time: '18:30:00' });
     }
   });
 
@@ -227,28 +230,65 @@ describe('the portal reads a content through app_private.portal_contents (issue 
   });
 });
 
-describe('the portal reads a media only through a content it may open (issue #249)', () => {
-  // The Admin of agency B also reads what is of agency B through the agency side, which this test does not take away.
+describe('the portal reads a media through app_private.portal_content_media, only of a content it may open (issue #249, review A3)', () => {
   const readers = [
-    ['a person of the portal of the client', () => ids.portalA1, () => ({ media: [] as string[], links: [] as string[] })],
-    ['a collaborator with a link to the client and a role without conteudo.*', () => ids.dualBare, () => ({ media: [] as string[], links: [] as string[] })],
-    ['an Admin of another agency who holds a link to the client', () => ids.crossDual, () => ({ media: [otherAgencyVideo], links: [otherAgencyContent] })]
+    ['a person of the portal of the client', () => ids.portalA1],
+    ['another person of the portal of the same client', () => ids.portalA1Second],
+    ['a collaborator with a link to the client and a role without conteudo.*', () => ids.dualBare],
+    ['a collaborator with the Production role and a link to the client, who reads the portal side through this function', () => ids.dualFull],
+    ['an Admin of another agency who holds a link to the client', () => ids.crossDual]
   ] as const;
-  const open = (map: Record<ContentStatus, string>): string[] => OPEN.map((status) => map[status]).sort();
+  const mediaOf = (user: string, contentId: string) =>
+    w.asUser(user, async (transaction) => (await transaction.raw<{ rows: Array<Record<string, unknown>> }>('select * from app_private.portal_content_media(?::uuid)', [contentId])).rows);
   const everyMedia = (): string[] => [...Object.values(video), ...Object.values(cover), detached, otherClientVideo, otherAgencyVideo];
 
-  it.each(readers)('shows %s the media and the cover of the contents from "awaiting approval" on, and no other media', async (_label, user, extra) => {
-    expect(await visible(user(), 'media_assets', 'id', everyMedia())).toEqual([...open(video), ...open(cover), ...extra().media].sort());
-    expect(await visible(user(), 'content_media', 'content_id', everyContent)).toEqual([...open(content), ...extra().links].sort());
+  it.each(readers)('shows %s the media and the cover of a content from "awaiting approval" on, the cover first', async (_label, user) => {
+    for (const status of OPEN) {
+      const rows = await mediaOf(user(), content[status]);
+      expect(rows.map((row) => [row.asset_id, row.role, row.item_position]), status).toEqual([[cover[status], 'cover', 0], [video[status], 'media', 1]]);
+    }
   });
 
-  it.each(readers)('shows %s no media of a content in production, of a cancelled one, or of the folder that no content selected', async (_label, user) => {
-    expect(await visible(user(), 'media_assets', 'id', [video.in_production, cover.in_production, video.cancelled, cover.cancelled, detached])).toEqual([]);
-    expect(await visible(user(), 'content_media', 'content_id', [content.in_production, content.cancelled])).toEqual([]);
+  it.each(readers)('shows %s no media of a content in production, of a cancelled one, of another client, or of the folder that no content selected', async (_label, user) => {
+    expect(await mediaOf(user(), content.in_production)).toEqual([]);
+    expect(await mediaOf(user(), content.cancelled)).toEqual([]);
+    expect(await mediaOf(user(), otherClientContent)).toEqual([]);
+    expect(await mediaOf(user(), randomUUID())).toEqual([]);
   });
 
-  it('shows a person of the portal of another client of the same agency only the media of that client', async () => {
-    expect(await visible(ids.portalA2, 'media_assets', 'id', everyMedia())).toEqual([otherClientVideo]);
+  it('returns only the columns a client needs: nothing about who uploaded, the storage keys or why a media was rejected', async () => {
+    const [row] = await mediaOf(ids.portalA1, content.approved);
+
+    expect(Object.keys(row ?? {}).sort()).toEqual([
+      'asset_id', 'category', 'content_type', 'duration_seconds', 'extension', 'item_position', 'preview_object_key', 'role',
+      'size_bytes', 'thumbnail_object_key', 'video_processing_status'
+    ]);
+    expect(row).toMatchObject({ category: 'image', extension: 'png', content_type: 'image/png', size_bytes: '1000' });
+  });
+
+  it.each([
+    ['an Admin of the agency, who has no link to the client', () => ids.adminA],
+    ['the Owner of the agency', () => ids.ownerA],
+    ['Production, who has no link to the client', () => ids.productionA],
+    ['an Admin whose link to the client was removed', () => ids.dualRemoved],
+    ['Sales', () => ids.salesA],
+    ['a person of the portal of another client of the same agency', () => ids.portalA2],
+    ['a person of the portal of a client of another agency', () => ids.portalB]
+  ] as const)('shows %s no media of the client through the portal function: the agency permission is not a link', async (_label, user) => {
+    expect(await mediaOf(user(), content.approved)).toEqual([]);
+  });
+
+  it('shows a person of the portal of another client only the media of that client', async () => {
+    expect((await mediaOf(ids.portalA2, otherClientContent)).map((row) => row.asset_id)).toEqual([otherClientVideo]);
+  });
+
+  it('hides a media that is not confirmed or was removed, and a cover that is not one', async () => {
+    const folder = await w.folderOf(ids.clientA1);
+    const [ok, pending, removed] = [await w.seedAsset(ids.clientA1, folder, { category: 'video' }), await w.seedAsset(ids.clientA1, folder, { category: 'video', status: 'pending' }), await w.seedAsset(ids.clientA1, folder, { category: 'video', removed: true })];
+    const id = await w.seedContent(ids.clientA1, { status: 'awaiting_approval' });
+    await w.getOwner().knex('content_media').insert([ok, pending, removed].map((assetId, index) => ({ content_id: id, asset_id: assetId, client_id: ids.clientA1, folder_id: folder, position: index + 1 })));
+
+    expect((await mediaOf(ids.portalA1, id)).map((row) => row.asset_id)).toEqual([ok]);
   });
 
   it('follows the state of the content: the media appears when the content is sent and goes when it is cancelled', async () => {
@@ -256,19 +296,16 @@ describe('the portal reads a media only through a content it may open (issue #24
     const asset = await w.seedAsset(ids.clientA1, folder, { category: 'video' });
     const id = await w.seedContent(ids.clientA1, { status: 'in_production' });
     await w.attach(id, [asset]);
-    const readOf = async (): Promise<string[]> => visible(ids.portalA1, 'media_assets', 'id', [asset]);
+    const move = (status: ContentStatus) => w.getOwner().transaction(async (transaction) => {
+      await transaction.raw('select app_private.bind_actor(?::uuid)', [ids.adminA]);
+      await transaction('contents').where({ id }).update({ status });
+    });
 
-    expect(await readOf()).toEqual([]);
-    await w.getOwner().transaction(async (transaction) => {
-      await transaction.raw('select app_private.bind_actor(?::uuid)', [ids.adminA]);
-      await transaction('contents').where({ id }).update({ status: 'awaiting_approval' });
-    });
-    expect(await readOf()).toEqual([asset]);
-    await w.getOwner().transaction(async (transaction) => {
-      await transaction.raw('select app_private.bind_actor(?::uuid)', [ids.adminA]);
-      await transaction('contents').where({ id }).update({ status: 'cancelled' });
-    });
-    expect(await readOf()).toEqual([]);
+    expect(await mediaOf(ids.portalA1, id)).toEqual([]);
+    await move('awaiting_approval');
+    expect((await mediaOf(ids.portalA1, id)).map((row) => row.asset_id)).toEqual([asset]);
+    await move('cancelled');
+    expect(await mediaOf(ids.portalA1, id)).toEqual([]);
   });
 
   it('shows the portal of an archived client no media, the ones of a content that was already sent included', async () => {
@@ -279,14 +316,21 @@ describe('the portal reads a media only through a content it may open (issue #24
     await w.archiveClient(ids.clientArchived);
 
     try {
-      expect(await visible(ids.portalArchived, 'media_assets', 'id', [asset])).toEqual([]);
+      expect(await mediaOf(ids.portalArchived, id)).toEqual([]);
     } finally {
       await w.reactivateClient(ids.clientArchived);
     }
-    expect(await visible(ids.portalArchived, 'media_assets', 'id', [asset])).toEqual([asset]);
+    expect((await mediaOf(ids.portalArchived, id)).map((row) => row.asset_id)).toEqual([asset]);
   });
 
-  it('does not let the portal write a media, a link or a cover, nor read the media of a client from another agency', async () => {
+  it.each(readers.filter(([label]) => !label.includes('Production role')))('lets %s read no row of media_assets or content_media of the client, whatever the state: the portal reads no media table', async (_label, user) => {
+    const clientMedia = [...Object.values(video), ...Object.values(cover), detached, otherClientVideo];
+
+    expect(await visible(user(), 'media_assets', 'id', clientMedia)).toEqual([]);
+    expect(await visible(user(), 'content_media', 'content_id', everyContent.filter((id) => id !== otherAgencyContent))).toEqual([]);
+  });
+
+  it('does not let the portal write a media, a link or a cover', async () => {
     await expect(w.asUser(ids.portalA1, (transaction) => transaction('media_assets').where({ id: video.approved }).update({ updated_at: new Date() }))).resolves.toBe(0);
     expect(await visible(ids.portalA1, 'media_assets', 'id', [otherAgencyVideo])).toEqual([]);
   });
@@ -294,7 +338,7 @@ describe('the portal reads a media only through a content it may open (issue #24
   it.each([
     ['an Admin', () => ids.adminA],
     ['a role with only conteudo.visualizar', () => onlyVisualizar]
-  ] as const)('still shows %s every media of the clients of the agency, the ones in production included', async (_label, user) => {
+  ] as const)('still shows %s every media of the clients of the agency, the ones in production included, through the tables', async (_label, user) => {
     expect(await visible(user(), 'media_assets', 'id', everyMedia())).toEqual([...Object.values(video), ...Object.values(cover), detached, otherClientVideo].sort());
   });
 });

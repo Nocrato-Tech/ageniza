@@ -55,9 +55,9 @@ Todo PR vai para `develop`, exceto promoção de release e hotfix.
 
 O corpo responde três coisas: **por que** existe, **o que muda**, e **como foi verificado**. O template preenche isso. O que ele cobra, e o revisor também:
 
-- **Um PR, um assunto.** Se o título precisa de "e", provavelmente são dois PRs.
+- **Um PR, um assunto — que pode juntar issues do mesmo tema e da mesma camada.** Mesmo tema é o mesmo módulo ou épico; mesma camada é o mesmo `escopo:` (`db`, `api`, `web`, `infra`). Um PR pode agrupar issues assim, cada uma com o seu `Closes #N` e o aceite item a item no corpo, até **~800 linhas de diff de código** — produção e testes; não contam gerados, lockfile nem o `openapi.json` gerado. Acima disso, dividir. Se o título precisa de "e" para juntar temas ou camadas diferentes, são dois PRs.
 - **API e interface não vêm juntas.** São tasks separadas de propósito; PR que mistura as duas não tem revisão possível.
-- **Migration vem sozinha.** É o único tipo de mudança que não dá para desfazer.
+- **Migration não vem com código de API nem de tela.** É o único tipo de mudança que não dá para desfazer. Duas issues de banco do mesmo tema podem dividir a mesma migration; a rota e a tela que a consomem ficam nos PRs delas.
 - **Verificação real.** "Testado" não é verificação; qual comando rodou e o que ele disse, é.
 
 Antes de abrir:
@@ -135,7 +135,7 @@ Closes #12 · Fixes #12 · Resolves #12
 Fecha #12 · Encerra #12
 ```
 
-Menção solta (`ver #12`) não fecha nada, e referência dentro de bloco de código é ignorada — exemplo em documentação não é intenção. A lógica vive em `scripts/ci/closing-references.mjs`, com teste.
+Menção solta (`ver #12`) não fecha nada, e referência dentro de bloco de código é ignorada — exemplo em documentação não é intenção. Com o PR agrupado, cada issue precisa da sua própria linha: **um `Closes` por linha** — `Closes #1, #2` fecha só a #1, porque a palavra-chave tem de vir imediatamente antes de cada número. A lógica vive em `scripts/ci/closing-references.mjs`, com teste.
 
 **Issue fechada significa "feito e revisado", não "no ar".** O card continua em *Pronto para subir* até a promoção para `main` movê-lo para *Em produção* — quem quer saber o que já está em produção olha a coluna, não o estado da issue.
 

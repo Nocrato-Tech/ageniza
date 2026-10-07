@@ -137,7 +137,7 @@ describe('what ageniza_app may write on the three tables (issue #249)', () => {
   it('opens to ageniza_app only the functions the API calls, and none of them to PUBLIC', async () => {
     const callable = [
       'approve_content', 'approve_content_by_agency', 'approve_content_task', 'cancel_content', 'content_open_to_client',
-      'deliver_content_task', 'media_asset_open_to_client', 'portal_contents', 'publish_content', 'reschedule_content',
+      'deliver_content_task', 'portal_content_media', 'portal_contents', 'publish_content', 'reschedule_content',
       'return_content_task', 'sao_paulo_date', 'set_content_media', 'submit_content', 'unpublish_content'
     ];
     const internal = ['agency_user_can', 'content_media_is_complete', 'lock_content_for_agency', 'lock_content_task', 'contents_guard', 'content_tasks_guard'];
@@ -284,20 +284,20 @@ describe('editing a content: what keeps the approval and what annuls it (issue #
     const id = await w.seedContent(ids.clientA1, { status });
     const before = await w.contentRow(id);
 
-    expect(await updateContent(ids.productionA, id, { title: 'Outro título', publish_on: '2026-11-02', publish_at_time: '18:30', owner_user_id: ids.managerA })).toBe(1);
+    expect(await updateContent(ids.managerA, id, { title: 'Outro título', publish_on: '2026-11-02', publish_at_time: '19:45', owner_user_id: ids.adminA })).toBe(1);
 
     expect(await w.contentRow(id)).toMatchObject({
-      status, revision: 1, title: 'Outro título', owner_user_id: ids.managerA, approved_by: before.approved_by, approved_at: before.approved_at
+      status, revision: 1, title: 'Outro título', owner_user_id: ids.adminA, approved_by: before.approved_by, approved_at: before.approved_at
     });
     expect(await dayOf(id, 'publish_on')).toBe('2026-11-02');
   });
 
   it.each([
     ['caption', () => ({ caption: 'Legenda nova' })],
-    ['format', () => ({ format: 'carousel' })],
+    ['format', () => ({ format: 'long_video' })],
     ['cover', async () => ({ cover_asset_id: await w.seedAsset(ids.clientA1, folderA1) })]
   ] as const)('returns an approved content to "awaiting approval" when its %s changes, clearing who approved and counting a revision', async (_label, patch) => {
-    const id = await w.seedContent(ids.clientA1, { status: 'approved' });
+    const id = await reelsReady('approved');
 
     expect(await updateContent(ids.productionA, id, await patch())).toBe(1);
 
@@ -333,7 +333,7 @@ describe('editing a content: what keeps the approval and what annuls it (issue #
       { title: 'x' }, { publish_on: '2026-12-01' }, { publish_at_time: '10:00' }, { caption: 'x' }, { format: 'image' },
       { owner_user_id: ids.managerA }, { folder_id: await w.folderOf(ids.clientA1, 'Imagens') }
     ]) {
-      await expect(updateContent(ids.productionA, id, patch), JSON.stringify(patch)).rejects.toMatchObject({ code: 'A0062' });
+      await expect(updateContent(ids.managerA, id, patch), JSON.stringify(patch)).rejects.toMatchObject({ code: 'A0062' });
     }
 
     expect(await w.contentRow(id)).toEqual(before);
@@ -394,6 +394,30 @@ describe('editing a content: what keeps the approval and what annuls it (issue #
     }
 
     expect(await w.contentRow(id)).toEqual(before);
+  });
+
+  it('refuses to change the person in charge to who only operates, even to themselves: the owner decides who approves a subtask', async () => {
+    const id = await w.seedContent(ids.clientA1, { owner: ids.managerA });
+    const before = await w.contentRow(id);
+
+    for (const user of [operarAndVisualizar, ids.productionA, await w.personWithAllBut('conteudo.aprovar_pela_agencia')]) {
+      await expect(updateContent(user, id, { owner_user_id: user }), String(user)).rejects.toMatchObject({ code: '42501', message: expect.stringContaining('approves for the agency') });
+      await expect(updateContent(user, id, { owner_user_id: ids.adminA }), String(user)).rejects.toMatchObject({ code: '42501' });
+    }
+
+    expect(await w.contentRow(id)).toEqual(before);
+  });
+
+  it.each([
+    ['a role with only conteudo.aprovar_pela_agencia and conteudo.visualizar and conteudo.operar', () => w.personWith('conteudo.aprovar_pela_agencia', 'conteudo.visualizar', 'conteudo.operar')],
+    ['the Account manager', async () => ids.managerA],
+    ['the Owner of the agency', async () => ids.ownerA]
+  ] as const)('lets %s change the person in charge', async (_label, user) => {
+    const id = await w.seedContent(ids.clientA1, { owner: ids.managerA });
+
+    expect(await updateContent(await user(), id, { owner_user_id: ids.productionA })).toBe(1);
+
+    expect((await w.contentRow(id)).owner_user_id).toBe(ids.productionA);
   });
 
   it('refuses a new person in charge who cannot see Conteúdo, leaving the owner as it was', async () => {
@@ -514,7 +538,7 @@ interface Guarded {
 const guarded: readonly Guarded[] = [
   { name: 'submit_content', permission: 'conteudo.operar', prepare: () => reelsReady(), invoke: submitAs, status: 'awaiting_approval' },
   { name: 'approve_content_by_agency', permission: 'conteudo.aprovar_pela_agencia', prepare: () => w.seedContent(ids.clientA1, { status: 'awaiting_approval' }), invoke: (user, id) => approveByAgencyAs(user, id, 1, 'Aprovado fora'), status: 'approved' },
-  { name: 'publish_content', permission: 'conteudo.publicar', prepare: () => w.seedContent(ids.clientA1, { status: 'approved' }), invoke: async (user, id) => publishAs(user, id, await today()), status: 'published' },
+  { name: 'publish_content', permission: 'conteudo.publicar', prepare: () => reelsReady('approved'), invoke: async (user, id) => publishAs(user, id, await today()), status: 'published' },
   { name: 'unpublish_content', permission: 'conteudo.publicar', prepare: () => w.seedContent(ids.clientA1, { status: 'published' }), invoke: unpublishAs, status: 'approved' },
   { name: 'cancel_content', permission: 'conteudo.cancelar', prepare: () => w.seedContent(ids.clientA1, { status: 'in_production' }), invoke: cancelAs, status: 'cancelled' },
   { name: 'reschedule_content', permission: 'conteudo.operar', prepare: () => w.seedContent(ids.clientA1, { status: 'cancelled' }), invoke: (user, id) => rescheduleAs(user, id), status: 'in_production' },
@@ -637,7 +661,7 @@ describe('submit: in production or in adjustment to awaiting approval (issue #24
     expect((await w.contentRow(id)).status).toBe('in_production');
 
     for (const next of status === 'pending' ? ['delivered', 'approved'] : ['approved']) {
-      await w.getOwner().knex('content_tasks').where({ id: task }).update({ status: next });
+      await asOwnerWithActor(ids.adminA, (transaction) => transaction('content_tasks').where({ id: task }).update({ status: next }));
     }
     await submitAs(ids.productionA, id);
 
@@ -818,7 +842,7 @@ describe('approve by the agency, outside the platform (issue #249)', () => {
 
 describe('publish and undo: the day rules, in America/Sao_Paulo (issue #249, acceptance 4)', () => {
   it('lets an approved content be published today or on a day before, and fixes the instant of the publication', async () => {
-    const [onToday, onYesterday] = [await w.seedContent(ids.clientA1, { status: 'approved' }), await w.seedContent(ids.clientA1, { status: 'approved' })];
+    const [onToday, onYesterday] = [await reelsReady('approved'), await reelsReady('approved')];
 
     await publishAs(ids.productionA, onToday, await today());
     await publishAs(ids.productionA, onYesterday, await daysFromToday(-1));
@@ -835,7 +859,7 @@ describe('publish and undo: the day rules, in America/Sao_Paulo (issue #249, acc
     ['a year ahead', () => daysFromToday(365)],
     ['no date at all', async () => null]
   ] as const)('refuses to publish with %s as the real date', async (_label, day) => {
-    const id = await w.seedContent(ids.clientA1, { status: 'approved' });
+    const id = await reelsReady('approved');
 
     await expect(publishAs(ids.productionA, id, await day())).rejects.toMatchObject({ code: 'A0067' });
 
@@ -878,7 +902,7 @@ describe('publish and undo: the day rules, in America/Sao_Paulo (issue #249, acc
   });
 
   it('undoes a publication made today, restoring "approved" with its approval and no publication', async () => {
-    const id = await w.seedContent(ids.clientA1, { status: 'approved' });
+    const id = await reelsReady('approved');
     await publishAs(ids.productionA, id, await today());
     const published = await w.contentRow(id);
 
@@ -963,6 +987,93 @@ describe('cancel and reschedule (issue #249)', () => {
     const id = await w.seedContent(ids.clientA1, { status });
 
     await expect(rescheduleAs(ids.productionA, id, '2026-12-01')).rejects.toMatchObject({ code: 'A0062' });
+  });
+});
+
+describe('a state is never reached by the database with what it needs missing (issue #249, review A1)', () => {
+  const formatOf = async (id: string): Promise<unknown> => (await w.contentRow(id)).format;
+
+  it.each(['awaiting_approval', 'approved'] as const)('refuses to change the format of a %s content to one its media does not fit, leaving format, state and approval', async (status) => {
+    const id = await reelsReady(status);
+    const before = await w.contentRow(id);
+
+    await expect(updateContent(ids.productionA, id, { format: 'image' })).rejects.toMatchObject({ code: 'A0065' });
+    await expect(updateContent(ids.productionA, id, { format: 'carousel' })).rejects.toMatchObject({ code: 'A0065' });
+
+    expect(await w.contentRow(id)).toEqual(before);
+  });
+
+  it.each(['in_production', 'adjusting'] as const)('lets the format of a %s content change, because it is checked when it is sent', async (status) => {
+    const id = await reelsReady(status);
+
+    expect(await updateContent(ids.productionA, id, { format: 'image' })).toBe(1);
+
+    expect(await formatOf(id)).toBe('image');
+  });
+
+  it('does not let the attack of the review reach "published": an approved reels turned into an image keeps its state and cannot be published without a fitting media', async () => {
+    const id = await reelsReady('approved');
+
+    await expect(updateContent(ids.productionA, id, { format: 'image' })).rejects.toMatchObject({ code: 'A0065' });
+    await publishAs(ids.adminA, id, await today());
+
+    expect(await w.contentRow(id)).toMatchObject({ status: 'published', format: 'reels' });
+  });
+
+  it.each(['awaiting_approval', 'approved'] as const)('refuses to take every media out of a %s content, to leave one that does not fit or one that is not confirmed', async (status) => {
+    const id = await reelsReady(status);
+    const before = await w.contentRow(id);
+    const list = async () => (await w.getOwner().knex('content_media').where({ content_id: id }).select('asset_id')).map((row) => row.asset_id as string);
+    const original = await list();
+
+    await expect(setMediaAs(ids.productionA, id, [])).rejects.toMatchObject({ code: 'A0065' });
+    await expect(setMediaAs(ids.productionA, id, [await w.seedAsset(ids.clientA1, folderA1)])).rejects.toMatchObject({ code: 'A0065' });
+    await expect(setMediaAs(ids.productionA, id, [await w.seedAsset(ids.clientA1, folderA1, { category: 'video', status: 'pending' })])).rejects.toMatchObject({ code: 'A0065' });
+
+    expect(await w.contentRow(id)).toEqual(before);
+    expect(await list()).toEqual(original);
+  });
+
+  it('swaps the media of an approved content for another one that fits, and returns it to "awaiting approval"', async () => {
+    const id = await reelsReady('approved');
+
+    await setMediaAs(ids.productionA, id, [await w.seedAsset(ids.clientA1, folderA1, { category: 'video' })]);
+
+    expect(await w.contentRow(id)).toMatchObject({ status: 'awaiting_approval', approved_by: null, revision: 2 });
+  });
+
+  it('lets a content in production hold an empty or a pending media while it is being made', async () => {
+    const id = await reelsReady('adjusting');
+
+    await setMediaAs(ids.productionA, id, []);
+    await setMediaAs(ids.productionA, id, [await w.seedAsset(ids.clientA1, folderA1, { category: 'video', status: 'pending' })]);
+
+    expect((await w.contentRow(id)).status).toBe('adjusting');
+  });
+
+  it('refuses to publish an approved content whose media is not complete for its format, as a second line', async () => {
+    const [empty, wrongKind] = [await w.seedContent(ids.clientA1, { status: 'approved' }), await w.seedContent(ids.clientA1, { status: 'approved', format: 'image' })];
+    await w.attach(wrongKind, [await w.seedAsset(ids.clientA1, folderA1, { category: 'video' })]);
+
+    for (const id of [empty, wrongKind]) {
+      await expect(publishAs(ids.adminA, id, await today())).rejects.toMatchObject({ code: 'A0065' });
+      expect((await w.contentRow(id)).status).toBe('approved');
+    }
+  });
+});
+
+describe('the cover of a content is a confirmed image (issue #249, review A4)', () => {
+  it.each([
+    ['not confirmed yet', { status: 'pending' as const }],
+    ['rejected', { status: 'rejected' as const }]
+  ] as const)('refuses a cover that is %s, on the INSERT and on the UPDATE', async (_label, extra) => {
+    const cover = await w.seedAsset(ids.clientA1, folderA1, extra);
+    const id = await w.seedContent(ids.clientA1);
+
+    await expect(insertContent(ids.adminA, { cover_asset_id: cover })).rejects.toMatchObject({ code: 'A0069' });
+    await expect(updateContent(ids.adminA, id, { cover_asset_id: cover })).rejects.toMatchObject({ code: 'A0069' });
+
+    expect((await w.contentRow(id)).cover_asset_id).toBeNull();
   });
 });
 

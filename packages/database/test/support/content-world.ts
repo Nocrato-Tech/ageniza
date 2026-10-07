@@ -46,7 +46,7 @@ export interface ContentWorld {
   /** A person of agency A who holds every conteudo.* permission except the one given. */
   personWithAllBut(permission: string): Promise<string>;
   folderOf(clientId: string, name?: string): Promise<string>;
-  seedAsset(clientId: string, folderId: string, extra?: { category?: 'image' | 'video'; status?: 'pending' | 'confirmed'; removed?: boolean }): Promise<string>;
+  seedAsset(clientId: string, folderId: string, extra?: { category?: 'image' | 'video'; status?: 'pending' | 'confirmed' | 'rejected'; removed?: boolean }): Promise<string>;
   seedContent(clientId: string, extra?: SeedContent): Promise<string>;
   attach(contentId: string, assetIds: readonly string[]): Promise<void>;
   contentRow(id: string): Promise<Record<string, unknown>>;
@@ -70,6 +70,7 @@ export interface SeedContent {
   readonly owner?: string;
   readonly caption?: string | null;
   readonly publishOn?: string;
+  readonly publishAtTime?: string;
   readonly publishedAt?: Date;
   readonly approvedBy?: string;
   readonly coverAssetId?: string;
@@ -168,6 +169,7 @@ export const createContentWorld = (label: string): ContentWorld => {
       declared_size_bytes: 1_000,
       created_by_user_id: ids.adminA,
       ...(confirmed ? { status: 'confirmed', confirmed_size_bytes: 1_000, confirmed_content_type: category === 'image' ? 'image/png' : 'video/mp4', confirmed_at: new Date() } : {}),
+      ...(extra.status === 'rejected' ? { status: 'rejected', rejected_reason: 'Formato inválido' } : {}),
       ...(extra.removed === true ? { removed_at: new Date() } : {})
     });
     return id;
@@ -185,6 +187,7 @@ export const createContentWorld = (label: string): ContentWorld => {
       platform: 'instagram',
       format: extra.format ?? 'reels',
       publish_on: extra.publishOn ?? '2026-10-20',
+      publish_at_time: extra.publishAtTime ?? '18:30',
       caption: extra.caption === undefined ? 'Legenda original' : extra.caption,
       folder_id: extra.folderId ?? await folderOf(clientId),
       owner_user_id: extra.owner ?? ids.productionA,
@@ -227,7 +230,8 @@ export const createContentWorld = (label: string): ContentWorld => {
       title: `Subtarefa ${id.slice(0, 8)}`,
       assignee_user_id: extra.assignee ?? ids.productionA,
       due_on: extra.dueOn ?? '2026-10-15',
-      status: extra.status ?? 'pending'
+      status: extra.status ?? 'pending',
+      ...(extra.status === 'approved' ? { approved_by: ids.adminA, approved_at: new Date('2026-10-05T12:00:00.000Z') } : {})
     });
     return id;
   };
