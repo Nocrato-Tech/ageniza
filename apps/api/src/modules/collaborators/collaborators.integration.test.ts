@@ -31,6 +31,7 @@ interface CollaboratorJson {
   readonly jobTitle: string | null;
   readonly role: { key: string; name: string };
   readonly isOwner: boolean;
+  readonly isSelf: boolean;
   readonly status: 'active' | 'removed';
   readonly joinedAt: string;
 }
@@ -262,13 +263,17 @@ describe('collaborators module (issue #95)', () => {
       viewers.push(await addMember(agencyId, { name: `Pessoa ${preset}`, emailLabel: `same-${preset}`, roleId: presetRoleIds[preset] }));
     }
 
+    // `isSelf` (issue #286) is the one field that legitimately differs: each viewer sees their own
+    // link marked. Everything else is compared as it was, and the mark is checked for each viewer.
+    const withoutSelf = (body: CollaboratorListJson) => ({ ...body, data: body.data.map((item) => ({ ...item, isSelf: false })) });
     const expected = await getCollaborators(await loginCookie(viewers[0]!), agencyId);
     expect(expected.status).toBe(200);
     expect(expected.body.meta.totalItems).toBe(6);
     for (const viewer of viewers) {
       const response = await getCollaborators(await loginCookie(viewer), agencyId);
       expect(response.status).toBe(200);
-      expect(response.body).toEqual(expected.body);
+      expect(withoutSelf(response.body)).toEqual(withoutSelf(expected.body));
+      expect(response.body.data.filter((item) => item.isSelf).map((item) => item.membershipId)).toEqual([await membershipIdOf(agencyId, viewer.id)]);
     }
   });
 
@@ -535,7 +540,7 @@ describe('collaborators module (issue #95)', () => {
     expect(unauthenticatedResponse.status).toBe(401);
   });
 
-  it('#95: the response carries only the six allowed fields, with a signed photo URL and the membership date', async () => {
+  it('#95: the response carries only the allowed fields, with a signed photo URL and the membership date', async () => {
     const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Shape', 'shape', 'Owner Shape');
     const withPhoto = await addMember(agencyId, { name: 'Com Foto', emailLabel: 'shape-photo', roleId: presetRoleIds.production, jobTitle: 'Editor de Vídeo' });
     const storageKey = `users/${withPhoto.id}/avatar/${randomUUID()}.png`;
@@ -551,7 +556,7 @@ describe('collaborators module (issue #95)', () => {
     expect(photoRow?.isOwner).toBe(false);
     expect(photoRow?.status).toBe('active');
     expect(Object.keys(photoRow!).sort()).toEqual(
-      ['email', 'isOwner', 'jobTitle', 'joinedAt', 'membershipId', 'name', 'photoUrl', 'role', 'status'].sort()
+      ['email', 'isOwner', 'isSelf', 'jobTitle', 'joinedAt', 'membershipId', 'name', 'photoUrl', 'role', 'status'].sort()
     );
 
     // The signed URL lasts exactly as long as the configured identity download expiry.
@@ -603,9 +608,107 @@ describe('collaborators module (issue #95)', () => {
     expect(detail.status).toBe(200);
     expect(detail.body).toEqual(fromList);
     expect(Object.keys(detail.body).sort()).toEqual(
-      ['email', 'isOwner', 'jobTitle', 'joinedAt', 'membershipId', 'name', 'photoUrl', 'role', 'status'].sort()
+      ['email', 'isOwner', 'isSelf', 'jobTitle', 'joinedAt', 'membershipId', 'name', 'photoUrl', 'role', 'status'].sort()
     );
     expect(JSON.stringify(detail.body)).not.toMatch(/salar|remunera|salary|compensation/i);
+  });
+
+  describe('isSelf says whether the link is the signed-in person\'s own (issue #286)', () => {
+    const selfIds = (body: CollaboratorListJson): string[] => body.data.filter((item) => item.isSelf).map((item) => item.membershipId);
+
+    it('is true only on the own link, in the listing and in the detail, for a person linked to two agencies', async () => {
+      const a = await createAgencyWithOwner('Colab Self A', 'self-a', 'Owner Self A');
+      const b = await createAgencyWithOwner('Colab Self B', 'self-b', 'Owner Self B');
+      // One permission only: the viewer reads the team and nothing else, so no other grant explains what they see.
+      const viewer = await addMember(a.agencyId, { name: 'Pessoa Dupla', emailLabel: 'self-viewer', roleId: await createCustomRole(a.agencyId, ['colaborador.visualizar']) });
+      await addAgencyMembership(b.agencyId, viewer.id, await createCustomRole(b.agencyId, ['colaborador.visualizar']));
+      const peerA = await addMemberWithMembershipId(a.agencyId, { membershipId: randomUUID(), name: 'Colega A', emailLabel: 'self-peer-a', roleId: presetRoleIds.production });
+      await addMemberWithMembershipId(b.agencyId, { membershipId: randomUUID(), name: 'Colega B', emailLabel: 'self-peer-b', roleId: presetRoleIds.production });
+      const viewerInA = await membershipIdOf(a.agencyId, viewer.id);
+      const viewerInB = await membershipIdOf(b.agencyId, viewer.id);
+      expect(viewerInA).not.toBe(viewerInB);
+      const cookie = await loginCookie(viewer);
+
+      const listA = await getCollaborators(cookie, a.agencyId);
+      expect(listA.status).toBe(200);
+      expect(listA.body.data.map((item) => [item.name, item.isSelf])).toEqual([['Colega A', false], ['Owner Self A', false], ['Pessoa Dupla', true]]);
+      expect(selfIds(listA.body)).toEqual([viewerInA]);
+
+      // The same person in the other agency: the answer follows the agency asked, with that link's id.
+      const listB = await getCollaborators(cookie, b.agencyId);
+      expect(listB.status).toBe(200);
+      expect(listB.body.data.map((item) => [item.name, item.isSelf])).toEqual([['Colega B', false], ['Owner Self B', false], ['Pessoa Dupla', true]]);
+      expect(selfIds(listB.body)).toEqual([viewerInB]);
+
+      const ownDetail = await getCollaboratorDetail(cookie, a.agencyId, viewerInA);
+      expect(ownDetail.status).toBe(200);
+      expect(ownDetail.body.isSelf).toBe(true);
+      const ownDetailB = await getCollaboratorDetail(cookie, b.agencyId, viewerInB);
+      expect(ownDetailB.status).toBe(200);
+      expect(ownDetailB.body.isSelf).toBe(true);
+      const ownerDetail = await getCollaboratorDetail(cookie, a.agencyId, await membershipIdOf(a.agencyId, a.ownerUser.id));
+      expect(ownerDetail.status).toBe(200);
+      expect(ownerDetail.body.isOwner).toBe(true);
+      expect(ownerDetail.body.isSelf).toBe(false);
+      const peerDetail = await getCollaboratorDetail(cookie, a.agencyId, await membershipIdOf(a.agencyId, peerA));
+      expect(peerDetail.status).toBe(200);
+      expect(peerDetail.body.isSelf).toBe(false);
+
+      // A link of the other agency is still a 404 here, with no `isSelf` to reveal anything.
+      const crossed = await getCollaboratorDetail(cookie, a.agencyId, viewerInB);
+      expect(crossed.status).toBe(404);
+      expect(JSON.stringify(crossed.body)).not.toContain('isSelf');
+    });
+
+    it('is false on every link for the Owner who has no link at all, strictly false and never absent', async () => {
+      const ownerUser = await makeUser('self-ownerless-owner', 'Dona Sem Vínculo');
+      const agencyId = await createAgency('Colab Self Ownerless', ownerUser.id);
+      await addMember(agencyId, { name: 'Colega Um', emailLabel: 'self-ownerless-1', roleId: presetRoleIds.production });
+      await addMemberWithMembershipId(agencyId, { membershipId: randomUUID(), name: 'Colega Dois', emailLabel: 'self-ownerless-2', roleId: presetRoleIds.finance });
+      expect(await owner.knex('agency_memberships').where({ agency_id: agencyId, user_id: ownerUser.id }).count<Array<{ count: string }>>('id as count')).toEqual([{ count: '0' }]);
+      const cookie = await loginCookie(ownerUser);
+
+      const list = await getCollaborators(cookie, agencyId);
+      expect(list.status).toBe(200);
+      expect(list.body.data).toHaveLength(2);
+      for (const item of list.body.data) {
+        expect(item.isSelf).toBe(false);
+        const detail = await getCollaboratorDetail(cookie, agencyId, item.membershipId);
+        expect(detail.status).toBe(200);
+        expect(detail.body.isSelf).toBe(false);
+      }
+    });
+
+    it('follows the session user, not the e-mail: a changed e-mail keeps the own link recognized', async () => {
+      const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Self Email', 'self-email', 'Owner Self Email');
+      const viewer = await addMember(agencyId, { name: 'Troca de E-mail', emailLabel: 'self-email-viewer', roleId: await createCustomRole(agencyId, ['colaborador.visualizar']) });
+      const cookie = await loginCookie(viewer);
+      const ownerMembershipId = await membershipIdOf(agencyId, ownerUser.id);
+      const viewerMembershipId = await membershipIdOf(agencyId, viewer.id);
+
+      // The operation swaps the e-mail of the signed-in person after the session was issued.
+      await app.pool.query('update auth."user" set email = $1 where id = $2', [`trocado.${randomUUID().slice(0, 8)}@collab-integration.test`, viewer.id]);
+
+      const list = await getCollaborators(cookie, agencyId);
+      expect(list.status).toBe(200);
+      expect(selfIds(list.body)).toEqual([viewerMembershipId]);
+      expect(list.body.data.find((item) => item.membershipId === ownerMembershipId)?.isSelf).toBe(false);
+      expect((await getCollaboratorDetail(cookie, agencyId, viewerMembershipId)).body.isSelf).toBe(true);
+    });
+
+    it('never exposes the user id of anyone, in the listing or in the detail', async () => {
+      const { agencyId, ownerUser } = await createAgencyWithOwner('Colab Self Identifier', 'self-nouid', 'Owner Self Identifier');
+      const viewer = await addMember(agencyId, { name: 'Sem Identificador', emailLabel: 'self-nouid-viewer', roleId: await createCustomRole(agencyId, ['colaborador.visualizar']) });
+      const cookie = await loginCookie(viewer);
+
+      const list = await getCollaborators(cookie, agencyId);
+      const detail = await getCollaboratorDetail(cookie, agencyId, await membershipIdOf(agencyId, viewer.id));
+      for (const body of [JSON.stringify(list.body), JSON.stringify(detail.body)]) {
+        expect(body).not.toContain(viewer.id);
+        expect(body).not.toContain(ownerUser.id);
+        expect(body).not.toMatch(/user_?id/i);
+      }
+    });
   });
 
   it('#226: the detail rejects an unknown query parameter, like the listing', async () => {
