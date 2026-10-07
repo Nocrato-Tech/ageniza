@@ -504,6 +504,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
       { status: 409, code: 'MEMBERSHIP_EXISTS' },
+      { status: 409, code: 'TRY_AGAIN' },
       { status: 502, code: 'EMAIL_DELIVERY_FAILED' }
     ]
   },
@@ -533,6 +534,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
       { status: 409, code: 'MEMBERSHIP_EXISTS' },
+      { status: 409, code: 'TRY_AGAIN' },
       { status: 502, code: 'EMAIL_DELIVERY_FAILED' }
     ]
   },
@@ -559,6 +561,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Invitation not found.' },
       { status: 409, code: 'INVITATION_NOT_PENDING' },
+      { status: 409, code: 'TRY_AGAIN' },
       { status: 502, code: 'EMAIL_DELIVERY_FAILED' }
     ]
   },

@@ -671,6 +671,181 @@ describe('invitation HTTP module', () => {
     }
   }, 20_000);
 
+  // Issue #335: creation and resend must take the slot before the row; the opposite order deadlocks.
+  describe('lock order between creating and resending (issue #335)', () => {
+    const LOCK_ORDER_IP = '127.0.0.4';
+    const loginFromLockOrderIp = async (user: TestUserFixture): Promise<string> => {
+      const login = await app.app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        remoteAddress: LOCK_ORDER_IP,
+        headers: origin,
+        payload: { email: user.email, password: user.password }
+      });
+      expect(login.statusCode).toBe(200);
+      return sessionCookieHeader(login.cookies);
+    };
+    /** Waits until a backend is blocked running one of the patterns, so the race is sequenced by locks. */
+    const waitUntilBlockedStatement = async (patterns: readonly string[]): Promise<void> => {
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        const result = await raw<{ rows: Array<{ waiting: number }> }>(owner.knex, `
+          select count(*)::int as waiting
+          from pg_catalog.pg_stat_activity
+          where datname = pg_catalog.current_database() and wait_event_type = 'Lock'
+            and (${patterns.map(() => 'query ilike ?').join(' or ')})
+        `, [...patterns]);
+        if ((result.rows[0]?.waiting ?? 0) > 0) return;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      throw new Error(`No backend ever waited on a lock for ${patterns.join(' or ')}.`);
+    };
+
+    it('serializes a create and a resend of the same recipient instead of deadlocking', async () => {
+      const raceOwner = await makeUser('invitations-lock-order-owner');
+      const raceAgencyId = await createAgency('Invitations lock order agency', raceOwner.id);
+      const cookie = await loginFromLockOrderIp(raceOwner);
+      const email = `lock-order-${randomUUID()}@example.test`;
+      const invitation = await insertInvitation({ agencyId: raceAgencyId, email });
+
+      const holder = await owner.knex.transaction();
+      let released = false;
+      try {
+        const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.invitations where id = ?::uuid for update', [invitation.invitationId]);
+        if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one invitation.');
+        const holderPid = await backendPid(holder);
+
+        // The resend takes the slot and lines up on the row; the create then waits on the slot
+        // (same order) or on the row (the old order, where the two deadlocked).
+        const resent = app.app.inject({
+          method: 'POST',
+          url: `/agencies/${raceAgencyId}/invitations/${invitation.invitationId}/resend`,
+          remoteAddress: LOCK_ORDER_IP,
+          headers: { ...origin, cookie }
+        });
+        await waitForBlockedQueryStart(owner, holderPid);
+        const created = app.app.inject({
+          method: 'POST',
+          url: `/agencies/${raceAgencyId}/invitations/collaborators`,
+          remoteAddress: LOCK_ORDER_IP,
+          headers: { ...origin, cookie },
+          payload: { email, roleId: productionRoleId }
+        });
+        await waitUntilBlockedStatement(['%pg_advisory_xact_lock%', '%update public.invitations%']);
+        await holder.commit();
+        released = true;
+
+        const [resendResponse, createResponse] = await Promise.all([resent, created]);
+        expect(resendResponse.statusCode).toBe(200);
+        expect(createResponse.statusCode).toBe(201);
+        expect(JSON.stringify([resendResponse.json(), createResponse.json()])).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
+        // The resend replaced the holder's invitation and the create replaced the resend's: one
+        // pending invitation for the e-mail remains.
+        const rows = await owner.knex('invitations').where({ agency_id: raceAgencyId, email }).select('id', 'revoked_at');
+        expect(rows).toHaveLength(3);
+        expect(rows.filter((row) => row.revoked_at === null)).toHaveLength(1);
+      } finally {
+        if (!released) await holder.rollback();
+      }
+    }, 20_000);
+
+    it('answers 409 TRY_AGAIN, with no database detail and nothing changed, when a resend loses a deadlock', async () => {
+      const raceOwner = await makeUser('invitations-deadlock-owner');
+      const raceAgencyId = await createAgency('Invitations deadlock agency', raceOwner.id);
+      const cookie = await loginFromLockOrderIp(raceOwner);
+      const email = `deadlock-${randomUUID()}@example.test`;
+      const invitation = await insertInvitation({ agencyId: raceAgencyId, email });
+
+      const holder = await owner.knex.transaction();
+      let released = false;
+      try {
+        // Hold the row, start the resend so it takes the slot and waits on the row, then ask for the
+        // same slot from the holder: the two wait on each other and the resend, waiting first, loses.
+        const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.invitations where id = ?::uuid for update', [invitation.invitationId]);
+        if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one invitation.');
+        const holderPid = await backendPid(holder);
+        const resent = app.app.inject({
+          method: 'POST',
+          url: `/agencies/${raceAgencyId}/invitations/${invitation.invitationId}/resend`,
+          remoteAddress: LOCK_ORDER_IP,
+          headers: { ...origin, cookie }
+        });
+        await waitForBlockedQueryStart(owner, holderPid);
+        // The exact advisory key `lockPendingInvitationSlot` takes (clientId null -> nil uuid).
+        await holder.raw('select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(?, 0))', [
+          `${raceAgencyId}:collaborator_invite:${email}:00000000-0000-0000-0000-000000000000`
+        ]);
+        await holder.commit();
+        released = true;
+
+        const response = await resent;
+        expect(response.statusCode).toBe(409);
+        expect(response.json().error?.code).toBe('TRY_AGAIN');
+        expect(JSON.stringify(response.json())).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
+        await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('revoked_at')).resolves.toEqual({ revoked_at: null });
+        await expect(owner.knex('invitations').where({ agency_id: raceAgencyId }).select('id')).resolves.toHaveLength(1);
+
+        // Repeating the call after the lost race works.
+        const retried = await app.app.inject({
+          method: 'POST',
+          url: `/agencies/${raceAgencyId}/invitations/${invitation.invitationId}/resend`,
+          remoteAddress: LOCK_ORDER_IP,
+          headers: { ...origin, cookie }
+        });
+        expect(retried.statusCode).toBe(200);
+      } finally {
+        if (!released) await holder.rollback();
+      }
+    }, 20_000);
+
+    it('answers 409 TRY_AGAIN when a creation loses a deadlock, and changes nothing', async () => {
+      const raceOwner = await makeUser('invitations-deadlock-create-owner');
+      const raceAgencyId = await createAgency('Invitations deadlock create agency', raceOwner.id);
+      const cookie = await loginFromLockOrderIp(raceOwner);
+      const email = `deadlock-create-${randomUUID()}@example.test`;
+      const invitation = await insertInvitation({ agencyId: raceAgencyId, email });
+
+      const holder = await owner.knex.transaction();
+      let released = false;
+      try {
+        // Same cycle as the resend case, with the creation waiting on the row first: it takes the
+        // slot, blocks on the revoke, and the holder closes the cycle by asking for the slot.
+        const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.invitations where id = ?::uuid for update', [invitation.invitationId]);
+        if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one invitation.');
+        const holderPid = await backendPid(holder);
+        const created = app.app.inject({
+          method: 'POST',
+          url: `/agencies/${raceAgencyId}/invitations/collaborators`,
+          remoteAddress: LOCK_ORDER_IP,
+          headers: { ...origin, cookie },
+          payload: { email, roleId: productionRoleId }
+        });
+        await waitForBlockedQueryStart(owner, holderPid);
+        await holder.raw('select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(?, 0))', [
+          `${raceAgencyId}:collaborator_invite:${email}:00000000-0000-0000-0000-000000000000`
+        ]);
+        await holder.commit();
+        released = true;
+
+        const response = await created;
+        expect(response.statusCode).toBe(409);
+        expect(JSON.stringify(response.json())).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
+        await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('revoked_at')).resolves.toEqual({ revoked_at: null });
+        await expect(owner.knex('invitations').where({ agency_id: raceAgencyId }).select('id')).resolves.toHaveLength(1);
+
+        const retried = await app.app.inject({
+          method: 'POST',
+          url: `/agencies/${raceAgencyId}/invitations/collaborators`,
+          remoteAddress: LOCK_ORDER_IP,
+          headers: { ...origin, cookie },
+          payload: { email, roleId: productionRoleId }
+        });
+        expect(retried.statusCode).toBe(201);
+      } finally {
+        if (!released) await holder.rollback();
+      }
+    }, 20_000);
+  });
+
   it.each([
     ['missing', () => `missing-${randomUUID()}`],
     ['expired', async () => (await insertInvitation({ agencyId, email: `expired-${randomUUID()}@example.test`, expiresAt: new Date(Date.now() - 1_000) })).token],
