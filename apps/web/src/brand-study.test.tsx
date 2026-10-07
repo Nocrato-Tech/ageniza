@@ -373,10 +373,12 @@ describe('brand study tab (#138)', () => {
     expect(screen.getByText('6 de 7')).toBeTruthy();
   });
 
-  it('refuses a bad hex without a request, sends colors: [] when every row is removed, and round-trips a save', async () => {
+  it('refuses a bad hex without a request, moves the counter and the General tab on save, and sends colors: [] on the last removal', async () => {
     const bodies: unknown[] = [];
-    let studyData = studyOf();
-    let detailData = padaria;
+    // Starting with an empty Cores keeps the section unfilled, so saving it moves `filled` and the
+    // counter assertion proves the study + detail invalidation (review of #388 r3).
+    let studyData = { ...studyOf(), filled: 4, sections: studyOf().sections.map((section) => (section.key === 'colors' ? sectionOf('colors') : section)) };
+    let detailData = { ...padaria, summary: { ...padaria.summary, brandStudyFilled: 4 } };
     const { impl, calls } = makeFetch({
       client: () => json(detailData),
       study: () => json(studyData),
@@ -384,55 +386,71 @@ describe('brand study tab (#138)', () => {
         bodies.push(body);
         const colors = (body as { colors: Array<{ name: string; hex: string }> }).colors;
         const updated = sectionOf(sectionKey, { colors, updatedBy: ANY_USER, updatedAt: BRANDING_EDITED_AT });
-        studyData = { ...studyData, filled: colors.length === 0 ? 4 : 5, sections: studyData.sections.map((section) => (section.key === sectionKey ? updated : section)) };
-        detailData = { ...detailData, summary: { ...detailData.summary, brandStudyFilled: studyData.filled } };
+        const filled = colors.length === 0 ? 4 : 5;
+        studyData = { ...studyData, filled, sections: studyData.sections.map((section) => (section.key === sectionKey ? updated : section)) };
+        detailData = { ...detailData, summary: { ...detailData.summary, brandStudyFilled: filled } };
         return json(updated);
       }
     });
     const { container } = renderStudy(impl);
     await screen.findByRole('heading', { name: 'Estudo de marca' });
+    expect(screen.getByText('4 de 7 preenchidas')).toBeTruthy();
+    expect(within(sectionCard(container, 'Cores')).getByText('Ainda não preenchida')).toBeTruthy();
 
-    fireEvent.click(within(sectionCard(container, 'Cores')).getByRole('button', { name: 'Editar Cores' }));
+    fireEvent.click(within(sectionCard(container, 'Cores')).getByRole('button', { name: 'Preencher Cores' }));
+    fireEvent.change(within(sectionCard(container, 'Cores')).getByLabelText('Nome da cor 1'), { target: { value: 'Vinho' } });
     fireEvent.change(within(sectionCard(container, 'Cores')).getByLabelText('Código da cor 1'), { target: { value: 'zzz' } });
     fireEvent.click(within(sectionCard(container, 'Cores')).getByRole('button', { name: 'Salvar' }));
     expect(await within(sectionCard(container, 'Cores')).findByText('Cada cor precisa de um nome e de um código hexadecimal como #7A1F2B.')).toBeTruthy();
     expect(bodies).toEqual([]);
     expect(calls.some((call) => call.startsWith('PUT'))).toBe(false);
 
-    // Fixing the hex saves and the editor closes over the new list, the last editor and the counter.
+    // Fixing the hex saves: the editor closes over the new list, the last editor shows and the
+    // counter moves (from the invalidated study and detail, not from a local guess).
     fireEvent.change(within(sectionCard(container, 'Cores')).getByLabelText('Código da cor 1'), { target: { value: '#112233' } });
     fireEvent.click(within(sectionCard(container, 'Cores')).getByRole('button', { name: 'Salvar' }));
-    await waitFor(() => expect(bodies).toEqual([{ colors: [{ name: 'Vinho', hex: '#112233' }, { name: 'Creme', hex: '#F3E9DC' }] }]));
+    await waitFor(() => expect(bodies).toEqual([{ colors: [{ name: 'Vinho', hex: '#112233' }] }]));
     await waitFor(() => expect(within(sectionCard(container, 'Cores')).queryByLabelText('Nome da cor 1')).toBeNull());
     expect(within(sectionCard(container, 'Cores')).getByText('#112233')).toBeTruthy();
     expect(within(sectionCard(container, 'Cores')).getByText('editado por Ana · 12/10')).toBeTruthy();
+    expect(await screen.findByText('5 de 7 preenchidas')).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
+    expect(await screen.findByText('5 de 7')).toBeTruthy();
 
-    // Removing every row is clearing the section: the last removal travels as colors: [].
+    // Back to the study, removing the only row is clearing the section: it travels as colors: []
+    // and the counter returns.
+    fireEvent.click(screen.getByRole('link', { name: 'Estudo de marca' }));
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
     fireEvent.click(within(sectionCard(container, 'Cores')).getByRole('button', { name: 'Editar Cores' }));
-    fireEvent.click(within(sectionCard(container, 'Cores')).getByRole('button', { name: 'Remover a cor 1' }));
     fireEvent.click(within(sectionCard(container, 'Cores')).getByRole('button', { name: 'Remover a cor 1' }));
     fireEvent.click(within(sectionCard(container, 'Cores')).getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(bodies[1]).toEqual({ colors: [] });
+    expect(await screen.findByText('4 de 7 preenchidas')).toBeTruthy();
     await waitFor(() => expect(within(sectionCard(container, 'Cores')).getByText('Ainda não preenchida')).toBeTruthy());
   });
 
-  it('edits the archetype by its Portuguese label, sends the key and shows the new editor day', async () => {
+  it('edits the archetype by its Portuguese label, sends the key, moves the counter and the General tab', async () => {
     const bodies: unknown[] = [];
-    let studyData = studyOf();
+    // Empty archetype means an unfilled section: saving it moves `filled` (review of #388 r3).
+    let studyData = { ...studyOf(), filled: 4, sections: studyOf().sections.map((section) => (section.key === 'archetype' ? sectionOf('archetype') : section)) };
+    let detailData = { ...padaria, summary: { ...padaria.summary, brandStudyFilled: 4 } };
     const { impl } = makeFetch({
+      client: () => json(detailData),
       study: () => json(studyData),
       putSection: (sectionKey, body) => {
         bodies.push(body);
         const updated = sectionOf(sectionKey, { archetype: (body as { archetype: string }).archetype, updatedBy: ANY_USER, updatedAt: BRANDING_EDITED_AT });
-        studyData = { ...studyData, sections: studyData.sections.map((section) => (section.key === sectionKey ? updated : section)) };
+        studyData = { ...studyData, filled: 5, sections: studyData.sections.map((section) => (section.key === sectionKey ? updated : section)) };
+        detailData = { ...detailData, summary: { ...detailData.summary, brandStudyFilled: 5 } };
         return json(updated);
       }
     });
     const { container } = renderStudy(impl);
     await screen.findByRole('heading', { name: 'Estudo de marca' });
+    expect(screen.getByText('4 de 7 preenchidas')).toBeTruthy();
 
-    fireEvent.click(within(sectionCard(container, 'Arquétipo')).getByRole('button', { name: 'Editar Arquétipo' }));
+    fireEvent.click(within(sectionCard(container, 'Arquétipo')).getByRole('button', { name: 'Preencher Arquétipo' }));
     fireEvent.change(within(sectionCard(container, 'Arquétipo')).getByRole('combobox', { name: 'Arquétipo' }), { target: { value: 'hero' } });
     fireEvent.click(within(sectionCard(container, 'Arquétipo')).getByRole('button', { name: 'Salvar' }));
 
@@ -440,6 +458,9 @@ describe('brand study tab (#138)', () => {
     expect(await within(sectionCard(container, 'Arquétipo')).findByText('Herói')).toBeTruthy();
     expect(within(sectionCard(container, 'Arquétipo')).queryByRole('combobox')).toBeNull();
     expect(within(sectionCard(container, 'Arquétipo')).getByText('editado por Ana · 12/10')).toBeTruthy();
+    expect(await screen.findByText('5 de 7 preenchidas')).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
+    expect(await screen.findByText('5 de 7')).toBeTruthy();
   });
 
   it('keeps reading and opening personas for a reader role, with no editing control at all', async () => {
@@ -487,19 +508,24 @@ describe('brand study tab (#138)', () => {
 
   it('creates a persona from the modal, refusing an empty name and a name over 120 bytes first', async () => {
     const bodies: unknown[] = [];
-    let studyData = studyOf({ personas: [] });
+    let studyData = studyOf({ personas: [], filled: 4 });
+    let detailData = { ...padaria, summary: { ...padaria.summary, brandStudyFilled: 4 } };
     const { impl } = makeFetch({
+      client: () => json(detailData),
       study: () => json(studyData),
       createPersona: (body) => {
         bodies.push(body);
         const created = { ...donaMaria, ...(body as object) };
-        studyData = { ...studyData, personas: [created] };
+        // The first active persona makes the section count: `filled` moves (SPEC §3).
+        studyData = { ...studyData, filled: 5, personas: [created] };
+        detailData = { ...detailData, summary: { ...detailData.summary, brandStudyFilled: 5 } };
         return json(created, 201);
       }
     });
     renderStudy(impl);
     await screen.findByRole('heading', { name: 'Estudo de marca' });
     expect(screen.getByText('Nenhuma persona ainda')).toBeTruthy();
+    expect(screen.getByText('4 de 7 preenchidas')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Adicionar persona' }));
     const dialog = await screen.findByRole('dialog', { name: 'Nova persona' });
@@ -510,7 +536,7 @@ describe('brand study tab (#138)', () => {
     const name = within(dialog).getByRole('textbox', { name: 'Nome' });
     fireEvent.change(name, { target: { value: 'x'.repeat(121) } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Criar persona' }));
-    expect(await within(dialog).findByText('O nome da persona pode ter no máximo 120 caracteres.')).toBeTruthy();
+    expect(await within(dialog).findByText('O nome da persona pode ter no máximo 120 bytes.')).toBeTruthy();
     expect(bodies).toEqual([]);
 
     fireEvent.change(name, { target: { value: 'Dona Maria' } });
@@ -520,6 +546,10 @@ describe('brand study tab (#138)', () => {
     await waitFor(() => expect(bodies).toEqual([{ name: 'Dona Maria', description: 'Dona da padaria', pains: null, desires: null, objections: null }]));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await screen.findByRole('button', { name: /Dona Maria/ })).toBeTruthy();
+    // The counter here and on the General tab follow the invalidated study and detail.
+    expect(await screen.findByText('5 de 7 preenchidas')).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
+    expect(await screen.findByText('5 de 7')).toBeTruthy();
   });
 
   it('keeps the create modal draft on server errors and maps 400, 403 and CLIENT_ARCHIVED', async () => {
@@ -564,7 +594,10 @@ describe('brand study tab (#138)', () => {
   it('opens a persona with its four fields, edits only what changed and archives with confirmation', async () => {
     const patches: unknown[] = [];
     let studyData = studyOf();
+    let detailData = padaria;
+    let detailGets = 0;
     const { impl } = makeFetch({
+      client: () => { detailGets += 1; return json(detailData); },
       study: () => json(studyData),
       patchPersona: (personaId, body) => {
         patches.push({ personaId, body });
@@ -574,7 +607,9 @@ describe('brand study tab (#138)', () => {
       },
       archivePersona: (personaId) => {
         const updated = { ...donaMaria, status: 'archived' as const };
-        studyData = { ...studyData, personas: studyData.personas.map((persona) => (persona.id === personaId ? updated : persona)) };
+        // No active persona is left, so the section stops counting (SPEC §3).
+        studyData = { ...studyData, filled: 4, personas: studyData.personas.map((persona) => (persona.id === personaId ? updated : persona)) };
+        detailData = { ...detailData, summary: { ...detailData.summary, brandStudyFilled: 4 } };
         return json(updated);
       }
     });
@@ -593,6 +628,10 @@ describe('brand study tab (#138)', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(patches).toEqual([{ personaId: donaMaria.id, body: { description: 'Dona da padaria e do bairro' } }]));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // The card reads from the invalidated study: the new description is what stays on screen,
+    // and the detail (General) query was refetched with it.
+    expect(await screen.findByText('Dona da padaria e do bairro')).toBeTruthy();
+    await waitFor(() => expect(detailGets).toBeGreaterThan(1));
 
     // Archiving asks first, saying what happens to the portal and to the conversations.
     const reopened = await openPersona('Dona Maria');
@@ -612,6 +651,10 @@ describe('brand study tab (#138)', () => {
     expect(within(archived).getByText('Dona Maria')).toBeTruthy();
     expect(within(archived).getByRole('button', { name: 'Desarquivar Dona Maria' })).toBeTruthy();
     expect(within(archived).getByRole('button', { name: 'Desarquivar Dona Aposentada' })).toBeTruthy();
+    // Archiving the last active persona moves the counter, here and on the General tab.
+    expect(await screen.findByText('4 de 7 preenchidas')).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
+    expect(await screen.findByText('4 de 7')).toBeTruthy();
   });
 
   it('keeps the edit draft on a persona save error, with the server message mapped', async () => {
@@ -623,14 +666,17 @@ describe('brand study tab (#138)', () => {
 
     const dialog = await openPersona('Dona Maria');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Editar' }));
-    const description = within(dialog).getByRole('textbox', { name: 'Descrição' }) as HTMLTextAreaElement;
-    fireEvent.change(description, { target: { value: 'Rascunho que não pode sumir' } });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Descrição' }), { target: { value: 'Rascunho que não pode sumir' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
 
     expect(await within(dialog).findByText('Não foi possível salvar. Tente de novo.')).toBeTruthy();
-    expect(description.value).toBe('Rascunho que não pode sumir');
     expect(dialog.textContent).not.toContain('private diagnostic');
     expect(screen.getByRole('dialog', { name: 'Dona Maria' })).toBe(dialog);
+    // The editor must still be open: re-query the live form and check the draft stayed there
+    // (review of #388 r3 — a detached node would keep its old value).
+    const liveDraft = within(dialog).getByRole('textbox', { name: 'Descrição' }) as HTMLTextAreaElement;
+    expect(liveDraft.value).toBe('Rascunho que não pode sumir');
+    expect(within(dialog).getByRole('button', { name: 'Salvar' })).toBeTruthy();
   });
 
   it('maps an archive refusal and keeps the retry available', async () => {
@@ -668,21 +714,26 @@ describe('brand study tab (#138)', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: /Dona Maria/ })).toBeNull());
   });
 
-  it('reactivates an archived persona and reports an unarchive failure in the section', async () => {
-    let studyData = studyOf({ personas: [donaMaria, donaAposentada] });
+  it('reactivates an archived persona, reports an unarchive failure and moves the counters', async () => {
+    // Only an archived persona: unarchiving it brings the section back to filled (SPEC §3).
+    let studyData = studyOf({ personas: [donaAposentada], filled: 4 });
+    let detailData = { ...padaria, summary: { ...padaria.summary, brandStudyFilled: 4 } };
     let attempts = 0;
     const { impl } = makeFetch({
+      client: () => json(detailData),
       study: () => json(studyData),
       unarchivePersona: (personaId) => {
         attempts += 1;
         if (attempts === 1) return json({ error: { code: 'FORBIDDEN', message: 'private diagnostic' } }, 403);
         const updated = { ...donaAposentada, status: 'active' as const };
-        studyData = { ...studyData, personas: studyData.personas.map((persona) => (persona.id === personaId ? updated : persona)) };
+        studyData = { ...studyData, filled: 5, personas: studyData.personas.map((persona) => (persona.id === personaId ? updated : persona)) };
+        detailData = { ...detailData, summary: { ...detailData.summary, brandStudyFilled: 5 } };
         return json(updated);
       }
     });
     renderStudy(impl);
     await screen.findByRole('heading', { name: 'Estudo de marca' });
+    expect(screen.getByText('4 de 7 preenchidas')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Arquivadas (1)' }));
     fireEvent.click(screen.getByRole('button', { name: 'Desarquivar Dona Aposentada' }));
@@ -692,6 +743,10 @@ describe('brand study tab (#138)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Desarquivar Dona Aposentada' }));
     expect(await screen.findByRole('button', { name: /Dona Aposentada/ })).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Arquivadas (1)' })).toBeNull());
+    // The counter here and on the General tab follow the invalidated study and detail.
+    expect(await screen.findByText('5 de 7 preenchidas')).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
+    expect(await screen.findByText('5 de 7')).toBeTruthy();
   });
 
   it('draws a skeleton of the seven sections while the study loads', async () => {
