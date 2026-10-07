@@ -113,6 +113,7 @@ interface Scenario {
   readonly patch?: (body: unknown) => Response | Promise<Response>;
   readonly putPhoto?: (body: unknown) => Response | Promise<Response>;
   readonly deletePhoto?: () => Response | Promise<Response>;
+  readonly brandStudy?: () => Response | Promise<Response>;
 }
 
 /** Behaves like the real API: 401 without a session, one 404 for every hidden client. */
@@ -136,6 +137,10 @@ const makeFetch = (scenario: Scenario = {}) => {
       if (method === 'PUT') return scenario.putPhoto?.(JSON.parse(String(init?.body))) ?? json({ photoUrl: 'https://storage.test/nova.png' });
       if (method === 'DELETE') return scenario.deletePhoto?.() ?? noContent();
     }
+    // The study tab of #138 reads its own endpoint; the tests here only need it to answer so the
+    // tab renders.
+    const brandStudy = /\/agencies\/([^/]+)\/clients\/([^/]+)\/brand-study$/.exec(path);
+    if (brandStudy !== null) return scenario.brandStudy?.() ?? json({ filled: 5, sections: [], personas: [] });
     const detail = /\/agencies\/([^/]+)\/clients\/([^/]+)$/.exec(path);
     if (detail !== null) {
       if (method === 'PATCH') {
@@ -266,7 +271,16 @@ describe('client detail (#136)', () => {
     const { probe } = renderClientDetail(impl);
     await screen.findByRole('heading', { name: 'Padaria Central' });
 
-    for (const [label, slug] of [['Conteúdos', 'conteudos'], ['Tarefas', 'tarefas'], ['Estudo de marca', 'estudo-de-marca'], ['Relatórios', 'relatorios'], ['Acessos', 'acessos']] as const) {
+    // Every tab's own content heading; the study tab of #138 renders its real area instead of the
+    // skeleton sentence.
+    const tabHeadings = [
+      ['Conteúdos', 'conteudos'],
+      ['Tarefas', 'tarefas'],
+      ['Estudo de marca', 'estudo-de-marca'],
+      ['Relatórios', 'relatorios'],
+      ['Acessos', 'acessos']
+    ] as const;
+    for (const [label, slug] of tabHeadings) {
       fireEvent.click(screen.getByRole('link', { name: label }));
       expect(await screen.findByRole('heading', { name: label })).toBeTruthy();
       expect(probe.pathname).toBe(clientUrl(CLIENT_ID, slug));
@@ -500,7 +514,6 @@ describe('client detail (#136)', () => {
     ['conteudos', 'Conteúdos', 'Aqui vai ficar o calendário editorial deste cliente, com os posts, a prévia do feed e as aprovações.'],
     ['tarefas', 'Tarefas', 'Aqui vão ficar as tarefas deste cliente, com prazos e responsáveis.'],
     ['relatorios', 'Relatórios', 'Aqui vai ficar o relatório deste cliente, com os resultados do trabalho.'],
-    ['estudo-de-marca', 'Estudo de marca', 'Aqui vão ficar as seções da marca, as personas e as conversas.'],
     ['acessos', 'Acessos', 'Aqui vão ficar as pessoas com acesso ao portal e os convites pendentes.']
   ])('draws %s as its name and its sentence, with no extra control', async (tab, title, sentence) => {
     const { impl } = makeFetch();

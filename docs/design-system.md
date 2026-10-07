@@ -315,6 +315,8 @@ O `variant` `outline` do shadcn corresponde ao nosso `secondary`; não expor `ou
 
 `leadingIcon`/`trailingIcon`, do vocabulário original, ainda não entraram: nenhuma tela pediu ícone em botão até agora. Adicionar quando pedir.
 
+Os campos de formulário seguem o mesmo princípio de passthrough nativo com tokens da Ageniza: `TextInput`, `Textarea` e `Select` são exports de `packages/ui` (classes `ui-text-input`, `ui-textarea` e `ui-select` em `globals.css`), com foco visível coberto pela regra global de `:focus-visible`.
+
 ## 14. Regra de composição
 
 Preferir:

@@ -21,7 +21,7 @@ import {
   type ResolvedPagination
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
-import { raw, isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+import { databaseErrorCode, raw, isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import {
   createInvitationToken,
   hashInvitationToken,
@@ -121,6 +121,13 @@ const invitationNotPending = (): HttpError => new HttpError({
   code: 'INVITATION_NOT_PENDING',
   message: 'O convite não está pendente.'
 });
+
+/**
+ * The code `app_private.lock_active_client_for_invitation` raises when the client was archived between
+ * the route's read and the insert (20261006000400): a portal invitation for a client that is no longer
+ * active, the same answer as reading it archived.
+ */
+const isClientNoLongerActive = (error: unknown): boolean => databaseErrorCode(error) === 'A0020';
 
 const clientArchived = (): HttpError => new HttpError({
   statusCode: 409,
@@ -426,6 +433,7 @@ const createClientInvitation = async (
     };
   }).catch((error: unknown) => {
     if (isRetryableConflict(error)) throw tryAgain();
+    if (isClientNoLongerActive(error)) throw clientArchived();
     throw error;
   });
 };
@@ -495,6 +503,7 @@ const resendInvitation = async (
     };
   }).catch((error: unknown) => {
     if (isRetryableConflict(error)) throw tryAgain();
+    if (isClientNoLongerActive(error)) throw clientArchived();
     if (isInsufficientPrivilegeError(error)) throw forbidden();
     throw error;
   });
