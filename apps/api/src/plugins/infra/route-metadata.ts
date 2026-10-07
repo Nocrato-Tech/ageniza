@@ -1,3 +1,6 @@
+/** A permission a route demands, or null; a list means any one of them is enough, and it never may be empty. */
+export type RoutePermission = string | readonly [string, ...string[]] | null;
+
 /**
  * Route metadata shared by every module and checked against the generated API documentation
  * (issue #182). It lives in `plugins/infra` because it is a declaration about the HTTP surface,
@@ -10,9 +13,6 @@
  * `responseStatus` or whose body does not parse with the declared `schemas.response`, so the
  * catalog cannot drift from the route it documents.
  */
-/** A permission a route demands, or null; a list means any one of them is enough, and it never may be empty. */
-export type RoutePermission = string | readonly [string, ...string[]] | null;
-
 export interface DocumentedRouteConfig {
   readonly permission: RoutePermission;
   readonly responseStatus: number;
