@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
+import { createRef } from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { Avatar, BadgeCard, Button, ChoiceCard, ConfirmDialog, Menu, MenuItem, MenuSeparator, Pagination, Select, Skeleton } from './index.js';
+import { Avatar, BadgeCard, Button, ChoiceCard, ConfirmDialog, Menu, MenuItem, MenuSeparator, Pagination, Select, Skeleton, Textarea } from './index.js';
 
 afterEach(cleanup);
 
@@ -293,5 +294,25 @@ describe('Pagination', () => {
   it('renders nothing when there is a single page and no count', () => {
     const { container } = render(<Pagination page={1} totalPages={1} onPageChange={vi.fn()} />);
     expect(container.querySelector('.ui-pagination')).toBeNull();
+  });
+});
+
+describe('Textarea', () => {
+  it('renders a native textarea with the shared class, forwarding ref, attributes and extra className', () => {
+    const ref = createRef<HTMLTextAreaElement>();
+    const onChange = vi.fn();
+    render(<Textarea ref={ref} id="notes" name="notes" rows={3} value="rascunho" className="extra" onChange={onChange} />);
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(textarea.tagName).toBe('TEXTAREA');
+    expect(textarea.className.split(' ')).toEqual(expect.arrayContaining(['ui-textarea', 'extra']));
+    expect(textarea.id).toBe('notes');
+    expect(textarea.name).toBe('notes');
+    expect(textarea.rows).toBe(3);
+    expect(textarea.value).toBe('rascunho');
+    expect(ref.current).toBe(textarea);
+
+    fireEvent.change(textarea, { target: { value: 'novo' } });
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 });

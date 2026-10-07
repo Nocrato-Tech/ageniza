@@ -113,6 +113,7 @@ interface Scenario {
   readonly patch?: (body: unknown) => Response | Promise<Response>;
   readonly putPhoto?: (body: unknown) => Response | Promise<Response>;
   readonly deletePhoto?: () => Response | Promise<Response>;
+  readonly brandStudy?: () => Response | Promise<Response>;
   readonly members?: () => Response | Promise<Response>;
   readonly clientInvitations?: () => Response | Promise<Response>;
 }
@@ -138,8 +139,10 @@ const makeFetch = (scenario: Scenario = {}) => {
       if (method === 'PUT') return scenario.putPhoto?.(JSON.parse(String(init?.body))) ?? json({ photoUrl: 'https://storage.test/nova.png' });
       if (method === 'DELETE') return scenario.deletePhoto?.() ?? noContent();
     }
-    // The Acessos tab of #140 reads its own endpoints; the tests here only need them to answer so
-    // the tab renders.
+    // The two content tabs of #138/#140 read their own endpoints; the tests here only need them
+    // to answer so the tab renders.
+    const brandStudy = /\/agencies\/([^/]+)\/clients\/([^/]+)\/brand-study$/.exec(path);
+    if (brandStudy !== null) return scenario.brandStudy?.() ?? json({ filled: 5, sections: [], personas: [] });
     const members = /\/agencies\/([^/]+)\/clients\/([^/]+)\/members$/.exec(path);
     if (members !== null) return scenario.members?.() ?? json({ data: [], meta: { page: 1, pageSize: 20, totalItems: 0, totalPages: 0 } });
     const clientInvitations = /\/agencies\/([^/]+)\/clients\/([^/]+)\/invitations$/.exec(path);
@@ -274,8 +277,8 @@ describe('client detail (#136)', () => {
     const { probe } = renderClientDetail(impl);
     await screen.findByRole('heading', { name: 'Padaria Central' });
 
-    // Every tab's own content heading; the Acessos tab of #140 renders its real area instead of
-    // the skeleton sentence.
+    // Every tab's own content heading; the two content tabs of #138/#140 render their real area
+    // instead of the skeleton sentence.
     const tabHeadings = [
       ['Conteúdos', 'conteudos', 'Conteúdos'],
       ['Tarefas', 'tarefas', 'Tarefas'],
@@ -516,8 +519,7 @@ describe('client detail (#136)', () => {
   it.each([
     ['conteudos', 'Conteúdos', 'Aqui vai ficar o calendário editorial deste cliente, com os posts, a prévia do feed e as aprovações.'],
     ['tarefas', 'Tarefas', 'Aqui vão ficar as tarefas deste cliente, com prazos e responsáveis.'],
-    ['relatorios', 'Relatórios', 'Aqui vai ficar o relatório deste cliente, com os resultados do trabalho.'],
-    ['estudo-de-marca', 'Estudo de marca', 'Aqui vão ficar as seções da marca, as personas e as conversas.']
+    ['relatorios', 'Relatórios', 'Aqui vai ficar o relatório deste cliente, com os resultados do trabalho.']
   ])('draws %s as its name and its sentence, with no extra control', async (tab, title, sentence) => {
     const { impl } = makeFetch();
     const { container } = renderClientDetail(impl, clientUrl(CLIENT_ID, tab));

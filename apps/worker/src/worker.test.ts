@@ -309,6 +309,18 @@ describe('worker runtime', () => {
     expect(client.close).toHaveBeenCalledOnce();
   });
 
+  it('registers the daily archive of ended contracts on the queue, scheduled, with or without object storage', () => {
+    const queue = createTestQueue();
+    createTestRuntime({ queue });
+    const registered = vi.mocked(queue.register).mock.calls.map(([definition]) => definition);
+    const archive = registered.find((definition) => definition.name === 'clients.archive-due');
+    expect(archive?.schedule).toEqual({ cron: '10 * * * *', timeZone: 'America/Sao_Paulo' });
+    expect(archive?.runOnStart).toBe(true);
+    expect(registered.filter((definition) => definition.name === 'clients.archive-due')).toHaveLength(1);
+    // Video processing needs storage and is absent from this config; the archive does not need it.
+    expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due']);
+  });
+
   it('runs smoke mode without a durable queue, since it has no database', () => {
     const runtime = createWorkerRuntime({
       config: { ...config, smokeJob: true },

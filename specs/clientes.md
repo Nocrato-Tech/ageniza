@@ -552,7 +552,7 @@ Na primeira entrada daquela pessoa naquele cliente, um tour guiado aponta os ite
 
 ## 8. Infraestrutura
 
-- **Job agendado `clients.archive-due`**, diário, no worker existente (pg-boss). Roda depois da virada do dia em `America/Sao_Paulo` e chama `app_private.archive_due_clients()`. É o **primeiro job agendado de negócio** do sistema.
+- **Job agendado `clients.archive-due`**, no worker existente (pg-boss). Roda aos 10 minutos de cada hora em `America/Sao_Paulo` (a das 00:10 é a que vira o dia) e uma vez cada vez que o worker sobe, e chama `app_private.archive_due_clients()`, que é idempotente: uma virada perdida não deixa o portal aberto por um dia. É o **primeiro job agendado de negócio** do sistema.
 - **Armazenamento de identidade** para a foto do cliente — criado por **#100**, de Colaboradores. Nenhum bucket novo.
 - **Nenhum e-mail novo.** O convite de portal já tem o seu; notificação está fora (seção 10).
 
