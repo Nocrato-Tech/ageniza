@@ -4,6 +4,8 @@ import { execFileSync } from 'node:child_process';
 // An instruction alone does not hold: this turns it into a gate, so the expensive decisions cannot
 // be settled quietly inside a pull request that was about something else.
 const DECISIONS_FILE = 'docs/business/decisions.md';
+// A decision may also live in a file of its own (the record is moving to one file per decision).
+const DECISIONS_DIRECTORY = 'docs/business/decisions/';
 
 /** SQL that reaches something already deployed, as opposed to creating new objects. */
 const STRUCTURAL_SQL = [
@@ -34,8 +36,10 @@ export const structuralReasons = (sql) => {
   return touchesExisting ? ['alters an existing table', ...reasons] : reasons;
 };
 
-/** True when the change records a decision alongside the migration. */
-export const recordsDecision = (changedFiles) => changedFiles.includes(DECISIONS_FILE);
+/** True when the change records a decision alongside the migration: in the file, or in a file of its own. */
+export const recordsDecision = (changedFiles) =>
+  changedFiles.includes(DECISIONS_FILE) ||
+  changedFiles.some((file) => file.startsWith(DECISIONS_DIRECTORY) && file.endsWith('.md'));
 
 export const evaluate = (migrations, changedFiles) => {
   const structural = migrations
