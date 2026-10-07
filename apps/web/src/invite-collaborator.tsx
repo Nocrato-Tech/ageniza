@@ -75,10 +75,7 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
   const emailRef = useRef<HTMLInputElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
-  // `autoFocus` would run before `Modal` captures the element focused before `showModal`, so the
-  // focus return on close would break; focusing from an effect runs after that capture. The open
-  // form answers to the e-mail field, the confirmation to its own "Fechar" button, since the send
-  // button unmounts with the form and the focus would otherwise fall to `body`.
+  // `autoFocus` would run before `Modal` captures the previous focus and break the focus return; focusing from an effect runs after that capture.
   useEffect(() => {
     if (sent === null) emailRef.current?.focus();
     else closeRef.current?.focus();

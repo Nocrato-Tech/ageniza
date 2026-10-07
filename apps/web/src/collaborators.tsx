@@ -4,7 +4,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { z } from 'zod';
 
 import { CollaboratorListResponseSchema } from '@ageniza/contracts';
-import { BadgeCard, Button, LiveStatus, Pagination, Select, Skeleton, TextInput } from '@ageniza/ui';
+import { BadgeCard, Button, Pagination, Select, Skeleton, TextInput } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -105,9 +105,7 @@ export function CollaboratorsPage() {
   const role = searchParams.get('role') ?? '';
   const jobTitle = searchParams.get('jobTitle') ?? '';
   const requestedStatus: 'active' | 'removed' = searchParams.get('status') === 'removed' ? 'removed' : 'active';
-  // A shared link can carry `status=removed` to someone without the administrative permission; the
-  // API would answer 403 and the whole team list would turn into a not-found. The SPEC says that
-  // without the permission only `active` is returned, so the filter falls back to it and says so.
+  // A shared link with `status=removed` must not take the list down: without the permission the API refuses it (403), so it falls back to active and says so.
   const removedFilterIgnored = requestedStatus === 'removed' && !canSeeRemoved;
   const status: 'active' | 'removed' = removedFilterIgnored ? 'active' : requestedStatus;
   const page = parsePage(searchParams.get('page'));
@@ -203,7 +201,7 @@ export function CollaboratorsPage() {
         {canSeeRemoved && <Select label="Status" value={status} options={STATUS_OPTIONS} onChange={(value) => setFilter('status', value)} />}
       </div>
 
-      {removedFilterIgnored && <LiveStatus>Você não tem permissão para ver colaboradores removidos. Mostrando os ativos.</LiveStatus>}
+      {removedFilterIgnored && <p>Você não tem permissão para ver colaboradores removidos. Mostrando os ativos.</p>}
 
       {collaborators.isPending ? (
         <ul className="collaborators__grid" aria-hidden="true">

@@ -2274,10 +2274,7 @@ describe('removed filter and reactivation (#105)', () => {
     expect(await screen.findByRole('combobox', { name: 'Status' })).toBeTruthy();
   });
 
-  // A shared link can carry `status=removed` to someone without the administrative permission; the
-  // API refuses that filter with 403, which used to turn the whole team list into a not-found. The
-  // SPEC says that without the permission only `active` is returned, so the screen never asks for
-  // removed and falls back to the active list with a notice.
+  // A shared link with `status=removed` without the permission used to turn the whole team list into a not-found.
   it('falls back to the active list with a notice when the link asks for removed without permission', async () => {
     const queries: string[] = [];
     const { impl, calls } = makeFetch({
@@ -2295,6 +2292,16 @@ describe('removed filter and reactivation (#105)', () => {
     expect(screen.getByText('Você não tem permissão para ver colaboradores removidos. Mostrando os ativos.')).toBeTruthy();
     expect(queries.some((query) => query.includes('page=1'))).toBe(true);
     expect(calls.some((call) => call.includes('status=removed'))).toBe(false);
+  });
+
+  it('does not warn someone who can see removed links when the URL filters them', async () => {
+    const { impl } = makeFetch({
+      permissions: reactivatePermissions,
+      collaborators: (query) => listResponse(removedOnly(query))
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+    expect(screen.queryByText(/não tem permissão para ver colaboradores removidos/)).toBeNull();
   });
 
   it('writes the removed filter to the URL and asks the server for removed links only', async () => {
