@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   captureLogs,
@@ -553,7 +553,13 @@ describe('GET /auth/session (#5, #6)', () => {
   });
 });
 
+// One app per block, closed with the block. Every `openApp()` keeps its pools until the end of the file, and
+// this file already holds dozens: twelve more apps exhausted the connection slots of the CI database (53300).
 describe('GET /auth/session/check applies every rule of the session guard without renewing (#423)', () => {
+  let app: TestApp;
+  beforeAll(async () => { app = await buildTestApp(); });
+  afterAll(async () => { await app.close(); });
+
   const loginSession = async (app: TestApp, user: TestUserFixture) => {
     const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
     const sessionId = (await app.pool.query<{ id: string }>(
@@ -571,7 +577,6 @@ describe('GET /auth/session/check applies every rule of the session guard withou
     (await app.pool.query('select 1 from auth.session where id = $1', [sessionId])).rowCount === 1;
 
   it('answers 401 UNAUTHENTICATED, with no cookie issued, when there is no session cookie', async () => {
-    const app = await openApp();
 
     const response = await check(app);
 
@@ -581,7 +586,6 @@ describe('GET /auth/session/check applies every rule of the session guard withou
   });
 
   it('answers 401 UNAUTHENTICATED once the session was revoked, by logout or by the row being gone', async () => {
-    const app = await openApp();
     const user = await makeUser(app, 'check-revoked');
     const loggedOut = await loginSession(app, user);
     const deleted = await loginSession(app, user);
@@ -600,7 +604,6 @@ describe('GET /auth/session/check applies every rule of the session guard withou
   });
 
   it('answers 401 UNAUTHENTICATED, with no cookie issued, once the 7 days without use ran out', async () => {
-    const app = await openApp();
     const user = await makeUser(app, 'check-expired');
     const { cookie, sessionId } = await loginSession(app, user);
     await app.pool.query('update auth.session set "expiresAt" = now() - interval \'1 second\' where id = $1', [sessionId]);
@@ -613,7 +616,6 @@ describe('GET /auth/session/check applies every rule of the session guard withou
   });
 
   it('answers 401 SESSION_EXPIRED and deletes the row for a session older than 30 days, although expiresAt is still ahead', async () => {
-    const app = await openApp();
     const user = await makeUser(app, 'check-absolute-cap');
     const { cookie, sessionId } = await loginSession(app, user);
     // Recently used and far from its 7 days: only the 30 days since creation can reject it.
@@ -631,7 +633,6 @@ describe('GET /auth/session/check applies every rule of the session guard withou
   });
 
   it('still accepts a session just under the 30 days: the cap is not applied early', async () => {
-    const app = await openApp();
     const user = await makeUser(app, 'check-under-cap');
     const { cookie, sessionId } = await loginSession(app, user);
     await app.pool.query('update auth.session set "createdAt" = now() - interval \'29 days\', "updatedAt" = now(), "expiresAt" = now() + interval \'6 days\' where id = $1', [sessionId]);
@@ -644,7 +645,6 @@ describe('GET /auth/session/check applies every rule of the session guard withou
   });
 
   it('answers 401 UNAUTHENTICATED for a tampered, unsigned or malformed cookie and leaves the real session alone', async () => {
-    const app = await openApp();
     const user = await makeUser(app, 'check-tampered');
     const { cookies, cookie, sessionId } = await loginSession(app, user);
     const sessionCookie = cookies.find((candidate) => candidate.name.includes('session_token'));
@@ -664,7 +664,6 @@ describe('GET /auth/session/check applies every rule of the session guard withou
   });
 
   it('never renews, whatever the query says: a session due for renewal keeps expiresAt and updatedAt and gets no cookie', async () => {
-    const app = await openApp();
     const user = await makeUser(app, 'check-no-renewal');
     const { cookie, sessionId } = await loginSession(app, user);
     // 6 d 23 h since the last use: far past updateAge (1 day), 2 minutes from the 7-day expiry.
@@ -684,7 +683,6 @@ describe('GET /auth/session/check applies every rule of the session guard withou
   });
 
   it('answers only GET', async () => {
-    const app = await openApp();
     const user = await makeUser(app, 'check-get-only');
     const { cookie } = await loginSession(app, user);
 
@@ -695,8 +693,11 @@ describe('GET /auth/session/check applies every rule of the session guard withou
 });
 
 describe('Cache-Control: no-store on the auth responses that carry session data (#423)', () => {
+  let app: TestApp;
+  beforeAll(async () => { app = await buildTestApp(); });
+  afterAll(async () => { await app.close(); });
+
   it('is sent by GET /auth/session and GET /auth/session/check, on 200 and on 401', async () => {
-    const app = await openApp();
     const user = await makeUser(app, 'no-store-session');
     const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
     const cookie = sessionCookieHeader(login.cookies);
@@ -713,7 +714,6 @@ describe('Cache-Control: no-store on the auth responses that carry session data 
   });
 
   it('is sent on the SESSION_EXPIRED answer of both routes', async () => {
-    const app = await openApp();
     const user = await makeUser(app, 'no-store-expired');
 
     for (const url of ['/auth/session', '/auth/session/check']) {
@@ -729,7 +729,6 @@ describe('Cache-Control: no-store on the auth responses that carry session data 
   });
 
   it('is sent by POST /auth/login, which returns the user and issues the session cookie', async () => {
-    const app = await openApp();
     const user = await makeUser(app, 'no-store-login');
 
     const response = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
