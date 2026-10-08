@@ -105,7 +105,7 @@ O registro é sempre o mesmo, porque `unique (agency_id, user_id)` impede dois v
 
 **O estado errado é `409`, nos dois sentidos** (2026-10-07, pendente de validação): remover quem já está removido (`COLLABORATOR_ALREADY_REMOVED`) e reativar quem não está removido (`COLLABORATOR_NOT_REMOVED`) são rejeitados, e nada muda, nem `updated_at`. A remoção idempotente (`200` sem escrita) foi descartada: responderia sucesso sem uma linha alterada.
 
-**Remover não encerra a sessão.** A sessão é global e não existe sessão por agência; o acesso à agência é decidido a cada requisição, e só enxerga vínculo `active`. A pessoa perde a agência na requisição seguinte, com o mesmo cookie, e mantém as outras agências.
+**Remover encerra todas as sessões da pessoa** (2026-10-08, decisão do dono, #411). A sessão é global e não existe sessão por agência, então a remoção apaga as linhas dela em `auth."session"` na mesma transação, mesmo que a pessoa tenha outra agência: a requisição seguinte com o cookie antigo é `401`, e ela entra de novo e escolhe a agência que ainda tem (se não tem nenhuma, o login é recusado). Vale também para remover o acesso ao portal de um cliente. Quem remove não perde a própria sessão, e só a passagem para `removed` encerra sessões: remover quem já está removido (`409`) ou reativar não muda nenhuma. O web confere a sessão a cada 45 s e quando a aba volta ao foco, na área da agência e no portal, porque uma aba parada não faria requisição nenhuma.
 
 **Reativar com o papel `admin` exige `colaborador.atribuir_admin`**, inclusive para quem já foi Admin e volta como Admin (mantendo o mesmo `role_id`). Quem reaceita um convite depois de removido entra por `accept_invitation`, que não passa pelo trigger do vínculo.
 
@@ -442,6 +442,7 @@ E, 2026-10-08, validadas pelo dono (#359):
 
 - O nome no aceite do convite tem o limite do perfil: 120 caracteres (#409; substitui a de 2026-09-30)
 - A API recusa editar o próprio cargo e o cargo do Owner (#410; substitui o item 7 da de 2026-10-07 do `PATCH` do vínculo)
+- Remover colaborador ou acesso ao portal encerra todas as sessões da pessoa (#411; substitui a decisão 3 de 2026-10-07 de remover e reativar)
 
 Herdadas de [`autorizacao.md`](autorizacao.md): o vocabulário `archived`/`removed`, a reativação que não herda autorização, o contrato de listagem, e as convenções de tela.
 

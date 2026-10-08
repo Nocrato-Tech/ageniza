@@ -146,6 +146,30 @@ const linkExistingUser = async (agencyId: string, member: Member, roleId: string
 const membershipRow = async (membershipId: string): Promise<MembershipRow> =>
   await owner.knex('agency_memberships').where({ id: membershipId }).first('id', 'role_id', 'job_title', 'status', 'updated_at') as MembershipRow;
 
+const sessionCount = async (userId: string): Promise<number> =>
+  Number((await owner.knex('auth.session').where({ userId }).count<Array<{ count: string }>>('id as count'))[0]?.count ?? 0);
+
+/**
+ * A trigger that makes the DELETE of one person's sessions fail with the given SQLSTATE, as a deadlock or
+ * a broken connection would: the proof that ending the sessions and removing the link are one transaction.
+ */
+const withFailingSessionDelete = async (userId: string, errcode: string, run: () => Promise<void>): Promise<void> => {
+  const name = `zz_fail_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+  await owner.knex.raw(`
+    create function public.${name}() returns trigger language plpgsql as $$
+    begin
+      if old."userId" = '${userId}'::uuid then raise exception 'sessions of this person cannot be deleted' using errcode = '${errcode}'; end if;
+      return old;
+    end $$;
+    create trigger ${name} before delete on auth."session" for each row execute function public.${name}();
+  `);
+  try {
+    await run();
+  } finally {
+    await owner.knex.raw(`drop trigger if exists ${name} on auth."session"; drop function if exists public.${name}();`);
+  }
+};
+
 const membershipCount = async (agencyId: string): Promise<number> => {
   const row = await owner.knex('agency_memberships').where({ agency_id: agencyId }).count<Array<{ count: string }>>('id as count');
   return Number(row[0]?.count);
@@ -418,27 +442,124 @@ describe('POST /agencies/:agencyId/collaborators/:membershipId/remove (issue #98
     expect(await membershipRow(target.membershipId)).toEqual(afterFirst);
   });
 
-  it('the person loses the agency on the very next request, with the session they already had', async () => {
+  it('the person is signed out of everything on the very next request, other agencies included, and signs in again with only the other agency (#411)', async () => {
     const home = await createAgency('remove-access-home');
     const away = await createAgency('remove-access-away');
     const person = await addMember(home.agencyId, 'remove-access-person', presetRoleIds.admin);
     await linkExistingUser(away.agencyId, person, presetRoleIds.production);
+    const secondDevice = await loginCookie(person.user);
+    const bystander = await addMember(away.agencyId, 'remove-access-bystander', presetRoleIds.admin);
 
     const before = await list(person.cookie, home.agencyId);
     expect(before.status).toBe(200);
     const contextsBefore = await app.app.inject({ method: 'GET', url: '/me/contexts', headers: { ...origin, cookie: person.cookie } });
     expect(contextsBefore.body).toContain(home.agencyId);
+    expect(await sessionCount(person.user.id)).toBe(2);
 
     expect((await remove(home.ownerCookie, home.agencyId, person.membershipId)).status).toBe(200);
 
-    const after = await list(person.cookie, home.agencyId);
-    expectRefused(after, 404, 'NOT_FOUND', 'Agency not found.');
-    const contextsAfter = await app.app.inject({ method: 'GET', url: '/me/contexts', headers: { ...origin, cookie: person.cookie } });
+    // The sessions are gone from the database, not only refused: every cookie of the person is a 401, the
+    // agency they still belong to included, because the session is global.
+    expect(await sessionCount(person.user.id)).toBe(0);
+    for (const cookie of [person.cookie, secondDevice]) {
+      expectRefused(await list(cookie, home.agencyId), 401, 'UNAUTHENTICATED');
+      expectRefused(await list(cookie, away.agencyId), 401, 'UNAUTHENTICATED');
+      expect((await app.app.inject({ method: 'GET', url: '/me/contexts', headers: { ...origin, cookie } })).statusCode).toBe(401);
+    }
+    // Whoever removed keeps their session, and so does anybody else.
+    expect((await list(home.ownerCookie, home.agencyId)).status).toBe(200);
+    expect(await sessionCount(home.ownerUser.id)).toBe(1);
+    expect((await list(bystander.cookie, away.agencyId)).status).toBe(200);
+
+    // They sign in again and choose the agency they still have.
+    const again = await loginCookie(person.user);
+    expectRefused(await list(again, home.agencyId), 404, 'NOT_FOUND', 'Agency not found.');
+    const contextsAfter = await app.app.inject({ method: 'GET', url: '/me/contexts', headers: { ...origin, cookie: again } });
     expect(contextsAfter.statusCode).toBe(200);
     expect(contextsAfter.body).not.toContain(home.agencyId);
     expect(contextsAfter.body).toContain(away.agencyId);
-    // The session itself is global and still valid: only this agency's access ended.
-    expect((await list(person.cookie, away.agencyId)).status).toBe(200);
+    expect((await list(again, away.agencyId)).status).toBe(200);
+  });
+
+  it('a session being refreshed at the moment of the removal is ended all the same: the delete waits for the row and then takes it (#411)', async () => {
+    const fx = await createAgency('remove-refresh-race');
+    const person = await addMember(fx.agencyId, 'remove-refresh-person', presetRoleIds.production);
+
+    // Better Auth renews a session with an UPDATE of its row; a second transaction holds that row.
+    const locker = await owner.knex.transaction();
+    let removal: ReturnType<typeof remove> | undefined;
+    try {
+      const touched = await locker.raw<{ rowCount: number }>('update auth."session" set "updatedAt" = now() where "userId" = ?::uuid', [person.user.id]);
+      expect(touched.rowCount).toBe(1);
+      removal = remove(fx.ownerCookie, fx.agencyId, person.membershipId);
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        const waiting = await owner.knex.raw<{ rows: Array<{ count: string }> }>(
+          "select count(*) as count from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query ilike '%delete from auth.\"session\"%'"
+        );
+        if (Number(waiting.rows[0]?.count) >= 1) break;
+        if (Date.now() > deadline) throw new Error('The removal never queued behind the session row.');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await locker.commit();
+    } catch (error) {
+      await locker.rollback().catch(() => undefined);
+      await Promise.allSettled([removal]);
+      throw error;
+    }
+
+    expect((await removal).status).toBe(200);
+    expect(await sessionCount(person.user.id)).toBe(0);
+    expectRefused(await list(person.cookie, fx.agencyId), 401, 'UNAUTHENTICATED');
+  });
+
+  it.each([['40P01', 409, 'TRY_AGAIN'], ['XX000', 500, 'INTERNAL_ERROR']] as const)(
+    'ending the sessions is part of the removal: when it fails (%s) the link stays active, the sessions stay, and repeating works (#411)',
+    async (errcode, status, code) => {
+      const fx = await createAgency(`remove-atomic-${errcode.toLowerCase()}`);
+      const person = await addMember(fx.agencyId, `remove-atomic-person-${errcode.toLowerCase()}`, presetRoleIds.production);
+      const secondDevice = await loginCookie(person.user);
+      const before = await membershipRow(person.membershipId);
+      expect(await sessionCount(person.user.id)).toBe(2);
+
+      await withFailingSessionDelete(person.user.id, errcode, async () => {
+        const failed = await remove(fx.ownerCookie, fx.agencyId, person.membershipId);
+        expect(failed.status).toBe(status);
+        expect(failed.body.error.code).toBe(code);
+      });
+
+      // Nothing happened: not the removal, not one session, and the person still works with both cookies.
+      expect(await membershipRow(person.membershipId)).toEqual(before);
+      expect(await sessionCount(person.user.id)).toBe(2);
+      for (const cookie of [person.cookie, secondDevice]) expect((await list(cookie, fx.agencyId)).status).toBe(200);
+
+      expect((await remove(fx.ownerCookie, fx.agencyId, person.membershipId)).status).toBe(200);
+      expect((await membershipRow(person.membershipId)).status).toBe('removed');
+      expect(await sessionCount(person.user.id)).toBe(0);
+    }
+  );
+
+  it('does not end any session when the removal is refused: the Owner, oneself, someone already removed, a person without the permission (#411)', async () => {
+    const fx = await createAgency('remove-keeps-sessions');
+    const admin = await addMember(fx.agencyId, 'remove-keeps-admin', presetRoleIds.admin);
+    const peer = await addMember(fx.agencyId, 'remove-keeps-peer', presetRoleIds.production);
+    const other = await createAgency('remove-keeps-other');
+    const gone = await addMember(fx.agencyId, 'remove-keeps-gone', presetRoleIds.production);
+    await linkExistingUser(other.agencyId, gone, presetRoleIds.production);
+    const viewer = await addMember(fx.agencyId, 'remove-keeps-viewer', await createCustomRole(fx.agencyId, ['colaborador.visualizar']));
+    expect((await remove(fx.ownerCookie, fx.agencyId, gone.membershipId)).status).toBe(200);
+    expect(await sessionCount(gone.user.id)).toBe(0);
+    const reopened = await loginCookie(gone.user);
+
+    expectRefused(await remove(admin.cookie, fx.agencyId, fx.ownerMembershipId), 403, 'FORBIDDEN', OWNER_REMOVAL_MESSAGE);
+    expectRefused(await remove(admin.cookie, fx.agencyId, admin.membershipId), 403, 'FORBIDDEN', SELF_REMOVAL_MESSAGE);
+    expectRefused(await remove(viewer.cookie, fx.agencyId, peer.membershipId), 403, 'FORBIDDEN', GENERIC_FORBIDDEN_MESSAGE);
+    expectRefused(await remove(fx.ownerCookie, fx.agencyId, gone.membershipId), 409, 'COLLABORATOR_ALREADY_REMOVED');
+
+    for (const user of [fx.ownerUser, admin.user, peer.user, viewer.user]) expect(await sessionCount(user.id), user.email).toBe(1);
+    // The 409 for someone already removed does not sign them out again either.
+    expect(await sessionCount(gone.user.id)).toBe(1);
+    expect((await app.app.inject({ method: 'GET', url: '/me/contexts', headers: { ...origin, cookie: reopened } })).statusCode).toBe(200);
   });
 
   it('two removals of the same person at the same moment: one wins with 200, the other is the 409, and the row is removed once', async () => {
@@ -714,17 +835,24 @@ describe('POST /agencies/:agencyId/collaborators/:membershipId/reactivate (issue
     expect(await membershipRow(fx.ownerMembershipId)).toMatchObject({ status: 'removed', role_id: presetRoleIds.admin });
   });
 
-  it('the person gets the agency back on the very next request, with the session they already had', async () => {
+  it('the person gets the agency back on signing in again; reactivating creates no session and ends none (#411)', async () => {
     const fx = await createAgency('reactivate-access');
     const person = await addMember(fx.agencyId, 'reactivate-access-person', presetRoleIds.sales);
     expect((await remove(fx.ownerCookie, fx.agencyId, person.membershipId)).status).toBe(200);
-    expectRefused(await list(person.cookie, fx.agencyId), 404, 'NOT_FOUND', 'Agency not found.');
+    expectRefused(await list(person.cookie, fx.agencyId), 401, 'UNAUTHENTICATED');
+    // Their only agency is gone, so there is no context to sign in to until they are brought back.
+    const refusedLogin = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email: person.user.email, password: person.user.password } });
+    expect(refusedLogin.statusCode).toBe(403);
+    expect(await sessionCount(person.user.id)).toBe(0);
 
     expect((await reactivate(fx.ownerCookie, fx.agencyId, person.membershipId, { roleId: presetRoleIds.production })).status).toBe(200);
 
-    expect((await list(person.cookie, fx.agencyId)).status).toBe(200);
+    expect(await sessionCount(person.user.id)).toBe(0);
+    expectRefused(await list(person.cookie, fx.agencyId), 401, 'UNAUTHENTICATED');
+    const again = await loginCookie(person.user);
+    expect((await list(again, fx.agencyId)).status).toBe(200);
     // Production reads the team but does not administer it: the role of the body is what applies.
-    expectRefused(await remove(person.cookie, fx.agencyId, fx.ownerMembershipId), 403, 'FORBIDDEN', GENERIC_FORBIDDEN_MESSAGE);
+    expectRefused(await remove(again, fx.agencyId, fx.ownerMembershipId), 403, 'FORBIDDEN', GENERIC_FORBIDDEN_MESSAGE);
   });
 
   it('two reactivations of the same person at the same moment: one wins with 200, the other is the 409, and its role is not applied', async () => {

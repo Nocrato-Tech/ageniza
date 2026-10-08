@@ -10,4 +10,4 @@
 
 **Origem.** Issue #142, revisão do PR #413 (achado 12); `specs/clientes.md`, seção 7.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-10-08.

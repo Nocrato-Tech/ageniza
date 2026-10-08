@@ -17,6 +17,7 @@ Origin/CSRF checking is global (see below); no route repeats it.
 | `POST /auth/logout` | — (session cookie) | `204`, revokes only the current session | `401 UNAUTHENTICATED` |
 | `POST /auth/logout-all` | — (session cookie) | `204`, revokes every session for the user; audits `auth.logout_all` | `401 UNAUTHENTICATED` |
 | `GET /auth/session` | — (session cookie) | `200 { user: { id, name, email }, session: { expiresAt } }` | `401 UNAUTHENTICATED`; `401 SESSION_EXPIRED` |
+| `GET /auth/session/check` | — (session cookie) | the same `200`, but the session is read with `disableRefresh`: no renewal, no cookie (#411) | `401 UNAUTHENTICATED`; `401 SESSION_EXPIRED` |
 | `POST /auth/password/forgot` | `{ email }` | always `202 {}` | `429 RATE_LIMITED` |
 | `POST /auth/password/reset` | `{ token, newPassword, inviteToken? }` | `200 { signedIn: true }` (with a new session cookie) or `200 { signedIn: false, reason }` (no cookie; `reason` is `'NO_CONTEXT_ACCESS'` or `'SIGN_IN_REQUIRED'`); revokes every previous session for the user either way; audits `auth.password_reset` | `400 INVALID_LINK`; `400 VALIDATION_ERROR` |
 

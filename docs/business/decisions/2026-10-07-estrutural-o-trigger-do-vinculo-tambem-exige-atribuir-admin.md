@@ -10,5 +10,5 @@
 
 **Consequência.** A rota e o banco passam a recusar o mesmo caso, e um teste confere que concordam para cada ator. Nenhuma tabela, coluna, policy ou grant muda, e não há backfill: vínculos já ativos não são reavaliados. O reaceite de convite por quem foi removido segue pelo `accept_invitation`, que não passa por este trigger.
 
-**Origem.** Issue #98, achado da implementação, decidido pelo maestro. **Pendente de validação** pelo dono do produto.
+**Origem.** Issue #98, achado da implementação, decidido pelo maestro. Validada pelo dono em 2026-10-08.
 
