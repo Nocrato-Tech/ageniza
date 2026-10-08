@@ -161,7 +161,7 @@ describe('ResetPasswordPage (/senha/redefinir)', () => {
     submit('a new correct password');
 
     await waitFor(() => expect(probe.pathname).toBe('/entrar'));
-    expect(screen.getByRole('status').textContent).toContain('Senha redefinida. Entre com a nova senha.');
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Senha redefinida. Entre com a nova senha.'));
     fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'pessoa@example.test' } });
     fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'a new correct password' } });
     fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));

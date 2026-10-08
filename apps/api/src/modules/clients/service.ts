@@ -17,7 +17,7 @@ import {
   type UpdatePersonaRequest,
   type WritableBrandSectionKey
 } from '@ageniza/contracts';
-import { raw, type DatabaseClient, type SqlBinding } from '@ageniza/database';
+import { databaseErrorCode, raw, type DatabaseClient, type SqlBinding } from '@ageniza/database';
 
 import { foldTextSql } from '../../plugins/infra/sql-text.js';
 import { latestCommentSideSql, openThreadSql } from './thread-state.js';
@@ -478,6 +478,9 @@ const PERSONA_COLUMNS = `
 /** True only for a row-level-security rejection; used to translate a concurrent archive into 409. */
 export const isRowLevelSecurityViolation = (error: unknown): boolean =>
   typeof error === 'object' && error !== null && (error as { code?: unknown }).code === '42501';
+
+/** The trigger of 20261007001400 found the client no longer active after waiting for the archive that held it. */
+export const isClientNoLongerActive = (error: unknown): boolean => databaseErrorCode(error) === 'A0020';
 
 export const loadBrandSections = async (
   transaction: ClientTransaction,

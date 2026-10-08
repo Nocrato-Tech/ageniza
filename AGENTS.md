@@ -1,5 +1,6 @@
 # Ageniza agent invariants
 
+- Find the document for your task in [docs/README.md](docs/README.md) before opening files, and read only what the task needs.
 - `User` is global: never add `agency_id` to it.
 - Owner is an Agency property, not a Role; tenant access is through memberships.
 - Keep domain modules in `apps/api/src/modules`; `packages` is shared infrastructure only.
