@@ -66,12 +66,24 @@ const nullableDisplayText = (maxChars: number, maxBytes: number) =>
     ]))
     .nullable();
 
+/** ZWJ/ZWNJ between two Latin letters (marks allowed before the joiner) only forge a lookalike of another name. */
+const JOINER_BETWEEN_LATIN_LETTERS = /(?<=\p{Script=Latin}\p{M}*)[‌‍]+(?=\p{Script=Latin})/u;
+
 /**
  * Client name: the shared display-name rule (control, bidi and invisible characters rejected, at
  * least one letter or number) plus the 256-byte cap the column and the unique index enforce --
  * "Padaria Central" followed by a zero-width space must not create a visually identical homonym.
+ * The stored form is NFC with every `\p{Zs}` space as a plain space, because the unique index only
+ * folds case and `[[:space:]]` runs: a decomposed "Cafe" + U+0301 or a U+2007 gap would otherwise
+ * be a different key for a name that looks the same.
  */
-export const ClientNameSchema = createDisplayNameSchema(256)
+export const ClientNameSchema = z.string()
+  .trim()
+  .min(1)
+  .max(256)
+  .transform((value) => value.normalize('NFC').replace(/\p{Zs}/gu, ' '))
+  .pipe(createDisplayNameSchema(256))
+  .refine((value) => !JOINER_BETWEEN_LATIN_LETTERS.test(value), 'a zero-width joiner is not allowed between Latin letters')
   .refine((value) => utf8ByteLength(value) <= 256, 'must be at most 256 bytes');
 
 /** Digits only, stored without any mask; 11 or 14 digits. */
