@@ -1079,6 +1079,7 @@ describe('collaborator admin actions (#104)', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Ana Prado' });
 
     expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
+    expect(within(dialog).getByText('Editora')).toBeTruthy();
   });
 
   it('saves cargo and papel and updates the badge behind without reloading', async () => {
