@@ -27,6 +27,8 @@ export type ClientTransaction = Parameters<Parameters<DatabaseClient['transactio
 /** One `clients` row as read or returned by this module; `closing_date` is text, never a Date. */
 export interface ClientRow {
   readonly id: string;
+  /** The row's own tenant: the photo scope is built from it, never from the (case-insensitive) URL. */
+  readonly agency_id: string;
   readonly name: string;
   readonly status: 'active' | 'archived';
   readonly photo_key: string | null;
@@ -54,7 +56,7 @@ interface RawRows<TResult> {
 }
 
 const CLIENT_COLUMNS = `
-  id, name, status, photo_key, legal_name, tax_id, segment, website, instagram_handle,
+  id, agency_id, name, status, photo_key, legal_name, tax_id, segment, website, instagram_handle,
   contact_name, contact_phone, contact_email, closing_date::text as closing_date, archived_at
 `;
 
@@ -266,6 +268,7 @@ export interface ClientListFilters {
 
 export interface ClientListRow {
   readonly id: string;
+  readonly agency_id: string;
   readonly name: string;
   readonly photo_key: string | null;
   readonly instagram_handle: string | null;
@@ -370,6 +373,7 @@ export const listClients = async (
     ${pendingInvitationsCte}
     select
       listing.id,
+      listing.agency_id,
       listing.name,
       listing.photo_key,
       listing.instagram_handle,
@@ -381,6 +385,7 @@ export const listClients = async (
     from (
       select
         client.id,
+        client.agency_id,
         client.name,
         client.photo_key,
         client.instagram_handle,
