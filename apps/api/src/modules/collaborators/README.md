@@ -68,13 +68,14 @@ convite com papel `admin` (módulo `invitations`).
 
 Proteções, todas `403` com mensagem própria: o papel do **Owner** não muda, nem para o mesmo papel
 que ele já tem; **ninguém altera o próprio papel** (compara com `request.auth`, nunca com o corpo).
-O cargo do Owner e o do próprio usuário continuam editáveis pela permissão de cargo.
+O mesmo vale para o **cargo**: o do Owner e o do próprio usuário não mudam (#410), nem para limpá-lo com
+`null`. É condição da rota, sem migration, e vem depois das recusas do papel.
 
 Ordem das respostas: 401 sem sessão; 404 se a agência não é acessível; 403 se falta a permissão
 da porta; 400 do corpo; 403 se falta a permissão de algum campo presente (antes de qualquer leitura,
 então quem não pode não descobre nada, nem que o id é malformado); 404 para vínculo de outra agência,
 inexistente, malformado ou removido; 400 `INVALID_ROLE` para papel que não é de sistema nem da agência;
-403 se o papel é `admin` e falta `atribuir_admin`; 403 de Owner e de si mesmo.
+403 se o papel é `admin` e falta `atribuir_admin`; 403 de Owner e de si mesmo, primeiro no papel e depois no cargo.
 
 A linha é lida com `for update` e a escrita grava **só os campos presentes**, então duas mudanças
 simultâneas de campos diferentes não se sobrescrevem. `UPDATE` que não altera nenhuma linha (a policy
