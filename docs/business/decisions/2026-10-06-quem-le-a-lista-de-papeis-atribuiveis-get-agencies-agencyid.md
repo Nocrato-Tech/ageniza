@@ -8,5 +8,5 @@
 
 **Consequência.** A lista expõe `{ id, key, name }` dos papéis de sistema e dos papéis da própria agência, na mesma ordem determinística por `key`. É a única rota que entrega ids de papel ao front, e desbloqueia a #107; a #97 e a #98 passam a ter a mesma fonte. O `x-permission` desta rota passa a admitir uma lista (ou) no OpenAPI, e a avaliação de autorização ganha a forma "alguma das permissões" apenas aqui — as guardas existentes não mudam.
 
-**Origem.** Issue #287, decidida pelo maestro a partir da lacuna achada na #107. **Pendente de validação** pelo dono do produto.
+**Origem.** Issue #287, decidida pelo maestro a partir da lacuna achada na #107. Validada pelo dono em 2026-10-08.
 

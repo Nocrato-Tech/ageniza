@@ -8,5 +8,5 @@
 
 **Consequência.** Nenhuma rota, tabela, formato de resposta, permissão ou policy muda. O aviso não revela a existência de vínculo removido nenhum — só que o filtro pedido não se aplica —, então a decisão de 2026-09-24 ("sem permissão" não é uma tela) continua valendo: a tela não nega a lista, que é permitida, nem confirma o recurso escondido. A alternativa descartada é o "não encontrado" da página inteira, que reaparece se alguém fizer a tela voltar a pedir o filtro proibido.
 
-**Origem.** Issue #322 (ressalva da revisão do PR #327), decidida pelo maestro. **Pendente de validação** pelo dono do produto.
+**Origem.** Issue #322 (ressalva da revisão do PR #327), decidida pelo maestro. Validada pelo dono em 2026-10-08.
 

@@ -8,5 +8,5 @@
 
 **Consequência.** 120 é folgado para um nome de exibição e não colide com nada existente. Se o dono do produto quiser outro número, é mudança de uma constante em `packages/contracts/src/profile.ts` e do teste correspondente — sem migration nem mudança de formato.
 
-**Origem.** Task #101. **Pendente de validação** — o número foi escolhido na implementação porque a SPEC não o define.
+**Origem.** Task #101. Validada pelo dono em 2026-10-08 — o número foi escolhido na implementação porque a SPEC não o define.
 
