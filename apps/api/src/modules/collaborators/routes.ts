@@ -81,6 +81,8 @@ const MISSING_PERMISSION_MESSAGES: Readonly<Record<string, string>> = {
 
 const OWNER_ROLE_PROTECTED_MESSAGE = 'O papel do Owner da agência não pode ser alterado.';
 const SELF_ROLE_PROTECTED_MESSAGE = 'Ninguém altera o próprio papel.';
+const OWNER_JOB_TITLE_PROTECTED_MESSAGE = 'O cargo do Owner da agência não pode ser alterado.';
+const SELF_JOB_TITLE_PROTECTED_MESSAGE = 'Ninguém altera o próprio cargo.';
 const OWNER_REMOVAL_PROTECTED_MESSAGE = 'O Owner da agência não pode ser removido.';
 const SELF_REMOVAL_PROTECTED_MESSAGE = 'Ninguém remove a si mesmo.';
 
@@ -369,6 +371,10 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
           assertHolds(role.isAdmin);
           if (target.is_owner) throw forbidden(OWNER_ROLE_PROTECTED_MESSAGE);
           if (target.user_id === auth.userId) throw forbidden(SELF_ROLE_PROTECTED_MESSAGE);
+        }
+        if (body.jobTitle !== undefined) {
+          if (target.is_owner) throw forbidden(OWNER_JOB_TITLE_PROTECTED_MESSAGE);
+          if (target.user_id === auth.userId) throw forbidden(SELF_JOB_TITLE_PROTECTED_MESSAGE);
         }
 
         // Zero rows means a policy filtered the row, which Postgres reports as success; answering

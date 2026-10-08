@@ -43,7 +43,7 @@ Administrar quem faz parte da agência: quem entra, com que papel, em que cargo,
 
 ¹ já existe no catálogo e já é concedida ao `admin`.
 
-² A API também deixa quem tem `colaborador.alterar_funcao` editar o **próprio** cargo e o do Owner: as regras 4 e 5 da seção 5 falam só do papel, e o banco não restringe o cargo. O modal mostra o cargo como leitura para a própria pessoa. **Pendente de validação** (2026-10-07): se o dono quiser recusar a edição do próprio cargo, é uma condição na rota, sem migration.
+² A API recusa a edição do **próprio** cargo e a do cargo do **Owner** (`403`), como já recusa a do papel: o modal mostra o cargo como leitura nos dois casos. Decisão do dono em 2026-10-08 (`docs/business/decisions/2026-10-08-cargo-proprio-e-do-owner-nao-se-edita.md`), que substitui o item 7 da decisão de 2026-10-07 do `PATCH` do vínculo.
 
 ³ Além deles, o Owner, por posse. O critério é a tarefa, não o nome do papel: quem remove ou reativa precisa encontrar a pessoa, e uma agência pode montar um papel personalizado de administração do quadro sem usar o preset `admin`. É um desvio deliberado de "apenas para Admin e Owner" (2026-09-24): o `account_manager`, que edita cargo mas não papel, **não** vê removidos. **Pendente de validação** (2026-10-07).
 
@@ -151,11 +151,11 @@ As rotas de perfil **não são escopadas por agência**: o usuário é global, e
 
 #### O `PATCH` do vínculo
 
-(2026-10-07, #97; os itens 6 e 7 da decisão estão pendentes de validação — ver a seção 2, nota ², e a seção 3.)
+(2026-10-07, #97; o item 6 da decisão está pendente de validação, e o item 7 foi substituído pela decisão de 2026-10-08, validada — ver a seção 2, nota ², e a seção 3.)
 
 - O corpo usa os nomes `jobTitle` e `roleId`, ambos opcionais; a resposta é o item de colaborador (abaixo).
 - Para chegar à rota basta uma de `alterar_funcao` ou `alterar_papel`. Lido o corpo, a permissão exigida é a de **cada campo presente** — e, quando o papel é `admin`, também `colaborador.atribuir_admin`.
-- **Ordem das respostas**, para que quem não pode não descubra nada antes do `403`: `401`; `404` da agência; `403` da porta; `400` do corpo; `403` por campo; `404` do vínculo (de outra agência, inexistente, malformado ou removido: o mesmo); `400 INVALID_ROLE`; `403` de `atribuir_admin` quando o papel é `admin`; `403` do Owner e do próprio papel.
+- **Ordem das respostas**, para que quem não pode não descubra nada antes do `403`: `401`; `404` da agência; `403` da porta; `400` do corpo; `403` por campo; `404` do vínculo (de outra agência, inexistente, malformado ou removido: o mesmo); `400 INVALID_ROLE`; `403` de `atribuir_admin` quando o papel é `admin`; `403` do Owner e do próprio papel; `403` do Owner e do próprio cargo, quando o corpo traz `jobTitle`.
 - **Toda recusa de autorização é `403 FORBIDDEN`**, com mensagem própria para as três que a pessoa precisa entender: falta de `atribuir_admin`, papel do Owner e papel próprio. Um `42501` vindo do banco (policy ou trigger) também é `403`, nunca `500`. Um `UPDATE` que não altera nenhuma linha é `403`, nunca `200`: a policy filtra em silêncio, e responder sucesso afirmaria uma mudança que não houve.
 - O limite do cargo é aplicado pelo schema **antes** de a instrução chegar ao banco, porque a função que mede unidades UTF-16 é quadrática no tamanho.
 
@@ -301,7 +301,7 @@ Abre ao clicar no crachá. A URL reflete a pessoa aberta, para o link ser compar
 | **Admin** e **Owner** | editam cargo e papel; removem. O Owner é o único que pode conceder `admin` |
 | **Gestor de conta** | edita **cargo**; o papel aparece como leitura |
 | **Produção, Vendas, Financeiro** | só leem |
-| **A própria pessoa** | edita nome e foto; vê a data de entrada ("Na agência desde"), como todos; cargo e papel são leitura, com a nota de que quem muda é quem administra (a API, por sua vez, deixa quem tem `alterar_funcao` editar o próprio cargo — seção 2, nota ²) |
+| **A própria pessoa** | edita nome e foto; vê a data de entrada ("Na agência desde"), como todos; cargo e papel são leitura, com a nota de que quem muda é quem administra |
 | Qualquer um, olhando o **Owner** | sem ação de remover e sem edição de papel |
 
 **E-mail** aparece como leitura em todos os casos, com a nota de que a troca é feita pela operação — nunca um campo desabilitado sem explicação.
@@ -437,6 +437,11 @@ E, 2026-10-07, decididas pelo maestro e **não** incluídas na lista de pendente
 
 - A pendência do convite é decidida no fim da espera pela trava, não no início da transação
 - Criar e reenviar convite travam na mesma ordem, e o deadlock vira 409 TRY_AGAIN (#335)
+
+E, 2026-10-08, validadas pelo dono (#359):
+
+- O nome no aceite do convite tem o limite do perfil: 120 caracteres (#409; substitui a de 2026-09-30)
+- A API recusa editar o próprio cargo e o cargo do Owner (#410; substitui o item 7 da de 2026-10-07 do `PATCH` do vínculo)
 
 Herdadas de [`autorizacao.md`](autorizacao.md): o vocabulário `archived`/`removed`, a reativação que não herda autorização, o contrato de listagem, e as convenções de tela.
 
