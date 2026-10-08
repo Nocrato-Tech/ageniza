@@ -24,7 +24,6 @@ import { NoAccessPage } from './no-access.js';
 import { ClientAccessTab } from './portal-access.js';
 import { PortalAreaLayout, PortalHomePage, PortalSkeletonPage } from './portal.js';
 import { ResetPasswordPage } from './reset-password.js';
-import { SessionWatch } from './session-watch.js';
 import { LoadingPage, NotFoundPage, SessionGate } from './status-pages.js';
 
 export function PublicLayout() {
@@ -66,7 +65,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="termos" element={<LegalDocumentPage document={termsOfUse} sibling={{ title: 'Política de Privacidade', to: '/privacidade' }} />} />
       <Route path="privacidade" element={<LegalDocumentPage document={privacyPolicy} sibling={{ title: 'Termos de Uso', to: '/termos' }} />} />
     </Route>
-    <Route path="agencia/:agenciaId" element={<SessionGate session={session}><SessionWatch /><AgencyAreaLayout /></SessionGate>}>
+    <Route path="agencia/:agenciaId" element={<SessionGate session={session}><AgencyAreaLayout /></SessionGate>}>
       <Route index element={<AgencyHomePage />} />
       <Route path="colaboradores" element={
         <AgencyPermissionRoute permission="colaborador.visualizar">
@@ -101,7 +100,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
     </Route>
     {/* The portal carries its own shell (header and bottom bar), like the agency area: the generic
         protected header never stacks above it (specs/clientes.md §7). */}
-    <Route path="portal/:clienteId" element={<SessionGate session={session}><SessionWatch /><PortalAreaLayout /></SessionGate>}>
+    <Route path="portal/:clienteId" element={<SessionGate session={session}><PortalAreaLayout /></SessionGate>}>
       <Route index element={<Navigate to="inicio" replace />} />
       <Route path="inicio" element={<PortalHomePage />} />
       <Route path="calendario" element={<PortalSkeletonPage title="Calendário" description="Aqui você vai ver os posts planejados para sua marca e aprovar cada um." />} />
