@@ -15,6 +15,7 @@ import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { AuthInstance } from '../auth/better-auth.js';
+import { revokeUserSessions } from '../auth/session-revocation.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeQuery, routeResponse } from '../../plugins/infra/zod.js';
@@ -173,8 +174,11 @@ export const registerAccessRoutes = (app: FastifyInstance, dependencies: AccessR
         const client = await loadClient(transaction, scope);
         if (client === undefined) return { kind: 'client-not-found' } as const;
         if (client.status === 'archived') return { kind: 'client-archived' } as const;
-        if (await loadClientMember(transaction, scope) === undefined) return { kind: 'member-not-found' } as const;
+        const current = await loadClientMember(transaction, scope);
+        if (current === undefined) return { kind: 'member-not-found' } as const;
         await setClientMemberStatus(transaction, membershipId, status);
+        // Only the transition ends sessions: removing again, or bringing the person back, changes none.
+        if (status === 'removed' && current.status === 'active') await revokeUserSessions(transaction, current.user_id, auth.sessionId);
         const member = await loadClientMember(transaction, scope);
         if (member === undefined) throw new Error('The member whose access just changed could not be read back.');
         return { kind: 'ok', member } as const;

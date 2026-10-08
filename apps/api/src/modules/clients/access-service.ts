@@ -21,6 +21,8 @@ interface RawRows<TResult> {
 
 export interface ClientMemberRow {
   readonly membership_id: string;
+  /** Never part of the contract: the route needs it to end the sessions of a person it removes. */
+  readonly user_id: string;
   readonly name: string;
   readonly email: string;
   readonly status: ClientMemberStatus;
@@ -29,6 +31,7 @@ export interface ClientMemberRow {
 
 const MEMBER_COLUMNS = `
   membership.id as membership_id,
+  membership.user_id as user_id,
   member.name as name,
   member.email as email,
   membership.status as status,

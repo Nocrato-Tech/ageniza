@@ -89,6 +89,9 @@ const statusOf = async (membershipId: string): Promise<string> =>
 const auditCount = async (action: string, targetId: string): Promise<number> =>
   Number((await owner.knex('audit.events').where({ action, target_id: targetId }).count<{ count: string }[]>('id as count'))[0]?.count ?? 0);
 
+const sessionCount = async (userId: string): Promise<number> =>
+  Number((await owner.knex('auth.session').where({ userId }).count<{ count: string }[]>('id as count'))[0]?.count ?? 0);
+
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
 const daysFromNow = (days: number): Date => new Date(Date.now() + days * 86_400_000);
 
@@ -516,9 +519,11 @@ describe('CLIENTS portal access, agency side (#132)', () => {
       expect(removed.statusCode).toBe(200);
       expect(removed.json()).toMatchObject({ membershipId: ana.id, status: 'removed' });
       expect(await statusOf(ana.id)).toBe('removed');
+      expect(await sessionCount(users.ana!.id)).toBe(0);
       const reactivated = await call('POST', reactivateUrl(agencyA, clientA1, ana.id), cookies.removeOnly!);
       expect(reactivated.statusCode).toBe(200);
       expect(await statusOf(ana.id)).toBe('active');
+      cookies.ana = await login(users.ana!);
     });
 
     it('lets the agency owner, who has no membership row, do everything', async () => {
@@ -547,6 +552,7 @@ describe('CLIENTS portal access, agency side (#132)', () => {
       const reactivated = await call('POST', reactivateUrl(agencyA, clientA1, ana.id), cookies.admin!, { status: 'removed' });
       expect(reactivated.json()).toMatchObject({ status: 'active' });
       expect(await statusOf(ana.id)).toBe('active');
+      cookies.ana = await login(users.ana!);
     });
   });
 
@@ -623,33 +629,97 @@ describe('CLIENTS portal access, agency side (#132)', () => {
       expect(await statusOf(ana.id)).toBe('removed');
       expect(await auditCount('client_member.removed', ana.id)).toBe(removedAuditBefore + 1);
 
-      // The next request of the same session: out of this client, still in the other one, and the others unaffected.
-      expect((await call('GET', portalClient(clientA1), cookies.ana!)).statusCode).toBe(404);
-      expect((await call('GET', `${portalClient(clientA1)}/brand-study`, cookies.ana!)).statusCode).toBe(404);
-      expect((await call('GET', portalClient(clientA2), cookies.ana!)).statusCode).toBe(200);
+      // #411: the session is global, so every session of the person ends, the other client included;
+      // the next request of the old cookie is a 401, and the remover and the others keep theirs.
+      expect(await sessionCount(users.ana!.id)).toBe(0);
+      for (const url of [portalClient(clientA1), `${portalClient(clientA1)}/brand-study`, portalClient(clientA2)]) {
+        const gone = await call('GET', url, cookies.ana!);
+        expect(gone.statusCode, url).toBe(401);
+        expect(gone.json().error.code).toBe('UNAUTHENTICATED');
+      }
       expect((await call('GET', portalClient(clientA1), cookies.alvaro!)).statusCode).toBe(200);
       const listed = (await call('GET', membersUrl(agencyA, clientA1), cookies.admin!)).json().data.map((item: { name: string }) => item.name);
       expect(listed).not.toContain('Ana Portal');
       expect((await call('GET', `${membersUrl(agencyA, clientA1)}?status=removed`, cookies.admin!)).json().data.map((item: { name: string }) => item.name)).toContain('Ana Portal');
+
+      // Signing in again is allowed: the person has no access to this client, and still has the other one.
+      cookies.ana = await login(users.ana!);
+      expect((await call('GET', portalClient(clientA1), cookies.ana)).statusCode).toBe(404);
+      expect((await call('GET', portalClient(clientA2), cookies.ana)).statusCode).toBe(200);
+      const sessionsAfterLogin = await sessionCount(users.ana!.id);
+      expect(sessionsAfterLogin).toBe(1);
 
       const reactivated = await call('POST', reactivateUrl(agencyA, clientA1, ana.id), cookies.admin!);
       expect(reactivated.statusCode).toBe(200);
       expect(reactivated.json()).toMatchObject({ membershipId: ana.id, status: 'active' });
       expect(await statusOf(ana.id)).toBe('active');
       expect(await auditCount('client_member.reactivated', ana.id)).toBe(reactivatedAuditBefore + 1);
-      expect((await call('GET', portalClient(clientA1), cookies.ana!)).statusCode).toBe(200);
+      // Reactivating creates no session and ends none: the session of the new login is the one that serves it.
+      expect(await sessionCount(users.ana!.id)).toBe(sessionsAfterLogin);
+      expect((await call('GET', portalClient(clientA1), cookies.ana)).statusCode).toBe(200);
       expect(Number((await owner.knex('invitations').where({ agency_id: agencyA }).count<{ count: string }[]>('id as count'))[0]?.count)).toBe(invitationsBefore);
     });
 
-    it('removes the client link of a collaborator without touching their place in the agency', async () => {
+    it('ends every session of the person, however many, and not those of anybody else; repeating the removal ends none more (#411)', async () => {
+      const ana = await membershipOf(clientA1, 'ana');
+      const second = await login(users.ana!);
+      const third = await login(users.ana!);
+      expect(await sessionCount(users.ana!.id)).toBeGreaterThanOrEqual(3);
+      const othersBefore = await sessionCount(users.alvaro!.id);
+
+      expect((await call('POST', removeUrl(agencyA, clientA1, ana.id), cookies.admin!)).statusCode).toBe(200);
+
+      expect(await sessionCount(users.ana!.id)).toBe(0);
+      for (const cookie of [cookies.ana!, second, third]) expect((await call('GET', portalClient(clientA2), cookie)).statusCode).toBe(401);
+      expect(await sessionCount(users.alvaro!.id)).toBe(othersBefore);
+      expect((await call('GET', portalClient(clientA1), cookies.alvaro!)).statusCode).toBe(200);
+
+      // A session opened after the removal is not ended by repeating it: only the transition does.
+      const reopened = await login(users.ana!);
+      const repeated = await call('POST', removeUrl(agencyA, clientA1, ana.id), cookies.admin!);
+      expect(repeated.statusCode).toBe(200);
+      expect(await sessionCount(users.ana!.id)).toBe(1);
+      expect((await call('GET', portalClient(clientA2), reopened)).statusCode).toBe(200);
+
+      expect((await call('POST', reactivateUrl(agencyA, clientA1, ana.id), cookies.admin!)).statusCode).toBe(200);
+      expect(await sessionCount(users.ana!.id)).toBe(1);
+      cookies.ana = reopened;
+    });
+
+    it('does not end the session of whoever removes, not even when they remove their own portal link (#411)', async () => {
+      const own = await owner.knex('client_memberships').insert({ client_id: clientA1, user_id: users.removeOnly!.id }).returning('id');
+      const ownId = own[0].id as string;
+      try {
+        const otherDevice = await login(users.removeOnly!);
+        const before = await sessionCount(users.removeOnly!.id);
+        expect(before).toBeGreaterThanOrEqual(2);
+
+        const removed = await call('POST', removeUrl(agencyA, clientA1, ownId), cookies.removeOnly!);
+        expect(removed.statusCode).toBe(200);
+        expect(await statusOf(ownId)).toBe('removed');
+
+        // The current session survives and keeps working; the others of the same person are gone.
+        expect((await call('GET', '/me/contexts', cookies.removeOnly!)).statusCode).toBe(200);
+        expect(await sessionCount(users.removeOnly!.id)).toBe(1);
+        expect((await call('GET', '/me/contexts', otherDevice)).statusCode).toBe(401);
+      } finally {
+        await owner.knex('client_memberships').where({ id: ownId }).delete();
+      }
+    });
+
+    it('removes the client link of a collaborator without touching their place in the agency, but ends their sessions (#411)', async () => {
       const dual = await membershipOf(clientA1, 'dual');
       expect((await call('GET', portalClient(clientA1), cookies.dual!)).statusCode).toBe(200);
       expect((await call('POST', removeUrl(agencyA, clientA1, dual.id), cookies.admin!)).statusCode).toBe(200);
       try {
-        expect((await call('GET', portalClient(clientA1), cookies.dual!)).statusCode).toBe(404);
-        // As a collaborator they still work: the agency workspace and the portal are different contexts.
-        expect((await call('GET', `/agencies/${agencyA}/clients/${clientA1}`, cookies.dual!)).statusCode).toBe(200);
+        // The session is global: the portal link ends it for the agency workspace too.
+        expect((await call('GET', portalClient(clientA1), cookies.dual!)).statusCode).toBe(401);
+        expect((await call('GET', `/agencies/${agencyA}/clients/${clientA1}`, cookies.dual!)).statusCode).toBe(401);
         expect(await owner.knex('agency_memberships').where({ agency_id: agencyA, user_id: users.dual!.id }).first('status')).toEqual({ status: 'active' });
+        // After signing in again they work as a collaborator; the portal of this client is closed.
+        cookies.dual = await login(users.dual!);
+        expect((await call('GET', `/agencies/${agencyA}/clients/${clientA1}`, cookies.dual)).statusCode).toBe(200);
+        expect((await call('GET', portalClient(clientA1), cookies.dual)).statusCode).toBe(404);
       } finally {
         await call('POST', reactivateUrl(agencyA, clientA1, dual.id), cookies.admin!);
       }
