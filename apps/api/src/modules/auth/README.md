@@ -108,6 +108,9 @@ without the password, the reset token, or the e-mail.
   update window (`session.expiresIn` / `session.updateAge` in `better-auth.ts`).
 - Session state is never cached in the cookie (`cookieCache.enabled: false`): revocation takes
   effect immediately, at the cost of one DB round trip per authenticated request.
+- The auth responses that carry session data (`GET /auth/session`, `GET /auth/session/check`,
+  `POST /auth/login`, and `POST /auth/password/reset`, which issues the cookie) answer
+  `Cache-Control: no-store`, set in `onRequest` so that a `401` from the guard carries it too (#423).
 - An **absolute 30-day limit since `createdAt`**, independent of activity, is enforced twice, not
   by Better Auth's own expiry: `session-guard.ts` revokes a session older than that on the next
   request that presents it (the caller gets `401 SESSION_EXPIRED`), and the `databaseHooks` entry in

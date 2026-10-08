@@ -553,6 +553,193 @@ describe('GET /auth/session (#5, #6)', () => {
   });
 });
 
+describe('GET /auth/session/check applies every rule of the session guard without renewing (#423)', () => {
+  const loginSession = async (app: TestApp, user: TestUserFixture) => {
+    const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
+    const sessionId = (await app.pool.query<{ id: string }>(
+      'select id from auth.session where "userId" = $1 order by "createdAt" desc limit 1',
+      [user.id]
+    )).rows[0]!.id;
+    return { cookies: login.cookies, cookie: sessionCookieHeader(login.cookies), sessionId };
+  };
+  const check = (app: TestApp, cookie?: string) => app.app.inject({
+    method: 'GET',
+    url: '/auth/session/check',
+    ...(cookie === undefined ? {} : { headers: { cookie } })
+  });
+  const sessionExists = async (app: TestApp, sessionId: string): Promise<boolean> =>
+    (await app.pool.query('select 1 from auth.session where id = $1', [sessionId])).rowCount === 1;
+
+  it('answers 401 UNAUTHENTICATED, with no cookie issued, when there is no session cookie', async () => {
+    const app = await openApp();
+
+    const response = await check(app);
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ error: { code: 'UNAUTHENTICATED' } });
+    expect(response.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('answers 401 UNAUTHENTICATED once the session was revoked, by logout or by the row being gone', async () => {
+    const app = await openApp();
+    const user = await makeUser(app, 'check-revoked');
+    const loggedOut = await loginSession(app, user);
+    const deleted = await loginSession(app, user);
+    expect((await check(app, loggedOut.cookie)).statusCode).toBe(200);
+    expect((await check(app, deleted.cookie)).statusCode).toBe(200);
+
+    expect((await app.app.inject({ method: 'POST', url: '/auth/logout', headers: { ...origin, cookie: loggedOut.cookie } })).statusCode).toBe(204);
+    await app.pool.query('delete from auth.session where id = $1', [deleted.sessionId]);
+
+    for (const { cookie } of [loggedOut, deleted]) {
+      const response = await check(app, cookie);
+      expect(response.statusCode).toBe(401);
+      expect(response.json()).toMatchObject({ error: { code: 'UNAUTHENTICATED' } });
+      expect(response.headers['set-cookie']).toBeUndefined();
+    }
+  });
+
+  it('answers 401 UNAUTHENTICATED, with no cookie issued, once the 7 days without use ran out', async () => {
+    const app = await openApp();
+    const user = await makeUser(app, 'check-expired');
+    const { cookie, sessionId } = await loginSession(app, user);
+    await app.pool.query('update auth.session set "expiresAt" = now() - interval \'1 second\' where id = $1', [sessionId]);
+
+    const response = await check(app, cookie);
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ error: { code: 'UNAUTHENTICATED' } });
+    expect(response.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('answers 401 SESSION_EXPIRED and deletes the row for a session older than 30 days, although expiresAt is still ahead', async () => {
+    const app = await openApp();
+    const user = await makeUser(app, 'check-absolute-cap');
+    const { cookie, sessionId } = await loginSession(app, user);
+    // Recently used and far from its 7 days: only the 30 days since creation can reject it.
+    await app.pool.query('update auth.session set "createdAt" = now() - interval \'31 days\', "updatedAt" = now(), "expiresAt" = now() + interval \'6 days\' where id = $1', [sessionId]);
+
+    const response = await check(app, cookie);
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ error: { code: 'SESSION_EXPIRED' } });
+    expect(await sessionExists(app, sessionId)).toBe(false);
+    // The deleted row is the whole rejection: the same cookie is now just a missing session.
+    const again = await check(app, cookie);
+    expect(again.statusCode).toBe(401);
+    expect(again.json()).toMatchObject({ error: { code: 'UNAUTHENTICATED' } });
+  });
+
+  it('still accepts a session just under the 30 days: the cap is not applied early', async () => {
+    const app = await openApp();
+    const user = await makeUser(app, 'check-under-cap');
+    const { cookie, sessionId } = await loginSession(app, user);
+    await app.pool.query('update auth.session set "createdAt" = now() - interval \'29 days\', "updatedAt" = now(), "expiresAt" = now() + interval \'6 days\' where id = $1', [sessionId]);
+
+    const response = await check(app, cookie);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ user: { id: user.id } });
+    expect(await sessionExists(app, sessionId)).toBe(true);
+  });
+
+  it('answers 401 UNAUTHENTICATED for a tampered, unsigned or malformed cookie and leaves the real session alone', async () => {
+    const app = await openApp();
+    const user = await makeUser(app, 'check-tampered');
+    const { cookies, cookie, sessionId } = await loginSession(app, user);
+    const sessionCookie = cookies.find((candidate) => candidate.name.includes('session_token'));
+    expect(sessionCookie).toBeDefined();
+    const { name, value } = sessionCookie!;
+    const flipped = `${value.startsWith('a') ? 'b' : 'a'}${value.slice(1)}`;
+    const unsigned = decodeURIComponent(value).split('.')[0]!;
+
+    for (const forged of [flipped, unsigned, 'x'.repeat(5_000), '%00', '']) {
+      const response = await check(app, `${name}=${forged}`);
+      expect(response.statusCode).toBe(401);
+      expect(response.json()).toMatchObject({ error: { code: 'UNAUTHENTICATED' } });
+      expect(response.headers['set-cookie']).toBeUndefined();
+    }
+    expect(await sessionExists(app, sessionId)).toBe(true);
+    expect((await check(app, cookie)).statusCode).toBe(200);
+  });
+
+  it('never renews, whatever the query says: a session due for renewal keeps expiresAt and updatedAt and gets no cookie', async () => {
+    const app = await openApp();
+    const user = await makeUser(app, 'check-no-renewal');
+    const { cookie, sessionId } = await loginSession(app, user);
+    // 6 d 23 h since the last use: far past updateAge (1 day), 2 minutes from the 7-day expiry.
+    await app.pool.query('update auth.session set "updatedAt" = now() - interval \'6 days 23 hours\', "expiresAt" = now() + interval \'2 minutes\' where id = $1', [sessionId]);
+    const readRow = async () => (await app.pool.query<{ expiresAt: Date; updatedAt: Date }>('select "expiresAt", "updatedAt" from auth.session where id = $1', [sessionId])).rows[0]!;
+    const before = await readRow();
+
+    for (const query of ['', '?disableRefresh=false', '?disableRefresh=0&renew=true']) {
+      const response = await app.app.inject({ method: 'GET', url: `/auth/session/check${query}`, headers: { cookie } });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['set-cookie']).toBeUndefined();
+    }
+
+    const after = await readRow();
+    expect(new Date(after.expiresAt).getTime()).toBe(new Date(before.expiresAt).getTime());
+    expect(new Date(after.updatedAt).getTime()).toBe(new Date(before.updatedAt).getTime());
+  });
+
+  it('answers only GET', async () => {
+    const app = await openApp();
+    const user = await makeUser(app, 'check-get-only');
+    const { cookie } = await loginSession(app, user);
+
+    const response = await app.app.inject({ method: 'POST', url: '/auth/session/check', headers: { ...origin, cookie } });
+
+    expect(response.statusCode).toBe(404);
+  });
+});
+
+describe('Cache-Control: no-store on the auth responses that carry session data (#423)', () => {
+  it('is sent by GET /auth/session and GET /auth/session/check, on 200 and on 401', async () => {
+    const app = await openApp();
+    const user = await makeUser(app, 'no-store-session');
+    const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
+    const cookie = sessionCookieHeader(login.cookies);
+
+    for (const url of ['/auth/session', '/auth/session/check']) {
+      const ok = await app.app.inject({ method: 'GET', url, headers: { cookie } });
+      expect(ok.statusCode).toBe(200);
+      expect(ok.headers['cache-control']).toBe('no-store');
+
+      const unauthenticated = await app.app.inject({ method: 'GET', url });
+      expect(unauthenticated.statusCode).toBe(401);
+      expect(unauthenticated.headers['cache-control']).toBe('no-store');
+    }
+  });
+
+  it('is sent on the SESSION_EXPIRED answer of both routes', async () => {
+    const app = await openApp();
+    const user = await makeUser(app, 'no-store-expired');
+
+    for (const url of ['/auth/session', '/auth/session/check']) {
+      const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
+      await app.pool.query('update auth.session set "createdAt" = now() - interval \'31 days\' where "userId" = $1', [user.id]);
+
+      const response = await app.app.inject({ method: 'GET', url, headers: { cookie: sessionCookieHeader(login.cookies) } });
+
+      expect(response.statusCode).toBe(401);
+      expect(response.json()).toMatchObject({ error: { code: 'SESSION_EXPIRED' } });
+      expect(response.headers['cache-control']).toBe('no-store');
+    }
+  });
+
+  it('is sent by POST /auth/login, which returns the user and issues the session cookie', async () => {
+    const app = await openApp();
+    const user = await makeUser(app, 'no-store-login');
+
+    const response = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.cookies.length).toBeGreaterThan(0);
+    expect(response.headers['cache-control']).toBe('no-store');
+  });
+});
+
 describe('POST /auth/logout and /auth/logout-all (#7)', () => {
   it('#7 logout revokes only the current session; logout-all revokes every session and is audited', async () => {
     const app = await openApp();
@@ -719,6 +906,22 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
       [user.id]
     );
     expect(auditRows.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('#423 a reset that signs the person back in answers Cache-Control: no-store, as it issues the session cookie', async () => {
+    const sender = createFakeEmailSender();
+    const app = await openApp({ sender });
+    const user = await makeUser(app, 'reset-no-store');
+    const token = await requestResetToken(app, sender, user.email);
+
+    const reset = await app.app.inject({
+      method: 'POST', url: '/auth/password/reset', headers: origin,
+      payload: { token, newPassword: 'a brand new correct horse battery staple' }
+    });
+
+    expect(reset.statusCode).toBe(200);
+    expect(reset.cookies.length).toBeGreaterThan(0);
+    expect(reset.headers['cache-control']).toBe('no-store');
   });
 
   it('resets the password with zero contexts, creates no session, audits the reset, and a following login gets NO_CONTEXT_ACCESS', async () => {
