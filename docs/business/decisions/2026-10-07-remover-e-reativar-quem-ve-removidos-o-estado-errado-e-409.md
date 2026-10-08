@@ -13,5 +13,5 @@
 
 **Consequência.** A remoção continua sem regra de "último Admin" (2026-09-24). A segunda barreira do banco tinha uma lacuna exatamente no caminho de reativação que esta task cria; ela é fechada neste mesmo PR, pela decisão estrutural seguinte.
 
-**Origem.** Issue #98. As decisões 1 e 2 estão **pendentes de validação** pelo dono do produto; a 1 foi proposta antes, para a #98, em branch antiga que não chegou a PR. A 3 foi confirmada pelo maestro (a sessão é global e o acesso cai na requisição seguinte).
+**Origem.** Issue #98. As decisões 1 e 2 foram validadas pelo dono em 2026-10-08; a 1 foi proposta antes, para a #98, em branch antiga que não chegou a PR. A 3 foi confirmada pelo maestro (a sessão é global e o acesso cai na requisição seguinte).
 
