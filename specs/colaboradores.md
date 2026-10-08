@@ -442,6 +442,7 @@ E, 2026-10-08, validadas pelo dono (#359):
 
 - O nome no aceite do convite tem o limite do perfil: 120 caracteres (#409; substitui a de 2026-09-30)
 - A API recusa editar o próprio cargo e o cargo do Owner (#410; substitui o item 7 da de 2026-10-07 do `PATCH` do vínculo)
+- Remover colaborador ou acesso ao portal encerra todas as sessões da pessoa (#411; substitui a decisão 3 de 2026-10-07 de remover e reativar)
 
 Herdadas de [`autorizacao.md`](autorizacao.md): o vocabulário `archived`/`removed`, a reativação que não herda autorização, o contrato de listagem, e as convenções de tela.
 
