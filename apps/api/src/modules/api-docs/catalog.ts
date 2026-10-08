@@ -961,7 +961,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       'é a de cada campo presente:',
       '`jobTitle` pede `colaborador.alterar_funcao`, `roleId` pede `colaborador.alterar_papel`, e os dois pedem',
       'as duas. Se o papel for `admin`, pede também `colaborador.atribuir_admin`, que só o Owner tem.',
-      'O papel do Owner não muda e ninguém altera o próprio papel (403). Um vínculo de outra agência,',
+      'O papel e o cargo do Owner não mudam, e ninguém altera o próprio papel nem o próprio cargo (403). Um vínculo de outra agência,',
       'inexistente, malformado ou removido devolve o mesmo 404. Devolve o vínculo atualizado, no',
       'mesmo contrato do detalhe; nunca há 200 sem uma linha alterada.'
     ].join('\n'),

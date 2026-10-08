@@ -31,6 +31,8 @@ const GENERIC_FORBIDDEN_MESSAGE = 'You do not have permission to perform this ac
 const TITLE_FORBIDDEN_MESSAGE = 'Você não tem permissão para alterar o cargo.';
 const ROLE_FORBIDDEN_MESSAGE = 'Você não tem permissão para alterar o papel.';
 const SELF_ROLE_MESSAGE = 'Ninguém altera o próprio papel.';
+const OWNER_TITLE_MESSAGE = 'O cargo do Owner da agência não pode ser alterado.';
+const SELF_TITLE_MESSAGE = 'Ninguém altera o próprio cargo.';
 
 interface ApiErrorJson {
   readonly error: { code: string; message: string };
@@ -411,7 +413,7 @@ describe('PATCH /agencies/:agencyId/collaborators/:membershipId (issue #97)', { 
     expect((await membershipRow(target.membershipId)).role_id).toBe(presetRoleIds.admin);
   });
 
-  it('refuses to change the role of the Owner, even by the Owner, and leaves the Owner title editable', async () => {
+  it('refuses to change the role of the Owner, even by the Owner, and refuses the Owner title too (#410)', async () => {
     const fx = await createAgency('owner-target');
     const admin = await addMember(fx.agencyId, 'owner-target-admin', presetRoleIds.admin);
 
@@ -431,38 +433,68 @@ describe('PATCH /agencies/:agencyId/collaborators/:membershipId (issue #97)', { 
     expect(adminSameRole.body.error.message).toBe(ADMIN_GRANT_MESSAGE);
     expect((await membershipRow(fx.ownerMembershipId)).role_id).toBe(presetRoleIds.admin);
 
-    const title = await patch(admin.cookie, fx.agencyId, fx.ownerMembershipId, { jobTitle: 'Fundadora' });
-    expect(title.status).toBe(200);
-    expect(title.body.isOwner).toBe(true);
-    expect((await membershipRow(fx.ownerMembershipId)).job_title).toBe('Fundadora');
+    // #410: the Owner title is as protected as the Owner role, for a peer, for the Owner and for a
+    // person whose only permission is the title one (the refusal is the route's, not a missing key).
+    const titleOnly = await addMember(fx.agencyId, 'owner-target-title', await createCustomRole(fx.agencyId, ['colaborador.alterar_funcao']));
+    for (const [cookie, payload] of [
+      [admin.cookie, { jobTitle: 'Fundadora' }],
+      [admin.cookie, { jobTitle: null }],
+      [fx.ownerCookie, { jobTitle: 'Fundadora' }],
+      [titleOnly.cookie, { jobTitle: 'Fundadora' }]
+    ] as const) {
+      await expectRefused(patch(cookie, fx.agencyId, fx.ownerMembershipId, payload), OWNER_TITLE_MESSAGE);
+    }
+    expect((await membershipRow(fx.ownerMembershipId)).job_title).toBe('Dona');
   });
 
-  it('#286: the answer says isSelf true on the own link and false on a peer, with a role of one permission and a person in two agencies', async () => {
+  it('#410: nobody changes their own title, not even an Admin or the Owner, while the title of a peer is still editable', async () => {
+    const fx = await createAgency('self-title');
+    const admin = await addMember(fx.agencyId, 'self-title-admin', presetRoleIds.admin, { jobTitle: 'Gestora' });
+    const titleOnly = await addMember(fx.agencyId, 'self-title-only', await createCustomRole(fx.agencyId, ['colaborador.alterar_funcao']), { jobTitle: 'Antes' });
+    const peer = await addMember(fx.agencyId, 'self-title-peer', presetRoleIds.production, { jobTitle: 'Colega', acts: false });
+
+    for (const member of [admin, titleOnly]) {
+      const before = (await membershipRow(member.membershipId)).job_title;
+      await expectRefused(patch(member.cookie, fx.agencyId, member.membershipId, { jobTitle: 'Promovida' }), SELF_TITLE_MESSAGE);
+      await expectRefused(patch(member.cookie, fx.agencyId, member.membershipId, { jobTitle: null }), SELF_TITLE_MESSAGE);
+      expect((await membershipRow(member.membershipId)).job_title).toBe(before);
+    }
+    // The Owner editing their own link is stopped by the Owner rule, which is checked first.
+    await expectRefused(patch(fx.ownerCookie, fx.agencyId, fx.ownerMembershipId, { jobTitle: 'Promovida' }), OWNER_TITLE_MESSAGE);
+
+    // The role of the self-link is refused one rule earlier, so a body with both fields names the role.
+    await expectRefused(patch(admin.cookie, fx.agencyId, admin.membershipId, { jobTitle: 'X', roleId: presetRoleIds.production }), SELF_ROLE_MESSAGE);
+    expect(await membershipRow(admin.membershipId)).toMatchObject({ role_id: presetRoleIds.admin, job_title: 'Gestora' });
+
+    const other = await patch(admin.cookie, fx.agencyId, peer.membershipId, { jobTitle: 'Colega Sênior' });
+    expect(other.status).toBe(200);
+    expect((await membershipRow(peer.membershipId)).job_title).toBe('Colega Sênior');
+  });
+
+  it('#286: isSelf is true on the own link (detail) and false on a peer (patch), with a role of one permission and a person in two agencies', async () => {
     const fx = await createAgency('isself');
     const other = await createAgency('isself-other');
-    const titleOnly = await createCustomRole(fx.agencyId, ['colaborador.alterar_funcao']);
+    const titleOnly = await createCustomRole(fx.agencyId, ['colaborador.alterar_funcao', 'colaborador.visualizar']);
     const viewer = await addMember(fx.agencyId, 'isself-viewer', titleOnly, { jobTitle: 'Antes' });
     const viewerInOther = await linkExistingUser(other.agencyId, viewer, await createCustomRole(other.agencyId, ['colaborador.alterar_funcao']));
     const peer = await addMember(fx.agencyId, 'isself-peer', presetRoleIds.production, { jobTitle: 'Colega', acts: false });
 
-    const own = await patch(viewer.cookie, fx.agencyId, viewer.membershipId, { jobTitle: 'Depois' });
-    expect(own.status).toBe(200);
-    expect(own.body.membershipId).toBe(viewer.membershipId);
-    expect(own.body.isSelf).toBe(true);
-    expect((await membershipRow(viewer.membershipId)).job_title).toBe('Depois');
+    // A PATCH on the own link is always refused (#410), so `isSelf: true` is read from the detail.
+    const ownDetail = await app.app.inject({ method: 'GET', url: `/agencies/${fx.agencyId}/collaborators/${viewer.membershipId}`, headers: { ...origin, cookie: viewer.cookie } });
+    expect(ownDetail.statusCode).toBe(200);
+    expect(ownDetail.json<CollaboratorJson>()).toMatchObject({ membershipId: viewer.membershipId, isSelf: true });
+    await expectRefused(patch(viewer.cookie, fx.agencyId, viewer.membershipId, { jobTitle: 'Depois' }), SELF_TITLE_MESSAGE);
+    expect((await membershipRow(viewer.membershipId)).job_title).toBe('Antes');
 
     const other1 = await patch(viewer.cookie, fx.agencyId, peer.membershipId, { jobTitle: 'Alterado' });
     expect(other1.status).toBe(200);
     expect(other1.body.isSelf).toBe(false);
 
-    // The same person's link in the other agency is theirs there, and only there.
-    const ownElsewhere = await patch(viewer.cookie, other.agencyId, viewerInOther, { jobTitle: 'Outra agência' });
-    expect(ownElsewhere.status).toBe(200);
-    expect(ownElsewhere.body.isSelf).toBe(true);
-    const ownerOfOther = await patch(viewer.cookie, other.agencyId, other.ownerMembershipId, { jobTitle: 'Dona' });
-    expect(ownerOfOther.status).toBe(200);
-    expect(ownerOfOther.body.isOwner).toBe(true);
-    expect(ownerOfOther.body.isSelf).toBe(false);
+    // The same person's link in the other agency is theirs there, and only there: refused as well,
+    // while the Owner of that agency is somebody else's and stays protected for the Owner reason.
+    await expectRefused(patch(viewer.cookie, other.agencyId, viewerInOther, { jobTitle: 'Outra agência' }), SELF_TITLE_MESSAGE);
+    await expectRefused(patch(viewer.cookie, other.agencyId, other.ownerMembershipId, { jobTitle: 'Dona' }), OWNER_TITLE_MESSAGE);
+    expect((await membershipRow(other.ownerMembershipId)).job_title).toBe('Dona');
   });
 
   it('nobody changes their own role, not even an Admin, while changing a peer is allowed', async () => {

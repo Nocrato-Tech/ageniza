@@ -487,6 +487,32 @@ describe('invitation HTTP module', () => {
     }
   }, 20_000);
 
+  it('#409: accept-new-account takes a name of 120 characters, the profile limit, and refuses 121 without consuming the invitation', async () => {
+    const agency = await createAgency('Invitation name limit agency', null);
+    const email = `name-limit-${randomUUID()}@example.test`;
+    const invitation = await insertInvitation({ agencyId: agency, purpose: 'agency_activation', roleId: null, clientId: null, email });
+    const accept = (name: string) => app.app.inject({
+      method: 'POST',
+      url: `/invitations/${invitation.token}/accept-new-account`,
+      headers: origin,
+      payload: { name, password: 'a secure activation password', acceptTerms: true }
+    });
+
+    for (const tooLong of ['a'.repeat(121), 'a'.repeat(256), '😀'.repeat(61)]) {
+      const refused = await accept(tooLong);
+      expect(refused.statusCode, `${tooLong.length} units`).toBe(400);
+      expect(refused.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+    }
+    expect(await owner.knex('auth.user').where({ email }).count({ total: '*' }).first()).toEqual({ total: '0' });
+
+    const boundary = 'b'.repeat(120);
+    const accepted = await accept(boundary);
+    expect(accepted.statusCode).toBe(201);
+    const row = await owner.knex('auth.user').where({ email }).first('id', 'name');
+    expect(row?.name).toBe(boundary);
+    createdUserIds.push(row!.id as string);
+  });
+
   it('rejects a non-empty body on accept with 400 and changes nothing', async () => {
     // The existing-account accept (`POST /invitations/:token/accept`) takes no name: the person
     // already has one. The route schema is a body-less request, so an unexpected body is a 400 --
