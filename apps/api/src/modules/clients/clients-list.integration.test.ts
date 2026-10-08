@@ -846,10 +846,13 @@ describe('clients listing (issue #125)', () => {
 
   it('#125: photoUrl signs a stored key, degrades a broken one to null with a warning, and closingDate is a plain date', async () => {
     const { agencyId, cookie } = await createAgencyWithAdmin('photo');
+    const withPhotoId = randomUUID();
+    const ownKey = `agencies/${agencyId}/clients/${withPhotoId}/avatar/${randomUUID()}.png`;
     const withPhoto = await createClient({
+      id: withPhotoId,
       agencyId,
       name: 'Com Foto',
-      photoKey: `agencies/${agencyId}/clients/${randomUUID()}/avatar/${randomUUID()}.png`,
+      photoKey: ownKey,
       closingDate: '2026-12-31'
     });
     const brokenPhoto = await createClient({ agencyId, name: 'Foto Quebrada', photoKey: 'not-a-real-key' });
@@ -859,6 +862,7 @@ describe('clients listing (issue #125)', () => {
     expect(list.status).toBe(200);
     const signed = list.body.data.find((item) => item.id === withPhoto);
     expect(typeof signed?.photoUrl).toBe('string');
+    expect(new URL(signed!.photoUrl!).pathname.endsWith(ownKey)).toBe(true);
     expect(signed?.closingDate).toBe('2026-12-31');
     expect(list.body.data.find((item) => item.id === brokenPhoto)?.photoUrl).toBeNull();
 
@@ -867,5 +871,27 @@ describe('clients listing (issue #125)', () => {
     expect(after.body.data).toHaveLength(1);
     expect(after.body.data[0]?.photoUrl).toBeNull();
     expect(logs.lines().slice(before).join('\n')).toContain('CLIENT_PHOTO_URL_FAILED');
+  });
+
+  it('#311: the list signs a stored photo key only when it is an avatar key of that agency and client', async () => {
+    const { agencyId, cookie } = await createAgencyWithAdmin('photoforeign');
+    const foreignKeys = [
+      `agencies/${agencyId}/clients/${randomUUID()}/avatar/${randomUUID()}.png`,
+      `agencies/${randomUUID()}/clients/${randomUUID()}/avatar/${randomUUID()}.png`,
+      `users/${randomUUID()}/avatar/${randomUUID()}.png`
+    ];
+    const ids: string[] = [];
+    for (const [index, photoKey] of foreignKeys.entries()) {
+      ids.push(await createClient({ agencyId, name: `Chave Alheia ${index}`, photoKey }));
+    }
+
+    const before = logs.lines().length;
+    const list = await getClients(cookie, agencyId, { pageSize: 100 });
+    expect(list.status).toBe(200);
+    expect(list.body.data).toHaveLength(foreignKeys.length);
+    for (const id of ids) expect(list.body.data.find((item) => item.id === id)?.photoUrl).toBeNull();
+    const during = logs.lines().slice(before).join('\n');
+    expect(during).toContain('CLIENT_PHOTO_URL_FAILED');
+    for (const foreignKey of foreignKeys) expect(during).not.toContain(foreignKey);
   });
 });

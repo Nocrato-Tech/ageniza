@@ -67,6 +67,7 @@ const insertMembership = async (agencyId: string, userId: string, roleId: string
 };
 
 const createClient = async (input: {
+  readonly id?: string;
   readonly agencyId?: string;
   readonly name?: string;
   readonly status?: 'active' | 'archived';
@@ -76,7 +77,7 @@ const createClient = async (input: {
   readonly taxId?: string | null;
   readonly contactPhone?: string | null;
 }): Promise<string> => {
-  const id = randomUUID();
+  const id = input.id ?? randomUUID();
   await owner.knex('clients').insert({
     id,
     agency_id: input.agencyId ?? agencyA,
@@ -405,12 +406,66 @@ describe('CLIENTS HTTP module (#124)', () => {
     expect((await postClient(adminCookie, agencyA, { name: '★★★' })).statusCode).toBe(400);
     expect((await postClient(adminCookie, agencyA, { name: '\u00a0\u00a0' })).statusCode).toBe(400);
 
-    // The joiners are accepted only between letters, combining marks or pictographs.
-    expect((await postClient(adminCookie, agencyA, { name: `Café\u200cCentral ${suffix}` })).statusCode).toBe(201);
+    // The joiners are accepted only between letters, combining marks or pictographs, and never
+    // between two Latin letters of a client name (#312).
+    expect((await postClient(adminCookie, agencyA, { name: `Café\u200cCentral ${suffix}` })).statusCode).toBe(400);
+    expect((await postClient(adminCookie, agencyA, { name: `Persa می\u200cخواهم ${suffix}` })).statusCode).toBe(201);
     expect((await postClient(adminCookie, agencyA, { name: `\u200dCafé ${suffix}` })).statusCode).toBe(400);
 
-    // NBSP is a space, not an invisible format character: inside the name it stays.
+    // NBSP is a space, not an invisible format character: it is accepted and stored as a plain space.
     expect((await postClient(adminCookie, agencyA, { name: `Café\u00a0Central ${suffix}` })).statusCode).toBe(201);
+  });
+
+  it('#312: a name that only looks like an active one (non-breaking spaces, NFD) answers CLIENT_NAME_IN_USE and is stored as NFC with plain spaces', async () => {
+    const suffix = randomUUID();
+    await createClient({ agencyId: agencyA, name: `Café Central ${suffix}` });
+    const lookalikes = {
+      'U+2007 figure space': `Café\u2007Central ${suffix}`,
+      'U+202F narrow no-break space': `Café\u202fCentral ${suffix}`,
+      'U+00A0 no-break space': `Café\u00a0Central ${suffix}`,
+      'NFD (e + U+0301)': `Cafe\u0301 Central ${suffix}`
+    };
+    for (const [label, name] of Object.entries(lookalikes)) {
+      const created = await postClient(adminCookie, agencyA, { name });
+      expect(created.statusCode, label).toBe(409);
+      expect(created.json(), label).toMatchObject({ error: { code: 'CLIENT_NAME_IN_USE' } });
+
+      const other = await createClient({ agencyId: agencyA });
+      const patched = await patchClient(adminCookie, agencyA, other, { name });
+      expect(patched.statusCode, label).toBe(409);
+      expect(patched.json(), label).toMatchObject({ error: { code: 'CLIENT_NAME_IN_USE' } });
+    }
+
+    const stored = await postClient(adminCookie, agencyA, { name: `Cafe\u0301\u2007Novo\u202fNome ${suffix}` });
+    expect(stored.statusCode).toBe(201);
+    expect(stored.json()).toMatchObject({ name: `Café Novo Nome ${suffix}` });
+    const row = await clientRow((stored.json() as { id: string }).id);
+    expect(row?.name).toBe(`Café Novo Nome ${suffix}`);
+    expect(row?.name).toBe((row?.name as string).normalize('NFC'));
+  });
+
+  it('#312: ZWJ/ZWNJ between Latin letters never forges a lookalike of an active name, while persian and emoji sequences stay accepted', async () => {
+    const suffix = randomUUID();
+    await createClient({ agencyId: agencyA, name: `Café Central ${suffix}` });
+    for (const joiner of ['\u200d', '\u200c', '\u200c\u200d']) {
+      for (const candidate of [
+        `Ca${joiner}fé Central ${suffix}`,
+        `Cafe\u0301${joiner}x Central ${suffix}`,
+        `Café Cen${joiner}tral ${suffix}`
+      ]) {
+        const created = await postClient(adminCookie, agencyA, { name: candidate });
+        expect(created.statusCode, JSON.stringify(candidate)).toBe(400);
+        const other = await createClient({ agencyId: agencyA });
+        expect((await patchClient(adminCookie, agencyA, other, { name: candidate })).statusCode, JSON.stringify(candidate)).toBe(400);
+        expect((await clientRow(other))?.name).not.toBe(candidate);
+      }
+    }
+
+    for (const accepted of [`می\u200cخواهم ${suffix}`, `Família 👩\u200d👩\u200d👧 ${suffix}`]) {
+      const created = await postClient(adminCookie, agencyA, { name: accepted });
+      expect(created.statusCode, accepted).toBe(201);
+      expect(created.json(), accepted).toMatchObject({ name: accepted });
+    }
   });
 
   it('applies the same name rule to the PATCH: name, contact fields and legalName', async () => {
@@ -470,12 +525,16 @@ describe('CLIENTS HTTP module (#124)', () => {
   });
 
   it('signs photoUrl when a key exists, returns null with a warning for an unusable key, and null with no key', async () => {
-    const withPhoto = await createClient({ agencyId: agencyA, photoKey: `agencies/${agencyA}/clients/${randomUUID()}/avatar/${randomUUID()}.png` });
+    const withPhotoId = randomUUID();
+    const ownKey = `agencies/${agencyA}/clients/${withPhotoId}/avatar/${randomUUID()}.png`;
+    const withPhoto = await createClient({ id: withPhotoId, agencyId: agencyA, photoKey: ownKey });
     const signed = await getClient(adminCookie, agencyA, withPhoto);
     const photoUrl = (signed.json() as { photoUrl: string }).photoUrl;
     const url = new URL(photoUrl);
+    expect(url.pathname.endsWith(ownKey)).toBe(true);
     expect(url.searchParams.get('X-Amz-Signature')).toBeTruthy();
     expect(url.searchParams.get('X-Amz-Expires')).toBe('300');
+    expect(url.searchParams.get('X-Amz-SignedHeaders')).toBe('host');
 
     const brokenPhoto = await createClient({ agencyId: agencyA, photoKey: 'not-a-real-key' });
     const logsBefore = logs.text().length;
@@ -486,6 +545,26 @@ describe('CLIENTS HTTP module (#124)', () => {
 
     const noPhoto = await createClient({ agencyId: agencyA });
     expect((await getClient(adminCookie, agencyA, noPhoto)).json()).toMatchObject({ photoUrl: null });
+  });
+
+  it('#311: the detail signs a stored photo key only when it is an avatar key of this agency and client', async () => {
+    const sibling = randomUUID();
+    const foreignKeys = [
+      `agencies/${agencyA}/clients/${sibling}/avatar/${randomUUID()}.png`,
+      `agencies/${agencyB}/clients/${randomUUID()}/avatar/${randomUUID()}.png`,
+      `users/${randomUUID()}/avatar/${randomUUID()}.png`,
+      `agencies/${agencyA}/clients/${randomUUID()}/documents/${randomUUID()}.pdf`
+    ];
+    for (const foreignKey of foreignKeys) {
+      const clientId = await createClient({ agencyId: agencyA, photoKey: foreignKey });
+      const logsBefore = logs.text().length;
+      const response = await getClient(adminCookie, agencyA, clientId);
+      expect(response.statusCode, foreignKey).toBe(200);
+      expect(response.json(), foreignKey).toMatchObject({ photoUrl: null });
+      const during = logs.text().slice(logsBefore);
+      expect(during, foreignKey).toContain('CLIENT_PHOTO_URL_FAILED');
+      expect(during, foreignKey).not.toContain(foreignKey);
+    }
   });
 
   it('returns archived status and archivedAt, and records the session user as updated_by', async () => {

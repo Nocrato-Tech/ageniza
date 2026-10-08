@@ -21,7 +21,7 @@ import {
   reactivateClient,
   setClientClosingDate
 } from './lifecycle-service.js';
-import { createPhotoUrlSigner } from './photo-url.js';
+import { createClientPhotoUrlSigner } from './photo-url.js';
 import { clientFromRow, loadClient, type ClientRow, type ClientTransaction } from './service.js';
 
 type PreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
@@ -102,7 +102,7 @@ interface LifecycleAction {
  */
 export const registerLifecycleRoutes = (app: FastifyInstance, dependencies: LifecycleRouteDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
-  const signPhotoUrl = createPhotoUrlSigner(dependencies, {
+  const signPhotoUrl = createClientPhotoUrlSigner(dependencies, {
     code: 'CLIENT_PHOTO_URL_FAILED',
     message: 'Could not sign the client photo URL; returning null'
   });
@@ -187,7 +187,7 @@ export const registerLifecycleRoutes = (app: FastifyInstance, dependencies: Life
     docs: { readonly schemas: { readonly response: typeof ClientSchema } },
     row: ClientRow
   ) =>
-    reply.send(routeResponse(docs, request, clientFromRow(row, await signPhotoUrl(request, row.photo_key))));
+    reply.send(routeResponse(docs, request, clientFromRow(row, await signPhotoUrl(request, { agencyId: requireTenant(request).agencyId, clientId: row.id }, row.photo_key))));
 
   app.put('/agencies/:agencyId/clients/:clientId/closing', authenticated(setClosingDocs), async (request, reply) => {
     const body = routeBody(setClosingDocs, request);

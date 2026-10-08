@@ -13,7 +13,7 @@ import { createRequireSession } from '../auth/session-guard.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeQuery, routeResponse } from '../../plugins/infra/zod.js';
-import { createPhotoUrlSigner } from './photo-url.js';
+import { createClientPhotoUrlSigner } from './photo-url.js';
 import { loadPortalBrandStudy, loadPortalClient, loadPortalHome } from './portal-service.js';
 import { clientFromRow } from './service.js';
 
@@ -37,7 +37,7 @@ const clientNotFound = (): HttpError => new HttpError({ statusCode: 404, code: '
  */
 export const registerPortalReadRoutes = (app: FastifyInstance, dependencies: PortalReadRouteDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
-  const signPhotoUrl = createPhotoUrlSigner(dependencies, {
+  const signPhotoUrl = createClientPhotoUrlSigner(dependencies, {
     code: 'PORTAL_CLIENT_PHOTO_URL_FAILED',
     message: 'Could not sign the client photo URL for the portal; returning null'
   });
@@ -79,7 +79,7 @@ export const registerPortalReadRoutes = (app: FastifyInstance, dependencies: Por
     });
     if (result === undefined) throw clientNotFound();
 
-    const photoUrl = await signPhotoUrl(request, result.row.photo_key);
+    const photoUrl = await signPhotoUrl(request, { agencyId: result.row.agency_id, clientId: clientContext.clientId }, result.row.photo_key);
     return reply.send(routeResponse(clientDocs, request, {
       ...clientFromRow(result.row, photoUrl),
       agencyName: result.row.agency_name,
