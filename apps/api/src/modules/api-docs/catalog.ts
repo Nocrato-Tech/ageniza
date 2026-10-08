@@ -1006,7 +1006,9 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Remove um colaborador do quadro',
     description: [
       'Coloca o vínculo em `removed`; a linha permanece e a pessoa perde o acesso à agência na',
-      'requisição seguinte. O Owner não é removido e ninguém remove a si mesmo (403). Remover um',
+      'requisição seguinte. Todas as sessões dela são encerradas na mesma transação, também as que ela',
+      'tem em outras agências: o cookie antigo recebe 401, e quem remove não perde a própria sessão.',
+      'O Owner não é removido e ninguém remove a si mesmo (403). Remover um',
       'vínculo que já está removido é 409. Um vínculo de outra agência, inexistente ou malformado',
       'devolve 404. Devolve o vínculo já em `removed`.'
     ].join('\n'),
@@ -1789,8 +1791,10 @@ path: '/agencies/:agencyId/roles',
     summary: 'Remove uma pessoa do portal do cliente',
     description: [
       'A pessoa perde o acesso ao portal deste cliente na requisição seguinte; as demais pessoas do cliente',
-      'e os outros clientes dela não mudam. O vínculo é preservado como `removed` e pode ser reativado.',
-      'Remover quem já está removido não escreve nada e responde o vínculo como está. Cliente arquivado',
+      'e os vínculos dela com outros clientes não mudam. Todas as sessões dela são encerradas na mesma',
+      'transação (a sessão é global): o cookie antigo recebe 401, e quem remove não perde a própria sessão.',
+      'O vínculo é preservado como `removed` e pode ser reativado, o que não cria sessão.',
+      'Remover quem já está removido não escreve nada, não encerra sessão e responde o vínculo como está. Cliente arquivado',
       'responde 409; vínculo de outro cliente ou id inválido, 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',

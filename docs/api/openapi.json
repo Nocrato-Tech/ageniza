@@ -7135,7 +7135,7 @@
       "post": {
         "operationId": "removeCollaborator",
         "summary": "Remove um colaborador do quadro",
-        "description": "Coloca o vínculo em `removed`; a linha permanece e a pessoa perde o acesso à agência na\nrequisição seguinte. O Owner não é removido e ninguém remove a si mesmo (403). Remover um\nvínculo que já está removido é 409. Um vínculo de outra agência, inexistente ou malformado\ndevolve 404. Devolve o vínculo já em `removed`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.remover`.",
+        "description": "Coloca o vínculo em `removed`; a linha permanece e a pessoa perde o acesso à agência na\nrequisição seguinte. Todas as sessões dela são encerradas na mesma transação, também as que ela\ntem em outras agências: o cookie antigo recebe 401, e quem remove não perde a própria sessão.\nO Owner não é removido e ninguém remove a si mesmo (403). Remover um\nvínculo que já está removido é 409. Um vínculo de outra agência, inexistente ou malformado\ndevolve 404. Devolve o vínculo já em `removed`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.remover`.",
         "tags": [
           "collaborators"
         ],
@@ -11798,7 +11798,7 @@
       "post": {
         "operationId": "removeClientMember",
         "summary": "Remove uma pessoa do portal do cliente",
-        "description": "A pessoa perde o acesso ao portal deste cliente na requisição seguinte; as demais pessoas do cliente\ne os outros clientes dela não mudam. O vínculo é preservado como `removed` e pode ser reativado.\nRemover quem já está removido não escreve nada e responde o vínculo como está. Cliente arquivado\nresponde 409; vínculo de outro cliente ou id inválido, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.remover_usuario`.",
+        "description": "A pessoa perde o acesso ao portal deste cliente na requisição seguinte; as demais pessoas do cliente\ne os vínculos dela com outros clientes não mudam. Todas as sessões dela são encerradas na mesma\ntransação (a sessão é global): o cookie antigo recebe 401, e quem remove não perde a própria sessão.\nO vínculo é preservado como `removed` e pode ser reativado, o que não cria sessão.\nRemover quem já está removido não escreve nada, não encerra sessão e responde o vínculo como está. Cliente arquivado\nresponde 409; vínculo de outro cliente ou id inválido, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.remover_usuario`.",
         "tags": [
           "clients"
         ],
