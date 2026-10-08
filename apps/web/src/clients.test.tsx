@@ -545,6 +545,8 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
 
     await act(async () => { probe.navigate(`/agencia/${AGENCY_A}/clientes?page=3`); });
     expect(probe.search).toBe('?page=3');
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Atualizando…'));
+    expect(screen.getByText('Padaria Central')).toBeTruthy();
 
     await act(async () => { release(listResponse([academia], 3, { totalItems: 50, totalPages: 3 })); });
     expect(await screen.findByText('Academia Corpo')).toBeTruthy();

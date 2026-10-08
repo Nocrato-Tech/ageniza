@@ -477,6 +477,8 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
 
     await act(async () => { probe.navigate(`/agencia/${AGENCY_A}/colaboradores?page=3`); });
     expect(probe.search).toBe('?page=3');
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Atualizando…'));
+    expect(screen.getByText('Ana Prado')).toBeTruthy();
 
     await act(async () => { release(json({ data: [juliaReis], meta: meta(3, 60, 3) })); });
     expect(await screen.findByText('Júlia Reis')).toBeTruthy();
