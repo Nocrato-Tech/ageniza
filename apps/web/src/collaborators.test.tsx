@@ -1042,8 +1042,43 @@ describe('collaborator admin actions (#104)', () => {
 
     expect(within(dialog).queryByRole('combobox')).toBeNull();
     expect(within(dialog).queryByRole('button', { name: 'Remover do quadro' })).toBeNull();
-    // The cargo stays editable for the roles the SPEC allows (Admin and account manager).
-    expect(within(dialog).getByRole('textbox', { name: 'Cargo' })).toBeTruthy();
+    // The API refuses the Owner's cargo with a 403 (#410), so the modal shows it as text for everyone.
+    expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
+    expect(within(dialog).getByText('Copywriter')).toBeTruthy();
+  });
+
+  // The account manager holds only `colaborador.alterar_funcao` (one permission); the Admin holds the
+  // full set. Each faces the Owner and a common collaborator: only the latter's cargo is a textbox (#418).
+  it.each([
+    { viewer: 'Admin', permissions: ADMIN_PERMISSIONS, who: 'the Owner', target: { ...marioCosta, isOwner: true }, editable: false },
+    { viewer: 'Admin', permissions: ADMIN_PERMISSIONS, who: 'a common collaborator', target: marioCosta, editable: true },
+    { viewer: 'account manager', permissions: MANAGER_PERMISSIONS, who: 'the Owner', target: { ...marioCosta, isOwner: true }, editable: false },
+    { viewer: 'account manager', permissions: MANAGER_PERMISSIONS, who: 'a common collaborator', target: marioCosta, editable: true }
+  ])('shows the cargo of $who to the $viewer with editable=$editable', async ({ permissions, target, editable }) => {
+    const { impl } = makeFetch({
+      permissions,
+      collaborators: () => json({ data: [target], meta: meta(1, 1, 1) }),
+      detail: () => json(target)
+    });
+    renderCollaborators(impl, detailUrl(target.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    expect(within(dialog).queryByRole('textbox', { name: 'Cargo' }) !== null).toBe(editable);
+    if (!editable) expect(within(dialog).getByText('Copywriter')).toBeTruthy();
+  });
+
+  it('keeps the cargo of the Owner read-only when the Owner opens the own link', async () => {
+    const ownerSelf = { ...anaSelf, isOwner: true };
+    const { impl } = makeFetch({
+      permissions: OWNER_PERMISSIONS,
+      isOwner: true,
+      collaborators: () => json({ data: [ownerSelf], meta: meta(1, 1, 1) }),
+      detail: () => json(ownerSelf)
+    });
+    renderCollaborators(impl, detailUrl(ownerSelf.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Ana Prado' });
+
+    expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
   });
 
   it('saves cargo and papel and updates the badge behind without reloading', async () => {
