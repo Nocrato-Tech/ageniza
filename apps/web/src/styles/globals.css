@@ -523,6 +523,11 @@ textarea:focus-visible {
   margin: 0;
 }
 
+.list-refreshing {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
 .clients__filters {
   display: flex;
   flex-wrap: wrap;
