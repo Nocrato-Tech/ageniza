@@ -1,4 +1,4 @@
-Follow all repository invariants in [AGENTS.md](./AGENTS.md).
+Follow all repository invariants in [AGENTS.md](./AGENTS.md). Find the document for your task in [docs/README.md](./docs/README.md) before opening files.
 
 <!-- ai-memory:start -->
 ## Long-term memory (ai-memory)
