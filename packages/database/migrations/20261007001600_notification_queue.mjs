@@ -17,26 +17,34 @@
 //    database itself returns an approved content there, rule 6: the trigger is not "UPDATE OF status", because a column-list trigger
 //    ignores a column a BEFORE trigger changes) or to "published". Nothing else enqueues, and no function that enqueues is granted.
 //  - The recipients are the ACTIVE links of the portal of that client (`client_memberships`), never a bare `auth."user"`. A client
-//    that is archived or an agency that is suspended enqueues nothing (rule 8). The trigger takes the client FOR SHARE, like every
-//    writer of the client, so it waits for an archive in flight; and the queue is a child of the client, so it has the AFTER INSERT
-//    lock of 20261007001400 as well, which refuses (A0020) a row for a client that is not active.
+//    that is archived or an agency that is suspended enqueues nothing (rule 8). The queue is a child of the client, so it has the AFTER
+//    INSERT lock of 20261007001400: it takes the client FOR SHARE, which waits for an archive in flight and then refuses (A0020) a row
+//    for a client that is not active. That lock is the only one: the trigger does not take another, and an edit that races the archive
+//    is refused with the error the other children give.
 //  - The worker reads and marks through three functions, granted to `ageniza_app` (the worker connects as the API does, with no
 //    user). They refuse a caller that has an actor bound to the transaction (42501): every request of the API binds one, the worker
 //    never does, so the list of addresses is not something a request can ask for. They refuse any isolation other than READ COMMITTED
 //    (40001, via `require_read_committed` of 20261007001500), because they lock rows and read again.
-//      claim_notification_batch(limit)   discards what stopped being true, then claims the items whose groups are ready and returns
-//                                        what an e-mail needs (address, names, content title and date): the worker has no other
-//                                        way to read them, RLS gives it no row.
-//      mark_notifications_sent(ids)      the e-mail left: stamps `sent_at` on what is claimed.
-//      fail_notifications(ids, code)     the e-mail did not leave: releases the claim and pushes the item back. The code is a machine
-//                                        token, never the text of the provider, which carries addresses.
+//      claim_notification_batch(limit)   discards what stopped being true, then claims the ready groups, one at a time and under an
+//                                        advisory lock of the group (so two workers never split a group), and returns what an e-mail
+//                                        needs (address, names, content title and date) with the TOKEN of the claim: the worker has no
+//                                        other way to read them, RLS gives it no row.
+//      mark_notifications_sent(ids, t)   the e-mail left: stamps `sent_at` on the items that still carry the token t.
+//      fail_notifications(ids, t, code)  the e-mail did not leave: releases the items that still carry t and pushes them back. The code
+//                                        is a machine token, never the text of the provider, which carries addresses. An item that
+//                                        another claim took after its lease ran out has another token, so a late answer of the first
+//                                        worker stamps and releases nothing and no e-mail is sent twice for it.
 //  - When an item goes out. "Contents to approve" are DEBOUNCED: an item is due 15 minutes after its content was sent for approval,
 //    and the e-mail of a recipient, client and type leaves only when no other open item of that group is still inside its 15
 //    minutes, so a burst of sends is ONE e-mail, 15 minutes after the LAST send, and nothing leaves at once. A burst is not postponed
 //    for ever: once the oldest open item of the group is 60 minutes old, what is due leaves (the rest opens the next window). The
 //    summary of "published" is not debounced: its items are due when the day ends in Brasília. Never two e-mails of the same group in
-//    flight. A claim is a lease of 10 minutes, after which another claim takes the item again; an item is tried 5 times. The numbers
+//    flight. A claim is a lease of 10 minutes, after which another claim takes the item again; an item is tried 5 times. A send repeated before the e-mail left
+//    postpones the open item (its `send_after` moves), and keeps `created_at`, which is what the cap counts from. The numbers
 //    live in this file, in `notification_send_after` and in `notification_max_wait` only.
+//  - What is tied to Conteúdo and to the portal, and a next type that is not has to replace (new migration): `client_id not null` and the
+//    lock of the client; the rule of "still true" and the recipients (`client_memberships`) in the discard of the claim; the
+//    `content_*` columns of what the claim returns. The claim, `mark` and `fail` are the contract with the worker.
 //  - What stopped being true is discarded, not held: the client was archived, the agency suspended, the person was removed from the
 //    portal, the content left "awaiting approval" (approved, or taken back) or left "published" (taken back the same day).
 //
@@ -56,6 +64,7 @@ export async function up(knex) {
       send_after timestamptz not null,
       created_at timestamptz not null default now(),
       claimed_at timestamptz null,
+      claim_token uuid null,
       attempts integer not null default 0 check (attempts >= 0),
       last_error text null check (last_error ~ '^[a-z0-9_.:-]{1,64}$'),
       sent_at timestamptz null,
@@ -65,7 +74,8 @@ export async function up(knex) {
       constraint notification_queue_reference_check check (
         (type in ('content_awaiting_approval', 'content_published')) = (content_id is not null)
       ),
-      constraint notification_queue_closed_once check (sent_at is null or discarded_at is null)
+      constraint notification_queue_closed_once check (sent_at is null or discarded_at is null),
+      constraint notification_queue_claim_shape check ((claimed_at is null) = (claim_token is null))
     );
 
     -- One open item per person and content and type: a content sent for approval, taken back and sent again before the e-mail goes
@@ -124,13 +134,12 @@ export async function up(knex) {
     declare
       v_type text;
     begin
-      -- The client is taken FOR SHARE, as every writer of it does, and read again after the wait: an archive in flight is waited for,
-      -- and one that committed first leaves nothing to send. The agency must be active too (rule 8).
+      -- A client that is already archived, or an agency that is already suspended, leaves nothing to send (rule 8). A client being
+      -- archived right now is the business of the AFTER INSERT lock of the queue, below.
       perform 1
       from public.clients client
       join public.agencies agency on agency.id = client.agency_id
-      where client.id = new.client_id and client.status = 'active' and agency.status = 'active'
-      for share of client;
+      where client.id = new.client_id and client.status = 'active' and agency.status = 'active';
       if not found then
         return null;
       end if;
@@ -141,7 +150,10 @@ export async function up(knex) {
       select v_type, new.client_id, membership.user_id, new.id, app_private.notification_send_after(v_type, pg_catalog.now())
       from public.client_memberships membership
       where membership.client_id = new.client_id and membership.status = 'active'
-      on conflict (type, content_id, recipient_user_id) where sent_at is null and discarded_at is null do nothing;
+      -- Sent again before the e-mail left: the same line of the e-mail, and a new send inside the window postpones it (debounce).
+      on conflict (type, content_id, recipient_user_id) where sent_at is null and discarded_at is null
+      do update set send_after = excluded.send_after
+      where public.notification_queue.claimed_at is null;
 
       return null;
     end;
@@ -158,9 +170,43 @@ export async function up(knex) {
   `);
 
   await knex.raw(`
+    -- Whether the e-mail of a group may leave now: debounced types wait for the group to be quiet (or for the cap), and no group has two
+    -- e-mails in flight. Internal: the claim calls it before and after it holds the lock of the group.
+    create function app_private.notification_group_ready(p_recipient_user_id uuid, p_client_id uuid, p_type text)
+    returns boolean
+    language sql
+    stable
+    set search_path = ''
+    as $function$
+      select (
+          app_private.notification_max_wait(p_type) is null
+          or not exists (
+            select 1 from public.notification_queue other
+            where other.recipient_user_id = p_recipient_user_id and other.client_id = p_client_id and other.type = p_type
+              and other.discarded_at is null
+              and other.send_after > pg_catalog.now()
+          )
+          or exists (
+            select 1 from public.notification_queue other
+            where other.recipient_user_id = p_recipient_user_id and other.client_id = p_client_id and other.type = p_type
+              and other.sent_at is null and other.discarded_at is null
+              and other.attempts < ${MAX_ATTEMPTS}
+              and other.created_at <= pg_catalog.now() - app_private.notification_max_wait(p_type)
+          )
+        )
+        and not exists (
+          select 1 from public.notification_queue other
+          where other.recipient_user_id = p_recipient_user_id and other.client_id = p_client_id and other.type = p_type
+            and other.sent_at is null and other.discarded_at is null
+            and other.claimed_at >= pg_catalog.now() - interval '${LEASE}'
+        )
+    $function$;
+    revoke all on function app_private.notification_group_ready(uuid, uuid, text) from public;
+
     create function app_private.claim_notification_batch(p_limit integer)
     returns table (
       item_id uuid,
+      claim_token uuid,
       notification_type text,
       client_id uuid,
       client_name text,
@@ -177,7 +223,10 @@ export async function up(knex) {
     as $function$
     #variable_conflict use_column
     declare
-      v_claimed uuid[];
+      v_token uuid := gen_random_uuid();
+      v_group record;
+      v_claimed integer := 0;
+      v_rows integer;
     begin
       perform app_private.require_read_committed();
       if app_private.current_user_id() is not null then
@@ -217,74 +266,66 @@ export async function up(knex) {
         for update skip locked
       );
 
-      with due as (
-        select item.id, item.recipient_user_id, item.client_id, item.type, item.send_after
+      -- One group at a time, and only the groups nobody else is claiming: the lock of the group is held to the end of the transaction,
+      -- so a second worker cannot claim part of a group whose first claim it cannot see yet. Whether the group is ready is asked in the
+      -- statement that claims, after the lock, so it sees what the previous holder of the lock committed.
+      for v_group in
+        select item.recipient_user_id, item.client_id, item.type, min(item.send_after) as first_due
         from public.notification_queue item
         where item.sent_at is null
           and item.discarded_at is null
           and item.send_after <= pg_catalog.now()
           and (item.claimed_at is null or item.claimed_at < pg_catalog.now() - interval '${LEASE}')
           and item.attempts < ${MAX_ATTEMPTS}
-        for update skip locked
-      ),
-      ready as (
-        select due.recipient_user_id, due.client_id, due.type
-        from due
-        where (
-            app_private.notification_max_wait(due.type) is null
-            or not exists (
-              select 1 from public.notification_queue other
-              where other.recipient_user_id = due.recipient_user_id and other.client_id = due.client_id and other.type = due.type
-                and other.sent_at is null and other.discarded_at is null
-                and other.send_after > pg_catalog.now()
-            )
-            or exists (
-              select 1 from public.notification_queue other
-              where other.recipient_user_id = due.recipient_user_id and other.client_id = due.client_id and other.type = due.type
-                and other.sent_at is null and other.discarded_at is null
-                and other.attempts < ${MAX_ATTEMPTS}
-                and other.created_at <= pg_catalog.now() - app_private.notification_max_wait(due.type)
-            )
-          )
-          and not exists (
-            select 1 from public.notification_queue other
-            where other.recipient_user_id = due.recipient_user_id and other.client_id = due.client_id and other.type = due.type
-              and other.sent_at is null and other.discarded_at is null
-              and other.claimed_at >= pg_catalog.now() - interval '${LEASE}'
-          )
-        group by due.recipient_user_id, due.client_id, due.type
-        order by min(due.send_after), due.recipient_user_id, due.client_id, due.type
-        limit p_limit
-      ),
-      claimed as (
+        group by item.recipient_user_id, item.client_id, item.type
+        order by min(item.send_after), item.recipient_user_id, item.client_id, item.type
+      loop
+        exit when v_claimed >= p_limit;
+        continue when not pg_catalog.pg_try_advisory_xact_lock(
+          pg_catalog.hashtextextended('notification_queue:' || v_group.recipient_user_id::text || ':' || v_group.client_id::text || ':' || v_group.type, 0)
+        );
+
         update public.notification_queue item
-        set claimed_at = pg_catalog.now(), attempts = item.attempts + 1
-        from due
-        join ready on ready.recipient_user_id = due.recipient_user_id and ready.client_id = due.client_id and ready.type = due.type
-        where item.id = due.id
-        returning item.id
-      )
-      select pg_catalog.array_agg(claimed.id) into v_claimed from claimed;
+        set claimed_at = pg_catalog.now(), claim_token = v_token, attempts = item.attempts + 1
+        where item.id in (
+          select due.id
+          from public.notification_queue due
+          where due.recipient_user_id = v_group.recipient_user_id and due.client_id = v_group.client_id and due.type = v_group.type
+            and due.sent_at is null
+            and due.discarded_at is null
+            and due.send_after <= pg_catalog.now()
+            and (due.claimed_at is null or due.claimed_at < pg_catalog.now() - interval '${LEASE}')
+            and due.attempts < ${MAX_ATTEMPTS}
+          for update skip locked
+        )
+        and app_private.notification_group_ready(v_group.recipient_user_id, v_group.client_id, v_group.type);
+        get diagnostics v_rows = row_count;
+        if v_rows > 0 then
+          v_claimed := v_claimed + 1;
+        end if;
+      end loop;
 
       -- The statuses were checked by the discard above, in this same call: a removal that commits between the two statements is
       -- seen by the next claim, and by no one sooner than the e-mail itself could be stopped.
       return query
-      select item.id, item.type, item.client_id, client.name, agency.name, item.recipient_user_id, person.email,
+      select item.id, item.claim_token, item.type, item.client_id, client.name, agency.name, item.recipient_user_id, person.email,
              item.content_id, content.title, content.publish_on
       from public.notification_queue item
       join public.contents content on content.id = item.content_id and content.client_id = item.client_id
       join public.clients client on client.id = item.client_id
       join public.agencies agency on agency.id = client.agency_id
-      join public.client_memberships membership on membership.client_id = item.client_id and membership.user_id = item.recipient_user_id
       join auth."user" person on person.id = item.recipient_user_id
-      where item.id = any(coalesce(v_claimed, '{}'::uuid[]))
+      where item.claim_token = v_token
+        and item.sent_at is null
       order by item.recipient_user_id, item.client_id, item.type, item.send_after, item.id;
     end;
     $function$;
     revoke all on function app_private.claim_notification_batch(integer) from public;
     grant execute on function app_private.claim_notification_batch(integer) to ageniza_app;
 
-    create function app_private.mark_notifications_sent(p_item_ids uuid[])
+    -- The token is the one the claim returned: an item another claim took after its lease ran out has another token, so a late
+    -- answer of the first worker stamps and releases nothing.
+    create function app_private.mark_notifications_sent(p_item_ids uuid[], p_claim_token uuid)
     returns integer
     language plpgsql
     security definer
@@ -298,21 +339,20 @@ export async function up(knex) {
         raise exception using errcode = '42501', message = 'The notification queue is written by the worker, not by a request.';
       end if;
 
-      -- Only what a claim holds: an item nobody claimed, or one already closed, is not stamped.
       update public.notification_queue item
       set sent_at = pg_catalog.now()
       where item.id = any(coalesce(p_item_ids, '{}'::uuid[]))
-        and item.claimed_at is not null
+        and item.claim_token = p_claim_token
         and item.sent_at is null
         and item.discarded_at is null;
       get diagnostics v_marked = row_count;
       return v_marked;
     end;
     $function$;
-    revoke all on function app_private.mark_notifications_sent(uuid[]) from public;
-    grant execute on function app_private.mark_notifications_sent(uuid[]) to ageniza_app;
+    revoke all on function app_private.mark_notifications_sent(uuid[], uuid) from public;
+    grant execute on function app_private.mark_notifications_sent(uuid[], uuid) to ageniza_app;
 
-    create function app_private.fail_notifications(p_item_ids uuid[], p_error_code text)
+    create function app_private.fail_notifications(p_item_ids uuid[], p_claim_token uuid, p_error_code text)
     returns integer
     language plpgsql
     security definer
@@ -332,18 +372,19 @@ export async function up(knex) {
 
       update public.notification_queue item
       set claimed_at = null,
+          claim_token = null,
           last_error = p_error_code,
           send_after = pg_catalog.now() + item.attempts * interval '5 minutes'
       where item.id = any(coalesce(p_item_ids, '{}'::uuid[]))
-        and item.claimed_at is not null
+        and item.claim_token = p_claim_token
         and item.sent_at is null
         and item.discarded_at is null;
       get diagnostics v_failed = row_count;
       return v_failed;
     end;
     $function$;
-    revoke all on function app_private.fail_notifications(uuid[], text) from public;
-    grant execute on function app_private.fail_notifications(uuid[], text) to ageniza_app;
+    revoke all on function app_private.fail_notifications(uuid[], uuid, text) from public;
+    grant execute on function app_private.fail_notifications(uuid[], uuid, text) to ageniza_app;
   `);
 }
 

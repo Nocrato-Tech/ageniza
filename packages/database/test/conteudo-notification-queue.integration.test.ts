@@ -108,18 +108,25 @@ const asWorker = <T>(work: (transaction: Knex.Transaction) => Promise<T>, isolat
   worker.knex.transaction(work, isolationLevel === undefined ? {} : { isolationLevel });
 
 interface Claimed {
-  item_id: string; notification_type: string; client_id: string; client_name: string; agency_name: string;
+  item_id: string; claim_token: string; notification_type: string; client_id: string; client_name: string; agency_name: string;
   recipient_user_id: string; recipient_email: string; content_id: string; content_title: string; content_publish_on: string;
 }
-const CLAIM_SQL = `select item_id, notification_type, client_id, client_name, agency_name, recipient_user_id, recipient_email,
+const CLAIM_SQL = `select item_id, claim_token, notification_type, client_id, client_name, agency_name, recipient_user_id, recipient_email,
   content_id, content_title, content_publish_on::text as content_publish_on from app_private.claim_notification_batch(?::integer)`;
 const claimIn = async (transaction: Knex.Transaction, limit = 100): Promise<Claimed[]> =>
   (await transaction.raw<{ rows: Claimed[] }>(CLAIM_SQL, [limit])).rows.filter((row) => worldClients().includes(row.client_id));
 const claim = (limit = 100): Promise<Claimed[]> => asWorker((transaction) => claimIn(transaction, limit));
-const markSent = async (ids_: readonly string[]): Promise<number> =>
-  asWorker(async (t) => Number((await t.raw<{ rows: Array<{ marked: number }> }>('select app_private.mark_notifications_sent(?::uuid[]) as marked', [ids_ as never])).rows[0]!.marked));
-const fail = async (ids_: readonly string[], code: string | null): Promise<number> =>
-  asWorker(async (t) => Number((await t.raw<{ rows: Array<{ failed: number }> }>('select app_private.fail_notifications(?::uuid[], ?::text) as failed', [ids_ as never, code])).rows[0]!.failed));
+// The token of the claim that holds these items, as the worker received it; a test of the token passes its own.
+const tokenOf = async (ids_: readonly string[]): Promise<string | null> =>
+  ((await owner()('notification_queue').whereIn('id', [...ids_]).whereNotNull('claim_token').first('claim_token'))?.claim_token as string | undefined) ?? null;
+const markSent = async (ids_: readonly string[], token?: string | null): Promise<number> => {
+  const claimToken = token === undefined ? await tokenOf(ids_) : token;
+  return asWorker(async (t) => Number((await t.raw<{ rows: Array<{ marked: number }> }>('select app_private.mark_notifications_sent(?::uuid[], ?::uuid) as marked', [ids_ as never, claimToken])).rows[0]!.marked));
+};
+const fail = async (ids_: readonly string[], code: string | null, token?: string | null): Promise<number> => {
+  const claimToken = token === undefined ? await tokenOf(ids_) : token;
+  return asWorker(async (t) => Number((await t.raw<{ rows: Array<{ failed: number }> }>('select app_private.fail_notifications(?::uuid[], ?::uuid, ?::text) as failed', [ids_ as never, claimToken, code])).rows[0]!.failed));
+};
 const forContent = (rows: readonly Claimed[], contentId: string): Claimed[] => rows.filter((row) => row.content_id === contentId);
 
 const freshClient = async (people: readonly string[] = [ids.portalA1, ids.portalA1Second]): Promise<string> => {
@@ -203,6 +210,7 @@ describe('the queue is reachable only through its functions (issue #252)', () =>
     `);
     expect(rows).toEqual([
       { column_name: 'attempts', data_type: 'integer', is_nullable: 'NO' },
+      { column_name: 'claim_token', data_type: 'uuid', is_nullable: 'YES' },
       { column_name: 'claimed_at', data_type: 'timestamp with time zone', is_nullable: 'YES' },
       { column_name: 'client_id', data_type: 'uuid', is_nullable: 'NO' },
       { column_name: 'content_id', data_type: 'uuid', is_nullable: 'YES' },
@@ -232,6 +240,8 @@ describe('the queue is reachable only through its functions (issue #252)', () =>
       expect(await refused({ type: 'content_unknown', content_id: null })).toMatchObject({ code: '23514', constraint: 'notification_queue_type_check' });
       expect(await refused({ content_id: null })).toMatchObject({ code: '23514', constraint: 'notification_queue_reference_check' });
       expect(await refused({ attempts: -1 })).toMatchObject({ code: '23514', constraint: 'notification_queue_attempts_check' });
+      expect(await refused({ claimed_at: new Date() })).toMatchObject({ code: '23514', constraint: 'notification_queue_claim_shape' });
+      expect(await refused({ claim_token: randomUUID() })).toMatchObject({ code: '23514', constraint: 'notification_queue_claim_shape' });
       expect(await refused({ sent_at: new Date(), discarded_at: new Date() })).toMatchObject({ code: '23514', constraint: 'notification_queue_closed_once' });
       expect(await refused({ content_id: other })).toMatchObject({ code: '23503', constraint: 'notification_queue_content_fk' });
       expect(await refused({ recipient_user_id: randomUUID() })).toMatchObject({ code: '23503' });
@@ -263,12 +273,13 @@ describe('the queue is reachable only through its functions (issue #252)', () =>
 describe('the catalog of the queue (issue #252)', () => {
   const WORKER_FUNCTIONS = [
     'app_private.claim_notification_batch(integer)',
-    'app_private.mark_notifications_sent(uuid[])',
-    'app_private.fail_notifications(uuid[], text)'
+    'app_private.mark_notifications_sent(uuid[], uuid)',
+    'app_private.fail_notifications(uuid[], uuid, text)'
   ];
   const INTERNAL = [
     'app_private.contents_enqueue_notification()',
     'app_private.notification_max_wait(text)',
+    'app_private.notification_group_ready(uuid, uuid, text)',
     'app_private.notification_send_after(text, timestamptz)'
   ];
 
@@ -395,12 +406,12 @@ describe('who is enqueued, and by what (issue #252)', () => {
 
     const items = await itemsOf(id);
     expect(items.map((item) => item.recipient_user_id)).toEqual(PEOPLE_OF_A1);
-    // The same rule written again, from the clock of this process and the fixed offset of Brasília (no daylight saving since 2019).
-    const brasilia = new Date(Date.now() - 3 * 3_600_000);
-    const expected = Date.UTC(brasilia.getUTCFullYear(), brasilia.getUTCMonth(), brasilia.getUTCDate() + 1, 3, 0, 0);
+    // The same rule written again, from the moment the item itself was queued and the fixed offset of Brasília (no daylight saving
+    // since 2019): the day of the item, not the clock of this process, so a run that crosses midnight cannot flip it.
     for (const item of items) {
       expect(item).toMatchObject({ type: 'content_published', client_id: ids.clientA1, content_id: id, sent_at: null, discarded_at: null });
-      expect((item.send_after as Date).getTime()).toBe(expected);
+      const brasilia = new Date((item.created_at as Date).getTime() - 3 * 3_600_000);
+      expect((item.send_after as Date).getTime()).toBe(Date.UTC(brasilia.getUTCFullYear(), brasilia.getUTCMonth(), brasilia.getUTCDate() + 1, 3, 0, 0));
     }
   });
 
@@ -428,6 +439,44 @@ describe('who is enqueued, and by what (issue #252)', () => {
     expect((await itemsOf(id)).map((item) => item.id)).toEqual(first);
   });
 
+  it('moves the window of the open item when the content is sent again, and keeps the moment it was first queued', async () => {
+    const id = await readyContent();
+    await submitAs(ids.productionA, id);
+    await sentAgo(id, 10);
+    const before = await itemsOf(id);
+    await owner().transaction(async (t) => {
+      await t.raw('select app_private.bind_actor(?::uuid)', [ids.adminA]);
+      await t('contents').where({ id }).update({ status: 'adjusting' });
+    });
+
+    await submitAs(ids.productionA, id);
+
+    const after = await itemsOf(id);
+    expect(after.map((item) => item.id)).toEqual(before.map((item) => item.id));
+    expect(after.map((item) => item.created_at)).toEqual(before.map((item) => item.created_at));
+    const wait = await sqlText('select extract(epoch from (min(send_after) - now()))::integer::text as value from public.notification_queue where content_id = ?::uuid', [id]);
+    expect(Number(wait)).toBeGreaterThan(14 * 60 - 30);
+    expect(Number(wait)).toBeLessThanOrEqual(15 * 60);
+  });
+
+  it('does not touch an item that an e-mail is leaving with when the content is sent again', async () => {
+    const id = await readyContent();
+    await sendDue(ids.productionA, id);
+    const batch = await claim();
+    expect(forContent(batch, id)).toHaveLength(PEOPLE_OF_A1.length);
+    const claimedAt = (await itemsOf(id)).map((item) => item.claimed_at);
+    const sendAfter = (await itemsOf(id)).map((item) => item.send_after);
+    await owner().transaction(async (t) => {
+      await t.raw('select app_private.bind_actor(?::uuid)', [ids.adminA]);
+      await t('contents').where({ id }).update({ status: 'adjusting' });
+    });
+
+    await submitAs(ids.productionA, id);
+
+    expect((await itemsOf(id)).map((item) => item.claimed_at)).toEqual(claimedAt);
+    expect((await itemsOf(id)).map((item) => item.send_after)).toEqual(sendAfter);
+  });
+
   it('opens a new item when a content is sent again after its e-mail left', async () => {
     const id = await readyContent();
     await submitAs(ids.productionA, id);
@@ -449,11 +498,21 @@ describe('who is enqueued, and by what (issue #252)', () => {
     ['the agency cancels', async () => { const id = await readyContent(); return { id, act: () => cancelAs(ids.adminA, id) }; }],
     ['a publication is undone', async () => { const id = await readyContent(ids.clientA1, 'approved'); await publishAs(ids.productionA, id); await owner()('notification_queue').where({ content_id: id }).delete(); return { id, act: () => unpublishAs(ids.productionA, id) }; }],
     ['the caption of a content in production changes', async () => { const id = await readyContent(); return { id, act: () => w.asUser(ids.productionA, (t) => t('contents').where({ id }).update({ caption: 'Outra legenda' })) }; }],
+    ['the caption of a content that is already awaiting approval changes after its e-mail left', async () => {
+      const id = await readyContent(); await submitAs(ids.productionA, id); await setItems(id, { sent_at: new Date() });
+      return { id, act: async () => { await w.asUser(ids.productionA, (t) => t('contents').where({ id }).update({ caption: 'Legenda corrigida depois do e-mail' })); expect(await w.contentRow(id)).toMatchObject({ status: 'awaiting_approval', revision: 2 }); } };
+    }],
+    ['the date of a content that is already awaiting approval moves after its e-mail left', async () => {
+      const id = await readyContent(); await submitAs(ids.productionA, id); await setItems(id, { sent_at: new Date() });
+      return { id, act: async () => { await w.asUser(ids.productionA, (t) => t('contents').where({ id }).update({ publish_on: '2026-12-01' })); expect((await w.contentRow(id)).status).toBe('awaiting_approval'); } };
+    }],
     ['the media of a content in production is replaced', async () => { const id = await readyContent(); const asset = await w.seedAsset(ids.clientA1, await w.folderOf(ids.clientA1), { category: 'video' }); return { id, act: () => fn(ids.productionA, 'set_content_media(?::uuid, ?::uuid[])', id, [asset]) }; }]
-  ])('enqueues nothing when %s', async (_label, prepare) => {
+  ])('enqueues nothing new when %s', async (_label, prepare) => {
     const { id, act } = await prepare();
+    const before = (await itemsOf(id)).map((item) => item.id);
     await act();
-    expect(await itemsOf(id)).toEqual([]);
+    expect((await itemsOf(id)).map((item) => item.id)).toEqual(before);
+    expect(await openRecipients(id)).toEqual([]);
   });
 
   it('enqueues nothing for an archived client, but does for the same flow on an active one', async () => {
@@ -501,8 +560,8 @@ describe('who is enqueued, and by what (issue #252)', () => {
 describe('what the worker may call (issue #252)', () => {
   it.each([
     ['claim_notification_batch', (t: Knex.Transaction) => t.raw('select * from app_private.claim_notification_batch(?::integer)', [10])],
-    ['mark_notifications_sent', (t: Knex.Transaction) => t.raw('select app_private.mark_notifications_sent(?::uuid[])', [[randomUUID()] as never])],
-    ['fail_notifications', (t: Knex.Transaction) => t.raw('select app_private.fail_notifications(?::uuid[], ?::text)', [[randomUUID()] as never, 'smtp_timeout'])]
+    ['mark_notifications_sent', (t: Knex.Transaction) => t.raw('select app_private.mark_notifications_sent(?::uuid[], ?::uuid)', [[randomUUID()] as never, randomUUID()])],
+    ['fail_notifications', (t: Knex.Transaction) => t.raw('select app_private.fail_notifications(?::uuid[], ?::uuid, ?::text)', [[randomUUID()] as never, randomUUID(), 'smtp_timeout'])]
   ])('%s refuses a request: a transaction with an actor bound is never the worker', async (_name, call) => {
     await sendDue(ids.productionA, await readyContent());
     const people = [ids.adminA, ids.ownerA, ids.portalA1, ids.dualFull, await w.personWith('conteudo.visualizar', 'conteudo.operar')];
@@ -516,8 +575,8 @@ describe('what the worker may call (issue #252)', () => {
   it.each(['repeatable read', 'serializable'] as const)('refuses every function under %s with 40001: they lock and read again, which only READ COMMITTED sees', async (level) => {
     const call = (sql: string, bindings: unknown[]) => asWorker(async (t) => { await t.raw('select 1'); await t.raw(sql, bindings as never[]); }, level);
     await expect(call('select * from app_private.claim_notification_batch(?::integer)', [10])).rejects.toMatchObject({ code: '40001' });
-    await expect(call('select app_private.mark_notifications_sent(?::uuid[])', [[randomUUID()]])).rejects.toMatchObject({ code: '40001' });
-    await expect(call('select app_private.fail_notifications(?::uuid[], ?::text)', [[randomUUID()], 'smtp_timeout'])).rejects.toMatchObject({ code: '40001' });
+    await expect(call('select app_private.mark_notifications_sent(?::uuid[], ?::uuid)', [[randomUUID()], randomUUID()])).rejects.toMatchObject({ code: '40001' });
+    await expect(call('select app_private.fail_notifications(?::uuid[], ?::uuid, ?::text)', [[randomUUID()], randomUUID(), 'smtp_timeout'])).rejects.toMatchObject({ code: '40001' });
   });
 
   it.each([null, 0, -1, 101])('claims at most 1 to 100 groups: %s is refused', async (limit) => {
@@ -540,12 +599,13 @@ describe('claiming a batch (issue #252)', () => {
 
     expect(batch).toHaveLength(PEOPLE_OF_A1.length);
     expect(Object.keys(batch[0]!).sort()).toEqual([
-      'agency_name', 'client_id', 'client_name', 'content_id', 'content_publish_on', 'content_title', 'item_id',
+      'agency_name', 'claim_token', 'client_id', 'client_name', 'content_id', 'content_publish_on', 'content_title', 'item_id',
       'notification_type', 'recipient_email', 'recipient_user_id'
     ]);
     const queue = await itemsOf(id);
     const expected = queue.map((item) => ({
       item_id: item.id,
+      claim_token: batch[0]!.claim_token,
       notification_type: 'content_awaiting_approval',
       client_id: ids.clientA1,
       client_name: `Cliente A1 ${ids.clientA1}`,
@@ -575,10 +635,68 @@ describe('claiming a batch (issue #252)', () => {
     expect(one).toHaveLength(3);
     expect(new Set(one.map((row) => row.content_id))).toEqual(new Set([first, second, third]));
 
+    // Two groups of three rows each: a limit of 2 counts groups, so it is not used up by the first three rows.
+    const two = await claim(2);
+    expect(new Set(two.map((row) => row.recipient_user_id)).size).toBe(2);
+    expect(two).toHaveLength(6);
+
     const rest = await claim(100);
-    expect(new Set(rest.map((row) => row.recipient_user_id)).size).toBe(PEOPLE_OF_A1.length - 1);
-    expect(rest).toHaveLength(3 * (PEOPLE_OF_A1.length - 1));
+    expect(new Set(rest.map((row) => row.recipient_user_id)).size).toBe(PEOPLE_OF_A1.length - 3);
+    expect(rest).toHaveLength(3 * (PEOPLE_OF_A1.length - 3));
     expect(await claim(100)).toEqual([]);
+  });
+
+  it('claims the items of one client at a time: a limit of one group does not take the other client of the same person', async () => {
+    const north = await freshClient([ids.portalA1]);
+    const south = await freshClient([ids.portalA1]);
+    await sendDue(ids.productionA, await readyContent(north));
+    await sendDue(ids.productionA, await readyContent(south));
+
+    const batch = await claim(1);
+
+    expect(batch).toHaveLength(1);
+    expect(await claim(1)).toHaveLength(1);
+    expect(await claim(1)).toEqual([]);
+  });
+
+  it('holds the lock of a group per person and per client: another client of the same person is claimed meanwhile', async () => {
+    const north = await freshClient([ids.portalA1]);
+    const south = await freshClient([ids.portalA1]);
+    await sendDue(ids.productionA, await readyContent(north));
+    const holder = await worker.knex.transaction();
+    try {
+      expect(await claimIn(holder)).toHaveLength(1);
+      await sendDue(ids.productionA, await readyContent(south));
+
+      const outcome = await Promise.race([claim(), new Promise<string>((resolve) => setTimeout(() => resolve('waited'), 3_000))]);
+
+      expect((outcome as Claimed[]).map((row) => row.client_id)).toEqual([south]);
+    } finally {
+      await holder.commit();
+    }
+  });
+
+  it('takes the lock of a group only when the group has something to claim: none for items that are not due, exhausted or under a lease', async () => {
+    const later = await readyContent(ids.clientA1, 'approved');
+    await publishAs(ids.productionA, later);
+    const exhausted = await readyContent(await freshClient([ids.portalA1]));
+    await sendDue(ids.productionA, exhausted);
+    await setItems(exhausted, { attempts: 5 });
+    const leased = await readyContent(await freshClient([ids.portalA1]));
+    await sendDue(ids.productionA, leased);
+    await owner().raw("update public.notification_queue set claimed_at = now() - interval '1 minute', claim_token = gen_random_uuid() where content_id = ?::uuid", [leased]);
+    const due = await readyContent(await freshClient([ids.portalA1]));
+    await sendDue(ids.productionA, due);
+
+    const holder = await worker.knex.transaction();
+    try {
+      const pid = Number((await holder.raw<{ rows: Array<{ pid: number }> }>('select pg_backend_pid() as pid')).rows[0]!.pid);
+      expect(forContent(await claimIn(holder), due)).toHaveLength(1);
+      const locks = await owner().raw<{ rows: Array<{ count: string }> }>("select count(*) as count from pg_locks where locktype = 'advisory' and pid = ?::integer", [pid]);
+      expect(locks.rows[0]!.count).toBe('1');
+    } finally {
+      await holder.commit();
+    }
   });
 
   it('leaves out an item that is not due yet, and takes it once it is', async () => {
@@ -640,6 +758,46 @@ describe('claiming a batch (issue #252)', () => {
       await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'active' });
     }
     expect((await itemOf(id, ids.portalA1Second)).discarded_at).toBeInstanceOf(Date);
+  });
+
+  it('does not let a second worker claim what arrived in a group the first still holds', async () => {
+    const first = await readyContent();
+    await sendDue(ids.productionA, first);
+    const holder = await worker.knex.transaction();
+    let arrivedId = '';
+    try {
+      expect(forContent(await claimIn(holder), first)).toHaveLength(PEOPLE_OF_A1.length);
+      // The first claim is not committed: its claimed_at is invisible to the second worker, which would take this one as a new group.
+      arrivedId = await readyContent();
+      await sendDue(ids.productionA, arrivedId);
+
+      const outcome = await Promise.race([claim(), new Promise<string>((resolve) => setTimeout(() => resolve('waited'), 3_000))]);
+
+      expect(outcome).toEqual([]);
+    } finally {
+      await holder.commit();
+    }
+    for (const item of await itemsOf(first)) expect(item.attempts).toBe(1);
+    for (const item of await itemsOf(arrivedId)) expect(item).toMatchObject({ attempts: 0, claimed_at: null, claim_token: null });
+  });
+
+  it('holds only the groups it claims: a claim of one group leaves the others to a second worker', async () => {
+    const id = await readyContent();
+    await sendDue(ids.productionA, id);
+    const holder = await worker.knex.transaction();
+    let second: Claimed[];
+    let firstBatch: Claimed[];
+    try {
+      firstBatch = await claimIn(holder, 1);
+      second = (await Promise.race([asWorker((t) => claimIn(t, 1)), new Promise<string>((resolve) => setTimeout(() => resolve('waited'), 3_000))])) as Claimed[];
+    } finally {
+      await holder.commit();
+    }
+
+    expect(firstBatch).toHaveLength(1);
+    expect(second).toHaveLength(1);
+    expect(second[0]!.recipient_user_id).not.toBe(firstBatch[0]!.recipient_user_id);
+    expect(second[0]!.claim_token).not.toBe(firstBatch[0]!.claim_token);
   });
 
   describe('the debounce of "contents to approve": ONE e-mail, 15 minutes after the last send (issue #252)', () => {
@@ -717,6 +875,18 @@ describe('claiming a batch (issue #252)', () => {
       await sentAgo(recent, 1);
       await setItems(left, { sent_at: new Date() });
       await setItems(dropped, { discarded_at: new Date() });
+
+      expect(await claim()).toEqual([]);
+    });
+
+    it('does not count an exhausted item as the start of the burst', async () => {
+      const exhausted = await send();
+      const due = await send();
+      const recent = await send();
+      await sentAgo(exhausted, 100);
+      await sentAgo(due, 20);
+      await sentAgo(recent, 1);
+      await setItems(exhausted, { attempts: 5 });
 
       expect(await claim()).toEqual([]);
     });
@@ -809,6 +979,20 @@ describe('claiming a batch (issue #252)', () => {
 
       expect(forContent(await claim(), id)).toHaveLength(claimed ? PEOPLE_OF_A1.length : 0);
       for (const item of await itemsOf(id)) expect(item.attempts).toBe(ending);
+    });
+
+    it('leaves an exhausted item out of a group that has fresh ones', async () => {
+      const exhausted = await readyContent();
+      const fresh = await readyContent();
+      await sendDue(ids.productionA, exhausted);
+      await sendDue(ids.productionA, fresh);
+      await setItems(exhausted, { attempts: 5 });
+
+      const batch = await claim();
+
+      expect(forContent(batch, exhausted)).toEqual([]);
+      expect(forContent(batch, fresh)).toHaveLength(PEOPLE_OF_A1.length);
+      for (const item of await itemsOf(exhausted)) expect(item).toMatchObject({ attempts: 5, claimed_at: null, claim_token: null });
     });
 
     it('stops handing over an item whose fifth attempt lease ended', async () => {
@@ -969,6 +1153,36 @@ describe('marking an item sent or failed (issue #252)', () => {
     expect((await itemOf(id, ids.portalA1)).last_error).toBe('smtp_rejected');
   });
 
+  it('ignores the late answer of a worker whose lease ran out and whose items another claim took', async () => {
+    const { id, batch } = await claimed();
+    const items = batch.map((row) => row.item_id);
+    const first = batch[0]!.claim_token;
+    await setItemsAgo(id, 'claimed_at', 11);
+    const second = await claim();
+    expect(forContent(second, id)).toHaveLength(PEOPLE_OF_A1.length);
+    const next = second[0]!.claim_token;
+    expect(next).not.toBe(first);
+
+    expect(await fail(items, 'smtp_timeout', first)).toBe(0);
+    expect(await markSent(items, first)).toBe(0);
+    for (const item of await itemsOf(id)) expect(item).toMatchObject({ sent_at: null, last_error: null, claim_token: next, attempts: 2 });
+
+    expect(await markSent(items, next)).toBe(PEOPLE_OF_A1.length);
+  });
+
+  it.each([
+    ['a token nobody was given', () => randomUUID()],
+    ['no token', () => null]
+  ])('stamps and releases nothing with %s', async (_label, token) => {
+    const { id, batch } = await claimed();
+    const items = batch.map((row) => row.item_id);
+
+    expect(await markSent(items, token())).toBe(0);
+    expect(await fail(items, 'smtp_timeout', token())).toBe(0);
+
+    for (const item of await itemsOf(id)) expect(item).toMatchObject({ sent_at: null, last_error: null, claim_token: batch[0]!.claim_token });
+  });
+
   it('touches only what a claim holds', async () => {
     const { id, batch } = await claimed();
     await markSent(batch.slice(0, 1).map((row) => row.item_id));
@@ -1043,7 +1257,8 @@ describe('races with the archive of the client (issue #252)', () => {
   });
 
   // The caption of an approved content moves it back to "awaiting approval" by a plain UPDATE, which takes no lock of the client:
-  // the lock is the one of the trigger that enqueues.
+  // the lock is the AFTER INSERT lock of the queue, which waits for the archive and then refuses the row. How the edit itself ends is
+  // the business of rule 14, not of this issue; the queue is what is asserted.
   it('an approved content whose caption changes while the archive is uncommitted queues nothing once the archive commits', async () => {
     const client = await freshClient();
     const id = await readyContent(client, 'approved', await today());
@@ -1058,7 +1273,8 @@ describe('races with the archive of the client (issue #252)', () => {
       await archiving.commit();
     }
 
-    expect(await outcome).toBe('edited');
+    // How the edit itself ends (rule 14, a plain UPDATE takes no lock of the client) is not this issue: only the queue is asserted.
+    await outcome;
     expect(await itemsOf(id)).toEqual([]);
   });
 
