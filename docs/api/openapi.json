@@ -4460,6 +4460,77 @@
         }
       }
     },
+    "/auth/session/check": {
+      "get": {
+        "operationId": "getAuthSessionCheck",
+        "summary": "Confere se a sessão continua válida, sem renová-la",
+        "description": "Para a aba aberta conferir a própria sessão de tempos em tempos (a pessoa removida é deslogada na hora, #411). Responde o mesmo que `GET /auth/session`, mas não conta como uso: `expiresAt` e `updatedAt` não mudam e nenhum cookie é emitido, então uma aba esquecida não mantém a sessão viva além dos 7 dias sem uso. Sessão encerrada ou revogada responde 401.\n\nAcesso: Sessão.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "responses": {
+          "200": {
+            "description": "Sessão válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getAuthSessionResponse"
+                },
+                "example": {
+                  "user": {
+                    "id": "55555555-5555-4555-8555-555555555555",
+                    "name": "Dono da Agência",
+                    "email": "dono@exemplo.test"
+                  },
+                  "session": {
+                    "expiresAt": "2026-10-01T12:00:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required. | SESSION_EXPIRED: Session has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/password/forgot": {
       "post": {
         "operationId": "postAuthPasswordForgot",

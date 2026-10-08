@@ -484,6 +484,40 @@ describe('GET /auth/session (#5, #6)', () => {
     expect(Math.abs(newExpiresAtMs - expectedMs)).toBeLessThan(60_000);
   });
 
+  it('#411 GET /auth/session/check answers like /auth/session but never renews: expiresAt, updatedAt and the cookie stay, and a revoked session is a 401', async () => {
+    const app = await openApp();
+    const user = await makeUser(app, 'session-check');
+    const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
+    const cookie = sessionCookieHeader(login.cookies);
+    const sessionId = (await app.pool.query<{ id: string }>('select id from auth.session where "userId" = $1 order by "createdAt" desc limit 1', [user.id])).rows[0]!.id;
+    // Due for renewal (updateAge is 1 day), and still valid.
+    await app.pool.query("update auth.session set \"updatedAt\" = now() - interval '2 days', \"expiresAt\" = now() + interval '5 days' where id = $1", [sessionId]);
+    const readRow = async () => (await app.pool.query<{ expiresAt: Date; updatedAt: Date }>('select "expiresAt", "updatedAt" from auth.session where id = $1', [sessionId])).rows[0]!;
+    const before = await readRow();
+
+    const check = await app.app.inject({ method: 'GET', url: '/auth/session/check', headers: { cookie } });
+    expect(check.statusCode).toBe(200);
+    expect(check.json()).toEqual({
+      user: { id: user.id, name: user.name, email: user.email },
+      session: { expiresAt: new Date(before.expiresAt).toISOString() }
+    });
+    expect(check.headers['set-cookie']).toBeUndefined();
+    const after = await readRow();
+    expect(new Date(after.expiresAt).getTime()).toBe(new Date(before.expiresAt).getTime());
+    expect(new Date(after.updatedAt).getTime()).toBe(new Date(before.updatedAt).getTime());
+
+    // The same session, asked through the route that counts as use, is renewed: the check is what differs.
+    const used = await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie } });
+    expect(used.statusCode).toBe(200);
+    expect(new Date((await readRow()).expiresAt).getTime()).toBeGreaterThan(new Date(before.expiresAt).getTime() + 24 * 60 * 60 * 1_000);
+
+    expect((await app.app.inject({ method: 'GET', url: '/auth/session/check' })).statusCode).toBe(401);
+    await app.pool.query('delete from auth.session where id = $1', [sessionId]);
+    const revoked = await app.app.inject({ method: 'GET', url: '/auth/session/check', headers: { cookie } });
+    expect(revoked.statusCode).toBe(401);
+    expect(revoked.json()).toMatchObject({ error: { code: 'UNAUTHENTICATED' } });
+  });
+
   it('B8 never lets a refresh push expiresAt past createdAt + 30 days, even at the database-hook level', async () => {
     const app = await openApp();
     const user = await makeUser(app, 'session-absolute-clamp');

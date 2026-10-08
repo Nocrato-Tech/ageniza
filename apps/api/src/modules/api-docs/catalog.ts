@@ -468,6 +468,26 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     errors: [COMMON_ERRORS.internal, { status: 401, code: 'UNAUTHENTICATED' }, { status: 401, code: 'SESSION_EXPIRED' }]
   },
   {
+    method: 'get',
+    path: '/auth/session/check',
+    operationId: 'getAuthSessionCheck',
+    module: 'auth',
+    summary: 'Confere se a sessão continua válida, sem renová-la',
+    description: 'Para a aba aberta conferir a própria sessão de tempos em tempos (a pessoa removida é deslogada na hora, #411). Responde o mesmo que `GET /auth/session`, mas não conta como uso: `expiresAt` e `updatedAt` não mudam e nenhum cookie é emitido, então uma aba esquecida não mantém a sessão viva além dos 7 dias sem uso. Sessão encerrada ou revogada responde 401.',
+    access: 'Sessão',
+    permission: null,
+    responses: [{
+      status: 200,
+      description: 'Sessão válida.',
+      schema: AuthSessionResponseSchema,
+      example: {
+        user: { id: userId, name: 'Dono da Agência', email: 'dono@exemplo.test' },
+        session: { expiresAt: '2026-10-01T12:00:00.000Z' }
+      }
+    }],
+    errors: [COMMON_ERRORS.internal, { status: 401, code: 'UNAUTHENTICATED' }, { status: 401, code: 'SESSION_EXPIRED' }]
+  },
+  {
     method: 'post',
     path: '/auth/password/forgot',
     operationId: 'postAuthPasswordForgot',
