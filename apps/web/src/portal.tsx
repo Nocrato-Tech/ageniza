@@ -56,7 +56,7 @@ function PortalUnavailable({ onRetry }: { onRetry: () => void }) {
 
 /** The portal before its client is known: the account menu is the only way out of these screens. */
 function PortalContextlessShell({ children }: { children: React.ReactNode }) {
-  return <div className="app-shell">
+  return <div className="app-shell portal-shell">
     <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
     <header className="portal-header"><AccountMenu /></header>
     <main className="portal-content" id="main-content">{children}</main>
@@ -65,7 +65,7 @@ function PortalContextlessShell({ children }: { children: React.ReactNode }) {
 
 function PortalShellSkeleton() {
   // The Início skeleton: the header identity, the greeting block and the next action's card.
-  return <div className="app-shell">
+  return <div className="app-shell portal-shell">
     <header className="portal-header">
       <div className="portal-header__identity">
         <Skeleton className="portal-header__avatar-skeleton" />
@@ -123,7 +123,7 @@ export function PortalAreaLayout() {
   if (data.id !== clienteId) return <PortalContextlessShell><NotFoundPage as="section" /></PortalContextlessShell>;
 
   return <PortalClientContext.Provider value={data}>
-    <div className="app-shell">
+    <div className="app-shell portal-shell">
       <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
       <header className="portal-header">
         <div className="portal-header__identity">

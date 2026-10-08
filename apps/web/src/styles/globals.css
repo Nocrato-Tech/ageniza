@@ -2052,8 +2052,20 @@ a.client-general__block:hover {
   width: 10rem;
 }
 
-.portal-content {
-  min-height: 60vh;
+/* The shell is a column as tall as the screen: the content takes what is left, so the bottom bar
+   sits at the bottom of a 360x780 phone even when the page is short. `sticky` alone only holds a
+   bar that would already be below the fold (review of #401). */
+.portal-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* A flex item with auto side margins shrinks to its content: the width is restated. */
+.portal-shell > .portal-content {
+  width: 100%;
+  flex: 1;
 }
 
 .portal-nav {
@@ -2061,6 +2073,7 @@ a.client-general__block:hover {
   bottom: 0;
   background: var(--bg-surface);
   border-top: 1px solid var(--border-default);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .portal-nav ul {

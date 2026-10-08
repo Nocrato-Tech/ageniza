@@ -2,6 +2,9 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import type { PortalClientResponse } from '@ageniza/contracts';
@@ -87,6 +90,8 @@ const json = (body: unknown, status = 200): Response =>
 const notFound = (): Response => json({ error: { code: 'NOT_FOUND', message: 'Client not found.' } }, 404);
 
 interface Scenario {
+  /** No session: like the real API, every endpoint answers 401 (the portal is never reachable). */
+  readonly anonymous?: boolean;
   readonly portal?: () => Response | Promise<Response>;
   readonly client?: () => Response | Promise<Response>;
   readonly patch?: (body: unknown) => Response | Promise<Response>;
@@ -101,6 +106,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     const path = url.pathname;
     const method = init?.method ?? 'GET';
     calls.push(`${method} ${path}`);
+    if (scenario.anonymous === true) return json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required.' } }, 401);
     if (path.endsWith('/auth/session')) return json(sessionBody);
     if (path.endsWith('/me/contexts')) return json(contextsBody);
     if (path.endsWith('/me/legal-acceptances')) return scenario.legal?.() ?? json(legalAccepted);
@@ -251,6 +257,7 @@ describe('client portal shell (#141)', () => {
 
   it.each([
     ['Calendário', 'Aqui você vai ver os posts planejados para sua marca e aprovar cada um.'],
+    ['Marca', 'Aqui você vai ver o estudo da sua marca e conversar com a agência sobre ele.'],
     ['Relatórios', 'Aqui você vai ver os resultados do trabalho que sua agência faz para você.']
   ])('draws %s as a skeleton with its reason and no clickable control', async (label, sentence) => {
     const { impl } = makeFetch();
@@ -265,6 +272,49 @@ describe('client portal shell (#141)', () => {
     expect(within(panel).queryByRole('link')).toBeNull();
     expect(within(panel).queryByRole('textbox')).toBeNull();
     expect(container.querySelector('.portal-skeleton')).toBeTruthy();
+  });
+
+  it('sets the tab title of each of the four areas', async () => {
+    const { impl } = makeFetch();
+    renderPortal(impl);
+    await screen.findByRole('heading', { name: 'Olá, Maria' });
+    expect(document.title).toBe('Início — Portal do cliente — Ageniza');
+
+    for (const label of ['Calendário', 'Marca', 'Relatórios']) {
+      clickTab(label);
+      await screen.findByRole('heading', { name: label });
+      expect(document.title).toBe(`${label} — Portal do cliente — Ageniza`);
+    }
+
+    clickTab('Início');
+    await screen.findByRole('heading', { name: 'Olá, Maria' });
+    expect(document.title).toBe('Início — Portal do cliente — Ageniza');
+  });
+
+  it('keeps the bottom bar as the last piece of a screen-tall column shell, with the content taking the rest', async () => {
+    const { impl } = makeFetch();
+    const { container } = renderPortal(impl);
+    await screen.findByRole('heading', { name: 'Olá, Maria' });
+
+    // Structure: header, content, bar — the bar follows the content directly inside the shell.
+    const shell = container.querySelector('.portal-shell') as HTMLElement;
+    expect(shell.classList.contains('app-shell')).toBe(true);
+    expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'header', 'main', 'nav']);
+    expect(shell.lastElementChild).toBe(nav());
+
+    // jsdom has no layout, so the rules that put the bar at the bottom of a short page are read from
+    // the stylesheet; the real 360x780 capture is in the PR (review of #401, finding 1).
+    const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
+    const rule = (selector: string): string => {
+      const start = css.indexOf(`\n${selector} {`);
+      if (start === -1) throw new Error(`${selector} was not found in globals.css.`);
+      return css.slice(start, css.indexOf('}', start));
+    };
+    expect(rule('.portal-shell')).toMatch(/display:\s*flex;/);
+    expect(rule('.portal-shell')).toMatch(/flex-direction:\s*column;/);
+    expect(rule('.portal-shell')).toMatch(/min-height:\s*100dvh;/);
+    expect(rule('.portal-shell > .portal-content')).toMatch(/flex:\s*1;/);
+    expect(rule('.portal-shell > .portal-content')).toMatch(/width:\s*100%;/);
   });
 
   it('never shows an internal term in the client portal', async () => {
@@ -310,6 +360,53 @@ describe('client portal shell (#141)', () => {
     renderPortal(wrong.impl);
     expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
     expect(screen.queryByText('Outro Cliente')).toBeNull();
+  });
+
+  it('does not render the portal without a session: no request for the client, the unavailable page instead', async () => {
+    const { impl, calls } = makeFetch({ anonymous: true });
+    renderPortal(impl);
+
+    expect(await screen.findByRole('heading', { name: 'Workspace unavailable' })).toBeTruthy();
+    expect(screen.queryByRole('navigation', { name: 'Navegação do portal' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: /Olá/ })).toBeNull();
+    expect(calls.some((call) => call.startsWith('GET /clients/'))).toBe(false);
+  });
+
+  it('answers the not-found inside the portal shell for an unknown portal address', async () => {
+    const { impl } = makeFetch();
+    const { probe, container } = renderPortal(impl, portalUrl('qualquer-coisa'));
+
+    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(probe.pathname).toBe(portalUrl('qualquer-coisa'));
+    // Still the portal shell (client header and bar), not the generic protected header: the `*` of the portal answers.
+    expect(within(container.querySelector('.portal-header') as HTMLElement).getByText('Padaria Central')).toBeTruthy();
+    expect(within(nav()).getAllByRole('link').map((link) => link.getAttribute('aria-current'))).toEqual([null, null, null, null]);
+    expect(container.querySelector('.protected-header')).toBeNull();
+    expect(screen.queryByRole('heading', { name: /Olá/ })).toBeNull();
+
+    // The bar still works from there.
+    clickTab('Início');
+    expect(await screen.findByRole('heading', { name: 'Olá, Maria' })).toBeTruthy();
+  });
+
+  it.each([
+    ['the client is not found', () => notFound(), 'Page not found'],
+    ['the portal cannot be opened', () => json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, 500), 'Não foi possível abrir o portal']
+  ])('keeps the account menu as the way out when %s, without an active client', async (_name, portal, heading) => {
+    const { impl } = makeFetch({ portal });
+    const { container } = renderPortal(impl);
+    // The query client retries a 5xx once after its backoff, so the failure screen takes a moment.
+    expect(await screen.findByRole('heading', { name: heading }, { timeout: 4000 })).toBeTruthy();
+
+    const header = container.querySelector('.portal-header') as HTMLElement;
+    fireEvent.click(within(header).getByRole('button', { name: /Maria/ }));
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getByText('maria@example.test')).toBeTruthy();
+    expect(within(menu).getByRole('menuitem', { name: 'Sair' })).toBeTruthy();
+    // No client is proven for this address, so none is named as the active context.
+    expect(within(menu).queryByText('Contexto ativo')).toBeNull();
+    expect(within(menu).queryByText('Padaria Central')).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Navegação do portal' })).toBeNull();
   });
 
   it('offers a retry when the portal cannot be opened', async () => {

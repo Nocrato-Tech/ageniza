@@ -293,10 +293,17 @@ describe('InvitationPage (/convite/:token)', () => {
     const { probe } = renderInvite(impl);
     await screen.findByRole('heading', { name: 'Você foi convidado' });
     fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
-    await waitFor(() => expect(probe.pathname).toBe(`/portal/${CLIENT_A}`));
+    // The destination is the Início itself: the index redirect used to change the path under the notice.
+    await waitFor(() => expect(probe.pathname).toBe(`/portal/${CLIENT_A}/inicio`));
 
     const notice = await screen.findByRole('status');
     expect(notice.textContent).toContain('Você já fazia parte de Agência Um. Nada mudou no seu acesso.');
+
+    // The first frame is not the proof: the notice must outlive the shell settling (greeting on screen).
+    await screen.findByRole('heading', { name: 'Olá, Pessoa' });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+    expect(probe.pathname).toBe(`/portal/${CLIENT_A}/inicio`);
+    expect(screen.getByRole('status').textContent).toContain('Você já fazia parte de Agência Um. Nada mudou no seu acesso.');
   });
 
   it('enters the invitation context, not the one the session would resolve', async () => {
