@@ -75,6 +75,11 @@ const sessionDocs = {
   responseStatus: 200,
   schemas: { response: AuthSessionResponseSchema }
 } satisfies DocumentedRouteConfig;
+const sessionCheckDocs = {
+  permission: null,
+  responseStatus: 200,
+  schemas: { response: AuthSessionResponseSchema }
+} satisfies DocumentedRouteConfig;
 const forgotDocs = {
   permission: null,
   responseStatus: 202,
@@ -183,6 +188,19 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     // discard the renewed cookie the guard already resolved.
     if (request.auth === undefined) throw new HttpError(unauthenticatedFallback);
     return routeResponse(sessionDocs, request, {
+      user: request.auth.user,
+      session: { expiresAt: request.auth.expiresAt }
+    });
+  });
+
+  // The periodic check of an open tab (#411): same answer as `/auth/session`, but it never renews the
+  // session, so a forgotten tab does not keep it alive past the 7 days without use.
+  app.get('/auth/session/check', {
+    preHandler: createRequireSession({ auth: dependencies.auth }, { renew: false }),
+    config: sessionCheckDocs
+  }, async (request) => {
+    if (request.auth === undefined) throw new HttpError(unauthenticatedFallback);
+    return routeResponse(sessionCheckDocs, request, {
       user: request.auth.user,
       session: { expiresAt: request.auth.expiresAt }
     });

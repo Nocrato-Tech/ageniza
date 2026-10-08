@@ -159,7 +159,7 @@ Não há pré-condição: arquiva-se com thread aberta, persona ou o que houver.
 
 ```
 (convite aceito) → active    # fluxo de convite que já existe
-active           → removed   # cliente.remover_usuario; perde o acesso na requisição seguinte
+active           → removed   # cliente.remover_usuario; perde o acesso e todas as sessões, na requisição seguinte
 removed          → active    # cliente.remover_usuario; reativação direta, sem convite
 ```
 
@@ -477,7 +477,7 @@ Só para `cliente.convidar_usuario`. O mesmo desenho da seção de convites de C
 ```
 
 - **Convidar**: modal só com o e-mail.
-- **Remover** pede confirmação: a pessoa perde o acesso ao portal deste cliente, as outras não são afetadas. Removidas ficam num filtro, com **Reativar**.
+- **Remover** pede confirmação: a pessoa perde o acesso ao portal deste cliente e é deslogada de tudo na hora, porque a sessão é global (2026-10-08, #411); as outras pessoas não são afetadas, e os vínculos dela com outros clientes continuam. Removidas ficam num filtro, com **Reativar**, que não cria sessão: a pessoa entra de novo.
 - **Vazio**: "Ninguém deste cliente acessa o portal ainda", com **Convidar**.
 - Convites vazios: a seção some.
 

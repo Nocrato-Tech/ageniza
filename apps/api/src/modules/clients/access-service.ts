@@ -21,6 +21,10 @@ interface RawRows<TResult> {
 
 export interface ClientMemberRow {
   readonly membership_id: string;
+  /** Never part of the contract: the route needs it to end the sessions of a person it removes. */
+  readonly user_id: string;
+  /** Whether this very transaction wrote the link (`updated_at` is the transaction's `now()`); never part of the contract. */
+  readonly written_by_this_transaction: boolean;
   readonly name: string;
   readonly email: string;
   readonly status: ClientMemberStatus;
@@ -29,6 +33,8 @@ export interface ClientMemberRow {
 
 const MEMBER_COLUMNS = `
   membership.id as membership_id,
+  membership.user_id as user_id,
+  (membership.updated_at = now()) as written_by_this_transaction,
   member.name as name,
   member.email as email,
   membership.status as status,

@@ -84,6 +84,7 @@ Verifica se a API está pronta para receber tráfego.
 | `POST` | `/auth/logout` | Sessão | — | Encerra a sessão atual |
 | `POST` | `/auth/logout-all` | Sessão | — | Encerra todas as sessões da conta |
 | `GET` | `/auth/session` | Sessão | — | Devolve a sessão e a pessoa autenticada |
+| `GET` | `/auth/session/check` | Sessão | — | Confere se a sessão continua válida, sem renová-la |
 | `POST` | `/auth/password/forgot` | Público | — | Pede o link de recuperação de senha |
 | `POST` | `/auth/password/reset` | Público | — | Redefine a senha e tenta autenticar de volta |
 
@@ -142,6 +143,30 @@ Encerra todas as sessões da conta.
 #### `GET /auth/session`
 
 Devolve a sessão e a pessoa autenticada.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Resposta `200`** — Sessão válida.
+
+```json
+{
+  "user": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "name": "Dono da Agência",
+    "email": "dono@exemplo.test"
+  },
+  "session": {
+    "expiresAt": "2026-10-01T12:00:00.000Z"
+  }
+}
+```
+
+**Erros:** `401 SESSION_EXPIRED` · `401 UNAUTHENTICATED` · `500 INTERNAL_ERROR`
+
+#### `GET /auth/session/check`
+
+Confere se a sessão continua válida, sem renová-la.
 
 - Acesso: Sessão.
 - Permissão: —.
@@ -1465,7 +1490,7 @@ Remove uma pessoa do portal do cliente.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/members/:membershipId/reactivate`
 
@@ -1486,7 +1511,7 @@ Reativa uma pessoa do portal do cliente.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/invitations`
 
@@ -1984,7 +2009,7 @@ Remove um colaborador do quadro.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 COLLABORATOR_ALREADY_REMOVED` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 COLLABORATOR_ALREADY_REMOVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/collaborators/:membershipId/reactivate`
 
