@@ -75,7 +75,7 @@ const PERSONA_FIELDS = [
   { key: 'objections', label: 'Objeções' }
 ] as const;
 
-function PersonaCard({ persona, onWritten }: { persona: PortalPersona; onWritten: () => void }) {
+function PersonaCard({ persona, onWritten, onStale }: { persona: PortalPersona; onWritten: () => void; onStale: () => void }) {
   const client = usePortalClient();
   const fields = PERSONA_FIELDS.filter((field) => persona[field.key] !== null);
   return <li className="portal-persona">
@@ -93,6 +93,7 @@ function PersonaCard({ persona, onWritten }: { persona: PortalPersona; onWritten
       readOnly={false}
       headingLevel={4}
       onWritten={onWritten}
+      onStale={onStale}
     />
   </li>;
 }
@@ -112,8 +113,15 @@ export function PortalBrandPage() {
     })
   });
 
-  // A suggestion moves the Início's count of answers; the study itself is not touched.
-  const onWritten = (): void => { void queryClient.invalidateQueries({ queryKey: portalClientQueryKey(client.id) }); };
+  // A suggestion moves the Início's count of answers and, for a collaborator who is also a portal
+  // member, the agency's conversations and the roster badge, which this browser may have cached.
+  const onWritten = (): void => {
+    void queryClient.invalidateQueries({ queryKey: portalClientQueryKey(client.id) });
+    void queryClient.invalidateQueries({ queryKey: ['conversation'] });
+    void queryClient.invalidateQueries({ queryKey: ['agency'], predicate: (query) => query.queryKey[2] === 'clients' });
+  };
+  // The agency archived a persona or emptied a section under the client: read the study again.
+  const onStale = (): void => { void queryClient.invalidateQueries({ queryKey: portalBrandStudyQueryKey(client.id) }); };
 
   if (study.isPending) {
     return <section className="portal-brand" aria-busy="true" aria-label="Carregando sua marca">
@@ -141,7 +149,7 @@ export function PortalBrandPage() {
         <header className="brand-section__header"><h2 id={titleId}>{section.label}</h2></header>
         {!filled && <p className="brand-section__body">{NOT_PREPARED}</p>}
         {filled && section.key === 'personas' && <ul className="portal-persona-list">
-          {data.personas.map((persona) => <PersonaCard key={persona.id} persona={persona} onWritten={onWritten} />)}
+          {data.personas.map((persona) => <PersonaCard key={persona.id} persona={persona} onWritten={onWritten} onStale={onStale} />)}
         </ul>}
         {filled && section.key !== 'personas' && <SectionContent sectionKey={section.key} study={data} />}
         {filled && <Conversation
@@ -152,6 +160,7 @@ export function PortalBrandPage() {
           readOnly={false}
           headingLevel={3}
           onWritten={onWritten}
+          onStale={onStale}
         />}
       </section>;
     })}

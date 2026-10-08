@@ -61,6 +61,15 @@ const FULL_STUDY = portalStudyBody({
   portalPersona(JOAO_ID, 'Seu João', { desires: 'Pão quente cedo' })
 ]);
 
+const FULL_STUDY_FILLED = {
+  branding: { body: 'Padaria de bairro desde 1990' },
+  tone_of_voice: { body: 'Fala como vizinha: simples e calorosa' },
+  colors: { colors: [{ name: 'Vinho', hex: '#7A1F2B' }] },
+  positioning: { body: 'A padaria de confiança do bairro' },
+  archetype: { archetype: 'caregiver' },
+  observations: { body: 'Evitar gírias' }
+};
+
 const SECOND_STUDY = portalStudyBody(
   { branding: { body: 'Confeitaria artesanal' }, tone_of_voice: { body: 'Doce e direta' } },
   [portalPersona(LIA_ID, 'Dona Lia', { description: 'Faz bolo de festa' })]
@@ -78,7 +87,7 @@ interface Scenario {
 }
 
 const makeWorld = (scenario: Scenario = {}) => {
-  const studies = scenario.studies ?? { [CLIENT_ID]: FULL_STUDY, [SECOND_ID]: SECOND_STUDY };
+  const studies: Record<string, Record<string, unknown>> = { ...(scenario.studies ?? { [CLIENT_ID]: FULL_STUDY, [SECOND_ID]: SECOND_STUDY }) };
   const names: Record<string, string> = { [CLIENT_ID]: 'Padaria Central', [SECOND_ID]: 'Confeitaria Dois' };
   const apis = {
     [CLIENT_ID]: createConversationApi({ side: 'client', clientId: CLIENT_ID }),
@@ -120,7 +129,8 @@ const makeWorld = (scenario: Scenario = {}) => {
     }
     throw new Error(`unexpected ${method} ${url}`);
   };
-  return { impl, calls, apis };
+  const setStudy = (clientId: string, body: Record<string, unknown>): void => { studies[clientId] = body; };
+  return { impl, calls, apis, setStudy };
 };
 
 function Harness({ store }: { store: AuthSessionStore }) {
@@ -143,9 +153,10 @@ const renderPortal = (impl: typeof fetch, entry = marcaUrl()) => {
   const client = new HttpClient('http://127.0.0.1:3001', impl);
   const store = createAuthSessionStore(client);
   const probe: ProbeTarget = { pathname: '', navigate: () => undefined };
+  const queryClient = createQueryClient();
   const rendered = render(
     <AuthSessionProvider store={store}>
-      <QueryClientProvider client={createQueryClient()}>
+      <QueryClientProvider client={queryClient}>
         <ApiClientProvider client={client}>
           <MemoryRouter initialEntries={[entry]}>
             <Probe probe={probe} />
@@ -155,7 +166,7 @@ const renderPortal = (impl: typeof fetch, entry = marcaUrl()) => {
       </QueryClientProvider>
     </AuthSessionProvider>
   );
-  return { probe, container: rendered.container };
+  return { probe, container: rendered.container, queryClient };
 };
 
 const SECTION_LABELS = ['Sobre sua marca', 'Como sua marca fala', 'Cores', 'Posicionamento', 'Personalidade da marca', 'Quem é seu público', 'Observações'];
@@ -189,7 +200,13 @@ describe('portal Marca (#143)', () => {
     const audience = within(sectionOf('Quem é seu público'));
     expect(audience.getByRole('heading', { level: 3, name: 'Dona Maria' })).toBeTruthy();
     expect(audience.getByRole('heading', { level: 3, name: 'Seu João' })).toBeTruthy();
-    for (const text of ['Mora perto da padaria', 'Falta de tempo', 'Pão quente cedo']) expect(audience.getByText(text)).toBeTruthy();
+    // Each card shows only the fields the persona has, by label and by value, and none of the empty ones.
+    const fieldsOf = (name: string): [string, string][] => {
+      const card = audience.getByRole('heading', { level: 3, name }).closest('li')!;
+      return Array.from(card.querySelectorAll('.portal-persona__field')).map((field) => [field.querySelector('dt')!.textContent!, field.querySelector('dd')!.textContent!]);
+    };
+    expect(fieldsOf('Dona Maria')).toEqual([['Descrição', 'Mora perto da padaria'], ['Dores', 'Falta de tempo']]);
+    expect(fieldsOf('Seu João')).toEqual([['Desejos', 'Pão quente cedo']]);
     expect(screen.queryByText(NOT_PREPARED)).toBeNull();
     expect(calls).toContain(`GET /clients/${CLIENT_ID}/brand-study`);
     expect(document.title).toBe('Marca — Portal do cliente — Ageniza');
@@ -324,6 +341,59 @@ describe('portal Marca (#143)', () => {
       { subject: { sectionKey: 'positioning' }, body: 'Falem de entrega em casa' },
       { subject: { sectionKey: 'positioning' }, body: 'Falem de entrega em casa' }
     ]);
+  });
+
+  it('says it in the client language and reads the study again when the agency archived the persona or emptied the part under the client', async () => {
+    const { impl, apis, setStudy } = makeWorld();
+    renderPortal(impl);
+    await page();
+
+    suggest('Seu João');
+    const personaDialog = await screen.findByRole('dialog', { name: 'Sugerir sobre "Seu João"' });
+    fireEvent.change(within(personaDialog).getByRole('textbox', { name: 'Escreva sua sugestão' }), { target: { value: 'Ele gosta de pão doce' } });
+    setStudy(CLIENT_ID, portalStudyBody({ ...FULL_STUDY_FILLED }, [portalPersona(MARIA_ID, 'Dona Maria', { description: 'Mora perto da padaria', pains: 'Falta de tempo' })]));
+    apis[CLIENT_ID].failNextWrite(() => apiError(409, 'PERSONA_ARCHIVED'));
+    fireEvent.click(within(personaDialog).getByRole('button', { name: 'Enviar' }));
+    const personaAlert = await within(personaDialog).findByRole('alert');
+    expect(personaAlert.textContent).toBe('Esta parte não está mais disponível para conversa.');
+    expect(personaAlert.textContent).not.toMatch(/persona/i);
+    await waitFor(() => expect(screen.queryByText('Seu João')).toBeNull());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(within(sectionOf('Quem é seu público')).getByRole('heading', { level: 3, name: 'Dona Maria' })).toBeTruthy();
+
+    suggest('Posicionamento');
+    const sectionDialog = await screen.findByRole('dialog', { name: 'Sugerir sobre "Posicionamento"' });
+    fireEvent.change(within(sectionDialog).getByRole('textbox', { name: 'Escreva sua sugestão' }), { target: { value: 'Falem de entrega' } });
+    setStudy(CLIENT_ID, portalStudyBody({ ...FULL_STUDY_FILLED, positioning: { body: '   ' } }, [portalPersona(MARIA_ID, 'Dona Maria', { description: 'Mora perto da padaria' })]));
+    apis[CLIENT_ID].failNextWrite(() => apiError(409, 'SECTION_NOT_FILLED'));
+    fireEvent.click(within(sectionDialog).getByRole('button', { name: 'Enviar' }));
+    expect((await within(sectionDialog).findByRole('alert')).textContent).toBe('Sua agência está preparando esta parte.');
+    await waitFor(() => expect(within(sectionOf('Posicionamento')).getByText(NOT_PREPARED)).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'Sugerir sobre Posicionamento' })).toBeNull();
+  });
+
+  it('marks as stale the conversations and the roster the agency caches in this browser, and only those, after a suggestion', async () => {
+    const { impl } = makeWorld({ alsoCollaborator: true });
+    const { queryClient } = renderPortal(impl);
+    await page();
+    const keys = {
+      conversation: ['conversation', 'agency', CLIENT_ID, 'threads', 'x'],
+      roster: ['agency', AGENCY_ID, 'clients', { page: 1, search: '', status: 'active' }],
+      unrelated: ['agency', AGENCY_ID, 'collaborators']
+    } as const;
+    for (const key of Object.values(keys)) queryClient.setQueryData(key, {});
+    const stale = (key: readonly unknown[]): boolean | undefined => queryClient.getQueryState(key)?.isInvalidated;
+    expect(Object.values(keys).map(stale)).toEqual([false, false, false]);
+
+    suggest('Cores');
+    const dialog = await screen.findByRole('dialog', { name: 'Sugerir sobre "Cores"' });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Escreva sua sugestão' }), { target: { value: 'Mais verde' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    expect(stale(keys.conversation)).toBe(true);
+    expect(stale(keys.roster)).toBe(true);
+    expect(stale(keys.unrelated)).toBe(false);
   });
 
   it('shows the agency answer with the name and photo of who answered, the day in São Paulo, and no Resolver', async () => {

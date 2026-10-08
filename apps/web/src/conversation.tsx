@@ -41,6 +41,8 @@ export interface ConversationProps {
   readonly readOnly: boolean;
   /** Called after a write the conversation cannot invalidate itself (client summary, roster badge). */
   readonly onWritten: () => void;
+  /** Called when a write is refused because the subject changed under the person (persona archived, section emptied). */
+  readonly onStale?: () => void;
   /** The heading level of "Conversas", so it nests under whatever heading holds the area. */
   readonly headingLevel?: 3 | 4;
 }
@@ -128,11 +130,18 @@ const bodyProblem = (body: string): string | undefined => {
   return undefined;
 };
 
-const writeError = (error: unknown): string => {
+const isStaleSubject = (error: unknown): boolean =>
+  error instanceof HttpClientError && (error.code === 'PERSONA_ARCHIVED' || error.code === 'SECTION_NOT_FILLED');
+
+const writeError = (error: unknown, side: ConversationSide): string => {
   if (!(error instanceof HttpClientError)) return 'Não foi possível enviar. Tente de novo.';
   if (error.code === 'CLIENT_ARCHIVED') return 'Cliente arquivado: a conversa está somente leitura.';
-  if (error.code === 'PERSONA_ARCHIVED') return 'Persona arquivada: a conversa está somente leitura.';
-  if (error.code === 'SECTION_NOT_FILLED') return 'Esta parte ainda não foi preenchida.';
+  if (error.code === 'PERSONA_ARCHIVED') {
+    return side === 'client' ? 'Esta parte não está mais disponível para conversa.' : 'Persona arquivada: a conversa está somente leitura.';
+  }
+  if (error.code === 'SECTION_NOT_FILLED') {
+    return side === 'client' ? 'Sua agência está preparando esta parte.' : 'Esta parte ainda não foi preenchida.';
+  }
   if (error.status === 403) return 'Você não tem permissão para conversar aqui.';
   if (error.status === 404) return 'Esta conversa não existe mais.';
   if (error.status === 400) return 'Revise o texto e tente de novo.';
@@ -197,7 +206,7 @@ function CommentItem({ comment }: { comment: ThreadComment }) {
 }
 
 function OpenThread({ props, thread, onClose }: { props: ConversationProps; thread: Thread; onClose: () => void }) {
-  const { scope, subjectLabel, canWrite, readOnly, onWritten } = props;
+  const { scope, subjectLabel, canWrite, readOnly, onWritten, onStale } = props;
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
   const routes = routesOf(scope);
@@ -232,13 +241,13 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
       response: CommentSchema
     }),
     onSuccess: () => { setSendError(undefined); setSent((count) => count + 1); refresh(); },
-    onError: (error: unknown) => { setSendError(writeError(error)); }
+    onError: (error: unknown) => { setSendError(writeError(error, scope.side)); if (isStaleSubject(error)) onStale?.(); }
   });
 
   const resolve = useMutation({
     mutationFn: () => httpClient.request({ path: routes.resolve(thread.id), method: 'POST', response: ThreadSchema }),
     onSuccess: () => { setResolveError(undefined); refresh(); },
-    onError: (error: unknown) => { setResolveError(writeError(error)); }
+    onError: (error: unknown) => { setResolveError(writeError(error, scope.side)); if (isStaleSubject(error)) onStale?.(); }
   });
 
   const items = comments.data?.pages.flatMap((page) => page.data) ?? [];
@@ -284,7 +293,7 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
 }
 
 function NewConversationDialog({ props, onClose }: { props: ConversationProps; onClose: () => void }) {
-  const { scope, subject, subjectLabel, onWritten } = props;
+  const { scope, subject, subjectLabel, onWritten, onStale } = props;
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | undefined>();
@@ -302,7 +311,7 @@ function NewConversationDialog({ props, onClose }: { props: ConversationProps; o
       onWritten();
       onClose();
     },
-    onError: (failure: unknown) => { setError(writeError(failure)); }
+    onError: (failure: unknown) => { setError(writeError(failure, scope.side)); if (isStaleSubject(failure)) onStale?.(); }
   });
 
   return <Modal title={wording.title(subjectLabel)} closeLabel={wording.closeLabel} onClose={onClose}>
