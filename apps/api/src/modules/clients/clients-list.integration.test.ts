@@ -594,6 +594,21 @@ describe('clients listing (issue #125)', () => {
       expect(response.body.meta).toMatchObject({ page: 2, pageSize: 3, totalItems: 3, totalPages: 1 });
     });
 
+    it('a search with results and a page past the end reports the filtered total; one without results is empty and 0', async () => {
+      const { agencyId, cookie } = await createAgencyWithAdmin('snapshot-search-past-end');
+      for (const name of ['Alfa', 'Beta', 'Gama']) await createClient({ agencyId, name });
+
+      const pastEnd = await getClients(cookie, agencyId, { search: 'alfa', page: 2, pageSize: 3 });
+      expect(pastEnd.status).toBe(200);
+      expect(pastEnd.body.data).toEqual([]);
+      expect(pastEnd.body.meta).toMatchObject({ page: 2, pageSize: 3, totalItems: 1, totalPages: 1 });
+
+      const noMatch = await getClients(cookie, agencyId, { search: 'zzz', page: 2, pageSize: 3 });
+      expect(noMatch.status).toBe(200);
+      expect(noMatch.body.data).toEqual([]);
+      expect(noMatch.body.meta).toMatchObject({ page: 2, pageSize: 3, totalItems: 0, totalPages: 0 });
+    });
+
     it('totalItems counts the whole filtered set, not the page', async () => {
       const { agencyId, cookie } = await createAgencyWithAdmin('snapshot-total');
       for (const name of ['Alfa Um', 'Alfa Dois', 'Alfa Tres', 'Beta']) await createClient({ agencyId, name });
