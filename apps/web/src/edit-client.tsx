@@ -18,6 +18,7 @@ import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
 import { clientDetailQueryKey } from './client-detail.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { portalClientQueryKey } from './portal.js';
 
 const NAME_REQUIRED = 'Informe o nome do cliente.';
 const NAME_INVALID = 'O nome contém caracteres que não são aceitos.';
@@ -164,11 +165,12 @@ export function EditClientDialog({ client, onClose }: { client: ClientDetailResp
   }, [client, dirty]);
 
   // `specs/clientes.md` §6: editing the registration or the photo invalidates the listing and the
-  // detail (the detail key is a prefix child of the listing key, so one invalidation covers both).
-  // The portal's own client query does not exist yet; the portal screen (#141) will invalidate it
-  // when it lands — recorded in the SPEC table, not faked here (review of #379).
+  // detail (the detail key is a prefix child of the listing key, so one invalidation covers both),
+  // and the client's own portal query, so the portal shows the new name and photo without a reload
+  // (issue #141's extra acceptance).
   const invalidateAfterClientWrite = (agencyId: string): void => {
     void queryClient.invalidateQueries({ queryKey: ['agency', agencyId, 'clients'] });
+    void queryClient.invalidateQueries({ queryKey: portalClientQueryKey(client.id) });
   };
 
   const applySaveError = (error: unknown): void => {

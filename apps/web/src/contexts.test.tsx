@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
+import { portalClientBody } from './portal-fixture.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
@@ -123,6 +124,8 @@ describe('ContextSelectPage (/contextos)', () => {
     renderContexts(async (input, init) => {
       const url = String(input);
       if (url.endsWith('/me/contexts/resolve')) return json(selectResponse);
+      if (url.endsWith('/auth/session')) return json(sessionBody);
+      if (url.endsWith(`/clients/${CLIENT_C}`)) return json(portalClientBody(CLIENT_C, 'Cliente Um'));
       if (url.endsWith('/me/last-context') && init?.method === 'PUT') {
         putBodies.push(JSON.parse(String(init.body)));
         return noContent();
@@ -135,7 +138,7 @@ describe('ContextSelectPage (/contextos)', () => {
 
     await waitFor(() => expect(putBodies).toEqual([{ type: 'client', clientId: CLIENT_C }]));
     // The client context enters the portal address, never `/app` (issue #181).
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Portal do cliente' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Olá, Pessoa' })).toBeTruthy());
   });
 
   it('reloads the list on a 404 instead of resending the context that vanished', async () => {

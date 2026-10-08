@@ -236,7 +236,7 @@ describe('AccountMenu', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: /Trocar de contexto/ }));
     fireEvent.click(await screen.findByRole('menuitem', { name: /Cliente Um/ }));
 
-    await waitFor(() => expect(probe.pathname).toBe(`/portal/${CLIENT_C}`));
+    await waitFor(() => expect(probe.pathname).toBe(`/portal/${CLIENT_C}/inicio`));
     expect(calls).toContainEqual({ path: '/me/last-context', method: 'PUT', body: { type: 'client', clientId: CLIENT_C } });
   });
 

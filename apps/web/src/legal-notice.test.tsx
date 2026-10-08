@@ -8,6 +8,7 @@ import { AcceptLegalDocumentRequestSchema } from '@ageniza/contracts';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
+import { portalClientBody } from './portal-fixture.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
@@ -56,6 +57,7 @@ const makeFetch = (scenario: Scenario) => {
     const method = init?.method ?? 'GET';
     calls.push(`${method} ${new URL(url).pathname}`);
     if (url.endsWith('/auth/session')) return json(sessionBody);
+    if (url.endsWith(`/clients/${CLIENT}`)) return json(portalClientBody(CLIENT, 'Cliente Um'));
     if (new RegExp(`/agencies/${AGENCY}/me$`).test(url)) return json(agencyMe);
     if (url.endsWith('/me/legal-acceptances') && method === 'GET') {
       return scenario.failRead === true ? json({ error: { code: 'INTERNAL_ERROR', message: 'Internal error.' } }, 500) : json(status(scenario.account));
@@ -195,7 +197,7 @@ describe('legal notice in the agency shell (issue #81)', () => {
     expect(posted).toEqual([]);
     expect(account.accepted).toEqual({ terms: '2026-01-01', privacy: '2026-02-01' });
     await act(async () => { probe.navigate(`/portal/${CLIENT}`); });
-    await screen.findByRole('heading', { name: 'Portal do cliente' });
+    await screen.findByRole('heading', { name: 'Olá, Pessoa' });
     expect(queryNotice()).toBeNull();
   });
 
@@ -232,7 +234,7 @@ describe('legal notice in the portal (issue #81)', () => {
     const { impl } = makeFetch({ account: outdatedAccount() });
     renderApp(impl, `/portal/${CLIENT}`);
 
-    await screen.findByRole('heading', { name: 'Portal do cliente' });
+    await screen.findByRole('heading', { name: 'Olá, Pessoa' });
     const region = await screen.findByRole('region', { name: 'Aviso sobre os documentos legais' });
     expect(within(region).getByText('Atualizamos os Termos de Uso.')).toBeTruthy();
   });
