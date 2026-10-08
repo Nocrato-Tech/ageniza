@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
+import { portalClientBody } from './portal-fixture.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
@@ -64,6 +65,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     }
     if (url.includes('/invitations/')) { calls.push('preview'); return scenario.preview?.() ?? json(previewBody(false)); }
     if (url.endsWith('/auth/session')) return serverLoggedIn ? json({ ...sessionBody, user: currentUser }) : unauthenticated();
+    if (url.endsWith(`/clients/${CLIENT_A}`)) return json(portalClientBody(CLIENT_A, 'Cliente Um'));
     if (url.endsWith('/auth/login')) { calls.push('login'); loginBodies.push(JSON.parse(String(init?.body))); serverLoggedIn = true; return json({ user: currentUser }); }
     if (url.endsWith('/me/contexts/resolve')) {
       calls.push('resolve');
