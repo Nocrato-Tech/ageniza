@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { createVerifiedUserClaims, withAuthenticatedUserTransaction } from '@ageniza/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -13,6 +14,7 @@ import {
   type TestApp,
   type TestUserFixture
 } from '../auth/test-support/harness.js';
+import { listClients, type ClientTransaction } from './service.js';
 
 // Issue #125 acceptance: `GET /agencies/:agencyId/clients` with the triage order. The suite holds
 // the listing contract (#95/#161 copy it) and the SPEC rules this route is the first to exercise:
@@ -489,6 +491,134 @@ describe('clients listing (issue #125)', () => {
     expect(attention.body.data[1]?.threadsAwaitingAgency).toBe(0);
   });
 
+  it('#367: the order compares the folded name byte by byte -- space, hyphen, digit and accent -- in both sorts', async () => {
+    const { agencyId, admin, cookie } = await createAgencyWithAdmin('byte-order');
+    const portal = await insertBareUser('byte-order-portal');
+    const inserted = ['Ana2', 'Anaïs', 'Ana Zélia', 'Édson', 'Anabela', 'Ana-Lúcia', 'Eduardo', 'Ana Maria', 'Ágata Costa', 'Ana Beatriz', 'Beatriz Álvares'];
+    const clientIds = new Map<string, string>();
+    for (const name of inserted) clientIds.set(name, await createClient({ agencyId, name }));
+
+    // The folded names are 'agata costa' < 'ana beatriz' < 'ana maria' < 'ana zelia' < 'ana-lucia' <
+    // 'ana2' < 'anabela' < 'anais' < 'beatriz alvares' < 'edson' < 'eduardo'. The database collation
+    // (en_US) puts 'ana2' first and 'ana-lucia' after 'ana zelia' instead.
+    const expected = ['Ágata Costa', 'Ana Beatriz', 'Ana Maria', 'Ana Zélia', 'Ana-Lúcia', 'Ana2', 'Anabela', 'Anaïs', 'Beatriz Álvares', 'Édson', 'Eduardo'];
+
+    const byName = await getClients(cookie, agencyId, { sort: 'name:asc' });
+    expect(byName.status).toBe(200);
+    expect(names(byName.body)).toEqual(expected);
+
+    const attention = await getClients(cookie, agencyId);
+    expect(names(attention.body)).toEqual(expected);
+
+    // The triage only moves the awaiting client to the front: the rest keeps the byte order.
+    const awaiting = clientIds.get('Eduardo')!;
+    const thread = await addThread(awaiting, admin.id);
+    await addComment({ threadId: thread, clientId: awaiting, authorUserId: portal, side: 'client', createdAt: new Date('2026-01-01T10:00:00.000Z') });
+    const triaged = await getClients(cookie, agencyId);
+    expect(names(triaged.body)).toEqual(['Eduardo', ...expected.filter((name) => name !== 'Eduardo')]);
+  });
+
+  describe('#310: the count and the page come from one statement', () => {
+    /**
+     * Runs `listClients` in an authenticated transaction whose statements are counted, and calls
+     * `afterFirstStatement` once the first one has returned: a write committed there is visible to
+     * any later statement of the same READ COMMITTED transaction, and to none of the first.
+     */
+    const listWithWriteBetweenStatements = async (
+      adminId: string,
+      agencyId: string,
+      filters: Parameters<typeof listClients>[2],
+      pagination: { pageSize: number; offset: number },
+      afterFirstStatement: () => Promise<void>
+    ): Promise<{ page: Awaited<ReturnType<typeof listClients>>; statements: number }> => {
+      let statements = 0;
+      const page = await withAuthenticatedUserTransaction(app.database, createVerifiedUserClaims({ userId: adminId }), (transaction) => {
+        const observed = new Proxy(transaction, {
+          get: (target, property, receiver) => {
+            if (property !== 'raw') return Reflect.get(target, property, receiver) as unknown;
+            return async (...args: Parameters<typeof transaction.raw>): Promise<unknown> => {
+              const result = await transaction.raw(...args);
+              statements += 1;
+              if (statements === 1) await afterFirstStatement();
+              return result;
+            };
+          }
+        }) as ClientTransaction;
+        return listClients(observed, agencyId, filters, pagination);
+      });
+      return { page, statements };
+    };
+
+    for (const sort of ['attention', 'name:asc'] as const) {
+      it(`${sort}: a client created after the page was read is in neither data nor totalItems`, async () => {
+        const { agencyId, admin } = await createAgencyWithAdmin(`snapshot-${sort.slice(0, 4)}`);
+        for (const name of ['Alfa', 'Beta', 'Gama']) await createClient({ agencyId, name });
+
+        const { page, statements } = await listWithWriteBetweenStatements(
+          admin.id,
+          agencyId,
+          { status: 'active', sort, includePendingInvitations: false },
+          { pageSize: 20, offset: 0 },
+          async () => { await createClient({ agencyId, name: 'Delta Concorrente' }); }
+        );
+
+        expect(statements).toBe(1);
+        expect(page.items.map((item) => item.name)).toEqual(['Alfa', 'Beta', 'Gama']);
+        expect(page.totalItems).toBe(3);
+      });
+    }
+
+    it('an empty first page is totalItems 0 without a second query', async () => {
+      const { agencyId, admin, cookie } = await createAgencyWithAdmin('snapshot-empty');
+      const { page, statements } = await listWithWriteBetweenStatements(
+        admin.id,
+        agencyId,
+        { status: 'active', sort: 'attention', includePendingInvitations: true },
+        { pageSize: 20, offset: 0 },
+        async () => { await createClient({ agencyId, name: 'Nascido Depois' }); }
+      );
+      expect(statements).toBe(1);
+      expect(page).toEqual({ items: [], totalItems: 0 });
+
+      const response = await getClients(cookie, agencyId);
+      expect(response.body.meta).toMatchObject({ totalItems: 1, totalPages: 1 });
+    });
+
+    it('a page past the end still reports the real total and an empty list', async () => {
+      const { agencyId, cookie } = await createAgencyWithAdmin('snapshot-past-end');
+      for (const name of ['Alfa', 'Beta', 'Gama']) await createClient({ agencyId, name });
+
+      const response = await getClients(cookie, agencyId, { page: 2, pageSize: 3 });
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual([]);
+      expect(response.body.meta).toMatchObject({ page: 2, pageSize: 3, totalItems: 3, totalPages: 1 });
+    });
+
+    it('a search with results and a page past the end reports the filtered total; one without results is empty and 0', async () => {
+      const { agencyId, cookie } = await createAgencyWithAdmin('snapshot-search-past-end');
+      for (const name of ['Alfa', 'Beta', 'Gama']) await createClient({ agencyId, name });
+
+      const pastEnd = await getClients(cookie, agencyId, { search: 'alfa', page: 2, pageSize: 3 });
+      expect(pastEnd.status).toBe(200);
+      expect(pastEnd.body.data).toEqual([]);
+      expect(pastEnd.body.meta).toMatchObject({ page: 2, pageSize: 3, totalItems: 1, totalPages: 1 });
+
+      const noMatch = await getClients(cookie, agencyId, { search: 'zzz', page: 2, pageSize: 3 });
+      expect(noMatch.status).toBe(200);
+      expect(noMatch.body.data).toEqual([]);
+      expect(noMatch.body.meta).toMatchObject({ page: 2, pageSize: 3, totalItems: 0, totalPages: 0 });
+    });
+
+    it('totalItems counts the whole filtered set, not the page', async () => {
+      const { agencyId, cookie } = await createAgencyWithAdmin('snapshot-total');
+      for (const name of ['Alfa Um', 'Alfa Dois', 'Alfa Tres', 'Beta']) await createClient({ agencyId, name });
+
+      const response = await getClients(cookie, agencyId, { search: 'alfa', pageSize: 2, page: 2 });
+      expect(names(response.body)).toEqual(['Alfa Um']);
+      expect(response.body.meta).toMatchObject({ totalItems: 3, totalPages: 2 });
+    });
+  });
+
   it('#125: the accent fold does not depend on lower() folding uppercase (Édson before Eduardo)', async () => {
     const { agencyId, cookie } = await createAgencyWithAdmin('locale');
     await createClient({ agencyId, name: 'Eduardo' });
@@ -652,12 +782,12 @@ describe('clients listing (issue #125)', () => {
 
     // The Owner with no membership at all still sees the badge: `tenant.isOwner` opens the count
     // without any role, and `has_agency_permission` grants ownership alone.
-    const owner = await makeUser('invites-owner', 'Dona Sem Papel');
-    const ownedAgencyId = await createAgency('Agency invites-owner', owner.id);
+    const agencyOwner = await makeUser('invites-owner', 'Dona Sem Papel');
+    const ownedAgencyId = await createAgency('Agency invites-owner', agencyOwner.id);
     const ownedWithPending = await createClient({ agencyId: ownedAgencyId, name: 'Com Convite do Dono' });
     const ownedWithoutPending = await createClient({ agencyId: ownedAgencyId, name: 'Sem Convite do Dono' });
-    await addInvitation({ agencyId: ownedAgencyId, clientId: ownedWithPending, invitedByUserId: owner.id });
-    const ownerList = await getClients(await loginCookie(owner), ownedAgencyId);
+    await addInvitation({ agencyId: ownedAgencyId, clientId: ownedWithPending, invitedByUserId: agencyOwner.id });
+    const ownerList = await getClients(await loginCookie(agencyOwner), ownedAgencyId);
     expect(ownerList.status).toBe(200);
     expect(ownerList.body.data.find((item) => item.id === ownedWithPending)?.pendingInvitations).toBe(1);
     expect(ownerList.body.data.find((item) => item.id === ownedWithoutPending)?.pendingInvitations).toBe(0);

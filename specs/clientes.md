@@ -262,7 +262,7 @@ Todas sob `requireSession` e `requireClientAccess` — o mesmo padrão de `POST 
 
 | rota | padrão | ordem | parâmetros nomeados |
 |---|---|---|---|
-| clientes | **20** | `sort=attention` (padrão): com thread aguardando a agência primeiro, depois nome ascendente · `sort=name:asc` | `search` (nome, razão social, @) · `status=active` (padrão) \| `archived` |
+| clientes | **20** | `sort=attention` (padrão): com thread aguardando a agência primeiro, depois nome ascendente · `sort=name:asc`. Nome ascendente **sem distinguir acento nem maiúsculas**, comparado byte a byte no texto dobrado, igual em qualquer banco: `Ágata`, `Ana Maria`, `Ana-Lúcia`, `Ana2`, `Anabela`, `Édson` (2026-10-08, #367, pendente de validação) | `search` (nome, razão social, @) · `status=active` (padrão) \| `archived` |
 | threads | **20** | última atividade, mais recente primeiro | `sectionKey` **ou** `personaId` (obrigatório, um dos dois) · `state=open` \| `resolved` (sem ele, todas) |
 | comentários | **50** | mais antigo primeiro | — |
 | pessoas do portal | **20** | nome ascendente | `status=active` (padrão) \| `removed` |
