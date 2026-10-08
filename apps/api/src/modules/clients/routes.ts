@@ -53,6 +53,7 @@ import {
   createClient,
   createPersona,
   isActiveClientNameConflict,
+  isClientNoLongerActive,
   isRowLevelSecurityViolation,
   listClients,
   loadBrandSection,
@@ -385,7 +386,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       try {
         written = await upsertBrandSection(transaction, { clientId, sectionKey, actorUserId: auth.userId, value: body });
       } catch (error) {
-        if (isRowLevelSecurityViolation(error)) return { kind: 'archived' } as const;
+        if (isRowLevelSecurityViolation(error) || isClientNoLongerActive(error)) return { kind: 'archived' } as const;
         throw error;
       }
       if (!written) return { kind: 'archived' } as const;
@@ -412,7 +413,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       try {
         personaId = await createPersona(transaction, { clientId, actorUserId: auth.userId, body });
       } catch (error) {
-        if (isRowLevelSecurityViolation(error)) return { kind: 'archived' } as const;
+        if (isRowLevelSecurityViolation(error) || isClientNoLongerActive(error)) return { kind: 'archived' } as const;
         throw error;
       }
       if (personaId === undefined) return { kind: 'not-found' } as const;
