@@ -365,6 +365,38 @@ describe('conversation component (#142)', () => {
     expect(api.bodies).toEqual([{ body: 'Ficou ótimo' }]);
   });
 
+  it('suggests, on the client side, with its own words, and the agency side keeps "+ conversa"', async () => {
+    const client = mount({ scope: clientScope });
+    const region = await area();
+    await within(region).findByText('Nenhuma conversa sobre esta parte');
+    const button = within(region).getByRole('button', { name: 'Sugerir sobre Tom de voz' });
+    expect(button.textContent).toBe('Sugerir');
+    expect(within(region).queryByRole('button', { name: /conversa/i })).toBeNull();
+
+    fireEvent.click(button);
+    const dialog = await screen.findByRole('dialog', { name: 'Sugerir sobre "Tom de voz"' });
+    expect(within(dialog).getByRole('textbox', { name: 'Escreva sua sugestão' }).getAttribute('placeholder')).toBe('Escreva aqui');
+    expect(within(dialog).getByText('A agência vai ver e responder por aqui.')).toBeTruthy();
+    expect(within(dialog).getByText('Depois de enviada, a mensagem não pode ser editada nem apagada.')).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: 'Enviar' })).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: 'Iniciar conversa' })).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar sugestão' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(client.api.calls.some((call) => call.startsWith('POST'))).toBe(false);
+    cleanup();
+
+    mount({ scope: agencyScope });
+    const agency = await area();
+    const plus = await within(agency).findByRole('button', { name: 'Nova conversa sobre Tom de voz' });
+    expect(plus.textContent).toBe('+ conversa');
+    fireEvent.click(plus);
+    const opened = await screen.findByRole('dialog', { name: 'Nova conversa sobre Tom de voz' });
+    expect(within(opened).getByRole('button', { name: 'Iniciar conversa' })).toBeTruthy();
+    expect(within(opened).getByRole('button', { name: 'Fechar nova conversa' })).toBeTruthy();
+    expect(within(opened).queryByText('A agência vai ver e responder por aqui.')).toBeNull();
+    expect(within(opened).getByRole('textbox', { name: 'Escreva a primeira mensagem' }).getAttribute('placeholder')).toBeNull();
+  });
+
   it('says so and offers to try again when the list cannot be loaded, then recovers', async () => {
     let failing = true;
     const { api } = mount({
