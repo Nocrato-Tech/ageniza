@@ -434,7 +434,7 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
 
     fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar por nome ou e-mail' }), { target: { value: 'julia' } });
 
-    expect(await screen.findByRole('status')).toHaveProperty('textContent', 'Atualizando…');
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Atualizando…'));
     expect(screen.getByText('Ana Prado')).toBeTruthy();
     expect(container.querySelectorAll('.ui-badge-card__skeleton')).toHaveLength(0);
 
@@ -442,6 +442,67 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
     expect(await screen.findByText('Júlia Reis')).toBeTruthy();
     expect(screen.queryByText('Ana Prado')).toBeNull();
     expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('keeps the skeleton, not "0 de 0", while an empty previous filter is the only data (#375)', async () => {
+    let release: (response: Response) => void = () => undefined;
+    const { impl } = makeFetch({
+      collaborators: (query) => query.get('q') === 'zzz'
+        ? listResponse([])
+        : new Promise<Response>((resolve) => { release = resolve; })
+    });
+    const { container } = renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?q=zzz`);
+    await screen.findByText('Nenhuma pessoa encontrada para "zzz"');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar busca' }));
+
+    await waitFor(() => expect(container.querySelectorAll('.ui-badge-card__skeleton')).toHaveLength(24));
+    expect(screen.queryByText('0 de 0 pessoas')).toBeNull();
+    expect(screen.queryByText(/Nenhuma pessoa encontrada/)).toBeNull();
+
+    await act(async () => { release(listResponse([anaPrado])); });
+    expect(await screen.findByText('Ana Prado')).toBeTruthy();
+    expect(container.querySelectorAll('.ui-badge-card__skeleton')).toHaveLength(0);
+  });
+
+  it("does not rewrite the URL page from the previous filter's totalPages while the new one loads (#375)", async () => {
+    let release: (response: Response) => void = () => undefined;
+    const { impl } = makeFetch({
+      collaborators: (query) => query.get('page') === '3'
+        ? new Promise<Response>((resolve) => { release = resolve; })
+        : listResponse([anaPrado])
+    });
+    const { probe } = renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?q=ana`);
+    await screen.findByText('Ana Prado');
+
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_A}/colaboradores?page=3`); });
+    expect(probe.search).toBe('?page=3');
+
+    await act(async () => { release(json({ data: [juliaReis], meta: meta(3, 60, 3) })); });
+    expect(await screen.findByText('Júlia Reis')).toBeTruthy();
+    expect(probe.search).toBe('?page=3');
+  });
+
+  it("shows no person of the previous agency, not even while the new agency's list loads (#375)", async () => {
+    // The shell of agency B is already cached, so the page does not remount on the switch: only the placeholder could leak.
+    let holdB = false;
+    const { impl } = makeFetch({
+      collaborators: (_query, agencyId) => agencyId === AGENCY_B && holdB ? new Promise<Response>(() => undefined) : listResponse([agencyId === AGENCY_B ? biancaSouza : anaPrado])
+    });
+    const { container, probe, queryClient } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/colaboradores`); });
+    await screen.findByText('Bianca Souza');
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_A}/colaboradores`); });
+    await screen.findByText('Ana Prado');
+    holdB = true;
+    queryClient.removeQueries({ queryKey: ['agency', AGENCY_B, 'collaborators'] });
+
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/colaboradores`); });
+
+    await screen.findByRole('link', { name: 'Agência Dois' });
+    expect(screen.queryByText('Ana Prado')).toBeNull();
+    expect(container.querySelectorAll('.ui-badge-card__skeleton')).toHaveLength(24);
   });
 
   it('offers a retry when the listing fails', async () => {

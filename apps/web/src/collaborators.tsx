@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 
@@ -117,7 +117,8 @@ export function CollaboratorsPage() {
     queryKey: ['agency', agency.agencyId, 'collaborators', { page, q: search, role, jobTitle, status }],
     queryFn: () => httpClient.request({ path: listPath(agency.agencyId, { page, q: search, role, jobTitle, status }), response: CollaboratorListResponseSchema }),
     // Keep the rows on screen while the next search/page loads: the skeleton is for the first load only.
-    placeholderData: keepPreviousData
+    // Never across agencies: the rows of the previous agency must not show under the new one, not even for a frame.
+    placeholderData: (previous, previousQuery) => previousQuery?.queryKey[1] === agency.agencyId ? previous : undefined
   });
 
   const jobTitles = useQuery({
@@ -169,6 +170,8 @@ export function CollaboratorsPage() {
   if (collaborators.isError && isNotVisible(collaborators.error)) return <NotFoundPage as="section" />;
 
   const hasFilters = search !== '' || role !== '' || jobTitle !== '';
+  // Placeholder rows are the previous filter's: an empty one must not become this filter's empty state or "0 de 0" summary, so it keeps the skeleton.
+  const loading = collaborators.isPending || (collaborators.isPlaceholderData && collaborators.data.data.length === 0);
   const outOfRange = collaborators.data !== undefined && !collaborators.isPlaceholderData && page > Math.max(1, collaborators.data.meta.totalPages);
   const jobTitleOptions = (jobTitles.data?.data ?? []).map((value) => ({ value, label: value }));
 
@@ -206,7 +209,7 @@ export function CollaboratorsPage() {
 
       {removedFilterIgnored && <p>Você não tem permissão para ver colaboradores removidos. Mostrando os ativos.</p>}
 
-      {collaborators.isPending ? (
+      {loading ? (
         <ul className="collaborators__grid" aria-hidden="true">
           {Array.from({ length: PAGE_SIZE }, (_value, index) => <li key={index}><Skeleton className="ui-badge-card__skeleton" /></li>)}
         </ul>

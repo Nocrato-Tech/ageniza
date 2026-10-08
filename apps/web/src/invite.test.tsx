@@ -141,7 +141,7 @@ const fillNewAccount = (): void => {
 /** The notice's `status` shares the role with the transient "Entrando…" status, so waiting for the role alone can resolve on the wrong one (#382). */
 const findNotice = (text: string): Promise<HTMLElement> => waitFor(() => {
   const notice = screen.getByRole('status');
-  expect(notice.textContent).toContain(text);
+  expect(notice.textContent).toBe(text);
   return notice;
 });
 
@@ -274,7 +274,7 @@ describe('InvitationPage (/convite/:token)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
 
-    await findNotice('Você já fazia parte de Agência Um.');
+    await findNotice('Você já fazia parte de Agência Um. Nada mudou no seu acesso.');
     fireEvent.click(screen.getByRole('button', { name: 'Fechar' }));
     expect(screen.queryByRole('status')).toBeNull();
 

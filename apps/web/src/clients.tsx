@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
 import { ClientListResponseSchema, type ClientListItem } from '@ageniza/contracts';
@@ -110,7 +110,8 @@ export function ClientsPage() {
       signal
     }),
     // Keep the rows on screen while the next search/page loads: the skeleton is for the first load only.
-    placeholderData: keepPreviousData
+    // Never across agencies: the rows of the previous agency must not show under the new one, not even for a frame.
+    placeholderData: (previous, previousQuery) => previousQuery?.queryKey[1] === agency.agencyId ? previous : undefined
   });
 
   const setFilter = (key: 'search' | 'status', value: string): void => {
@@ -152,6 +153,8 @@ export function ClientsPage() {
 
   if (clients.isError && isNotVisible(clients.error)) return <NotFoundPage as="section" />;
 
+  // Placeholder rows are the previous filter's: an empty one must not become this filter's empty state or "0 de 0" summary, so it keeps the skeleton.
+  const loading = clients.isPending || (clients.isPlaceholderData && clients.data.data.length === 0);
   const outOfRange = clients.data !== undefined && !clients.isPlaceholderData && page > Math.max(1, clients.data.meta.totalPages);
 
   return (
@@ -176,7 +179,7 @@ export function ClientsPage() {
         <Select label="Status" value={status} options={STATUS_OPTIONS} onChange={(value) => setFilter('status', value)} />
       </div>
 
-      {clients.isPending ? (
+      {loading ? (
         <ul className="clients__list" aria-hidden="true">
           {Array.from({ length: PAGE_SIZE }, (_value, index) => <li key={index}><Skeleton className="clients__card-skeleton" /></li>)}
         </ul>
