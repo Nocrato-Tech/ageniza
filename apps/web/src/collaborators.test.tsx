@@ -422,6 +422,28 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
     expect(container.querySelectorAll('.ui-badge-card__skeleton')).toHaveLength(24);
   });
 
+  it('keeps the people on screen while a new search loads, with a discreet indicator and no skeleton (#375)', async () => {
+    let release: (response: Response) => void = () => undefined;
+    const { impl } = makeFetch({
+      collaborators: (query) => query.get('q') === 'julia'
+        ? new Promise<Response>((resolve) => { release = resolve; })
+        : listResponse([anaPrado])
+    });
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar por nome ou e-mail' }), { target: { value: 'julia' } });
+
+    expect(await screen.findByRole('status')).toHaveProperty('textContent', 'Atualizando…');
+    expect(screen.getByText('Ana Prado')).toBeTruthy();
+    expect(container.querySelectorAll('.ui-badge-card__skeleton')).toHaveLength(0);
+
+    await act(async () => { release(listResponse([juliaReis])); });
+    expect(await screen.findByText('Júlia Reis')).toBeTruthy();
+    expect(screen.queryByText('Ana Prado')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
   it('offers a retry when the listing fails', async () => {
     let attempts = 0;
     const { impl } = makeFetch({

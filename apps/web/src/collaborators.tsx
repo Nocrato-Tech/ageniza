@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 
@@ -115,7 +115,9 @@ export function CollaboratorsPage() {
 
   const collaborators = useQuery({
     queryKey: ['agency', agency.agencyId, 'collaborators', { page, q: search, role, jobTitle, status }],
-    queryFn: () => httpClient.request({ path: listPath(agency.agencyId, { page, q: search, role, jobTitle, status }), response: CollaboratorListResponseSchema })
+    queryFn: () => httpClient.request({ path: listPath(agency.agencyId, { page, q: search, role, jobTitle, status }), response: CollaboratorListResponseSchema }),
+    // Keep the rows on screen while the next search/page loads: the skeleton is for the first load only.
+    placeholderData: keepPreviousData
   });
 
   const jobTitles = useQuery({
@@ -153,7 +155,8 @@ export function CollaboratorsPage() {
   // exists. The server's `totalPages` is authoritative, so move to the last valid page (or the
   // first) and keep the URL coherent, instead of showing "nenhuma pessoa" as if the team were gone.
   useEffect(() => {
-    if (collaborators.data === undefined) return;
+    // Placeholder rows belong to the previous filter: their `totalPages` says nothing about this page.
+    if (collaborators.data === undefined || collaborators.isPlaceholderData) return;
     const lastPage = Math.max(1, collaborators.data.meta.totalPages);
     if (page <= lastPage) return;
     setSearchParams((previous) => {
@@ -161,12 +164,12 @@ export function CollaboratorsPage() {
       if (lastPage <= 1) next.delete('page'); else next.set('page', String(lastPage));
       return next;
     }, { replace: true });
-  }, [collaborators.data, page, setSearchParams]);
+  }, [collaborators.data, collaborators.isPlaceholderData, page, setSearchParams]);
 
   if (collaborators.isError && isNotVisible(collaborators.error)) return <NotFoundPage as="section" />;
 
   const hasFilters = search !== '' || role !== '' || jobTitle !== '';
-  const outOfRange = collaborators.data !== undefined && page > Math.max(1, collaborators.data.meta.totalPages);
+  const outOfRange = collaborators.data !== undefined && !collaborators.isPlaceholderData && page > Math.max(1, collaborators.data.meta.totalPages);
   const jobTitleOptions = (jobTitles.data?.data ?? []).map((value) => ({ value, label: value }));
 
   return (
@@ -213,6 +216,7 @@ export function CollaboratorsPage() {
           <Button onClick={() => { void collaborators.refetch(); }}>Tentar de novo</Button>
         </div>
       ) : outOfRange ? null : <>
+        {collaborators.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
         {collaborators.data.data.length === 0 && status === 'removed' && !hasFilters ? (
           <div className="collaborators__empty">
             <p>Ninguém foi removido desta agência</p>

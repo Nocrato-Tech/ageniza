@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
 import { ClientListResponseSchema, type ClientListItem } from '@ageniza/contracts';
@@ -108,7 +108,9 @@ export function ClientsPage() {
       path: listPath(agency.agencyId, { page, search, status }),
       response: ClientListResponseSchema,
       signal
-    })
+    }),
+    // Keep the rows on screen while the next search/page loads: the skeleton is for the first load only.
+    placeholderData: keepPreviousData
   });
 
   const setFilter = (key: 'search' | 'status', value: string): void => {
@@ -137,7 +139,8 @@ export function ClientsPage() {
   // server's `totalPages` is authoritative, so move to the last valid page instead of reading
   // "nenhum cliente" as if the roster were gone.
   useEffect(() => {
-    if (clients.data === undefined) return;
+    // Placeholder rows belong to the previous filter: their `totalPages` says nothing about this page.
+    if (clients.data === undefined || clients.isPlaceholderData) return;
     const lastPage = Math.max(1, clients.data.meta.totalPages);
     if (page <= lastPage) return;
     setSearchParams((previous) => {
@@ -145,11 +148,11 @@ export function ClientsPage() {
       if (lastPage <= 1) next.delete('page'); else next.set('page', String(lastPage));
       return next;
     }, { replace: true });
-  }, [clients.data, page, setSearchParams]);
+  }, [clients.data, clients.isPlaceholderData, page, setSearchParams]);
 
   if (clients.isError && isNotVisible(clients.error)) return <NotFoundPage as="section" />;
 
-  const outOfRange = clients.data !== undefined && page > Math.max(1, clients.data.meta.totalPages);
+  const outOfRange = clients.data !== undefined && !clients.isPlaceholderData && page > Math.max(1, clients.data.meta.totalPages);
 
   return (
     <section aria-labelledby="clients-title" className="clients">
@@ -183,6 +186,7 @@ export function ClientsPage() {
           <Button onClick={() => { void clients.refetch(); }}>Tentar de novo</Button>
         </div>
       ) : outOfRange ? null : <>
+        {clients.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
         {clients.data.data.length === 0 ? (
           status === 'archived' && search === '' ? (
             <div className="clients__empty">

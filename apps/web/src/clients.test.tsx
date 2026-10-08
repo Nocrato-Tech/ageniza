@@ -466,6 +466,50 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
     expect(container.querySelectorAll('.clients__card-skeleton')).toHaveLength(20);
   });
 
+  it('keeps the rows on screen while a new search loads, with a discreet indicator and no skeleton (#375)', async () => {
+    let release: (response: Response) => void = () => undefined;
+    const { impl } = makeFetch({
+      clients: (query) => query.get('search') === 'academia'
+        ? new Promise<Response>((resolve) => { release = resolve; })
+        : listResponse([padaria])
+    });
+    const { container } = renderClients(impl);
+    await screen.findByText('Padaria Central');
+
+    fireEvent.change(searchBox(), { target: { value: 'academia' } });
+
+    expect(await screen.findByRole('status')).toHaveProperty('textContent', 'Atualizando…');
+    expect(screen.getByText('Padaria Central')).toBeTruthy();
+    expect(container.querySelectorAll('.clients__card-skeleton')).toHaveLength(0);
+
+    await act(async () => { release(listResponse([academia])); });
+    expect(await screen.findByText('Academia Corpo')).toBeTruthy();
+    expect(screen.queryByText('Padaria Central')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('keeps the rows on screen while the next page loads (#375)', async () => {
+    let release: (response: Response) => void = () => undefined;
+    const { impl } = makeFetch({
+      clients: (query) => query.get('page') === '2'
+        ? new Promise<Response>((resolve) => { release = resolve; })
+        : listResponse([padaria], 1, { totalItems: 21, totalPages: 2 })
+    });
+    const { container, probe } = renderClients(impl);
+    await screen.findByText('Padaria Central');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Próxima página' }));
+    await waitFor(() => expect(probe.search).toContain('page=2'));
+
+    expect(await screen.findByRole('status')).toHaveProperty('textContent', 'Atualizando…');
+    expect(screen.getByText('Padaria Central')).toBeTruthy();
+    expect(container.querySelectorAll('.clients__card-skeleton')).toHaveLength(0);
+
+    await act(async () => { release(listResponse([academia], 2, { totalItems: 21, totalPages: 2 })); });
+    expect(await screen.findByText('Academia Corpo')).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
   it('offers a retry when the listing fails', async () => {
     let attempts = 0;
     const { impl } = makeFetch({
