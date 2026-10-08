@@ -16,10 +16,11 @@ import {
   type Collaborator
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
-import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+import { isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { AuthInstance } from '../auth/better-auth.js';
+import { tryAgain } from '../../plugins/infra/conflict.js';
 import { revokeUserSessions } from '../auth/session-revocation.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
@@ -425,6 +426,7 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
       });
     } catch (error) {
       if (isInsufficientPrivilegeError(error)) throw forbidden();
+      if (isRetryableConflict(error)) throw tryAgain();
       throw error;
     }
     if (row === undefined) throw new Error('The removed membership could not be read back.');

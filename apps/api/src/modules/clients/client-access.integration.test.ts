@@ -92,6 +92,27 @@ const auditCount = async (action: string, targetId: string): Promise<number> =>
 const sessionCount = async (userId: string): Promise<number> =>
   Number((await owner.knex('auth.session').where({ userId }).count<{ count: string }[]>('id as count'))[0]?.count ?? 0);
 
+/**
+ * A trigger that makes the DELETE of one person's sessions fail with the given SQLSTATE, as a deadlock or
+ * a broken connection would: the proof that ending the sessions and removing the link are one transaction.
+ */
+const withFailingSessionDelete = async (userId: string, errcode: string, run: () => Promise<void>): Promise<void> => {
+  const name = `zz_fail_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+  await owner.knex.raw(`
+    create function public.${name}() returns trigger language plpgsql as $$
+    begin
+      if old."userId" = '${userId}'::uuid then raise exception 'sessions of this person cannot be deleted' using errcode = '${errcode}'; end if;
+      return old;
+    end $$;
+    create trigger ${name} before delete on auth."session" for each row execute function public.${name}();
+  `);
+  try {
+    await run();
+  } finally {
+    await owner.knex.raw(`drop trigger if exists ${name} on auth."session"; drop function if exists public.${name}();`);
+  }
+};
+
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
 const daysFromNow = (days: number): Date => new Date(Date.now() + days * 86_400_000);
 
@@ -724,6 +745,61 @@ describe('CLIENTS portal access, agency side (#132)', () => {
         await call('POST', reactivateUrl(agencyA, clientA1, dual.id), cookies.admin!);
       }
       expect((await call('GET', portalClient(clientA1), cookies.dual!)).statusCode).toBe(200);
+    });
+
+    it.each([['40P01', 409, 'TRY_AGAIN'], ['XX000', 500, 'INTERNAL_ERROR']] as const)(
+      'ending the sessions is part of the removal: when it fails (%s) the link stays active, the sessions stay, nothing is audited, and repeating works (#411)',
+      async (errcode, status, code) => {
+        const maria = await membershipOf(clientA1, 'anaMaria');
+        const cookie = await login(users.anaMaria!);
+        const second = await login(users.anaMaria!);
+        const sessions = await sessionCount(users.anaMaria!.id);
+        expect(sessions).toBeGreaterThanOrEqual(2);
+        const removedEvents = await auditCount('client_member.removed', maria.id);
+        const before = await membershipOf(clientA1, 'anaMaria');
+
+        await withFailingSessionDelete(users.anaMaria!.id, errcode, async () => {
+          const failed = await call('POST', removeUrl(agencyA, clientA1, maria.id), cookies.admin!);
+          expect(failed.statusCode).toBe(status);
+          expect(failed.json().error.code).toBe(code);
+        });
+
+        expect(await statusOf(maria.id)).toBe('active');
+        expect(new Date((await membershipOf(clientA1, 'anaMaria')).updated_at).getTime()).toBe(new Date(before.updated_at).getTime());
+        expect(await auditCount('client_member.removed', maria.id)).toBe(removedEvents);
+        expect(await sessionCount(users.anaMaria!.id)).toBe(sessions);
+        for (const each of [cookie, second]) expect((await call('GET', portalClient(clientA1), each)).statusCode).toBe(200);
+
+        expect((await call('POST', removeUrl(agencyA, clientA1, maria.id), cookies.admin!)).statusCode).toBe(200);
+        expect(await auditCount('client_member.removed', maria.id)).toBe(removedEvents + 1);
+        expect(await sessionCount(users.anaMaria!.id)).toBe(0);
+        expect((await call('POST', reactivateUrl(agencyA, clientA1, maria.id), cookies.admin!)).statusCode).toBe(200);
+      }
+    );
+
+    it('a reactivation that lands between the route\'s reading and the function still ends the sessions: the transaction decides by what it wrote (#411)', async () => {
+      const ana = await membershipOf(clientA1, 'ana');
+      // Ana is removed from this client and still works in the other one, with a session.
+      await owner.knex('client_memberships').where({ id: ana.id }).update({ status: 'removed' });
+      const sessionsBefore = await sessionCount(users.ana!.id);
+      expect(sessionsBefore).toBeGreaterThanOrEqual(1);
+      const removedEvents = await auditCount('client_member.removed', ana.id);
+      try {
+        // The route reads the link as removed; a reactivation commits before the function runs; the
+        // function then finds it active, removes it and audits it.
+        const response = await withRacingApp(
+          async () => { await owner.knex('client_memberships').where({ id: ana.id }).update({ status: 'active' }); },
+          (racingApp) => postOn(racingApp, removeUrl(agencyA, clientA1, ana.id), cookies.admin!)
+        );
+        expect(response.statusCode).toBe(200);
+        expect(await statusOf(ana.id)).toBe('removed');
+        expect(await auditCount('client_member.removed', ana.id)).toBe(removedEvents + 1);
+        expect(await sessionCount(users.ana!.id)).toBe(0);
+        expect((await call('GET', portalClient(clientA2), cookies.ana!)).statusCode).toBe(401);
+      } finally {
+        await owner.knex('client_memberships').where({ id: ana.id }).update({ status: 'active' });
+        cookies.ana = await login(users.ana!);
+      }
     });
 
     it('is idempotent: repeating a removal or a reactivation answers the link as it is and writes nothing', async () => {

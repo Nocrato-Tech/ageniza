@@ -1039,7 +1039,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
-      { status: 409, code: 'COLLABORATOR_ALREADY_REMOVED' }
+      { status: 409, code: 'COLLABORATOR_ALREADY_REMOVED' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
 
@@ -1812,7 +1813,8 @@ path: '/agencies/:agencyId/roles',
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Member not found.' },
-      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' }
+      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
   {
@@ -1836,7 +1838,8 @@ path: '/agencies/:agencyId/roles',
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Member not found.' },
-      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' }
+      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
   {

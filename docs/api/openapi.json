@@ -7264,7 +7264,7 @@
             }
           },
           "409": {
-            "description": "COLLABORATOR_ALREADY_REMOVED:",
+            "description": "COLLABORATOR_ALREADY_REMOVED: | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11909,7 +11909,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12064,7 +12064,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {

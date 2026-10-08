@@ -149,6 +149,27 @@ const membershipRow = async (membershipId: string): Promise<MembershipRow> =>
 const sessionCount = async (userId: string): Promise<number> =>
   Number((await owner.knex('auth.session').where({ userId }).count<Array<{ count: string }>>('id as count'))[0]?.count ?? 0);
 
+/**
+ * A trigger that makes the DELETE of one person's sessions fail with the given SQLSTATE, as a deadlock or
+ * a broken connection would: the proof that ending the sessions and removing the link are one transaction.
+ */
+const withFailingSessionDelete = async (userId: string, errcode: string, run: () => Promise<void>): Promise<void> => {
+  const name = `zz_fail_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+  await owner.knex.raw(`
+    create function public.${name}() returns trigger language plpgsql as $$
+    begin
+      if old."userId" = '${userId}'::uuid then raise exception 'sessions of this person cannot be deleted' using errcode = '${errcode}'; end if;
+      return old;
+    end $$;
+    create trigger ${name} before delete on auth."session" for each row execute function public.${name}();
+  `);
+  try {
+    await run();
+  } finally {
+    await owner.knex.raw(`drop trigger if exists ${name} on auth."session"; drop function if exists public.${name}();`);
+  }
+};
+
 const membershipCount = async (agencyId: string): Promise<number> => {
   const row = await owner.knex('agency_memberships').where({ agency_id: agencyId }).count<Array<{ count: string }>>('id as count');
   return Number(row[0]?.count);
@@ -491,6 +512,32 @@ describe('POST /agencies/:agencyId/collaborators/:membershipId/remove (issue #98
     expect(await sessionCount(person.user.id)).toBe(0);
     expectRefused(await list(person.cookie, fx.agencyId), 401, 'UNAUTHENTICATED');
   });
+
+  it.each([['40P01', 409, 'TRY_AGAIN'], ['XX000', 500, 'INTERNAL_ERROR']] as const)(
+    'ending the sessions is part of the removal: when it fails (%s) the link stays active, the sessions stay, and repeating works (#411)',
+    async (errcode, status, code) => {
+      const fx = await createAgency(`remove-atomic-${errcode.toLowerCase()}`);
+      const person = await addMember(fx.agencyId, `remove-atomic-person-${errcode.toLowerCase()}`, presetRoleIds.production);
+      const secondDevice = await loginCookie(person.user);
+      const before = await membershipRow(person.membershipId);
+      expect(await sessionCount(person.user.id)).toBe(2);
+
+      await withFailingSessionDelete(person.user.id, errcode, async () => {
+        const failed = await remove(fx.ownerCookie, fx.agencyId, person.membershipId);
+        expect(failed.status).toBe(status);
+        expect(failed.body.error.code).toBe(code);
+      });
+
+      // Nothing happened: not the removal, not one session, and the person still works with both cookies.
+      expect(await membershipRow(person.membershipId)).toEqual(before);
+      expect(await sessionCount(person.user.id)).toBe(2);
+      for (const cookie of [person.cookie, secondDevice]) expect((await list(cookie, fx.agencyId)).status).toBe(200);
+
+      expect((await remove(fx.ownerCookie, fx.agencyId, person.membershipId)).status).toBe(200);
+      expect((await membershipRow(person.membershipId)).status).toBe('removed');
+      expect(await sessionCount(person.user.id)).toBe(0);
+    }
+  );
 
   it('does not end any session when the removal is refused: the Owner, oneself, someone already removed, a person without the permission (#411)', async () => {
     const fx = await createAgency('remove-keeps-sessions');

@@ -11,9 +11,10 @@ import {
   type ClientMemberStatus
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
-import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+import { isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
+import { tryAgain } from '../../plugins/infra/conflict.js';
 import type { AuthInstance } from '../auth/better-auth.js';
 import { revokeUserSessions } from '../auth/session-revocation.js';
 import { createRequireSession } from '../auth/session-guard.js';
@@ -174,16 +175,21 @@ export const registerAccessRoutes = (app: FastifyInstance, dependencies: AccessR
         const client = await loadClient(transaction, scope);
         if (client === undefined) return { kind: 'client-not-found' } as const;
         if (client.status === 'archived') return { kind: 'client-archived' } as const;
-        const current = await loadClientMember(transaction, scope);
-        if (current === undefined) return { kind: 'member-not-found' } as const;
+        if (await loadClientMember(transaction, scope) === undefined) return { kind: 'member-not-found' } as const;
         await setClientMemberStatus(transaction, membershipId, status);
-        // Only the transition ends sessions: removing again, or bringing the person back, changes none.
-        if (status === 'removed' && current.status === 'active') await revokeUserSessions(transaction, current.user_id, auth.sessionId);
         const member = await loadClientMember(transaction, scope);
         if (member === undefined) throw new Error('The member whose access just changed could not be read back.');
+        // Only the transition ends sessions, and it is read from what this transaction wrote: the
+        // function locks the link and decides, so a reading made before it (a reactivation may land
+        // in between) would leave a removed link with live sessions. Removing again or bringing the
+        // person back writes nothing that ends them.
+        if (member.status === 'removed' && member.written_by_this_transaction) {
+          await revokeUserSessions(transaction, member.user_id, auth.sessionId);
+        }
         return { kind: 'ok', member } as const;
       });
     } catch (error) {
+      if (isRetryableConflict(error)) throw tryAgain();
       if (!isMembershipFunctionRefusal(error)) throw error;
       throw await diagnoseRefusal(request, scope);
     }
