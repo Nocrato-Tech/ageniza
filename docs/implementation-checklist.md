@@ -26,5 +26,7 @@ regra é o erro mais repetido.
 20. **A decisão descreve o código de verdade.** Afirmação como "a tela já faz X" ou "a decisão Y diz Z" é conferida no código e no texto citado antes de registrar; depois do merge o arquivo não se edita (#414, #420).
 21. **API e tela em PRs separados.** Mesmo quando a issue pede as duas (#417, #419).
 22. **Harness no banco certo.** Antes de rodar a integração, confira que `DATABASE_URL` e `MIGRATION_DATABASE_URL` apontam para o seu banco; se faltarem, o harness cai no `ageniza` (#391, #426).
+23. **Caractere invisível.** A regra de invisível não fica só em `\p{Cf}`: inclua `Default_Ignorable_Code_Point` (CGJ, seletores de variação, FVS) e brancos que são símbolo (U+2800) (#426).
+24. **Mutação por ponto de chamada.** Quando um helper protege várias rotas, mute cada chamada, não só o helper; mutar o helper esconde a rota que ficou sem teste (#426).
 
 As lições completas de segurança estão em `docs/security-review.md` e nas notas do projeto; este checklist só lista o que mais se repete.
