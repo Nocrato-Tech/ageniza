@@ -8,6 +8,7 @@ import { Avatar, Button, Skeleton } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
+import { ClientLifecycleActions } from './client-lifecycle.js';
 import { useDocumentTitle } from './document-title.js';
 import { EditClientDialog } from './edit-client.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -89,6 +90,7 @@ function ClientHeader({ client, onEdit }: { client: ClientDetailResponse; onEdit
     </div>
     <div className="client-detail__actions">
       {canOperate && active && <Button onClick={onEdit}>Editar</Button>}
+      <ClientLifecycleActions client={client} />
     </div>
   </header>;
 }
@@ -96,8 +98,7 @@ function ClientHeader({ client, onEdit }: { client: ClientDetailResponse; onEdit
 /**
  * The client page (`specs/clientes.md` §7): header, the six tabs and the tab content. The tab lives
  * in the URL so the link is shareable and the back button works. Geral and the three skeleton tabs
- * belong to this task; the content tabs of #138 and #140 are skeleton text until their own tasks
- * land, and the closing actions of #139 are announced, never faked.
+ * belong to #136; the content tabs belong to #138/#140, and the closing actions to #139.
  */
 export function ClientDetailPage() {
   const agency = useAgencyContext();

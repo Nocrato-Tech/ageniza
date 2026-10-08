@@ -40,7 +40,7 @@ export interface ContentWorld {
   >;
   getOwner(): DatabaseClient;
   asUser<TResult>(userId: string, work: (transaction: Knex.Transaction) => Promise<TResult>): Promise<TResult>;
-  openTransactionAs(userId: string): Promise<Knex.Transaction>;
+  openTransactionAs(userId: string, isolationLevel?: 'read committed' | 'repeatable read' | 'serializable'): Promise<Knex.Transaction>;
   /** A person of agency A who holds exactly the permissions given. */
   personWith(...permissions: string[]): Promise<string>;
   /** A person of agency A who holds every conteudo.* permission except the one given. */
@@ -112,8 +112,8 @@ export const createContentWorld = (label: string): ContentWorld => {
   const asUser = <TResult>(userId: string, work: (transaction: Knex.Transaction) => Promise<TResult>): Promise<TResult> =>
     withAuthenticatedUserTransaction(getApplication(), createVerifiedUserClaims({ userId }), work);
 
-  const openTransactionAs = async (userId: string): Promise<Knex.Transaction> => {
-    const transaction = await getApplication().knex.transaction();
+  const openTransactionAs = async (userId: string, isolationLevel?: 'read committed' | 'repeatable read' | 'serializable'): Promise<Knex.Transaction> => {
+    const transaction = await getApplication().knex.transaction(isolationLevel === undefined ? {} : { isolationLevel });
     await transaction.raw('select app_private.bind_actor(?::uuid)', [userId]);
     return transaction;
   };

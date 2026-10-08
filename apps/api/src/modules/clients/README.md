@@ -274,6 +274,11 @@ evento em `audit.events`. Todas respondem o cliente (`200`), no mesmo formato do
 - **Convite criado ou reenviado enquanto o cliente é arquivado**: o gatilho da `20261006000400` trava o cliente e,
   achando-o arquivado depois da espera, levanta `A0020`. As duas rotas de convite (`invitations/routes.ts`) o
   traduzem para `409 CLIENT_ARCHIVED` e nada é criado; antes era `500`.
+- **Escrita nas filhas enquanto o cliente é arquivado** (#392): o mesmo gatilho vale para seção do estudo,
+  persona, conversa e comentário. O `A0020` vira `409 CLIENT_ARCHIVED` na agência (`PUT` de seção, `POST` de
+  persona, de conversa e de comentário) e `404 NOT_FOUND` no portal, onde cliente arquivado é sempre "não
+  encontrado". Nada é gravado. Editar o que já existe (persona, seção já preenchida) não trava o cliente e
+  não levanta `A0020`.
 - O `404` é um só para cliente inexistente, de outra agência ou com id que não é UUID. Se a função
   recusar depois das checagens (permissão perdida no meio, cliente arquivado no meio), a recusa é relida
   numa transação nova e vira o `403`, o `404` ou o `409` que a checagem teria dado.

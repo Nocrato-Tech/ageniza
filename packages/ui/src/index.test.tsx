@@ -92,6 +92,16 @@ describe('Menu', () => {
     expect(document.activeElement).toBe(trigger);
   });
 
+  it('names a glyph-only trigger from its label', () => {
+    render(
+      <Menu label='Ações do cliente' triggerLabel='Ações do cliente' trigger={<span aria-hidden='true'>⋯</span>}>
+        <MenuItem>Encerrar contrato…</MenuItem>
+      </Menu>
+    );
+
+    expect(screen.getByRole('button', { name: 'Ações do cliente' })).toBeTruthy();
+  });
+
   it('exposes a separated destructive menu action', () => {
     render(
       <Menu label='Menu' trigger='Open'>

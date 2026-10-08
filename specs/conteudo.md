@@ -175,7 +175,7 @@ enviado ──▶ gravado     # pessoa ativa do portal
 9. Conteúdo não é apagado: cancelado continua guardado.
 10. Responsável de subtarefa é colaborador ativo da agência; só o responsável do conteúdo, ou quem tem `conteudo.aprovar_pela_agencia`, aprova subtarefa.
 11. Enviar para aprovação exige mídia completa para o formato e subtarefas aprovadas; pedir ajuste exige comentário.
-12. Mídia usada em conteúdo aprovado ou publicado não pode ser removida da pasta.
+12. Mídia usada, como arquivo ou como capa, em conteúdo aguardando aprovação, aprovado ou publicado não pode ser removida da pasta. A recusa vale também para "aguardando aprovação", além da leitura literal de "aprovado ou publicado", porque o cliente está olhando o post e a aprovação não confere a mídia de novo (`docs/business/decisions/2026-10-07-remover-midia-e-por-funcao-e-se-recusa-em-conteudo-ja-enviado.md`).
 13. O cliente comenta só a partir de "aguardando aprovação".
 14. Conteúdo de cliente arquivado é só leitura na agência.
 
@@ -205,7 +205,7 @@ Todas sob `requireAgencyAccess`; o cliente de `:clientId` precisa pertencer a `:
 | `GET` | `/agencies/:agencyId/clients/:clientId/media-folders` | `conteudo.visualizar` | pastas do cliente |
 | `POST` | `/agencies/:agencyId/clients/:clientId/media-folders` | `conteudo.operar` | `201` com a pasta |
 | `GET` | `…/media-folders/:folderId/assets` | `conteudo.visualizar` | mídias da pasta, paginado |
-| `POST` | `…/media-folders/:folderId/assets/:assetId/remove` | `conteudo.operar` | `409` se usada em conteúdo aprovado ou publicado |
+| `POST` | `…/media-folders/:folderId/assets/:assetId/remove` | `conteudo.operar` | `409` se usada, como arquivo ou capa, em conteúdo aguardando aprovação, aprovado ou publicado (regra 12) |
 | `POST` | `/agencies/:agencyId/clients/:clientId/story-scripts` | `conteudo.operar` | `201` com o roteiro em rascunho |
 | `PATCH` | `…/story-scripts/:scriptId` | `conteudo.operar` | o roteiro |
 | `POST` | `…/story-scripts/:scriptId/send` | `conteudo.operar` | enviado |
