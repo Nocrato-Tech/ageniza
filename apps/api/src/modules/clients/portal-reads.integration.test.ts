@@ -280,6 +280,19 @@ describe('CLIENTS portal reads (#129)', () => {
       expect((await call('GET', portalClient(clientEmpty), cookies.portalOne!)).json().photoUrl).toBeNull();
     });
 
+    it('#311: signs nothing for a stored key that is not an avatar key of this client', async () => {
+      const foreignKey = OTHER_PHOTO_KEY;
+      await owner.knex('clients').where({ id: clientEmpty }).update({ photo_key: foreignKey });
+      try {
+        const response = await call('GET', portalClient(clientEmpty), cookies.portalOne!);
+        expect(response.statusCode).toBe(200);
+        expect(response.json().photoUrl).toBeNull();
+        expect(JSON.stringify(response.json())).not.toContain(foreignKey);
+      } finally {
+        await owner.knex('clients').where({ id: clientEmpty }).update({ photo_key: null });
+      }
+    });
+
     it('answers 200 to the collaborator who also has a client link, whatever their agency role', async () => {
       for (const key of ['dual', 'dualBare']) {
         const response = await call('GET', portalClient(clientA1), cookies[key]!);

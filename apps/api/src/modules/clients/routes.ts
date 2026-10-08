@@ -42,7 +42,7 @@ import {
   type IdentityStorageClient,
   type UploadedIdentityImage
 } from '../identity-storage/storage-client.js';
-import { createPhotoUrlSigner } from './photo-url.js';
+import { createClientPhotoUrlSigner } from './photo-url.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { CLIENT_PHOTO_RATE_LIMIT, clientPhotoBodyLimitBytes } from './policy.js';
@@ -180,7 +180,7 @@ const assertSectionShape = (sectionKey: WritableBrandSectionKey, body: BrandStud
 export const registerClientModule = (app: FastifyInstance, dependencies: ClientModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
 
-  const signPhotoUrl = createPhotoUrlSigner(dependencies, {
+  const signPhotoUrl = createClientPhotoUrlSigner(dependencies, {
     code: 'CLIENT_PHOTO_URL_FAILED',
     message: 'Could not sign the client photo URL; returning null'
   });
@@ -242,7 +242,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       const item: ClientListItem = {
         id: row.id,
         name: row.name,
-        photoUrl: await signPhotoUrl(request, row.photo_key),
+        photoUrl: await signPhotoUrl(request, { agencyId: tenant.agencyId, clientId: row.id }, row.photo_key),
         instagramHandle: row.instagram_handle,
         status: row.status,
         closingDate: row.closing_date,
@@ -287,7 +287,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     });
     if (result === undefined) throw clientNotFound();
 
-    const photoUrl = await signPhotoUrl(request, result.row.photo_key);
+    const photoUrl = await signPhotoUrl(request, { agencyId: tenant.agencyId, clientId }, result.row.photo_key);
     return reply.send(routeResponse(detailDocs, request, {
       ...clientFromRow(result.row, photoUrl),
       summary: result.summary
@@ -322,7 +322,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
 
     if (outcome.kind === 'not-found') throw clientNotFound();
     if (outcome.kind === 'archived') throw clientArchived();
-    const photoUrl = await signPhotoUrl(request, outcome.row.photo_key);
+    const photoUrl = await signPhotoUrl(request, { agencyId: tenant.agencyId, clientId }, outcome.row.photo_key);
     return reply.send(routeResponse(updateDocs, request, clientFromRow(outcome.row, photoUrl)));
   });
 
