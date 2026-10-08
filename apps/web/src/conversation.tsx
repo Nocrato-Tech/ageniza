@@ -41,18 +41,23 @@ export interface ConversationProps {
   readonly readOnly: boolean;
   /** Called after a write the conversation cannot invalidate itself (client summary, roster badge). */
   readonly onWritten: () => void;
+  /** The heading level of "Conversas", so it nests under whatever heading holds the area. */
+  readonly headingLevel?: 3 | 4;
 }
 
 const THREADS_PAGE_SIZE = 100;
 const BODY_MAX_BYTES = 5000;
+const COMMENTS_PAGE_SIZE = 50;
 const NO_EDIT_NOTE = 'Depois de enviada, a mensagem não pode ser editada nem apagada.';
 const SIDE_LABEL: Record<ConversationSide, string> = { agency: 'agência', client: 'cliente' };
+const SIDE_TITLE: Record<ConversationSide, string> = { agency: 'Agência', client: 'Cliente' };
 
 const subjectKeyOf = (subject: ThreadSubject): string => ('sectionKey' in subject ? `section:${subject.sectionKey}` : `persona:${subject.personaId}`);
 
 const scopeKeyOf = (scope: ConversationScope) => ['conversation', scope.side, scope.clientId] as const;
 const threadsQueryKey = (scope: ConversationScope, subject: ThreadSubject) => [...scopeKeyOf(scope), 'threads', subjectKeyOf(subject)] as const;
-const commentsQueryKey = (scope: ConversationScope, threadId: string) => [...scopeKeyOf(scope), 'comments', threadId] as const;
+// The first page read is part of the key: a thread that grows onto a new page starts again at its end.
+const commentsQueryKey = (scope: ConversationScope, threadId: string, firstPage: number) => [...scopeKeyOf(scope), 'comments', threadId, firstPage] as const;
 
 const routesOf = (scope: ConversationScope) => {
   const values: Record<string, string> = scope.side === 'agency' ? { agencyId: scope.agencyId, clientId: scope.clientId } : { clientId: scope.clientId };
@@ -132,6 +137,7 @@ function Composer({ label, submitLabel, pending, error, onSubmit, onEdit }: {
       id={fieldId}
       value={draft}
       rows={4}
+      readOnly={pending}
       onChange={(event) => { setDraft(event.target.value); setProblem(undefined); onEdit(); }}
     />
     <p className="conversation__note">{NO_EDIT_NOTE}</p>
@@ -165,15 +171,18 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
   const [resolveError, setResolveError] = useState<string | undefined>();
   const [sent, setSent] = useState(0);
 
+  // The API pages oldest first: a conversation opens on its last page, the newest messages.
+  const lastPage = Math.max(1, Math.ceil(thread.commentCount / COMMENTS_PAGE_SIZE));
   const comments = useInfiniteQuery({
-    queryKey: commentsQueryKey(scope, thread.id),
-    initialPageParam: 1,
+    queryKey: commentsQueryKey(scope, thread.id, lastPage),
+    initialPageParam: lastPage,
     queryFn: ({ pageParam, signal }) => httpClient.request({
       path: `${routes.comments(thread.id)}?page=${pageParam}`,
       response: CommentListResponseSchema,
       signal
     }),
-    getNextPageParam: (last) => (last.meta.page < last.meta.totalPages ? last.meta.page + 1 : undefined)
+    getNextPageParam: (last) => (last.meta.page < last.meta.totalPages ? last.meta.page + 1 : undefined),
+    getPreviousPageParam: (first) => (first.meta.page > 1 ? first.meta.page - 1 : undefined)
   });
 
   const refresh = (): void => {
@@ -211,12 +220,13 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
         <p>Não foi possível carregar a conversa.</p>
         <Button variant="secondary" onClick={() => { void comments.refetch(); }}>Tentar de novo</Button>
       </div>}
+      {comments.hasPreviousPage && <Button variant="secondary" loading={comments.isFetchingPreviousPage} onClick={() => { void comments.fetchPreviousPage(); }}>Ver mensagens anteriores</Button>}
       {items.length > 0 && <ol className="conversation__comments">
         {items.map((comment) => <CommentItem key={comment.id} comment={comment} />)}
       </ol>}
-      {comments.hasNextPage && <Button variant="secondary" loading={comments.isFetchingNextPage} onClick={() => { void comments.fetchNextPage(); }}>Ver mais mensagens</Button>}
+      {comments.hasNextPage && <Button variant="secondary" loading={comments.isFetchingNextPage} onClick={() => { void comments.fetchNextPage(); }}>Ver mensagens mais novas</Button>}
       {thread.state === 'resolved' && thread.resolvedAt !== null && <p className="conversation__resolved">
-        Resolvida{thread.resolvedBy?.name ? ` por ${thread.resolvedBy.name}` : ''} em {formatDay(thread.resolvedAt)}
+        Resolvida {thread.resolvedBy?.name ? `por ${thread.resolvedBy.name}` : 'pela agência'} em {formatDay(thread.resolvedAt)}
       </p>}
       {writable
         ? <Composer
@@ -284,8 +294,11 @@ function ThreadRow({ thread, viewer, onOpen }: { thread: Thread; viewer: Convers
   return <li>
     <button type="button" className="conversation__thread" onClick={onOpen}>
       <span className="conversation__thread-meta">
-        {thread.openedBy.name ?? SIDE_LABEL[thread.openedBy.side]} ({SIDE_LABEL[thread.openedBy.side]}) · {formatDay(thread.lastComment.at)}
+        {thread.openedBy.name === null
+          ? `Aberta ${thread.openedBy.side === 'agency' ? 'pela agência' : 'pelo cliente'}`
+          : `Aberta por ${thread.openedBy.name} (${SIDE_LABEL[thread.openedBy.side]})`}
       </span>
+      <span className="conversation__thread-last">{SIDE_TITLE[thread.lastComment.side]} · {formatDay(thread.lastComment.at)}</span>
       <span className="conversation__thread-excerpt">{thread.lastComment.excerpt}</span>
       <span className={awaiting ? 'conversation__status conversation__status--awaiting' : 'conversation__status'}>{status}</span>
     </button>
@@ -293,7 +306,8 @@ function ThreadRow({ thread, viewer, onOpen }: { thread: Thread; viewer: Convers
 }
 
 export function Conversation(props: ConversationProps) {
-  const { scope, subject, subjectLabel, canWrite, readOnly } = props;
+  const { scope, subject, subjectLabel, canWrite, readOnly, headingLevel = 4 } = props;
+  const Heading = `h${headingLevel}` as const;
   const httpClient = useApiClient();
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -315,9 +329,9 @@ export function Conversation(props: ConversationProps) {
 
   return <section className="conversation" aria-label={`Conversas sobre ${subjectLabel}`}>
     <header className="conversation__header">
-      <h4 className="conversation__title">
+      <Heading className="conversation__title">
         Conversas{threads.data === undefined ? '' : ` (${threads.data.meta.totalItems})`}
-      </h4>
+      </Heading>
       {awaiting > 0 && <span className="conversation__status conversation__status--awaiting">
         {scope.side === 'agency' ? `${awaiting} aguardando` : `${awaiting} com resposta da agência`}
       </span>}

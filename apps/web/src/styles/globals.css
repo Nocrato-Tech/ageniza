@@ -2076,9 +2076,14 @@ a.client-general__block:hover {
   border-color: var(--focus-ring);
 }
 
-.conversation__thread-meta {
+.conversation__thread-meta,
+.conversation__thread-last {
   color: var(--text-secondary);
   font: var(--caption);
+}
+
+.conversation__thread-last {
+  color: var(--text-primary);
 }
 
 .conversation__thread-excerpt {

@@ -44,6 +44,8 @@ interface Options {
   readonly pageSize?: number;
   /** Holds every write until it resolves, to look at the screen while a send is pending. */
   readonly gate?: Promise<void>;
+  /** Holds the reads of one route until the promise resolves, to look at the loading state. */
+  readonly holdReads?: { readonly promise: Promise<void>; readonly path: 'threads' | 'comments' };
   /** Answers instead of the fixture, for a failure the fixture cannot model. */
   readonly fail?: (url: URL, method: string) => Response | undefined;
 }
@@ -60,6 +62,7 @@ const mount = (options: Options = {}) => {
     const failed = options.fail?.(url, method);
     if (failed !== undefined) return failed;
     if (method === 'POST' && options.gate !== undefined) await options.gate;
+    if (method === 'GET' && options.holdReads !== undefined && url.pathname.endsWith(options.holdReads.path)) await options.holdReads.promise;
     const answered = api.handle(url, method, init?.body === undefined ? undefined : JSON.parse(String(init.body)));
     if (answered !== undefined) return answered;
     throw new Error(`unexpected ${method} ${url}`);
@@ -102,9 +105,9 @@ describe('conversation component (#142)', () => {
     expect(within(region).getByRole('heading', { name: 'Conversas (3)' })).toBeTruthy();
     const rows = rowsOf(region);
     expect(rows.map((row) => row.textContent)).toEqual([
-      'Ana (agência) · 12/10Mandei três opções novasaberta',
-      'Maria (cliente) · 12/10Acho formal demais para o nosso públicoaguardando você',
-      'Ana (agência) · 12/10Ajustamos o exemplo de legendaresolvida'
+      'Aberta por Ana (agência)Agência · 12/10Mandei três opções novasaberta',
+      'Aberta por Maria (cliente)Cliente · 12/10Acho formal demais para o nosso públicoaguardando você',
+      'Aberta por Ana (agência)Agência · 12/10Ajustamos o exemplo de legendaresolvida'
     ]);
     // One awaiting thread, so the header says it once.
     expect(within(region).getByText('1 aguardando')).toBeTruthy();
@@ -174,8 +177,9 @@ describe('conversation component (#142)', () => {
     expect(onWritten).toHaveBeenCalledTimes(1);
     // The list behind the dialog re-read: the answered thread no longer awaits, the other one still does.
     await waitFor(() => expect(rowsOf(region).map((row) => row.textContent)).toEqual([
-      'Maria (cliente) · 12/10Vou reescrever hojeaberta',
-      'Maria (cliente) · 12/10Outra conversaaguardando você'
+      // Opened by the client, last word by the agency: each side is named next to its own words.
+      'Aberta por Maria (cliente)Agência · 12/10Vou reescrever hojeaberta',
+      'Aberta por Maria (cliente)Cliente · 12/10Outra conversaaguardando você'
     ]));
     expect(within(region).getByText('1 aguardando')).toBeTruthy();
   });
@@ -239,6 +243,7 @@ describe('conversation component (#142)', () => {
     const region = await area();
     const dialog = await openRow(region, /Acho formal demais/);
 
+    expect(within(region).getByText('2 aguardando')).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Resolver' }));
     await within(dialog).findByText('Resolvida por Ana em 12/10');
     expect(api.calls.filter((call) => call.includes('/resolve'))).toEqual([`POST /agencies/${AGENCY_ID}/clients/${CLIENT_ID}/threads/${target}/resolve`]);
@@ -250,9 +255,11 @@ describe('conversation component (#142)', () => {
 
     // Behind the dialog the list moved the resolved thread to the end.
     await waitFor(() => expect(rowsOf(region).map((row) => row.textContent)).toEqual([
-      'Maria (cliente) · 12/10Outra conversa abertaaguardando você',
-      'Maria (cliente) · 12/10Acho formal demaisresolvida'
+      'Aberta por Maria (cliente)Cliente · 12/10Outra conversa abertaaguardando você',
+      'Aberta por Maria (cliente)Cliente · 12/10Acho formal demaisresolvida'
     ]));
+    // The resolved thread's last word is the client's, yet it no longer awaits: only the other one does.
+    expect(within(region).getByText('1 aguardando')).toBeTruthy();
 
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Escrever resposta' }), { target: { value: 'Reescrevi' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
@@ -261,8 +268,8 @@ describe('conversation component (#142)', () => {
     await within(dialog).findByRole('button', { name: 'Resolver' });
     expect(within(dialog).queryByText(/Resolvida por/)).toBeNull();
     await waitFor(() => expect(rowsOf(region).map((row) => row.textContent)).toEqual([
-      'Maria (cliente) · 12/10Reescreviaberta',
-      'Maria (cliente) · 12/10Outra conversa abertaaguardando você'
+      'Aberta por Maria (cliente)Agência · 12/10Reescreviaberta',
+      'Aberta por Maria (cliente)Cliente · 12/10Outra conversa abertaaguardando você'
     ]));
   });
 
@@ -344,7 +351,7 @@ describe('conversation component (#142)', () => {
     const region = await area();
     await within(region).findByText('Reescrevi o exemplo');
     expect(within(region).getByText('1 com resposta da agência')).toBeTruthy();
-    expect(rowsOf(region)[0]!.textContent).toBe('Maria (cliente) · 12/10Reescrevi o exemploa agência respondeu');
+    expect(rowsOf(region)[0]!.textContent).toBe('Aberta por Maria (cliente)Agência · 12/10Reescrevi o exemploa agência respondeu');
     expect(api.calls[0]).toBe(`GET /clients/${CLIENT_ID}/threads?sectionKey=tone_of_voice&pageSize=100`);
 
     const dialog = await openRow(region, /Reescrevi o exemplo/);
@@ -373,20 +380,139 @@ describe('conversation component (#142)', () => {
     expect(within(region).queryByText('Não foi possível carregar as conversas.')).toBeNull();
   });
 
-  it('pages the comments of a long conversation and offers to see more', async () => {
+  const longConversation = (count: number) => Array.from({ length: count }, (_, index) => ({
+    side: index % 2 === 0 ? ('client' as const) : ('agency' as const),
+    body: `mensagem ${String(index + 1).padStart(3, '0')}`,
+    at: new Date(Date.parse(EARLIER) + index * 60_000).toISOString()
+  }));
+
+  it('opens a long conversation on its newest messages and pages back to the earlier ones', async () => {
     const { api } = mount();
-    const comments = Array.from({ length: 51 }, (_, index) => ({
-      side: index % 2 === 0 ? ('client' as const) : ('agency' as const),
-      body: `mensagem ${String(index + 1).padStart(2, '0')}`,
-      at: new Date(Date.parse(EARLIER) + index * 60_000).toISOString()
-    }));
-    api.seed(TONE, comments);
-    const dialog = await openRow(await area(), /mensagem 51/);
-    await within(dialog).findByText('mensagem 50');
-    expect(within(dialog).queryByText('mensagem 51')).toBeNull();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Ver mais mensagens' }));
-    await within(dialog).findByText('mensagem 51');
-    expect(within(dialog).queryByRole('button', { name: 'Ver mais mensagens' })).toBeNull();
-    expect(api.calls.filter((call) => call.includes('/comments?page='))).toHaveLength(2);
+    api.seed(TONE, longConversation(120));
+    const dialog = await openRow(await area(), /mensagem 120/);
+    // Page 3 of 3: the last message is on screen at once, the first 100 are one click away.
+    await within(dialog).findByText('mensagem 120');
+    expect(within(dialog).getByText('mensagem 101')).toBeTruthy();
+    expect(within(dialog).queryByText('mensagem 100')).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Ver mensagens mais novas' })).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Ver mensagens anteriores' }));
+    await within(dialog).findByText('mensagem 100');
+    expect(within(dialog).getByText('mensagem 051')).toBeTruthy();
+    expect(within(dialog).getAllByRole('listitem').map((item) => item.querySelector('.conversation__comment-body')?.textContent).slice(0, 2)).toEqual(['mensagem 051', 'mensagem 052']);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Ver mensagens anteriores' }));
+    await within(dialog).findByText('mensagem 001');
+    expect(within(dialog).queryByRole('button', { name: 'Ver mensagens anteriores' })).toBeNull();
+    expect(api.calls.filter((call) => call.includes('/comments?page=')).map((call) => call.slice(call.indexOf('?')))).toEqual(['?page=3', '?page=2', '?page=1']);
+  });
+
+  it('shows the answer that makes a conversation grow onto a new page', async () => {
+    const { api } = mount();
+    api.seed(TONE, longConversation(50));
+    const dialog = await openRow(await area(), /mensagem 050/);
+    await within(dialog).findByText('mensagem 050');
+    expect(within(dialog).queryByRole('button', { name: 'Ver mensagens anteriores' })).toBeNull();
+
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Escrever resposta' }), { target: { value: 'A resposta nova' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+    // Comment 51 lives on page 2; the screen follows the thread there and offers the earlier page.
+    await within(dialog).findByText('A resposta nova');
+    expect(await within(dialog).findByRole('button', { name: 'Ver mensagens anteriores' })).toBeTruthy();
+  });
+
+  it('shows skeletons while the list loads and while the conversation loads', async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const { api } = mount({ holdReads: { promise: held, path: 'threads' } });
+    api.seed(TONE, [{ side: 'client', body: 'Acho formal demais', at: LATE }]);
+    const region = await area();
+    expect(region.querySelector('.conversation__threads-skeleton')?.getAttribute('aria-busy')).toBe('true');
+    expect(region.querySelectorAll('.conversation__threads-skeleton > *')).toHaveLength(2);
+    release();
+    await within(region).findByText('Acho formal demais');
+    expect(region.querySelector('.conversation__threads-skeleton')).toBeNull();
+    cleanup();
+
+    let releaseComments: () => void = () => undefined;
+    const heldComments = new Promise<void>((resolve) => { releaseComments = resolve; });
+    const second = mount({ holdReads: { promise: heldComments, path: 'comments' } });
+    second.api.seed(TONE, [{ side: 'client', body: 'Acho formal demais', at: LATE }]);
+    const dialog = await openRow(await area(), /Acho formal demais/);
+    // Three comments' worth of skeleton, and no composer story yet: the conversation is not there.
+    expect(dialog.querySelector('.conversation__comments-skeleton')?.getAttribute('aria-busy')).toBe('true');
+    expect(dialog.querySelectorAll('.conversation__comments-skeleton > *')).toHaveLength(3);
+    releaseComments();
+    await within(dialog).findAllByRole('listitem');
+    expect(dialog.querySelector('.conversation__comments-skeleton')).toBeNull();
+  });
+
+  it('says so and offers to try again when the messages of a conversation cannot be loaded', async () => {
+    let failing = true;
+    const { api } = mount({
+      fail: (url, method) => (failing && method === 'GET' && url.pathname.endsWith('/comments') ? apiError(403, 'FORBIDDEN') : undefined)
+    });
+    api.seed(TONE, [{ side: 'client', body: 'Acho formal demais', at: LATE }]);
+    const dialog = await openRow(await area(), /Acho formal demais/);
+    await within(dialog).findByText('Não foi possível carregar a conversa.');
+    expect(within(dialog).queryByRole('list')).toBeNull();
+    failing = false;
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tentar de novo' }));
+    await within(dialog).findByText('Acho formal demais');
+    expect(within(dialog).queryByText('Não foi possível carregar a conversa.')).toBeNull();
+  });
+
+  it('says who resolved neutrally when the server has no name for them', async () => {
+    const { api } = mount();
+    api.seed(TONE, [{ side: 'client', body: 'Acho formal demais', at: EARLIER }], { at: LATE, by: null });
+    const dialog = await openRow(await area(), /Acho formal demais/);
+    await within(dialog).findByText('Resolvida pela agência em 12/10');
+  });
+
+  it('does not let the typed text change while a send is pending', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const { api } = mount({ gate });
+    api.seed(TONE, [{ side: 'client', body: 'Acho formal demais', at: LATE }]);
+    const dialog = await openRow(await area(), /Acho formal demais/);
+    const box = within(dialog).getByRole('textbox', { name: 'Escrever resposta' }) as HTMLTextAreaElement;
+    expect(box.readOnly).toBe(false);
+    fireEvent.change(box, { target: { value: 'Resposta' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+    await waitFor(() => expect(box.readOnly).toBe(true));
+    release();
+    await within(dialog).findByText('Resposta');
+  });
+
+  it('names an opener the server has no name for without repeating the side', async () => {
+    const { api } = mount();
+    api.seed(TONE, [{ side: 'client', body: 'Acho formal demais', at: LATE }]);
+    api.threads[0]!.openedBy.name = null;
+    const region = await area();
+    await waitFor(() => expect(rowsOf(region)).toHaveLength(1));
+    await within(region).findByText('Acho formal demais');
+    expect(rowsOf(region)[0]!.querySelector('.conversation__thread-meta')?.textContent).toBe('Aberta pelo cliente');
+  });
+
+  it('lists the thread with the latest activity first, like the API', async () => {
+    const { api } = mount();
+    api.seed(TONE, [{ side: 'client', body: 'Antiga, respondida agora', at: EARLIER }]);
+    api.seed(TONE, [{ side: 'client', body: 'Nova, sem resposta', at: LATE }]);
+    const region = await area();
+    await within(region).findByText('Nova, sem resposta');
+    const dialog = await openRow(region, /Antiga, respondida agora/);
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Escrever resposta' }), { target: { value: 'Respondi' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+    await within(dialog).findByText('Respondi');
+    await waitFor(() => expect(rowsOf(region).map((row) => row.querySelector('.conversation__thread-excerpt')?.textContent)).toEqual(['Respondi', 'Nova, sem resposta']));
+  });
+
+  it('says when only the most recent conversations are shown', async () => {
+    const { api } = mount();
+    for (let index = 0; index < 101; index += 1) {
+      api.seed(TONE, [{ side: 'client', body: `pergunta ${index}`, at: LATE }]);
+    }
+    const region = await area();
+    await within(region).findByText('Mostrando as 100 conversas mais recentes.');
+    expect(rowsOf(region)).toHaveLength(100);
+    expect(within(region).getByRole('heading', { name: 'Conversas (101)' })).toBeTruthy();
   });
 });

@@ -87,7 +87,7 @@ export const createConversationApi = (options: ConversationApiOptions) => {
     id: nextId(), body, side, author: people[side], createdAt
   });
 
-  const seed = (subject: ThreadSubject, comments: readonly SeedComment[], resolved?: { at: string; by: string }): string => {
+  const seed = (subject: ThreadSubject, comments: readonly SeedComment[], resolved?: { at: string; by: string | null }): string => {
     const first = comments[0]!;
     const thread: StoredThread = {
       id: nextId(),
@@ -137,7 +137,11 @@ export const createConversationApi = (options: ConversationApiOptions) => {
       const query = ThreadListQuerySchema.safeParse(Object.fromEntries(url.searchParams));
       const subject = query.success ? threadSubjectOfQuery(query.data) : undefined;
       if (subject === undefined) return apiError(400, 'VALIDATION_ERROR');
-      const matching = threads.filter((thread) => sameSubject(thread.subject, subject)).map(publicThread);
+      // Like the API: the latest activity first; the sort is stable, so a tie keeps the newest thread first.
+      const matching = threads
+        .filter((thread) => sameSubject(thread.subject, subject))
+        .sort((left, right) => lastOf(right).createdAt.localeCompare(lastOf(left).createdAt))
+        .map(publicThread);
       return json(page(matching, url, options.pageSize ?? 20));
     }
     if (isThreads && writing) {

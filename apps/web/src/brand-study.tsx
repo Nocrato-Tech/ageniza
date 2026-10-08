@@ -91,11 +91,12 @@ function UpdatedBy({ section }: { section: { updatedBy: { name: string } | null;
  * The conversations of one subject of the study. Writing them also moves the detail's summary and
  * the roster's "aguardando" badge, so both are invalidated here (SPEC section 6).
  */
-function StudyConversation({ client, subject, subjectLabel, readOnly }: {
+function StudyConversation({ client, subject, subjectLabel, readOnly, headingLevel }: {
   client: ClientDetailResponse;
   subject: ThreadSubject;
   subjectLabel: string;
   readOnly: boolean;
+  headingLevel?: 3 | 4;
 }) {
   const agency = useAgencyContext();
   const queryClient = useQueryClient();
@@ -106,6 +107,7 @@ function StudyConversation({ client, subject, subjectLabel, readOnly }: {
     subjectLabel={subjectLabel}
     canWrite={canOperate}
     readOnly={readOnly || client.status !== 'active'}
+    headingLevel={headingLevel}
     onWritten={() => {
       void queryClient.invalidateQueries({ queryKey: clientDetailQueryKey(agency.agencyId, client.id) });
       void queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'clients'], predicate: (query) => typeof query.queryKey[3] === 'object' });
@@ -582,7 +584,7 @@ function PersonaDialog({ client, persona, onClose }: { client: ClientDetailRespo
           <dt>Desejos</dt><dd>{persona.desires ?? NOT_INFORMED}</dd>
           <dt>Objeções</dt><dd>{persona.objections ?? NOT_INFORMED}</dd>
         </dl>
-        <StudyConversation client={client} subject={{ personaId: persona.id }} subjectLabel={persona.name} readOnly={persona.status === 'archived'} />
+        <StudyConversation client={client} subject={{ personaId: persona.id }} subjectLabel={persona.name} readOnly={persona.status === 'archived'} headingLevel={3} />
         {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
         {canEdit && <div className="brand-persona__actions">
           <Button size="sm" variant="secondary" onClick={() => { setDraft(draftFromPersona(persona)); setEditing(true); setNameError(undefined); }}>Editar</Button>

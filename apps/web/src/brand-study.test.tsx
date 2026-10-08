@@ -875,4 +875,24 @@ describe('brand study conversations (#142)', () => {
     expect(within(dialog).queryByRole('button', { name: 'Resolver' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Nova conversa/ })).toBeNull();
   });
+
+  it('closes only the conversation on Esc, leaving the persona dialog under it open, and nests its heading under the dialog title', async () => {
+    const conversation = createConversationApi({ side: 'agency', clientId: CLIENT_ID });
+    conversation.seed({ personaId: donaMaria.id }, [{ side: 'client', body: 'Ela não compra assim', at: NOW_LATE }]);
+    const { impl } = makeFetch({ conversation });
+    renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+
+    const persona = await openPersona('Dona Maria');
+    const area = within(persona).getByRole('region', { name: 'Conversas sobre Dona Maria' });
+    // The persona dialog titles itself with an h2, so its conversation heading is an h3.
+    expect(within(area).getByRole('heading', { level: 3, name: /^Conversas/ })).toBeTruthy();
+    fireEvent.click(await within(area).findByRole('button', { name: /Ela não compra assim/ }));
+    await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(2));
+    const inner = screen.getAllByRole('dialog')[1]!;
+
+    fireEvent(inner, new Event('cancel', { bubbles: true, cancelable: true }));
+    await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(1));
+    expect(screen.getByRole('dialog', { name: 'Dona Maria' })).toBeTruthy();
+  });
 });
