@@ -13,13 +13,15 @@ import {
   type BrandColor,
   type BrandStudyResponse,
   type ClientDetailResponse,
-  type Persona
+  type Persona,
+  type ThreadSubject
 } from '@ageniza/contracts';
 import { Button, ConfirmDialog, FieldMessage, Modal, Select, Skeleton, TextInput, Textarea } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
 import { clientDetailQueryKey, formatAgencyDayMonth, useClientDetail } from './client-detail.js';
+import { Conversation } from './conversation.js';
 import { HttpClientError, useApiClient } from './http.js';
 
 const EMPTY_SECTION = 'Ainda não preenchida';
@@ -34,8 +36,6 @@ const NAME_INVALID = 'O nome contém caracteres que não são aceitos.';
 const NAME_TOO_LONG = 'O nome da persona pode ter no máximo 120 bytes.';
 const COLORS_INVALID = 'Cada cor precisa de um nome e de um código hexadecimal como #7A1F2B.';
 const PERSONA_ARCHIVE_DESCRIPTION = 'Ela some do portal e as conversas dela ficam somente leitura. Você pode desarquivar depois.';
-const CONVERSATIONS_RESERVED = 'Aqui vão ficar as conversas sobre esta parte da marca.';
-const PERSONA_CONVERSATIONS_RESERVED = 'Aqui vão ficar as conversas sobre esta persona.';
 const PERSONA_NAME_MAX_BYTES = 120;
 
 /** `specs/clientes.md` §3: the seven fixed sections, always present and always in this order. */
@@ -87,9 +87,30 @@ function UpdatedBy({ section }: { section: { updatedBy: { name: string } | null;
   return <p className="brand-section__updated">editado por {section.updatedBy.name} · {formatAgencyDayMonth(section.updatedAt)}</p>;
 }
 
-/** A reserved line inside a section card (or the persona modal), filled by #142. */
-function ReservedConversations({ text }: { text: string }) {
-  return <p className="brand-section__reserved">{text}</p>;
+/**
+ * The conversations of one subject of the study. Writing them also moves the detail's summary and
+ * the roster's "aguardando" badge, so both are invalidated here (SPEC section 6).
+ */
+function StudyConversation({ client, subject, subjectLabel, readOnly }: {
+  client: ClientDetailResponse;
+  subject: ThreadSubject;
+  subjectLabel: string;
+  readOnly: boolean;
+}) {
+  const agency = useAgencyContext();
+  const queryClient = useQueryClient();
+  const canOperate = useCan('cliente.operar');
+  return <Conversation
+    scope={{ side: 'agency', agencyId: agency.agencyId, clientId: client.id }}
+    subject={subject}
+    subjectLabel={subjectLabel}
+    canWrite={canOperate}
+    readOnly={readOnly || client.status !== 'active'}
+    onWritten={() => {
+      void queryClient.invalidateQueries({ queryKey: clientDetailQueryKey(agency.agencyId, client.id) });
+      void queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'clients'], predicate: (query) => typeof query.queryKey[3] === 'object' });
+    }}
+  />;
 }
 
 /** The in-place editor of a free-text section (Branding, Tom de voz, Posicionamento, Observações). */
@@ -561,7 +582,7 @@ function PersonaDialog({ client, persona, onClose }: { client: ClientDetailRespo
           <dt>Desejos</dt><dd>{persona.desires ?? NOT_INFORMED}</dd>
           <dt>Objeções</dt><dd>{persona.objections ?? NOT_INFORMED}</dd>
         </dl>
-        <ReservedConversations text={PERSONA_CONVERSATIONS_RESERVED} />
+        <StudyConversation client={client} subject={{ personaId: persona.id }} subjectLabel={persona.name} readOnly={persona.status === 'archived'} />
         {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
         {canEdit && <div className="brand-persona__actions">
           <Button size="sm" variant="secondary" onClick={() => { setDraft(draftFromPersona(persona)); setEditing(true); setNameError(undefined); }}>Editar</Button>
@@ -650,7 +671,7 @@ function PersonasSection({ client, personas, canEdit }: { client: ClientDetailRe
       </section>
       : <Button variant="ghost" aria-expanded={archivedOpen} onClick={() => setArchivedOpen(true)}>{`Arquivadas (${archived.length})`} <span aria-hidden="true">▾</span></Button>)}
 
-    <ReservedConversations text={CONVERSATIONS_RESERVED} />
+    <StudyConversation client={client} subject={{ sectionKey: 'personas' }} subjectLabel={SECTION_LABELS.personas} readOnly={false} />
     {error !== undefined && <FieldMessage role="alert">{error}</FieldMessage>}
 
     {currentOpen !== null && <PersonaDialog client={client} persona={currentOpen} onClose={() => setOpenPersona(null)} />}
@@ -662,8 +683,7 @@ function PersonasSection({ client, personas, canEdit }: { client: ClientDetailRe
  * The brand-study tab (`specs/clientes.md` §7, issue #138): the seven fixed sections, always in the
  * same order and always present, with in-place editing for `cliente.operar` on an active client.
  * Every edit invalidates the study and the client detail, so the counter here and the General tab
- * move together without a reload. The conversations of each section are #142 and only have their
- * reserved line here.
+ * move together without a reload. The conversations of each section and persona are #142.
  */
 export function ClientBrandStudyTab() {
   const agency = useAgencyContext();
@@ -720,20 +740,20 @@ export function ClientBrandStudyTab() {
         return <div key={key} className="brand-section">
           {header}
           <ColorsSection client={client} colors={section?.colors ?? null} canEdit={canEdit} />
-          <ReservedConversations text={CONVERSATIONS_RESERVED} />
+          <StudyConversation client={client} subject={{ sectionKey: key }} subjectLabel={SECTION_LABELS[key]} readOnly={false} />
         </div>;
       }
       if (key === 'archetype') {
         return <div key={key} className="brand-section">
           {header}
           <ArchetypeSection client={client} archetype={section?.archetype ?? null} canEdit={canEdit} />
-          <ReservedConversations text={CONVERSATIONS_RESERVED} />
+          <StudyConversation client={client} subject={{ sectionKey: key }} subjectLabel={SECTION_LABELS[key]} readOnly={false} />
         </div>;
       }
       return <div key={key} className="brand-section">
         {header}
         <TextSection client={client} sectionKey={key} section={section ?? { body: null }} canEdit={canEdit} />
-        <ReservedConversations text={CONVERSATIONS_RESERVED} />
+        <StudyConversation client={client} subject={{ sectionKey: key }} subjectLabel={SECTION_LABELS[key]} readOnly={false} />
       </div>;
     })}
   </div>;

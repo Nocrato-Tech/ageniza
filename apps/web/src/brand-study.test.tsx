@@ -5,6 +5,7 @@ import { MemoryRouter, useLocation, useNavigate, type NavigateFunction } from 'r
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { createConversationApi } from './conversation-fixture.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
@@ -129,18 +130,23 @@ interface Scenario {
   readonly patchPersona?: (personaId: string, body: unknown) => Response | Promise<Response>;
   readonly archivePersona?: (personaId: string) => Response | Promise<Response>;
   readonly unarchivePersona?: (personaId: string) => Response | Promise<Response>;
+  /** The conversation routes of #128; an empty one answers when the scenario brings none. */
+  readonly conversation?: ReturnType<typeof createConversationApi>;
 }
 
 /** Behaves like the real API: the brand-study routes of #127 plus the detail of #124. */
 const makeFetch = (scenario: Scenario = {}) => {
   const calls: string[] = [];
   const permissions = scenario.permissions ?? ADMIN_PERMISSIONS;
+  const conversation = scenario.conversation ?? createConversationApi({ side: 'agency', clientId: CLIENT_ID });
   const impl: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     const path = url.pathname;
     const method = init?.method ?? 'GET';
     calls.push(`${method} ${path}`);
     if (path.endsWith('/auth/session')) return json(sessionBody);
+    const talked = conversation.handle(url, method, init?.body === undefined ? undefined : JSON.parse(String(init.body)));
+    if (talked !== undefined) return talked;
     const me = /\/agencies\/([^/]+)\/me$/.exec(path);
     if (me !== null) return json(agencyMe(permissions));
     const section = /\/agencies\/([^/]+)\/clients\/([^/]+)\/brand-study\/sections\/([^/]+)$/.exec(path);
@@ -236,7 +242,7 @@ const openPersona = async (name: string): Promise<HTMLElement> => {
 };
 
 describe('brand study tab (#138)', () => {
-  it('renders the seven sections once each, in the SPEC order, with the counter and reserved lines', async () => {
+  it('renders the seven sections once each, in the SPEC order, with the counter and a conversation area each', async () => {
     const { impl } = makeFetch();
     const { container } = renderStudy(impl);
 
@@ -248,9 +254,14 @@ describe('brand study tab (#138)', () => {
     const headings = within(panel).getAllByRole('heading', { level: 3 }).map((element) => element.textContent);
     expect(headings).toEqual(['Branding', 'Tom de voz', 'Cores', 'Posicionamento', 'Arquétipo', 'Personas', 'Observações']);
     expect(screen.getAllByRole('heading', { name: 'Personas' })).toHaveLength(1);
-    // Every section reserves its own conversations area for #142; there is no fake control.
-    expect(screen.getAllByText('Aqui vão ficar as conversas sobre esta parte da marca.')).toHaveLength(7);
-    expect(screen.queryByRole('button', { name: /conversa/i })).toBeNull();
+    // Every section carries its own conversations area, named after it, with the way to start one.
+    const labels = ['Branding', 'Tom de voz', 'Cores', 'Posicionamento', 'Arquétipo', 'Personas', 'Observações'];
+    for (const label of labels) {
+      const area = await screen.findByRole('region', { name: `Conversas sobre ${label}` });
+      await waitFor(() => expect(within(area).getByText('Nenhuma conversa sobre esta parte')).toBeTruthy());
+      expect(within(sectionCard(container, label)).getByRole('button', { name: `Nova conversa sobre ${label}` })).toBeTruthy();
+    }
+    expect(screen.getAllByRole('button', { name: /^Nova conversa sobre/ })).toHaveLength(7);
     // Empty sections say so instead of disappearing; Branding, Cores and Arquétipo are filled.
     expect(screen.getAllByText('Ainda não preenchida')).toHaveLength(3);
     expect(screen.getByText('Marca acolhedora do bairro')).toBeTruthy();
@@ -481,7 +492,9 @@ describe('brand study tab (#138)', () => {
     // Opening a persona is reading, not editing: the detail shows the fields without its actions.
     const dialog = await openPersona('Dona Maria');
     expect(within(dialog).getByText('Dona da padaria')).toBeTruthy();
-    expect(within(dialog).getByText('Aqui vão ficar as conversas sobre esta persona.')).toBeTruthy();
+    const area = within(dialog).getByRole('region', { name: 'Conversas sobre Dona Maria' });
+    await waitFor(() => expect(within(area).getByText('Nenhuma conversa sobre esta parte')).toBeTruthy());
+    expect(within(area).queryByRole('button', { name: /Nova conversa/ })).toBeNull();
     expect(within(dialog).queryByRole('button', { name: 'Editar' })).toBeNull();
     expect(within(dialog).queryByRole('button', { name: 'Arquivar' })).toBeNull();
   });
@@ -621,7 +634,9 @@ describe('brand study tab (#138)', () => {
     expect(within(dialog).getByText('Pouco tempo')).toBeTruthy();
     expect(within(dialog).getByText('Clientes fiéis')).toBeTruthy();
     expect(within(dialog).getByText('Preço')).toBeTruthy();
-    expect(within(dialog).getByText('Aqui vão ficar as conversas sobre esta persona.')).toBeTruthy();
+    const area = within(dialog).getByRole('region', { name: 'Conversas sobre Dona Maria' });
+    await waitFor(() => expect(within(area).getByText('Nenhuma conversa sobre esta parte')).toBeTruthy());
+    expect(within(area).getByRole('button', { name: 'Nova conversa sobre Dona Maria' })).toBeTruthy();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Editar' }));
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Descrição' }), { target: { value: 'Dona da padaria e do bairro' } });
@@ -773,5 +788,91 @@ describe('brand study tab (#138)', () => {
     expect(alert.textContent).not.toContain('private diagnostic');
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
     expect(await screen.findByText('Marca acolhedora do bairro')).toBeTruthy();
+  });
+});
+
+describe('brand study conversations (#142)', () => {
+  const NOW_LATE = '2026-10-13T01:30:00.000Z';
+
+  it('opens a conversation on exactly the section it was asked on, and the write moves the Geral summary and the roster', async () => {
+    const conversation = createConversationApi({ side: 'agency', clientId: CLIENT_ID });
+    let detailData = padaria;
+    const { impl, calls } = makeFetch({ conversation, client: () => json(detailData) });
+    const { container, queryClient } = renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    // A cached roster page and the detail of the Geral tab: both must be read again after the write.
+    const rosterKey = ['agency', AGENCY_A, 'clients', { page: 1, search: '', status: 'active' }];
+    queryClient.setQueryData(rosterKey, { data: [], meta: { page: 1, pageSize: 20, totalItems: 0, totalPages: 0 } });
+    const detailReads = () => calls.filter((call) => call === `GET /agencies/${AGENCY_A}/clients/${CLIENT_ID}`).length;
+    const before = detailReads();
+
+    const tone = sectionCard(container, 'Tom de voz');
+    fireEvent.click(within(tone).getByRole('button', { name: 'Nova conversa sobre Tom de voz' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Nova conversa sobre Tom de voz' });
+    detailData = { ...padaria, summary: { ...padaria.summary, threadsAwaitingAgency: 1 } };
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Escreva a primeira mensagem' }), { target: { value: 'O tom está formal' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Iniciar conversa' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(conversation.bodies).toEqual([{ subject: { sectionKey: 'tone_of_voice' }, body: 'O tom está formal' }]);
+    await within(tone).findByText('O tom está formal');
+    // Only the section it was opened on shows it; the other six still say there is nothing.
+    expect(screen.getAllByText('Nenhuma conversa sobre esta parte')).toHaveLength(6);
+    await waitFor(() => expect(detailReads()).toBeGreaterThan(before));
+    expect(queryClient.getQueryState(rosterKey)?.isInvalidated).toBe(true);
+  });
+
+  it('opens a persona conversation inside the persona dialog, on that persona and not on the section', async () => {
+    const conversation = createConversationApi({ side: 'agency', clientId: CLIENT_ID });
+    conversation.seed({ personaId: donaMaria.id }, [{ side: 'client', body: 'Ela não compra assim', at: NOW_LATE }]);
+    conversation.seed({ sectionKey: 'personas' }, [{ side: 'client', body: 'Faltam personas jovens', at: NOW_LATE }]);
+    const { impl } = makeFetch({ conversation });
+    const { container } = renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+
+    // The section's own area lists the section thread, not the persona's.
+    const personasArea = await within(sectionCard(container, 'Personas')).findByRole('region', { name: 'Conversas sobre Personas' });
+    await within(personasArea).findByText('Faltam personas jovens');
+    expect(within(personasArea).queryByText('Ela não compra assim')).toBeNull();
+
+    const dialog = await openPersona('Dona Maria');
+    const area = within(dialog).getByRole('region', { name: 'Conversas sobre Dona Maria' });
+    await within(area).findByText('Ela não compra assim');
+    expect(within(area).queryByText('Faltam personas jovens')).toBeNull();
+    fireEvent.click(within(area).getByRole('button', { name: 'Nova conversa sobre Dona Maria' }));
+    const novo = await screen.findByRole('dialog', { name: 'Nova conversa sobre Dona Maria' });
+    fireEvent.change(within(novo).getByRole('textbox', { name: 'Escreva a primeira mensagem' }), { target: { value: 'Falemos dela' } });
+    fireEvent.click(within(novo).getByRole('button', { name: 'Iniciar conversa' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Nova conversa sobre Dona Maria' })).toBeNull());
+    expect(conversation.bodies).toEqual([{ subject: { personaId: donaMaria.id }, body: 'Falemos dela' }]);
+    await within(area).findByText('Falemos dela');
+  });
+
+  it('lets who only reads see every conversation and write none', async () => {
+    const conversation = createConversationApi({ side: 'agency', clientId: CLIENT_ID });
+    conversation.seed({ sectionKey: 'tone_of_voice' }, [{ side: 'client', body: 'O tom está formal', at: NOW_LATE }]);
+    const { impl } = makeFetch({ permissions: READER_PERMISSIONS, conversation });
+    const { container } = renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    fireEvent.click(await within(sectionCard(container, 'Tom de voz')).findByRole('button', { name: /O tom está formal/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Tom de voz' });
+    expect(within(dialog).getByText('Esta conversa é somente leitura.')).toBeTruthy();
+    expect(within(dialog).queryByRole('textbox')).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Resolver' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Nova conversa/ })).toBeNull();
+  });
+
+  it('keeps a conversation of an archived client readable and closed to writing', async () => {
+    const conversation = createConversationApi({ side: 'agency', clientId: CLIENT_ID });
+    conversation.seed({ sectionKey: 'tone_of_voice' }, [{ side: 'client', body: 'O tom está formal', at: NOW_LATE }]);
+    const { impl } = makeFetch({ conversation, client: () => json({ ...padaria, status: 'archived', archivedAt: '2026-10-04T12:00:00.000Z' }) });
+    const { container } = renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    fireEvent.click(await within(sectionCard(container, 'Tom de voz')).findByRole('button', { name: /O tom está formal/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Tom de voz' });
+    expect(within(dialog).getByText('Esta conversa é somente leitura.')).toBeTruthy();
+    expect(within(dialog).queryByRole('textbox')).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Resolver' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Nova conversa/ })).toBeNull();
   });
 });
