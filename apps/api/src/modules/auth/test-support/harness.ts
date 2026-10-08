@@ -268,6 +268,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     config: config.storage,
     requireAgencyAccess: createRequireAgencyAccess({ database }),
     requirePermission,
+    requireAnyPermission,
     jobs: mediaJobs
   };
   const profile: ProfileModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {

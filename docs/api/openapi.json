@@ -36,7 +36,7 @@
     },
     {
       "name": "media",
-      "description": "Upload direto ao armazenamento, confirmação e URLs assinadas de mídia."
+      "description": "Upload direto ao armazenamento, confirmação e URLs assinadas de mídia; as pastas de mídia de um cliente, a listagem do que há nelas e a remoção."
     },
     {
       "name": "profile",
@@ -3721,6 +3721,14 @@
             "type": "integer",
             "exclusiveMinimum": 0,
             "maximum": 10737418240
+          },
+          "clientId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "folderId": {
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
@@ -3860,6 +3868,243 @@
         "required": [
           "url",
           "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "listClientMediaFoldersResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "parentId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "isDefault": {
+                  "type": "boolean"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "parentId",
+                "name",
+                "isDefault",
+                "createdAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "pageSize": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "totalItems": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "totalPages": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "page",
+              "pageSize",
+              "totalItems",
+              "totalPages"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "createClientMediaFolderResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "parentId",
+          "name",
+          "isDefault",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "createClientMediaFolderRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "parentId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "listMediaFolderAssetsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "image",
+                    "video"
+                  ]
+                },
+                "contentType": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sizeBytes": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "videoProcessingStatus": {
+                  "type": "string",
+                  "enum": [
+                    "not_applicable",
+                    "pending",
+                    "processing",
+                    "ready",
+                    "failed"
+                  ]
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "category",
+                "contentType",
+                "sizeBytes",
+                "videoProcessingStatus",
+                "createdAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "pageSize": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "totalItems": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "totalPages": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "page",
+              "pageSize",
+              "totalItems",
+              "totalPages"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "removeMediaFolderAssetResponse": {
+        "type": "object",
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "removed": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "assetId",
+          "removed"
         ],
         "additionalProperties": false
       },
@@ -13133,11 +13378,14 @@
       "post": {
         "operationId": "createMediaUpload",
         "summary": "Inicia um upload de mídia",
-        "description": "Devolve a URL assinada de PUT ou o plano de multipart; o tipo real é validado no fim, pelo conteúdo.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar`.",
+        "description": "Devolve a URL assinada de PUT ou o plano de multipart; o tipo real é validado no fim, pelo conteúdo.\nSem `clientId` e `folderId` a mídia é da agência e exige `midia.enviar`. Com os dois, é a mídia de uma pasta do\ncliente e exige `conteudo.operar` **e** `conteudo.visualizar`: o servidor confere que a pasta é do cliente e o\ncliente é da agência (cliente de outra agência e pasta de outro cliente dão o mesmo 404), e a cota soma a agência inteira.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar` ou `conteudo.operar`.",
         "tags": [
           "media"
         ],
-        "x-permission": "midia.enviar",
+        "x-permission": [
+          "midia.enviar",
+          "conteudo.operar"
+        ],
         "parameters": [
           {
             "schema": {
@@ -13243,7 +13491,7 @@
             }
           },
           "404": {
-            "description": "NOT_FOUND: Agency not found.",
+            "description": "NOT_FOUND: Agency not found. | NOT_FOUND: Folder not found.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13262,7 +13510,7 @@
             }
           },
           "409": {
-            "description": "QUOTA_EXCEEDED: This agency has reached its storage quota.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo. | QUOTA_EXCEEDED: This agency has reached its storage quota.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13270,8 +13518,8 @@
                 },
                 "example": {
                   "error": {
-                    "code": "QUOTA_EXCEEDED",
-                    "message": "This agency has reached its storage quota."
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
@@ -13344,11 +13592,14 @@
       "post": {
         "operationId": "requestMediaUploadParts",
         "summary": "Pede URLs assinadas de partes do multipart",
-        "description": "Repetível para retomar um upload interrompido; pede só os números que ainda faltam.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar`.",
+        "description": "Repetível para retomar um upload interrompido; pede só os números que ainda faltam.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar` ou `conteudo.operar`.",
         "tags": [
           "media"
         ],
-        "x-permission": "midia.enviar",
+        "x-permission": [
+          "midia.enviar",
+          "conteudo.operar"
+        ],
         "parameters": [
           {
             "schema": {
@@ -13545,11 +13796,14 @@
       "post": {
         "operationId": "completeMediaUpload",
         "summary": "Confirma o upload e valida o objeto",
-        "description": "Valida tipo e tamanho pelo conteúdo observado no armazenamento; rejeição vira 422 e fica registrada.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar`.",
+        "description": "Valida tipo e tamanho pelo conteúdo observado no armazenamento; rejeição vira 422 e fica registrada.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar` ou `conteudo.operar`.",
         "tags": [
           "media"
         ],
-        "x-permission": "midia.enviar",
+        "x-permission": [
+          "midia.enviar",
+          "conteudo.operar"
+        ],
         "parameters": [
           {
             "schema": {
@@ -13905,6 +14159,744 @@
                   "error": {
                     "code": "VARIANT_NOT_READY",
                     "message": "This variant has not been generated yet."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/media-folders": {
+      "get": {
+        "operationId": "listClientMediaFolders",
+        "summary": "Lista as pastas de mídia de um cliente",
+        "description": "As quatro pastas padrão e as da agência, as de primeiro nível antes das de trabalho; cem por página.\nCliente arquivado continua legível; cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
+        "tags": [
+          "media"
+        ],
+        "x-permission": "conteudo.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de pastas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listClientMediaFoldersResponse"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                      "parentId": null,
+                      "name": "Vídeos",
+                      "isDefault": true,
+                      "createdAt": "2026-10-07T12:00:00.000Z"
+                    }
+                  ],
+                  "meta": {
+                    "page": 1,
+                    "pageSize": 100,
+                    "totalItems": 1,
+                    "totalPages": 1
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createClientMediaFolder",
+        "summary": "Cria uma pasta de mídia do cliente",
+        "description": "No primeiro nível, ou dentro de uma pasta de primeiro nível do mesmo cliente (`parentId`): há só dois níveis.\nExige `conteudo.operar` e também `conteudo.visualizar`, porque a resposta é uma leitura. O nome não aceita\ncaracteres de controle, invisíveis nem os dois joiners, e tem até 80 caracteres.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "tags": [
+          "media"
+        ],
+        "x-permission": "conteudo.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/createClientMediaFolderRequest"
+              },
+              "example": {
+                "name": "Lançamento de outubro",
+                "parentId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Pasta criada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createClientMediaFolderResponse"
+                },
+                "example": {
+                  "id": "12121212-1212-4121-8121-121212121212",
+                  "parentId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                  "name": "Lançamento de outubro",
+                  "isDefault": false,
+                  "createdAt": "2026-10-07T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Request payload is too large"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/media-folders/{folderId}/assets": {
+      "get": {
+        "operationId": "listMediaFolderAssets",
+        "summary": "Lista as mídias de uma pasta",
+        "description": "Só a mídia confirmada e não removida, a mais recente primeiro; quarenta e oito por página. Nunca devolve chave de\nobjeto. Cliente de outra agência, pasta de outro cliente e id inválido devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
+        "tags": [
+          "media"
+        ],
+        "x-permission": "conteudo.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "folderId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de mídias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listMediaFolderAssetsResponse"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "category": "image",
+                      "contentType": "image/png",
+                      "sizeBytes": 1048576,
+                      "videoProcessingStatus": "not_applicable",
+                      "createdAt": "2026-10-07T12:00:00.000Z"
+                    }
+                  ],
+                  "meta": {
+                    "page": 1,
+                    "pageSize": 48,
+                    "totalItems": 1,
+                    "totalPages": 1
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Folder not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Folder not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/media-folders/{folderId}/assets/{assetId}/remove": {
+      "post": {
+        "operationId": "removeMediaFolderAsset",
+        "summary": "Remove uma mídia da pasta",
+        "description": "Remoção lógica: o arquivo sai da pasta e não pode mais ser escolhido em conteúdo, mas continua contando na cota\naté a retenção apagá-lo. Recusa (409 `MEDIA_IN_USE`) a mídia de um conteúdo aguardando aprovação, aprovado ou\npublicado, arquivo ou capa. Exige `conteudo.operar` e também `conteudo.visualizar`. Repetir a chamada não é erro.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "tags": [
+          "media"
+        ],
+        "x-permission": "conteudo.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "folderId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "assetId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mídia removida da pasta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/removeMediaFolderAssetResponse"
+                },
+                "example": {
+                  "assetId": "44444444-4444-4444-8444-444444444444",
+                  "removed": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Media asset not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Media asset not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | MEDIA_IN_USE: Esta mídia está em um conteúdo enviado para aprovação, aprovado ou publicado e não pode ser removida. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"

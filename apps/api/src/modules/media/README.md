@@ -71,9 +71,22 @@ route.
 A media may belong to a client and to one of that client's folders (`client_id`, `folder_id`,
 `removed_at`, issue #247). A media with no client is read and written with `midia.enviar`, as
 before; a media of a client is read with `conteudo.visualizar` and written with `conteudo.operar`.
-No route writes the client columns yet, and the storage quota still counts through the caller's
-RLS: the Conteúdo upload route must count the agency's whole usage before it opens (see
-`docs/business/decisions/2026-10-07-conteudo-pastas-de-midia-e-midia-com-cliente-no-banco.md`).
+`removed_at` has no write grant: a media leaves its folder only through
+`app_private.remove_media_asset`, which refuses one that a content waiting for approval, approved or
+published uses. The storage quota is `app_private.agency_media_usage`, summed over the whole agency
+whatever the caller's RLS lets it read (issue #253; see the decisions of 2026-10-07).
+
+## The client's media library (issue #253)
+
+`folder-routes.ts` serves the folders and the media of a client under
+`/agencies/:agencyId/clients/:clientId/media-folders`: list and create folders, list the media of a
+folder (confirmed and not removed, newest first) and remove one. A client of another agency, a folder
+of another client and a malformed id are the same 404. The writes need `conteudo.operar` **and**
+`conteudo.visualizar`. `POST /agencies/:agencyId/media/uploads` takes an optional `clientId` and
+`folderId`, both or neither; with them the route locks the folder (`app_private.lock_media_folder`),
+checks the pair and the client, and demands the same two permissions instead of `midia.enviar`.
+`parts` and `complete` accept either family, and RLS decides which media a role sees. What is not
+here yet: a signed read URL for a role that only holds `conteudo.visualizar`.
 
 ## Environment variables
 
