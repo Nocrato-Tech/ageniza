@@ -295,7 +295,8 @@ const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, (c
  * The "aguardando a agência" count comes from the single definition in `thread-state.ts`, the same
  * one the detail summary and the portal use, and is a correlated subquery over `client_threads`
  * so the `client_thread_comments (thread_id, created_at)` index from #122 answers the last-comment
- * lookup. The count of the whole filtered set is a second, simple `count(*)`, never all the rows.
+ * lookup. The count of the whole filtered set rides the page's own statement (`count(*) over ()`),
+ * so `data` and `totalItems` come from one snapshot; only a page past the end asks again.
  *
  * A parameter the SPEC does not declare does not exist: the caller only ever adds the named
  * conditions above, and every value is a bind.
@@ -356,20 +357,16 @@ export const listClients = async (
   // The CTE's agency bind appears before the WHERE binds in the statement text.
   const itemBindings: SqlBinding[] = filters.includePendingInvitations ? [agencyId, ...bindings] : [...bindings];
 
-  const countResult = await raw<RawRows<{ total: string | number }>>(transaction, `
-    select count(*) as total
-    from public.clients client
-    where ${where}
-  `, bindings);
-  const totalItems = Number(countResult.rows[0]?.total ?? 0);
-
   // A derived table because PostgreSQL does not accept an output alias inside an ORDER BY
   // expression (`ORDER BY threads_awaiting_agency > 0` over the subquery output is valid).
+  // The folded name is compared byte by byte (`collate "C"`), so space, hyphen and digit order the
+  // same in every database, like the collaborators list (#355).
+  const foldedName = `${foldTextSql('listing.name')} collate "C"`;
   const orderBy = filters.sort === 'name:asc'
-    ? `${foldTextSql('listing.name')} asc, listing.id asc`
-    : `(listing.threads_awaiting_agency > 0) desc, ${foldTextSql('listing.name')} asc, listing.id asc`;
+    ? `${foldedName} asc, listing.id asc`
+    : `(listing.threads_awaiting_agency > 0) desc, ${foldedName} asc, listing.id asc`;
 
-  const itemsResult = await raw<RawRows<ClientListRow>>(transaction, `
+  const itemsResult = await raw<RawRows<ClientListRow & { readonly total: string | number }>>(transaction, `
     ${pendingInvitationsCte}
     select
       listing.id,
@@ -379,7 +376,8 @@ export const listClients = async (
       listing.status,
       listing.closing_date,
       listing.threads_awaiting_agency,
-      listing.pending_invitations
+      listing.pending_invitations,
+      count(*) over () as total
     from (
       select
         client.id,
@@ -404,7 +402,18 @@ export const listClients = async (
     limit ? offset ?
   `, [...itemBindings, pagination.pageSize, pagination.offset]);
 
-  return { items: itemsResult.rows, totalItems };
+  if (itemsResult.rows.length > 0) {
+    return { items: itemsResult.rows, totalItems: Number(itemsResult.rows[0]?.total ?? 0) };
+  }
+  // An empty first page is the whole truth; a second count could only answer from another snapshot.
+  if (pagination.offset === 0) return { items: [], totalItems: 0 };
+
+  const countResult = await raw<RawRows<{ total: string | number }>>(transaction, `
+    select count(*) as total
+    from public.clients client
+    where ${where}
+  `, bindings);
+  return { items: [], totalItems: Number(countResult.rows[0]?.total ?? 0) };
 };
 
 // --- Brand study and personas (specs/clientes.md section 3) ---------------------------------
