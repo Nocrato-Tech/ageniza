@@ -36,24 +36,38 @@ const portalClient = {
 interface World {
   /** What the server says about the session; flipped by the test, never by the page. */
   sessionAlive: boolean;
-  /** Makes `GET /auth/session` fail without a verdict (network error or 5xx) instead of answering. */
+  /** Makes `GET /auth/session/check` fail without a verdict (network error or 5xx) instead of answering. */
   sessionCheck: 'answer' | 'unreachable' | 'unavailable';
+  /** Holds the answer of `GET /auth/session/check` until `release` is called. */
+  hold: boolean;
+  release: () => void;
+  /** `GET /auth/session`, which the app makes once when it opens. */
+  initialLoads: number;
+  /** `GET /auth/session/check`, the periodic one: the only route that must not renew the session. */
   sessionChecks: number;
-  requests: string[];
+  /** Anything else the page asked for from the `/auth/session` family, which must never be the renewing route. */
+  renewingChecks: number;
 }
 
 const makeWorld = (): { world: World; impl: typeof fetch } => {
-  const world: World = { sessionAlive: true, sessionCheck: 'answer', sessionChecks: 0, requests: [] };
-  const impl: typeof fetch = async (input, init) => {
+  let open: () => void = () => undefined;
+  const world: World = {
+    sessionAlive: true, sessionCheck: 'answer', hold: false, release: () => open(), initialLoads: 0, sessionChecks: 0, renewingChecks: 0
+  };
+  const impl: typeof fetch = async (input) => {
     const path = new URL(String(input)).pathname;
-    world.requests.push(`${init?.method ?? 'GET'} ${path}`);
     if (path === '/auth/session') {
+      world.initialLoads += 1;
+      if (world.initialLoads > 1) world.renewingChecks += 1;
+    }
+    if (path === '/auth/session/check') {
       world.sessionChecks += 1;
+      if (world.hold) await new Promise<void>((resolve) => { open = resolve; });
       if (world.sessionAlive && world.sessionCheck === 'unreachable') throw new TypeError('network down');
       if (world.sessionAlive && world.sessionCheck === 'unavailable') return json({ error: { code: 'INTERNAL_ERROR', message: 'Unexpected error.' } }, 500);
     }
     if (!world.sessionAlive) return unauthenticated();
-    if (path === '/auth/session') return json(sessionBody);
+    if (path === '/auth/session' || path === '/auth/session/check') return json(sessionBody);
     if (path === '/me/legal-acceptances') return json(legalAccepted);
     if (path === '/me/contexts') {
       return json({ contexts: [{ type: 'client', clientId: CLIENT_ID, clientName: 'Padaria Central', agencyId: AGENCY_ID, agencyName: 'Agência Um', onboardingPending: false }] });
@@ -110,15 +124,20 @@ const setVisibility = (state: 'visible' | 'hidden'): void => {
 };
 
 const tick = async (ms: number): Promise<void> => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
+const focus = async (): Promise<void> => { await act(async () => { document.dispatchEvent(new Event('visibilitychange')); }); };
 
 const AREAS = [
   { label: 'agency area', entry: `/agencia/${AGENCY_ID}`, ready: () => screen.findByRole('link', { name: 'Agência Um' }) },
-  { label: 'portal', entry: `/portal/${CLIENT_ID}/inicio`, ready: () => screen.findByRole('heading', { name: 'Olá, Maria' }) }
+  { label: 'portal', entry: `/portal/${CLIENT_ID}/inicio`, ready: () => screen.findByRole('heading', { name: 'Olá, Maria' }) },
+  // The generic protected layout (the context chooser and the protected not-found).
+  { label: 'protected layout', entry: '/rota-que-nao-existe', ready: () => screen.findByRole('heading', { name: /não encontrada|not found/i }) }
 ] as const;
 
+const SESSION_DEAD_AREAS = [AREAS[0], AREAS[1]] as const;
+
 beforeEach(() => {
-  // Only the interval is faked: the HTTP client and the router keep their real timers.
-  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  // The timers and the clock are faked: the HTTP client and the router keep their real setTimeout.
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
   setVisibility('visible');
 });
 
@@ -135,15 +154,15 @@ describe.each(AREAS)('the session check in the $label', ({ entry, ready }) => {
     const { world, impl } = makeWorld();
     renderAt(entry, impl);
     await ready();
-    const checksAtStart = world.sessionChecks;
-    expect(checksAtStart).toBe(1);
+    expect(world.initialLoads).toBe(1);
+    expect(world.sessionChecks).toBe(0);
 
     // The owner asked for 30 to 60 s: nothing is asked before 30 s, exactly one check falls inside the
     // first minute, and a live session is not disturbed by it.
     await tick(29_999);
-    expect(world.sessionChecks).toBe(checksAtStart);
+    expect(world.sessionChecks).toBe(0);
     await tick(30_001);
-    expect(world.sessionChecks).toBe(checksAtStart + 1);
+    expect(world.sessionChecks).toBe(1);
     expect(currentLocation).toBe(entry);
 
     // Removed from the agency or the client: the server ends the session; the tab sends nothing itself.
@@ -154,10 +173,26 @@ describe.each(AREAS)('the session check in the $label', ({ entry, ready }) => {
     expect(sessionDestination(currentState)).toBe(entry);
     expect(screen.getByText('Sessão encerrada')).toBeTruthy();
 
-    // Once signed out nothing keeps asking.
+    // Once signed out nothing keeps asking: not on the timer, and not when the tab comes back to the foreground.
     const checksAfterEnd = world.sessionChecks;
     await tick(3 * 60_000);
+    await focus();
+    await tick(15_000);
+    await focus();
     expect(world.sessionChecks).toBe(checksAfterEnd);
+  });
+
+  it('never asks through the route that renews the session: a forgotten tab must not keep it alive', async () => {
+    const { world, impl } = makeWorld();
+    renderAt(entry, impl);
+    await ready();
+
+    await tick(60_000);
+    await focus();
+    await tick(60_000);
+
+    expect(world.sessionChecks).toBeGreaterThanOrEqual(2);
+    expect(world.renewingChecks).toBe(0);
   });
 
   it('checks as soon as the tab comes back to the foreground, and not while it is hidden', async () => {
@@ -167,18 +202,71 @@ describe.each(AREAS)('the session check in the $label', ({ entry, ready }) => {
 
     setVisibility('hidden');
     world.sessionAlive = false;
-    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await focus();
     await tick(2 * 60_000);
-    expect(world.sessionChecks).toBe(1);
+    expect(world.sessionChecks).toBe(0);
     expect(currentLocation).toBe(entry);
 
     setVisibility('visible');
-    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await focus();
     await tick(0);
 
-    expect(world.sessionChecks).toBe(2);
+    expect(world.sessionChecks).toBe(1);
     expect(currentLocation).toBe('/entrar');
     expect(sessionDestination(currentState)).toBe(entry);
+  });
+
+  it('keeps one check at a time: a focus, a second focus and the timer while the answer is pending ask nothing more', async () => {
+    const { world, impl } = makeWorld();
+    renderAt(entry, impl);
+    await ready();
+
+    world.hold = true;
+    await tick(60_000);
+    expect(world.sessionChecks).toBe(1);
+
+    // The answer has not come back: the tab returns twice, a long time passes (timers fire), nothing is asked.
+    await focus();
+    await focus();
+    await tick(3 * 60_000);
+    await focus();
+    expect(world.sessionChecks).toBe(1);
+
+    world.hold = false;
+    await act(async () => { world.release(); });
+    await tick(0);
+
+    // With the answer in, the next check is possible again.
+    await tick(60_000);
+    expect(world.sessionChecks).toBe(2);
+  });
+
+  it('does not ask again when the tab returns right after a check, and restarts the interval after each check', async () => {
+    const { world, impl } = makeWorld();
+    renderAt(entry, impl);
+    await ready();
+
+    // A check at 40 s, by the focus (the first one is never held back).
+    await tick(40_000);
+    await focus();
+    expect(world.sessionChecks).toBe(1);
+
+    // Back and forth a moment later: held back. The old timer would have fired at 45 s: it does not.
+    await focus();
+    await tick(5_000);
+    await focus();
+    expect(world.sessionChecks).toBe(1);
+
+    // The interval counts from the last check (40 s): the next tick is at 85 s.
+    await tick(39_999);
+    expect(world.sessionChecks).toBe(1);
+    await tick(1);
+    expect(world.sessionChecks).toBe(2);
+
+    // Past the gap, a focus asks again.
+    await tick(11_000);
+    await focus();
+    expect(world.sessionChecks).toBe(3);
   });
 
   it.each(['unreachable', 'unavailable'] as const)('does not end the session when the check cannot reach the API (%s): only a 401 does', async (failure) => {
@@ -188,7 +276,7 @@ describe.each(AREAS)('the session check in the $label', ({ entry, ready }) => {
 
     world.sessionCheck = failure;
     await tick(60_000);
-    expect(world.sessionChecks).toBe(2);
+    expect(world.sessionChecks).toBe(1);
     expect(currentLocation).toBe(entry);
     expect(screen.queryByText('Sessão encerrada')).toBeNull();
 
@@ -200,18 +288,35 @@ describe.each(AREAS)('the session check in the $label', ({ entry, ready }) => {
   });
 });
 
+describe.each(SESSION_DEAD_AREAS)('the $label without a session', ({ entry }) => {
+  it('shows the unavailable page and asks nothing about the session, on the timer or on focus', async () => {
+    const { world, impl } = makeWorld();
+    world.sessionAlive = false;
+    renderAt(entry, impl);
+    await screen.findByRole('heading', { name: 'Workspace unavailable' });
+    expect(world.initialLoads).toBe(1);
+
+    await tick(3 * 60_000);
+    await focus();
+    await tick(15_000);
+    await focus();
+
+    expect(world.sessionChecks).toBe(0);
+    expect(currentLocation).toBe(entry);
+  });
+});
+
 describe('where the check does not run', () => {
   it('does not poll a public page: a visitor has no session to lose', async () => {
     const { world, impl } = makeWorld();
     world.sessionAlive = false;
     renderAt('/termos', impl);
     await screen.findByRole('heading', { level: 1 });
-    const checksAtStart = world.sessionChecks;
 
     await tick(3 * 60_000);
-    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await focus();
 
-    expect(world.sessionChecks).toBe(checksAtStart);
+    expect(world.sessionChecks).toBe(0);
     expect(currentLocation).toBe('/termos');
   });
 });
