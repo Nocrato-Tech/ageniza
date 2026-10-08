@@ -12,6 +12,6 @@
 
 **Consequência.** Se o dono preferir que a remoção do próprio acesso também derrube a sessão corrente, é tirar a exclusão da sessão corrente do `DELETE` (`revokeUserSessions`) e inverter um teste (`does not end the session of whoever removes, not even when they remove their own portal link`); sem migration.
 
-**Origem.** Issue #411; revisão de segurança do PR #417 (pergunta 6 e achado 3).
+**Origem.** Issue #411; revisão de segurança do PR #417 (pergunta 6 e achado 3). O dono validou a exceção em 2026-10-08.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-10-08.
