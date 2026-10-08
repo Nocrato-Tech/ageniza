@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
+import { portalClientBody } from './portal-fixture.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 
@@ -92,9 +93,12 @@ describe('route boundaries', () => {
   });
 
   it('keeps the account menu with the person identity on the client portal', async () => {
-    renderRoute('/portal/11111111-1111-4111-8111-111111111111', true);
+    const clientId = '11111111-1111-4111-8111-111111111111';
+    renderRoute(`/portal/${clientId}/inicio`, true, async (input) => (
+      String(input).endsWith(`/clients/${clientId}`) ? json(portalClientBody(clientId, 'Cliente Um')) : authenticatedFetch(input)
+    ));
+    expect(await screen.findByRole('heading', { name: 'Olá, Pessoa' })).toBeTruthy();
     expectAccountMenu();
-    expect(screen.getByRole('heading', { name: 'Portal do cliente' })).toBeTruthy();
   });
 
   it('keeps the account menu on the global not-found when there is a session', () => {

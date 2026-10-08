@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
+import { portalClientBody } from './portal-fixture.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
@@ -64,6 +65,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     }
     if (url.includes('/invitations/')) { calls.push('preview'); return scenario.preview?.() ?? json(previewBody(false)); }
     if (url.endsWith('/auth/session')) return serverLoggedIn ? json({ ...sessionBody, user: currentUser }) : unauthenticated();
+    if (url.endsWith(`/clients/${CLIENT_A}`)) return json(portalClientBody(CLIENT_A, 'Cliente Um'));
     if (url.endsWith('/auth/login')) { calls.push('login'); loginBodies.push(JSON.parse(String(init?.body))); serverLoggedIn = true; return json({ user: currentUser }); }
     if (url.endsWith('/me/contexts/resolve')) {
       calls.push('resolve');
@@ -296,9 +298,16 @@ describe('InvitationPage (/convite/:token)', () => {
     const { probe } = renderInvite(impl);
     await screen.findByRole('heading', { name: 'Você foi convidado' });
     fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
-    await waitFor(() => expect(probe.pathname).toBe(`/portal/${CLIENT_A}`));
+    // The destination is the Início itself: the index redirect used to change the path under the notice.
+    await waitFor(() => expect(probe.pathname).toBe(`/portal/${CLIENT_A}/inicio`));
 
     await findNotice('Você já fazia parte de Agência Um. Nada mudou no seu acesso.');
+
+    // The first frame is not the proof: the notice must outlive the shell settling (greeting on screen).
+    await screen.findByRole('heading', { name: 'Olá, Pessoa' });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+    expect(probe.pathname).toBe(`/portal/${CLIENT_A}/inicio`);
+    expect(screen.getByRole('status').textContent).toBe('Você já fazia parte de Agência Um. Nada mudou no seu acesso.');
   });
 
   it('enters the invitation context, not the one the session would resolve', async () => {

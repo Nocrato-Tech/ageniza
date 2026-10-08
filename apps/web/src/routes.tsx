@@ -22,7 +22,7 @@ import { termsOfUse } from './legal/terms.js';
 import { LoginPage } from './login.js';
 import { NoAccessPage } from './no-access.js';
 import { ClientAccessTab } from './portal-access.js';
-import { PortalAreaLayout, PortalHomePage } from './portal.js';
+import { PortalAreaLayout, PortalHomePage, PortalSkeletonPage } from './portal.js';
 import { ResetPasswordPage } from './reset-password.js';
 import { LoadingPage, NotFoundPage, SessionGate } from './status-pages.js';
 
@@ -98,10 +98,19 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       </Route>
       <Route path="*" element={<NotFoundPage as="section" />} />
     </Route>
+    {/* The portal carries its own shell (header and bottom bar), like the agency area: the generic
+        protected header never stacks above it (specs/clientes.md §7). */}
+    <Route path="portal/:clienteId" element={<SessionGate session={session}><PortalAreaLayout /></SessionGate>}>
+      <Route index element={<Navigate to="inicio" replace />} />
+      <Route path="inicio" element={<PortalHomePage />} />
+      <Route path="calendario" element={<PortalSkeletonPage title="Calendário" description="Aqui você vai ver os posts planejados para sua marca e aprovar cada um." />} />
+      {/* The Marca address belongs to #143; the shell reserves it so the bottom bar has no dead
+          item, and the next action has somewhere to lead. */}
+      <Route path="marca" element={<PortalSkeletonPage title="Marca" description="Aqui você vai ver o estudo da sua marca e conversar com a agência sobre ele." />} />
+      <Route path="relatorios" element={<PortalSkeletonPage title="Relatórios" description="Aqui você vai ver os resultados do trabalho que sua agência faz para você." />} />
+      <Route path="*" element={<NotFoundPage as="section" />} />
+    </Route>
     <Route element={<ProtectedLayout session={session} />}>
-      <Route path="portal/:clienteId" element={<PortalAreaLayout />}>
-        <Route index element={<PortalHomePage />} />
-      </Route>
       <Route path="contextos" element={<ContextSelectPage />} />
       {/* `/app` is not a destination anymore; the resolve decides where the person enters. */}
       <Route path="app" element={<Navigate to="/contextos" replace />} />
