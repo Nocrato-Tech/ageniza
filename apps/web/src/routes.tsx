@@ -23,6 +23,7 @@ import { LoginPage } from './login.js';
 import { NoAccessPage } from './no-access.js';
 import { ClientAccessTab } from './portal-access.js';
 import { PortalAreaLayout, PortalHomePage, PortalSkeletonPage } from './portal.js';
+import { PortalBrandPage } from './portal-brand.js';
 import { ResetPasswordPage } from './reset-password.js';
 import { SessionWatch } from './session-watch.js';
 import { LoadingPage, NotFoundPage, SessionGate } from './status-pages.js';
@@ -106,9 +107,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route index element={<Navigate to="inicio" replace />} />
       <Route path="inicio" element={<PortalHomePage />} />
       <Route path="calendario" element={<PortalSkeletonPage title="Calendário" description="Aqui você vai ver os posts planejados para sua marca e aprovar cada um." />} />
-      {/* The Marca address belongs to #143; the shell reserves it so the bottom bar has no dead
-          item, and the next action has somewhere to lead. */}
-      <Route path="marca" element={<PortalSkeletonPage title="Marca" description="Aqui você vai ver o estudo da sua marca e conversar com a agência sobre ele." />} />
+      <Route path="marca" element={<PortalBrandPage />} />
       <Route path="relatorios" element={<PortalSkeletonPage title="Relatórios" description="Aqui você vai ver os resultados do trabalho que sua agência faz para você." />} />
       <Route path="*" element={<NotFoundPage as="section" />} />
     </Route>

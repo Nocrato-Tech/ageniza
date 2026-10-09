@@ -41,6 +41,8 @@ export interface ConversationProps {
   readonly readOnly: boolean;
   /** Called after a write the conversation cannot invalidate itself (client summary, roster badge). */
   readonly onWritten: () => void;
+  /** Called when a write is refused because the subject changed under the person (persona archived, section emptied). */
+  readonly onStale?: () => void;
   /** The heading level of "Conversas", so it nests under whatever heading holds the area. */
   readonly headingLevel?: 3 | 4;
 }
@@ -51,6 +53,36 @@ const COMMENTS_PAGE_SIZE = 50;
 const NO_EDIT_NOTE = 'Depois de enviada, a mensagem não pode ser editada nem apagada.';
 const SIDE_LABEL: Record<ConversationSide, string> = { agency: 'agência', client: 'cliente' };
 const SIDE_TITLE: Record<ConversationSide, string> = { agency: 'Agência', client: 'Cliente' };
+
+/** The wording of opening a conversation: the agency "starts a conversation", the client "suggests". */
+const OPENING: Record<ConversationSide, {
+  readonly buttonName: (subjectLabel: string) => string;
+  readonly title: (subjectLabel: string) => string;
+  readonly closeLabel: string;
+  readonly composerLabel: string;
+  readonly submit: string;
+  readonly placeholder: string | undefined;
+  readonly note: string | undefined;
+}> = {
+  agency: {
+    buttonName: (subjectLabel) => `Nova conversa sobre ${subjectLabel}`,
+    title: (subjectLabel) => `Nova conversa sobre ${subjectLabel}`,
+    closeLabel: 'Fechar nova conversa',
+    composerLabel: 'Escreva a primeira mensagem',
+    submit: 'Iniciar conversa',
+    placeholder: undefined,
+    note: undefined
+  },
+  client: {
+    buttonName: (subjectLabel) => `Sugerir sobre ${subjectLabel}`,
+    title: (subjectLabel) => `Sugerir sobre "${subjectLabel}"`,
+    closeLabel: 'Fechar sugestão',
+    composerLabel: 'Escreva sua sugestão',
+    submit: 'Enviar',
+    placeholder: 'Escreva aqui',
+    note: 'A agência vai ver e responder por aqui.'
+  }
+};
 
 const subjectKeyOf = (subject: ThreadSubject): string => ('sectionKey' in subject ? `section:${subject.sectionKey}` : `persona:${subject.personaId}`);
 
@@ -98,11 +130,18 @@ const bodyProblem = (body: string): string | undefined => {
   return undefined;
 };
 
-const writeError = (error: unknown): string => {
+const isStaleSubject = (error: unknown): boolean =>
+  error instanceof HttpClientError && (error.code === 'PERSONA_ARCHIVED' || error.code === 'SECTION_NOT_FILLED');
+
+const writeError = (error: unknown, side: ConversationSide): string => {
   if (!(error instanceof HttpClientError)) return 'Não foi possível enviar. Tente de novo.';
   if (error.code === 'CLIENT_ARCHIVED') return 'Cliente arquivado: a conversa está somente leitura.';
-  if (error.code === 'PERSONA_ARCHIVED') return 'Persona arquivada: a conversa está somente leitura.';
-  if (error.code === 'SECTION_NOT_FILLED') return 'Esta parte ainda não foi preenchida.';
+  if (error.code === 'PERSONA_ARCHIVED') {
+    return side === 'client' ? 'Esta parte não está mais disponível para conversa.' : 'Persona arquivada: a conversa está somente leitura.';
+  }
+  if (error.code === 'SECTION_NOT_FILLED') {
+    return side === 'client' ? 'Sua agência está preparando esta parte.' : 'Esta parte ainda não foi preenchida.';
+  }
   if (error.status === 403) return 'Você não tem permissão para conversar aqui.';
   if (error.status === 404) return 'Esta conversa não existe mais.';
   if (error.status === 400) return 'Revise o texto e tente de novo.';
@@ -112,9 +151,11 @@ const writeError = (error: unknown): string => {
 const authorName = (comment: ThreadComment): string => comment.author?.name ?? (comment.side === 'agency' ? 'Agência' : 'Cliente');
 
 /** The writing box shared by the first message and the answers: the text leaves only once confirmed. */
-function Composer({ label, submitLabel, pending, error, onSubmit, onEdit }: {
+function Composer({ label, submitLabel, placeholder, note, pending, error, onSubmit, onEdit }: {
   label: string;
   submitLabel: string;
+  placeholder?: string | undefined;
+  note?: string | undefined;
   pending: boolean;
   error: string | undefined;
   onSubmit: (body: string) => void;
@@ -137,9 +178,11 @@ function Composer({ label, submitLabel, pending, error, onSubmit, onEdit }: {
       id={fieldId}
       value={draft}
       rows={4}
+      placeholder={placeholder}
       readOnly={pending}
       onChange={(event) => { setDraft(event.target.value); setProblem(undefined); onEdit(); }}
     />
+    {note !== undefined && <p className="conversation__note">{note}</p>}
     <p className="conversation__note">{NO_EDIT_NOTE}</p>
     {(problem ?? error) !== undefined && <FieldMessage role="alert">{problem ?? error}</FieldMessage>}
     <div className="conversation__actions">
@@ -163,7 +206,7 @@ function CommentItem({ comment }: { comment: ThreadComment }) {
 }
 
 function OpenThread({ props, thread, onClose }: { props: ConversationProps; thread: Thread; onClose: () => void }) {
-  const { scope, subjectLabel, canWrite, readOnly, onWritten } = props;
+  const { scope, subjectLabel, canWrite, readOnly, onWritten, onStale } = props;
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
   const routes = routesOf(scope);
@@ -198,13 +241,13 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
       response: CommentSchema
     }),
     onSuccess: () => { setSendError(undefined); setSent((count) => count + 1); refresh(); },
-    onError: (error: unknown) => { setSendError(writeError(error)); }
+    onError: (error: unknown) => { setSendError(writeError(error, scope.side)); if (isStaleSubject(error)) onStale?.(); }
   });
 
   const resolve = useMutation({
     mutationFn: () => httpClient.request({ path: routes.resolve(thread.id), method: 'POST', response: ThreadSchema }),
     onSuccess: () => { setResolveError(undefined); refresh(); },
-    onError: (error: unknown) => { setResolveError(writeError(error)); }
+    onError: (error: unknown) => { setResolveError(writeError(error, scope.side)); if (isStaleSubject(error)) onStale?.(); }
   });
 
   const items = comments.data?.pages.flatMap((page) => page.data) ?? [];
@@ -226,7 +269,11 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
       </ol>}
       {comments.hasNextPage && <Button variant="secondary" loading={comments.isFetchingNextPage} onClick={() => { void comments.fetchNextPage(); }}>Ver mensagens mais novas</Button>}
       {thread.state === 'resolved' && thread.resolvedAt !== null && <p className="conversation__resolved">
-        Resolvida {thread.resolvedBy?.name ? `por ${thread.resolvedBy.name}` : 'pela agência'} em {formatDay(thread.resolvedAt)}
+        {scope.side === 'client'
+          ? (thread.resolvedBy?.name
+            ? `Concluída por ${thread.resolvedBy.name} em ${formatDay(thread.resolvedAt)}`
+            : `A agência concluiu esta conversa em ${formatDay(thread.resolvedAt)}`)
+          : `Resolvida ${thread.resolvedBy?.name ? `por ${thread.resolvedBy.name}` : 'pela agência'} em ${formatDay(thread.resolvedAt)}`}
       </p>}
       {writable
         ? <Composer
@@ -248,10 +295,11 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
 }
 
 function NewConversationDialog({ props, onClose }: { props: ConversationProps; onClose: () => void }) {
-  const { scope, subject, subjectLabel, onWritten } = props;
+  const { scope, subject, subjectLabel, onWritten, onStale } = props;
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | undefined>();
+  const wording = OPENING[scope.side];
 
   const open = useMutation({
     mutationFn: (body: string) => httpClient.request({
@@ -265,13 +313,15 @@ function NewConversationDialog({ props, onClose }: { props: ConversationProps; o
       onWritten();
       onClose();
     },
-    onError: (failure: unknown) => { setError(writeError(failure)); }
+    onError: (failure: unknown) => { setError(writeError(failure, scope.side)); if (isStaleSubject(failure)) onStale?.(); }
   });
 
-  return <Modal title={`Nova conversa sobre ${subjectLabel}`} closeLabel="Fechar nova conversa" onClose={onClose}>
+  return <Modal title={wording.title(subjectLabel)} closeLabel={wording.closeLabel} onClose={onClose}>
     <Composer
-      label="Escreva a primeira mensagem"
-      submitLabel="Iniciar conversa"
+      label={wording.composerLabel}
+      submitLabel={wording.submit}
+      placeholder={wording.placeholder}
+      note={wording.note}
       pending={open.isPending}
       error={error}
       onEdit={() => setError(undefined)}
@@ -289,7 +339,7 @@ const openFirst = (threads: readonly Thread[]): Thread[] => [
 function ThreadRow({ thread, viewer, onOpen }: { thread: Thread; viewer: ConversationSide; onOpen: () => void }) {
   const awaiting = awaitsViewer(thread, viewer);
   const status = thread.state === 'resolved'
-    ? 'resolvida'
+    ? (viewer === 'client' ? 'concluída' : 'resolvida')
     : awaiting ? (viewer === 'agency' ? 'aguardando você' : 'a agência respondeu') : 'aberta';
   return <li>
     <button type="button" className="conversation__thread" onClick={onOpen}>
@@ -308,6 +358,7 @@ function ThreadRow({ thread, viewer, onOpen }: { thread: Thread; viewer: Convers
 export function Conversation(props: ConversationProps) {
   const { scope, subject, subjectLabel, canWrite, readOnly, headingLevel = 4 } = props;
   const Heading = `h${headingLevel}` as const;
+  const opening = OPENING[scope.side];
   const httpClient = useApiClient();
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -335,7 +386,9 @@ export function Conversation(props: ConversationProps) {
       {awaiting > 0 && <span className="conversation__status conversation__status--awaiting">
         {scope.side === 'agency' ? `${awaiting} aguardando` : `${awaiting} com resposta da agência`}
       </span>}
-      {writable && <Button size="sm" variant="secondary" aria-label={`Nova conversa sobre ${subjectLabel}`} onClick={() => setCreating(true)}><span aria-hidden="true">+</span> conversa</Button>}
+      {writable && (scope.side === 'client'
+        ? <Button variant="secondary" aria-label={opening.buttonName(subjectLabel)} onClick={() => setCreating(true)}>Sugerir</Button>
+        : <Button size="sm" variant="secondary" aria-label={opening.buttonName(subjectLabel)} onClick={() => setCreating(true)}><span aria-hidden="true">+</span> conversa</Button>)}
     </header>
 
     {threads.isPending && <div className="conversation__threads-skeleton" aria-busy="true"><Skeleton /><Skeleton /></div>}

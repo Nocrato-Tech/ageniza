@@ -15,6 +15,7 @@ import { createQueryClient } from './query.js';
 import { portalClientQueryKey } from './portal.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
+import { portalStudyBody } from './portal-fixture.js';
 
 afterEach(cleanup);
 
@@ -111,6 +112,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     if (path.endsWith('/me/contexts')) return json(contextsBody);
     if (path.endsWith('/me/legal-acceptances')) return scenario.legal?.() ?? json(legalAccepted);
     if (path === `/clients/${CLIENT_ID}`) return scenario.portal?.() ?? json(portalClient());
+    if (path === `/clients/${CLIENT_ID}/brand-study`) return json(portalStudyBody());
     if (path === `/clients/${OTHER_CLIENT_ID}`) return json(portalClient({ id: OTHER_CLIENT_ID, name: 'Outro Cliente' }));
     if (path.endsWith('/agencies/' + AGENCY_A + '/me')) return json(agencyMe);
     const photo = new RegExp(`/agencies/${AGENCY_A}/clients/([^/]+)/photo$`).exec(path);
@@ -197,7 +199,7 @@ describe('client portal shell (#141)', () => {
     expect(probe.pathname).toBe(portalUrl('relatorios'));
 
     clickTab('Marca');
-    expect(await screen.findByRole('heading', { name: 'Marca' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Sua marca' })).toBeTruthy();
     expect(probe.pathname).toBe(portalUrl('marca'));
 
     clickTab('Início');
@@ -228,7 +230,7 @@ describe('client portal shell (#141)', () => {
     expect(screen.queryByText(/A agência respondeu/)).toBeNull();
     expect(within(screen.getByRole('link', { name: /Conheça o estudo da sua marca/ })).getByText('ver')).toBeTruthy();
     fireEvent.click(screen.getByRole('link', { name: /Conheça o estudo da sua marca/ }));
-    expect(await screen.findByRole('heading', { name: 'Marca' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Sua marca' })).toBeTruthy();
     expect(first.probe.pathname).toBe(portalUrl('marca'));
     cleanup();
 
@@ -257,7 +259,6 @@ describe('client portal shell (#141)', () => {
 
   it.each([
     ['Calendário', 'Aqui você vai ver os posts planejados para sua marca e aprovar cada um.'],
-    ['Marca', 'Aqui você vai ver o estudo da sua marca e conversar com a agência sobre ele.'],
     ['Relatórios', 'Aqui você vai ver os resultados do trabalho que sua agência faz para você.']
   ])('draws %s as a skeleton with its reason and no clickable control', async (label, sentence) => {
     const { impl } = makeFetch();
@@ -282,7 +283,7 @@ describe('client portal shell (#141)', () => {
 
     for (const label of ['Calendário', 'Marca', 'Relatórios']) {
       clickTab(label);
-      await screen.findByRole('heading', { name: label });
+      await screen.findByRole('heading', { name: label === 'Marca' ? 'Sua marca' : label });
       expect(document.title).toBe(`${label} — Portal do cliente — Ageniza`);
     }
 

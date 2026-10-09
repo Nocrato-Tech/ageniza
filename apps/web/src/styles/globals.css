@@ -2351,3 +2351,41 @@ a.client-general__block:hover {
   margin: 0;
   color: var(--text-secondary);
 }
+
+/* --- Portal: Marca (#143) --- */
+
+.portal-brand {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.portal-brand h1 {
+  margin: 0;
+}
+
+.portal-persona-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.portal-persona {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.portal-persona__name {
+  margin: 0;
+  font: var(--label-md);
+  overflow-wrap: anywhere;
+}
+
+.portal-persona__field {
+  display: contents;
+}
