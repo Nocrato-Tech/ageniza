@@ -270,7 +270,9 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
       {comments.hasNextPage && <Button variant="secondary" loading={comments.isFetchingNextPage} onClick={() => { void comments.fetchNextPage(); }}>Ver mensagens mais novas</Button>}
       {thread.state === 'resolved' && thread.resolvedAt !== null && <p className="conversation__resolved">
         {scope.side === 'client'
-          ? `A agência concluiu esta conversa em ${formatDay(thread.resolvedAt)}`
+          ? (thread.resolvedBy?.name
+            ? `Concluída por ${thread.resolvedBy.name} em ${formatDay(thread.resolvedAt)}`
+            : `A agência concluiu esta conversa em ${formatDay(thread.resolvedAt)}`)
           : `Resolvida ${thread.resolvedBy?.name ? `por ${thread.resolvedBy.name}` : 'pela agência'} em ${formatDay(thread.resolvedAt)}`}
       </p>}
       {writable

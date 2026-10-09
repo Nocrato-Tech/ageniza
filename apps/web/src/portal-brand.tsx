@@ -98,6 +98,11 @@ function PersonaCard({ persona, onWritten, onStale }: { persona: PortalPersona; 
   </li>;
 }
 
+const isClientRosterKey = (query: { readonly queryKey: readonly unknown[] }): boolean => {
+  const key = query.queryKey;
+  return key[2] === 'clients' && typeof key[3] === 'object' && key[3] !== null;
+};
+
 export function PortalBrandPage() {
   const client = usePortalClient();
   const httpClient = useApiClient();
@@ -118,7 +123,9 @@ export function PortalBrandPage() {
   const onWritten = (): void => {
     void queryClient.invalidateQueries({ queryKey: portalClientQueryKey(client.id) });
     void queryClient.invalidateQueries({ queryKey: ['conversation'] });
-    void queryClient.invalidateQueries({ queryKey: ['agency'], predicate: (query) => query.queryKey[2] === 'clients' });
+    // Only the roster's page (`['agency', id, 'clients', { page, search, status }]`): the detail, the
+    // brand study and the access lists of the same clients live under the same prefix and are not touched.
+    void queryClient.invalidateQueries({ queryKey: ['agency'], predicate: isClientRosterKey });
   };
   // The agency archived a persona or emptied a section under the client: read the study again.
   const onStale = (): void => { void queryClient.invalidateQueries({ queryKey: portalBrandStudyQueryKey(client.id) }); };

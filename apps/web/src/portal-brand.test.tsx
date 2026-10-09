@@ -379,11 +379,15 @@ describe('portal Marca (#143)', () => {
     const keys = {
       conversation: ['conversation', 'agency', CLIENT_ID, 'threads', 'x'],
       roster: ['agency', AGENCY_ID, 'clients', { page: 1, search: '', status: 'active' }],
-      unrelated: ['agency', AGENCY_ID, 'collaborators']
+      unrelated: ['agency', AGENCY_ID, 'collaborators'],
+      // Same prefix as the roster, but not the roster: a suggestion moves none of them.
+      detail: ['agency', AGENCY_ID, 'clients', 'detail', CLIENT_ID],
+      brandStudy: ['agency', AGENCY_ID, 'clients', 'brand-study', CLIENT_ID],
+      members: ['agency', AGENCY_ID, 'clients', CLIENT_ID, 'members', { page: 1, status: 'active' }]
     } as const;
     for (const key of Object.values(keys)) queryClient.setQueryData(key, {});
     const stale = (key: readonly unknown[]): boolean | undefined => queryClient.getQueryState(key)?.isInvalidated;
-    expect(Object.values(keys).map(stale)).toEqual([false, false, false]);
+    expect(Object.values(keys).map(stale)).toEqual([false, false, false, false, false, false]);
 
     suggest('Cores');
     const dialog = await screen.findByRole('dialog', { name: 'Sugerir sobre "Cores"' });
@@ -394,6 +398,9 @@ describe('portal Marca (#143)', () => {
     expect(stale(keys.conversation)).toBe(true);
     expect(stale(keys.roster)).toBe(true);
     expect(stale(keys.unrelated)).toBe(false);
+    expect(stale(keys.detail)).toBe(false);
+    expect(stale(keys.brandStudy)).toBe(false);
+    expect(stale(keys.members)).toBe(false);
   });
 
   it('shows the agency answer with the name and photo of who answered, the day in São Paulo, and no Resolver', async () => {
@@ -417,7 +424,7 @@ describe('portal Marca (#143)', () => {
     expect(within(dialog).queryByRole('button', { name: 'Resolver' })).toBeNull();
   });
 
-  it('tells a concluded conversation was concluded by the agency, and the client comment reopens it', async () => {
+  it('tells who concluded a conversation, by name, and the client comment reopens it', async () => {
     const { impl, apis } = makeWorld();
     apis[CLIENT_ID].seed({ sectionKey: 'colors' }, [
       { side: 'client', body: 'Troquem o verde', at: EARLIER },
@@ -431,15 +438,42 @@ describe('portal Marca (#143)', () => {
     expect(rowsOf(region)[0]!.textContent).toBe('Aberta por Maria (cliente)Agência · 12/10Troquei para vinhoconcluída');
     fireEvent.click(within(region).getByRole('button', { name: /Troquei para vinho/ }));
     const dialog = await screen.findByRole('dialog', { name: 'Cores' });
-    expect(await within(dialog).findByText('A agência concluiu esta conversa em 12/10')).toBeTruthy();
+    expect(await within(dialog).findByText('Concluída por Ana em 12/10')).toBeTruthy();
+    expect(within(dialog).queryByText(/A agência concluiu esta conversa/)).toBeNull();
     expect(within(dialog).queryByRole('button', { name: 'Resolver' })).toBeNull();
 
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Escrever resposta' }), { target: { value: 'Ficou ótimo, obrigada' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
     await within(dialog).findByText('Ficou ótimo, obrigada');
-    await waitFor(() => expect(within(dialog).queryByText(/A agência concluiu esta conversa/)).toBeNull());
+    await waitFor(() => expect(within(dialog).queryByText(/Concluída por/)).toBeNull());
     expect(rowsOf(region)[0]!.textContent).toContain('aberta');
     expect(rowsOf(region)[0]!.textContent).not.toContain('concluída');
+  });
+
+  it('names whoever concluded the conversation, whoever it was, and says only that the agency did when the name is null', async () => {
+    const { impl, apis } = makeWorld();
+    apis[CLIENT_ID].seed({ sectionKey: 'colors' }, [
+      { side: 'client', body: 'Troquem o verde', at: EARLIER },
+      { side: 'agency', body: 'Troquei para vinho', at: LATE }
+    ], { at: RESOLVED_AT, by: 'Beatriz Lima' });
+    apis[CLIENT_ID].seed({ sectionKey: 'branding' }, [
+      { side: 'client', body: 'Mudem o tom', at: EARLIER },
+      { side: 'agency', body: 'Mudei o tom', at: LATE }
+    ], { at: RESOLVED_AT, by: null });
+    renderPortal(impl);
+    await page();
+
+    fireEvent.click(await within(conversationsOf('Cores')).findByRole('button', { name: /Troquei para vinho/ }));
+    const named = await screen.findByRole('dialog', { name: 'Cores' });
+    expect(await within(named).findByText('Concluída por Beatriz Lima em 12/10')).toBeTruthy();
+    fireEvent.click(within(named).getByRole('button', { name: 'Fechar conversa' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    fireEvent.click(await within(conversationsOf('Sobre sua marca')).findByRole('button', { name: /Mudei o tom/ }));
+    const unnamed = await screen.findByRole('dialog', { name: 'Sobre sua marca' });
+    expect(await within(unnamed).findByText('A agência concluiu esta conversa em 12/10')).toBeTruthy();
+    expect(within(unnamed).queryByText(/Concluída por/)).toBeNull();
+    expect(unnamed.textContent).not.toContain('null');
   });
 
   it('serves only the client of the address, for a person who is also a collaborator and has two clients, and acts on that client', async () => {
