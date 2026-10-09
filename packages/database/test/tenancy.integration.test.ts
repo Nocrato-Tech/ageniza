@@ -7,13 +7,13 @@ import {
   createVerifiedUserClaims,
   raw,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // This suite is intentionally database-only. API acceptance tests can exercise the same functions
 // through the HTTP routes, while these tests prove the RLS boundary when connected as ageniza_app.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 let owner: DatabaseClient | undefined;
 let application: DatabaseClient | undefined;

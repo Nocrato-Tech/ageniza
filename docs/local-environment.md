@@ -175,11 +175,26 @@ Nem todo teste é igual, e os que dependem de infraestrutura falham de forma con
 |---|---|---|
 | `pnpm test` | unitários de todos os workspaces | nada |
 | `pnpm lint` · `pnpm typecheck` · `pnpm build` | os mesmos portões do CI | nada |
-| `pnpm db:test:local` | integração do banco e isolamento por RLS | PostgreSQL no ar |
+| `pnpm db:test:local` | integração do banco e isolamento por RLS | PostgreSQL no ar e [banco próprio](#banco-dos-testes-de-integração) |
 | `pnpm --filter @ageniza/api test:integration` | auth, convites, contextos e mídia contra o banco real | PostgreSQL **e** armazenamento |
 | `pnpm --filter @ageniza/worker test:integration` | fila durável e processamento de vídeo | PostgreSQL, armazenamento e **ffmpeg** |
 
 Antes de abrir um PR, rode o conjunto inteiro. O CI roda exatamente isso.
+
+### Banco dos testes de integração
+
+As três suítes de integração (`db:test:local`, a da API e a do worker) **exigem** `DATABASE_URL` (papel `ageniza_app`) e `MIGRATION_DATABASE_URL` (dono) apontando para um banco **seu**. Não há valor padrão: se uma das duas faltar, a suíte recusa e diz qual, e se qualquer uma apontar para o banco chamado exatamente `ageniza` (o do ambiente local do dono, onde ficam os dados de demonstração) ela também recusa, antes de abrir qualquer conexão. A comparação usa o nome que o driver `pg` realmente conectaria, então `/%61geniza`, uma URL sem caminho com usuário `ageniza` e um `PGDATABASE=ageniza` herdado também são recusados.
+
+Crie o banco uma vez, aplique as migrations nele e exporte as duas variáveis em todo shell que rodar migration ou teste:
+
+```sh
+docker exec ageniza-local-postgres-1 psql -U postgres -c "create database ageniza_meu"
+export MIGRATION_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/ageniza_meu
+export DATABASE_URL=postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza_meu
+pnpm db:migrate
+```
+
+Para recomeçar, apague e recrie só esse banco (`drop database ageniza_meu`). O CI faz o mesmo com `ageniza_ci`. O comando de demonstração (`seed-demo`) é outra coisa: ele existe justamente para o banco `ageniza` do dono e mantém o próprio portão local descrito acima.
 
 ## Quando algo não sobe
 

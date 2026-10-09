@@ -164,6 +164,53 @@ export const assertLocalDatabaseUrl = (connectionString: string): void => {
   }
 };
 
+/** The local development database belongs to the repository owner; no test may touch it. */
+const PROTECTED_DATABASE_NAME = 'ageniza';
+
+const driverDatabaseName = (connectionString: string, variable: string): string => {
+  let database: unknown;
+  try {
+    // Same parser the driver uses (percent-decoding, `PGDATABASE`, the user-name fallback), so the
+    // name checked is the database that would be connected to. `new URL(...).pathname` is not.
+    database = (new Client(connectionString) as unknown as { connectionParameters: { database?: unknown } }).connectionParameters.database;
+  } catch {
+    throw new Error(`${variable} must be a valid PostgreSQL URL.`);
+  }
+  if (typeof database !== 'string' || database === '') throw new Error(`${variable} must name a database.`);
+  return database;
+};
+
+/**
+ * The only way a test harness may obtain its connections: both variables are required, there is no
+ * default, and a database named exactly `ageniza` is refused before anything connects. Without
+ * this, a missing variable sent the superuser connection of an integration run to the owner's
+ * development database (issue #391).
+ */
+export const resolveIntegrationDatabaseUrls = (
+  environment: Readonly<Record<string, string | undefined>> = process.env
+): { readonly applicationUrl: string; readonly ownerUrl: string } => {
+  const applicationUrl = environment.DATABASE_URL?.trim() ?? '';
+  const ownerUrl = environment.MIGRATION_DATABASE_URL?.trim() ?? '';
+  const missing = [
+    ...(applicationUrl === '' ? ['DATABASE_URL'] : []),
+    ...(ownerUrl === '' ? ['MIGRATION_DATABASE_URL'] : [])
+  ];
+  if (missing.length > 0) {
+    throw new Error(
+      `Integration tests need ${missing.join(' and ')} pointing at your own database (for example ageniza_<name>); there is no default. See docs/local-environment.md.`
+    );
+  }
+  for (const [variable, url] of [['DATABASE_URL', applicationUrl], ['MIGRATION_DATABASE_URL', ownerUrl]] as const) {
+    assertLocalDatabaseUrl(url);
+    if (driverDatabaseName(url, variable) === PROTECTED_DATABASE_NAME) {
+      throw new Error(
+        `${variable} points at the database \`${PROTECTED_DATABASE_NAME}\`, which belongs to the repository owner. Create your own (create database ageniza_<name>) and point both variables at it. See docs/local-environment.md.`
+      );
+    }
+  }
+  return { applicationUrl, ownerUrl };
+};
+
 /** Creates a client for the Docker-backed local development database only. */
 export const createLocalTestDatabaseClient = (connectionString: string): DatabaseClient => {
   assertLocalDatabaseUrl(connectionString);

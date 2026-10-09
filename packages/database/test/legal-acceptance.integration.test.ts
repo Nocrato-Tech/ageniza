@@ -7,14 +7,14 @@ import {
   createVerifiedUserClaims,
   raw,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // Issue #81. `app_private.accept_legal_document` is the only path through which the application
 // role records an acceptance of one document; the table itself still refuses a direct INSERT
 // (tenancy.integration.test.ts pins that). Everything below runs as ageniza_app.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 const actorA = randomUUID();
 const actorB = randomUUID();

@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 
 import type { ApiConfig, IdentityStorageConfig, StorageConfig } from '@ageniza/config/server';
 import { createLogger, type CoreLogger } from '@ageniza/core';
-import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, type DatabaseClient } from '@ageniza/database';
+import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, type DatabaseClient, resolveIntegrationDatabaseUrls } from '@ageniza/database';
 import type { EmailSender, OutgoingEmail } from '@ageniza/email';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Pool } from 'pg';
@@ -31,9 +31,10 @@ import type { LegalModuleDependencies } from '../../legal/routes.js';
 import type { EmailChangeModuleDependencies } from '../../email-change/routes.js';
 import type { ProfileModuleDependencies } from '../../profile/routes.js';
 
-/** Runs only against the migrated local database (`pnpm db:migrate`), as the application role. */
-export const APPLICATION_DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
-export const OWNER_DATABASE_URL = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
+/** Runs only against your own migrated database (`pnpm db:migrate`), as the application role; never `ageniza`. */
+const integrationUrls = resolveIntegrationDatabaseUrls();
+export const APPLICATION_DATABASE_URL = integrationUrls.applicationUrl;
+export const OWNER_DATABASE_URL = integrationUrls.ownerUrl;
 
 /** Test-only values; never a real secret and never committed anywhere else. */
 export const TEST_APP_PUBLIC_URL = 'http://127.0.0.1:5173';

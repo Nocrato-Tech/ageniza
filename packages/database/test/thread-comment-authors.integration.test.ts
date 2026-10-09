@@ -7,7 +7,8 @@ import {
   createVerifiedUserClaims,
   raw,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // Issues #128 and #130. `app_private.thread_comment_authors` is the one read path the agency and
@@ -15,8 +16,7 @@ import {
 // through a `security definer` function because the portal cannot read `agency_memberships` or
 // another person's `client_memberships` under RLS. Everything runs as ageniza_app, with people who
 // belong to more than one tenant so that a missing filter shows up as a leaked row.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 let owner: DatabaseClient | undefined;
 let application: DatabaseClient | undefined;

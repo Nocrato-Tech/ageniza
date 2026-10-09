@@ -1,15 +1,14 @@
 import { randomUUID } from 'node:crypto';
 
 import { createLogger } from '@ageniza/core';
-import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, raw, type DatabaseClient } from '@ageniza/database';
+import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, raw, type DatabaseClient, resolveIntegrationDatabaseUrls } from '@ageniza/database';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createDurableQueue, deadLetterQueueName, type CreateDurableQueueOptions, type DurableJobDefinition, type DurableQueue } from './queue.js';
 
 // Runs against the migrated local database (`pnpm db:migrate`) as the application role, so it also
 // proves the queue works with data access alone: no CREATE, ALTER, or ownership in the pgboss schema.
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 const prefix = `test.${randomUUID().slice(0, 8)}`;
 
 let owner: DatabaseClient | undefined;

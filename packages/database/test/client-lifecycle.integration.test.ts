@@ -8,7 +8,8 @@ import {
   createVerifiedUserClaims,
   raw,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // Issue #123. This suite proves the acceptance of
@@ -16,8 +17,7 @@ import {
 // schema, always connected as `ageniza_app` and with the user context published by the existing
 // helpers. Every assertion checks the final state (row counts, columns), never just "it did not
 // throw": `security definer` bypasses RLS, so a silently filtered response would be a failure here.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 let owner: DatabaseClient | undefined;
 let application: DatabaseClient | undefined;

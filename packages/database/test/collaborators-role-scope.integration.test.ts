@@ -6,7 +6,8 @@ import {
   createLocalTestDatabaseClient,
   createVerifiedUserClaims,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // Issue #353. Two barriers refuse a role that belongs to another agency: the `role.agency_id =
@@ -16,8 +17,7 @@ import {
 // an actor who is a member of one agency only is stopped by the hidden role, not by the clause.
 // Only a person who is a member of **both** agencies sees the foreign role, which is the one case
 // where the clause is the whole defence.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 // The trigger's own message: an RLS refusal is also 42501, so the code alone would not tell them apart.
 const TRIGGER_MESSAGE = 'role_id must be a system role or belong to this agency.';
