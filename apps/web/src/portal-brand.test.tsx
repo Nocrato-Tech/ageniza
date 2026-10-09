@@ -379,7 +379,8 @@ describe('portal Marca (#143)', () => {
     const keys = {
       conversation: ['conversation', 'agency', CLIENT_ID, 'threads', 'x'],
       roster: ['agency', AGENCY_ID, 'clients', { page: 1, search: '', status: 'active' }],
-      unrelated: ['agency', AGENCY_ID, 'collaborators'],
+      // The real key of the collaborators list: an object at the same position as the roster's.
+      unrelated: ['agency', AGENCY_ID, 'collaborators', { page: 1, q: '', role: '', jobTitle: '', status: 'active' }],
       // Same prefix as the roster, but not the roster: a suggestion moves none of them.
       detail: ['agency', AGENCY_ID, 'clients', 'detail', CLIENT_ID],
       brandStudy: ['agency', AGENCY_ID, 'clients', 'brand-study', CLIENT_ID],
