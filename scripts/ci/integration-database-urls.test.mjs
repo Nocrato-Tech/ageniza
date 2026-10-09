@@ -33,7 +33,7 @@ describe('integration harnesses obtain their database only from resolveIntegrati
 
   it('never reads the database variables or carries a default URL', () => {
     const offenders = harnessFiles
-      .filter((path) => /process\.env\.(MIGRATION_)?DATABASE_URL|process\.env\[['"](MIGRATION_)?DATABASE_URL|postgres(ql)?:\/\/[^'"`\s]*\/ageniza['"`\s?]/.test(readFileSync(path, 'utf8')))
+      .filter((path) => /process\.env\.(MIGRATION_)?DATABASE_URL|process\.env\[['"](MIGRATION_)?DATABASE_URL|\}\s*=\s*process\.env\b|postgres(ql)?:\/\/[^'"`\s]*\/ageniza['"`\s?]/.test(readFileSync(path, 'utf8')))
       .map((path) => relative(root, path).split(sep).join('/'));
     expect(offenders).toEqual([]);
   });
