@@ -242,7 +242,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       const item: ClientListItem = {
         id: row.id,
         name: row.name,
-        photoUrl: await signPhotoUrl(request, { agencyId: tenant.agencyId, clientId: row.id }, row.photo_key),
+        photoUrl: await signPhotoUrl(request, { agencyId: row.agency_id, clientId: row.id }, row.photo_key),
         instagramHandle: row.instagram_handle,
         status: row.status,
         closingDate: row.closing_date,
@@ -287,7 +287,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     });
     if (result === undefined) throw clientNotFound();
 
-    const photoUrl = await signPhotoUrl(request, { agencyId: tenant.agencyId, clientId }, result.row.photo_key);
+    const photoUrl = await signPhotoUrl(request, { agencyId: result.row.agency_id, clientId: result.row.id }, result.row.photo_key);
     return reply.send(routeResponse(detailDocs, request, {
       ...clientFromRow(result.row, photoUrl),
       summary: result.summary
@@ -322,7 +322,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
 
     if (outcome.kind === 'not-found') throw clientNotFound();
     if (outcome.kind === 'archived') throw clientArchived();
-    const photoUrl = await signPhotoUrl(request, { agencyId: tenant.agencyId, clientId }, outcome.row.photo_key);
+    const photoUrl = await signPhotoUrl(request, { agencyId: outcome.row.agency_id, clientId: outcome.row.id }, outcome.row.photo_key);
     return reply.send(routeResponse(updateDocs, request, clientFromRow(outcome.row, photoUrl)));
   });
 

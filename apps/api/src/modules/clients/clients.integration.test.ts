@@ -468,6 +468,41 @@ describe('CLIENTS HTTP module (#124)', () => {
     }
   });
 
+  it('#427: an invisible or blank character that is not a format character never forges a lookalike of an active name', async () => {
+    const suffix = randomUUID();
+    await createClient({ agencyId: agencyA, name: `Café Central ${suffix}` });
+    // Each one is `Default_Ignorable_Code_Point` (or the Braille blank) and none is `\p{Cf}`, so the
+    // shared display-name rule lets it through and the unique index does not remove it.
+    const invisible = {
+      'U+034F combining grapheme joiner': 0x034f,
+      'U+FE00 variation selector': 0xfe00,
+      'U+FE0F variation selector 16 after a letter': 0xfe0f,
+      'U+E0100 supplementary variation selector': 0xe0100,
+      'U+180B Mongolian free variation selector': 0x180b,
+      'U+17B4 Khmer inherent vowel': 0x17b4,
+      'U+2800 Braille blank': 0x2800
+    };
+    for (const [label, codePoint] of Object.entries(invisible)) {
+      const middle = String.fromCodePoint(codePoint);
+      for (const candidate of [`Ca${middle}fé Central ${suffix}`, `Café${middle}Central ${suffix}`]) {
+        const created = await postClient(adminCookie, agencyA, { name: candidate });
+        expect(created.statusCode, label).toBe(400);
+        const other = await createClient({ agencyId: agencyA });
+        const before = (await clientRow(other))?.name;
+        expect((await patchClient(adminCookie, agencyA, other, { name: candidate })).statusCode, label).toBe(400);
+        expect((await clientRow(other))?.name, label).toBe(before);
+      }
+    }
+    const lookalikes = await owner.knex('clients').where({ agency_id: agencyA }).whereRaw('name like ?', [`%Central ${suffix}`]).select('name');
+    expect(lookalikes.map((row) => row.name)).toEqual([`Café Central ${suffix}`]);
+
+    // A pictograph keeps its emoji presentation selector: the red heart is U+2764 + U+FE0F.
+    const heart = String.fromCodePoint(0x2764, 0xfe0f);
+    const accepted = await postClient(adminCookie, agencyA, { name: `Amor ${heart} Doce ${suffix}` });
+    expect(accepted.statusCode).toBe(201);
+    expect(accepted.json()).toMatchObject({ name: `Amor ${heart} Doce ${suffix}` });
+  });
+
   it('applies the same name rule to the PATCH: name, contact fields and legalName', async () => {
     const clientId = await createClient({ agencyId: agencyA });
     expect((await patchClient(adminCookie, agencyA, clientId, { name: `Padaria\u200bCentral ${randomUUID()}` })).statusCode).toBe(400);
@@ -565,6 +600,76 @@ describe('CLIENTS HTTP module (#124)', () => {
       expect(during, foreignKey).toContain('CLIENT_PHOTO_URL_FAILED');
       expect(during, foreignKey).not.toContain(foreignKey);
     }
+  });
+
+  describe('#427: the stored photo key is signed by the ids of the row, at every call site that answers a client', () => {
+    const send = (method: 'PUT' | 'DELETE' | 'POST' | 'GET', path: string, cookie: string, agencyId: string, clientId: string, payload?: Record<string, unknown>): Promise<InjectResponse> =>
+      app.app.inject({
+        method,
+        url: `/agencies/${agencyId}/clients/${clientId}${path}`,
+        headers: { ...origin, cookie },
+        ...(payload === undefined ? {} : { payload })
+      }) as unknown as Promise<InjectResponse>;
+
+    // The PATCH and the four lifecycle routes (closing set and cleared, archive, reactivate) each
+    // build the photo scope on their own, so each is exercised alone; `seed` is the state the call needs.
+    const callSites: ReadonlyArray<{
+      readonly label: string;
+      readonly seed: { readonly status?: 'active' | 'archived'; readonly closingDate?: string };
+      readonly call: (agencyId: string, clientId: string) => Promise<InjectResponse>;
+    }> = [
+      { label: 'PATCH', seed: {}, call: (agencyId, clientId) => patchClient(adminCookie, agencyId, clientId, { segment: 'Alimentação' }) },
+      { label: 'PUT closing', seed: {}, call: (agencyId, clientId) => send('PUT', '/closing', adminCookie, agencyId, clientId, { closingDate: '2099-12-31' }) },
+      { label: 'DELETE closing', seed: { closingDate: '2099-12-31' }, call: (agencyId, clientId) => send('DELETE', '/closing', adminCookie, agencyId, clientId) },
+      { label: 'archive', seed: {}, call: (agencyId, clientId) => send('POST', '/archive', adminCookie, agencyId, clientId) },
+      { label: 'reactivate', seed: { status: 'archived' }, call: (agencyId, clientId) => send('POST', '/reactivate', adminCookie, agencyId, clientId) }
+    ];
+
+    it.each(callSites)('$label answers photoUrl null, and logs no key, for a stored key that is not an avatar key of this agency and client', async ({ label, seed, call }) => {
+      const foreignKeys = [
+        `agencies/${agencyA}/clients/${randomUUID()}/avatar/${randomUUID()}.png`,
+        `agencies/${agencyB}/clients/${randomUUID()}/avatar/${randomUUID()}.png`,
+        `users/${randomUUID()}/avatar/${randomUUID()}.png`
+      ];
+      for (const foreignKey of foreignKeys) {
+        const clientId = await createClient({ agencyId: agencyA, photoKey: foreignKey, ...seed });
+        const logsBefore = logs.text().length;
+        const response = await call(agencyA, clientId);
+        expect(response.statusCode, `${label} ${foreignKey}`).toBe(200);
+        expect(response.json(), `${label} ${foreignKey}`).toMatchObject({ id: clientId, photoUrl: null });
+        expect(JSON.stringify(response.json()), `${label} ${foreignKey}`).not.toContain(foreignKey);
+        const during = logs.text().slice(logsBefore);
+        expect(during, `${label} ${foreignKey}`).toContain('CLIENT_PHOTO_URL_FAILED');
+        expect(during, `${label} ${foreignKey}`).not.toContain(foreignKey);
+      }
+    });
+
+    it.each(callSites)('$label signs the own key of the client, also when the URL spells the ids in upper case', async ({ label, seed, call }) => {
+      for (const form of ['lower', 'upper'] as const) {
+        const clientId = randomUUID();
+        const ownKey = `agencies/${agencyA}/clients/${clientId}/avatar/${randomUUID()}.png`;
+        await createClient({ id: clientId, agencyId: agencyA, photoKey: ownKey, ...seed });
+        const logsBefore = logs.text().length;
+        const response = await call(form === 'upper' ? agencyA.toUpperCase() : agencyA, form === 'upper' ? clientId.toUpperCase() : clientId);
+        expect(response.statusCode, `${label} ${form}`).toBe(200);
+        const photoUrl = (response.json() as { photoUrl: string | null }).photoUrl;
+        expect(photoUrl, `${label} ${form}`).not.toBeNull();
+        expect(new URL(photoUrl as string).pathname.endsWith(ownKey), `${label} ${form}`).toBe(true);
+        expect(logs.text().slice(logsBefore), `${label} ${form}`).not.toContain('CLIENT_PHOTO_URL_FAILED');
+      }
+    });
+
+    it('the detail signs the own key of the client when the URL spells the ids in upper case', async () => {
+      const clientId = randomUUID();
+      const ownKey = `agencies/${agencyA}/clients/${clientId}/avatar/${randomUUID()}.png`;
+      await createClient({ id: clientId, agencyId: agencyA, photoKey: ownKey });
+      const logsBefore = logs.text().length;
+      const response = await getClient(adminCookie, agencyA.toUpperCase(), clientId.toUpperCase());
+      expect(response.statusCode).toBe(200);
+      const photoUrl = (response.json() as { photoUrl: string | null }).photoUrl;
+      expect(new URL(photoUrl as string).pathname.endsWith(ownKey)).toBe(true);
+      expect(logs.text().slice(logsBefore)).not.toContain('CLIENT_PHOTO_URL_FAILED');
+    });
   });
 
   it('returns archived status and archivedAt, and records the session user as updated_by', async () => {

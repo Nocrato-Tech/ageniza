@@ -873,6 +873,20 @@ describe('clients listing (issue #125)', () => {
     expect(logs.lines().slice(before).join('\n')).toContain('CLIENT_PHOTO_URL_FAILED');
   });
 
+  it('#427: the list signs the own key of the client when the URL spells the agency in upper case', async () => {
+    const { agencyId, cookie } = await createAgencyWithAdmin('photoupper');
+    const clientId = randomUUID();
+    const ownKey = `agencies/${agencyId}/clients/${clientId}/avatar/${randomUUID()}.png`;
+    await createClient({ id: clientId, agencyId, name: 'Com Foto Maiuscula', photoKey: ownKey });
+
+    const before = logs.lines().length;
+    const list = await getClients(cookie, agencyId.toUpperCase(), { pageSize: 100 });
+    expect(list.status).toBe(200);
+    const item = list.body.data.find((candidate) => candidate.id === clientId);
+    expect(new URL(item!.photoUrl!).pathname.endsWith(ownKey)).toBe(true);
+    expect(logs.lines().slice(before).join('\n')).not.toContain('CLIENT_PHOTO_URL_FAILED');
+  });
+
   it('#311: the list signs a stored photo key only when it is an avatar key of that agency and client', async () => {
     const { agencyId, cookie } = await createAgencyWithAdmin('photoforeign');
     const foreignKeys = [

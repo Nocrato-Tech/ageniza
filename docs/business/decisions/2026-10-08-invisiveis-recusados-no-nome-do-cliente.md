@@ -1,0 +1,13 @@
+# Caracteres invisíveis e o quadrado em branco braille são recusados no nome do cliente
+
+**Data.** 2026-10-08
+
+**Contexto.** A decisão de 2026-10-08 sobre ZWJ e ZWNJ ([`2026-10-08-joiner-entre-letras-latinas-recusado-no-nome-do-cliente`](./2026-10-08-joiner-entre-letras-latinas-recusado-no-nome-do-cliente.md), issue #312) fechou os joiners entre letras latinas, mas a revisão do PR #426 mostrou que a mesma classe de homônimo visual continua aberta. A regra de nome de exibição (#200) recusa só os caracteres da categoria `Cf`. O índice de nome único de cliente dobra caixa e sequências de espaço e não remove mais nada. Com `Café Central` ativo, o cadastro aceitou (201) o mesmo nome com U+034F (CGJ, categoria `Mn`), com seletores de variação (U+FE00 a U+FE0F e U+E0100), com U+180B (seletor mongol), com U+17B4 (Khmer, invisível) e com U+2800 (braille em branco, categoria `So`, que se desenha como espaço). Nenhum é `Cf`, e cada um criava um cliente ativo de aparência igual à de outro (issue #427).
+
+**Decisão.** O nome do cliente (`ClientNameSchema`, cadastro e edição) recusa todo `Default_Ignorable_Code_Point` do Unicode e U+2800. Esta é a extensão da opção A da decisão ligada acima, validada pelo dono em 2026-10-08 para ZWJ e ZWNJ. Continuam valendo as regras anteriores: ZWJ e ZWNJ seguem a regra de nome de exibição e a recusa entre letras latinas. Uma exceção: U+FE0F (VS16, seletor de apresentação de emoji) é aceito logo depois de um caractere pictográfico (`Extended_Pictographic`), porque "❤️" é U+2764 seguido de U+FE0F e o nome de um cliente pode ter um emoji, do mesmo modo que o schema de pessoas aceita ZWJ em família de emoji. U+FE0F depois de qualquer outra coisa, um segundo seletor depois do primeiro, e os demais seletores de variação (incluindo U+FE0E) continuam recusados. Caracteres de tag (U+E0000 a U+E007F, usados em bandeiras de subdivisão como a da Escócia) também ficam recusados nesta primeira versão: são `Default_Ignorable` e não há caso de uso conhecido em nome de cliente. `createDisplayNameSchema` e os nomes de pessoas, o cargo, a razão social e os contatos não mudam.
+
+**Consequência.** O `POST` e o `PATCH` de cliente respondem `400` para esses nomes. Nomes já gravados não são corrigidos (sem backfill, sem migration). Nome de pessoa não tem índice único e por isso não entra; um nome de pessoa com esses caracteres continua aceito. Confusáveis de outra natureza (cirílico, largura total, ligaduras) seguem fora do escopo.
+
+**Origem.** Issue #427, ressalva 1 da revisão de segurança do PR #426. Extensão da decisão do dono de 2026-10-08 (opção A) sobre a #312.
+
+**Validação.** Pendente de validação do dono.

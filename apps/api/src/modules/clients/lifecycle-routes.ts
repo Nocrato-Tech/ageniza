@@ -187,7 +187,7 @@ export const registerLifecycleRoutes = (app: FastifyInstance, dependencies: Life
     docs: { readonly schemas: { readonly response: typeof ClientSchema } },
     row: ClientRow
   ) =>
-    reply.send(routeResponse(docs, request, clientFromRow(row, await signPhotoUrl(request, { agencyId: requireTenant(request).agencyId, clientId: row.id }, row.photo_key))));
+    reply.send(routeResponse(docs, request, clientFromRow(row, await signPhotoUrl(request, { agencyId: row.agency_id, clientId: row.id }, row.photo_key))));
 
   app.put('/agencies/:agencyId/clients/:clientId/closing', authenticated(setClosingDocs), async (request, reply) => {
     const body = routeBody(setClosingDocs, request);
