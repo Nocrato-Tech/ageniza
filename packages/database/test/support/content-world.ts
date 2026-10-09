@@ -6,7 +6,8 @@ import {
   createLocalTestDatabaseClient,
   createVerifiedUserClaims,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../../src/index.js';
 
 // The people, agencies and clients every Conteúdo test attacks from. "Dual" people are agency collaborators who
@@ -15,8 +16,7 @@ import {
 // and a role without any conteudo.* (`dualBare`), and a person of another agency who has a link to a client here
 // (`crossDual`). A custom role holding one permission stands in for each guard, because the Admin holds every
 // permission and hides a guard written with the wrong one.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 export const CONTENT_PERMISSIONS = [
   'conteudo.visualizar',

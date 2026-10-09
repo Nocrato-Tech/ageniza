@@ -7,12 +7,12 @@ import {
   createVerifiedUserClaims,
   raw,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
-// Loopback defaults match compose.yml. Run `pnpm db:migrate` first; the owner client only builds fixtures.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+// Run `pnpm db:migrate` on your own database first; the owner client only builds fixtures.
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 let owner: DatabaseClient | undefined;
 let application: DatabaseClient | undefined;

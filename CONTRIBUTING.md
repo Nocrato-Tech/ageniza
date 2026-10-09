@@ -60,7 +60,7 @@ O corpo responde três coisas: **por que** existe, **o que muda**, e **como foi 
 - **Migration não vem com código de API nem de tela.** É o único tipo de mudança que não dá para desfazer. Duas issues de banco do mesmo tema podem dividir a mesma migration; a rota e a tela que a consomem ficam nos PRs delas.
 - **Verificação real.** "Testado" não é verificação; qual comando rodou e o que ele disse, é.
 
-Antes de abrir:
+Antes de abrir, com `DATABASE_URL` e `MIGRATION_DATABASE_URL` apontando para um banco seu (as suítes de integração recusam sem elas e recusam o banco `ageniza`; veja [ambiente local](docs/local-environment.md#banco-dos-testes-de-integração)):
 
 ```sh
 pnpm lint && pnpm typecheck && pnpm build && pnpm test

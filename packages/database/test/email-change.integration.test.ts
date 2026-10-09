@@ -7,14 +7,14 @@ import {
   createVerifiedUserClaims,
   raw,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // Issue #80. The two functions below are the only paths through which the application role
 // touches `public.email_change_requests`; approving, rejecting and listing belong to the CLI, which
 // connects as the owner. Everything here runs as ageniza_app unless it says "owner".
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 let owner: DatabaseClient | undefined;
 let application: DatabaseClient | undefined;

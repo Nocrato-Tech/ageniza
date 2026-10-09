@@ -7,7 +7,8 @@ import {
   createLocalTestDatabaseClient,
   createVerifiedUserClaims,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // Issue #248 (specs/conteudo.md §3, §4, §5 rules 1, 2 and 4, §6). Every attack runs as `ageniza_app`;
@@ -16,8 +17,7 @@ import {
 // every permission and hides a guard written with the wrong one. "Dual" people are agency collaborators
 // who also hold a link to a client: RLS answers WHO may read, not through WHICH SIDE, so each rule of the
 // portal is attacked again with a person who has the link and a person who has the link and a role.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 const NOT_FOUND = { code: 'A0050', message: expect.stringContaining('Story script not found.') };
 const ARCHIVED = { code: 'A0051' };

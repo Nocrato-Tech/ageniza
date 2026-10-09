@@ -9,7 +9,7 @@ import { HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s
 import type { MediaProcessingConfig, WorkerStorageConfig } from '@ageniza/config/server';
 import { MEDIA_VIDEO_PROCESSING_JOB_NAME } from '@ageniza/contracts';
 import { createLogger } from '@ageniza/core';
-import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, raw, type DatabaseClient } from '@ageniza/database';
+import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, raw, type DatabaseClient, resolveIntegrationDatabaseUrls } from '@ageniza/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createMediaProcessingStorageClient } from './media-storage.js';
@@ -20,8 +20,7 @@ import type { DurableJobContext } from './queue.js';
 // `pnpm db:migrate` / `pnpm storage:start` -- see
 // apps/api/src/modules/media/README.md for how those are started, and real ffmpeg/ffprobe on
 // PATH (see media-ffmpeg.integration.test.ts for why these are not mocked).
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 const localStorageCredentials = (): { accessKeyId: string; secretAccessKey: string } => {
   if (process.env.R2_ACCESS_KEY_ID !== undefined && process.env.R2_SECRET_ACCESS_KEY !== undefined) {

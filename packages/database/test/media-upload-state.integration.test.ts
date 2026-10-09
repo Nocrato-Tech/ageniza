@@ -6,7 +6,8 @@ import {
   createLocalTestDatabaseClient,
   createVerifiedUserClaims,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // Issue #295. A role holding only `midia.enviar` passes the `media_assets` policies, and until
@@ -15,8 +16,7 @@ import {
 // Every attack below runs as `ageniza_app` with a custom role that holds that one permission.
 // The trigger refuses with 42501 like the RLS does, so each case checks the trigger's own message;
 // a refusal at the privilege layer reads "permission denied for table".
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 const HUNDRED_MB = 104_857_600;
 

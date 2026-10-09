@@ -4,13 +4,13 @@ import { fileURLToPath } from 'node:url';
 import knex from 'knex';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { createLocalTestDatabaseClient, type DatabaseClient } from '../src/index.js';
+import { createLocalTestDatabaseClient, type DatabaseClient, resolveIntegrationDatabaseUrls } from '../src/index.js';
 
 // Issue #225. `agency_memberships.job_title` is constrained to what the API response schema accepts:
 // null, or 1 to 256 **UTF-16 units** after the same trim the contract's `.trim()` does. A CHECK
 // applies to every role, so the suite runs as the migration owner and asserts the thrown error or
 // the final state, never a bare resolved value.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 const migrationsDir = fileURLToPath(new URL('../migrations', import.meta.url));
 const MIGRATION_NAME = '20261001000000_job_title_format.mjs';
 
@@ -212,7 +212,7 @@ describe('function grants of the job_title migration (issue #97)', () => {
   });
 
   it('refuses to run the backfill as ageniza_app', async () => {
-    const application = createLocalTestDatabaseClient(process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza');
+    const application = createLocalTestDatabaseClient(applicationUrl);
     try {
       await expect(application.knex.raw('select * from app_private.backfill_job_title()')).rejects.toMatchObject({ code: '42501' });
     } finally {

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { PassThrough } from 'node:stream';
 
 import { createLogger } from '@ageniza/core';
-import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, raw, type DatabaseClient } from '@ageniza/database';
+import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, raw, type DatabaseClient, resolveIntegrationDatabaseUrls } from '@ageniza/database';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ARCHIVE_DUE_CLIENTS_JOB_NAME, ARCHIVE_DUE_CLIENTS_SCHEDULE, archiveDueClientsJob } from './archive-due-clients-job.js';
@@ -12,8 +12,7 @@ import { createDurableQueue, deadLetterQueueName, type DurableJobDefinition, typ
 // uses in production: the job needs data access alone and no identity of its own. The definition under
 // test is the real one with only its queue name changed, so the real `clients.archive-due` queue of a
 // developer's local database is never deleted by the cleanup below.
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 const prefix = `test.${randomUUID().slice(0, 8)}`;
 const jobName = `${prefix}.${ARCHIVE_DUE_CLIENTS_JOB_NAME}`;
 

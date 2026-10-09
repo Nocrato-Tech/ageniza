@@ -6,15 +6,15 @@ import {
   createLocalTestDatabaseClient,
   createVerifiedUserClaims,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // Issue #122. This suite proves the invariants of docs/business/decisions.md
 // ("Regras invioláveis de clientes, garantidas pelo banco", 2026-09-26) and specs/clientes.md §5
 // against the real schema, connected as ageniza_app. RLS filters silently, so every assertion here
 // checks either an affected row count or a thrown error, never a bare resolved value.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 let owner: DatabaseClient | undefined;
 let application: DatabaseClient | undefined;

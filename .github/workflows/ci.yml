@@ -178,6 +178,11 @@ jobs:
     name: PostgreSQL local database
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # The test harnesses have no default database and refuse the one named `ageniza` (issue #391), so
+    # the job creates its own and points every command at it. Throwaway credentials, same as compose.yml.
+    env:
+      DATABASE_URL: postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza_ci
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/ageniza_ci
     steps:
       # The default pull_request checkout is the merge result, which is what actually lands.
       - uses: actions/checkout@v4
@@ -199,6 +204,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Start the isolated local PostgreSQL
         run: pnpm db:start
+      - name: Create the database the suites run against
+        run: docker compose exec -T postgres psql -U postgres -v ON_ERROR_STOP=1 -c 'create database ageniza_ci'
       - name: Apply every migration to an empty database
         run: pnpm db:migrate
       - name: Run database integration and RLS isolation suite

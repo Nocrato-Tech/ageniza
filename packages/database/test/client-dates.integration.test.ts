@@ -1,13 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { createLocalTestDatabaseClient, raw, type DatabaseClient } from '../src/index.js';
+import { createLocalTestDatabaseClient, raw, type DatabaseClient, resolveIntegrationDatabaseUrls } from '../src/index.js';
 
 // Issues #131 and #133. "Today" of a contract is the day in America/Sao_Paulo, and `now()` cannot be
 // pinned, so the day is computed by `app_private.sao_paulo_date(instant)` and these tests call it with
 // fixed instants. Between 21:00 and 24:00 in Brasília the Brasília date and the UTC date differ, which
 // is the only place the mutation Sao_Paulo -> UTC is visible.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 let owner: DatabaseClient | undefined;
 let application: DatabaseClient | undefined;

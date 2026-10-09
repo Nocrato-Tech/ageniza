@@ -7,7 +7,8 @@ import {
   createVerifiedUserClaims,
   raw,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // Issue #296. `agencies`, `agency_storage_quotas`, `roles`, `role_permissions` and `permissions` have
@@ -17,8 +18,7 @@ import {
 // `permission_key`. Migration 20261007000700 takes the privileges away; `accept_invitation` also
 // validates the Terms and Privacy versions as a date. Every attack runs as the agency owner, the
 // person for whom the most policies say yes, so a refusal can only come from the privilege layer.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 const denied = (table: string) => ({ code: '42501', message: expect.stringContaining(`permission denied for table ${table}`) });
 
