@@ -482,7 +482,7 @@ describe('portal tour (#144)', () => {
     expect(world.posts()).toEqual([`POST /clients/${CLIENT_ID}/onboarding/seen`]);
 
     unmount();
-    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(fireEvent.keyDown(document.body, { key: 'Escape' })).toBe(true);
     release();
     await act(async () => { await Promise.resolve(); });
     expect(world.posts()).toHaveLength(1);
@@ -630,7 +630,10 @@ ${selector} {`);
     };
     expect(rule('.portal-tour')).toMatch(/position:\s*absolute;/);
     expect(rule('.portal-tour')).toMatch(/bottom:\s*100%;/);
-    expect(rule('.portal-tour')).not.toMatch(/\d(\.\d+)?rem/);
+    expect(rule('.portal-tour')).toMatch(/width:\s*min\(calc\(100% - 2 \* var\(--space-4\)\), 28rem\);/);
+    expect(rule('.portal-tour')).not.toMatch(/max-width/);
+    expect(rule('.portal-tour').replace(/width:\s*min\([^;]*;|border:[^;]*;/g, '')).not.toMatch(/\d(\.\d+)?(rem|px)/);
+    expect(rule(".portal-tour[data-step='welcome']")).toMatch(/position:\s*fixed;/);
     expect(rule('.portal-nav')).toMatch(/position:\s*sticky;/);
   });
 
@@ -645,8 +648,6 @@ ${selector} {`);
     await waitFor(() => { expect(world.seenAt[CLIENT_ID]).not.toBeNull(); });
     await waitFor(() => { expect(queryTour()).toBeNull(); });
     await waitFor(() => { expect(world.posts()).toHaveLength(1); });
-    // The first person's mark is now in the cache, written by the close.
-    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull(); });
 
     fireEvent.click(screen.getByRole('button', { name: /Maria/ }));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Sair' }));
@@ -690,6 +691,34 @@ ${selector} {`);
     act(() => { probe.navigate(portalUrl('inicio', CLIENT_ID)); });
     expect(await screen.findByRole('heading', { name: 'Olá, Maria' })).toBeTruthy();
     expect(queryTour()).toBeNull();
+    expect(world.posts()).toEqual([]);
+  });
+
+  it('closes only the account menu when Esc is pressed inside it, keeping the tour', async () => {
+    const world = makeWorld();
+    renderPortal(world.impl);
+    await tour(WELCOME);
+    fireEvent.click(screen.getByRole('button', { name: /Maria/ }));
+    const item = within(await screen.findByRole('menu')).getAllByRole('menuitem')[0]!;
+    item.focus();
+    fireEvent.keyDown(item, { key: 'Escape' });
+
+    await waitFor(() => { expect(screen.queryByRole('menu')).toBeNull(); });
+    expect(screen.queryByRole('dialog', { name: WELCOME })).not.toBeNull();
+    expect(world.posts()).toEqual([]);
+  });
+
+  it('closes only the logout-all confirmation when Esc is pressed inside it, keeping the tour', async () => {
+    const world = makeWorld();
+    renderPortal(world.impl);
+    await tour(WELCOME);
+    fireEvent.click(screen.getByRole('button', { name: /Maria/ }));
+    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: /todas as sessões/i }));
+    const confirm = await screen.findByRole('dialog', { name: /todas as sessões/i });
+    fireEvent.keyDown(within(confirm).getByRole('button', { name: 'Cancelar' }), { key: 'Escape' });
+
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: /todas as sessões/i })).toBeNull(); });
+    expect(screen.queryByRole('dialog', { name: WELCOME })).not.toBeNull();
     expect(world.posts()).toEqual([]);
   });
 });
