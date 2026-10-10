@@ -81,6 +81,43 @@ describe('ClientNameSchema invisible characters (#427)', () => {
     expect(ClientNameSchema.safeParse(`Amor ${text(0x2764)} ${text(0xfe0f)}Doce`).success).toBe(false);
   });
 
+  // The owner's exception of 2026-10-08 (#436): the copyright, registered and trademark signs are
+  // pictographic for Unicode but common in a company name, so they stay. Everything else does not.
+  const MARK_SIGNS: ReadonlyArray<readonly [string, number]> = [['copyright', 0x00a9], ['registered', 0x00ae], ['trademark', 0x2122]];
+
+  it.each(MARK_SIGNS)('keeps the %s sign in a client name, at the start, in the middle and at the end', (_label, codePoint) => {
+    const sign = text(codePoint);
+    for (const name of [`${sign} Studio`, `Marca${sign}`, `Marca ${sign} Central`]) {
+      expect(ClientNameSchema.safeParse(name).success, name).toBe(true);
+    }
+  });
+
+  it('keeps the names of the owner decision', () => {
+    for (const name of [`Nike${text(0x00ae)}`, `Marca${text(0x2122)}`, `${text(0x00a9)} Studio`]) {
+      const parsed = ClientNameSchema.safeParse(name);
+      expect(parsed.success, name).toBe(true);
+      expect(parsed.data).toBe(name);
+    }
+  });
+
+  it.each(MARK_SIGNS)('refuses the selector 16 after the %s sign, which would forge a homonym of the plain name', (_label, codePoint) => {
+    expect(ClientNameSchema.safeParse(`Nike${text(codePoint, 0xfe0f)}`).success).toBe(false);
+    expect(ClientNameSchema.safeParse(`Nike${text(codePoint, 0xfe0f)} Studio`).success).toBe(false);
+  });
+
+  it.each(MARK_SIGNS)('refuses a joiner beside the %s sign, which would forge a homonym of the plain name', (_label, codePoint) => {
+    for (const joiner of [0x200c, 0x200d]) {
+      expect(ClientNameSchema.safeParse(`Nike${text(codePoint, joiner)}Studio`).success, `after ${joiner.toString(16)}`).toBe(false);
+      expect(ClientNameSchema.safeParse(`Nike${text(joiner, codePoint)} Studio`).success, `before ${joiner.toString(16)}`).toBe(false);
+    }
+  });
+
+  it('still refuses the other pictographic symbols', () => {
+    for (const codePoint of [0x2605, 0x2714, 0x2764, 0x203c, 0x2139]) {
+      expect(ClientNameSchema.safeParse(`Nota ${text(codePoint)}`).success, codePoint.toString(16)).toBe(false);
+    }
+  });
+
   it('keeps a name with no emoji and the text that is not pictographic', () => {
     for (const name of ['Cafe Central', 'Café Central 24h', 'Padaria & Cia', 'Ana-Maria #1']) {
       expect(ClientNameSchema.safeParse(name).success, name).toBe(true);

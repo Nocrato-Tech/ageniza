@@ -526,6 +526,27 @@ describe('CLIENTS HTTP module (#124)', () => {
     expect(plain.json()).toMatchObject({ name: `Casa Verde ${suffix}` });
   });
 
+  it('#436: a client name keeps the copyright, registered and trademark signs but not their selector 16, nor another pictographic symbol', async () => {
+    const suffix = randomUUID();
+    const vs16 = String.fromCodePoint(0xfe0f);
+    const accepted = [`Nike® ${suffix}`, `Marca™ ${suffix}`, `© Studio ${suffix}`];
+    for (const name of accepted) {
+      const created = await postClient(adminCookie, agencyA, { name });
+      expect(created.statusCode, name).toBe(201);
+      expect(created.json(), name).toMatchObject({ name });
+    }
+    const refused = [`Nike®${vs16} ${suffix}`, `Marca™${vs16} ${suffix}`, `©${vs16} Studio ${suffix}`, `Nota ★ ${suffix}`, `Nota ✔ ${suffix}`];
+    for (const name of refused) {
+      expect((await postClient(adminCookie, agencyA, { name })).statusCode, name).toBe(400);
+      const other = await createClient({ agencyId: agencyA });
+      const before = (await clientRow(other))?.name;
+      expect((await patchClient(adminCookie, agencyA, other, { name })).statusCode, name).toBe(400);
+      expect((await clientRow(other))?.name, name).toBe(before);
+    }
+    const stored = await owner.knex('clients').where({ agency_id: agencyA }).whereRaw('name like ?', [`%${suffix}`]).orderBy('name').select('name');
+    expect(stored.map((row) => row.name).sort()).toEqual([...accepted].sort());
+  });
+
   it('applies the same name rule to the PATCH: name, contact fields and legalName', async () => {
     const clientId = await createClient({ agencyId: agencyA });
     expect((await patchClient(adminCookie, agencyA, clientId, { name: `Padaria\u200bCentral ${randomUUID()}` })).statusCode).toBe(400);
