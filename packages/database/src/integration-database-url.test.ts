@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { resolveIntegrationDatabaseUrls } from './index.js';
+import { integrationDatabaseEnvironment, resolveIntegrationDatabaseUrls } from './index.js';
 
 const own = {
   DATABASE_URL: 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza_agent391',
@@ -77,5 +77,16 @@ describe('resolveIntegrationDatabaseUrls (issue #391)', () => {
     }
     expect(message).not.toBe('');
     expect(message).not.toContain('s3cret-pass');
+  });
+});
+
+describe('integrationDatabaseEnvironment (issue #434)', () => {
+  it('hands an operation the two variables the resolver accepted, under their own names', () => {
+    expect(integrationDatabaseEnvironment(own)).toEqual({ DATABASE_URL: own.DATABASE_URL, MIGRATION_DATABASE_URL: own.MIGRATION_DATABASE_URL });
+  });
+
+  it('keeps the refusals of the resolver: no default, and never the protected database', () => {
+    expect(() => integrationDatabaseEnvironment({})).toThrow(/DATABASE_URL and MIGRATION_DATABASE_URL/);
+    expect(() => integrationDatabaseEnvironment({ ...own, MIGRATION_DATABASE_URL: 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza' })).toThrow(/MIGRATION_DATABASE_URL points at the database `ageniza`/);
   });
 });

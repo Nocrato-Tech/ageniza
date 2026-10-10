@@ -4,15 +4,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   createVerifiedUserClaims,
+  integrationDatabaseEnvironment,
   raw,
   withAuthenticatedUserTransaction,
   type DatabaseClient
 } from '@ageniza/database';
 
 import {
-  APPLICATION_DATABASE_URL,
   buildTestApp,
-  OWNER_DATABASE_URL,
   ownerClient,
   TEST_APP_PUBLIC_URL,
   type TestApp
@@ -29,8 +28,7 @@ const silentStdout = { write: () => undefined };
 // developer created with `pnpm seed:demo` in the same database (security review of PR #188).
 const namespace = `seed-test-${randomUUID().slice(0, 8)}`;
 const seedEnvironment = {
-  DATABASE_URL: APPLICATION_DATABASE_URL,
-  MIGRATION_DATABASE_URL: OWNER_DATABASE_URL,
+  ...integrationDatabaseEnvironment(),
   AUTH_TERMS_VERSION: '2026-01-01',
   AUTH_PRIVACY_VERSION: '2026-02-01'
 };

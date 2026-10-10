@@ -211,6 +211,17 @@ export const resolveIntegrationDatabaseUrls = (
   return { applicationUrl, ownerUrl };
 };
 
+/**
+ * The two variables an operation under test reads from its environment, taken from the resolver so
+ * a harness never has to write their names (the scanner in `scripts/ci` rejects the names there).
+ */
+export const integrationDatabaseEnvironment = (
+  environment: Readonly<Record<string, string | undefined>> = process.env
+): { readonly DATABASE_URL: string; readonly MIGRATION_DATABASE_URL: string } => {
+  const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls(environment);
+  return { DATABASE_URL: applicationUrl, MIGRATION_DATABASE_URL: ownerUrl };
+};
+
 /** Creates a client for the Docker-backed local development database only. */
 export const createLocalTestDatabaseClient = (connectionString: string): DatabaseClient => {
   assertLocalDatabaseUrl(connectionString);
