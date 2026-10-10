@@ -772,6 +772,43 @@ describe('edit client modal (#137)', () => {
     expect(calls.some((call) => call.startsWith('PATCH'))).toBe(false);
   });
 
+  // A zero-width space is refused today by the name rule; the name was saved before the rule (#446).
+  const legacyName = 'Padaria​Central';
+  const legacyClient = { ...padaria, name: legacyName };
+
+  it('saves another field of a client whose stored name the current rule refuses (#446)', async () => {
+    const bodies: unknown[] = [];
+    const { impl } = makeFetch({
+      client: () => json(legacyClient),
+      patch: (body) => { bodies.push(body); return json(registrationOf(legacyClient)); }
+    });
+    renderClientDetail(impl);
+    await screen.findByRole('heading', { name: legacyName });
+    const dialog = await openEditDialog();
+    expect(editNameInput(dialog).value).toBe(legacyName);
+
+    fireEvent.change(editTaxIdInput(dialog), { target: { value: '98.765.432/0001-10' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(bodies).toEqual([{ taxId: '98765432000110' }]));
+    expect(within(dialog).queryByText('O nome contém caracteres que não são aceitos.')).toBeNull();
+  });
+
+  it('still holds a changed name to the current rule, sending nothing (#446)', async () => {
+    const { impl, calls } = makeFetch({ client: () => json(legacyClient) });
+    renderClientDetail(impl);
+    await screen.findByRole('heading', { name: legacyName });
+    const dialog = await openEditDialog();
+    const name = editNameInput(dialog);
+
+    fireEvent.change(name, { target: { value: 'Outra​Padaria' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    expect(await within(dialog).findByText('O nome contém caracteres que não são aceitos.')).toBeTruthy();
+    expect(name.getAttribute('aria-invalid')).toBe('true');
+    expect(calls.some((call) => call.startsWith('PATCH'))).toBe(false);
+  });
+
   it('shows the name-in-use message on the name field on a 409, keeping the typed value', async () => {
     const { impl } = makeFetch({ patch: () => json({ error: { code: 'CLIENT_NAME_IN_USE', message: 'private diagnostic' } }, 409) });
     renderClientDetail(impl);
