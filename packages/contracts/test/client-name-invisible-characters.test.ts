@@ -126,13 +126,19 @@ describe('ClientNameSchema invisible characters (#427)', () => {
     }
   });
 
-  it('keeps what the owner decision leaves out of Extended_Pictographic: a flag and a lone skin tone modifier', () => {
-    expect(ClientNameSchema.safeParse(`Cafe ${text(0x1f1e7, 0x1f1f7)}`).success).toBe(true);
-    for (let codePoint = 0x1f3fb; codePoint <= 0x1f3ff; codePoint += 1) {
-      expect(ClientNameSchema.safeParse(`Cafe ${text(codePoint)}`).success, codePoint.toString(16)).toBe(true);
+  // Not `Extended_Pictographic`, but they draw as an emoji, and the owner decided "no emoji".
+  it('refuses a flag and every regional indicator on its own', () => {
+    expect(ClientNameSchema.safeParse(`Loja ${text(0x1f1e7, 0x1f1f7)}`).success).toBe(false);
+    for (let codePoint = 0x1f1e6; codePoint <= 0x1f1ff; codePoint += 1) {
+      expect(ClientNameSchema.safeParse(`Loja ${text(codePoint)}`).success, codePoint.toString(16)).toBe(false);
     }
-    // After an emoji the modifier is part of a refused pictograph.
-    expect(ClientNameSchema.safeParse(`Cafe ${text(0x1f44d, 0x1f3fb)}`).success).toBe(false);
+  });
+
+  it('refuses every skin tone modifier, alone or after an emoji', () => {
+    for (let codePoint = 0x1f3fb; codePoint <= 0x1f3ff; codePoint += 1) {
+      expect(ClientNameSchema.safeParse(`Loja ${text(codePoint)}`).success, codePoint.toString(16)).toBe(false);
+      expect(ClientNameSchema.safeParse(`Loja ${text(0x1f44d, codePoint)}`).success, codePoint.toString(16)).toBe(false);
+    }
   });
 
   it('still refuses the other pictographic symbols', () => {

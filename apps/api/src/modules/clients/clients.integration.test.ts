@@ -535,7 +535,7 @@ describe('CLIENTS HTTP module (#124)', () => {
       expect(created.statusCode, name).toBe(201);
       expect(created.json(), name).toMatchObject({ name });
     }
-    const refused = [`Nike®${vs16} ${suffix}`, `Marca™${vs16} ${suffix}`, `©${vs16} Studio ${suffix}`, `Nota ★ ${suffix}`, `Nota ✔ ${suffix}`, `Nike®\u0301\u200d Studio ${suffix}`, `Mesa 1\u20e3 ${suffix}`];
+    const refused = [`Nike®${vs16} ${suffix}`, `Marca™${vs16} ${suffix}`, `©${vs16} Studio ${suffix}`, `Nota ★ ${suffix}`, `Nota ✔ ${suffix}`, `Nike®\u0301\u200d Studio ${suffix}`, `Mesa 1\u20e3 ${suffix}`, `Loja \u{1F1E7}\u{1F1F7} ${suffix}`, `Loja \u{1F3FB} ${suffix}`];
     for (const name of refused) {
       expect((await postClient(adminCookie, agencyA, { name })).statusCode, name).toBe(400);
       const other = await createClient({ agencyId: agencyA });
