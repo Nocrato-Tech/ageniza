@@ -550,6 +550,31 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     expect((await putSection(adminCookie, agencyA, clientId, 'colors', { colors: [{ name: 'n'.repeat(61), hex: '#FFFFFF' }] })).statusCode).toBe(400);
   });
 
+  it('answers 400, never 500, to a lone surrogate in a color name, and stores nothing (#484)', async () => {
+    const clientId = await createClient(agencyA);
+    // The escape reaches the server as written on the wire, the way a client would send it.
+    const wire = (name: string) => `{"colors":[{"name":"${name}","hex":"#FFFFFF"}]}`;
+    const put = async (payload: string): Promise<InjectResponse> =>
+      (await app.app.inject({
+        method: 'PUT',
+        url: `/agencies/${agencyA}/clients/${clientId}/brand-study/sections/colors`,
+        headers: { ...origin, cookie: adminCookie, 'content-type': 'application/json' },
+        payload
+      })) as unknown as InjectResponse;
+
+    for (const name of ['x\\ud800', 'x\\udc00', '\\ud83dx', '\\ude00\\ud83d']) {
+      const response = await put(wire(name));
+      expect(response.statusCode, name).toBe(400);
+      expect(response.json(), name).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+    }
+    const study = (await getStudy(adminCookie, agencyA, clientId)).json<{ sections: { key: string; colors: unknown }[] }>();
+    expect(study.sections.find((section) => section.key === 'colors')?.colors).toBeNull();
+
+    const pair = await put(wire('Sol \\ud83d\\ude00'));
+    expect(pair.statusCode).toBe(200);
+    expect(pair.json()).toMatchObject({ colors: [{ name: 'Sol 😀', hex: '#FFFFFF' }] });
+  });
+
   it('accepts multiline text with accents and returns it unchanged', async () => {
     const clientId = await createClient(agencyA);
     const body = 'Primeira linha\nSegunda linha\r\n\tCom tab e acentuação çãõ.';
