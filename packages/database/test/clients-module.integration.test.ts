@@ -416,6 +416,59 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
     await getOwner().knex('client_threads').where({ id: archivedThreadId }).delete();
   });
 
+  it('keeps the comments of two threads of the same client apart: a thread the portal cannot read exposes no comment and takes none (#479)', async () => {
+    // Both threads belong to clientA1, so a policy that matched the comment by client_id instead of
+    // thread_id would still find a readable thread (the open one) and let the other thread's comment
+    // through. Only a hidden thread and a readable one of the SAME client tell the two apart.
+    const personaId = randomUUID();
+    await getOwner().knex('client_personas').insert({ id: personaId, client_id: clientA1, name: 'Persona of the hidden thread' });
+    const openThreadId = randomUUID();
+    const hiddenThreadId = randomUUID();
+    const openCommentId = randomUUID();
+    const hiddenCommentId = randomUUID();
+    await getOwner().knex('client_threads').insert([
+      { id: openThreadId, client_id: clientA1, section_key: 'observations', opened_by: portalA1, opened_side: 'client' },
+      { id: hiddenThreadId, client_id: clientA1, persona_id: personaId, opened_by: portalA1, opened_side: 'client' }
+    ]);
+    await getOwner().knex('client_thread_comments').insert([
+      { id: openCommentId, thread_id: openThreadId, client_id: clientA1, author_user_id: portalA1, author_side: 'client', body: 'On the open thread' },
+      { id: hiddenCommentId, thread_id: hiddenThreadId, client_id: clientA1, author_user_id: portalA1, author_side: 'client', body: 'On the hidden thread' }
+    ]);
+    await getOwner().knex('client_personas').where({ id: personaId }).update({ status: 'archived' });
+
+    const commentIdsOf = (userId: string, where: Record<string, string>) =>
+      asUser(userId, (transaction) => transaction('client_thread_comments').where(where).select('id')).then((rows) => rows.map((row) => row.id as string).sort());
+    const storedOn = async (threadId: string) =>
+      Number((await getOwner().knex('client_thread_comments').where({ thread_id: threadId }).count({ total: '*' }))[0]!.total);
+
+    await expect(asUser(portalA1, (transaction) => transaction('client_threads').where({ client_id: clientA1 }).whereIn('id', [openThreadId, hiddenThreadId]).select('id'))).resolves.toEqual([{ id: openThreadId }]);
+    await expect(commentIdsOf(portalA1, { client_id: clientA1 })).resolves.toEqual([openCommentId]);
+    await expect(commentIdsOf(portalA1, { thread_id: openThreadId })).resolves.toEqual([openCommentId]);
+    await expect(commentIdsOf(portalA1, { thread_id: hiddenThreadId })).resolves.toEqual([]);
+    await expect(commentIdsOf(portalA1, { id: hiddenCommentId })).resolves.toEqual([]);
+    // The agency keeps both, each under its own thread.
+    await expect(commentIdsOf(adminA, { thread_id: openThreadId })).resolves.toEqual([openCommentId]);
+    await expect(commentIdsOf(adminA, { thread_id: hiddenThreadId })).resolves.toEqual([hiddenCommentId]);
+    await expect(commentIdsOf(adminA, { client_id: clientA1 })).resolves.toEqual([openCommentId, hiddenCommentId].sort());
+
+    const commentOn = (threadId: string, userId: string, side: 'agency' | 'client') =>
+      asUser(userId, (transaction) =>
+        transaction('client_thread_comments').insert({ id: randomUUID(), thread_id: threadId, client_id: clientA1, author_user_id: userId, author_side: side, body: `Comment by ${userId}` })
+      );
+    await expect(commentOn(hiddenThreadId, portalA1, 'client')).rejects.toThrow(/row-level security/);
+    await expect(commentOn(hiddenThreadId, managerA, 'agency')).rejects.toThrow(/row-level security/);
+    await expect(storedOn(hiddenThreadId)).resolves.toBe(1);
+    // The same writers comment on the readable thread of that client: the refusal above is the thread's, not the client's.
+    await commentOn(openThreadId, portalA1, 'client');
+    await commentOn(openThreadId, managerA, 'agency');
+    await expect(storedOn(openThreadId)).resolves.toBe(3);
+    await expect(storedOn(hiddenThreadId)).resolves.toBe(1);
+
+    await getOwner().knex('client_thread_comments').whereIn('thread_id', [openThreadId, hiddenThreadId]).delete();
+    await getOwner().knex('client_threads').whereIn('id', [openThreadId, hiddenThreadId]).delete();
+    await getOwner().knex('client_personas').where({ id: personaId }).delete();
+  });
+
   it('hides a sibling client of the same agency from a portal member, and blocks their writes on it', async () => {
     const sectionId = { client_id: clientA2, section_key: 'branding' as const };
     await getOwner().knex('client_brand_sections').insert({ ...sectionId, body: 'Client A2 branding', updated_by: adminA });
