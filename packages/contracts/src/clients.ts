@@ -71,7 +71,7 @@ const JOINER_BETWEEN_LATIN_LETTERS = /(?<=\p{Script=Latin}\p{M}*)[‌‍]+(?=\p{
 
 /**
  * Invisible or blank characters the shared rule lets through because they are not `\p{Cf}`: the
- * combining grapheme joiner (U+034F, `Mn`), the variation selectors (U+180B-U+180D, U+FE00-U+FE0F,
+ * combining grapheme joiner (U+034F, `Mn`), the variation selectors (U+180B-U+180D, U+FE00-U+FE0F, VS16 included,
  * U+E0100-U+E01EF), the Khmer inherent vowels (U+17B4, U+17B5), the tag characters and the like are
  * all `Default_Ignorable_Code_Point`, and the Braille blank (U+2800, `So`) renders as a space. The
  * unique index removes none of them, so each one forges a homonym of an active name. ZWJ/ZWNJ are
@@ -80,11 +80,14 @@ const JOINER_BETWEEN_LATIN_LETTERS = /(?<=\p{Script=Latin}\p{M}*)[‌‍]+(?=\p{
 const INVISIBLE_IN_CLIENT_NAME = /(?![\u200C\u200D])[\p{Default_Ignorable_Code_Point}\u2800]/u;
 
 /**
- * VS16 (U+FE0F) right after a pictograph only asks for its emoji presentation (a red heart is U+2764 +
- * U+FE0F), the way a ZWJ binds an emoji family. It is the one variation selector a name keeps; the
- * same selector after anything else, or a second one, is invisible and stays refused.
+ * A client name carries no emoji (owner decision of 2026-10-08): every `Extended_Pictographic`
+ * character is refused, which also closes the homonyms an emoji could forge -- a redundant VS16
+ * after a default-emoji pictograph, and a ZWJ between a pictograph and a letter or another
+ * pictograph, both render exactly like the plain name. VS16 itself stays refused by the invisible
+ * characters rule below, now without the exception it had after a pictograph. Includes the
+ * trademark, copyright and registered signs and the like, which Unicode classes as pictographic.
  */
-const EMOJI_PRESENTATION_SELECTOR = /(?<=\p{Extended_Pictographic})\uFE0F/gu;
+const PICTOGRAPH_IN_CLIENT_NAME = /\p{Extended_Pictographic}/u;
 
 /**
  * Client name: the shared display-name rule (control, bidi and invisible characters rejected, at
@@ -101,7 +104,8 @@ export const ClientNameSchema = z.string()
   .transform((value) => value.normalize('NFC').replace(/\p{Zs}/gu, ' '))
   .pipe(createDisplayNameSchema(256))
   .refine((value) => !JOINER_BETWEEN_LATIN_LETTERS.test(value), 'a zero-width joiner is not allowed between Latin letters')
-  .refine((value) => !INVISIBLE_IN_CLIENT_NAME.test(value.replace(EMOJI_PRESENTATION_SELECTOR, '')), 'must not contain invisible or blank characters')
+  .refine((value) => !PICTOGRAPH_IN_CLIENT_NAME.test(value), 'must not contain emoji or pictographs')
+  .refine((value) => !INVISIBLE_IN_CLIENT_NAME.test(value), 'must not contain invisible or blank characters')
   .refine((value) => utf8ByteLength(value) <= 256, 'must be at most 256 bytes');
 
 /** Digits only, stored without any mask; 11 or 14 digits. */
