@@ -74,7 +74,7 @@ function Harness({ store }: { store: AuthSessionStore }) {
   return <ApplicationRoutes session={session} />;
 }
 function LocationProbe({ probe }: { probe: { pathname: string; search: string } }) {
-  useCommittedLocation((location, navigate) => {
+  useCommittedLocation((location) => {
     probe.pathname = location.pathname;
     probe.search = location.search;
   });

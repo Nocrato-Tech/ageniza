@@ -81,7 +81,7 @@ const makeFetch = (scenario: Scenario = {}) => {
 const posts = (calls: readonly Call[], path: string): Call[] => calls.filter((call) => call.path === path && call.method === 'POST');
 
 function LocationProbe({ probe }: { probe: { pathname: string; search: string } }) {
-  useCommittedLocation((location, navigate) => {
+  useCommittedLocation((location) => {
     probe.pathname = location.pathname;
     probe.search = location.search;
   });

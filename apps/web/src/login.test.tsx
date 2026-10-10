@@ -75,7 +75,7 @@ function SessionHarness({ store }: { store: AuthSessionStore }) {
 }
 
 function LocationProbe({ probe }: { probe: { pathname: string; state: unknown } }) {
-  useCommittedLocation((location, navigate) => {
+  useCommittedLocation((location) => {
     probe.pathname = location.pathname;
     probe.state = location.state;
   });

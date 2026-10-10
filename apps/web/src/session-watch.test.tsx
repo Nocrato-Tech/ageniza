@@ -85,7 +85,7 @@ const makeWorld = (): { world: World; impl: typeof fetch } => {
 let currentLocation = '';
 let currentState: unknown = null;
 function Probe() {
-  useCommittedLocation((location, navigate) => {
+  useCommittedLocation((location) => {
     currentLocation = `${location.pathname}${location.search}`;
     currentState = location.state;
   });

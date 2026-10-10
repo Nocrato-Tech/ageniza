@@ -37,7 +37,7 @@ const signedInFetch: typeof fetch = async (input, init) => {
 };
 
 function LocationProbe({ probe }: { probe: { pathname: string } }) {
-  useCommittedLocation((location, navigate) => {
+  useCommittedLocation((location) => {
     probe.pathname = location.pathname;
   });
   return null;
