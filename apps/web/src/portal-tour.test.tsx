@@ -2,11 +2,12 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { portalClientBody, portalStudyBody } from './portal-fixture.js';
+import { PortalTour } from './portal-tour.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
@@ -145,6 +146,14 @@ const openReview = async (): Promise<void> => {
   const menu = await screen.findByRole('menu');
   fireEvent.click(within(menu).getByRole('menuitem', { name: 'Rever o tour' }));
 };
+
+const RECORD_FAILURES: ReadonlyArray<readonly [string, () => Response]> = [
+  ['a server error', () => json({ error: { code: 'INTERNAL_ERROR', message: 'Internal error.' } }, 500)],
+  ['a link that no longer exists', () => json({ error: { code: 'NOT_FOUND', message: 'Client not found.' } }, 404)],
+  ['an invalid request', () => json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid.' } }, 400)],
+  ['a rejected origin', () => json({ error: { code: 'CSRF_REJECTED', message: 'Request origin is not allowed' } }, 403)],
+  ['a network failure', (): Response => { throw new TypeError('network down'); }]
+];
 
 describe('portal tour (#144)', () => {
   it('opens on the first entry, welcoming the person by name and naming the client and the agency', async () => {
@@ -397,12 +406,7 @@ describe('portal tour (#144)', () => {
     expect(within(menu).queryByRole('menuitem', { name: 'Rever o tour' })).toBeNull();
   });
 
-  it.each([
-    ['a server error', () => json({ error: { code: 'INTERNAL_ERROR', message: 'Internal error.' } }, 500)],
-    ['a link that no longer exists', () => json({ error: { code: 'NOT_FOUND', message: 'Client not found.' } }, 404)],
-    ['an invalid request', () => json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid.' } }, 400)],
-    ['a network failure', (): Response => { throw new TypeError('network down'); }]
-  ])('closes the tour and leaves the portal usable when recording the mark fails with %s, and brings the tour back on the next entry', async (_label, answer) => {
+  it.each(RECORD_FAILURES)('closes the tour and leaves the portal usable when recording the mark fails with %s, and brings the tour back on the next entry', async (_label, answer) => {
     const world = makeWorld({ seenAnswer: answer });
     const first = renderPortal(world.impl);
     await tour(WELCOME);
@@ -465,5 +469,83 @@ describe('portal tour (#144)', () => {
     release();
     await act(async () => { await Promise.resolve(); });
     expect(world.posts()).toHaveLength(1);
+  });
+
+  it('announces itself as a modal dialog to assistive technology', async () => {
+    const world = makeWorld();
+    renderPortal(world.impl);
+    const dialog = await tour(WELCOME);
+
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    click('Começar');
+    expect((await tour('Início')).getAttribute('aria-modal')).toBe('true');
+  });
+
+  it('keeps Esc to itself: a handler of the page around the tour never hears it', () => {
+    const outside = vi.fn();
+    const onClose = vi.fn();
+    render(<div onKeyDown={outside}>
+      <PortalTour personName="Maria" clientName="Padaria Central" agencyName="Agência Um" onClose={onClose} onTargetChange={() => undefined} />
+    </div>);
+
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledExactlyOnceWith(false);
+    expect(outside).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'a' });
+    expect(outside).toHaveBeenCalledOnce();
+  });
+
+  it('starts the welcome card again when the portal switches to another client with the tour still open', async () => {
+    const world = makeWorld({ alsoCollaborator: true });
+    const { probe } = renderPortal(world.impl, portalUrl('inicio', SECOND_ID));
+    expect(within(await tour(WELCOME)).getByText('Este é o espaço de Confeitaria Dois com Agência Um.')).toBeTruthy();
+
+    // The first client is not loaded yet, so the tour of the second is gone while it loads; the second is cached by now.
+    act(() => { probe.navigate(portalUrl('inicio', CLIENT_ID)); });
+    expect(within(await tour(WELCOME)).getByText('Este é o espaço de Padaria Central com Agência Um.')).toBeTruthy();
+    click('Começar');
+    await tour('Início');
+
+    act(() => { probe.navigate(portalUrl('inicio', SECOND_ID)); });
+    const dialog = await tour(WELCOME);
+    expect(within(dialog).getByText('Este é o espaço de Confeitaria Dois com Agência Um.')).toBeTruthy();
+    expect(dialog.getAttribute('data-step')).toBe('welcome');
+    expect(world.posts()).toEqual([]);
+  });
+
+  it.each(RECORD_FAILURES)('handles the rejection of the record itself when it fails with %s', async (_label, answer) => {
+    const unhandled: unknown[] = [];
+    const listener = (reason: unknown): void => { unhandled.push(reason); };
+    process.on('unhandledRejection', listener);
+    try {
+      const world = makeWorld({ seenAnswer: answer });
+      renderPortal(world.impl);
+      await tour(WELCOME);
+
+      click('Pular');
+      await waitFor(() => { expect(world.posts()).toHaveLength(1); });
+      await new Promise<void>((resolve) => { setTimeout(resolve, 50); });
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', listener);
+    }
+  });
+
+  it('after a 403 CSRF_REJECTED the mark is not kept in the cache: leaving the portal and coming back brings the tour', async () => {
+    const world = makeWorld({ seenAnswer: () => json({ error: { code: 'CSRF_REJECTED', message: 'Request origin is not allowed' } }, 403) });
+    const { probe } = renderPortal(world.impl);
+    await tour(WELCOME);
+    click('Pular');
+    await waitFor(() => { expect(world.posts()).toHaveLength(1); });
+    await waitFor(() => { expect(queryTour()).toBeNull(); });
+
+    act(() => { probe.navigate('/uma-pagina-que-nao-existe'); });
+    await waitFor(() => { expect(screen.queryByRole('navigation', { name: 'Navegação do portal' })).toBeNull(); });
+    // From the cache alone, before any new read of the client can answer.
+    act(() => { probe.navigate(portalUrl()); });
+    expect(screen.getByRole('dialog', { name: WELCOME })).toBeTruthy();
+    expect(world.posts()).toHaveLength(1);
+    expect(world.seenAt[CLIENT_ID]).toBeNull();
   });
 });

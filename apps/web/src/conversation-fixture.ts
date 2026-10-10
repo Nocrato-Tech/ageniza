@@ -140,6 +140,7 @@ export const createConversationApi = (options: ConversationApiOptions) => {
       // Like the API: the latest activity first; the sort is stable, so a tie keeps the newest thread first.
       const matching = threads
         .filter((thread) => sameSubject(thread.subject, subject))
+        .filter((thread) => query.data?.state === undefined || stateOf(thread) === query.data.state)
         .sort((left, right) => lastOf(right).createdAt.localeCompare(lastOf(left).createdAt))
         .map(publicThread);
       return json(page(matching, url, options.pageSize ?? 20));

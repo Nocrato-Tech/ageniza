@@ -330,12 +330,6 @@ function NewConversationDialog({ props, onClose }: { props: ConversationProps; o
   </Modal>;
 }
 
-/** Open threads first, then the resolved; the API already orders by latest activity inside each. */
-const openFirst = (threads: readonly Thread[]): Thread[] => [
-  ...threads.filter((thread) => thread.state === 'open'),
-  ...threads.filter((thread) => thread.state === 'resolved')
-];
-
 function ThreadRow({ thread, viewer, onOpen }: { thread: Thread; viewer: ConversationSide; onOpen: () => void }) {
   const awaiting = awaitsViewer(thread, viewer);
   const status = thread.state === 'resolved'
@@ -364,24 +358,34 @@ export function Conversation(props: ConversationProps) {
   const [creating, setCreating] = useState(false);
   const subjectQuery = 'sectionKey' in subject ? `sectionKey=${subject.sectionKey}` : `personaId=${subject.personaId}`;
 
+  // One query reads both states and answers together: a thread that changes state moves between the
+  // two lists, so reading them apart would make it vanish or repeat between the two answers.
   const threads = useQuery({
     queryKey: threadsQueryKey(scope, subject),
-    queryFn: ({ signal }) => httpClient.request({
-      path: `${routesOf(scope).threads}?${subjectQuery}&pageSize=${THREADS_PAGE_SIZE}`,
-      response: ThreadListResponseSchema,
-      signal
-    })
+    queryFn: async ({ signal }) => {
+      const read = async (state: Thread['state']) => await httpClient.request({
+        path: `${routesOf(scope).threads}?${subjectQuery}&state=${state}&pageSize=${THREADS_PAGE_SIZE}`,
+        response: ThreadListResponseSchema,
+        signal
+      });
+      const [open, resolved] = await Promise.all([read('open'), read('resolved')]);
+      return { open, resolved };
+    }
   });
 
   const writable = canWrite && !readOnly;
-  const list = threads.data === undefined ? [] : openFirst(threads.data.data);
+  // The API already orders by latest activity inside each state.
+  const list = threads.data === undefined ? [] : [...threads.data.open.data, ...threads.data.resolved.data];
+  const totalItems = threads.data === undefined ? 0 : threads.data.open.meta.totalItems + threads.data.resolved.meta.totalItems;
+  const truncated = threads.data !== undefined
+    && (threads.data.open.meta.totalItems > THREADS_PAGE_SIZE || threads.data.resolved.meta.totalItems > THREADS_PAGE_SIZE);
   const awaiting = list.filter((thread) => awaitsViewer(thread, scope.side)).length;
   const current = openId === null ? undefined : list.find((thread) => thread.id === openId);
 
   return <section className="conversation" aria-label={`Conversas sobre ${subjectLabel}`}>
     <header className="conversation__header">
       <Heading className="conversation__title">
-        Conversas{threads.data === undefined ? '' : ` (${threads.data.meta.totalItems})`}
+        Conversas{threads.data === undefined ? '' : ` (${totalItems})`}
       </Heading>
       {awaiting > 0 && <span className="conversation__status conversation__status--awaiting">
         {scope.side === 'agency' ? `${awaiting} aguardando` : `${awaiting} com resposta da agência`}
@@ -400,7 +404,7 @@ export function Conversation(props: ConversationProps) {
     {list.length > 0 && <ul className="conversation__threads">
       {list.map((thread) => <ThreadRow key={thread.id} thread={thread} viewer={scope.side} onOpen={() => setOpenId(thread.id)} />)}
     </ul>}
-    {threads.data !== undefined && threads.data.meta.totalItems > THREADS_PAGE_SIZE && <p className="conversation__note">
+    {truncated && <p className="conversation__note">
       Mostrando as {THREADS_PAGE_SIZE} conversas mais recentes.
     </p>}
 
