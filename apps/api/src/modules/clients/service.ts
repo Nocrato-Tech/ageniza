@@ -112,7 +112,8 @@ export const loadClient = async (
 };
 
 /**
- * Locks an active client of the agency and returns its current photo reference. `for update` also
+ * Locks an active client of the agency and returns its current photo reference with the row's own
+ * ids (the lowercase ones the readers sign against, whatever case the URL carried). `for update` also
  * has to pass the `clients_update` policy, so an archived client, one of another agency, or a
  * caller without `cliente.operar` all come back as `undefined` -- the caller tells 404 from 409
  * with `loadClient`, which only needs the read policy.
@@ -124,15 +125,15 @@ export const loadClient = async (
 export const lockActiveClientPhoto = async (
   transaction: ClientTransaction,
   input: { readonly agencyId: string; readonly clientId: string }
-): Promise<{ readonly photoKey: string | null } | undefined> => {
-  const result = await raw<RawRows<{ photo_key: string | null }>>(transaction, `
-    select photo_key
+): Promise<{ readonly photoKey: string | null; readonly agencyId: string; readonly clientId: string } | undefined> => {
+  const result = await raw<RawRows<{ photo_key: string | null; agency_id: string; id: string }>>(transaction, `
+    select photo_key, agency_id, id
     from public.clients
     where id = ?::uuid and agency_id = ?::uuid and status = 'active'
     for update
   `, [input.clientId, input.agencyId]);
   const row = result.rows[0];
-  return row === undefined ? undefined : { photoKey: row.photo_key };
+  return row === undefined ? undefined : { photoKey: row.photo_key, agencyId: row.agency_id, clientId: row.id };
 };
 
 /**
