@@ -111,6 +111,8 @@ describe('brand colors: the contract and the database agree (#476)', () => {
   it.each([
     ['a lone high surrogate', 'x\ud800'],
     ['a lone low surrogate', 'x\udc00'],
+    ['the last high surrogate, alone', 'x\udbff'],
+    ['the last low surrogate, alone', 'x\udfff'],
     ['a high surrogate followed by a letter', '\ud83dx'],
     ['a low surrogate at the start', '\ude00x'],
     ['a pair written in reverse order', '\ude00\ud83d'],
