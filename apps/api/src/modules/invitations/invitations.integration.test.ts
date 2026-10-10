@@ -407,6 +407,56 @@ describe('invitation HTTP module', () => {
     }
   });
 
+  describe('Cache-Control: no-store on the routes that read or issue a session (#432)', () => {
+    it('GET /invitations/:token answers no-store on the preview and on the invalid-token error', async () => {
+      const email = `no-store-preview-${randomUUID()}@example.test`;
+      const invitation = await insertInvitation({ agencyId, email });
+
+      const preview = await app.app.inject({ method: 'GET', url: `/invitations/${invitation.token}` });
+      expect(preview.statusCode).toBe(200);
+      expect(preview.headers['cache-control']).toBe('no-store');
+
+      const unknown = await app.app.inject({ method: 'GET', url: `/invitations/${createInvitationToken({ appPublicUrl: TEST_APP_PUBLIC_URL }).token}` });
+      expect(unknown.statusCode).toBe(410);
+      expect(unknown.headers['cache-control']).toBe('no-store');
+    });
+
+    it('POST /invitations/:token/accept-new-account answers no-store on the 201 that sets the cookie and on its errors', async () => {
+      const email = `no-store-accept-${randomUUID()}@example.test`;
+      const invitation = await insertInvitation({ agencyId, email });
+
+      const invalidBody = await app.app.inject({
+        method: 'POST',
+        url: `/invitations/${invitation.token}/accept-new-account`,
+        headers: origin,
+        payload: { name: 'No Store Invitee', password: 'short', acceptTerms: true }
+      });
+      expect(invalidBody.statusCode).toBe(400);
+      expect(invalidBody.headers['cache-control']).toBe('no-store');
+
+      const unknown = await app.app.inject({
+        method: 'POST',
+        url: `/invitations/${createInvitationToken({ appPublicUrl: TEST_APP_PUBLIC_URL }).token}/accept-new-account`,
+        headers: origin,
+        payload: { name: 'No Store Invitee', password: 'a secure activation password', acceptTerms: true }
+      });
+      expect(unknown.statusCode).toBe(410);
+      expect(unknown.headers['cache-control']).toBe('no-store');
+
+      const accepted = await app.app.inject({
+        method: 'POST',
+        url: `/invitations/${invitation.token}/accept-new-account`,
+        headers: origin,
+        payload: { name: 'No Store Invitee', password: 'a secure activation password', acceptTerms: true }
+      });
+      expect(accepted.statusCode).toBe(201);
+      expect(accepted.cookies.length).toBeGreaterThan(0);
+      expect(accepted.headers['cache-control']).toBe('no-store');
+      const created = await owner.knex('auth.user').where({ email }).first('id');
+      createdUserIds.push(created!.id as string);
+    });
+  });
+
   it('rejects an email in the accept-new-account body with 400 and writes nothing', async () => {
     const agency = await createAgency('Foreign email activation agency', null);
     const email = `invited-${randomUUID()}@example.test`;

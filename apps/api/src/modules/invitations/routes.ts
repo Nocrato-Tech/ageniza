@@ -37,6 +37,7 @@ import type { EmailService } from '../auth/email-service.js';
 import { AUTH_RATE_LIMITS } from '../auth/policy.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { tryAgain } from '../../plugins/infra/conflict.js';
+import { noStore } from '../../plugins/infra/no-store.js';
 import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { isInsufficientPrivilegeError, tenantHolds } from '../tenancy/guards.js';
 
@@ -792,7 +793,7 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     return reply.status(204).send();
   });
 
-  app.get('/invitations/:token', publicConfig(previewDocs), async (request) => {
+  app.get('/invitations/:token', { onRequest: noStore, ...publicConfig(previewDocs) }, async (request) => {
     const { token } = routeParams(previewDocs, request);
     const row = await lookupOrInvalid(lookup, token);
     const accountResult = await dependencies.database.transaction(async (transaction) =>
@@ -807,7 +808,7 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     });
   });
 
-  app.post('/invitations/:token/accept-new-account', publicConfig(acceptNewAccountDocs), async (request, reply) => {
+  app.post('/invitations/:token/accept-new-account', { onRequest: noStore, ...publicConfig(acceptNewAccountDocs) }, async (request, reply) => {
     const { token } = routeParams(acceptNewAccountDocs, request);
     const body = routeBody(acceptNewAccountDocs, request);
     const invitation = await lookupOrInvalid(lookup, token);
