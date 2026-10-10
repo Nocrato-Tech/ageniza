@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { integrationDatabaseEnvironment, resolveIntegrationDatabaseUrls } from './index.js';
 
@@ -10,6 +10,7 @@ const own = {
 const originalPGDATABASE = process.env.PGDATABASE;
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   if (originalPGDATABASE === undefined) delete process.env.PGDATABASE;
   else process.env.PGDATABASE = originalPGDATABASE;
 });
@@ -82,6 +83,9 @@ describe('resolveIntegrationDatabaseUrls (issue #391)', () => {
 
 describe('integrationDatabaseEnvironment (issue #434)', () => {
   it('hands an operation the two variables the resolver accepted, under their own names', () => {
+    // The process environment holds other values, so a helper that reads process.env instead of its argument fails here.
+    vi.stubEnv('DATABASE_URL', 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza_other');
+    vi.stubEnv('MIGRATION_DATABASE_URL', 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza_other');
     expect(integrationDatabaseEnvironment(own)).toEqual({ DATABASE_URL: own.DATABASE_URL, MIGRATION_DATABASE_URL: own.MIGRATION_DATABASE_URL });
   });
 
