@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { DeleteObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import Fastify from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import type { DatabaseClient } from '@ageniza/database';
 
@@ -578,6 +578,128 @@ describe('client photo (issue #126)', () => {
       expect((await clientRow(second))?.photo_key).toBe(secondKey);
       expect(await listObjects(agencyA, second)).toEqual([secondKey]);
       expect(await listObjects(agencyA, first)).toEqual([]);
+    });
+
+    // Issue #436 (review of #431). A UUID in capitals reaches the same row, but the readers sign only
+    // the key built from the row's lowercase ids: a key built from the URL's capitals would be an
+    // object nobody signs and nobody deletes. Every call site is exercised on its own.
+    describe('ids in capitals in the URL name the same row and the same lowercase keys (#436)', () => {
+      // The photo rate limit is per user: a fresh operator keeps these bursts off the shared manager.
+      let operatorCookie = '';
+      beforeEach(async () => {
+        operatorCookie = (await makeOperator('photo-capitals-operator')).cookie;
+      });
+
+      const lowerKeyPattern = (clientId: string): RegExp => new RegExp(`^agencies/${agencyA}/clients/${clientId}/avatar/[0-9a-f-]{36}\\.png$`);
+
+      const seedPhoto = async (clientId: string): Promise<string> => {
+        expect((await putPhoto(operatorCookie, agencyA, clientId, { imageBase64: base64(png()) })).status).toBe(200);
+        return (await clientRow(clientId))!.photo_key!;
+      };
+
+      /** The module over a database whose `call`-th transaction first runs `before` (or throws), like the races above. */
+      const withTransactionHook = async (
+        hook: { readonly call: number; readonly before?: () => Promise<void>; readonly fail?: boolean },
+        run: (hooked: ReturnType<typeof Fastify>) => Promise<void>
+      ): Promise<void> => {
+        const database = app.database;
+        let calls = 0;
+        const hookedDatabase = {
+          ...database,
+          transaction: async (work: Parameters<DatabaseClient['transaction']>[0]) => {
+            calls += 1;
+            if (calls === hook.call) {
+              if (hook.fail === true) throw new Error('simulated commit failure');
+              await hook.before?.();
+            }
+            return database.transaction(work);
+          }
+        } as unknown as DatabaseClient;
+        const hooked = Fastify();
+        registerClientModule(hooked, {
+          database: hookedDatabase,
+          auth: app.auth,
+          requireAgencyAccess: createRequireAgencyAccess({ database }),
+          requirePermission,
+          requireClientAccess: createRequireClientAccess({ database }),
+          identityStorage: createIdentityStorageClient(TEST_IDENTITY_STORAGE_CONFIG),
+          photoUrlExpirySeconds: TEST_IDENTITY_STORAGE_CONFIG.downloadUrlExpirySeconds,
+          photoMaxImageBytes: TEST_IDENTITY_STORAGE_CONFIG.maxImageBytes
+        });
+        await hooked.ready();
+        try {
+          await run(hooked);
+        } finally {
+          await hooked.close();
+        }
+      };
+
+      const putInCapitals = (instance: { inject: typeof app.app.inject }, clientId: string) => instance.inject({
+        method: 'PUT',
+        url: `/agencies/${agencyA.toUpperCase()}/clients/${clientId.toUpperCase()}/photo`,
+        headers: { ...origin, cookie: operatorCookie },
+        payload: { imageBase64: base64(png()) }
+      });
+
+      it('PUT stores the key built from the row ids, and the readers sign it', async () => {
+        const clientId = await createClient();
+        const response = await putPhoto(operatorCookie, agencyA.toUpperCase(), clientId.toUpperCase(), { imageBase64: base64(png()) });
+        expect(response.status).toBe(200);
+
+        const key = (await clientRow(clientId))?.photo_key;
+        expect(key).toMatch(lowerKeyPattern(clientId));
+        expect(await listObjects(agencyA, clientId)).toEqual([key]);
+        expect(await listObjects(agencyA.toUpperCase(), clientId.toUpperCase())).toEqual([]);
+        expect(new URL(response.body.photoUrl!).pathname).toContain(key);
+
+        const detail = await app.app.inject({ method: 'GET', url: `/agencies/${agencyA}/clients/${clientId}`, headers: { ...origin, cookie: operatorCookie } });
+        const detailUrl = detail.json<{ photoUrl: string | null }>().photoUrl;
+        expect(detailUrl).not.toBeNull();
+        expect(new URL(detailUrl!).pathname).toContain(key);
+        expect((await fetch(detailUrl!)).ok).toBe(true);
+      });
+
+      it('PUT removes the previous object, which a capital-lettered scope would have refused to delete', async () => {
+        const clientId = await createClient();
+        const previous = await seedPhoto(clientId);
+
+        const response = await putPhoto(operatorCookie, agencyA.toUpperCase(), clientId.toUpperCase(), { imageBase64: base64(png()) });
+        expect(response.status).toBe(200);
+        const current = (await clientRow(clientId))?.photo_key;
+        expect(current).not.toBe(previous);
+        expect(await listObjects(agencyA, clientId)).toEqual([current]);
+      });
+
+      it('PUT removes the object it just wrote when the client is archived before the commit', async () => {
+        const clientId = await createClient();
+        await withTransactionHook({
+          call: 2,
+          before: async () => { await owner.knex('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() }); }
+        }, async (hooked) => {
+          expect((await putInCapitals(hooked, clientId)).statusCode).toBe(409);
+        });
+        expect(await listObjects(agencyA, clientId)).toEqual([]);
+        expect((await clientRow(clientId))?.photo_key).toBeNull();
+      });
+
+      it('PUT removes the object it just wrote when the reference cannot be committed', async () => {
+        const clientId = await createClient();
+        await withTransactionHook({ call: 2, fail: true }, async (hooked) => {
+          expect((await putInCapitals(hooked, clientId)).statusCode).toBe(500);
+        });
+        expect(await listObjects(agencyA, clientId)).toEqual([]);
+        expect((await clientRow(clientId))?.photo_key).toBeNull();
+      });
+
+      it('DELETE clears the reference and removes the object', async () => {
+        const clientId = await createClient();
+        await seedPhoto(clientId);
+
+        const removed = await deletePhoto(operatorCookie, agencyA.toUpperCase(), clientId.toUpperCase());
+        expect(removed.status).toBe(204);
+        expect((await clientRow(clientId))?.photo_key).toBeNull();
+        expect(await listObjects(agencyA, clientId)).toEqual([]);
+      });
     });
 
     it('treats a malformed or traversal client id as the same 404, never reaching storage', async () => {

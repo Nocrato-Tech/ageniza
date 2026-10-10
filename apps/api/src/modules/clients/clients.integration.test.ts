@@ -444,7 +444,7 @@ describe('CLIENTS HTTP module (#124)', () => {
     expect(row?.name).toBe((row?.name as string).normalize('NFC'));
   });
 
-  it('#312: ZWJ/ZWNJ between Latin letters never forges a lookalike of an active name, while persian and emoji sequences stay accepted', async () => {
+  it('#312: ZWJ/ZWNJ between Latin letters never forges a lookalike of an active name, while the persian ZWNJ stays accepted', async () => {
     const suffix = randomUUID();
     await createClient({ agencyId: agencyA, name: `Café Central ${suffix}` });
     for (const joiner of ['\u200d', '\u200c', '\u200c\u200d']) {
@@ -461,11 +461,10 @@ describe('CLIENTS HTTP module (#124)', () => {
       }
     }
 
-    for (const accepted of [`می\u200cخواهم ${suffix}`, `Família 👩\u200d👩\u200d👧 ${suffix}`]) {
-      const created = await postClient(adminCookie, agencyA, { name: accepted });
-      expect(created.statusCode, accepted).toBe(201);
-      expect(created.json(), accepted).toMatchObject({ name: accepted });
-    }
+    const accepted = `می‌خواهم ${suffix}`;
+    const created = await postClient(adminCookie, agencyA, { name: accepted });
+    expect(created.statusCode, accepted).toBe(201);
+    expect(created.json(), accepted).toMatchObject({ name: accepted });
   });
 
   it('#427: an invisible or blank character that is not a format character never forges a lookalike of an active name', async () => {
@@ -495,12 +494,57 @@ describe('CLIENTS HTTP module (#124)', () => {
     }
     const lookalikes = await owner.knex('clients').where({ agency_id: agencyA }).whereRaw('name like ?', [`%Central ${suffix}`]).select('name');
     expect(lookalikes.map((row) => row.name)).toEqual([`Café Central ${suffix}`]);
+  });
 
-    // A pictograph keeps its emoji presentation selector: the red heart is U+2764 + U+FE0F.
-    const heart = String.fromCodePoint(0x2764, 0xfe0f);
-    const accepted = await postClient(adminCookie, agencyA, { name: `Amor ${heart} Doce ${suffix}` });
-    expect(accepted.statusCode).toBe(201);
-    expect(accepted.json()).toMatchObject({ name: `Amor ${heart} Doce ${suffix}` });
+  it('#436: a client name takes no emoji, so a pictograph never forges a homonym, on POST and on PATCH', async () => {
+    const suffix = randomUUID();
+    await createClient({ agencyId: agencyA, name: `Café ${suffix}` });
+    await createClient({ agencyId: agencyA, name: `Casa ${suffix}` });
+    const heart = String.fromCodePoint(0x2764);
+    const house = String.fromCodePoint(0x1f3e0);
+    const vs16 = String.fromCodePoint(0xfe0f);
+    const zwj = String.fromCodePoint(0x200d);
+    const refused = {
+      'heart with VS16': `Café ${heart}${vs16} ${suffix}`,
+      'house, a default emoji': `Casa ${house} ${suffix}`,
+      'house with a redundant VS16': `Casa ${house}${vs16} ${suffix}`,
+      'heart bound to a letter by a ZWJ': `Cafe ${heart}${zwj}Central ${suffix}`,
+      'a family of emoji': `Família ${String.fromCodePoint(0x1f469, 0x200d, 0x1f469, 0x200d, 0x1f467)} ${suffix}`
+    };
+    for (const [label, candidate] of Object.entries(refused)) {
+      expect((await postClient(adminCookie, agencyA, { name: candidate })).statusCode, label).toBe(400);
+      const other = await createClient({ agencyId: agencyA });
+      const before = (await clientRow(other))?.name;
+      expect((await patchClient(adminCookie, agencyA, other, { name: candidate })).statusCode, label).toBe(400);
+      expect((await clientRow(other))?.name, label).toBe(before);
+    }
+    const stored = await owner.knex('clients').where({ agency_id: agencyA }).whereRaw('name like ?', [`%${suffix}`]).orderBy('name').select('name');
+    expect(stored.map((row) => row.name)).toEqual([`Café ${suffix}`, `Casa ${suffix}`]);
+
+    const plain = await postClient(adminCookie, agencyA, { name: `Casa Verde ${suffix}` });
+    expect(plain.statusCode).toBe(201);
+    expect(plain.json()).toMatchObject({ name: `Casa Verde ${suffix}` });
+  });
+
+  it('#436: a client name keeps the copyright, registered and trademark signs but not their selector 16, nor another pictographic symbol', async () => {
+    const suffix = randomUUID();
+    const vs16 = String.fromCodePoint(0xfe0f);
+    const accepted = [`Nike® ${suffix}`, `Marca™ ${suffix}`, `© Studio ${suffix}`];
+    for (const name of accepted) {
+      const created = await postClient(adminCookie, agencyA, { name });
+      expect(created.statusCode, name).toBe(201);
+      expect(created.json(), name).toMatchObject({ name });
+    }
+    const refused = [`Nike®${vs16} ${suffix}`, `Marca™${vs16} ${suffix}`, `©${vs16} Studio ${suffix}`, `Nota ★ ${suffix}`, `Nota ✔ ${suffix}`, `Nike®\u0301\u200d Studio ${suffix}`, `Mesa 1\u20e3 ${suffix}`, `Loja \u{1F1E7}\u{1F1F7} ${suffix}`, `Loja \u{1F3FB} ${suffix}`];
+    for (const name of refused) {
+      expect((await postClient(adminCookie, agencyA, { name })).statusCode, name).toBe(400);
+      const other = await createClient({ agencyId: agencyA });
+      const before = (await clientRow(other))?.name;
+      expect((await patchClient(adminCookie, agencyA, other, { name })).statusCode, name).toBe(400);
+      expect((await clientRow(other))?.name, name).toBe(before);
+    }
+    const stored = await owner.knex('clients').where({ agency_id: agencyA }).whereRaw('name like ?', [`%${suffix}`]).orderBy('name').select('name');
+    expect(stored.map((row) => row.name).sort()).toEqual([...accepted].sort());
   });
 
   it('applies the same name rule to the PATCH: name, contact fields and legalName', async () => {
