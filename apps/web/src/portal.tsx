@@ -81,13 +81,14 @@ function PortalShellSkeleton() {
   </div>;
 }
 
-function PortalNav({ clienteId, tourTarget }: { clienteId: string; tourTarget: PortalTourTarget | null }) {
+function PortalNav({ clienteId, tourTarget, children }: { clienteId: string; tourTarget: PortalTourTarget | null; children?: React.ReactNode }) {
   return <nav className="portal-nav" aria-label="Navegação do portal">
     <ul>
       {PORTAL_TABS.map((tab) => <li key={tab.slug}>
         <NavLink end to={`/portal/${clienteId}/${tab.slug}`} data-tour-target={tab.slug === tourTarget ? 'true' : undefined}>{tab.label}</NavLink>
       </li>)}
     </ul>
+    {children}
   </nav>;
 }
 
@@ -100,7 +101,10 @@ export function PortalAreaLayout() {
   // The tour is per person and per client: what was closed here is remembered by client, and a
   // failed "seen" write is deliberately not remembered past this visit (specs/clientes.md §7).
   const [closedTours, setClosedTours] = useState<ReadonlySet<string>>(new Set());
-  const [reviewing, setReviewing] = useState(false);
+  // A review is asked for in one client's portal; it does not follow the person to another.
+  const [reviewingClientId, setReviewingClientId] = useState<string | null>(null);
+  if (reviewingClientId !== null && reviewingClientId !== clienteId) setReviewingClientId(null);
+  const reviewing = reviewingClientId === clienteId;
   const [tourTarget, setTourTarget] = useState<PortalTourTarget | null>(null);
   const validId = uuidPattern.test(clienteId);
   const { data, error, refetch } = useQuery({
@@ -112,9 +116,6 @@ export function PortalAreaLayout() {
     // A malformed id is a bad address, not a request: the API would answer 404 anyway.
     enabled: validId
   });
-
-  // A review is asked for in one client's portal; it does not follow the person to another.
-  useEffect(() => { setReviewing(false); }, [clienteId]);
 
   // Revalidates on every navigation inside the portal, so a link removed mid-use turns the very
   // next navigation into "não encontrado" instead of serving the cached shell. React Query dedupes
@@ -138,7 +139,7 @@ export function PortalAreaLayout() {
       : null;
 
   const closeTour = (): void => {
-    if (tourMode === 'review') { setReviewing(false); return; }
+    if (tourMode === 'review') { setReviewingClientId(null); return; }
     setClosedTours((previous) => new Set(previous).add(clienteId));
     httpClient.request({
       path: apiPath('/clients/:clientId/onboarding/seen', { clientId: clienteId }),
@@ -162,19 +163,21 @@ export function PortalAreaLayout() {
           </div>
         </div>
         {/* The account menu (#70) lives here; the active context is the client this portal is. */}
-        <AccountMenu activeContext={data.name} onReviewTour={tourMode === null ? () => { setReviewing(true); } : undefined} />
+        <AccountMenu activeContext={data.name} onReviewTour={tourMode === null ? () => { setReviewingClientId(clienteId); } : undefined} />
       </header>
       <LegalNotice />
       <main className="portal-content" id="main-content"><InvitationNotice /><Outlet /></main>
-      <PortalNav clienteId={clienteId} tourTarget={tourTarget} />
-      {tourMode !== null && <PortalTour
-        key={`${clienteId}:${tourMode}`}
-        personName={session.user?.name ?? ''}
-        clientName={data.name}
-        agencyName={data.agencyName}
-        onClose={closeTour}
-        onTargetChange={setTourTarget}
-      />}
+      {/* The card lives in the bar so it sits right above it, whatever the bar's height becomes. */}
+      <PortalNav clienteId={clienteId} tourTarget={tourTarget}>
+        {tourMode !== null && <PortalTour
+          key={`${clienteId}:${tourMode}`}
+          personName={session.user?.name ?? ''}
+          clientName={data.name}
+          agencyName={data.agencyName}
+          onClose={closeTour}
+          onTargetChange={setTourTarget}
+        />}
+      </PortalNav>
     </div>
   </PortalClientContext.Provider>;
 }
