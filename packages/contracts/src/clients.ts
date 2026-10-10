@@ -86,10 +86,13 @@ const INVISIBLE_IN_CLIENT_NAME = /(?![\u200C\u200D])[\p{Default_Ignorable_Code_P
  * pictograph, both render exactly like the plain name. VS16 itself stays refused by the invisible
  * characters rule below. The copyright, registered and trademark signs (U+00A9, U+00AE, U+2122)
  * are the owner's exception: they are common in a company name. Being pictographic, they would
- * still let the shared rule accept a joiner beside them, so `JOINER_NEXT_TO_MARK_SIGN` closes it.
+ * still let the shared rule accept a joiner beside them, even with combining marks in between, so
+ * `JOINER_NEXT_TO_MARK_SIGN` closes it. The combining enclosing keycap (U+20E3, `Me`) is not
+ * pictographic but is the emoji of a digit ("1" + U+20E3), so it is refused too.
  */
 const PICTOGRAPH_IN_CLIENT_NAME = /(?![©®™])\p{Extended_Pictographic}/u;
-const JOINER_NEXT_TO_MARK_SIGN = /[©®™][‌‍]|[‌‍][©®™]/u;
+const JOINER_NEXT_TO_MARK_SIGN = /[\u00A9\u00AE\u2122]\p{M}*[\u200C\u200D]|[\u200C\u200D]\p{M}*[\u00A9\u00AE\u2122]/u;
+const KEYCAP_IN_CLIENT_NAME = /\u20E3/u;
 
 /**
  * Client name: the shared display-name rule (control, bidi and invisible characters rejected, at
@@ -108,6 +111,7 @@ export const ClientNameSchema = z.string()
   .refine((value) => !JOINER_BETWEEN_LATIN_LETTERS.test(value), 'a zero-width joiner is not allowed between Latin letters')
   .refine((value) => !PICTOGRAPH_IN_CLIENT_NAME.test(value), 'must not contain emoji or pictographs')
   .refine((value) => !JOINER_NEXT_TO_MARK_SIGN.test(value), 'a zero-width joiner is not allowed next to a mark sign')
+  .refine((value) => !KEYCAP_IN_CLIENT_NAME.test(value), 'must not contain emoji or pictographs')
   .refine((value) => !INVISIBLE_IN_CLIENT_NAME.test(value), 'must not contain invisible or blank characters')
   .refine((value) => utf8ByteLength(value) <= 256, 'must be at most 256 bytes');
 

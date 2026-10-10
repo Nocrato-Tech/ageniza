@@ -112,6 +112,29 @@ describe('ClientNameSchema invisible characters (#427)', () => {
     }
   });
 
+  it.each(MARK_SIGNS)('refuses a joiner that only a combining mark separates from the %s sign (#440)', (_label, codePoint) => {
+    for (const joiner of [0x200c, 0x200d]) {
+      expect(ClientNameSchema.safeParse(`Nike${text(codePoint, 0x0301, joiner)}Studio`).success, `after one mark, ${joiner.toString(16)}`).toBe(false);
+      expect(ClientNameSchema.safeParse(`Nike${text(codePoint, 0x0301, 0x0302, joiner)}Studio`).success, `after two marks, ${joiner.toString(16)}`).toBe(false);
+      expect(ClientNameSchema.safeParse(`Nike${text(joiner, 0x0301, codePoint)} Studio`).success, `before, ${joiner.toString(16)}`).toBe(false);
+    }
+  });
+
+  it('refuses the combining keycap, with or without the selector 16, since "1" + U+20E3 is an emoji', () => {
+    for (const name of [`Mesa 1${text(0x20e3)}`, `Mesa 1${text(0xfe0f, 0x20e3)}`, `Mesa #${text(0x20e3)}`, `${text(0x20e3)}Mesa`]) {
+      expect(ClientNameSchema.safeParse(name).success, name).toBe(false);
+    }
+  });
+
+  it('keeps what the owner decision leaves out of Extended_Pictographic: a flag and a lone skin tone modifier', () => {
+    expect(ClientNameSchema.safeParse(`Cafe ${text(0x1f1e7, 0x1f1f7)}`).success).toBe(true);
+    for (let codePoint = 0x1f3fb; codePoint <= 0x1f3ff; codePoint += 1) {
+      expect(ClientNameSchema.safeParse(`Cafe ${text(codePoint)}`).success, codePoint.toString(16)).toBe(true);
+    }
+    // After an emoji the modifier is part of a refused pictograph.
+    expect(ClientNameSchema.safeParse(`Cafe ${text(0x1f44d, 0x1f3fb)}`).success).toBe(false);
+  });
+
   it('still refuses the other pictographic symbols', () => {
     for (const codePoint of [0x2605, 0x2714, 0x2764, 0x203c, 0x2139]) {
       expect(ClientNameSchema.safeParse(`Nota ${text(codePoint)}`).success, codePoint.toString(16)).toBe(false);
