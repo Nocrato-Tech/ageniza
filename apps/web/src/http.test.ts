@@ -147,6 +147,25 @@ describe('HttpClient', () => {
       expect(onSessionEnded).toHaveBeenCalledTimes(1);
     });
 
+    it('ends a confirmed session on a 401 SESSION_EXPIRED too, once', async () => {
+      const onSessionEnded = vi.fn();
+      const client = new HttpClient('http://127.0.0.1:3001', answering(401, 'SESSION_EXPIRED'), { onSessionEnded });
+      client.confirmSession();
+
+      await expect(client.request({ path: '/clients', response: HealthResponseSchema })).rejects.toMatchObject({ status: 401, code: 'SESSION_EXPIRED' });
+      await expect(client.request({ path: '/clients', response: HealthResponseSchema })).rejects.toMatchObject({ status: 401 });
+      expect(onSessionEnded).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not end the session on a SESSION_EXPIRED that is not a 401', async () => {
+      const onSessionEnded = vi.fn();
+      const client = new HttpClient('http://127.0.0.1:3001', answering(403, 'SESSION_EXPIRED'), { onSessionEnded });
+      client.confirmSession();
+
+      await expect(client.request({ path: '/clients', response: HealthResponseSchema })).rejects.toMatchObject({ status: 403 });
+      expect(onSessionEnded).not.toHaveBeenCalled();
+    });
+
     it('treats a 401 as the ordinary answer while no session has been confirmed', async () => {
       const onSessionEnded = vi.fn();
       const client = new HttpClient('http://127.0.0.1:3001', answering(401, 'UNAUTHENTICATED'), { onSessionEnded });
