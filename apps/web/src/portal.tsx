@@ -13,7 +13,7 @@ import { HttpClientError, useApiClient } from './http.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';
 import { PortalTour, type PortalTourTarget } from './portal-tour.js';
-import { NotFoundPage } from './status-pages.js';
+import { NotFoundHomeContext, NotFoundPage } from './status-pages.js';
 
 /**
  * The client portal shell (specs/clientes.md §7, issue #141): mobile-first, in the client's
@@ -125,14 +125,14 @@ export function PortalAreaLayout() {
     void refetch();
   }, [location.pathname, refetch, validId]);
 
-  if (!validId) return <PortalContextlessShell><NotFoundPage as="section" /></PortalContextlessShell>;
+  if (!validId) return <PortalContextlessShell><NotFoundPage as="section" home="/contextos" /></PortalContextlessShell>;
   if (error !== null) {
-    if (isNotFound(error)) return <PortalContextlessShell><NotFoundPage as="section" /></PortalContextlessShell>;
+    if (isNotFound(error)) return <PortalContextlessShell><NotFoundPage as="section" home="/contextos" /></PortalContextlessShell>;
     return <PortalContextlessShell><PortalUnavailable onRetry={() => { void refetch(); }} /></PortalContextlessShell>;
   }
   if (data === undefined) return <PortalShellSkeleton />;
   // Defense in depth: the answer must belong to the client in the address, or it is not shown.
-  if (data.id !== clienteId) return <PortalContextlessShell><NotFoundPage as="section" /></PortalContextlessShell>;
+  if (data.id !== clienteId) return <PortalContextlessShell><NotFoundPage as="section" home="/contextos" /></PortalContextlessShell>;
 
   const tourMode = reviewing ? 'review'
     : data.onboardingSeenAt === null && !closedTours.has(clienteId) ? 'first'
@@ -166,7 +166,7 @@ export function PortalAreaLayout() {
         <AccountMenu activeContext={data.name} onReviewTour={tourMode === null ? () => { setReviewingClientId(clienteId); } : undefined} />
       </header>
       <LegalNotice />
-      <main className="portal-content" id="main-content"><InvitationNotice /><Outlet /></main>
+      <main className="portal-content" id="main-content"><InvitationNotice /><NotFoundHomeContext.Provider value={`/portal/${data.id}/inicio`}><Outlet /></NotFoundHomeContext.Provider></main>
       {/* The card lives in the bar so it sits right above it, whatever the bar's height becomes. */}
       <PortalNav clienteId={clienteId} tourTarget={tourTarget}>
         {tourMode !== null && <PortalTour

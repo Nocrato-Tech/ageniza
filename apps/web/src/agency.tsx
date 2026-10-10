@@ -11,7 +11,7 @@ import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';
-import { NotFoundPage } from './status-pages.js';
+import { NotFoundHomeContext, NotFoundPage } from './status-pages.js';
 
 /**
  * The agency area shell (issue #181). The route carries the agency (`/agencia/:agenciaId/...`), so
@@ -110,14 +110,14 @@ export function AgencyAreaLayout() {
     void refetch();
   }, [location.pathname, refetch, validAgencyId]);
 
-  if (!validAgencyId) return <AgencyContextlessShell><NotFoundPage as="section" /></AgencyContextlessShell>;
+  if (!validAgencyId) return <AgencyContextlessShell><NotFoundPage as="section" home="/contextos" /></AgencyContextlessShell>;
   if (error !== null) {
-    if (isNotFound(error)) return <AgencyContextlessShell><NotFoundPage as="section" /></AgencyContextlessShell>;
+    if (isNotFound(error)) return <AgencyContextlessShell><NotFoundPage as="section" home="/contextos" /></AgencyContextlessShell>;
     return <AgencyContextlessShell><AgencyUnavailable onRetry={() => { void refetch(); }} /></AgencyContextlessShell>;
   }
   if (data === undefined) return <AgencyShellSkeleton />;
   // Defense in depth: the answer must belong to the agency in the route, or it is not shown at all.
-  if (data.agencyId !== agenciaId) return <AgencyContextlessShell><NotFoundPage as="section" /></AgencyContextlessShell>;
+  if (data.agencyId !== agenciaId) return <AgencyContextlessShell><NotFoundPage as="section" home="/contextos" /></AgencyContextlessShell>;
 
   return <AgencyAreaContext.Provider value={data}>
     <div className="app-shell">
@@ -133,7 +133,7 @@ export function AgencyAreaLayout() {
       <LegalNotice />
       <div className="agency-layout">
         <AgencyNav agenciaId={agenciaId} />
-        <main className="agency-content" id="main-content"><InvitationNotice /><Outlet /></main>
+        <main className="agency-content" id="main-content"><InvitationNotice /><NotFoundHomeContext.Provider value={`/agencia/${data.agencyId}`}><Outlet /></NotFoundHomeContext.Provider></main>
       </div>
     </div>
   </AgencyAreaContext.Provider>;

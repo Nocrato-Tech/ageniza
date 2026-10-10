@@ -348,7 +348,7 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
     const { impl, calls } = makeFetch({ permissions: [] });
     renderClients(impl);
 
-    await screen.findByRole('heading', { name: 'Page not found' });
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
     expect(calls.filter((call) => call.includes('/clients'))).toEqual([]);
   });
 
@@ -360,7 +360,7 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
     });
     renderClients(impl);
 
-    await screen.findByRole('heading', { name: 'Page not found' });
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
     expect(screen.queryByText('sensitive detail')).toBeNull();
     expect(screen.queryByText('Não foi possível carregar os clientes. Tente de novo.')).toBeNull();
   });
