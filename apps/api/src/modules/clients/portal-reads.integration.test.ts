@@ -450,6 +450,30 @@ describe('CLIENTS portal reads (#129)', () => {
   });
 
   describe('GET /clients/:clientId/brand-study', () => {
+    // The portal reads the same stored label back as the English key, for each of the twelve (#464).
+    it.each([
+      ['innocent', 'Inocente'],
+      ['sage', 'Sábio'],
+      ['explorer', 'Explorador'],
+      ['outlaw', 'Fora-da-lei'],
+      ['magician', 'Mago'],
+      ['hero', 'Herói'],
+      ['lover', 'Amante'],
+      ['jester', 'Bobo da corte'],
+      ['everyman', 'Cara comum'],
+      ['caregiver', 'Cuidador'],
+      ['ruler', 'Governante'],
+      ['creator', 'Criador']
+    ])('serves the stored label %2$s as the key %1$s', async (key, label) => {
+      try {
+        await owner.knex('client_brand_sections').where({ client_id: clientA1, section_key: 'archetype' }).update({ archetype: label });
+        const body = (await call('GET', portalStudy(clientA1), cookies.portalOne!)).json();
+        expect(sectionOf(body, 'archetype')).toMatchObject({ archetype: key });
+      } finally {
+        await owner.knex('client_brand_sections').where({ client_id: clientA1, section_key: 'archetype' }).update({ archetype: 'Cuidador' });
+      }
+    });
+
     it('serves the seven sections in order and the active personas, without who edited them', async () => {
       const response = await call('GET', portalStudy(clientA1), cookies.portalOne!);
       expect(response.statusCode).toBe(200);

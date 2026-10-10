@@ -252,6 +252,36 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     expect((await getStudy(adminCookie, agencyA, clientId)).json<{ filled: number }>().filled).toBe(2);
   });
 
+  // specs/clientes.md section 3: the archetype is one of twelve. The database stores the Portuguese
+  // label and the API speaks the English key; each pair is written out by value so neither side can
+  // drift together with the constant (issue #464).
+  it.each([
+    ['innocent', 'Inocente'],
+    ['sage', 'Sábio'],
+    ['explorer', 'Explorador'],
+    ['outlaw', 'Fora-da-lei'],
+    ['magician', 'Mago'],
+    ['hero', 'Herói'],
+    ['lover', 'Amante'],
+    ['jester', 'Bobo da corte'],
+    ['everyman', 'Cara comum'],
+    ['caregiver', 'Cuidador'],
+    ['ruler', 'Governante'],
+    ['creator', 'Criador']
+  ])('stores %s as the label %s and reads the same key back', async (key, label) => {
+    const clientId = await createClient(agencyA);
+    const written = await putSection(adminCookie, agencyA, clientId, 'archetype', { archetype: key });
+    expect(written.statusCode).toBe(200);
+    expect(written.json()).toMatchObject({ key: 'archetype', archetype: key });
+
+    const row = await owner.knex('client_brand_sections').where({ client_id: clientId, section_key: 'archetype' }).first('archetype');
+    expect(row?.archetype).toBe(label);
+
+    const study = await getStudy(adminCookie, agencyA, clientId);
+    const archetype = study.json<{ sections: { key: string; archetype: string | null }[] }>().sections.find((section) => section.key === 'archetype');
+    expect(archetype?.archetype).toBe(key);
+  });
+
   it('counts an active persona in filled and stops counting it when archived', async () => {
     const clientId = await createClient(agencyA);
     await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'Marca' });
