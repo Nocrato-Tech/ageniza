@@ -1742,7 +1742,7 @@ describe('invitation HTTP module', () => {
     const expectUntouched = async (invitationId: string, email: string): Promise<void> => {
       expect(await invitationsFor(email)).toEqual([{ id: invitationId, revoked_at: null, used_at: null }]);
     };
-    // The message of the permission guard (tenancy/guards.ts), so a refusal from the database cannot pass for it.
+    // Pins the guard's message (tenancy/guards.ts), not only the code.
     const expectForbidden = (response: Injection): void => {
       expect(response.statusCode).toBe(403);
       expect(response.json<{ error: unknown }>().error).toEqual({ code: 'FORBIDDEN', message: 'You do not have permission to perform this action.' });
