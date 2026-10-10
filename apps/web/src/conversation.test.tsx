@@ -119,7 +119,10 @@ describe('conversation component (#142)', () => {
     await within(region).findByText('Nenhuma conversa sobre esta parte');
     expect(within(region).getByRole('button', { name: 'Nova conversa sobre Tom de voz' })).toBeTruthy();
     expect(within(region).getByRole('heading', { name: 'Conversas (0)' })).toBeTruthy();
-    expect(writer.api.calls).toEqual([`GET /agencies/${AGENCY_ID}/clients/${CLIENT_ID}/threads?sectionKey=tone_of_voice&pageSize=100`]);
+    expect([...writer.api.calls].sort()).toEqual([
+      `GET /agencies/${AGENCY_ID}/clients/${CLIENT_ID}/threads?sectionKey=tone_of_voice&state=open&pageSize=100`,
+      `GET /agencies/${AGENCY_ID}/clients/${CLIENT_ID}/threads?sectionKey=tone_of_voice&state=resolved&pageSize=100`
+    ]);
     cleanup();
 
     mount({ canWrite: false });
@@ -342,7 +345,7 @@ describe('conversation component (#142)', () => {
     const region = await area('Dona Maria');
     await within(region).findByText('Ela não é assim');
     expect(within(region).queryByText('Isto é de outra parte')).toBeNull();
-    expect(api.calls[0]).toBe(`GET /agencies/${AGENCY_ID}/clients/${CLIENT_ID}/threads?personaId=${PERSONA_ID}&pageSize=100`);
+    expect(api.calls[0]).toBe(`GET /agencies/${AGENCY_ID}/clients/${CLIENT_ID}/threads?personaId=${PERSONA_ID}&state=open&pageSize=100`);
   });
 
   it('works for the client side on its own routes, with no Resolver and its own wording', async () => {
@@ -352,7 +355,7 @@ describe('conversation component (#142)', () => {
     await within(region).findByText('Reescrevi o exemplo');
     expect(within(region).getByText('1 com resposta da agência')).toBeTruthy();
     expect(rowsOf(region)[0]!.textContent).toBe('Aberta por Maria (cliente)Agência · 12/10Reescrevi o exemploa agência respondeu');
-    expect(api.calls[0]).toBe(`GET /clients/${CLIENT_ID}/threads?sectionKey=tone_of_voice&pageSize=100`);
+    expect(api.calls[0]).toBe(`GET /clients/${CLIENT_ID}/threads?sectionKey=tone_of_voice&state=open&pageSize=100`);
 
     const dialog = await openRow(region, /Reescrevi o exemplo/);
     expect(within(dialog).queryByRole('button', { name: 'Resolver' })).toBeNull();
@@ -537,14 +540,38 @@ describe('conversation component (#142)', () => {
     await waitFor(() => expect(rowsOf(region).map((row) => row.querySelector('.conversation__thread-excerpt')?.textContent)).toEqual(['Respondi', 'Nova, sem resposta']));
   });
 
-  it('says when only the most recent conversations are shown', async () => {
+  it.each(['open', 'resolved'] as const)('says when only the 100 most recent %s conversations are shown', async (state) => {
     const { api } = mount();
     for (let index = 0; index < 101; index += 1) {
-      api.seed(TONE, [{ side: 'client', body: `pergunta ${index}`, at: LATE }]);
+      api.seed(TONE, [{ side: 'client', body: `pergunta ${index}`, at: EARLIER }], state === 'resolved' ? { at: LATE, by: 'Ana' } : undefined);
     }
     const region = await area();
     await within(region).findByText('Mostrando as 100 conversas mais recentes.');
     expect(rowsOf(region)).toHaveLength(100);
     expect(within(region).getByRole('heading', { name: 'Conversas (101)' })).toBeTruthy();
+  });
+
+  it('shows an old open thread even when more than 100 resolved ones are newer', async () => {
+    const { api } = mount();
+    api.seed(TONE, [{ side: 'client', body: 'Aberta antiga', at: '2026-09-01T12:00:00.000Z' }]);
+    for (let index = 0; index < 100; index += 1) {
+      api.seed(TONE, [{ side: 'agency', body: `resolvida ${index}`, at: EARLIER }], { at: LATE, by: 'Ana' });
+    }
+    const region = await area();
+    await within(region).findByText('Aberta antiga');
+    expect(within(region).getByRole('heading', { name: 'Conversas (101)' })).toBeTruthy();
+    expect(rowsOf(region)).toHaveLength(101);
+    expect(rowsOf(region)[0]!.textContent).toContain('Aberta antiga');
+    expect(within(region).getByText('1 aguardando')).toBeTruthy();
+  });
+
+  it('keeps the open threads on screen with an error and a retry when only the resolved read fails', async () => {
+    const { api } = mount({ fail: (url) => url.searchParams.get('state') === 'resolved' ? apiError(403, 'FORBIDDEN') : undefined });
+    api.seed(TONE, [{ side: 'client', body: 'Aberta que aparece', at: LATE }]);
+    const region = await area();
+    await within(region).findByText('Aberta que aparece');
+    await within(region).findByText('Não foi possível carregar as conversas.');
+    expect(within(region).getByRole('button', { name: 'Tentar de novo' })).toBeTruthy();
+    expect(within(region).queryByText('Nenhuma conversa sobre esta parte')).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { useId, useState, type FormEvent } from 'react';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 
 import {
   CommentListResponseSchema,
@@ -48,6 +48,7 @@ export interface ConversationProps {
 }
 
 const THREADS_PAGE_SIZE = 100;
+const THREAD_STATES = ['open', 'resolved'] as const;
 const BODY_MAX_BYTES = 5000;
 const COMMENTS_PAGE_SIZE = 50;
 const NO_EDIT_NOTE = 'Depois de enviada, a mensagem não pode ser editada nem apagada.';
@@ -87,7 +88,8 @@ const OPENING: Record<ConversationSide, {
 const subjectKeyOf = (subject: ThreadSubject): string => ('sectionKey' in subject ? `section:${subject.sectionKey}` : `persona:${subject.personaId}`);
 
 const scopeKeyOf = (scope: ConversationScope) => ['conversation', scope.side, scope.clientId] as const;
-const threadsQueryKey = (scope: ConversationScope, subject: ThreadSubject) => [...scopeKeyOf(scope), 'threads', subjectKeyOf(subject)] as const;
+const threadsQueryKey = (scope: ConversationScope, subject: ThreadSubject, state: Thread['state']) =>
+  [...scopeKeyOf(scope), 'threads', subjectKeyOf(subject), state] as const;
 // The first page read is part of the key: a thread that grows onto a new page starts again at its end.
 const commentsQueryKey = (scope: ConversationScope, threadId: string, firstPage: number) => [...scopeKeyOf(scope), 'comments', threadId, firstPage] as const;
 
@@ -330,11 +332,6 @@ function NewConversationDialog({ props, onClose }: { props: ConversationProps; o
   </Modal>;
 }
 
-/** Open threads first, then the resolved; the API already orders by latest activity inside each. */
-const openFirst = (threads: readonly Thread[]): Thread[] => [
-  ...threads.filter((thread) => thread.state === 'open'),
-  ...threads.filter((thread) => thread.state === 'resolved')
-];
 
 function ThreadRow({ thread, viewer, onOpen }: { thread: Thread; viewer: ConversationSide; onOpen: () => void }) {
   const awaiting = awaitsViewer(thread, viewer);
@@ -364,24 +361,32 @@ export function Conversation(props: ConversationProps) {
   const [creating, setCreating] = useState(false);
   const subjectQuery = 'sectionKey' in subject ? `sectionKey=${subject.sectionKey}` : `personaId=${subject.personaId}`;
 
-  const threads = useQuery({
-    queryKey: threadsQueryKey(scope, subject),
-    queryFn: ({ signal }) => httpClient.request({
-      path: `${routesOf(scope).threads}?${subjectQuery}&pageSize=${THREADS_PAGE_SIZE}`,
-      response: ThreadListResponseSchema,
-      signal
-    })
+  // Two reads, one per state: a single read of the latest 100 would hide an old open thread behind resolved ones.
+  const [open, resolved] = useQueries({
+    queries: THREAD_STATES.map((state) => ({
+      queryKey: threadsQueryKey(scope, subject, state),
+      queryFn: ({ signal }: { signal: AbortSignal }) => httpClient.request({
+        path: `${routesOf(scope).threads}?${subjectQuery}&state=${state}&pageSize=${THREADS_PAGE_SIZE}`,
+        response: ThreadListResponseSchema,
+        signal
+      })
+    }))
   });
+  const reads = [open, resolved];
 
   const writable = canWrite && !readOnly;
-  const list = threads.data === undefined ? [] : openFirst(threads.data.data);
+  // The API already orders by latest activity inside each state.
+  const list = [...(open.data?.data ?? []), ...(resolved.data?.data ?? [])];
+  const totalItems = (open.data?.meta.totalItems ?? 0) + (resolved.data?.meta.totalItems ?? 0);
+  const loaded = open.data !== undefined && resolved.data !== undefined;
+  const failed = reads.filter((read) => read.isError && read.data === undefined);
   const awaiting = list.filter((thread) => awaitsViewer(thread, scope.side)).length;
   const current = openId === null ? undefined : list.find((thread) => thread.id === openId);
 
   return <section className="conversation" aria-label={`Conversas sobre ${subjectLabel}`}>
     <header className="conversation__header">
       <Heading className="conversation__title">
-        Conversas{threads.data === undefined ? '' : ` (${threads.data.meta.totalItems})`}
+        Conversas{loaded ? ` (${totalItems})` : ''}
       </Heading>
       {awaiting > 0 && <span className="conversation__status conversation__status--awaiting">
         {scope.side === 'agency' ? `${awaiting} aguardando` : `${awaiting} com resposta da agência`}
@@ -391,16 +396,16 @@ export function Conversation(props: ConversationProps) {
         : <Button size="sm" variant="secondary" aria-label={opening.buttonName(subjectLabel)} onClick={() => setCreating(true)}><span aria-hidden="true">+</span> conversa</Button>)}
     </header>
 
-    {threads.isPending && <div className="conversation__threads-skeleton" aria-busy="true"><Skeleton /><Skeleton /></div>}
-    {threads.isError && threads.data === undefined && <div role="alert">
+    {reads.some((read) => read.isPending) && failed.length === 0 && <div className="conversation__threads-skeleton" aria-busy="true"><Skeleton /><Skeleton /></div>}
+    {failed.length > 0 && <div role="alert">
       <p>Não foi possível carregar as conversas.</p>
-      <Button size="sm" variant="secondary" loading={threads.isFetching} onClick={() => { void threads.refetch(); }}>Tentar de novo</Button>
+      <Button size="sm" variant="secondary" loading={failed.some((read) => read.isFetching)} onClick={() => { failed.forEach((read) => { void read.refetch(); }); }}>Tentar de novo</Button>
     </div>}
-    {threads.data !== undefined && list.length === 0 && <p className="conversation__empty">Nenhuma conversa sobre esta parte</p>}
+    {loaded && list.length === 0 && <p className="conversation__empty">Nenhuma conversa sobre esta parte</p>}
     {list.length > 0 && <ul className="conversation__threads">
       {list.map((thread) => <ThreadRow key={thread.id} thread={thread} viewer={scope.side} onOpen={() => setOpenId(thread.id)} />)}
     </ul>}
-    {threads.data !== undefined && threads.data.meta.totalItems > THREADS_PAGE_SIZE && <p className="conversation__note">
+    {reads.some((read) => (read.data?.meta.totalItems ?? 0) > THREADS_PAGE_SIZE) && <p className="conversation__note">
       Mostrando as {THREADS_PAGE_SIZE} conversas mais recentes.
     </p>}
 

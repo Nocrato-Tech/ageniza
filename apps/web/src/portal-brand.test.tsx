@@ -250,8 +250,10 @@ describe('portal Marca (#143)', () => {
     await screen.findAllByText('Nenhuma conversa sobre esta parte');
     const threadReads = calls.filter((call) => call.includes('/threads')).sort();
     expect(threadReads).toEqual([
-      `GET /clients/${CLIENT_ID}/threads?sectionKey=branding&pageSize=100`,
-      `GET /clients/${CLIENT_ID}/threads?sectionKey=positioning&pageSize=100`
+      `GET /clients/${CLIENT_ID}/threads?sectionKey=branding&state=open&pageSize=100`,
+      `GET /clients/${CLIENT_ID}/threads?sectionKey=branding&state=resolved&pageSize=100`,
+      `GET /clients/${CLIENT_ID}/threads?sectionKey=positioning&state=open&pageSize=100`,
+      `GET /clients/${CLIENT_ID}/threads?sectionKey=positioning&state=resolved&pageSize=100`
     ]);
   });
 
