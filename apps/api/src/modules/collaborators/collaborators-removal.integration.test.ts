@@ -149,6 +149,9 @@ const membershipRow = async (membershipId: string): Promise<MembershipRow> =>
 const sessionCount = async (userId: string): Promise<number> =>
   Number((await owner.knex('auth.session').where({ userId }).count<Array<{ count: string }>>('id as count'))[0]?.count ?? 0);
 
+const sessionIds = async (userId: string): Promise<string[]> =>
+  (await owner.knex('auth.session').where({ userId }).orderBy('id').select('id')).map((row) => row.id as string);
+
 /**
  * A trigger that makes the DELETE of one person's sessions fail with the given SQLSTATE, as a deadlock or
  * a broken connection would: the proof that ending the sessions and removing the link are one transaction.
@@ -853,6 +856,60 @@ describe('POST /agencies/:agencyId/collaborators/:membershipId/reactivate (issue
     expect((await list(again, fx.agencyId)).status).toBe(200);
     // Production reads the team but does not administer it: the role of the body is what applies.
     expectRefused(await remove(again, fx.agencyId, fx.ownerMembershipId), 403, 'FORBIDDEN', GENERIC_FORBIDDEN_MESSAGE);
+  });
+
+  // Issue #450: SPEC section 4 says only the passage to `removed` ends sessions. The test above starts from a
+  // person with no session at all, where an extra DELETE leaves no trace; here the person was removed from this
+  // agency, signed in again through another one, and only then is brought back.
+  it('reactivating a person who signed in again through another agency leaves every live session of theirs alone (#450)', async () => {
+    const home = await createAgency('reactivate-keeps-home');
+    const away = await createAgency('reactivate-keeps-away');
+    const person = await addMember(home.agencyId, 'reactivate-keeps-person', presetRoleIds.sales);
+    await linkExistingUser(away.agencyId, person, presetRoleIds.production);
+    expect((await remove(home.ownerCookie, home.agencyId, person.membershipId)).status).toBe(200);
+    expect(await sessionCount(person.user.id)).toBe(0);
+    const signedInAgain = await loginCookie(person.user);
+    const secondDevice = await loginCookie(person.user);
+    const before = await sessionIds(person.user.id);
+    expect(before).toHaveLength(2);
+    expectRefused(await list(signedInAgain, home.agencyId), 404, 'NOT_FOUND', 'Agency not found.');
+    expect((await list(signedInAgain, away.agencyId)).status).toBe(200);
+
+    expect((await reactivate(home.ownerCookie, home.agencyId, person.membershipId, { roleId: presetRoleIds.production })).status).toBe(200);
+
+    // The very same sessions, not two new ones: a revoke followed by a login would also count two.
+    expect(await sessionIds(person.user.id)).toEqual(before);
+    for (const cookie of [signedInAgain, secondDevice]) {
+      expect((await list(cookie, away.agencyId)).status).toBe(200);
+      expect((await list(cookie, home.agencyId)).status).toBe(200);
+    }
+    expect(await sessionCount(home.ownerUser.id)).toBe(1);
+  });
+
+  it('a refused reactivation ends no session either: already active, unknown role, admin role without the grant, the Owner link (#450)', async () => {
+    const home = await createAgency('reactivate-refused-home');
+    const away = await createAgency('reactivate-refused-away');
+    const admin = await addMember(home.agencyId, 'reactivate-refused-admin', presetRoleIds.admin);
+    const active = await addMember(home.agencyId, 'reactivate-refused-active', presetRoleIds.sales);
+    const gone = await addMember(home.agencyId, 'reactivate-refused-gone', presetRoleIds.production);
+    await linkExistingUser(away.agencyId, gone, presetRoleIds.production);
+    expect((await remove(home.ownerCookie, home.agencyId, gone.membershipId)).status).toBe(200);
+    const goneCookie = await loginCookie(gone.user);
+    await owner.knex('agency_memberships').where({ id: home.ownerMembershipId }).update({ status: 'removed' });
+    const watched = [home.ownerUser, active.user, gone.user, admin.user];
+    const before = await Promise.all(watched.map((user) => sessionIds(user.id)));
+    expect(before.map((ids) => ids.length)).toEqual([1, 1, 1, 1]);
+
+    expectRefused(await reactivate(admin.cookie, home.agencyId, active.membershipId, { roleId: presetRoleIds.production }), 409, 'COLLABORATOR_NOT_REMOVED');
+    expectRefused(await reactivate(home.ownerCookie, home.agencyId, gone.membershipId, { roleId: randomUUID() }), 400, 'INVALID_ROLE');
+    expectRefused(await reactivate(admin.cookie, home.agencyId, gone.membershipId, { roleId: presetRoleIds.admin }), 403, 'FORBIDDEN', ADMIN_GRANT_MESSAGE);
+    expectRefused(await reactivate(admin.cookie, home.agencyId, home.ownerMembershipId, { roleId: presetRoleIds.production }), 403, 'FORBIDDEN', OWNER_ROLE_MESSAGE);
+
+    expect(await Promise.all(watched.map((user) => sessionIds(user.id)))).toEqual(before);
+    expect((await membershipRow(gone.membershipId)).status).toBe('removed');
+    expect((await list(goneCookie, away.agencyId)).status).toBe(200);
+    expect((await list(active.cookie, home.agencyId)).status).toBe(200);
+    expect((await list(home.ownerCookie, home.agencyId)).status).toBe(200);
   });
 
   it('two reactivations of the same person at the same moment: one wins with 200, the other is the 409, and its role is not applied', async () => {
