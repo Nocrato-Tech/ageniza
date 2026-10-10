@@ -46,6 +46,8 @@ interface Options {
   readonly gate?: Promise<void>;
   /** Holds the reads of one route until the promise resolves, to look at the loading state. */
   readonly holdReads?: { readonly promise: Promise<void>; readonly path: 'threads' | 'comments' };
+  /** Holds the reads of one state, while `release` is unset, to see the screen between the two answers. */
+  readonly slowState?: { readonly state: 'open' | 'resolved'; promise?: Promise<void> };
   /** Answers instead of the fixture, for a failure the fixture cannot model. */
   readonly fail?: (url: URL, method: string) => Response | undefined;
 }
@@ -62,6 +64,7 @@ const mount = (options: Options = {}) => {
     const failed = options.fail?.(url, method);
     if (failed !== undefined) return failed;
     if (method === 'POST' && options.gate !== undefined) await options.gate;
+    if (method === 'GET' && options.slowState?.promise !== undefined && url.pathname.endsWith('/threads') && url.searchParams.get('state') === options.slowState.state) await options.slowState.promise;
     if (method === 'GET' && options.holdReads !== undefined && url.pathname.endsWith(options.holdReads.path)) await options.holdReads.promise;
     const answered = api.handle(url, method, init?.body === undefined ? undefined : JSON.parse(String(init.body)));
     if (answered !== undefined) return answered;
@@ -565,13 +568,97 @@ describe('conversation component (#142)', () => {
     expect(within(region).getByText('1 aguardando')).toBeTruthy();
   });
 
-  it('keeps the open threads on screen with an error and a retry when only the resolved read fails', async () => {
-    const { api } = mount({ fail: (url) => url.searchParams.get('state') === 'resolved' ? apiError(403, 'FORBIDDEN') : undefined });
-    api.seed(TONE, [{ side: 'client', body: 'Aberta que aparece', at: LATE }]);
+  it('says so when only one of the two reads fails, shows nothing half-loaded, and the retry reads both again', async () => {
+    let failing = true;
+    const { api } = mount({ fail: (url) => (failing && url.searchParams.get('state') === 'resolved' ? apiError(403, 'FORBIDDEN') : undefined) });
+    api.seed(TONE, [{ side: 'client', body: 'Aberta que não aparece sozinha', at: LATE }]);
     const region = await area();
-    await within(region).findByText('Aberta que aparece');
     await within(region).findByText('Não foi possível carregar as conversas.');
-    expect(within(region).getByRole('button', { name: 'Tentar de novo' })).toBeTruthy();
+    expect(within(region).queryByText('Aberta que não aparece sozinha')).toBeNull();
     expect(within(region).queryByText('Nenhuma conversa sobre esta parte')).toBeNull();
+    failing = false;
+    fireEvent.click(within(region).getByRole('button', { name: 'Tentar de novo' }));
+    await within(region).findByText('Aberta que não aparece sozinha');
+    expect(within(region).queryByText('Não foi possível carregar as conversas.')).toBeNull();
+  });
+
+  describe('when a thread changes state, the list and the open conversation never lose or repeat it', () => {
+    const consoleError = vi.spyOn(console, 'error');
+    afterEach(() => { consoleError.mockClear(); });
+    const noRepeatedKey = (): void => {
+      expect(consoleError.mock.calls.filter((call) => String(call[0]).includes('same key'))).toEqual([]);
+    };
+
+    it('keeps the conversation and the typed draft while Resolver waits for the slow read of the resolved ones', async () => {
+      let release: () => void = () => undefined;
+      const slowState = { state: 'resolved' as const, promise: undefined as Promise<void> | undefined };
+      const { api } = mount({ slowState });
+      api.seed(TONE, [{ side: 'client', body: 'Acho formal demais', at: LATE }]);
+      const region = await area();
+      const dialog = await openRow(region, /Acho formal demais/);
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'Escrever resposta' }), { target: { value: 'rascunho em andamento' } });
+
+      slowState.promise = new Promise<void>((resolve) => { release = resolve; });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Resolver' }));
+      await waitFor(() => expect(api.calls.filter((call) => call.includes('state=open'))).toHaveLength(2));
+      await new Promise<void>((resolve) => { setTimeout(resolve, 20); });
+
+      expect(screen.getByRole('dialog', { name: 'Tom de voz' })).toBe(dialog);
+      expect((within(dialog).getByRole('textbox', { name: 'Escrever resposta' }) as HTMLTextAreaElement).value).toBe('rascunho em andamento');
+      expect(rowsOf(region)).toHaveLength(1);
+      expect(within(region).getByRole('heading', { name: 'Conversas (1)' })).toBeTruthy();
+
+      release();
+      await within(dialog).findByText('Resolvida por Ana em 12/10');
+      expect(rowsOf(region)).toHaveLength(1);
+      expect((within(dialog).getByRole('textbox', { name: 'Escrever resposta' }) as HTMLTextAreaElement).value).toBe('rascunho em andamento');
+      noRepeatedKey();
+    });
+
+    it('keeps the conversation on screen while an answer to a resolved one waits for the slow read of the open ones', async () => {
+      let release: () => void = () => undefined;
+      const slowState = { state: 'open' as const, promise: undefined as Promise<void> | undefined };
+      const { api } = mount({ slowState });
+      api.seed(TONE, [{ side: 'client', body: 'Acho formal demais', at: EARLIER }], { at: LATE, by: 'Ana' });
+      const region = await area();
+      const dialog = await openRow(region, /Acho formal demais/);
+
+      slowState.promise = new Promise<void>((resolve) => { release = resolve; });
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'Escrever resposta' }), { target: { value: 'Reabrindo' } });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+      await waitFor(() => expect(api.calls.filter((call) => call.includes('state=resolved'))).toHaveLength(2));
+      await new Promise<void>((resolve) => { setTimeout(resolve, 20); });
+
+      expect(screen.getByRole('dialog', { name: 'Tom de voz' })).toBe(dialog);
+      expect(rowsOf(region)).toHaveLength(1);
+
+      release();
+      await within(dialog).findByRole('button', { name: 'Resolver' });
+      expect(rowsOf(region)).toHaveLength(1);
+      expect(within(region).getByRole('heading', { name: 'Conversas (1)' })).toBeTruthy();
+      noRepeatedKey();
+    });
+
+    it('does not repeat the conversation when one of the two reads after the write fails', async () => {
+      let failing = false;
+      let refused = 0;
+      mount({ fail: (url) => {
+        if (!failing || url.searchParams.get('state') !== 'open') return undefined;
+        refused += 1;
+        return apiError(403, 'FORBIDDEN');
+      } }).api.seed(TONE, [{ side: 'client', body: 'Acho formal demais', at: LATE }]);
+      const region = await area();
+      const dialog = await openRow(region, /Acho formal demais/);
+
+      failing = true;
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Resolver' }));
+      await waitFor(() => expect(refused).toBe(1));
+      await new Promise<void>((resolve) => { setTimeout(resolve, 50); });
+
+      expect(rowsOf(region)).toHaveLength(1);
+      expect(within(region).getByRole('heading', { name: 'Conversas (1)' })).toBeTruthy();
+      expect(screen.getByRole('dialog', { name: 'Tom de voz' })).toBe(dialog);
+      noRepeatedKey();
+    });
   });
 });
