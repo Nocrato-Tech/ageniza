@@ -2135,6 +2135,41 @@ describe('invitation HTTP module', () => {
         expect(pending).toBeDefined();
       });
 
+      it('#469: a removed portal member who accepts a new invitation gets the same link back, and no other link of theirs changes', async () => {
+        const removed = await addPortalMembership(clientId, 'invitation-client-removed-accepts', 'removed');
+        const otherClients = [randomUUID(), randomUUID()];
+        for (const otherClientId of otherClients) {
+          createdClientIds.push(otherClientId);
+          await owner.knex('clients').insert({ id: otherClientId, agency_id: agencyId, name: `Removed accepts other ${otherClientId}` });
+        }
+        await owner.knex('client_memberships').insert([
+          { client_id: otherClients[0], user_id: removed.id, status: 'active' },
+          { client_id: otherClients[1], user_id: removed.id, status: 'removed' }
+        ]);
+        const linkBefore = await owner.knex('client_memberships').where({ client_id: clientId, user_id: removed.id }).first('id', 'status');
+        expect(linkBefore?.status).toBe('removed');
+        const othersBefore = await owner.knex('client_memberships').whereIn('client_id', otherClients).where({ user_id: removed.id }).orderBy('client_id').select('id', 'client_id', 'status', 'updated_at');
+        expect(othersBefore).toHaveLength(2);
+
+        const cookie = await loginFromMemberIp(removed);
+        const portalRead = (): Promise<Injection> => app.app.inject({ method: 'GET', url: `/clients/${clientId}`, remoteAddress: MEMBER_IP, headers: { ...origin, cookie } });
+        expect((await portalRead()).statusCode).toBe(404);
+
+        const invitation = await insertInvitation({ agencyId, purpose: 'client_invite', roleId: null, clientId, email: removed.email });
+        const accepted = await app.app.inject({ method: 'POST', url: `/invitations/${invitation.token}/accept`, remoteAddress: MEMBER_IP, headers: { ...origin, cookie } });
+        expect(accepted.statusCode).toBe(200);
+        expect(accepted.json()).toMatchObject({ status: 'accepted', context: { agencyId, clientId } });
+
+        await expect(owner.knex('client_memberships').where({ client_id: clientId, user_id: removed.id }).select('id', 'status')).resolves.toEqual([{ id: linkBefore!.id, status: 'active' }]);
+        const read = await portalRead();
+        expect(read.statusCode).toBe(200);
+        expect(read.json()).toMatchObject({ id: clientId });
+
+        const othersAfter = await owner.knex('client_memberships').whereIn('client_id', otherClients).where({ user_id: removed.id }).orderBy('client_id').select('id', 'client_id', 'status', 'updated_at');
+        expect(othersAfter).toEqual(othersBefore);
+        expect(othersAfter.map((row) => row.status).sort()).toEqual(['active', 'removed']);
+      });
+
       it('accepts an invitation to a portal member active only in another client of the caller', async () => {
         const cookie = await loginFromMemberIp(admin);
         const otherClientId = randomUUID();
