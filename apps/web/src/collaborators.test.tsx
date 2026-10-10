@@ -538,7 +538,7 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
     const { impl } = makeFetch({ collaborators: () => listResponse([]) });
     const { container } = renderCollaborators(impl);
 
-    await waitFor(() => expect(container.querySelector('.collaborators__grid')).not.toBeNull());
+    await waitFor(() => expect(container.querySelector('.collaborators__grid:not([aria-hidden])')).not.toBeNull());
     // The loading skeleton is also a grid: wait for it to go away so the empty list is what is checked.
     await waitFor(() => expect(container.querySelector('.collaborators__grid[aria-hidden]')).toBeNull());
     expect(screen.queryByText(/Nenhuma pessoa encontrada/)).toBeNull();
