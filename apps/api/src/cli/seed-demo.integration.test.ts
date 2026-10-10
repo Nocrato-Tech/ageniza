@@ -256,7 +256,7 @@ describe('seed:demo (issue #183)', () => {
     }
   });
 
-  it('running the seed again repairs colors a previous version stored in the old shape, deleting nothing (issue #471)', async () => {
+  it('running the seed again repairs colors that drifted from the seed, deleting nothing (issues #471 and #476)', async () => {
     const [padaria] = await owner.knex('client_brand_sections')
       .whereIn('client_id', first.clientIds)
       .where('section_key', 'colors')
@@ -264,8 +264,10 @@ describe('seed:demo (issue #183)', () => {
       .where('clients.name', 'Padaria Central')
       .select('client_brand_sections.client_id');
     const clientId = padaria!.client_id as string;
+    // The old { nome, codigoHexadecimal } shape can no longer be stored (client_brand_sections_colors_format, #476),
+    // so the stale row is one in the contract's shape whose values the seed no longer writes.
     await owner.knex.raw(
-      `update public.client_brand_sections set colors = '[{"nome":"Vermelho terracota","codigoHexadecimal":"#B4472F"}]'::jsonb where client_id = ? and section_key = 'colors'`,
+      `update public.client_brand_sections set colors = '[{"name":"Antiga","hex":"#000000"}]'::jsonb where client_id = ? and section_key = 'colors'`,
       [clientId]
     );
     const rowsBefore = await count('select count(*)::text as total from public.client_brand_sections where client_id = any(?::uuid[])', [first.clientIds]);

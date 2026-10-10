@@ -91,7 +91,7 @@ Sete seções **fixas, definidas pelo produto**. Uma linha por seção preenchid
 |---|---|
 | `branding` | texto livre |
 | `tone_of_voice` | texto livre |
-| `colors` | lista de `{ nome, código hexadecimal }` |
+| `colors` | lista de `{ name, hex }` (nome e código hexadecimal `#RRGGBB`) |
 | `positioning` | texto livre |
 | `archetype` | um dos doze: Inocente, Sábio, Explorador, Fora-da-lei, Mago, Herói, Amante, Bobo da corte, Cara comum, Cuidador, Governante, Criador |
 | `personas` | a seção agrupa as personas (tabela abaixo); não tem texto próprio |
