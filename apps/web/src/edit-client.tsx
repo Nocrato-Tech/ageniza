@@ -282,7 +282,10 @@ export function EditClientDialog({ client, onClose }: { client: ClientDetailResp
     event.preventDefault();
     const name = fields.name.trim();
     if (name === '') { setFieldError('name', NAME_REQUIRED); return; }
-    if (!ClientNameSchema.safeParse(name).success) { setFieldError('name', NAME_INVALID); return; }
+    // Only a changed name is held to the current rule: a name saved before a rule existed stays
+    // as it is, and editing another field must not fail on it (#446). The API takes a PATCH
+    // without `name`, and `changedFields` leaves it out when it did not change.
+    if (body.name !== undefined && !ClientNameSchema.safeParse(name).success) { setFieldError('name', NAME_INVALID); return; }
     save.mutate(body);
   };
 
