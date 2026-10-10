@@ -75,7 +75,7 @@ const refused = async <T>(
   run: () => Promise<Reply>,
   photoOf: (body: any) => T, // eslint-disable-line @typescript-eslint/no-explicit-any -- test helper over untyped JSON
   signedKey: string
-): Promise<{ readonly reply: Reply; readonly photo: T; readonly logged: string }> => {
+): Promise<{ readonly reply: Reply; readonly photo: T | undefined; readonly logged: string }> => {
   bucket.refusing = false;
   const healthy = await run();
   expect([200, 201]).toContain(healthy.statusCode);
@@ -84,7 +84,9 @@ const refused = async <T>(
   bucket.refusing = true;
   const before = logs.text().length;
   const reply = await run();
-  return { reply, photo: photoOf(reply.json()), logged: logs.text().slice(before) };
+  // A 500 has no body to read the photo from; the status assertion that follows names the failure.
+  const photo = reply.statusCode < 300 ? photoOf(reply.json()) : undefined;
+  return { reply, photo, logged: logs.text().slice(before) };
 };
 
 describe('CLIENTS photo URL when the bucket refuses to sign (#470)', () => {
@@ -149,7 +151,8 @@ describe('CLIENTS photo URL when the bucket refuses to sign (#470)', () => {
   const expectDegraded = (outcome: { readonly reply: Reply; readonly photo: unknown; readonly logged: string }, code: string, key: string, status = 200): void => {
     expect(outcome.reply.statusCode).toBe(status);
     expect(outcome.photo).toBeNull();
-    expect(outcome.logged).toContain(code);
+    // The whole JSON field: a bare substring also matches PORTAL_CLIENT_PHOTO_URL_FAILED.
+    expect(outcome.logged).toContain(`"code":"${code}"`);
     expect(outcome.logged).not.toContain(key);
   };
 
