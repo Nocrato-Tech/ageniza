@@ -20,6 +20,8 @@ const ELEMENTS: readonly { readonly label: string; readonly element: unknown; re
   { label: 'empty name', element: { name: '', hex: '#000000' }, expected: true },
   { label: 'whitespace-only name', element: { name: '   ', hex: '#000000' }, expected: true },
   { label: 'accented name and emoji', element: { name: 'Café com leite ☕', hex: '#6F4E37' }, expected: true },
+  { label: 'a surrogate pair at the start of the name', element: { name: '😀 alegre', hex: '#6F4E37' }, expected: true },
+  { label: 'a surrogate pair at the end of the name', element: { name: 'alegre 😀', hex: '#6F4E37' }, expected: true },
   { label: 'NBSP in the name', element: { name: 'com nbsp', hex: '#6F4E37' }, expected: true },
   { label: 'C1 control and line separator in the name', element: { name: 'a\u0080b c', hex: '#6F4E37' }, expected: true },
   { label: 'name of 60 bytes', element: { name: 'a'.repeat(60), hex: '#112233' }, expected: true },
@@ -102,5 +104,25 @@ describe('brand colors: the contract and the database agree (#476)', () => {
     const element = { name: 'a\u0000b', hex: '#112233' };
     expect(BrandColorSchema.safeParse(element).success).toBe(false);
     await expect(verdictOfDatabase([element])).rejects.toMatchObject({ code: '22P05' });
+  });
+
+  // JSON.stringify keeps a lone surrogate as a \udXXX escape, which jsonb refuses with 22P02 before the
+  // CHECK runs, so only the contract can answer it with a 400 (#484). A well-formed pair is not lone.
+  it.each([
+    ['a lone high surrogate', 'x\ud800'],
+    ['a lone low surrogate', 'x\udc00'],
+    ['the last high surrogate, alone', 'x\udbff'],
+    ['the last low surrogate, alone', 'x\udfff'],
+    ['a high surrogate followed by a letter', '\ud83dx'],
+    ['a low surrogate at the start', '\ude00x'],
+    ['a pair written in reverse order', '\ude00\ud83d'],
+    ['a high surrogate before a whole pair', '\ud83d😀'],
+    ['a low surrogate after a whole pair', '😀\ude00'],
+    ['a lone surrogate in a name that otherwise fits the limit', `${'a'.repeat(50)}\ud800`]
+  ])('refuses %s in the name on both sides: the contract rejects it and jsonb cannot hold it', async (_label, name) => {
+    const element = { name, hex: '#112233' };
+    expect(BrandColorSchema.safeParse(element).success, 'BrandColorSchema').toBe(false);
+    expect(BrandStudySectionUpdateRequestSchema.safeParse({ colors: [element] }).success, 'write contract').toBe(false);
+    await expect(verdictOfDatabase([element])).rejects.toMatchObject({ code: '22P02' });
   });
 });

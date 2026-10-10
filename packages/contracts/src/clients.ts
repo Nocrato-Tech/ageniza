@@ -33,6 +33,9 @@ export const utf8ByteLength = (value: string): number => {
   return bytes;
 };
 
+// A lone surrogate survives JSON.stringify as a \udXXX escape, which jsonb refuses with 22P02 (a 500).
+const hasLoneSurrogate = (value: string): boolean => /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(value);
+
 const boundedText = (maxBytes: number) =>
   z.string()
     .refine((value) => !hasControlCharacters(value), 'must not contain control characters')
@@ -325,7 +328,7 @@ export const ARCHETYPE_LABELS: Readonly<Record<z.infer<typeof ArchetypeSchema>, 
 });
 
 export const BrandColorSchema = z.object({
-  name: boundedText(60),
+  name: boundedText(60).refine((value) => !hasLoneSurrogate(value), 'must not contain a lone surrogate'),
   hex: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'hex must be #RRGGBB')
 }).strict();
 
