@@ -303,7 +303,7 @@ describe('CLIENTS HTTP module (#124)', () => {
       { client_id: clientId, section_key: 'branding', body: 'Marca' },
       { client_id: clientId, section_key: 'positioning', body: null }
     ]);
-    await owner.knex.raw(`insert into public.client_brand_sections (client_id, section_key, colors) values (?, 'colors', ?::jsonb)`, [clientId, JSON.stringify([{ nome: 'Vinho', codigo: '#7A1F2B' }])]);
+    await owner.knex.raw(`insert into public.client_brand_sections (client_id, section_key, colors) values (?, 'colors', ?::jsonb)`, [clientId, JSON.stringify([{ name: 'Vinho', hex: '#7A1F2B' }])]);
     const activePersona = randomUUID();
     await owner.knex('client_personas').insert([
       { id: activePersona, client_id: clientId, name: 'Ativa' },
