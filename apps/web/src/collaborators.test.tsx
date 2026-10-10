@@ -539,8 +539,12 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
     const { container } = renderCollaborators(impl);
 
     await waitFor(() => expect(container.querySelector('.collaborators__grid')).not.toBeNull());
+    // The loading skeleton is also a grid: wait for it to go away so the empty list is what is checked.
+    await waitFor(() => expect(container.querySelector('.collaborators__grid[aria-hidden]')).toBeNull());
     expect(screen.queryByText(/Nenhuma pessoa encontrada/)).toBeNull();
     expect(screen.queryByText(/Nenhum colaborador/)).toBeNull();
+    // "Ninguém foi removido" is the empty state of the removed filter only (SPEC §7).
+    expect(screen.queryByText(/Ninguém foi removido/)).toBeNull();
   });
 
   it('returns to the last valid page when the URL points past the end (#229)', async () => {
@@ -2581,6 +2585,32 @@ describe('removed filter and reactivation (#105)', () => {
     expect(confirm.disabled).toBe(false);
     fireEvent.click(confirm);
     await waitFor(() => expect(bodies).toEqual([{ membershipId: pauloLima.membershipId, body: { roleId: PRODUCTION_ROLE_ID } }]));
+  });
+
+  it('refuses to reactivate with no role even if the disabled button is bypassed', async () => {
+    const bodies: unknown[] = [];
+    const { impl, calls } = makeFetch({
+      permissions: reactivatePermissions,
+      collaborators: (query) => listResponse(removedOnly(query)),
+      roles: () => rolesFor(false),
+      reactivate: (membershipId, body) => {
+        bodies.push({ membershipId, body });
+        return json({ ...pauloLima, status: 'active' });
+      }
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar Paulo Lima' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reativar Paulo Lima' });
+    await within(dialog).findByRole('option', { name: 'Produção' });
+    const form = dialog.querySelector('form');
+    if (form === null) throw new Error('The reactivation form was not rendered.');
+
+    fireEvent.submit(form);
+    expect(await within(dialog).findByText('Selecione um papel.')).toBeTruthy();
+    expect(bodies).toEqual([]);
+    expect(calls.some((call) => call.startsWith('POST') && call.includes('reactivate'))).toBe(false);
   });
 
   it('offers Admin in the reactivation roles only to the Owner', async () => {

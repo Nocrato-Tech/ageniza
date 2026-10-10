@@ -48,27 +48,109 @@ describe('ClientNameSchema invisible characters (#427)', () => {
     expect(ClientNameSchema.safeParse(`Cafe${text(0x2800)}Central`).success).toBe(false);
   });
 
-  it('keeps the variation selector 16 after a pictograph, the way an emoji needs it', () => {
-    const heart = text(0x2764, 0xfe0f);
-    const parsed = ClientNameSchema.safeParse(`Amor ${heart} Doce`);
-    expect(parsed.success).toBe(true);
-    expect(parsed.data).toBe(`Amor ${heart} Doce`);
-    expect(ClientNameSchema.safeParse(`Casa ${text(0x1f3e0, 0xfe0f)} Verde`).success).toBe(true);
+  // The owner's decision of 2026-10-08 (#436): a client name takes no emoji. The four names below
+  // are the ones of the review of #431; each pair forges a homonym with its plain twin.
+  const heart = text(0x2764);
+  const house = text(0x1f3e0);
+
+  it('refuses a pictograph, with or without the selector 16, and a ZWJ next to one', () => {
+    for (const name of [
+      `Café ${heart}${text(0xfe0f)}`,
+      `Casa ${house}`,
+      `Casa ${house}${text(0xfe0f)}`,
+      `Cafe ${heart}${text(0x200d)}Central`,
+      `Amor ${heart}${text(0xfe0f)} Doce`,
+      `Familia ${text(0x1f469, 0x200d, 0x1f469, 0x200d, 0x1f467)}`,
+      `Fogo ${text(0x2764, 0xfe0f, 0x200d, 0x1f525)}`
+    ]) {
+      expect(ClientNameSchema.safeParse(name).success, name).toBe(false);
+    }
   });
 
-  it('keeps emoji sequences that bind with a ZWJ, with or without the selector', () => {
-    const family = text(0x1f469, 0x200d, 0x1f469, 0x200d, 0x1f467);
-    expect(ClientNameSchema.safeParse(`Familia ${family}`).success).toBe(true);
-    const couple = text(0x2764, 0xfe0f, 0x200d, 0x1f525);
-    expect(ClientNameSchema.safeParse(`Fogo ${couple}`).success).toBe(true);
+  it('refuses a pictograph on its own, which no other rule would catch', () => {
+    // No selector, no joiner: only the pictograph rule can refuse these.
+    for (const name of [`Casa ${house}`, `Amor ${heart} Doce`, `${text(0x1f600)} Padaria`, `Padaria ${text(0x2b50)}`]) {
+      expect(ClientNameSchema.safeParse(name).success, name).toBe(false);
+    }
   });
 
-  it('refuses the selector 16 when it does not follow a pictograph, and a second one after a pictograph', () => {
+  it('refuses the selector 16 on its own, after a pictograph or after anything else', () => {
     expect(ClientNameSchema.safeParse(`Cafe${text(0xfe0f)} Central`).success).toBe(false);
+    expect(ClientNameSchema.safeParse(`Cafe 1${text(0xfe0f)}`).success).toBe(false);
     expect(ClientNameSchema.safeParse(`Amor ${text(0x2764, 0xfe0f, 0xfe0f)}`).success).toBe(false);
-    expect(ClientNameSchema.safeParse(`Amor ${text(0x2764, 0xfe0f, 0xfe00)}`).success).toBe(false);
-    // A pictograph that sits before a space does not lend its permission to a selector after it.
     expect(ClientNameSchema.safeParse(`Amor ${text(0x2764)} ${text(0xfe0f)}Doce`).success).toBe(false);
+  });
+
+  // The owner's exception of 2026-10-08 (#436): the copyright, registered and trademark signs are
+  // pictographic for Unicode but common in a company name, so they stay. Everything else does not.
+  const MARK_SIGNS: ReadonlyArray<readonly [string, number]> = [['copyright', 0x00a9], ['registered', 0x00ae], ['trademark', 0x2122]];
+
+  it.each(MARK_SIGNS)('keeps the %s sign in a client name, at the start, in the middle and at the end', (_label, codePoint) => {
+    const sign = text(codePoint);
+    for (const name of [`${sign} Studio`, `Marca${sign}`, `Marca ${sign} Central`]) {
+      expect(ClientNameSchema.safeParse(name).success, name).toBe(true);
+    }
+  });
+
+  it('keeps the names of the owner decision', () => {
+    for (const name of [`Nike${text(0x00ae)}`, `Marca${text(0x2122)}`, `${text(0x00a9)} Studio`]) {
+      const parsed = ClientNameSchema.safeParse(name);
+      expect(parsed.success, name).toBe(true);
+      expect(parsed.data).toBe(name);
+    }
+  });
+
+  it.each(MARK_SIGNS)('refuses the selector 16 after the %s sign, which would forge a homonym of the plain name', (_label, codePoint) => {
+    expect(ClientNameSchema.safeParse(`Nike${text(codePoint, 0xfe0f)}`).success).toBe(false);
+    expect(ClientNameSchema.safeParse(`Nike${text(codePoint, 0xfe0f)} Studio`).success).toBe(false);
+  });
+
+  it.each(MARK_SIGNS)('refuses a joiner beside the %s sign, which would forge a homonym of the plain name', (_label, codePoint) => {
+    for (const joiner of [0x200c, 0x200d]) {
+      expect(ClientNameSchema.safeParse(`Nike${text(codePoint, joiner)}Studio`).success, `after ${joiner.toString(16)}`).toBe(false);
+      expect(ClientNameSchema.safeParse(`Nike${text(joiner, codePoint)} Studio`).success, `before ${joiner.toString(16)}`).toBe(false);
+    }
+  });
+
+  it.each(MARK_SIGNS)('refuses a joiner that only a combining mark separates from the %s sign (#440)', (_label, codePoint) => {
+    for (const joiner of [0x200c, 0x200d]) {
+      expect(ClientNameSchema.safeParse(`Nike${text(codePoint, 0x0301, joiner)}Studio`).success, `after one mark, ${joiner.toString(16)}`).toBe(false);
+      expect(ClientNameSchema.safeParse(`Nike${text(codePoint, 0x0301, 0x0302, joiner)}Studio`).success, `after two marks, ${joiner.toString(16)}`).toBe(false);
+      expect(ClientNameSchema.safeParse(`Nike${text(joiner, 0x0301, codePoint)} Studio`).success, `before, ${joiner.toString(16)}`).toBe(false);
+    }
+  });
+
+  it('refuses the combining keycap, with or without the selector 16, since "1" + U+20E3 is an emoji', () => {
+    for (const name of [`Mesa 1${text(0x20e3)}`, `Mesa 1${text(0xfe0f, 0x20e3)}`, `Mesa #${text(0x20e3)}`, `${text(0x20e3)}Mesa`]) {
+      expect(ClientNameSchema.safeParse(name).success, name).toBe(false);
+    }
+  });
+
+  // Not `Extended_Pictographic`, but they draw as an emoji, and the owner decided "no emoji".
+  it('refuses a flag and every regional indicator on its own', () => {
+    expect(ClientNameSchema.safeParse(`Loja ${text(0x1f1e7, 0x1f1f7)}`).success).toBe(false);
+    for (let codePoint = 0x1f1e6; codePoint <= 0x1f1ff; codePoint += 1) {
+      expect(ClientNameSchema.safeParse(`Loja ${text(codePoint)}`).success, codePoint.toString(16)).toBe(false);
+    }
+  });
+
+  it('refuses every skin tone modifier, alone or after an emoji', () => {
+    for (let codePoint = 0x1f3fb; codePoint <= 0x1f3ff; codePoint += 1) {
+      expect(ClientNameSchema.safeParse(`Loja ${text(codePoint)}`).success, codePoint.toString(16)).toBe(false);
+      expect(ClientNameSchema.safeParse(`Loja ${text(0x1f44d, codePoint)}`).success, codePoint.toString(16)).toBe(false);
+    }
+  });
+
+  it('still refuses the other pictographic symbols', () => {
+    for (const codePoint of [0x2605, 0x2714, 0x2764, 0x203c, 0x2139]) {
+      expect(ClientNameSchema.safeParse(`Nota ${text(codePoint)}`).success, codePoint.toString(16)).toBe(false);
+    }
+  });
+
+  it('keeps a name with no emoji and the text that is not pictographic', () => {
+    for (const name of ['Cafe Central', 'Café Central 24h', 'Padaria & Cia', 'Ana-Maria #1']) {
+      expect(ClientNameSchema.safeParse(name).success, name).toBe(true);
+    }
   });
 
   it('keeps the persian ZWNJ and the combining marks that are not default-ignorable', () => {
@@ -87,8 +169,13 @@ describe('ClientNameSchema invisible characters (#427)', () => {
   });
 });
 
-describe('createDisplayNameSchema keeps the owner decision of 2026-10-08 (#427)', () => {
+describe('createDisplayNameSchema keeps the owner decision of 2026-10-08 (#427, #436)', () => {
   it('still accepts, for a person, the characters a client name now refuses', () => {
+    for (const name of [`Ana ${text(0x2764, 0xfe0f)} Maria`, `Ana ${text(0x1f3e0)} Maria`, `Familia ${text(0x1f469, 0x200d, 0x1f469, 0x200d, 0x1f467)}`]) {
+      expect(DisplayNameSchema.safeParse(name).success, name).toBe(true);
+      expect(createDisplayNameSchema(80).safeParse(name).success, name).toBe(true);
+      expect(ClientNameSchema.safeParse(name).success, name).toBe(false);
+    }
     for (const codePoint of [0x034f, 0xfe00, 0xfe0e, 0xe0100, 0x180b, 0x17b4, 0x2800]) {
       const name = `Ana${text(codePoint)}Maria`;
       expect(DisplayNameSchema.safeParse(name).success, codePoint.toString(16)).toBe(true);

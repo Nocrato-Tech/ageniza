@@ -773,7 +773,7 @@ describe('edit client modal (#137)', () => {
   });
 
   // A zero-width space is refused today by the name rule; the name was saved before the rule (#446).
-  const legacyName = 'Padaria​Central';
+  const legacyName = 'Padaria\u200bCentral';
   const legacyClient = { ...padaria, name: legacyName };
 
   it('saves another field of a client whose stored name the current rule refuses (#446)', async () => {
@@ -801,12 +801,41 @@ describe('edit client modal (#137)', () => {
     const dialog = await openEditDialog();
     const name = editNameInput(dialog);
 
-    fireEvent.change(name, { target: { value: 'Outra​Padaria' } });
+    fireEvent.change(name, { target: { value: 'Outra\u200bPadaria' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
 
     expect(await within(dialog).findByText('O nome contém caracteres que não são aceitos.')).toBeTruthy();
     expect(name.getAttribute('aria-invalid')).toBe('true');
     expect(calls.some((call) => call.startsWith('PATCH'))).toBe(false);
+  });
+
+  it('refuses an invalid new name for a client whose stored name is fine (#446)', async () => {
+    const { impl, calls } = makeFetch();
+    renderClientDetail(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const dialog = await openEditDialog();
+
+    fireEvent.change(editNameInput(dialog), { target: { value: 'Outra\u200bPadaria' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    expect(await within(dialog).findByText('O nome contém caracteres que não são aceitos.')).toBeTruthy();
+    expect(calls.some((call) => call.startsWith('PATCH'))).toBe(false);
+  });
+
+  it('lets a legacy client rename to a valid name (#446)', async () => {
+    const bodies: unknown[] = [];
+    const { impl } = makeFetch({
+      client: () => json(legacyClient),
+      patch: (body) => { bodies.push(body); return json(registrationOf({ ...legacyClient, name: 'Padaria Central' })); }
+    });
+    renderClientDetail(impl);
+    await screen.findByRole('heading', { name: legacyName });
+    const dialog = await openEditDialog();
+
+    fireEvent.change(editNameInput(dialog), { target: { value: 'Padaria Central' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(bodies).toEqual([{ name: 'Padaria Central' }]));
   });
 
   it('shows the name-in-use message on the name field on a 409, keeping the typed value', async () => {
