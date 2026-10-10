@@ -13,7 +13,7 @@ import { Pool } from 'pg';
 import { buildApp, type ApiAppOptions } from '../../../app.js';
 import type { AgencyModuleDependencies } from '../../agencies/routes.js';
 import type { CollaboratorModuleDependencies } from '../../collaborators/routes.js';
-import { createIdentityStorageClient } from '../../identity-storage/storage-client.js';
+import { createIdentityStorageClient, type IdentityStorageClient } from '../../identity-storage/storage-client.js';
 import { createAuthAuditRecorder, type AuthAuditRecorder } from '../audit.js';
 import { createAuthLimiter, type AuthLimiterOptions, type InMemoryAuthLimiter } from '../auth-limiter.js';
 import { createAuth, type AuthInstance } from '../better-auth.js';
@@ -181,6 +181,11 @@ export interface TestAppOptions {
    * statements a module sends through it (issue #304). Never used by production code.
    */
   readonly wrapDatabase?: (database: DatabaseClient) => DatabaseClient;
+  /**
+   * Test-only wrapper around the identity storage the clients module signs photo URLs with, so a
+   * test can make the bucket refuse a signature the way the real one does (issue #470).
+   */
+  readonly wrapIdentityStorage?: (storage: IdentityStorageClient) => IdentityStorageClient;
 }
 
 /** Real prehandler builders, wired to this test app's own `auth`/`database`, for `registerExtraRoutes`. */
@@ -242,7 +247,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
         requireAgencyAccess: createRequireAgencyAccess({ database }),
         requirePermission,
         requireClientAccess,
-        identityStorage: createIdentityStorageClient(config.identityStorage),
+        identityStorage: (options.wrapIdentityStorage ?? ((storage) => storage))(createIdentityStorageClient(config.identityStorage)),
         photoUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds,
         photoMaxImageBytes: config.identityStorage.maxImageBytes
       };

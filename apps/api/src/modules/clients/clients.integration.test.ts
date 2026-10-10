@@ -288,6 +288,37 @@ describe('CLIENTS HTTP module (#124)', () => {
     expect(cleared.json()).toMatchObject({ taxId: null, instagramHandle: null });
   });
 
+  it('#468: rejects an instagramHandle or a website of the wrong shape with 400 on the field, and the client does not change', async () => {
+    const clientId = await createClient({ agencyId: agencyA });
+    const stored = await patchClient(adminCookie, agencyA, clientId, { instagramHandle: 'padaria.central', website: 'https://padaria.example' });
+    expect(stored.statusCode).toBe(200);
+    const before = await clientRow(clientId);
+
+    const rejected: readonly { readonly field: string; readonly payload: Record<string, unknown> }[] = [
+      { field: 'instagramHandle', payload: { instagramHandle: 'com espaço' } },
+      { field: 'instagramHandle', payload: { instagramHandle: 'padaria!' } },
+      { field: 'instagramHandle', payload: { instagramHandle: 'a'.repeat(31) } },
+      { field: 'instagramHandle', payload: { instagramHandle: '@' } },
+      { field: 'website', payload: { website: 'ftp://padaria.example' } },
+      { field: 'website', payload: { website: 'javascript:alert(1)' } },
+      { field: 'website', payload: { website: 'padaria.example' } },
+      { field: 'website', payload: { website: 'https://padaria .example' } }
+    ];
+    for (const { field, payload } of rejected) {
+      // A valid field next to the invalid one must not be written either: the PATCH is all or nothing.
+      const response = await patchClient(adminCookie, agencyA, clientId, { ...payload, segment: 'Nao deve gravar' });
+      expect(response.statusCode, JSON.stringify(payload)).toBe(400);
+      expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR', details: { issues: [expect.objectContaining({ path: field })] } } });
+      await expect(clientRow(clientId)).resolves.toEqual(before);
+    }
+
+    // The same shapes at the edge of the rule are accepted, so the refusals above are the format
+    // and not a blanket 400 on the field.
+    const accepted = await patchClient(adminCookie, agencyA, clientId, { instagramHandle: `@${'a'.repeat(30)}`, website: 'http://padaria.example/cardapio?x=1' });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json()).toMatchObject({ instagramHandle: 'a'.repeat(30), website: 'http://padaria.example/cardapio?x=1' });
+  });
+
   it('answers 409 on a PATCH that reuses an active name', async () => {
     const taken = `Tomado ${randomUUID()}`;
     await createClient({ agencyId: agencyA, name: taken });

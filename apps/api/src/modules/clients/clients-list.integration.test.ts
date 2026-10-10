@@ -491,6 +491,46 @@ describe('clients listing (issue #125)', () => {
     expect(attention.body.data[1]?.threadsAwaitingAgency).toBe(0);
   });
 
+  it('#465: names that fold to the same text and have no awaiting thread are ordered by id under attention, page by page', async () => {
+    const { agencyId, admin, cookie } = await createAgencyWithAdmin('attention-tiebreak');
+    const portal = await insertBareUser('attention-tiebreak-portal');
+
+    // Four spellings that fold to 'avila' and pass the unique index (it only lowercases). They are
+    // inserted from the highest id down, so heap order is the reverse of the id order and dropping
+    // the `id` tie-break from the attention sort cannot pass by luck.
+    const spellings = ['Avila', 'Ávila', 'Àvila', 'Âvila'];
+    const sortedIds = spellings.map(() => randomUUID()).sort();
+    for (const [index, id] of [...sortedIds].reverse().entries()) {
+      await createClient({ agencyId, id, name: spellings[index]! });
+    }
+
+    const attention = await getClients(cookie, agencyId, { search: 'avila' });
+    expect(attention.status).toBe(200);
+    expect(ids(attention.body)).toEqual(sortedIds);
+    expect(attention.body.data.map((item) => item.threadsAwaitingAgency)).toEqual([0, 0, 0, 0]);
+
+    const walk = async (search?: string): Promise<string[]> => {
+      const walked: string[] = [];
+      for (let page = 1; page <= 5; page += 1) {
+        const response = await getClients(cookie, agencyId, search === undefined ? { pageSize: 1, page } : { search, pageSize: 1, page });
+        expect(response.status).toBe(200);
+        walked.push(...ids(response.body));
+      }
+      return walked;
+    };
+    expect(await walk('avila')).toEqual(sortedIds);
+
+    // A fifth client awaiting the agency sorts last by name, so it only leads because of the triage;
+    // the tied pair keeps the id order behind it.
+    const awaiting = await createClient({ agencyId, name: 'Zélia Aguardando' });
+    const thread = await addThread(awaiting, admin.id);
+    await addComment({ threadId: thread, clientId: awaiting, authorUserId: portal, side: 'client', createdAt: new Date('2026-01-01T10:00:00.000Z') });
+    const triaged = await getClients(cookie, agencyId);
+    expect(ids(triaged.body)).toEqual([awaiting, ...sortedIds]);
+    expect(triaged.body.data.map((item) => item.threadsAwaitingAgency)).toEqual([1, 0, 0, 0, 0]);
+    expect(await walk()).toEqual([awaiting, ...sortedIds]);
+  });
+
   it('#367: the order compares the folded name byte by byte -- space, hyphen, digit and accent -- in both sorts', async () => {
     const { agencyId, admin, cookie } = await createAgencyWithAdmin('byte-order');
     const portal = await insertBareUser('byte-order-portal');
