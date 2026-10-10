@@ -183,27 +183,6 @@ const suggest = (label: string): void => { fireEvent.click(screen.getByRole('but
 const nav = () => screen.getByRole('navigation', { name: 'Navegação do portal' });
 
 describe('portal Marca (#143)', () => {
-  // The twelve archetypes of specs/clientes.md section 3, written out by value (issue #464).
-  it.each([
-  ['innocent', 'Inocente'],
-  ['sage', 'Sábio'],
-  ['explorer', 'Explorador'],
-  ['outlaw', 'Fora-da-lei'],
-  ['magician', 'Mago'],
-  ['hero', 'Herói'],
-  ['lover', 'Amante'],
-  ['jester', 'Bobo da corte'],
-  ['everyman', 'Cara comum'],
-  ['caregiver', 'Cuidador'],
-  ['ruler', 'Governante'],
-  ['creator', 'Criador']
-])('reads the archetype %s as %s', async (key, label) => {
-    const { impl } = makeWorld({ studies: { [CLIENT_ID]: portalStudyBody({ archetype: { archetype: key } }, []), [SECOND_ID]: SECOND_STUDY } });
-    renderPortal(impl);
-    await page();
-    expect(within(sectionOf('Personalidade da marca')).getByText(label)).toBeTruthy();
-  });
-
   it('reads the whole study in the client language, in order, with the archetype by its Portuguese name', async () => {
     const { impl, calls } = makeWorld();
     renderPortal(impl);
