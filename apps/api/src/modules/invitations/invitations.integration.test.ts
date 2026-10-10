@@ -89,6 +89,17 @@ const createAgency = async (name: string, ownerUserId: string | null = null): Pr
   return id;
 };
 
+// A role scoped to exactly one permission distinguishes "the guard checks the right key" from
+// "the guard checks *a* key that only `admin` happens to hold" -- the divergence issue #99
+// itself points to (#39): rota e policy exigindo chaves diferentes.
+const customRoleWithPermission = async (targetAgencyId: string, permissionKey: string): Promise<string> => {
+  const roleId = randomUUID();
+  createdCustomRoleIds.push(roleId);
+  await owner.knex('roles').insert({ id: roleId, agency_id: targetAgencyId, key: `custom-${roleId}`, name: `Custom (${permissionKey})`, is_system: false });
+  await owner.knex('role_permissions').insert({ role_id: roleId, permission_key: permissionKey });
+  return roleId;
+};
+
 const insertInvitation = async (input: {
   readonly agencyId: string;
   readonly email: string;
@@ -1389,17 +1400,6 @@ describe('invitation HTTP module', () => {
       return role.id as string;
     };
 
-    // A role scoped to exactly one permission distinguishes "the guard checks the right key" from
-    // "the guard checks *a* key that only `admin` happens to hold" -- the divergence issue #99
-    // itself points to (#39): rota e policy exigindo chaves diferentes.
-    const customRoleWithPermission = async (targetAgencyId: string, permissionKey: string): Promise<string> => {
-      const roleId = randomUUID();
-      createdCustomRoleIds.push(roleId);
-      await owner.knex('roles').insert({ id: roleId, agency_id: targetAgencyId, key: `custom-${roleId}`, name: `Custom (${permissionKey})`, is_system: false });
-      await owner.knex('role_permissions').insert({ role_id: roleId, permission_key: permissionKey });
-      return roleId;
-    };
-
     it('returns only pending collaborator invitations for that agency, paginated by the shared contract', async () => {
       const pendingAgencyOwner = await makeUser('invitations-pending-owner');
       const pendingAgencyId = await createAgency('Pending invitations agency', pendingAgencyOwner.id);
@@ -1683,6 +1683,122 @@ describe('invitation HTTP module', () => {
         headers: { ...origin, cookie: await loginCookie(outsider) }
       });
       expect(response.statusCode).toBe(404);
+    });
+  });
+
+  // Issue #449. Resending and cancelling each name their own permission, and the database policies
+  // accept the three invitation permissions interchangeably (`invitations_update`), so a guard on the
+  // wrong key is invisible to every test that uses the Admin preset or a role with nothing at all.
+  // Each caller below holds exactly one invitation permission (plus `colaborador.visualizar` for the
+  // inviter), and every refusal is confirmed against the rows and the outbox, not only the status.
+  describe('resend and cancel are gated by their own permission (issue #449)', () => {
+    let gateOwner: TestUserFixture;
+    let gateAgencyId: string;
+    let onlyResend: TestUserFixture;
+    let onlyCancel: TestUserFixture;
+    let onlyInvite: TestUserFixture;
+    let onlyResendCookie: string;
+    let onlyCancelCookie: string;
+    let onlyInviteCookie: string;
+
+    const memberWithPermissions = async (label: string, permissionKeys: readonly string[]): Promise<TestUserFixture> => {
+      const roleId = await customRoleWithPermission(gateAgencyId, permissionKeys[0] as string);
+      for (const permissionKey of permissionKeys.slice(1)) {
+        await owner.knex('role_permissions').insert({ role_id: roleId, permission_key: permissionKey });
+      }
+      const user = await makeUser(`invitations-gate-${label}`);
+      await owner.knex('agency_memberships').insert({ agency_id: gateAgencyId, user_id: user.id, role_id: roleId });
+      return user;
+    };
+
+    beforeAll(async () => {
+      gateOwner = await makeUser('invitations-gate-owner');
+      gateAgencyId = await createAgency('Invitation gates agency', gateOwner.id);
+      onlyResend = await memberWithPermissions('only-resend', ['convite.reenviar']);
+      onlyCancel = await memberWithPermissions('only-cancel', ['convite.cancelar']);
+      onlyInvite = await memberWithPermissions('only-invite', ['colaborador.convidar', 'colaborador.visualizar']);
+      onlyResendCookie = await loginCookie(onlyResend);
+      onlyCancelCookie = await loginCookie(onlyCancel);
+      onlyInviteCookie = await loginCookie(onlyInvite);
+    });
+
+    const pendingInvitation = async (): Promise<{ invitationId: string; email: string }> => {
+      const email = `gate-${randomUUID()}@example.test`;
+      const { invitationId } = await insertInvitation({ agencyId: gateAgencyId, email, roleId: productionRoleId });
+      return { invitationId, email };
+    };
+    const resend = (cookie: string, invitationId: string): Promise<Injection> => app.app.inject({
+      method: 'POST',
+      url: `/agencies/${gateAgencyId}/invitations/${invitationId}/resend`,
+      headers: { ...origin, cookie }
+    });
+    const cancel = (cookie: string, invitationId: string): Promise<Injection> => app.app.inject({
+      method: 'DELETE',
+      url: `/agencies/${gateAgencyId}/invitations/${invitationId}`,
+      headers: { ...origin, cookie }
+    });
+    const invitationsFor = (email: string): Promise<Array<{ id: string; revoked_at: Date | null; used_at: Date | null }>> =>
+      owner.knex('invitations').where({ agency_id: gateAgencyId, email }).orderBy('created_at').select('id', 'revoked_at', 'used_at');
+    const expectUntouched = async (invitationId: string, email: string): Promise<void> => {
+      expect(await invitationsFor(email)).toEqual([{ id: invitationId, revoked_at: null, used_at: null }]);
+    };
+    const expectForbidden = (response: Injection): void => {
+      expect(response.statusCode).toBe(403);
+      expect(response.json<{ error: { code: string } }>().error.code).toBe('FORBIDDEN');
+    };
+
+    it('lets a role with only convite.reenviar resend (200, new token, old one revoked) and refuses it the cancellation', async () => {
+      const refusedTarget = await pendingInvitation();
+      const sentBefore = sender.sent.length;
+      expectForbidden(await cancel(onlyResendCookie, refusedTarget.invitationId));
+      await expectUntouched(refusedTarget.invitationId, refusedTarget.email);
+
+      const resent = await resend(onlyResendCookie, refusedTarget.invitationId);
+      expect(resent.statusCode).toBe(200);
+      const newInvitationId = resent.json<{ invitationId: string }>().invitationId;
+      expect(newInvitationId).not.toBe(refusedTarget.invitationId);
+      const rows = await invitationsFor(refusedTarget.email);
+      expect(rows).toHaveLength(2);
+      expect(rows[0]?.revoked_at).not.toBeNull();
+      expect(rows[1]).toMatchObject({ id: newInvitationId, revoked_at: null, used_at: null });
+      expect(sender.sent.length).toBe(sentBefore + 1);
+      expect(sender.sent.at(-1)?.to).toBe(refusedTarget.email);
+    });
+
+    it('lets a role with only convite.cancelar cancel (204, nothing sent) and refuses it the resend', async () => {
+      const target = await pendingInvitation();
+      const sentBefore = sender.sent.length;
+      expectForbidden(await resend(onlyCancelCookie, target.invitationId));
+      await expectUntouched(target.invitationId, target.email);
+      expect(sender.sent.length).toBe(sentBefore);
+
+      const cancelled = await cancel(onlyCancelCookie, target.invitationId);
+      expect(cancelled.statusCode).toBe(204);
+      const rows = await invitationsFor(target.email);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.revoked_at).not.toBeNull();
+      expect(sender.sent.length).toBe(sentBefore);
+    });
+
+    it('refuses both the resend and the cancellation to a role that only invites, leaving the invitation pending', async () => {
+      const target = await pendingInvitation();
+      const sentBefore = sender.sent.length;
+      expectForbidden(await resend(onlyInviteCookie, target.invitationId));
+      expectForbidden(await cancel(onlyInviteCookie, target.invitationId));
+      await expectUntouched(target.invitationId, target.email);
+      expect(sender.sent.length).toBe(sentBefore);
+    });
+
+    it('lets the Owner, who has no link and no role, resend and cancel by ownership', async () => {
+      const target = await pendingInvitation();
+      const ownerCookie = await loginCookie(gateOwner);
+      const resent = await resend(ownerCookie, target.invitationId);
+      expect(resent.statusCode).toBe(200);
+      const newInvitationId = resent.json<{ invitationId: string }>().invitationId;
+      expect((await cancel(ownerCookie, newInvitationId)).statusCode).toBe(204);
+      const rows = await invitationsFor(target.email);
+      expect(rows).toHaveLength(2);
+      expect(rows.every((row) => row.revoked_at !== null)).toBe(true);
     });
   });
 
