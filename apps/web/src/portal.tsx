@@ -1,8 +1,8 @@
-import { createContext, useContext, useEffect } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { PortalClientResponseSchema, type PortalClientResponse } from '@ageniza/contracts';
+import { AuthNoContentResponseSchema, PortalClientResponseSchema, type PortalClientResponse } from '@ageniza/contracts';
 import { AccountMenu } from './account-menu.js';
 import { Avatar, Button, Skeleton } from '@ageniza/ui';
 
@@ -12,6 +12,7 @@ import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';
+import { PortalTour, type PortalTourTarget } from './portal-tour.js';
 import { NotFoundPage } from './status-pages.js';
 
 /**
@@ -80,11 +81,11 @@ function PortalShellSkeleton() {
   </div>;
 }
 
-function PortalNav({ clienteId }: { clienteId: string }) {
+function PortalNav({ clienteId, tourTarget }: { clienteId: string; tourTarget: PortalTourTarget | null }) {
   return <nav className="portal-nav" aria-label="Navegação do portal">
     <ul>
       {PORTAL_TABS.map((tab) => <li key={tab.slug}>
-        <NavLink end to={`/portal/${clienteId}/${tab.slug}`}>{tab.label}</NavLink>
+        <NavLink end to={`/portal/${clienteId}/${tab.slug}`} data-tour-target={tab.slug === tourTarget ? 'true' : undefined}>{tab.label}</NavLink>
       </li>)}
     </ul>
   </nav>;
@@ -94,6 +95,13 @@ export function PortalAreaLayout() {
   const { clienteId = '' } = useParams();
   const httpClient = useApiClient();
   const location = useLocation();
+  const queryClient = useQueryClient();
+  const session = useAuthSession(useAuthSessionStore());
+  // The tour is per person and per client: what was closed here is remembered by client, and a
+  // failed "seen" write is deliberately not remembered past this visit (specs/clientes.md §7).
+  const [closedTours, setClosedTours] = useState<ReadonlySet<string>>(new Set());
+  const [reviewing, setReviewing] = useState(false);
+  const [tourTarget, setTourTarget] = useState<PortalTourTarget | null>(null);
   const validId = uuidPattern.test(clienteId);
   const { data, error, refetch } = useQuery({
     queryKey: portalClientQueryKey(clienteId),
@@ -104,6 +112,9 @@ export function PortalAreaLayout() {
     // A malformed id is a bad address, not a request: the API would answer 404 anyway.
     enabled: validId
   });
+
+  // A review is asked for in one client's portal; it does not follow the person to another.
+  useEffect(() => { setReviewing(false); }, [clienteId]);
 
   // Revalidates on every navigation inside the portal, so a link removed mid-use turns the very
   // next navigation into "não encontrado" instead of serving the cached shell. React Query dedupes
@@ -122,6 +133,23 @@ export function PortalAreaLayout() {
   // Defense in depth: the answer must belong to the client in the address, or it is not shown.
   if (data.id !== clienteId) return <PortalContextlessShell><NotFoundPage as="section" /></PortalContextlessShell>;
 
+  const tourMode = reviewing ? 'review'
+    : data.onboardingSeenAt === null && !closedTours.has(clienteId) ? 'first'
+      : null;
+
+  const closeTour = (): void => {
+    if (tourMode === 'review') { setReviewing(false); return; }
+    setClosedTours((previous) => new Set(previous).add(clienteId));
+    httpClient.request({
+      path: apiPath('/clients/:clientId/onboarding/seen', { clientId: clienteId }),
+      method: 'POST',
+      response: AuthNoContentResponseSchema
+    }).then(() => {
+      queryClient.setQueryData<PortalClientResponse>(portalClientQueryKey(clienteId), (previous) =>
+        previous === undefined ? previous : { ...previous, onboardingSeenAt: new Date().toISOString() });
+    }).catch(() => undefined);
+  };
+
   return <PortalClientContext.Provider value={data}>
     <div className="app-shell portal-shell">
       <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
@@ -134,11 +162,19 @@ export function PortalAreaLayout() {
           </div>
         </div>
         {/* The account menu (#70) lives here; the active context is the client this portal is. */}
-        <AccountMenu activeContext={data.name} />
+        <AccountMenu activeContext={data.name} onReviewTour={tourMode === null ? () => { setReviewing(true); } : undefined} />
       </header>
       <LegalNotice />
       <main className="portal-content" id="main-content"><InvitationNotice /><Outlet /></main>
-      <PortalNav clienteId={clienteId} />
+      <PortalNav clienteId={clienteId} tourTarget={tourTarget} />
+      {tourMode !== null && <PortalTour
+        key={`${clienteId}:${tourMode}`}
+        personName={session.user?.name ?? ''}
+        clientName={data.name}
+        agencyName={data.agencyName}
+        onClose={closeTour}
+        onTargetChange={setTourTarget}
+      />}
     </div>
   </PortalClientContext.Provider>;
 }

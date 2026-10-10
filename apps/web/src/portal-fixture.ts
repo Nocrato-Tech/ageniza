@@ -1,5 +1,5 @@
-/** A `GET /clients/:clientId` answer (the portal's own read) for tests that only need the shell to open. */
-export const portalClientBody = (clientId: string, name: string): Record<string, unknown> => ({
+/** A `GET /clients/:clientId` answer (the portal's own read); the tour is already seen unless the test asks for it. */
+export const portalClientBody = (clientId: string, name: string, onboardingSeenAt: string | null = '2026-10-01T12:00:00.000Z'): Record<string, unknown> => ({
   id: clientId,
   name,
   status: 'active',
@@ -15,7 +15,7 @@ export const portalClientBody = (clientId: string, name: string): Record<string,
   closingDate: null,
   archivedAt: null,
   agencyName: 'Agência Um',
-  onboardingSeenAt: null,
+  onboardingSeenAt,
   home: { threadsAnsweredByAgency: 0, brandStudyFilled: 0 }
 });
 

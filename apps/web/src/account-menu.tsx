@@ -47,10 +47,12 @@ const isCurrentContext = (context: Context, target: ContextTarget | null): boole
 
 export interface AccountMenuProps {
   activeContext?: string;
+  /** Offered only where a tour exists to review (the client portal); it reopens the tour and calls nothing. */
+  onReviewTour?: () => void;
   user?: AuthUser | null;
 }
 
-export function AccountMenu({ activeContext, user: userOverride }: AccountMenuProps) {
+export function AccountMenu({ activeContext, onReviewTour, user: userOverride }: AccountMenuProps) {
   const httpClient = useApiClient();
   const authStore = useOptionalAuthSessionStore();
   const session = useAuthSession(userOverride === undefined ? (authStore ?? fallbackAuthStore) : fallbackAuthStore);
@@ -159,6 +161,7 @@ export function AccountMenu({ activeContext, user: userOverride }: AccountMenuPr
               {switchLabel} <span aria-hidden='true'>{'\u203A'}</span>
             </MenuItem>
           )}
+          {onReviewTour !== undefined && <MenuItem onClick={onReviewTour}>Rever o tour</MenuItem>}
           <MenuItem onClick={() => { setEmailChangeOpen(true); }}>{emailChangeLabel}</MenuItem>
           <MenuSeparator />
           <MenuItem onClick={() => { void startLogout('logout'); }}>Sair</MenuItem>

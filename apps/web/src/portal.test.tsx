@@ -72,7 +72,7 @@ const portalClient = (overrides: Partial<PortalClientResponse> = {}): Record<str
   closingDate: null,
   archivedAt: null,
   agencyName: 'Agência Um',
-  onboardingSeenAt: null,
+  onboardingSeenAt: '2026-10-01T12:00:00.000Z',
   home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5 },
   ...overrides
 });
