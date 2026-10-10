@@ -441,6 +441,42 @@ describe('brand study tab (#138)', () => {
     await waitFor(() => expect(within(sectionCard(container, 'Cores')).getByText('Ainda não preenchida')).toBeTruthy());
   });
 
+  // specs/clientes.md section 3: the archetype is one of twelve; each pair is written out by value
+  // so the screen cannot drift together with the contract constant (issue #464).
+  const SPEC_ARCHETYPES: readonly (readonly [string, string])[] = [
+  ['innocent', 'Inocente'],
+  ['sage', 'Sábio'],
+  ['explorer', 'Explorador'],
+  ['outlaw', 'Fora-da-lei'],
+  ['magician', 'Mago'],
+  ['hero', 'Herói'],
+  ['lover', 'Amante'],
+  ['jester', 'Bobo da corte'],
+  ['everyman', 'Cara comum'],
+  ['caregiver', 'Cuidador'],
+  ['ruler', 'Governante'],
+  ['creator', 'Criador']
+];
+
+  it('offers exactly the twelve archetypes of the SPEC, each sending its key and showing its Portuguese label', async () => {
+    const { impl } = makeFetch({ client: () => json(padaria), study: () => json({ ...studyOf(), sections: studyOf().sections.map((section) => (section.key === 'archetype' ? sectionOf('archetype') : section)) }) });
+    const { container } = renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+
+    fireEvent.click(within(sectionCard(container, 'Arquétipo')).getByRole('button', { name: 'Preencher Arquétipo' }));
+    const select = within(sectionCard(container, 'Arquétipo')).getByRole('combobox', { name: 'Arquétipo' });
+    const options = Array.from(select.querySelectorAll('option')).filter((option) => option.value !== '');
+    expect(options.map((option) => [option.value, option.textContent])).toEqual(SPEC_ARCHETYPES.map(([key, label]) => [key, label]));
+  });
+
+  it.each(SPEC_ARCHETYPES)('shows the archetype %s as %s', async (key, label) => {
+    const study = { ...studyOf(), sections: studyOf().sections.map((section) => (section.key === 'archetype' ? sectionOf('archetype', { archetype: key }) : section)) };
+    const { impl } = makeFetch({ client: () => json(padaria), study: () => json(study) });
+    const { container } = renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    expect(within(sectionCard(container, 'Arquétipo')).getByText(label)).toBeTruthy();
+  });
+
   it('edits the archetype by its Portuguese label, sends the key, moves the counter and the General tab', async () => {
     const bodies: unknown[] = [];
     // Empty archetype means an unfilled section: saving it moves `filled` (review of #388 r3).
