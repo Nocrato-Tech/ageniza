@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createLocalTestDatabaseClient, raw, type DatabaseClient, resolveIntegrationDatabaseUrls } from '../src/index.js';
 
-// Issues #131 and #133. "Today" of a contract is the day in America/Sao_Paulo, and `now()` cannot be
+// Issues #131, #133 and #373. "Today" of a contract is the day in America/Sao_Paulo, and `now()` cannot be
 // pinned, so the day is computed by `app_private.sao_paulo_date(instant)` and these tests call it with
 // fixed instants. Between 21:00 and 24:00 in Brasília the Brasília date and the UTC date differ, which
 // is the only place the mutation Sao_Paulo -> UTC is visible.
@@ -90,7 +90,7 @@ describe('app_private.sao_paulo_date', () => {
   });
 });
 
-describe('the closing-date functions', () => {
+describe('the functions that ask for today', () => {
   const definitionOf = async (signature: string): Promise<string> => {
     const { rows } = await raw<{ rows: readonly { definition: string }[] }>(getOwner().knex, 'select pg_catalog.pg_get_functiondef(?::regprocedure) as definition', [signature]);
     return rows[0]!.definition;
@@ -99,9 +99,34 @@ describe('the closing-date functions', () => {
   // `now()` cannot be pinned in a test, so the one thing a test can pin is that neither function
   // keeps a clock of its own: both ask the function above, whose fixed-instant tests are the ones
   // that turn red when the zone changes.
+  // A function added later that writes the zone inline is the same defect again, so the catalog is
+  // scanned instead of listing the functions known today.
+  it('leaves no function, policy or constraint of the application schemas with a time zone of its own', async () => {
+    const zone = '(at\\s+time\\s+zone|current_date|localtimestamp)';
+    const { rows } = await raw<{ rows: readonly { object: string }[] }>(getOwner().knex, `
+      select p.pronamespace::regnamespace || '.' || p.proname as object
+      from pg_catalog.pg_proc p
+      where p.prokind = 'f'
+        and p.pronamespace::regnamespace::text in ('public', 'app_private', 'audit', 'auth')
+        and p.oid <> 'app_private.sao_paulo_date(timestamptz)'::regprocedure
+        and pg_catalog.pg_get_functiondef(p.oid) ~* '${zone}'
+      union all
+      select pol.polrelid::regclass || ' policy ' || pol.polname
+      from pg_catalog.pg_policy pol
+      where coalesce(pg_catalog.pg_get_expr(pol.polqual, pol.polrelid), '') || coalesce(pg_catalog.pg_get_expr(pol.polwithcheck, pol.polrelid), '') ~* '${zone}'
+      union all
+      select con.conrelid::regclass || ' constraint ' || con.conname
+      from pg_catalog.pg_constraint con
+      where pg_catalog.pg_get_constraintdef(con.oid) ~* '${zone}'
+    `, []);
+    expect(rows).toEqual([]);
+  });
+
   it.each([
     'app_private.archive_due_clients()',
-    'app_private.set_client_closing_date(uuid, date)'
+    'app_private.set_client_closing_date(uuid, date)',
+    'app_private.accept_legal_document(text, text)',
+    'app_private.accept_invitation(text, uuid, text, text, boolean)'
   ])('%s asks sao_paulo_date for today and names no time zone of its own', async (signature) => {
     const definition = await definitionOf(signature);
     expect(definition).toContain("app_private.sao_paulo_date(pg_catalog.now())");
@@ -112,7 +137,9 @@ describe('the closing-date functions', () => {
 
   it.each([
     'app_private.archive_due_clients()',
-    'app_private.set_client_closing_date(uuid, date)'
+    'app_private.set_client_closing_date(uuid, date)',
+    'app_private.accept_legal_document(text, text)',
+    'app_private.accept_invitation(text, uuid, text, text, boolean)'
   ])('%s is still security definer, with a fixed search_path, closed to PUBLIC and open to the application role', async (signature) => {
     const { rows } = await raw<{ rows: readonly { definer: boolean; fixed_path: boolean; app: boolean; public_role: boolean }[] }>(getOwner().knex, `
       select
