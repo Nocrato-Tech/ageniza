@@ -1742,9 +1742,10 @@ describe('invitation HTTP module', () => {
     const expectUntouched = async (invitationId: string, email: string): Promise<void> => {
       expect(await invitationsFor(email)).toEqual([{ id: invitationId, revoked_at: null, used_at: null }]);
     };
+    // The message of the permission guard (tenancy/guards.ts), so a refusal from the database cannot pass for it.
     const expectForbidden = (response: Injection): void => {
       expect(response.statusCode).toBe(403);
-      expect(response.json<{ error: { code: string } }>().error.code).toBe('FORBIDDEN');
+      expect(response.json<{ error: unknown }>().error).toEqual({ code: 'FORBIDDEN', message: 'You do not have permission to perform this action.' });
     };
 
     it('lets a role with only convite.reenviar resend (200, new token, old one revoked) and refuses it the cancellation', async () => {
@@ -1792,6 +1793,8 @@ describe('invitation HTTP module', () => {
     it('lets the Owner, who has no link and no role, resend and cancel by ownership', async () => {
       const target = await pendingInvitation();
       const ownerCookie = await loginCookie(gateOwner);
+      // No link and therefore no role: the Owner goes through by ownership alone.
+      expect(await owner.knex('agency_memberships').where({ agency_id: gateAgencyId, user_id: gateOwner.id }).select('id')).toEqual([]);
       const resent = await resend(ownerCookie, target.invitationId);
       expect(resent.statusCode).toBe(200);
       const newInvitationId = resent.json<{ invitationId: string }>().invitationId;

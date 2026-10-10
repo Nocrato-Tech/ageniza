@@ -899,6 +899,14 @@ describe('POST /agencies/:agencyId/collaborators/:membershipId/reactivate (issue
     const watched = [home.ownerUser, active.user, gone.user, admin.user];
     const before = await Promise.all(watched.map((user) => sessionIds(user.id)));
     expect(before.map((ids) => ids.length)).toEqual([1, 1, 1, 1]);
+    // Status and role of the other links of the scenario: the refusals must leave them as they are.
+    const otherLinks = [active.membershipId, admin.membershipId, home.ownerMembershipId];
+    const otherLinksState = [
+      { status: 'active', role_id: presetRoleIds.sales },
+      { status: 'active', role_id: presetRoleIds.admin },
+      { status: 'removed', role_id: presetRoleIds.admin }
+    ];
+    expect((await Promise.all(otherLinks.map(membershipRow))).map(({ status, role_id }) => ({ status, role_id }))).toEqual(otherLinksState);
 
     expectRefused(await reactivate(admin.cookie, home.agencyId, active.membershipId, { roleId: presetRoleIds.production }), 409, 'COLLABORATOR_NOT_REMOVED');
     expectRefused(await reactivate(home.ownerCookie, home.agencyId, gone.membershipId, { roleId: randomUUID() }), 400, 'INVALID_ROLE');
@@ -906,6 +914,7 @@ describe('POST /agencies/:agencyId/collaborators/:membershipId/reactivate (issue
     expectRefused(await reactivate(admin.cookie, home.agencyId, home.ownerMembershipId, { roleId: presetRoleIds.production }), 403, 'FORBIDDEN', OWNER_ROLE_MESSAGE);
 
     expect(await Promise.all(watched.map((user) => sessionIds(user.id)))).toEqual(before);
+    expect((await Promise.all(otherLinks.map(membershipRow))).map(({ status, role_id }) => ({ status, role_id }))).toEqual(otherLinksState);
     expect((await membershipRow(gone.membershipId)).status).toBe('removed');
     expect((await list(goneCookie, away.agencyId)).status).toBe(200);
     expect((await list(active.cookie, home.agencyId)).status).toBe(200);
