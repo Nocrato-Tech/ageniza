@@ -306,7 +306,7 @@ describe('CLIENTS HTTP module (#124)', () => {
     ];
     for (const { field, payload } of rejected) {
       // A valid field next to the invalid one must not be written either: the PATCH is all or nothing.
-      const response = await patchClient(adminCookie, agencyA, clientId, { ...payload, segment: 'Nao deve gravar' });
+      const response = await patchClient(adminCookie, agencyA, clientId, { ...payload, segment: 'Não deve gravar' });
       expect(response.statusCode, JSON.stringify(payload)).toBe(400);
       expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR', details: { issues: [expect.objectContaining({ path: field })] } } });
       await expect(clientRow(clientId)).resolves.toEqual(before);
@@ -317,6 +317,29 @@ describe('CLIENTS HTTP module (#124)', () => {
     const accepted = await patchClient(adminCookie, agencyA, clientId, { instagramHandle: `@${'a'.repeat(30)}`, website: 'http://padaria.example/cardapio?x=1' });
     expect(accepted.statusCode).toBe(200);
     expect(accepted.json()).toMatchObject({ instagramHandle: 'a'.repeat(30), website: 'http://padaria.example/cardapio?x=1' });
+  });
+
+  it('#481: rejects a contactEmail that is not an e-mail or is over 320 characters with 400 on the field, and the client does not change', async () => {
+    const clientId = await createClient({ agencyId: agencyA });
+    expect((await patchClient(adminCookie, agencyA, clientId, { contactEmail: 'maria@padaria.example' })).statusCode).toBe(200);
+    const before = await clientRow(clientId);
+
+    const rejected = ['sem-arroba', 'maria@', '@padaria.example', 'maria padaria@exemplo.test', `${'a'.repeat(314)}@x.test`];
+    for (const contactEmail of rejected) {
+      const response = await patchClient(adminCookie, agencyA, clientId, { contactEmail, segment: 'Não deve gravar' });
+      expect(response.statusCode, contactEmail.slice(0, 40)).toBe(400);
+      const { error } = response.json<{ error: { code: string; details: { issues: { path: string }[] } } }>();
+      expect(error.code).toBe('VALIDATION_ERROR');
+      expect(error.details.issues.map((issue) => issue.path)).toContain('contactEmail');
+      expect(new Set(error.details.issues.map((issue) => issue.path))).toEqual(new Set(['contactEmail']));
+      await expect(clientRow(clientId)).resolves.toEqual(before);
+    }
+
+    // 320 characters is the edge that stays valid; the address is stored in its canonical lower case.
+    const edge = `${'a'.repeat(313)}@x.test`;
+    const accepted = await patchClient(adminCookie, agencyA, clientId, { contactEmail: edge.toUpperCase() });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json()).toMatchObject({ contactEmail: edge });
   });
 
   it('answers 409 on a PATCH that reuses an active name', async () => {
