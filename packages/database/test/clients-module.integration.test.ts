@@ -458,10 +458,26 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
     await expect(commentOn(hiddenThreadId, portalA1, 'client')).rejects.toThrow(/row-level security/);
     await expect(commentOn(hiddenThreadId, managerA, 'agency')).rejects.toThrow(/row-level security/);
     await expect(storedOn(hiddenThreadId)).resolves.toBe(1);
+
+    // A collaborator who also holds the client's portal link reads the hidden thread through the agency branch
+    // of the thread policy, so the portal's own filter never hides it from them: only the persona clause of the
+    // comment policy stops a comment written as the client. The pure portal member above cannot prove that clause.
+    await getOwner().knex('client_memberships').insert({ client_id: clientA1, user_id: productionA });
+    try {
+      await expect(
+        asUser(productionA, (transaction) => transaction('client_threads').whereIn('id', [openThreadId, hiddenThreadId]).select('id'))
+      ).resolves.toHaveLength(2);
+      await expect(commentOn(hiddenThreadId, productionA, 'client')).rejects.toThrow(/row-level security/);
+      await expect(storedOn(hiddenThreadId)).resolves.toBe(1);
+      await commentOn(openThreadId, productionA, 'client');
+    } finally {
+      await getOwner().knex('client_memberships').where({ client_id: clientA1, user_id: productionA }).delete();
+    }
+
     // The same writers comment on the readable thread of that client: the refusal above is the thread's, not the client's.
     await commentOn(openThreadId, portalA1, 'client');
     await commentOn(openThreadId, managerA, 'agency');
-    await expect(storedOn(openThreadId)).resolves.toBe(3);
+    await expect(storedOn(openThreadId)).resolves.toBe(4);
     await expect(storedOn(hiddenThreadId)).resolves.toBe(1);
 
     await getOwner().knex('client_thread_comments').whereIn('thread_id', [openThreadId, hiddenThreadId]).delete();
