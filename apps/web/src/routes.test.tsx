@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore } from './auth.js';
@@ -9,6 +9,7 @@ import { ApiClientProvider, HttpClient } from './http.js';
 import { portalClientBody } from './portal-fixture.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
+import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(cleanup);
 
@@ -36,8 +37,9 @@ const signedInFetch: typeof fetch = async (input, init) => {
 };
 
 function LocationProbe({ probe }: { probe: { pathname: string } }) {
-  const location = useLocation();
-  probe.pathname = location.pathname;
+  useCommittedLocation((location, navigate) => {
+    probe.pathname = location.pathname;
+  });
   return null;
 }
 

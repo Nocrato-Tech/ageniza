@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
+import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
@@ -13,6 +13,7 @@ import { PortalTour } from './portal-tour.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
+import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(cleanup);
 
@@ -123,9 +124,10 @@ function Harness({ store }: { store: AuthSessionStore }) {
 interface ProbeTarget { pathname: string; navigate: NavigateFunction }
 
 function Probe({ probe }: { probe: ProbeTarget }) {
-  const location = useLocation();
-  probe.pathname = location.pathname;
-  probe.navigate = useNavigate();
+  useCommittedLocation((location, navigate) => {
+    probe.pathname = location.pathname;
+    probe.navigate = navigate;
+  });
   return null;
 }
 
