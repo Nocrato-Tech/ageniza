@@ -51,7 +51,25 @@ export function PortalTour({ personName, clientName, agencyName, onClose, onTarg
 
   useEffect(() => () => { onTargetChange(null); }, []);
 
-  const close = (completed: boolean): void => { onClose(completed); };
+  const closed = useRef(false);
+  const close = (completed: boolean): void => {
+    if (closed.current) return;
+    closed.current = true;
+    onClose(completed);
+  };
+
+  // The card does not block the page, so Esc must work wherever the focus went after a click outside;
+  // a native dialog (Sugerir) keeps its own Esc.
+  useEffect(() => {
+    const onDocumentKeyDown = (event: globalThis.KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (event.target instanceof Element && event.target.closest('dialog') !== null) return;
+      event.preventDefault();
+      close(false);
+    };
+    document.addEventListener('keydown', onDocumentKeyDown);
+    return () => { document.removeEventListener('keydown', onDocumentKeyDown); };
+  }, [onClose]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
     if (event.key === 'Escape') {

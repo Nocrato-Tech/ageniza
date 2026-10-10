@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
@@ -51,7 +53,13 @@ interface Scenario {
   readonly alsoCollaborator?: boolean;
   /** Answers the onboarding POST instead of the real API's 204; consulted per request, in order. */
   readonly seenAnswer?: () => Response | Promise<Response>;
+  /** What the logout answers; the real API answers 204, and 401 when the session was already gone. */
+  readonly logoutStatus?: 204 | 401;
 }
+
+interface Person { readonly id: string; readonly name: string; readonly email: string }
+const MARIA: Person = { id: USER_ID, name: 'Maria', email: 'maria@example.test' };
+const ANA: Person = { id: '88888888-8888-4888-8888-888888888888', name: 'Ana', email: 'ana@example.test' };
 
 /**
  * The server remembers the seen mark per link, like `client_memberships.onboarding_seen_at`: only a
@@ -59,7 +67,8 @@ interface Scenario {
  */
 const makeWorld = (scenario: Scenario = {}) => {
   const names: Record<string, string> = { [CLIENT_ID]: 'Padaria Central', [SECOND_ID]: 'Confeitaria Dois' };
-  const seenAt: Record<string, string | null> = {
+  let person: Person = MARIA;
+  let seenAt: Record<string, string | null> = {
     [CLIENT_ID]: scenario.seen?.includes(CLIENT_ID) === true ? SEEN_AT : null,
     [SECOND_ID]: scenario.seen?.includes(SECOND_ID) === true ? SEEN_AT : null
   };
@@ -70,7 +79,12 @@ const makeWorld = (scenario: Scenario = {}) => {
     const path = url.pathname;
     const method = init?.method ?? 'GET';
     calls.push(`${method} ${path}`);
-    if (path.endsWith('/auth/session')) return json(sessionBody);
+    if (path.endsWith('/auth/session')) return json({ user: person, session: sessionBody.session });
+    if (path.endsWith('/auth/logout') && method === 'POST') {
+      return scenario.logoutStatus === 401
+        ? json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required.' } }, 401)
+        : new Response(null, { status: 204 });
+    }
     if (path.endsWith('/me/legal-acceptances')) return json(legalAccepted);
     if (path.endsWith('/me/contexts')) {
       return json({
@@ -93,7 +107,12 @@ const makeWorld = (scenario: Scenario = {}) => {
     throw new Error(`unexpected ${method} ${url}`);
   };
   const posts = (): string[] => calls.filter((call) => call.startsWith('POST /clients/'));
-  return { impl, calls, posts, seenAt };
+  /** Another person takes over the browser: the server remembers the mark per person and link. */
+  const signInAs = (next: Person): void => {
+    person = next;
+    seenAt = { [CLIENT_ID]: null, [SECOND_ID]: null };
+  };
+  return { impl, calls, posts, get seenAt() { return seenAt; }, signInAs };
 };
 
 function Harness({ store }: { store: AuthSessionStore }) {
@@ -130,7 +149,7 @@ const renderPortal = (impl: typeof fetch, entry = portalUrl()) => {
       </QueryClientProvider>
     </AuthSessionProvider>
   );
-  return { probe, unmount: rendered.unmount };
+  return { probe, store, unmount: rendered.unmount };
 };
 
 const nav = () => screen.getByRole('navigation', { name: 'Navegação do portal' });
@@ -451,24 +470,71 @@ describe('portal tour (#144)', () => {
     await waitFor(() => { expect(probe.pathname).toBe('/entrar'); });
   });
 
-  it('sends one record per closing, even while the answer is still on its way, and survives leaving meanwhile', async () => {
+  it('sends one record per closing, even while the answer is still on its way, and a later Esc after leaving sends nothing', async () => {
     let release: () => void = () => undefined;
     const held = new Promise<void>((resolve) => { release = resolve; });
-    const world = makeWorld({ seenAnswer: async () => { await held; return json({}); } });
+    const world = makeWorld({ seenAnswer: async () => { await held; return new Response(null, { status: 204 }); } });
     const { unmount } = renderPortal(world.impl);
     const dialog = await tour(WELCOME);
 
-    const skip = within(dialog).getByRole('button', { name: 'Pular' });
-    fireEvent.click(skip);
-    fireEvent.click(skip);
-    fireEvent.keyDown(dialog, { key: 'Escape' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Pular' }));
     await waitFor(() => { expect(queryTour()).toBeNull(); });
     expect(world.posts()).toEqual([`POST /clients/${CLIENT_ID}/onboarding/seen`]);
 
     unmount();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
     release();
     await act(async () => { await Promise.resolve(); });
     expect(world.posts()).toHaveLength(1);
+  });
+
+  it('closes once however many times the card is told to close while it stays mounted', () => {
+    const onClose = vi.fn();
+    render(<PortalTour personName="Maria" clientName="Padaria Central" agencyName="Agência Um" onClose={onClose} onTargetChange={() => undefined} />);
+    const skip = screen.getByRole('button', { name: 'Pular' });
+
+    fireEvent.click(skip);
+    fireEvent.click(skip);
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  it('closes on Esc wherever the focus is, after a click outside the card', async () => {
+    const world = makeWorld();
+    renderPortal(world.impl);
+    await tour(WELCOME);
+
+    const link = within(nav()).getByRole('link', { name: 'Marca' });
+    link.focus();
+    fireEvent.keyDown(link, { key: 'Escape' });
+
+    await waitFor(() => { expect(queryTour()).toBeNull(); });
+    await waitFor(() => { expect(world.posts()).toEqual([`POST /clients/${CLIENT_ID}/onboarding/seen`]); });
+  });
+
+  it('closes on an Esc heard on the page itself, with no card focus needed', () => {
+    const onClose = vi.fn();
+    render(<PortalTour personName="Maria" clientName="Padaria Central" agencyName="Agência Um" onClose={onClose} onTargetChange={() => undefined} />);
+
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  it('leaves Esc to a native dialog open over the tour, and stops listening once the tour is gone', () => {
+    const onClose = vi.fn();
+    const { unmount } = render(<>
+      <PortalTour personName="Maria" clientName="Padaria Central" agencyName="Agência Um" onClose={onClose} onTargetChange={() => undefined} />
+      <dialog open><button type="button">Enviar</button></dialog>
+    </>);
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Enviar' }), { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+
+    unmount();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('announces itself as a modal dialog to assistive technology', async () => {
@@ -547,5 +613,83 @@ describe('portal tour (#144)', () => {
     expect(screen.getByRole('dialog', { name: WELCOME })).toBeTruthy();
     expect(world.posts()).toHaveLength(1);
     expect(world.seenAt[CLIENT_ID]).toBeNull();
+  });
+
+  it('rests the card on the bar itself, with no height or width of its own to go stale', async () => {
+    const world = makeWorld();
+    renderPortal(world.impl);
+    const dialog = await tour(WELCOME);
+    expect(nav().contains(dialog)).toBe(true);
+
+    const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
+    const rule = (selector: string): string => {
+      const start = css.indexOf(`
+${selector} {`);
+      if (start === -1) throw new Error(`${selector} was not found in globals.css.`);
+      return css.slice(start, css.indexOf('}', start));
+    };
+    expect(rule('.portal-tour')).toMatch(/position:\s*absolute;/);
+    expect(rule('.portal-tour')).toMatch(/bottom:\s*100%;/);
+    expect(rule('.portal-tour')).not.toMatch(/\d(\.\d+)?rem/);
+    expect(rule('.portal-nav')).toMatch(/position:\s*sticky;/);
+  });
+
+  it.each([
+    ['logs out', 204],
+    ['finds the session already gone while logging out', 401]
+  ] as const)('shows the tour to a second person who arrives in the same browser after the first %s', async (_label, logoutStatus) => {
+    const world = makeWorld({ logoutStatus });
+    const { probe, store } = renderPortal(world.impl);
+    await tour(WELCOME);
+    click('Pular');
+    await waitFor(() => { expect(world.seenAt[CLIENT_ID]).not.toBeNull(); });
+    await waitFor(() => { expect(queryTour()).toBeNull(); });
+    await waitFor(() => { expect(world.posts()).toHaveLength(1); });
+    // The first person's mark is now in the cache, written by the close.
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull(); });
+
+    fireEvent.click(screen.getByRole('button', { name: /Maria/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Sair' }));
+    await waitFor(() => { expect(probe.pathname).toBe('/entrar'); });
+
+    world.signInAs(ANA);
+    await act(async () => { await store.refresh(); });
+    act(() => { probe.navigate(portalUrl()); });
+
+    // Nothing of the first person's cache shows: the portal waits for its own answer.
+    expect(screen.queryByRole('navigation', { name: 'Navegação do portal' })).toBeNull();
+    const dialog = await screen.findByRole('dialog', { name: 'Boas-vindas, Ana!' });
+    expect(within(dialog).getByText('Este é o espaço de Padaria Central com Agência Um.')).toBeTruthy();
+  });
+
+  it('never paints the review of one client over another, not even for a render, and does not bring it back on return', async () => {
+    const world = makeWorld({ seen: [CLIENT_ID, SECOND_ID] });
+    const { probe } = renderPortal(world.impl, portalUrl('inicio', SECOND_ID));
+    await screen.findByRole('heading', { name: 'Olá, Maria' });
+    act(() => { probe.navigate(portalUrl('inicio', CLIENT_ID)); });
+    await waitFor(() => { expect(screen.getByRole('heading', { name: 'Olá, Maria' })).toBeTruthy(); });
+    await openReview();
+    await tour(WELCOME);
+
+    const observer = new MutationObserver(() => undefined);
+    observer.observe(document.body, { childList: true, subtree: true });
+    let painted: string[];
+    try {
+      // The second client is already in the cache, so it renders on the very first pass.
+      act(() => { probe.navigate(portalUrl('inicio', SECOND_ID)); });
+      painted = observer.takeRecords()
+        .flatMap((record) => Array.from(record.addedNodes))
+        .filter((node): node is Element => node instanceof Element && (node.getAttribute('role') === 'dialog' || node.querySelector('[role="dialog"]') !== null))
+        .map((node) => node.textContent ?? '');
+    } finally {
+      observer.disconnect();
+    }
+    expect(painted).toEqual([]);
+    expect(queryTour()).toBeNull();
+
+    act(() => { probe.navigate(portalUrl('inicio', CLIENT_ID)); });
+    expect(await screen.findByRole('heading', { name: 'Olá, Maria' })).toBeTruthy();
+    expect(queryTour()).toBeNull();
+    expect(world.posts()).toEqual([]);
   });
 });

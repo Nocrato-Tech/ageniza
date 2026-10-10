@@ -2235,6 +2235,7 @@ a.client-general__block:hover {
 }
 
 .portal-nav {
+  /* Also the containing block of the tour card, which rests on the bar's own top edge. */
   position: sticky;
   bottom: 0;
   background: var(--bg-surface);
@@ -2283,15 +2284,15 @@ a.client-general__block:hover {
 }
 
 .portal-tour {
-  position: fixed;
-  left: var(--space-4);
-  right: var(--space-4);
-  bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  position: absolute;
+  inset-inline: 0;
+  bottom: 100%;
   z-index: 10;
   display: grid;
   gap: var(--space-3);
-  max-width: 24rem;
-  margin-inline: auto;
+  width: fit-content;
+  max-width: calc(100% - 2 * var(--space-4));
+  margin: 0 auto var(--space-2);
   padding: var(--space-4);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
@@ -2300,8 +2301,10 @@ a.client-general__block:hover {
 }
 
 .portal-tour[data-step='welcome'] {
+  position: fixed;
   top: 50%;
   bottom: auto;
+  margin-bottom: 0;
   transform: translateY(-50%);
 }
 

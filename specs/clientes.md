@@ -526,7 +526,7 @@ A próxima ação é **uma**: havendo threads abertas com resposta da agência, 
 
 ### Portal — tour
 
-Na primeira entrada daquela pessoa naquele cliente, um tour guiado aponta os itens da navegação. Pode ser pulado e revisto pelo menu de conta. **Mostra só o que funciona**: no MVP, Marca e como sugerir. Calendário e Relatórios entram no tour com seus módulos.
+Na primeira entrada daquela pessoa naquele cliente, um tour guiado aponta os itens da navegação. Pode ser pulado e revisto pelo menu de conta. **Mostra só o que funciona**: no MVP, três passos — Início, Marca e como sugerir (esboço da #144). Calendário e Relatórios entram no tour com seus módulos.
 
 ### Variação por quem olha
 
