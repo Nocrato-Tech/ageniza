@@ -54,6 +54,17 @@ const submitAs = (user: string, contentId: string) => fn(user, 'submit_content(?
 const removedAt = async (assetId: string): Promise<Date | null> =>
   (await w.getOwner().knex('media_assets').where({ id: assetId }).first('removed_at'))?.removed_at as Date | null;
 
+// A lock the transaction under test holds, proved from another connection: a row nobody holds answers FOR SHARE NOWAIT.
+const expectHeld = async (table: 'media_assets' | 'contents', id: string): Promise<void> => {
+  await expect(w.getOwner().knex.raw(`select 1 from public.${table} where id = ? for share nowait`, [id])).rejects.toMatchObject({ code: '55P03' });
+};
+
+const removedInside = async (transaction: Awaited<ReturnType<typeof w.openTransactionAs>>, assetId: string): Promise<void> => {
+  const { rows } = await transaction.raw<{ rows: Array<{ removed_at: Date | null }> }>('select removed_at from public.media_assets where id = ?::uuid', [assetId]);
+  expect(rows[0]?.removed_at).toBeInstanceOf(Date);
+  await expectHeld('media_assets', assetId);
+};
+
 const usageAs = async (user: string, windowSeconds: number | null, exclude: string | null = null, agency = ids.agencyA): Promise<{ bytes: number; count: number }> => {
   const result = await w.asUser(user, (transaction) => transaction.raw<{ rows: Array<{ used_bytes: string; used_object_count: string }> }>(
     'select used_bytes, used_object_count from app_private.agency_media_usage(?::uuid, ?::integer, ?::uuid)',
@@ -432,8 +443,8 @@ describe('removal against a media swap that races it (issue #384, review of #394
     let swapping: Promise<unknown> | undefined;
 
     try {
-      const locker = await remover.raw('select app_private.remove_media_asset(?::uuid, ?::uuid)', [swapped, folderImages]);
-      expect(locker.rows).toHaveLength(1);
+      await remover.raw('select app_private.remove_media_asset(?::uuid, ?::uuid)', [swapped, folderImages]);
+      await removedInside(remover, swapped);
       swapping = w.asUser(ids.productionA, (tx) => setMedia(tx, content, [swapped])).catch((error: unknown) => error);
       await w.waitUntilSomeoneWaitsOnALock();
     } finally {
@@ -453,8 +464,9 @@ describe('removal against a media swap that races it (issue #384, review of #394
     let removing: Promise<unknown> | undefined;
 
     try {
-      const locker = await setMedia(swapper, content, [swapped]);
-      expect(locker.rows).toHaveLength(1);
+      await setMedia(swapper, content, [swapped]);
+      expect(await swapper('content_media').where({ content_id: content }).pluck('asset_id')).toEqual([swapped]);
+      await expectHeld('contents', content);
       removing = removeAs(operarAndVisualizar, swapped, folderImages).catch((error: unknown) => error);
       await w.waitUntilSomeoneWaitsOnALock();
     } finally {
@@ -477,8 +489,8 @@ describe('removal against a cover swap that races it (issue #396)', () => {
     let swapping: Promise<unknown> | undefined;
 
     try {
-      const locker = await remover.raw('select app_private.remove_media_asset(?::uuid, ?::uuid)', [cover, folderImages]);
-      expect(locker.rows).toHaveLength(1);
+      await remover.raw('select app_private.remove_media_asset(?::uuid, ?::uuid)', [cover, folderImages]);
+      await removedInside(remover, cover);
       swapping = w.asUser(ids.productionA, (tx) => tx('contents').where({ id: content }).update({ cover_asset_id: cover })).catch((error: unknown) => error);
       await w.waitUntilSomeoneWaitsOnALock();
     } finally {
@@ -566,14 +578,16 @@ describe('a snapshot older than the lock is refused, not trusted (review of #394
     expect(await removedAt(cover)).toBeNull();
   });
 
-  it.each(levels)('%s: a cover set after the snapshot of a removal is refused by the lock on the media', async (level) => {
+  // The 40001 here also comes from the FOR KEY SHARE that the foreign key of the cover takes on the media, so this test stays
+  // green with `0_contents_lock_cover` off: the trigger is proved by the cover swap that waits for the removal, in READ COMMITTED.
+  it.each(levels)('%s: a cover set from a snapshot older than the removal fails with 40001, and the content keeps no cover', async (level) => {
     const cover = await w.seedAsset(ids.clientA1, folderImages);
     const content = await w.seedContent(ids.clientA1, { status: 'awaiting_approval', folderId: folderImages });
     const setter = await w.openTransactionAs(ids.productionA, level);
 
     try {
       await removeAs(operarAndVisualizar, cover, folderImages);
-      await expect(setter('contents').where({ id: content }).update({ cover_asset_id: cover })).rejects.toMatchObject({ code: expect.stringMatching(/^(40001|A0069)$/) });
+      await expect(setter('contents').where({ id: content }).update({ cover_asset_id: cover })).rejects.toMatchObject({ code: '40001' });
     } finally {
       await setter.rollback();
     }
