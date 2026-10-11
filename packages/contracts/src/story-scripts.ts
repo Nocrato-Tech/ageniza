@@ -41,8 +41,8 @@ const FORMAT_CHARACTER = /\p{Cf}/u;
  * variation selectors, the Hangul fillers and the like (`Default_Ignorable_Code_Point` that is not `Cf`), and the
  * Braille blank. The one exception is VS16 right after a pictograph, which is how a phone writes a heart.
  */
-const IGNORABLE_NOT_FORMAT = /(?!\p{Cf})[\p{Default_Ignorable_Code_Point}⠀]/u;
-const EMOJI_PRESENTATION = /(?<=\p{Extended_Pictographic})️/gu;
+const IGNORABLE_NOT_FORMAT = /(?!\p{Cf})[\p{Default_Ignorable_Code_Point}\u2800]/u;
+const EMOJI_PRESENTATION = /(?<=\p{Extended_Pictographic})\uFE0F/gu;
 
 /** Whether a free text carries a character that is invisible, forged-looking or breaks the line it is on. */
 export const hasHiddenStoryCharacters = (value: string): boolean => {

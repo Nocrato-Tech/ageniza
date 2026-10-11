@@ -75,6 +75,8 @@ const seedScript = async (
     status?: 'draft' | 'sent' | 'recorded';
     scenes?: ReadonlyArray<readonly [string, string | null]>;
     recordedBy?: string;
+    /** Writes the last scene first, so the order the rows were stored in is not the order of their positions. */
+    insertLastSceneFirst?: boolean;
   } = {}
 ): Promise<Seeded> => {
   const id = randomUUID();
@@ -87,11 +89,12 @@ const seedScript = async (
     ...(status === 'recorded' ? { recorded_by: extra.recordedBy ?? users.portalOne!.id, recorded_at: new Date('2026-10-19T15:00:00Z') } : {})
   });
   const scenes = extra.scenes ?? [['Cena um', 'Orientação um'], ['Cena dois', null]];
-  const sceneIds: string[] = [];
-  for (const [index, [text, guidance]] of scenes.entries()) {
-    const sceneId = randomUUID();
-    sceneIds.push(sceneId);
-    await owner.knex('story_script_scenes').insert({ id: sceneId, script_id: id, client_id: clientId, position: index + 1, text, guidance });
+  const sceneIds: string[] = scenes.map(() => randomUUID());
+  const order = scenes.map((_, index) => index);
+  if (extra.insertLastSceneFirst === true) order.reverse();
+  for (const index of order) {
+    const [text, guidance] = scenes[index]!;
+    await owner.knex('story_script_scenes').insert({ id: sceneIds[index], script_id: id, client_id: clientId, position: index + 1, text, guidance });
   }
   return { id, sceneIds };
 };
@@ -568,6 +571,27 @@ describe('editing a story script (issue #258)', () => {
     expect((await stateOf(script.id)).scenes.map((scene) => scene.text)).toEqual(['Antes do envio']);
   });
 
+  it('serializes with the send: an edit that changes nothing, behind a send, is still refused as an edit of a sent script', async () => {
+    const script = await seedScript(cMain, { scriptOn: '2026-11-30' });
+    const holder = await owner.knex.transaction();
+    let released = false;
+    try {
+      expect(await holder('story_scripts').where({ id: script.id }).forUpdate().select('id')).toHaveLength(1);
+      const send = call('POST', `${agencyScript(agencyA, cMain, script.id)}/send`, 'opVis');
+      await waitUntilSomeoneWaitsOnALock(1);
+      const edit = call('PATCH', agencyScript(agencyA, cMain, script.id), 'opVis', { scriptOn: '2026-11-30' });
+      await waitUntilSomeoneWaitsOnALock(2);
+      await holder.commit();
+      released = true;
+
+      expect((await send).statusCode).toBe(200);
+      const edited = await edit;
+      expect({ status: edited.statusCode, code: edited.json().error?.code }).toEqual({ status: 409, code: 'STORY_SCRIPT_STATE' });
+    } finally {
+      if (!released) await holder.rollback();
+    }
+  });
+
   it.each([['40P01', 409, 'TRY_AGAIN'], ['40001', 409, 'TRY_AGAIN'], ['A0020', 409, 'CLIENT_ARCHIVED'], ['A0050', 404, 'NOT_FOUND'], ['A0052', 409, 'STORY_SCRIPT_STATE'], ['XX000', 500, 'INTERNAL_ERROR']] as const)(
     'answers the failure %s of the UPDATE as %i %s, changes nothing, and works when repeated',
     async (errcode, status, code) => {
@@ -691,7 +715,7 @@ describe('the portal lists the sent scripts of a period (issue #258, format of #
     await owner.knex('clients').insert({ id: client, agency_id: agencyA, name: `Cliente da listagem ${client}` });
     await owner.knex('client_memberships').insert([{ client_id: client, user_id: users.portalOne!.id }, { client_id: client, user_id: users.portalTwo!.id }]);
     const early = await seedScript(client, { scriptOn: '2026-10-05', status: 'sent', scenes: [['Cedo', 'Guia']] });
-    const recorded = await seedScript(client, { scriptOn: '2026-10-12', status: 'recorded', recordedBy: users.portalTwo!.id, scenes: [['Gravada', null], ['Segunda cena', 'Com guia']] });
+    const recorded = await seedScript(client, { scriptOn: '2026-10-12', status: 'recorded', recordedBy: users.portalTwo!.id, scenes: [['Gravada', null], ['Segunda cena', 'Com guia']], insertLastSceneFirst: true });
     const late = await seedScript(client, { scriptOn: '2026-10-31', status: 'sent', scenes: [] });
     await seedScript(client, { scriptOn: '2026-10-15', status: 'draft' });
     await seedScript(client, { scriptOn: '2026-09-30', status: 'sent' });
@@ -865,16 +889,18 @@ describe('the portal marks a script as recorded (issue #258)', () => {
   it('refuses a script of another client or of another agency with the same 404, and nothing is recorded', async () => {
     const ofOther = await seedScript(cOther, { status: 'sent' });
     const ofB = await seedScript(cB, { status: 'sent' });
+    // `portalOne` also has a link with cCap, so the row-level security SHOWS them this script: only the route's own client filter refuses it.
+    const ofCap = await seedScript(cCap, { status: 'sent' });
 
     for (const [as, client, script] of [
-      ['portalOne', cMain, ofOther.id], ['portalOne', cMain, ofB.id], ['portalOther', cMain, ofOther.id], ['portalOther', cOther, 'not-a-uuid'], ['portalOne', cMain, 'not-a-uuid'],
+      ['portalOne', cMain, ofCap.id], ['portalOne', cMain, ofOther.id], ['portalOne', cMain, ofB.id], ['portalOther', cMain, ofOther.id], ['portalOther', cOther, 'not-a-uuid'], ['portalOne', cMain, 'not-a-uuid'],
       ['crossDual', cMain, ofB.id], ['portalB', cB, ofOther.id]
     ] as const) {
       const reply = await call('POST', recordedUrl(client, script), as);
       expect({ as, client, script, status: reply.statusCode }).toEqual({ as, client, script, status: 404 });
     }
     expectNotFound(await call('POST', recordedUrl(cMain, ofOther.id), 'portalOne'), 'Story script not found.');
-    expect([(await stateOf(ofOther.id)).status, (await stateOf(ofB.id)).status]).toEqual(['sent', 'sent']);
+    expect([(await stateOf(ofCap.id)).status, (await stateOf(ofOther.id)).status, (await stateOf(ofB.id)).status]).toEqual(['sent', 'sent', 'sent']);
   });
 
   it('answers a stranger to the client with the 404 of the client: a removed link, another client\'s person, an archived client, an agency person with no link', async () => {
