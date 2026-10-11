@@ -327,7 +327,7 @@ const contentExample = {
   caption: 'A coleção chegou. Vem ver.',
   folderId,
   coverAssetId: null,
-  ownerUserId: userId,
+  owner: { membershipId, name: 'Ana Souza' },
   status: 'in_production',
   revision: 1,
   approvedBy: null,
@@ -345,7 +345,7 @@ const contentDetailExample = {
     id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0',
     title: 'Gravar o vídeo',
     description: null,
-    assigneeUserId: userId,
+    assignee: { membershipId, name: 'Ana Souza' },
     dueOn: '2026-10-15',
     status: 'pending',
     returnComment: null,
@@ -365,7 +365,7 @@ const contentPeriodExample = {
       publishOn: '2026-10-20',
       publishAtTime: '18:30',
       status: 'in_production',
-      ownerUserId: userId,
+      owner: { membershipId, name: 'Ana Souza' },
       coverAssetId: null,
       revision: 1,
       publishedOn: null,
@@ -1056,7 +1056,10 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     description: [
       'Exige `conteudo.operar` e também `conteudo.visualizar`. O conteúdo nasce em produção; o estado',
       'não é campo do corpo. `platform` é `instagram` e é o padrão. O responsável é quem cria, a não ser',
-      'que `ownerUserId` nomeie outro colaborador ativo que veja Conteúdo (`400 CONTENT_OWNER_INVALID`).',
+      'que `ownerMembershipId` nomeie o vínculo ativo de outro colaborador da agência que veja Conteúdo (`400 CONTENT_OWNER_INVALID`',
+      'para vínculo removido, de outra agência, do portal ou que não existe). A resposta traz o responsável como `owner: { membershipId, name }`',
+      '(`null` para quem não tem vínculo com a agência). Nenhuma rota de conteúdo devolve o id de usuário de ninguém: quem aprovou vem como',
+      '`approvedBy: { name, side }` (`agency` ou `client`) e o responsável de uma subtarefa como `assignee: { membershipId, name }`.',
       'A pasta e a capa são do próprio cliente (`400 CONTENT_FOLDER_INVALID`, `400 CONTENT_MEDIA_INVALID`).',
       'Título de uma linha até 120 caracteres e legenda até 2.200 caracteres recusam caractere de',
       'controle e invisível. Cliente arquivado responde `409 CLIENT_ARCHIVED`.'
@@ -1111,7 +1114,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Edita um conteúdo; mover de data é editar `publishOn`',
     description: [
       'Qualquer subconjunto de `title`, `format`, `publishOn`, `publishAtTime` (`null` limpa),',
-      '`caption`, `folderId`, `coverAssetId` e `ownerUserId`; exige `conteudo.operar` e também',
+      '`caption`, `folderId`, `coverAssetId` e `ownerMembershipId` (o vínculo ativo do novo responsável); exige `conteudo.operar` e também',
       '`conteudo.visualizar`. Mudar a legenda, a capa ou o formato de um conteúdo aprovado o devolve',
       'a `awaiting_approval` e sobe `revision`; mudar data, hora, título ou responsável mantém a aprovação.',
       'Trocar o responsável exige `conteudo.aprovar_pela_agencia` (`403` sem ela). `mediaAssetIds` é a lista',
@@ -1201,7 +1204,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       example: {
         ...contentDetailExample,
         status: 'approved',
-        approvedBy: userId,
+        approvedBy: { name: 'Ana Souza', side: 'agency' },
         approvedAt: '2026-10-11T12:30:00.000Z',
         approvedByAgencyReason: 'O cliente aprovou por telefone em 11/10.'
       }

@@ -84,6 +84,7 @@ export const createTransitionFixtures = (w: ContentsWorld) => {
       status: 'published',
       approved_by: w.people.admin.id,
       approved_at: new Date('2026-10-05T12:00:00.000Z'),
+      approved_by_agency_reason: 'Aprovado fora da plataforma',
       published_on: publishedOn,
       published_at: publishedAt
     });

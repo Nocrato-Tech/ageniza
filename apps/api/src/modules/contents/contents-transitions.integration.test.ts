@@ -351,7 +351,7 @@ describe('approve-by-agency: approving outside the platform (issue #256, rules 4
     expect(reply.statusCode).toBe(200);
     expect(reply.json()).toMatchObject({
       status: 'approved',
-      approvedBy: idOf('approver'),
+      approvedBy: { name: 'Pessoa approver', side: 'agency' },
       approvedByAgencyReason: 'O cliente aprovou por telefone.',
       revision: 1
     });
@@ -444,7 +444,7 @@ describe('approve-by-agency: approving outside the platform (issue #256, rules 4
     const again = await approve('admin', fixture.contentId, { revision: 1, reason: 'Segundo motivo' });
 
     expect(again.statusCode).toBe(200);
-    expect(again.json()).toMatchObject({ approvedBy: idOf('approver'), approvedByAgencyReason: 'Primeiro motivo' });
+    expect(again.json()).toMatchObject({ approvedBy: { name: 'Pessoa approver', side: 'agency' }, approvedByAgencyReason: 'Primeiro motivo' });
   });
 
   it('answers 409 CONTENT_MEDIA_NOT_CONFIRMED to a content whose media has not finished uploading, and approves nothing', async () => {
@@ -605,7 +605,7 @@ describe('unpublish: undoing a publication on the same day only (issue #256, rul
       const reply = await act('production', 'unpublish', contentId, undefined, clientId);
 
       expect(reply.statusCode).toBe(200);
-      expect(reply.json()).toMatchObject({ status: 'approved', publishedOn: null, approvedBy: idOf('admin') });
+      expect(reply.json()).toMatchObject({ status: 'approved', publishedOn: null, approvedBy: { name: 'Pessoa admin', side: 'agency' } });
       expect(reply.json().approvedAt).not.toBeNull();
       const row = await w.contentRow(contentId);
       expect(row.published_at).toBeNull();
