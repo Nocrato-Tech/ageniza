@@ -17,7 +17,7 @@ regra é o erro mais repetido.
 9. **Locker de concorrência.** A transação que trava a linha afirma `rows=1`; sem isso, sem ator, a RLS faz do teste de concorrência um vazio verde (#202).
 10. **Guarda montada à mão.** A rota deriva a guarda do próprio `docs` (`docs.permission`) e tem teste de 403 com papel de uma permissão só; papel vazio não prova a guarda (#293).
 11. **Listagem.** Desempate de ordenação, busca mínima (ex.: `@` sozinho) e contagem e página no mesmo snapshot com `count(*) over ()` (#291, #293, #298).
-12. **Decisão no mesmo PR.** Regra de negócio nova vira um arquivo novo em `docs/business/decisions/` no mesmo PR (#282), e uma linha nova no índice `docs/business/decisions/README.md`, no módulo certo.
+12. **Decisão no mesmo PR.** Regra de negócio nova vira um arquivo novo em `docs/business/decisions/` no mesmo PR (#282). O índice `docs/business/decisions/README.md` não entra no PR de entrega: é regenerado com `pnpm docs:decisions-index` ao fim de cada onda, num PR de docs (decisão `2026-10-11-indice-de-decisoes-gerado-por-script-fora-dos-prs`).
 13. **Pasta e banco próprios.** Agente em paralelo usa a própria pasta e o próprio banco `ageniza_<id>`; o banco `ageniza` é o do ambiente local do dono.
 14. **Borda com filtro.** Paginação além do fim e recontagem testadas com e sem busca: busca com resultado e `page` além do fim responde o total filtrado (#415).
 15. **Lista truncada.** Quando a tela lê só os N primeiros, um teste passa do limite (51 comentários, 101 conversas) e confere que o mais recente e a resposta nova aparecem (#413).
@@ -34,11 +34,13 @@ regra é o erro mais repetido.
 
 ## Banco
 
+_Ver também os itens 7 a 9 e 25, que estão na faixa Geral._
+
 26. **Estado, ator e datas fora do grant.** `status`, `archived_at`, `resolved_by`, `resolved_at` e `created_at` não entram no `GRANT` de `INSERT`/`UPDATE`; quem os carimba é uma função ou um trigger `BEFORE UPDATE` com `OLD`/`NEW` em `security invoker`, e o teste exercita a transição, não só a coluna (#159, #162).
 27. **Escrita exige leitura.** Um `UPDATE` com `WHERE` ou `RETURNING` sobre uma coluna exige `SELECT` nela. O teste de escrita roda com o papel de uma permissão só, senão a falta do `SELECT` some atrás de um papel com mais privilégio.
 28. **Lock de linha depende do `UPDATE`.** Revogar `UPDATE` tira o `SELECT ... FOR UPDATE` que a função usa. A trava é conferida com o papel `ageniza_app`, e a transação afirma `rows=1` (ver item 9).
 29. **Dia de negócio com instante fixo.** O dia de São Paulo sai de `app_private.sao_paulo_date` com um instante fixo no teste. `current_date` e `now()` solto numa regra de data são reprovados.
-30. **Filha de cliente trava o cliente.** Insert em filha do cliente passa pelo gatilho `AFTER INSERT ... FOR SHARE` no cliente. A rota testa as duas janelas da corrida com o arquivamento: arquivamento em curso (A0020 do gatilho, 409) e já confirmado antes do `INSERT` (42501 da RLS), e relê o cliente depois das travas (#406).
+30. **Filha de cliente trava o cliente.** Insert em filha do cliente passa pelo gatilho `AFTER INSERT ... FOR SHARE` no cliente. A rota testa as duas janelas da corrida com o arquivamento: arquivamento em curso (A0020 do gatilho: 409 na agência e 404 no portal) e já confirmado antes do `INSERT` (42501 da RLS), e relê o cliente depois das travas (#406).
 31. **Trava com releitura só vale em READ COMMITTED.** A função recusa outro isolamento com `40001`, e o teste de corrida tem variantes em REPEATABLE READ e SERIALIZABLE, com upsert e `MERGE` (#393, #394).
 32. **`CHECK` que chama função não é reavaliado.** Quando a função muda, apertar a regra exige `DROP` e `ADD` da constraint depois do backfill (#482).
 33. **Grant de tabela inteira.** Complementa o item 25: use `has_table_privilege` (enxerga `PUBLIC` e herança, e ignora grant por coluna) e compare um snapshot do catálogo antes e depois da migration (#502).
@@ -53,6 +55,8 @@ regra é o erro mais repetido.
 
 ## Telas
 
+_Ver também os itens 15 a 17, que estão na faixa Geral._
+
 39. **Todo texto tem asserção positiva.** Cada texto que a tela mostra é conferido pelo próprio texto, não só pela ausência de erro. Cada navegação e cada parâmetro de URL têm um clique no teste.
 40. **Estado da carteira em todo link.** Todo link interno da tela leva o `state` da carteira. O teste confere o parâmetro no `href` de cada um.
 41. **Datas no dia de São Paulo.** Fixtures ficam em 01:30Z, que cai em outro dia em UTC. Assim, uma data calculada em UTC aparece como erro no teste.
@@ -61,7 +65,7 @@ regra é o erro mais repetido.
 44. **Modal fecha no sucesso e não apaga o digitado.** O teste confirma que o sucesso fecha o modal e que o erro mantém o texto já digitado.
 45. **Ação age no item certo.** Teste com duas linhas: a ação na segunda não pode alterar a primeira.
 46. **Aviso de uso único e barra sticky.** O aviso de uso único é conferido depois dos redirects e da casca assentarem. A barra inferior sticky é conferida a 360 px com conteúdo curto (#401).
-47. **Tela grande vira um PR por aba.** Quando a tela passa de ~800 linhas, o PR sai por aba (decisão `2026-10-07-pr-agrupado-por-tema`).
+47. **Tela acima do teto de diff.** Acima de ~800 linhas de diff de código, o PR se divide (decisão `2026-10-07-pr-agrupado-por-tema`); numa tela com abas, a divisão natural é por aba.
 
 ## Testes e mutação
 

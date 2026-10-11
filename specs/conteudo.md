@@ -403,6 +403,8 @@ Em [decisions.md](../docs/business/decisions.md), todas de 2026-10-01:
 
 Herdadas: publicar e medir decidem juntos (2026-09-26); conteúdo além do encerramento é cancelado (2026-09-26); tarefa e prazo interno nunca são dados do portal (2026-09-26); a conversa com o cliente é uma tabela de threads por cliente (2026-09-26); arquivar cliente é função de escopo único (2026-09-26); cliente na mídia fica para Conteúdo (2026-09-26).
 
+Registrada depois, em 2026-10-11: [SPEC de Conteúdo aprovada, com o recorte de implementação](../docs/business/decisions/2026-10-11-spec-de-conteudo-aprovada-com-o-recorte.md). Ela registra a aprovação desta SPEC e está pendente de validação do dono.
+
 ## 12. Recorte de implementação
 
 **Épico:** #238.

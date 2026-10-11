@@ -2,7 +2,7 @@
 
 Uma linha por decisão, agrupada por módulo. Cada decisão é um arquivo `AAAA-MM-DD-<slug>.md` nesta pasta, com o título da linha `# ` do arquivo e a data da decisão.
 
-**Como manter.** Toda decisão nova entra aqui no **mesmo PR** que cria o arquivo: uma linha no módulo certo, com o link, o título e a data. O arquivo da decisão é novo e não se edita depois do merge (ver [`implementation-checklist.md`](../../implementation-checklist.md), item 12). Se a decisão não couber em nenhum módulo listado, o PR propõe o agrupamento junto com a decisão.
+**Como manter.** Este índice é gerado pelo `pnpm docs:decisions-index` (`scripts/generate-decisions-index.mjs`) e não se edita à mão. Toda decisão nova entra na pasta como arquivo no PR que a cria, e esse PR não toca o índice (ver [`implementation-checklist.md`](../../implementation-checklist.md), item 12). O índice é regenerado ao fim de cada onda, num PR de docs. **Ele pode estar atrasado até lá**: a fonte da verdade é a listagem da pasta. Uma decisão sem linha aparece em "A classificar". Para mudar o módulo de uma decisão, mova a linha para a seção certa e regenere; uma regra que vale para uma faixa inteira vai em `MOVES` no script. A decisão que criou este mecanismo é [`2026-10-11-indice-de-decisoes-gerado-por-script-fora-dos-prs`](2026-10-11-indice-de-decisoes-gerado-por-script-fora-dos-prs.md).
 
 ## Autenticação
 
@@ -121,20 +121,28 @@ Uma linha por decisão, agrupada por módulo. Cada decisão é um arquivo `AAAA-
 - 2026-10-07 — [Conteúdo: roteiro de stories no banco](2026-10-07-conteudo-roteiro-de-stories-no-banco.md)
 - 2026-10-11 — [SPEC de Conteúdo aprovada, com o recorte de implementação](2026-10-11-spec-de-conteudo-aprovada-com-o-recorte.md)
 
+## Mídia
+
+- 2026-09-16 — [Mídia vai direto do navegador para o armazenamento](2026-09-16-midia-vai-direto-do-navegador-para-o-armazenamento.md)
+- 2026-09-16 — [O original nunca é convertido](2026-09-16-o-original-nunca-e-convertido.md)
+- 2026-09-18 — [Falha ao enfileirar não derruba a confirmação do upload](2026-09-18-falha-ao-enfileirar-nao-derruba-a-confirmacao-do-upload.md)
+- 2026-09-18 — [Mídia é escopada por agência, sem vínculo com cliente](2026-09-18-midia-e-escopada-por-agencia-sem-vinculo-com-cliente.md)
+- 2026-09-18 — [O processamento de vídeo não contorna o RLS](2026-09-18-o-processamento-de-video-nao-contorna-o-rls.md)
+- 2026-09-18 — [Quota de armazenamento sem interface de configuração](2026-09-18-quota-de-armazenamento-sem-interface-de-configuracao.md)
+- 2026-09-18 — [Tipos de mídia aceitos definidos em código](2026-09-18-tipos-de-midia-aceitos-definidos-em-codigo.md)
+- 2026-10-07 — [A cota de armazenamento soma a agência inteira por uma função própria](2026-10-07-a-cota-soma-a-agencia-inteira-por-funcao-propria.md)
+- 2026-10-07 — [A pasta pai se trava por uma função própria](2026-10-07-a-pasta-pai-se-trava-por-funcao-propria.md)
+- 2026-10-07 — [O estado do envio de mídia só anda para frente, e as colunas que o banco fixa não são gravadas pela aplicação](2026-10-07-estado-do-envio-de-midia-so-anda-para-frente.md)
+- 2026-10-07 — [O banco carimba o autor e a confirmação da mídia, e o vídeo só anda para a frente](2026-10-07-o-banco-carimba-o-autor-e-a-confirmacao-da-midia.md)
+- 2026-10-07 — [Remover mídia é por função e se recusa em conteúdo já enviado para aprovação](2026-10-07-remover-midia-e-por-funcao-e-se-recusa-em-conteudo-ja-enviado.md)
+
 ## Autorização e transversais
 
 - 2026-09-15 — [Agência suspensa preserva dados e nega acesso](2026-09-15-agencia-suspensa-preserva-dados-e-nega-acesso.md)
 - 2026-09-15 — [Contexto de tenant explícito na rota, nunca na sessão](2026-09-15-contexto-de-tenant-explicito-na-rota-nunca-na-sessao.md)
 - 2026-09-15 — [Entrada de agências apenas por comando interno](2026-09-15-entrada-de-agencias-apenas-por-comando-interno.md)
 - 2026-09-15 — [Owner é propriedade da agência, não papel](2026-09-15-owner-e-propriedade-da-agencia-nao-papel.md)
-- 2026-09-16 — [Mídia vai direto do navegador para o armazenamento](2026-09-16-midia-vai-direto-do-navegador-para-o-armazenamento.md)
-- 2026-09-16 — [O original nunca é convertido](2026-09-16-o-original-nunca-e-convertido.md)
-- 2026-09-18 — [Falha ao enfileirar não derruba a confirmação do upload](2026-09-18-falha-ao-enfileirar-nao-derruba-a-confirmacao-do-upload.md)
-- 2026-09-18 — [Mídia é escopada por agência, sem vínculo com cliente](2026-09-18-midia-e-escopada-por-agencia-sem-vinculo-com-cliente.md)
-- 2026-09-18 — [O processamento de vídeo não contorna o RLS](2026-09-18-o-processamento-de-video-nao-contorna-o-rls.md)
 - 2026-09-18 — [Permissões de convite são reconhecidas pelo banco, não só pela API](2026-09-18-permissoes-de-convite-sao-reconhecidas-pelo-banco-nao-so.md)
-- 2026-09-18 — [Quota de armazenamento sem interface de configuração](2026-09-18-quota-de-armazenamento-sem-interface-de-configuracao.md)
-- 2026-09-18 — [Tipos de mídia aceitos definidos em código](2026-09-18-tipos-de-midia-aceitos-definidos-em-codigo.md)
 - 2026-09-24 — [`archived` e `removed` coexistem, e nenhuma rota exclui entidade de negócio](2026-09-24-archived-e-removed-coexistem-e-nenhuma-rota-exclui-entidade.md)
 - 2026-09-24 — [Arquivado fica fora da listagem até ser pedido](2026-09-24-arquivado-fica-fora-da-listagem-ate-ser-pedido.md)
 - 2026-09-24 — [Carregamento tem três tratamentos, e escrita nunca deixa dado velho na tela](2026-09-24-carregamento-tem-tres-tratamentos-e-escrita-nunca-deixa.md)
@@ -149,13 +157,8 @@ Uma linha por decisão, agrupada por módulo. Cada decisão é um arquivo `AAAA-
 - 2026-09-28 — [O repositório é a fonte do design system, com documento e página viva](2026-09-28-o-repositorio-e-a-fonte-do-design-system-com-documento-e.md)
 - 2026-09-29 — [A área da agência vive em `/agencia/:agenciaId/...` no navegador](2026-09-29-a-area-da-agencia-vive-em-agencia-agenciaid-no-navegador.md)
 - 2026-09-30 — [O ator de cada transação é gravado uma vez pelo banco, e não pelo GUC `app.user_id`](2026-09-30-o-ator-de-cada-transacao-e-gravado-uma-vez-pelo-banco-e-nao.md)
-- 2026-10-07 — [A cota de armazenamento soma a agência inteira por uma função própria](2026-10-07-a-cota-soma-a-agencia-inteira-por-funcao-propria.md)
-- 2026-10-07 — [A pasta pai se trava por uma função própria](2026-10-07-a-pasta-pai-se-trava-por-funcao-propria.md)
-- 2026-10-07 — [O estado do envio de mídia só anda para frente, e as colunas que o banco fixa não são gravadas pela aplicação](2026-10-07-estado-do-envio-de-midia-so-anda-para-frente.md)
 - 2026-10-07 — [Link com `?status=removed` sem permissão cai nos ativos, com aviso](2026-10-07-link-com-status-removed-sem-permissao-cai-nos-ativos-com.md)
 - 2026-10-07 — [O aviso de `already_member` aparece uma vez no destino](2026-10-07-o-aviso-de-already-member-aparece-uma-vez-no-destino.md)
-- 2026-10-07 — [O banco carimba o autor e a confirmação da mídia, e o vídeo só anda para a frente](2026-10-07-o-banco-carimba-o-autor-e-a-confirmacao-da-midia.md)
-- 2026-10-07 — [Remover mídia é por função e se recusa em conteúdo já enviado para aprovação](2026-10-07-remover-midia-e-por-funcao-e-se-recusa-em-conteudo-ja-enviado.md)
 - 2026-10-10 — [A API lê a autorização de agência de uma função, e a RLS não](2026-10-10-a-api-le-a-autorizacao-de-agencia-de-uma-funcao-e-a-rls-nao.md)
 - 2026-10-10 — [`agency_user_can` também nega a chave que não existe no catálogo](2026-10-10-agency-user-can-tambem-nega-chave-fora-do-catalogo.md)
 - 2026-10-10 — [O "Voltar ao início" da página não encontrada leva ao início de cada lado](2026-10-10-voltar-ao-inicio-da-pagina-nao-encontrada-leva-ao-inicio-de-cada-lado.md)
@@ -181,6 +184,7 @@ Uma linha por decisão, agrupada por módulo. Cada decisão é um arquivo `AAAA-
 - 2026-10-07 — [Pontos em aberto até Conteúdo: adiados até o gatilho](2026-10-07-pontos-em-aberto-ate-conteudo.md)
 - 2026-10-07 — [PR agrupado por tema e camada, até ~800 linhas](2026-10-07-pr-agrupado-por-tema.md)
 - 2026-10-07 — [Uma decisão por arquivo](2026-10-07-uma-decisao-por-arquivo.md)
+- 2026-10-11 — [Índice de decisões gerado por script, fora dos PRs de entrega](2026-10-11-indice-de-decisoes-gerado-por-script-fora-dos-prs.md)
 
 ## Infra
 
