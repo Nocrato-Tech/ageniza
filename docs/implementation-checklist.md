@@ -49,6 +49,7 @@ _Ver também os itens 7 a 9 e 25, que estão na faixa Geral._
 61. **Releitura depois da última espera.** Ler o estado do pai "depois das travas" só fecha a janela se a leitura vier depois da última espera antes da escrita. Num `UPDATE` sem policy de cliente ativo, quem fecha o resto é o gatilho do banco. Complementa o item 30 (#541).
 62. **Gatilho com erro em UPDATE de rota existente.** Gatilho novo que levanta erro num `UPDATE` já usado por rota existente exige achar e testar cada rota que faz esse `UPDATE` antes do merge: a revisão do #545 achou, antes do merge, que o gatilho novo faria o `PATCH` de persona dar 500 (#545).
 63. **Lista de colunas do gatilho contra o grant.** Lista de colunas escrita à mão num gatilho precisa de teste de catálogo contra o grant (`tgattr` x `has_column_privilege`); senão coluna gravável nova escapa sem vermelho. Complementa o item 33 (#538).
+67. **Corrida com trava segurada.** Na corrida com trava segurada, o 2º waiter é bloqueado pelo 1º waiter (tuple lock), não pelo holder: esperar N bloqueados pelo pid do holder trava; conte `cardinality(pg_blocking_pids) > 0` (#555).
 
 ## API e portal
 
@@ -88,5 +89,6 @@ _Ver também os itens 15 a 17, que estão na faixa Geral._
 58. **Soma com semente em outra agência.** O teste de soma mede o valor com uma semente em outra agência, para que um filtro de agência faltando apareça.
 65. **Exceção tem teste das bordas.** Exceção aceita numa regra de caracteres precisa de teste das bordas dela (repetição, vizinhos, variantes), não só do caso feliz (#533).
 66. **Corrida sem o gatilho fica vermelha.** Quando a proteção de uma rota vem de um gatilho de outro PR, o teste de corrida da rota tem de ficar vermelho sem esse gatilho; senão não prova nada sobre a rota (#542).
+68. **Worktree recompila o contrato.** Rodar a API de um worktree pede recompilar `packages/contracts` quando o PR mexe nele; senão constante nova chega `undefined` e comparação numérica passa calada (#575).
 
 As lições completas de segurança estão em `docs/security-review.md` e nas notas do projeto; este checklist só lista o que mais se repete.
