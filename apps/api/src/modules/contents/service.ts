@@ -9,6 +9,8 @@ import type {
 } from '@ageniza/contracts';
 import { raw, type DatabaseClient } from '@ageniza/database';
 
+import { CONTENT_READ_PERMISSION } from './policy.js';
+
 export type ContentTransaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
 
 interface RawRows<TResult> {
@@ -112,17 +114,33 @@ const ownerOf = (row: { readonly owner_membership_id: string | null; readonly ow
   row.owner_membership_id === null || row.owner_name === null ? null : { membershipId: row.owner_membership_id, name: row.owner_name };
 
 /**
- * The user behind an active link of a collaborator of this agency, or `undefined` for a link that is absent, removed, of another
- * agency or of a client's portal (a portal link has its own table, so its id is no id here). A person is named by a link, never by an id.
+ * The user behind an active link of a collaborator of this agency who can see Conteúdo, or `undefined` for a link that is absent,
+ * removed, of another agency, of a client's portal (a portal link has its own table, so its id is no id here) or of a person who
+ * cannot read Conteúdo. A person is named by a link, never by an id. The trigger `A0073` asks the same of the database
+ * (`app_private.agency_user_can`, which `ageniza_app` cannot call), so this is the same rule read by the route before any write.
  */
 export const resolveCollaboratorLink = async (
   transaction: ContentTransaction,
   input: { readonly agencyId: string; readonly membershipId: string }
 ): Promise<string | undefined> => {
   const result = await raw<RawRows<{ user_id: string }>>(transaction, `
-    select user_id from public.agency_memberships
-    where id = ?::uuid and agency_id = ?::uuid and status = 'active'
-  `, [input.membershipId, input.agencyId]);
+    select membership.user_id
+    from public.agency_memberships membership
+    join public.agencies agency on agency.id = membership.agency_id
+    where membership.id = ?::uuid and membership.agency_id = ?::uuid and membership.status = 'active' and agency.status = 'active'
+      and exists (select 1 from public.permissions permission where permission.key = ?)
+      and (
+        agency.owner_user_id = membership.user_id
+        or exists (
+          select 1
+          from public.roles role
+          join public.role_permissions role_permission on role_permission.role_id = role.id
+          where role.id = membership.role_id
+            and (role.agency_id is null or role.agency_id = agency.id)
+            and role_permission.permission_key = ?
+        )
+      )
+  `, [input.membershipId, input.agencyId, CONTENT_READ_PERMISSION, CONTENT_READ_PERMISSION]);
   return result.rows[0]?.user_id;
 };
 
