@@ -242,6 +242,7 @@ export function ContentsClientPage() {
             {contents.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
             {loaded.data.contents.length === 0 && !contents.isPlaceholderData && <p className="contents__empty">Nenhum conteúdo planejado neste período.</p>}
             <ContentCalendar
+              clientId={normalizedId}
               view={view}
               anchor={anchor}
               today={today}

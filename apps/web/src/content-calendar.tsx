@@ -1,7 +1,8 @@
-import { useState, type DragEvent } from 'react';
+import { useId, useState, type DragEvent } from 'react';
 
 import type { ContentListItem } from '@ageniza/contracts';
 
+import { ContentCover, ContentHoverDetail } from './content-card-extras.js';
 import { fullDayLabel, WEEKDAY_LABELS, type CalendarView } from './content-dates.js';
 import { DEADLINE_LABELS, deadlineAlert, FORMAT_LABELS, isClosed, STATUS_LABELS, subtaskPercent } from './content-labels.js';
 
@@ -10,8 +11,9 @@ import { DEADLINE_LABELS, deadlineAlert, FORMAT_LABELS, isClosed, STATUS_LABELS,
  * is a React text child, never markup. A card is draggable only when the caller says it can move and
  * the content is still open: a published or cancelled one never changes date (specs/conteudo.md section 4).
  */
-export function ContentCard({ content, today, draggable = false, busy = false, onDragStart, onDragEnd }: {
+export function ContentCard({ content, clientId, today, draggable = false, busy = false, onDragStart, onDragEnd }: {
   content: ContentListItem;
+  clientId: string;
   today: string;
   draggable?: boolean;
   busy?: boolean;
@@ -20,14 +22,24 @@ export function ContentCard({ content, today, draggable = false, busy = false, o
 }) {
   const alert = deadlineAlert(content, today);
   const percent = subtaskPercent(content);
+  const detailId = useId();
+  const [pointed, setPointed] = useState(false);
   return <article
     className={`content-card${draggable ? ' content-card--movable' : ''}${busy ? ' content-card--busy' : ''}`}
     data-status={content.status}
     draggable={draggable}
+    tabIndex={0}
     aria-busy={busy || undefined}
-    onDragStart={draggable ? onDragStart : undefined}
+    aria-describedby={pointed ? detailId : undefined}
+    onMouseEnter={() => setPointed(true)}
+    onMouseLeave={() => setPointed(false)}
+    onFocus={() => setPointed(true)}
+    onBlur={() => setPointed(false)}
+    onKeyDown={(event) => { if (event.key === 'Escape') setPointed(false); }}
+    onDragStart={draggable ? (event) => { setPointed(false); onDragStart?.(event); } : undefined}
     onDragEnd={draggable ? onDragEnd : undefined}
   >
+    <ContentCover assetId={content.coverAssetId} format={content.format} />
     <p className="content-card__title">{content.title}</p>
     <p className="content-card__meta">
       {FORMAT_LABELS[content.format]}{content.publishAtTime !== null && <> · {content.publishAtTime}</>}
@@ -37,10 +49,12 @@ export function ContentCard({ content, today, draggable = false, busy = false, o
       {alert !== null && <li className={`content-card__badge content-card__badge--${alert}`}>{DEADLINE_LABELS[alert]}</li>}
       {percent !== null && <li className="content-card__badge">{percent}% das subtarefas</li>}
     </ul>
+    {pointed && <ContentHoverDetail id={detailId} clientId={clientId} contentId={content.id} />}
   </article>;
 }
 
 export interface ContentCalendarProps {
+  readonly clientId: string;
   readonly view: CalendarView;
   /** The day the period is built around; a month view dims the days of its neighbours. */
   readonly anchor: string;
@@ -55,7 +69,7 @@ export interface ContentCalendarProps {
 }
 
 /** Whole weeks, Monday first: a month and a week are the same grid with a different number of rows. */
-export function ContentCalendar({ view, anchor, today, days, contents, canMove = false, movingId = null, onMove }: ContentCalendarProps) {
+export function ContentCalendar({ clientId, view, anchor, today, days, contents, canMove = false, movingId = null, onMove }: ContentCalendarProps) {
   // Which card is being dragged lives here, not in the data transfer: a drop that was not started by a card of this calendar moves nothing.
   const [dragging, setDragging] = useState<ContentListItem | null>(null);
   const byDay = new Map<string, ContentListItem[]>();
@@ -93,6 +107,7 @@ export function ContentCalendar({ view, anchor, today, days, contents, canMove =
             {items.map((content) => <li key={content.id}>
               <ContentCard
                 content={content}
+                clientId={clientId}
                 today={today}
                 draggable={canMove && movingId === null && !isClosed(content.status)}
                 busy={movingId === content.id}

@@ -2738,3 +2738,60 @@ a.client-general__block:hover {
 .contents__move-error {
   color: var(--text-danger);
 }
+
+.content-card {
+  position: relative;
+}
+
+.content-card__cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+}
+
+.content-card__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.content-card__cover--placeholder {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font: var(--heading-md);
+}
+
+.content-card__detail {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 1;
+  display: grid;
+  gap: var(--space-1);
+  width: 16rem;
+  margin-top: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--body-md);
+}
+
+.content-card__detail p,
+.content-card__detail dl,
+.content-card__detail dd {
+  margin: 0;
+}
+
+.content-card__detail dt {
+  color: var(--text-secondary);
+  font: var(--label-sm);
+}
+
+.content-card__detail dd {
+  overflow-wrap: anywhere;
+}

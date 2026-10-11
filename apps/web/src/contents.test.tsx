@@ -125,6 +125,10 @@ const detailOfContent = (clientId: string, row: ReturnType<typeof contentFixture
 });
 
 interface Scenario {
+  /** The answer of `GET .../media/:assetId/download-url`; the default is a signed address of that asset. */
+  readonly cover?: (assetId: string, search: string) => Response | Promise<Response> | undefined;
+  /** The answer of `GET .../contents/:contentId` (the hover detail); the default is the bare content. */
+  readonly content?: (clientId: string, contentId: string) => Response | Promise<Response> | undefined;
   /** Overrides the answer of a move, after the guard and the body were checked like the API does. */
   readonly patch?: (clientId: string, contentId: string, body: unknown, call: number) => Response | Promise<Response> | undefined;
   readonly permissions?: readonly string[];
@@ -178,7 +182,22 @@ const makeFetch = (scenario: Scenario = {}) => {
       const rows = (scenario.contents?.[clientId] ?? []).filter((content) => content.publishOn >= from && content.publishOn <= to);
       return periodResponse(rows, from, to);
     }
+    const media = /\/agencies\/([^/]+)\/media\/([^/]+)\/download-url$/.exec(path);
+    if (media !== null && method === 'GET') {
+      // Reading a client's media follows conteudo.visualizar (#550); the portal never reaches this route.
+      if (!permissions.includes(VISUALIZE)) return forbidden();
+      const custom = scenario.cover?.(media[2]!, url.search);
+      if (custom !== undefined) return custom;
+      return json({ url: `https://storage.test/${media[2]}.jpg`, expiresAt: '2026-10-12T01:45:00.000Z' });
+    }
     const one = /\/agencies\/([^/]+)\/clients\/([^/]+)\/contents\/([^/]+)$/.exec(path);
+    if (one !== null && method === 'GET') {
+      if (!permissions.includes(VISUALIZE)) return forbidden();
+      const custom = scenario.content?.(one[2]!, one[3]!);
+      if (custom !== undefined) return custom;
+      const row = scenario.contents?.[one[2]!]?.find((candidate) => candidate.id === one[3]);
+      return row === undefined ? notFound() : json(detailOfContent(one[2]!, row));
+    }
     if (one !== null && method === 'PATCH') {
       // The routes of the API need conteudo.operar and conteudo.visualizar together (decision 2026-10-11).
       if (!permissions.includes('conteudo.operar') || !permissions.includes(VISUALIZE)) return forbidden();
@@ -1012,5 +1031,368 @@ describe('moving a content to another day (drag)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }));
     await waitFor(() => expect(screen.queryByText('Você não tem permissão para mover conteúdos.')).toBeNull());
+  });
+});
+
+const ASSET_A = 'a1a1a1a1-0000-4000-8000-000000000001';
+const ASSET_B = 'a2a2a2a2-0000-4000-8000-000000000002';
+
+/** Controls what the observer reports: nothing is on screen until a test says so. */
+class FakeIntersectionObserver {
+  static instances: FakeIntersectionObserver[] = [];
+  readonly observed: Element[] = [];
+  disconnected = false;
+  constructor(private readonly callback: IntersectionObserverCallback) { FakeIntersectionObserver.instances.push(this); }
+  observe(element: Element): void { this.observed.push(element); }
+  unobserve(): void { /* unused */ }
+  disconnect(): void { this.disconnected = true; }
+  takeRecords(): IntersectionObserverEntry[] { return []; }
+  show(element: Element): void { this.callback([{ isIntersecting: true, target: element } as IntersectionObserverEntry], this as unknown as IntersectionObserver); }
+  hide(element: Element): void { this.callback([{ isIntersecting: false, target: element } as IntersectionObserverEntry], this as unknown as IntersectionObserver); }
+}
+
+describe('the cover of a card', () => {
+  const coverCalls = (calls: readonly string[]): string[] => calls.filter((call) => /\/download-url/.test(call));
+  const cardOf = (title: string): HTMLElement => {
+    const card = screen.getByText(title).closest('article');
+    if (card === null) throw new Error(`The card of ${title} was not rendered.`);
+    return card;
+  };
+
+  it('reads the address of the cover of its own asset, with no variant, and draws it without a text of its own', async () => {
+    const { impl, calls } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Com capa', publishOn: '2026-10-14', coverAssetId: ASSET_A })] } });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Com capa');
+
+    await waitFor(() => expect(cardOf('Com capa').querySelector('img')).not.toBeNull());
+    expect(cardOf('Com capa').querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${ASSET_A}.jpg`);
+    expect(cardOf('Com capa').querySelector('img')?.getAttribute('alt')).toBe('');
+    expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET_A}/download-url`]);
+  });
+
+  it('asks for nothing and shows the shape of the format when the content has no cover', async () => {
+    const { impl, calls } = makeFetch({
+      contents: { [padaria.id]: [contentFixture({ title: 'Sem capa', publishOn: '2026-10-14', format: 'carousel' }), contentFixture({ title: 'Filme', publishOn: '2026-10-15', format: 'reels' })] }
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Sem capa');
+
+    expect(cardOf('Sem capa').querySelector('img')).toBeNull();
+    expect(cardOf('Sem capa').querySelector('.content-card__cover--placeholder')?.textContent).toBe('▤');
+    expect(cardOf('Filme').querySelector('.content-card__cover--placeholder')?.textContent).toBe('▶');
+    expect(coverCalls(calls)).toEqual([]);
+  });
+
+  it('keeps the placeholder, and the rest of the card, when the route says there is no thumbnail', async () => {
+    const { impl } = makeFetch({
+      contents: { [padaria.id]: [contentFixture({ title: 'Sem miniatura', publishOn: '2026-10-14', coverAssetId: ASSET_A, status: 'approved' })] },
+      cover: () => json({ error: { code: 'MEDIA_VARIANT_NOT_READY', message: 'Not ready' } }, 409)
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Sem miniatura');
+
+    await waitFor(() => expect(cardOf('Sem miniatura').querySelector('.content-card__cover--placeholder')).not.toBeNull());
+    expect(cardOf('Sem miniatura').querySelector('img')).toBeNull();
+    expect(within(cardOf('Sem miniatura')).getByText('Pronto para publicar')).toBeTruthy();
+  });
+
+  it.each([[403, 'FORBIDDEN'], [404, 'NOT_FOUND']] as const)('keeps the placeholder when the route answers %s', async (status, code) => {
+    const { impl } = makeFetch({
+      contents: { [padaria.id]: [contentFixture({ title: 'Recusada', publishOn: '2026-10-14', coverAssetId: ASSET_A })] },
+      cover: () => json({ error: { code, message: 'no' } }, status)
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Recusada');
+    await waitFor(() => expect(cardOf('Recusada').querySelector('.content-card__cover--placeholder')).not.toBeNull());
+    expect(cardOf('Recusada').querySelector('img')).toBeNull();
+  });
+
+  it('gives each card the cover of its own asset, and reads an asset used by two cards once', async () => {
+    const { impl, calls } = makeFetch({
+      contents: {
+        [padaria.id]: [
+          contentFixture({ title: 'Um', publishOn: '2026-10-14', coverAssetId: ASSET_A }),
+          contentFixture({ title: 'Dois', publishOn: '2026-10-15', coverAssetId: ASSET_B }),
+          contentFixture({ title: 'Três', publishOn: '2026-10-16', coverAssetId: ASSET_A })
+        ]
+      }
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Três');
+
+    await waitFor(() => expect(document.querySelectorAll('.content-card img')).toHaveLength(3));
+    expect(cardOf('Um').querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${ASSET_A}.jpg`);
+    expect(cardOf('Dois').querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${ASSET_B}.jpg`);
+    expect(cardOf('Três').querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${ASSET_A}.jpg`);
+    expect(coverCalls(calls).sort()).toEqual([
+      `GET /agencies/${AGENCY_A}/media/${ASSET_A}/download-url`,
+      `GET /agencies/${AGENCY_A}/media/${ASSET_B}/download-url`
+    ]);
+  });
+
+  it('does not read an address again when the person leaves the period and comes back before it expires', async () => {
+    const { impl, calls } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Volta', publishOn: '2026-10-14', coverAssetId: ASSET_A })] } });
+    render_(impl, contentsUrl(padaria.id));
+    await waitFor(() => expect(document.querySelector('.content-card img')).not.toBeNull());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }));
+    await screen.findByRole('heading', { name: 'Novembro 2026' });
+    await waitFor(() => expect(document.querySelector('.content-card')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Mês anterior' }));
+    await waitFor(() => expect(document.querySelector('.content-card img')).not.toBeNull());
+    expect(coverCalls(calls)).toHaveLength(1);
+  });
+
+  it('reads an expired address again', async () => {
+    let issued = 0;
+    const { impl, calls } = makeFetch({
+      contents: { [padaria.id]: [contentFixture({ title: 'Vencida', publishOn: '2026-10-14', coverAssetId: ASSET_A })] },
+      // Expired a minute before "now" (2026-10-12T01:30:00Z): there is nothing left to cache.
+      cover: () => { issued += 1; return json({ url: `https://storage.test/${issued}.jpg`, expiresAt: '2026-10-12T01:29:00.000Z' }); }
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await waitFor(() => expect(document.querySelector('.content-card img')).not.toBeNull());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }));
+    await screen.findByRole('heading', { name: 'Novembro 2026' });
+    await waitFor(() => expect(document.querySelector('.content-card')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Mês anterior' }));
+    await waitFor(() => expect(coverCalls(calls)).toHaveLength(2));
+  });
+
+  it('never makes an address that is not http(s), or a picture that fails to load, a cover', async () => {
+    const { impl } = makeFetch({
+      contents: { [padaria.id]: [contentFixture({ title: 'Script', publishOn: '2026-10-14', coverAssetId: ASSET_A }), contentFixture({ title: 'Quebrada', publishOn: '2026-10-15', coverAssetId: ASSET_B })] },
+      cover: (assetId) => assetId === ASSET_A
+        ? json({ url: 'data:text/html;base64,PHNjcmlwdD4=', expiresAt: '2026-10-12T01:45:00.000Z' })
+        : undefined
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Quebrada');
+
+    await waitFor(() => expect(cardOf('Quebrada').querySelector('img')).not.toBeNull());
+    expect(cardOf('Script').querySelector('img')).toBeNull();
+    expect(cardOf('Script').querySelector('.content-card__cover--placeholder')).not.toBeNull();
+    fireEvent.error(cardOf('Quebrada').querySelector('img')!);
+    await waitFor(() => expect(cardOf('Quebrada').querySelector('img')).toBeNull());
+    expect(cardOf('Quebrada').querySelector('.content-card__cover--placeholder')).not.toBeNull();
+  });
+
+  describe('with an observer of what is on screen', () => {
+    const original = globalThis.IntersectionObserver;
+    beforeEach(() => {
+      FakeIntersectionObserver.instances = [];
+      globalThis.IntersectionObserver = FakeIntersectionObserver as unknown as typeof IntersectionObserver;
+    });
+    afterEach(() => { globalThis.IntersectionObserver = original; });
+
+    it('reads the address only once the card is on screen, and only for that card', async () => {
+      const { impl, calls } = makeFetch({
+        contents: { [padaria.id]: [contentFixture({ title: 'À vista', publishOn: '2026-10-14', coverAssetId: ASSET_A }), contentFixture({ title: 'Fora da tela', publishOn: '2026-10-15', coverAssetId: ASSET_B })] }
+      });
+      render_(impl, contentsUrl(padaria.id));
+      await screen.findByText('Fora da tela');
+      await waitFor(() => expect(FakeIntersectionObserver.instances.length).toBeGreaterThanOrEqual(2));
+      expect(coverCalls(calls)).toEqual([]);
+
+      const visible = FakeIntersectionObserver.instances.find((observer) => cardOf('À vista').contains(observer.observed[0] ?? null))!;
+      // A report that the card is out of the screen is not sight.
+      act(() => visible.hide(visible.observed[0]!));
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 40)); });
+      expect(coverCalls(calls)).toEqual([]);
+      act(() => visible.show(visible.observed[0]!));
+      await waitFor(() => expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET_A}/download-url`]));
+      expect(cardOf('Fora da tela').querySelector('img')).toBeNull();
+    });
+
+    it('stops observing a card once it was seen, and when the screen goes away', async () => {
+      const { impl } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Observada', publishOn: '2026-10-14', coverAssetId: ASSET_A })] } });
+      const { unmount } = render_(impl, contentsUrl(padaria.id));
+      await screen.findByText('Observada');
+      await waitFor(() => expect(FakeIntersectionObserver.instances.length).toBeGreaterThanOrEqual(1));
+      const observer = FakeIntersectionObserver.instances.at(-1)!;
+      expect(observer.disconnected).toBe(false);
+
+      act(() => observer.show(observer.observed[0]!));
+      await waitFor(() => expect(observer.disconnected).toBe(true));
+      unmount();
+      expect(FakeIntersectionObserver.instances.every((instance) => instance.disconnected)).toBe(true);
+    });
+  });
+});
+
+describe('the detail on a card (hover and focus)', () => {
+  const cardOf = (title: string): HTMLElement => {
+    const card = screen.getByText(title).closest('article');
+    if (card === null) throw new Error(`The card of ${title} was not rendered.`);
+    return card;
+  };
+  const detailCalls = (calls: readonly string[]): string[] => calls.filter((call) => /\/contents\/[^/?]+$/.test(call) && call.startsWith('GET'));
+  const withDetail = (row: ReturnType<typeof contentFixture>, extra: Record<string, unknown>) => (_client: string, id: string) =>
+    id === row.id ? json({ ...detailOfContent(padaria.id, row), ...extra }) : undefined;
+
+  it('reads nothing until a card is pointed at, then shows the start of the caption, the subtasks and the conversation', async () => {
+    const row = contentFixture({ title: 'Lançamento', publishOn: '2026-10-14', tasksTotal: 4, tasksApproved: 2 });
+    const { impl, calls } = makeFetch({
+      contents: { [padaria.id]: [row] },
+      content: withDetail(row, {
+        caption: 'Hoje tem pão quente na padaria!',
+        tasks: ['approved', 'approved', 'delivered', 'pending'].map((status, index) => ({
+          id: `b0b0b0b0-0000-4000-8000-00000000000${index}`, title: `Tarefa ${index}`, description: null, assigneeUserId: row.ownerUserId, dueOn: '2026-10-13', status, returnComment: null, approvedBy: null, approvedAt: null
+        })),
+        conversation: { threadId: 'c1c1c1c1-0000-4000-8000-000000000001', commentCount: 3, lastCommentAt: '2026-10-12T01:30:00.000Z' }
+      })
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Lançamento');
+    expect(detailCalls(calls)).toEqual([]);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+
+    fireEvent.mouseEnter(cardOf('Lançamento'));
+    const tooltip = await screen.findByRole('tooltip');
+    expect(await within(tooltip).findByText('Hoje tem pão quente na padaria!')).toBeTruthy();
+    expect(within(tooltip).getByText('Legenda')).toBeTruthy();
+    expect(within(tooltip).getByText('2 de 4 aprovadas · 1 entregue · 1 pendente')).toBeTruthy();
+    // 01:30Z of the 12th is still the 11th in São Paulo.
+    expect(within(tooltip).getByText('3 comentários · último em 11/10')).toBeTruthy();
+    expect(cardOf('Lançamento').getAttribute('aria-describedby')).toBe(tooltip.id);
+    expect(detailCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/clients/${padaria.id}/contents/${row.id}`]);
+
+    fireEvent.mouseLeave(cardOf('Lançamento'));
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+    expect(cardOf('Lançamento').getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('says the empty cases in words: no caption, no subtasks, no comments', async () => {
+    const row = contentFixture({ title: 'Vazio', publishOn: '2026-10-14' });
+    const { impl } = makeFetch({ contents: { [padaria.id]: [row] } });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Vazio');
+
+    fireEvent.mouseEnter(cardOf('Vazio'));
+    const tooltip = await screen.findByRole('tooltip');
+    expect(await within(tooltip).findByText('Sem legenda')).toBeTruthy();
+    expect(within(tooltip).getByText('Sem subtarefas')).toBeTruthy();
+    expect(within(tooltip).getByText('Sem comentários')).toBeTruthy();
+  });
+
+  it('cuts a long caption at 140 characters and keeps the singular of one comment and one subtask', async () => {
+    const row = contentFixture({ title: 'Longa', publishOn: '2026-10-14' });
+    const { impl } = makeFetch({
+      contents: { [padaria.id]: [row] },
+      content: withDetail(row, {
+        caption: `${'a'.repeat(140)}b\n\nfim`,
+        tasks: [{ id: 'b0b0b0b0-0000-4000-8000-000000000001', title: 'T', description: null, assigneeUserId: row.ownerUserId, dueOn: '2026-10-13', status: 'pending', returnComment: null, approvedBy: null, approvedAt: null }],
+        conversation: { threadId: 'c1c1c1c1-0000-4000-8000-000000000001', commentCount: 1, lastCommentAt: null }
+      })
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Longa');
+
+    fireEvent.mouseEnter(cardOf('Longa'));
+    const tooltip = await screen.findByRole('tooltip');
+    expect(await within(tooltip).findByText(`${'a'.repeat(140)}…`)).toBeTruthy();
+    expect(within(tooltip).getByText('0 de 1 aprovadas · 1 pendente')).toBeTruthy();
+    expect(within(tooltip).getByText('1 comentário')).toBeTruthy();
+  });
+
+  it('shows the detail of the card pointed at, not of its neighbour, and reads each content once', async () => {
+    const first = contentFixture({ title: 'Primeira', publishOn: '2026-10-14' });
+    const second = contentFixture({ title: 'Segunda', publishOn: '2026-10-14' });
+    const { impl, calls } = makeFetch({
+      contents: { [padaria.id]: [first, second] },
+      content: (_client, id) => json({ ...detailOfContent(padaria.id, id === first.id ? first : second), caption: id === first.id ? 'Legenda da primeira' : 'Legenda da segunda' })
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Segunda');
+
+    fireEvent.mouseEnter(cardOf('Segunda'));
+    expect(await screen.findByText('Legenda da segunda')).toBeTruthy();
+    expect(screen.queryByText('Legenda da primeira')).toBeNull();
+    fireEvent.mouseLeave(cardOf('Segunda'));
+    fireEvent.mouseEnter(cardOf('Primeira'));
+    expect(await screen.findByText('Legenda da primeira')).toBeTruthy();
+    expect(screen.queryByText('Legenda da segunda')).toBeNull();
+    // Back on the first one: it was read already.
+    fireEvent.mouseLeave(cardOf('Primeira'));
+    fireEvent.mouseEnter(cardOf('Segunda'));
+    expect(await screen.findByText('Legenda da segunda')).toBeTruthy();
+    expect(detailCalls(calls).sort()).toEqual([
+      `GET /agencies/${AGENCY_A}/clients/${padaria.id}/contents/${first.id}`,
+      `GET /agencies/${AGENCY_A}/clients/${padaria.id}/contents/${second.id}`
+    ].sort());
+  });
+
+  it('opens with the keyboard focus too, and closes with Escape', async () => {
+    const row = contentFixture({ title: 'Teclado', publishOn: '2026-10-14' });
+    const { impl } = makeFetch({ contents: { [padaria.id]: [row] } });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Teclado');
+
+    expect(cardOf('Teclado').getAttribute('tabindex')).toBe('0');
+    fireEvent.focus(cardOf('Teclado'));
+    expect(await screen.findByRole('tooltip')).toBeTruthy();
+    fireEvent.keyDown(cardOf('Teclado'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+    fireEvent.focus(cardOf('Teclado'));
+    await screen.findByRole('tooltip');
+    fireEvent.blur(cardOf('Teclado'));
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+  });
+
+  it('says it is loading, and says when it could not load', async () => {
+    const held = deferred<Response>();
+    const row = contentFixture({ title: 'Lenta', publishOn: '2026-10-14' });
+    const slow = makeFetch({ contents: { [padaria.id]: [row] }, content: () => held.promise });
+    const first = render_(slow.impl, contentsUrl(padaria.id));
+    await screen.findByText('Lenta');
+    fireEvent.mouseEnter(cardOf('Lenta'));
+    expect(await screen.findByText('Carregando detalhes…')).toBeTruthy();
+    held.resolve(json(detailOfContent(padaria.id, row)));
+    expect(await screen.findByText('Sem legenda')).toBeTruthy();
+    first.unmount();
+
+    const failing = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Falha', publishOn: '2026-10-14' })] }, content: () => notFound() });
+    render_(failing.impl, contentsUrl(padaria.id));
+    await screen.findByText('Falha');
+    fireEvent.mouseEnter(cardOf('Falha'));
+    expect(await screen.findByText('Não foi possível carregar os detalhes.')).toBeTruthy();
+  });
+
+  it('renders the caption as text, never as markup', async () => {
+    const row = contentFixture({ title: 'Hostil', publishOn: '2026-10-14' });
+    const hostile = '<img src=x onerror="document.title=1"><b>negrito</b>';
+    const { impl } = makeFetch({ contents: { [padaria.id]: [row] }, content: withDetail(row, { caption: hostile }) });
+    const { container } = render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Hostil');
+
+    fireEvent.mouseEnter(cardOf('Hostil'));
+    expect(await screen.findByText(hostile)).toBeTruthy();
+    expect(container.querySelector('.content-card__detail b')).toBeNull();
+    expect(container.querySelector('.content-card__detail img')).toBeNull();
+  });
+
+  it('closes the detail when the card is picked up to be dragged', async () => {
+    const row = contentFixture({ title: 'Levantada', publishOn: '2026-10-14' });
+    const { impl } = makeFetch({ permissions: [VISUALIZE, READ_CLIENTS, 'conteudo.operar'], contents: { [padaria.id]: [row] } });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Levantada');
+
+    fireEvent.mouseEnter(cardOf('Levantada'));
+    await screen.findByRole('tooltip');
+    fireEvent.dragStart(cardOf('Levantada'));
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+  });
+
+  it('does not show the responsible until the API names them (#552)', async () => {
+    const row = contentFixture({ title: 'Sem responsável', publishOn: '2026-10-14' });
+    const { impl } = makeFetch({ contents: { [padaria.id]: [row] } });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Sem responsável');
+
+    fireEvent.mouseEnter(cardOf('Sem responsável'));
+    await screen.findByText('Sem legenda');
+    expect(screen.queryByText('Responsável')).toBeNull();
+    expect(screen.queryByText(row.ownerUserId)).toBeNull();
   });
 });
