@@ -261,10 +261,11 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
   });
 
   it('lets the error through, to be retried by the queue, when the stamp keeps failing', async () => {
-    const { queue } = fakeQueue([[item()]], { markFails: 5 });
+    const { queue, calls } = fakeQueue([[item()]], { markFails: 5 });
     const { sender } = senderThatRecords();
 
     await expect(run(queue, sender)).rejects.toThrow('connection reset');
+    expect(calls.filter((call) => call.call === 'markSent')).toHaveLength(3);
   });
 
   it('releases the items of a type it does not send, without sending anything', async () => {
