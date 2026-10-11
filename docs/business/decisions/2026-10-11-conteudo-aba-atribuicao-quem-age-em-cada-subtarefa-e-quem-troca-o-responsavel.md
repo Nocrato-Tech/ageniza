@@ -19,7 +19,7 @@
 **Consequência.**
 
 - A tela depende de `membershipId` no `/me` (PR do Quartzo): sem ele a pessoa nunca é reconhecida como responsável, e só as permissões decidem Aprovar e Devolver.
-- Quem criar um papel personalizado que opere e aprove precisa dar também `colaborador.visualizar` para trocar o responsável ou criar subtarefas.
+- Quem criar um papel personalizado que opere e aprove precisa dar também `colaborador.visualizar` para trocar o responsável do conteúdo, criar subtarefas ou editá-las.
 - Se o dono quiser que quem só opera troque o responsável, é decisão estrutural de autorização na API, não de tela.
 
 **Origem.** Issue #265; SPEC `specs/conteudo.md` seções 2 a 4 e 7; #255 (subtarefas), #552 e #561 (responsável por vínculo); pedido do maestro de usar `me.membershipId`.
