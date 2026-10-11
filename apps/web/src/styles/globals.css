@@ -2469,6 +2469,204 @@ a.client-general__block:hover {
   color: var(--text-secondary);
 }
 
+/* --- Portal: post em tela cheia (#270) ---
+   Phone first: every box may shrink (`min-width: 0`), every server text wraps, no width is fixed, and the actions
+   take the whole row, so a 390 px screen never scrolls sideways. */
+
+.portal-post {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.portal-post h1,
+.portal-post h2 {
+  margin: 0;
+}
+
+.portal-post h1 {
+  font: var(--heading-lg);
+  overflow-wrap: anywhere;
+}
+
+.portal-post h2 {
+  font: var(--heading-md);
+}
+
+.portal-post__back {
+  justify-self: start;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-link);
+  font: var(--label-md);
+}
+
+.portal-post__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.portal-post__status {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  font: var(--label-sm);
+}
+
+.portal-post__status--awaiting_approval {
+  border-color: var(--focus-ring);
+  color: var(--text-link);
+}
+
+.portal-post__section {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.portal-post__caption,
+.portal-post__hint,
+.portal-post__request-label {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.portal-post__caption {
+  white-space: pre-wrap;
+  color: var(--text-primary);
+  font: var(--body-lg);
+}
+
+.portal-post__hint {
+  color: var(--text-muted);
+  font: var(--caption);
+}
+
+.portal-post__request,
+.portal-post__actions {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.portal-post__request-label {
+  color: var(--text-secondary);
+  font: var(--label-sm);
+}
+
+.portal-post__actions > .ui-button {
+  width: 100%;
+}
+
+.portal-post__title-skeleton {
+  height: var(--space-8);
+}
+
+.portal-post__media-skeleton {
+  height: 16rem;
+}
+
+.portal-media {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  border-radius: var(--radius-lg);
+}
+
+.portal-media__stage {
+  display: grid;
+  min-width: 0;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  background: var(--bg-hover);
+  overflow: hidden;
+  /* The swipe is ours sideways; the page still scrolls up and down. */
+  touch-action: pan-y;
+}
+
+.portal-media__item {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  max-height: 70dvh;
+  object-fit: contain;
+}
+
+.portal-media__skeleton {
+  width: 100%;
+  height: 16rem;
+}
+
+.portal-media__problem {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  padding: var(--space-4);
+}
+
+.portal-media__problem p,
+.portal-media__empty {
+  margin: 0;
+}
+
+.portal-media__controls {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.portal-media__counter {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--label-md);
+}
+
+.portal-media__strip {
+  min-width: 0;
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  list-style: none;
+}
+
+.portal-media__thumb {
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font: var(--label-sm);
+  cursor: pointer;
+}
+
+.portal-media__thumb[aria-current='true'] {
+  border-color: var(--focus-ring);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.portal-media__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 /* --- Portal: Marca (#143) --- */
 
 .portal-brand {
