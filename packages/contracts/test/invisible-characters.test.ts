@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CommentBodySchema,
   ContentCaptionSchema,
   ContentTitleSchema,
   CreateMediaFolderRequestSchema,
@@ -66,7 +67,8 @@ const CONTRACTS: readonly Contract[] = [
   { label: 'the text of a story scene', accepts: (value) => StorySceneTextSchema.safeParse(`Cena ${value}`).success },
   { label: 'the guidance of a story scene', accepts: (value) => StorySceneGuidanceSchema.safeParse(`Dica ${value}`).success },
   { label: 'the title of a content', accepts: (value) => ContentTitleSchema.safeParse(`Post ${value}`).success },
-  { label: 'the caption of a content', accepts: (value) => ContentCaptionSchema.safeParse(`Legenda ${value}`).success }
+  { label: 'the caption of a content', accepts: (value) => ContentCaptionSchema.safeParse(`Legenda ${value}`).success },
+  { label: 'the body of a comment', accepts: (value) => CommentBodySchema.safeParse(`Comentario ${value}`).success }
 ];
 
 // The emoji sequences of UTS #51 that a phone writes. Each is accepted only whole: the matrix after the list breaks every one of them.

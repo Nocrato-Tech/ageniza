@@ -992,8 +992,11 @@ describe('CLIENTES conversation of a content (#259)', () => {
       expect(await snapshotOf(clientA1)).toEqual(before);
       for (const [cookie, url] of [[cookies.portalOne!, base()], [cookies.manager!, agencyThreads(agencyA, clientA1)]] as const) {
         expect((await commentAs(cookie, url, threadId, `Gostei ${text(0x2764, 0xfe0f)} 👍`)).statusCode).toBe(201);
-        // The composed emoji waits for #539: its joiner is a format character.
-        expect((await commentAs(cookie, url, threadId, text(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467))).statusCode).toBe(400);
+        // A composed emoji is accepted whole (#539); the same one cut, or a joiner between letters, is not.
+        expect((await commentAs(cookie, url, threadId, text(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467))).statusCode).toBe(201);
+        for (const broken of [text(0x1f468, 0x200d, 0x1f469, 0x200d), `a${text(0x200d)}b`]) {
+          expect((await commentAs(cookie, url, threadId, broken)).statusCode, JSON.stringify(broken)).toBe(400);
+        }
       }
     });
   });
