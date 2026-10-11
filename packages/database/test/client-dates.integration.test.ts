@@ -4,6 +4,7 @@ import type { Knex } from 'knex';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createLocalTestDatabaseClient, databaseErrorCode, raw, type DatabaseClient, resolveIntegrationDatabaseUrls } from '../src/index.js';
+import { keepsItsOwnDay } from './support/own-day-scan.js';
 
 // Issues #131, #133 and #373. "Today" of a contract is the day in America/Sao_Paulo, and `now()` cannot be
 // pinned, so the day is computed by `app_private.sao_paulo_date(instant)` and these tests call it with
@@ -102,47 +103,57 @@ describe('the functions that ask for today', () => {
   // The one thing the catalog can say is that no function keeps a clock of its own: the day comes
   // from the function above, whose fixed-instant tests are the ones that turn red when the zone
   // changes. A function added later that works the day out inline is the same defect again, so the
-  // catalog is scanned instead of listing the functions known today, and the scan is proved on
-  // probes that write each form, so a form it stops recognising turns a test red.
-  const CLOCK = '(now|clock_timestamp|statement_timestamp|transaction_timestamp)\\s*\\(\\s*\\)|current_timestamp(\\s*\\(\\s*[0-9]*\\s*\\))?';
-  const OWN_ZONE = [
-    'at\\s+time\\s+zone',
-    'current_date',
-    'local(time|timestamp)',
-    'date_trunc\\s*\\(',
-    'timezone\\s*\\(',
-    `(${CLOCK})[[:space:])]*(::\\s*(pg_catalog\\.)?date|as\\s+(pg_catalog\\.)?date)`,
-    `\\mdate\\s*\\(\\s*([a-z_]+\\.)?(${CLOCK})`,
-    `(extract|date_part)\\s*\\([^;]{0,120}(${CLOCK})`,
-    `to_char\\s*\\(\\s*([a-z_]+\\.)?(${CLOCK})`
-  ].join('|');
-
+  // catalog is read instead of listing the functions known today: functions and procedures, views,
+  // the WHEN of a trigger, policies, constraints and column defaults. The reading is by form
+  // (`support/own-day-scan.ts`, with a probe for each form in `own-day-scan.test.ts`) and does not
+  // prove absence. The probes below prove that each class of object is read and that the catalog's own
+  // text of a form (the parentheses and casts it normalises) is still recognised.
   const objectsWithAZoneOfTheirOwn = async (executor: Pick<DatabaseClient['knex'], 'raw'>): Promise<readonly string[]> => {
-    const { rows } = await raw<{ rows: readonly { object: string }[] }>(executor, `
-      select p.pronamespace::regnamespace || '.' || p.proname as object
+    const { rows } = await raw<{ rows: readonly { object: string; definition: string | null }[] }>(executor, `
+      select p.pronamespace::regnamespace || '.' || p.proname as object, pg_catalog.pg_get_functiondef(p.oid) as definition
       from pg_catalog.pg_proc p
-      where p.prokind = 'f'
+      where p.prokind in ('f', 'p')
         and p.pronamespace::regnamespace::text in ('public', 'app_private', 'audit', 'auth')
         and p.oid <> 'app_private.sao_paulo_date(timestamptz)'::regprocedure
-        and pg_catalog.pg_get_functiondef(p.oid) ~* ?::text
       union all
-      select pol.polrelid::regclass || ' policy ' || pol.polname
+      select c.oid::regclass || case c.relkind when 'm' then ' materialized view' else ' view' end, pg_catalog.pg_get_viewdef(c.oid)
+      from pg_catalog.pg_class c
+      where c.relkind in ('v', 'm')
+        and c.relnamespace::regnamespace::text in ('public', 'app_private', 'audit', 'auth')
+      union all
+      select trg.tgrelid::regclass || ' trigger ' || trg.tgname, pg_catalog.pg_get_triggerdef(trg.oid)
+      from pg_catalog.pg_trigger trg
+      join pg_catalog.pg_class rel on rel.oid = trg.tgrelid
+      where not trg.tgisinternal
+        and rel.relnamespace::regnamespace::text in ('public', 'app_private', 'audit', 'auth')
+      union all
+      select pol.polrelid::regclass || ' policy ' || pol.polname,
+        coalesce(pg_catalog.pg_get_expr(pol.polqual, pol.polrelid), '') || ' ' || coalesce(pg_catalog.pg_get_expr(pol.polwithcheck, pol.polrelid), '')
       from pg_catalog.pg_policy pol
-      where coalesce(pg_catalog.pg_get_expr(pol.polqual, pol.polrelid), '') || coalesce(pg_catalog.pg_get_expr(pol.polwithcheck, pol.polrelid), '') ~* ?::text
       union all
-      select con.conrelid::regclass || ' constraint ' || con.conname
+      select con.conrelid::regclass || ' constraint ' || con.conname, pg_catalog.pg_get_constraintdef(con.oid)
       from pg_catalog.pg_constraint con
-      where pg_catalog.pg_get_constraintdef(con.oid) ~* ?::text
       union all
-      select def.adrelid::regclass || ' default ' || att.attname
+      select def.adrelid::regclass || ' default ' || att.attname, pg_catalog.pg_get_expr(def.adbin, def.adrelid)
       from pg_catalog.pg_attrdef def
       join pg_catalog.pg_attribute att on att.attrelid = def.adrelid and att.attnum = def.adnum
-      where pg_catalog.pg_get_expr(def.adbin, def.adrelid) ~* ?::text
-    `, [OWN_ZONE, OWN_ZONE, OWN_ZONE, OWN_ZONE]);
-    return rows.map((row) => row.object);
+    `, []);
+    return rows.filter((row) => keepsItsOwnDay(row.definition ?? '')).map((row) => row.object);
   };
 
-  it('leaves no function, policy, constraint or default of the application schemas with a time zone of its own', async () => {
+  it('reads at least one object of each class it is meant to police', async () => {
+    const { rows } = await raw<{ rows: readonly { functions: number; triggers: number; policies: number; constraints: number; defaults: number }[] }>(getOwner().knex, `
+      select
+        (select count(*) from pg_catalog.pg_proc p where p.prokind = 'f' and p.pronamespace::regnamespace::text = 'app_private')::int as functions,
+        (select count(*) from pg_catalog.pg_trigger trg where not trg.tgisinternal)::int as triggers,
+        (select count(*) from pg_catalog.pg_policy)::int as policies,
+        (select count(*) from pg_catalog.pg_constraint)::int as constraints,
+        (select count(*) from pg_catalog.pg_attrdef)::int as defaults
+    `, []);
+    for (const [kind, count] of Object.entries(rows[0]!)) expect(count, kind).toBeGreaterThan(0);
+  });
+
+  it('leaves no function, procedure, view, trigger, policy, constraint or default of the application schemas with a time zone of its own', async () => {
     await expect(objectsWithAZoneOfTheirOwn(getOwner().knex)).resolves.toEqual([]);
   });
 
@@ -158,7 +169,7 @@ describe('the functions that ask for today', () => {
   };
 
   const functionProbe = (body: string): string =>
-    `create function app_private.zone_probe() returns text language sql stable set search_path = '' as $probe$ select (${body})::text $probe$`;
+    `create function app_private.zone_probe() returns void language plpgsql stable set search_path = '' as $probe$ begin perform ${body}; end $probe$`;
 
   it.each([
     ['at time zone', "pg_catalog.now() at time zone 'America/Sao_Paulo'"],
@@ -176,9 +187,41 @@ describe('the functions that ask for today', () => {
     ['date(now())', 'pg_catalog.date(pg_catalog.now())'],
     ['extract from now()', 'extract(day from pg_catalog.now())'],
     ['date_part on now()', "pg_catalog.date_part('day', pg_catalog.now())"],
-    ['to_char of now()', "pg_catalog.to_char(pg_catalog.now(), 'YYYY-MM-DD')"]
+    ['to_char of now()', "pg_catalog.to_char(pg_catalog.now(), 'YYYY-MM-DD')"],
+    ['now() shifted by hand, then cast', "(pg_catalog.now() - interval '3 hours')::pg_catalog.date"],
+    ['now()::timestamp::date', 'pg_catalog.now()::pg_catalog.timestamp::pg_catalog.date'],
+    ['now()::timestamptz::date', 'pg_catalog.now()::pg_catalog.timestamptz::pg_catalog.date'],
+    ['left(now()::text, 10)', 'pg_catalog.left(pg_catalog.now()::pg_catalog.text, 10)'],
+    ['date_bin on now()', "pg_catalog.date_bin('1 day', pg_catalog.now(), timestamptz '2020-01-01 00:00:00+00')"],
+    ["'today'::date", "'today'::pg_catalog.date"]
   ])('the catalog scan finds a function that works the day out with %s', async (_form, body) => {
     await expect(findsProbe(functionProbe(body), 'zone_probe')).resolves.toEqual(['app_private.zone_probe']);
+  });
+
+  it('the catalog scan finds a procedure that works the day out', async () => {
+    await expect(findsProbe(
+      "create procedure app_private.zone_probe() language plpgsql set search_path = '' as $probe$ begin perform current_date; end $probe$",
+      'zone_probe'
+    )).resolves.toEqual(['app_private.zone_probe']);
+  });
+
+  it('the catalog scan finds a view and a materialized view that work the day out', async () => {
+    const found = await findsProbe(`
+      create view app_private.zone_probe_view as select (pg_catalog.now() - interval '3 hours')::pg_catalog.date as today;
+      create materialized view app_private.zone_probe_materialized as select pg_catalog.now()::pg_catalog.date as today;
+    `, 'zone_probe');
+    expect([...found].sort()).toEqual(['app_private.zone_probe_materialized materialized view', 'app_private.zone_probe_view view']);
+  });
+
+  it('the catalog scan finds the WHEN of a trigger that works the day out', async () => {
+    const found = await findsProbe(`
+      create table app_private.zone_probe_table (happened_on date not null);
+      create function app_private.zone_probe_noop() returns trigger language plpgsql set search_path = '' as $probe$ begin return new; end $probe$;
+      create trigger zone_probe_trigger before update on app_private.zone_probe_table
+        for each row when (new.happened_on > (pg_catalog.now() - interval '3 hours')::pg_catalog.date)
+        execute function app_private.zone_probe_noop();
+    `, 'zone_probe');
+    expect(found).toEqual(['app_private.zone_probe_table trigger zone_probe_trigger']);
   });
 
   it('the catalog scan finds a policy, a constraint and a column default that work the day out inline', async () => {
@@ -201,7 +244,10 @@ describe('the functions that ask for today', () => {
     ['the pure function of the clock', 'app_private.sao_paulo_date(pg_catalog.now())'],
     ['a plain timestamp from the clock', 'pg_catalog.now()'],
     ['a shifted timestamp from the clock', "pg_catalog.now() - interval '1 day'"],
-    ['a text that only mentions a zone', "'timezone, current and local'"]
+    ['a text that only mentions a zone', "'timezone, current and local'"],
+    ['date_trunc of a constant date', "pg_catalog.date_trunc('month', date '2020-01-15')"],
+    ['timezone() of constants', "pg_catalog.timezone('UTC', timestamptz '2020-01-01 00:00:00+00')"],
+    ['the age of a row in seconds', "extract(epoch from pg_catalog.now() - timestamptz '2020-01-01 00:00:00+00')"]
   ])('the catalog scan leaves alone %s', async (_form, body) => {
     await expect(findsProbe(functionProbe(body), 'zone_probe')).resolves.toEqual([]);
   });
