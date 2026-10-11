@@ -16,14 +16,7 @@ const baseConfig = loadApiConfig({
   APP_PUBLIC_URL: 'http://127.0.0.1:5173'
 });
 
-/**
- * The cold start of the first local `buildApp` is the whole cost of this file: `registerApiDocsModule` is
- * imported on demand and pulls in the Scalar bundle (a multi-megabyte string module), then registers it and
- * builds the OpenAPI document. Warm measurement is ~0.1 s a build; cold, inside the first test, it was 0.9 s
- * alone and 1.4-5.7 s while `pnpm test` ran every package at once, against the default 5 s test timeout (#443).
- * It is paid here, once, under a hook timeout sized for the slowest observed cold start with room to spare, so
- * the tests below only measure what they assert.
- */
+/** The first local `buildApp` pays the Scalar bundle import here, under its own hook timeout (#443). */
 const COLD_START_TIMEOUT_MS = 60_000;
 let expectedDocument: ReturnType<typeof buildOpenApiDocument>;
 
