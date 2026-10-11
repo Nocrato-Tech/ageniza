@@ -28,7 +28,7 @@ const checksumParameters = (url: string): string[] =>
 
 describe('media storage client presigned URLs (#292, #306)', () => {
   // The browser follows these URLs. The SDK's default since 3.729 bakes `x-amz-checksum-crc32` into a presigned
-  // PUT, and the browser's bytes can never match a checksum computed before it has them: every upload would fail.
+  // PUT, and a store that validates the checksum would reject the bytes the browser sends.
   it('presigns a PUT with no checksum parameter, but still signed and expiring', async () => {
     const client = createMediaStorageClient(config);
 

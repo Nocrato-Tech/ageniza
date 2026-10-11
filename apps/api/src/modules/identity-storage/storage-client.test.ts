@@ -53,8 +53,8 @@ describe('identity storage client and the SDK checksum defaults (#292, #306)', (
     if (server !== undefined) await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  // S3-compatible stores that predate the SDK's default CRC32 (and R2 in the past) refuse or mishandle it;
-  // the API was written and reviewed without it, and the bump to a newer SDK must not add it silently.
+  // The SDK's default CRC32 on PutObject was not part of what this API was written and reviewed with, and a
+  // store that validates a checksum it did not expect could reject the upload; a newer SDK must not add it silently.
   it('uploads with no checksum or trailer header, and still sends the body and the content type', async () => {
     const fake = await startFakeS3();
     running = fake.server;
