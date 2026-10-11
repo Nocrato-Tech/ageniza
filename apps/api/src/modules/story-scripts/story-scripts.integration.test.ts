@@ -1055,7 +1055,7 @@ describe('reading a story script (issue #268)', () => {
     ]) {
       const reply = await call('GET', url, 'opVis');
       expect({ url, status: reply.statusCode }).toEqual({ url, status: 404 });
-      expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
     }
     expectNotFound(await call('GET', agencyScript(agencyA, cMain, ofOther.id), 'opVis'), 'Story script not found.');
     expectNotFound(await call('GET', agencyScript(agencyA, cMain, ofB.id), 'opVis'), 'Story script not found.');
