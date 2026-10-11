@@ -341,7 +341,7 @@ Nenhuma policy de outro módulo é alterada.
 | Editar cadastro | modal sobre o detalhe | todos os campos do cadastro | `cliente.operar` |
 | Portal — Início | `/portal/:clienteId` | saudação e próxima ação | vínculo de cliente |
 | Portal — Marca | `/portal/:clienteId/marca` | estudo em leitura e conversas | vínculo de cliente |
-| Portal — Calendário | `/portal/:clienteId/calendario` | esqueleto | vínculo de cliente |
+| Portal — Conteúdos | `/portal/:clienteId/conteudos` | o que precisa de você, o mês e o feed (`specs/conteudo.md` seção 7); o endereço antigo `/portal/:clienteId/calendario`, que o e-mail ao cliente ainda usa, redireciona para ele | vínculo de cliente |
 | Portal — Relatórios | `/portal/:clienteId/relatorios` | esqueleto | vínculo de cliente |
 
 **Duas intenções diferentes, e o designer precisa das duas.**
@@ -351,7 +351,7 @@ Nenhuma policy de outro módulo é alterada.
 
 ### Aba esqueleto
 
-Conteúdos, Tarefas e Relatórios na agência, e Calendário e Relatórios no portal, **existem desde o MVP** e são preenchidas pelos seus módulos. Uma aba esqueleto diz que a área existe e o que ela vai mostrar — **nunca dado fictício, nunca controle que não funciona**. Nada nela pode parecer quebrado.
+Conteúdos, Tarefas e Relatórios na agência, e Conteúdos e Relatórios no portal, **existem desde o MVP** e são preenchidas pelos seus módulos. Uma aba esqueleto diz que a área existe e o que ela vai mostrar — **nunca dado fictício, nunca controle que não funciona**. Nada nela pode parecer quebrado.
 
 ### Carteira — `/agencia/:agenciaId/clientes`
 
@@ -499,7 +499,7 @@ Esqueleto: o nome da área, uma frase do que ela vai mostrar, e nenhum controle.
 │        (conteúdo)         │
 │                           │
 ├───────────────────────────┤
-│ Início Calendário Marca Relatórios │
+│ Início Conteúdos Marca Relatórios │
 └───────────────────────────┘
 ```
 
@@ -525,7 +525,7 @@ Barra inferior com quatro itens, o padrão que um dono de negócio já sabe usar
 
 A próxima ação é **uma**, e a pendência de aprovação vem antes de tudo:
 
-- **Com conteúdos esperando a aprovação do cliente** (o número é o `home.contentsAwaitingApproval` da API): o cartão é "N conteúdos esperando sua aprovação" (singular com 1), com "ver", e leva ao Calendário (`/portal/:clienteId/calendario`). A lista do portal entra na #269, que troca o destino junto com o nome.
+- **Com conteúdos esperando a aprovação do cliente** (o número é o `home.contentsAwaitingApproval` da API): o cartão é "N conteúdos esperando sua aprovação" (singular com 1), com "ver", e leva a Conteúdos (`/portal/:clienteId/conteudos`).
 - **Sem pendência**, o cartão volta à próxima ação de antes: "A agência respondeu N sugestões suas", que leva à Marca; senão, "Conheça o estudo da sua marca".
 
 Abaixo do cartão, o bloco **Roteiro de hoje** traz as cenas em ordem (texto e "Orientação: …") dos roteiros **enviados** ou **gravados** do dia de São Paulo. Roteiro em rascunho não aparece para o cliente. Sem roteiro hoje, o bloco não existe.
@@ -544,7 +544,7 @@ Abaixo do cartão, o bloco **Roteiro de hoje** traz as cenas em ordem (texto e "
 
 ### Portal — tour
 
-Na primeira entrada daquela pessoa naquele cliente, um tour guiado aponta os itens da navegação. Pode ser pulado e revisto pelo menu de conta. **Mostra só o que funciona**: no MVP, três passos — Início, Marca e como sugerir (esboço da #144). Calendário e Relatórios entram no tour com seus módulos.
+Na primeira entrada daquela pessoa naquele cliente, um tour guiado aponta os itens da navegação. Pode ser pulado e revisto pelo menu de conta. **Mostra só o que funciona**: no MVP, três passos — Início, Marca e como sugerir (esboço da #144). Relatórios entra no tour com o seu módulo. **Conteúdos fica fora do tour no MVP**: o tour segue só com Início e Marca, porque o dono pediu para não abrir feature nova agora ([decisão](../docs/business/decisions/2026-10-11-portal-conteudos-lista-do-mes-filtro-por-situacao-e-feed.md), item 7, pendente de validação do dono).
 
 ### Variação por quem olha
 

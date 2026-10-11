@@ -9,7 +9,7 @@ import { FORMAT_LABELS } from './content-labels.js';
 const EMPTY_TILES = 9;
 
 /** Long videos and VSLs are not posts of the feed: they live in the calendar only (specs/conteudo.md section 7). */
-const FEED_FORMATS: ReadonlySet<ContentFormat> = new Set<ContentFormat>(['image', 'carousel', 'reels']);
+export const FEED_FORMATS: ReadonlySet<ContentFormat> = new Set<ContentFormat>(['image', 'carousel', 'reels']);
 
 /** A content with no time counts as the end of its day, as the calendar's own order does. */
 const timeKey = (content: ContentListItem): string => content.publishAtTime ?? '99:99';

@@ -9,7 +9,7 @@ import {
 import { Button, Skeleton } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
-import { useSeen } from './content-cover.js';
+import { useSeen } from './use-seen.js';
 import { useApiClient } from './http.js';
 import { signedUrlStaleTime } from './signed-url.js';
 

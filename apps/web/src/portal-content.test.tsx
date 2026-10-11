@@ -308,7 +308,8 @@ describe('the post of the portal (#270)', () => {
       renderPost(scenario.impl, { pathname: postUrl(), state: { invitationNotice: { agencyName: 'Agência Um' } } });
       await title('Lançamento da primavera');
       expect(await screen.findByText('Você já fazia parte de Agência Um. Nada mudou no seu acesso.')).toBeTruthy();
-      fireEvent.click(screen.getByRole('link', { name: 'Conteúdos' }));
+      // The back link of the post, not the item of the bottom bar that carries the same name.
+      fireEvent.click(within(screen.getByRole('main')).getByRole('link', { name: 'Conteúdos' }));
       await waitFor(() => { expect(screen.queryByText('Você já fazia parte de Agência Um. Nada mudou no seu acesso.')).toBeNull(); });
     });
   });

@@ -54,6 +54,9 @@ export const periodOf = (view: CalendarView, anchor: string): Period => view ===
   ? { from: startOfWeek(anchor), to: addDays(startOfWeek(anchor), 6) }
   : { from: startOfWeek(firstOfMonth(anchor)), to: addDays(startOfWeek(lastOfMonth(anchor)), 6) };
 
+/** Exactly the days of the month of `anchor`: a list of the month has no neighbours to spill into. */
+export const monthPeriod = (anchor: string): Period => ({ from: firstOfMonth(anchor), to: lastOfMonth(anchor) });
+
 export const daysOf = (period: Period): readonly string[] =>
   Array.from({ length: daysBetween(period.from, period.to) + 1 }, (_value, index) => addDays(period.from, index));
 
@@ -80,6 +83,9 @@ export const periodTitle = (view: CalendarView, anchor: string): string => {
 /** "segunda-feira, 12 de outubro de 2026": the day in full, for the readers that do not see the grid. */
 export const fullDayLabel = (day: string): string =>
   `${WEEKDAYS[weekdayIndex(day)]}, ${dayOfMonth(day)} de ${monthName(day)} de ${day.slice(0, 4)}`;
+
+/** "ter": the weekday as the grid header spells it. */
+export const weekdayShortLabel = (day: string): string => WEEKDAY_LABELS[weekdayIndex(day)]!;
 
 /** "12/10": a day and month from the text, never from a `Date`. */
 export const dayMonthLabel = (day: string): string => `${day.slice(8, 10)}/${day.slice(5, 7)}`;
