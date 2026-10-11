@@ -12,6 +12,7 @@ import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';
+import { PortalTodayScripts } from './portal-story-scripts.js';
 import { PortalTour, type PortalTourTarget } from './portal-tour.js';
 import { NotFoundHomeContext, NotFoundPage } from './status-pages.js';
 
@@ -183,9 +184,9 @@ export function PortalAreaLayout() {
 }
 
 /**
- * The Início (specs/clientes.md §7, issue #141): greeting by the person's name, one next action —
- * the agency's answer when there is one, the brand study otherwise — and the approval space
- * reserved, because it is what the portal will exist to do when Conteúdo lands.
+ * The Início (specs/clientes.md §7, issues #141 and #271): greeting by the person's name, and one next action — the contents
+ * waiting for the client's approval when there are any, otherwise the agency's answer, otherwise the brand study — then the
+ * story script of today, which is not there when the agency sent none.
  */
 export function PortalHomePage() {
   const client = usePortalClient();
@@ -194,17 +195,23 @@ export function PortalHomePage() {
   useDocumentTitle('Início — Portal do cliente — Ageniza');
 
   const answered = client.home.threadsAnsweredByAgency;
+  const awaiting = client.home.contentsAwaitingApproval;
   const nextAction = answered > 0
     ? `A agência respondeu ${answered} ${answered === 1 ? 'sugestão sua' : 'sugestões suas'}`
     : 'Conheça o estudo da sua marca';
 
   return <section className="portal-home" aria-labelledby="portal-home-title">
     <h1 id="portal-home-title">Olá, {session.user?.name ?? ''}</h1>
-    <Link className="portal-home__action" to={`/portal/${clienteId}/marca`}>
-      <span className="portal-home__action-text">{nextAction}</span>
-      <span className="portal-home__action-link">ver</span>
-    </Link>
-    <p className="portal-home__reserved">conteúdos para aprovar (em breve)</p>
+    {awaiting > 0
+      ? <Link className="portal-home__action" to={`/portal/${clienteId}/calendario`}>
+        <span className="portal-home__action-text">{awaiting} {awaiting === 1 ? 'conteúdo esperando' : 'conteúdos esperando'} sua aprovação</span>
+        <span className="portal-home__action-link">ver</span>
+      </Link>
+      : <Link className="portal-home__action" to={`/portal/${clienteId}/marca`}>
+        <span className="portal-home__action-text">{nextAction}</span>
+        <span className="portal-home__action-link">ver</span>
+      </Link>}
+    <PortalTodayScripts clientId={clienteId} />
   </section>;
 }
 
