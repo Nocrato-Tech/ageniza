@@ -14,21 +14,26 @@ import {
   type MediaFolder
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
-import { isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
-import { tryAgain } from '../../plugins/infra/conflict.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { isInsufficientPrivilegeError } from '../tenancy/guards.js';
 import {
+  clientArchived,
+  explainRefusedClientWrite,
+  forbidden,
+  notFound,
+  parentNotFirstLevel,
+  translateClientMediaError
+} from './client-media-errors.js';
+import {
   clientScopeOf,
   folderFunctionRefusal,
   insertFolder,
-  isAssetRemoved,
-  isFolderParentViolation,
   listFolderAssets,
   listFolders,
   loadFolder,
@@ -50,21 +55,6 @@ export interface MediaFolderRouteDependencies {
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-const notFound = (message: string): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message });
-const forbidden = (): HttpError => new HttpError({ statusCode: 403, code: 'FORBIDDEN', message: 'You do not have permission to perform this action.' });
-const clientArchived = (): HttpError => new HttpError({ statusCode: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode ser editado.' });
-const mediaInUse = (): HttpError => new HttpError({
-  statusCode: 409,
-  code: 'MEDIA_IN_USE',
-  message: 'Esta mídia está em um conteúdo enviado para aprovação, aprovado ou publicado e não pode ser removida.'
-});
-const parentNotFirstLevel = (): HttpError => new HttpError({
-  statusCode: 400,
-  code: 'VALIDATION_ERROR',
-  message: 'Request validation failed',
-  details: { issues: [{ path: 'parentId', code: 'custom', message: 'parentId must be a first-level folder of this client.' }] }
-});
 
 const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth']> => {
   const auth = request.auth;
@@ -92,19 +82,6 @@ const folderFrom = (row: FolderRow): MediaFolder => ({
   isDefault: row.is_default,
   createdAt: new Date(row.created_at).toISOString()
 });
-
-/** What the functions and the foreign key raise, as the public answer; anything else is not ours to translate. */
-const translate = (error: unknown): HttpError | undefined => {
-  if (isRetryableConflict(error)) return tryAgain();
-  if (isFolderParentViolation(error)) return parentNotFirstLevel();
-  if (isInsufficientPrivilegeError(error)) return forbidden();
-  switch (folderFunctionRefusal(error)) {
-    case 'not-found': return notFound('Not found.');
-    case 'client-archived': return clientArchived();
-    case 'in-use': return mediaInUse();
-    default: return undefined;
-  }
-};
 
 /**
  * The client's media library (#253, specs/conteudo.md §6): folders and the media in them. Every route
@@ -153,11 +130,23 @@ export const registerMediaFolderRoutes = (app: FastifyInstance, dependencies: Me
     if (scope === 'archived') throw clientArchived();
   };
 
-  const inTransaction = async <T>(request: FastifyRequest, work: Parameters<typeof withAuthenticatedUserTransaction<T>>[2]): Promise<T> => {
+  /**
+   * Runs the work in the caller's transaction and answers what the database refused. A refusal by the row-level
+   * security means the route read the client as open and the archive of the client committed before the statement,
+   * so a write of the client says which of the two it was (`whenRefusedByRls`); anything else it refuses is the 403.
+   */
+  const inTransaction = async <T>(
+    request: FastifyRequest,
+    work: Parameters<typeof withAuthenticatedUserTransaction<T>>[2],
+    whenRefusedByRls?: () => Promise<HttpError>
+  ): Promise<T> => {
     try {
       return await withAuthenticatedUserTransaction(dependencies.database, requireAuth(request).claims, work);
     } catch (error) {
-      throw translate(error) ?? error;
+      const translated = translateClientMediaError(error);
+      if (translated !== undefined) throw translated;
+      if (isInsufficientPrivilegeError(error)) throw whenRefusedByRls === undefined ? forbidden() : await whenRefusedByRls();
+      throw error;
     }
   };
 
@@ -176,22 +165,22 @@ export const registerMediaFolderRoutes = (app: FastifyInstance, dependencies: Me
   });
 
   app.post('/agencies/:agencyId/clients/:clientId/media-folders', guarded(createDocs, true), async (request, reply) => {
+    const auth = requireAuth(request);
     const tenant = requireTenant(request);
     const clientId = idFromRoute(request, 'clientId', 'Client not found.');
     routeParams(createDocs, request);
     const body = routeBody(createDocs, request);
 
+    // The parent is locked BEFORE the client is read: an archive that commits while this request waits for the lock
+    // is then seen by the read, as the 409 it is, and not by the INSERT as a refusal of the policy. What commits after
+    // the read is the policy's, answered below.
     const folder = await inTransaction(request, async (transaction) => {
+      const parent = body.parentId === undefined ? undefined : await lockFolder(transaction, body.parentId);
       requireWritableClient(await clientScopeOf(transaction, tenant.agencyId, clientId));
-      let parentId: string | null = null;
-      if (body.parentId !== undefined) {
-        const parent = await lockFolder(transaction, body.parentId);
-        if (parent.client_id !== clientId) throw notFound('Folder not found.');
-        if (parent.parent_id !== null) throw parentNotFirstLevel();
-        parentId = parent.id;
-      }
-      return insertFolder(transaction, { clientId, parentId, name: body.name });
-    });
+      if (parent !== undefined && parent.client_id !== clientId) throw notFound('Folder not found.');
+      if (parent !== undefined && parent.parent_id !== null) throw parentNotFirstLevel();
+      return insertFolder(transaction, { clientId, parentId: parent?.id ?? null, name: body.name });
+    }, () => explainRefusedClientWrite(dependencies.database, auth.claims, { agencyId: tenant.agencyId, clientId }, () => notFound('Client not found.')));
 
     return reply.status(201).send(routeResponse(createDocs, request, folderFrom(folder)));
   });
@@ -233,14 +222,16 @@ export const registerMediaFolderRoutes = (app: FastifyInstance, dependencies: Me
     await inTransaction(request, async (transaction) => {
       requireWritableClient(await clientScopeOf(transaction, tenant.agencyId, clientId));
       if (await loadFolder(transaction, clientId, folderId) === undefined) throw notFound('Folder not found.');
-      const alreadyRemoved = await isAssetRemoved(transaction, assetId);
+      let removed: boolean;
       try {
-        await removeAsset(transaction, assetId, folderId);
+        removed = await removeAsset(transaction, assetId, folderId);
       } catch (error) {
         if (folderFunctionRefusal(error) === 'not-found') throw notFound('Media asset not found.');
         throw error;
       }
-      if (!alreadyRemoved) {
+      // Whether THIS call removed it is the function's answer, given after the lock of the media: two removals at the
+      // same instant read the same "not removed" before it, and each would write the event.
+      if (removed) {
         await auditMediaEvent(transaction, { action: 'media.removed', actorUserId: auth.userId, agencyId: tenant.agencyId, targetId: assetId });
       }
     });

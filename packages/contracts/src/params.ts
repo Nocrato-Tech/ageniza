@@ -36,8 +36,6 @@ export const AgencyMediaAssetPathParamsSchema = z.object({
   assetId: z.string().uuid()
 }).strict();
 
-// The writable keys are the enum so the generated OpenAPI lists the six values; `personas` is a
-// fixed section but not writable, and the route still answers its own 400 for it.
 export const AgencyClientMediaFolderPathParamsSchema = z.object({
   agencyId: z.string().uuid(),
   clientId: z.string().uuid(),
@@ -51,6 +49,8 @@ export const AgencyClientMediaFolderAssetPathParamsSchema = z.object({
   assetId: z.string().uuid()
 }).strict();
 
+// The writable keys are the enum so the generated OpenAPI lists the six values; `personas` is a
+// fixed section but not writable, and the route still answers its own 400 for it.
 export const AgencyClientSectionPathParamsSchema = z.object({
   agencyId: z.string().uuid(),
   clientId: z.string().uuid(),

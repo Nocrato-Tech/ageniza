@@ -13,16 +13,16 @@ import {
   RequestMediaUploadPartsResponseSchema
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
-import { isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
-import { tryAgain } from '../../plugins/infra/conflict.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
-import { tenantHolds } from '../tenancy/guards.js';
-import { clientScopeOf, folderFunctionRefusal, lockFolder } from './folder-service.js';
+import { isInsufficientPrivilegeError, tenantHolds } from '../tenancy/guards.js';
+import { clientArchived, explainRefusedClientWrite, translateClientMediaError } from './client-media-errors.js';
+import { clientScopeOf, lockFolder } from './folder-service.js';
 import { registerMediaFolderRoutes } from './folder-routes.js';
 import type { MediaJobDispatcher } from './job-dispatcher.js';
 import {
@@ -75,7 +75,6 @@ const unauthenticated = (): HttpError => new HttpError({ statusCode: 401, code: 
 const assetNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Media asset not found.' });
 const forbidden = (): HttpError => new HttpError({ statusCode: 403, code: 'FORBIDDEN', message: 'You do not have permission to perform this action.' });
 const folderNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Folder not found.' });
-const clientArchived = (): HttpError => new HttpError({ statusCode: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode ser editado.' });
 const unsupportedType = (): HttpError => new HttpError({
   statusCode: 415,
   code: 'UNSUPPORTED_MEDIA_TYPE',
@@ -97,16 +96,6 @@ const variantProcessingFailed = (reason: string | null): HttpError => new HttpEr
       : 'Video processing failed.',
   details: { reason: reason ?? 'processing_failed' }
 });
-
-/** What the folder lock, the client's gate and a lost race raise while a media of a client is born. */
-const translateClientMediaError = (error: unknown): HttpError | undefined => {
-  if (isRetryableConflict(error)) return tryAgain();
-  switch (folderFunctionRefusal(error)) {
-    case 'not-found': return folderNotFound();
-    case 'client-archived': return clientArchived();
-    default: return undefined;
-  }
-};
 
 type CompletionResult = {
   readonly ok: true;
@@ -200,14 +189,19 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     const expiresAt = new Date(Date.now() + config.uploadUrlExpirySeconds * 1_000).toISOString();
 
     const upload = await withAuthenticatedUserTransaction(database, auth.claims, async (transaction) => {
+      // The client is read AFTER the locks of the folder and of the agency's quota: an archive that commits while this
+      // request waits for either is then seen as the 409 it is, and not by the INSERT as a refusal of the policy.
+      let lockedFolder: Awaited<ReturnType<typeof lockFolder>> | undefined;
       if (body.clientId !== undefined && body.folderId !== undefined) {
+        lockedFolder = await lockFolder(transaction, body.folderId);
+        if (lockedFolder.client_id !== body.clientId) throw folderNotFound();
+      }
+      await lockAgencyStorageQuota(transaction, params.agencyId);
+      if (lockedFolder !== undefined && body.clientId !== undefined) {
         const scope = await clientScopeOf(transaction, params.agencyId, body.clientId);
         if (scope === 'not-found') throw folderNotFound();
         if (scope === 'archived') throw clientArchived();
-        const folder = await lockFolder(transaction, body.folderId);
-        if (folder.client_id !== body.clientId) throw folderNotFound();
       }
-      await lockAgencyStorageQuota(transaction, params.agencyId);
       const quota = await readQuotaSnapshot(transaction, params.agencyId, {
         quotaBytes: config.quotaDefaultBytes,
         quotaObjectCount: config.quotaDefaultObjectCount
@@ -238,8 +232,14 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       const url = await storage.presignPutObject({ key: uploadObjectKey, contentType: body.contentType, expiresInSeconds: config.uploadUrlExpirySeconds });
       await auditMediaEvent(transaction, { action: 'media.upload_initiated', actorUserId: auth.userId, agencyId: params.agencyId, targetId: assetId });
       return { type: 'single' as const, url };
-    }).catch((error: unknown) => {
-      throw translateClientMediaError(error) ?? error;
+    }).catch(async (error: unknown) => {
+      const translated = translateClientMediaError(error);
+      if (translated !== undefined) throw translated;
+      // After the read of the client the archive committed, and the policy of the INSERT refused: say which it was.
+      if (body.clientId !== undefined && isInsufficientPrivilegeError(error)) {
+        throw await explainRefusedClientWrite(database, auth.claims, { agencyId: params.agencyId, clientId: body.clientId }, folderNotFound);
+      }
+      throw error;
     });
 
     return reply.status(201).send(routeResponse(uploadDocs, request, {

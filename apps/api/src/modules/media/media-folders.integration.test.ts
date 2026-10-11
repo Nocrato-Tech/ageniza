@@ -127,37 +127,62 @@ const mediaCount = async (agencyId: string): Promise<number> =>
 const auditCount = async (assetId: string): Promise<number> =>
   Number((await owner.knex('audit.events').where({ action: 'media.removed', target_id: assetId }).count<{ count: string }[]>('id as count'))[0]?.count);
 
-const waitUntilSomeoneWaitsOnALock = async (): Promise<void> => {
+const waitUntilSomeoneWaitsOnALock = async (waiters = 1): Promise<void> => {
   const deadline = Date.now() + 10_000;
   for (;;) {
     const waiting = await owner.knex.raw<{ rows: Array<{ count: string }> }>(
       "select count(*) as count from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'"
     );
-    if (Number(waiting.rows[0]?.count) >= 1) return;
-    if (Date.now() > deadline) throw new Error('Nothing ever queued behind the lock.');
+    if (Number(waiting.rows[0]?.count) >= waiters) return;
+    if (Date.now() > deadline) throw new Error(`Fewer than ${waiters} requests ever queued behind the lock.`);
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
 };
 
 /**
- * Runs a request while the archive of a fresh client is uncommitted: the request's snapshot still sees an active
- * client, so only the AFTER INSERT lock of the client's children (#284) can refuse what it writes. Resolves with the
- * reply and leaves the client archived and committed, as the archive left it.
+ * The two windows of the race with the archive of a client. `in-progress`: the archive has changed the client and
+ * not committed, the request passes the policy on a snapshot where the client is still active and waits on the AFTER
+ * INSERT lock of the client's children (#284), which raises A0020. `committed-before-insert`: the request has read
+ * the client as active, and the archive commits before the statement that writes starts, so the policy of the INSERT
+ * refuses (42501); the table is locked by the archive's own transaction, which holds the request in front of that
+ * statement and releases it together with the commit.
  */
-const duringArchiveOfAFreshClient = async (request: (clientId: string) => Promise<Reply>): Promise<{ clientId: string; reply: Reply }> => {
+type ArchiveWindow = 'in-progress' | { readonly committedBeforeInsert: 'media_folders' | 'media_assets' };
+
+const duringArchiveOfAFreshClient = async <TPrepared = void>(
+  window: ArchiveWindow,
+  prepare: (clientId: string) => Promise<TPrepared>,
+  request: (clientId: string, prepared: TPrepared) => Promise<Reply>
+): Promise<{ clientId: string; reply: Reply }> => {
   const clientId = randomUUID();
   extraClientIds.push(clientId);
   await owner.knex('clients').insert({ id: clientId, agency_id: agencyA, name: `Cliente em arquivamento ${clientId}` });
+  const prepared = await prepare(clientId);
   const archiving = await owner.knex.transaction();
   let pending: Promise<Reply> | undefined;
   try {
+    if (window !== 'in-progress') await archiving.raw(`lock table public.${window.committedBeforeInsert} in access exclusive mode`);
     await archiving('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
-    pending = request(clientId);
+    pending = request(clientId, prepared);
     await waitUntilSomeoneWaitsOnALock();
   } finally {
     await archiving.commit();
   }
   return { clientId, reply: await pending! };
+};
+
+const NO_DATABASE_DETAIL = /A00\d\d|deadlock|40P01|42501|pg_|relation|process/i;
+
+const expectClientArchived = (reply: Reply): void => {
+  expect(reply.statusCode).toBe(409);
+  expect(reply.json().error).toEqual({ code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode ser editado.' });
+  expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+};
+
+const firstLevelFolder = async (clientId: string, name: string): Promise<string> => {
+  const created = await call('POST', foldersUrl(agencyA, clientId), 'opVis', { name });
+  expect(created.statusCode).toBe(201);
+  return created.json().id as string;
 };
 
 beforeAll(async () => {
@@ -325,7 +350,7 @@ describe('creating a folder (issue #253)', () => {
   });
 
   it('loses the race with the archive of the client: 409 CLIENT_ARCHIVED, and the folder is not left behind', async () => {
-    const { clientId, reply } = await duringArchiveOfAFreshClient((id) => call('POST', foldersUrl(agencyA, id), 'opVis', { name: 'Chegou tarde' }));
+    const { clientId, reply } = await duringArchiveOfAFreshClient('in-progress', async () => undefined, (id) => call('POST', foldersUrl(agencyA, id), 'opVis', { name: 'Chegou tarde' }));
 
     expect(reply.statusCode).toBe(409);
     expect(reply.json().error.code).toBe('CLIENT_ARCHIVED');
@@ -510,11 +535,8 @@ describe('uploading a media into a folder of a client (issue #253)', () => {
   });
 
   it('loses the race with the archive of the client: 409 CLIENT_ARCHIVED, and no media or reservation is left behind', async () => {
-    let folderId = '';
-    const { clientId, reply } = await duringArchiveOfAFreshClient(async (id) => {
-      folderId = await defaultFolder(id);
-      return call('POST', uploadUrl(agencyA), 'opVis', body(id, folderId));
-    });
+    const { clientId, reply } = await duringArchiveOfAFreshClient('in-progress', defaultFolder, (id, folderId) =>
+      call('POST', uploadUrl(agencyA), 'opVis', body(id, folderId)));
 
     expect(reply.statusCode).toBe(409);
     expect(reply.json().error.code).toBe('CLIENT_ARCHIVED');
@@ -534,5 +556,184 @@ describe('uploading a media into a folder of a client (issue #253)', () => {
     const fits = await call('POST', uploadUrl(agencyC), 'midiaC', { ...body(), declaredSizeBytes: 300 });
     expect(fits.statusCode).toBe(201);
     assetIds.push(fits.json().assetId as string);
+  });
+});
+
+describe('the race with the archive of the client, in both of its windows (issue #253)', () => {
+  // Every route that writes into the children of a client answers the 409 in both windows, with nothing written.
+  const windows: ReadonlyArray<readonly [string, (table: 'media_folders' | 'media_assets') => ArchiveWindow]> = [
+    ['the archive is still running (A0020 of the trigger)', () => 'in-progress'],
+    ['the archive committed before the INSERT (42501 of the policy)', (table) => ({ committedBeforeInsert: table })]
+  ];
+
+  for (const [label, windowOf] of windows) {
+    describe(`when ${label}`, () => {
+      it('creating a first-level folder is a 409 and leaves no folder', async () => {
+        const { clientId, reply } = await duringArchiveOfAFreshClient(windowOf('media_folders'), async () => undefined, (id) =>
+          call('POST', foldersUrl(agencyA, id), 'opVis', { name: 'Chegou tarde' }));
+
+        expectClientArchived(reply);
+        expect(await owner.knex('media_folders').where({ client_id: clientId, is_default: false })).toHaveLength(0);
+      });
+
+      it('creating a folder inside a folder is a 409 and leaves only the parent', async () => {
+        const { clientId, reply } = await duringArchiveOfAFreshClient(windowOf('media_folders'), (id) => firstLevelFolder(id, 'Pai'), (id, parentId) =>
+          call('POST', foldersUrl(agencyA, id), 'opVis', { name: 'Filha tardia', parentId }));
+
+        expectClientArchived(reply);
+        expect((await owner.knex('media_folders').where({ client_id: clientId, is_default: false })).map((folder) => folder.name)).toEqual(['Pai']);
+      });
+
+      it('uploading into a folder is a 409 and leaves no media', async () => {
+        const { clientId, reply } = await duringArchiveOfAFreshClient(windowOf('media_assets'), defaultFolder, (id, folderId) =>
+          call('POST', `/agencies/${agencyA}/media/uploads`, 'opVis', {
+            fileName: 'foto.png', contentType: 'image/png', declaredSizeBytes: 10, clientId: id, folderId
+          }));
+
+        expectClientArchived(reply);
+        expect(await owner.knex('media_assets').where({ client_id: clientId })).toHaveLength(0);
+      });
+
+      it('removing a media is a 409, the media stays and no event is written', async () => {
+        let seeded = { folder: '', asset: '' };
+        const { reply } = await duringArchiveOfAFreshClient(
+          windowOf('media_assets'),
+          async (id) => {
+            const folder = await defaultFolder(id);
+            seeded = { folder, asset: await seedAsset(agencyA, id, folder) };
+            return seeded;
+          },
+          (id, prepared) => call('POST', removeUrl(agencyA, id, prepared.folder, prepared.asset), 'opVis')
+        );
+
+        expectClientArchived(reply);
+        expect(await removedAt(seeded.asset)).toBeNull();
+        expect(await auditCount(seeded.asset)).toBe(0);
+      });
+    });
+  }
+});
+
+describe('two removals of the same media at the same instant (issue #253, rule 12)', () => {
+  it('both answer 200 and the audit has ONE media.removed: who audits is decided after the lock of the media', async () => {
+    const folder = await defaultFolder(clientA1);
+    const asset = await seedAsset(agencyA, clientA1, folder);
+
+    const holder = await owner.knex.transaction();
+    let released = false;
+    try {
+      const locked = await holder('media_assets').where({ id: asset }).forUpdate().select('id');
+      expect(locked).toHaveLength(1);
+      const both = Promise.all([
+        call('POST', removeUrl(agencyA, clientA1, folder, asset), 'opVis'),
+        call('POST', removeUrl(agencyA, clientA1, folder, asset), 'owner')
+      ]);
+      await waitUntilSomeoneWaitsOnALock(2);
+      await holder.commit();
+      released = true;
+
+      for (const reply of await both) {
+        expect(reply.statusCode).toBe(200);
+        expect(reply.json()).toEqual({ assetId: asset, removed: true });
+      }
+    } finally {
+      if (!released) await holder.rollback();
+    }
+
+    expect(await removedAt(asset)).toBeInstanceOf(Date);
+    expect(await auditCount(asset)).toBe(1);
+  });
+});
+
+describe('a page past the end answers the real total, not an empty library (issue #253)', () => {
+  it('folders: page 9 is empty and still carries the count of the folders of the client', async () => {
+    const total = await folderCount(clientA1);
+    expect(total).toBeGreaterThanOrEqual(4);
+
+    const past = await call('GET', `${foldersUrl(agencyA, clientA1)}?page=9`, 'opVis');
+    expect(past.statusCode).toBe(200);
+    expect(past.json().data).toEqual([]);
+    expect(past.json().meta).toEqual({ page: 9, pageSize: 100, totalItems: total, totalPages: 1 });
+
+    const smaller = await call('GET', `${foldersUrl(agencyA, clientA1)}?page=${total}&pageSize=3`, 'opVis');
+    expect(smaller.json().data).toEqual([]);
+    expect(smaller.json().meta).toEqual({ page: total, pageSize: 3, totalItems: total, totalPages: Math.ceil(total / 3) });
+  });
+
+  it('media: page 9 is empty, counts only the confirmed and not removed media and tells the folder is not empty', async () => {
+    const folder = await defaultFolder(clientA2, 'Vídeos');
+    await seedAsset(agencyA, clientA2, folder);
+    await seedAsset(agencyA, clientA2, folder);
+    await seedAsset(agencyA, clientA2, folder, { removed: true });
+    await seedAsset(agencyA, clientA2, folder, { status: 'pending' });
+    await seedAsset(agencyA, clientA2, folder, { status: 'rejected' });
+
+    const past = await call('GET', `${assetsUrl(agencyA, clientA2, folder)}?page=9&pageSize=1`, 'opVis');
+
+    expect(past.statusCode).toBe(200);
+    expect(past.json().data).toEqual([]);
+    expect(past.json().meta).toEqual({ page: 9, pageSize: 1, totalItems: 2, totalPages: 2 });
+  });
+});
+
+describe('the order of the folders (issue #253)', () => {
+  it('sorts the folders of the agency by name without telling accent or case apart, after the default ones', async () => {
+    for (const name of ['Zebra', 'abril', 'Água', 'Ábaco']) expect((await call('POST', foldersUrl(agencyA, clientA2), 'opVis', { name })).statusCode).toBe(201);
+
+    const listed = await call('GET', foldersUrl(agencyA, clientA2), 'opVis');
+
+    expect(listed.json().data.map((folder: { name: string }) => folder.name))
+      .toEqual(['Carrosséis', 'Ensaio fotográfico', 'Imagens', 'Vídeos', 'Ábaco', 'abril', 'Água', 'Zebra']);
+  });
+});
+
+describe('a role with one permission alone, where the lock answers before the policy would (issue #253)', () => {
+  it('creating a folder with a parent, or in an archived client, is a 403 and writes nothing, even for who only operates', async () => {
+    const parent = await firstLevelFolder(clientA1, 'Pai da permissão');
+    const archivedFolder = await defaultFolder(clientArchived);
+    const before = [await folderCount(clientA1), await folderCount(clientArchived)];
+
+    for (const as of ['onlyOperar', 'onlyVisualizar']) {
+      for (const [clientId, payload] of [
+        [clientA1, { name: 'Com pai', parentId: parent }],
+        [clientArchived, { name: 'Em arquivado' }],
+        [clientArchived, { name: 'Em arquivado com pai', parentId: archivedFolder }]
+      ] as const) {
+        const reply = await call('POST', foldersUrl(agencyA, clientId), as, payload);
+        expect({ as, clientId, status: reply.statusCode, code: reply.json().error.code }).toEqual({ as, clientId, status: 403, code: 'FORBIDDEN' });
+      }
+    }
+    expect([await folderCount(clientA1), await folderCount(clientArchived)]).toEqual(before);
+  });
+
+  it('removing a media of an archived client, or uploading into it, is a 403 for who only operates', async () => {
+    const folder = await defaultFolder(clientArchived);
+    const asset = await seedAsset(agencyA, clientArchived, folder);
+    const before = await mediaCount(agencyA);
+
+    for (const as of ['onlyOperar', 'onlyVisualizar']) {
+      expect({ as, status: (await call('POST', removeUrl(agencyA, clientArchived, folder, asset), as)).statusCode }).toEqual({ as, status: 403 });
+      expect({ as, status: (await call('POST', `/agencies/${agencyA}/media/uploads`, as, {
+        fileName: 'foto.png', contentType: 'image/png', declaredSizeBytes: 10, clientId: clientArchived, folderId: folder
+      })).statusCode }).toEqual({ as, status: 403 });
+    }
+    expect(await removedAt(asset)).toBeNull();
+    expect(await mediaCount(agencyA)).toBe(before);
+  });
+});
+
+describe('the folder that is not there answers the same body in every case (issue #253)', () => {
+  it('names the folder when the parent is of another client, of another agency or absent', async () => {
+    const parentOfA1 = await firstLevelFolder(clientA1, 'Pai alheio');
+    const folderB = await defaultFolder(clientB);
+    const before = [await folderCount(clientA1), await folderCount(clientA2), await folderCount(clientB)];
+
+    for (const [clientId, parentId] of [[clientA2, parentOfA1], [clientA1, folderB], [clientA1, randomUUID()]] as const) {
+      const reply = await call('POST', foldersUrl(agencyA, clientId), 'opVis', { name: 'Sem pai', parentId });
+      expect({ clientId, parentId, status: reply.statusCode, error: reply.json().error }).toEqual({
+        clientId, parentId, status: 404, error: { code: 'NOT_FOUND', message: 'Folder not found.' }
+      });
+    }
+    expect([await folderCount(clientA1), await folderCount(clientA2), await folderCount(clientB)]).toEqual(before);
   });
 });

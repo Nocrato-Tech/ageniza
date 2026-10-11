@@ -1,5 +1,7 @@
 import { raw } from '@ageniza/database';
 
+import { foldTextSql } from '../../plugins/infra/sql-text.js';
+
 type Transaction = Parameters<typeof raw>[0];
 
 interface RawRows<TResult> {
@@ -60,6 +62,12 @@ export const lockFolder = async (transaction: Transaction, folderId: string): Pr
   return row;
 };
 
+/**
+ * One page of the folders of a client: the first level before the working folders, the default ones first, then
+ * by name (accent and case folded, then compared byte by byte like the collaborators and the people of a client,
+ * so the order does not depend on the database collation), with the id as the tie-break. `count(*) over ()` rides
+ * the page's own snapshot; a page past the end has no row to carry it, so the total is counted on its own.
+ */
 export const listFolders = async (
   transaction: Transaction,
   clientId: string,
@@ -69,10 +77,15 @@ export const listFolders = async (
     select id, client_id, parent_id, name, is_default, created_at, count(*) over () as total
     from public.media_folders
     where client_id = ?::uuid
-    order by depth, is_default desc, name collate "C", id
+    order by depth, is_default desc, ${foldTextSql('name')} collate "C", id
     limit ? offset ?
   `, [clientId, page.limit, page.offset]);
-  return { rows: result.rows, total: Number(result.rows[0]?.total ?? 0) };
+  if (result.rows.length > 0 || page.offset === 0) return { rows: result.rows, total: Number(result.rows[0]?.total ?? 0) };
+
+  const count = await raw<RawRows<{ total: string | number }>>(transaction, `
+    select count(*) as total from public.media_folders where client_id = ?::uuid
+  `, [clientId]);
+  return { rows: [], total: Number(count.rows[0]?.total ?? 0) };
 };
 
 export const insertFolder = async (
@@ -103,19 +116,30 @@ export const listFolderAssets = async (
     order by created_at desc, id desc
     limit ? offset ?
   `, [folderId, page.limit, page.offset]);
-  return { rows: result.rows, total: Number(result.rows[0]?.total ?? 0) };
+  if (result.rows.length > 0 || page.offset === 0) return { rows: result.rows, total: Number(result.rows[0]?.total ?? 0) };
+
+  // A page past the end carries no row, and "no total" would read as an empty folder.
+  const count = await raw<RawRows<{ total: string | number }>>(transaction, `
+    select count(*) as total from public.media_assets
+    where folder_id = ?::uuid and status = 'confirmed' and removed_at is null
+  `, [folderId]);
+  return { rows: [], total: Number(count.rows[0]?.total ?? 0) };
 };
 
-/** Whether the media is already out of the folder, so a repeated call writes no second audit event. */
-export const isAssetRemoved = async (transaction: Transaction, assetId: string): Promise<boolean> => {
-  const result = await raw<RawRows<{ removed: boolean }>>(transaction, `
-    select removed_at is not null as removed from public.media_assets where id = ?::uuid
-  `, [assetId]);
-  return result.rows[0]?.removed === true;
-};
-
-export const removeAsset = async (transaction: Transaction, assetId: string, folderId: string): Promise<void> => {
-  await raw(transaction, 'select app_private.remove_media_asset(?::uuid, ?::uuid)', [assetId, folderId]);
+/**
+ * Takes the media out of its folder. Resolves `true` when THIS call removed it and `false` when it was already
+ * removed, as the function sees it after the lock of the media: that is the only point where two removals at
+ * the same instant are told apart, so the audit event is decided by it and never by a read before the lock.
+ */
+export const removeAsset = async (transaction: Transaction, assetId: string, folderId: string): Promise<boolean> => {
+  const result = await raw<RawRows<{ removed: boolean }>>(
+    transaction,
+    'select app_private.remove_media_asset(?::uuid, ?::uuid) as removed',
+    [assetId, folderId]
+  );
+  const row = result.rows[0];
+  if (row === undefined) throw new Error('remove_media_asset returned no row.');
+  return row.removed;
 };
 
 const databaseCode = (error: unknown): string | undefined =>
