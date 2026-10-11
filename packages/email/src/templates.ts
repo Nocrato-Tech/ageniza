@@ -163,8 +163,9 @@ export interface ClientContentEmailInput {
   readonly items: readonly ContentNotificationItem[];
 }
 
-// A header must be one line, and the names that go into it are free text of the agency.
-const oneLine = (value: string): string => value.replace(/[\p{Cc}\u2028\u2029]+/gu, ' ').trim();
+// A header must be one line, and the names that go into it are free text of the agency. \p{Cf} takes the invisible format
+// marks too: a bidi override such as U+202E reorders what the reader sees, so a name can read as another one.
+const oneLine = (value: string): string => value.replace(/[\p{Cc}\p{Cf}\u2028\u2029]+/gu, ' ').trim();
 
 const formatPlannedDate = (publishOn: string | null): string | undefined => {
   const match = publishOn === null ? null : /^(\d{4})-(\d{2})-(\d{2})$/.exec(publishOn);

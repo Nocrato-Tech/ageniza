@@ -55,6 +55,16 @@ describe('the e-mails of the contents of a client (issue #260)', () => {
     expect(message.subject).toContain('Padaria Bcc: alguem@exemplo.test');
   });
 
+  it.each([contentsAwaitingApprovalEmail, contentsPublishedEmail])('takes the invisible format marks out of the names, a bidi override (U+202E) included, so the name cannot read as another one', (compose) => {
+    const message = compose(input({ clientName: 'Padaria‮odnas', agencyName: 'Agência‮​Aurora' }));
+
+    expect(message.subject).toContain('Padaria odnas');
+    expect(message.subject).not.toMatch(/\p{Cf}/u);
+    expect(message.text).toContain('Agência Aurora');
+    expect(message.text).not.toMatch(/\p{Cf}/u);
+    expect(message.html).not.toMatch(/\p{Cf}/u);
+  });
+
   it('refuses a link that is not https (loopback aside), a contentless e-mail and a missing name', () => {
     expect(() => contentsAwaitingApprovalEmail(input({ portalUrl: 'http://app.ageniza.example/portal/1' }))).toThrow('HTTPS');
     expect(() => contentsAwaitingApprovalEmail(input({ portalUrl: 'javascript:alert(1)' }))).toThrow();
