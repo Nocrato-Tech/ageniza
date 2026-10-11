@@ -411,7 +411,7 @@ const portalContentDetailExample = {
   ...portalContentOpenExample,
   caption: 'Novidades de outono chegando!',
   revision: 1,
-  media: [{ id: assetId, position: 1 }]
+  media: [{ id: assetId, position: 1, kind: 'image' }]
 } as const;
 
 const agencyContextExample = {

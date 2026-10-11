@@ -2870,7 +2870,8 @@ Lê um conteúdo, no portal.
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
-      "position": 1
+      "position": 1,
+      "kind": "image"
     }
   ]
 }
@@ -2937,7 +2938,8 @@ Aprova um conteúdo, no portal.
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
-      "position": 1
+      "position": 1,
+      "kind": "image"
     }
   ]
 }
@@ -2979,7 +2981,8 @@ Pede ajuste de um conteúdo, no portal.
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
-      "position": 1
+      "position": 1,
+      "kind": "image"
     }
   ]
 }
