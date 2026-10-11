@@ -14,7 +14,7 @@
 **Consequência.**
 - Quem lê Conteúdo passa a assinar todo original do cliente da própria agência, não só a miniatura: a URL do original é a mesma que a da miniatura de imagem. Quem só lê, pois, baixa o arquivo de produção. Se o dono quiser separar "ver" de "baixar", é uma permissão nova e uma variante reduzida gerada para imagem.
 - Quem lê Conteúdo pode obter o original de imagem pela variante `thumbnail` sem deixar rastro de auditoria; só o pedido explícito de `original` aparece na trilha. Se o dono quiser rastrear quem baixou o arquivo de produção, a saída é a variante reduzida gerada para imagem, e então a auditoria volta a valer para o original.
-- A rota de download não tem limite de taxa próprio: o `signedUrlIssuance` das rotas de upload não a cobre, e o plugin de rate limit da API é `global: false`, então não há limite geral que valha para ela. A lista de capas de um mês pode chamá-la dezenas de vezes. Limitar é decisão à parte, e fica como está.
+- A rota de download não tem limite de taxa próprio: o `signedUrlIssuance` das rotas de upload não a cobre, e o plugin de rate limit da API é `global: false`, então não há limite geral que valha para ela. A lista de capas de um mês pode chamá-la dezenas de vezes. Limitar é decisão à parte, e fica como está. A revisão de segurança do PR #553 classificou a ausência de limite como Média; o limite por usuário é o follow-up #558.
 - Não há migration: a RLS e as colunas já existiam.
 
 **Origem.** Issue #550, achado da Âncora no #544 (#262) e pendência da decisão de 2026-10-07.
