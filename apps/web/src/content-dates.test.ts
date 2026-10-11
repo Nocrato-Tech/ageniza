@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { addDays, daysBetween, daysOf, fullDayLabel, parseAnchor, periodOf, periodTitle, shiftAnchor, startOfWeek, todayInSaoPaulo } from './content-dates.js';
+import { addDays, daysBetween, daysOf, fullDayLabel, monthPeriod, parseAnchor, periodOf, periodTitle, shiftAnchor, startOfWeek, todayInSaoPaulo, weekdayShortLabel } from './content-dates.js';
 import { deadlineAlert, subtaskPercent } from './content-labels.js';
 
 describe('todayInSaoPaulo', () => {
@@ -52,6 +52,30 @@ describe('periodOf', () => {
       expect(daysOf(periodOf('month', anchor)).length).toBeLessThanOrEqual(42);
     }
     expect(daysOf(periodOf('week', '2026-10-14'))).toHaveLength(7);
+  });
+});
+
+describe('monthPeriod', () => {
+  it('is exactly the days of the month, with no neighbours', () => {
+    expect(monthPeriod('2026-10-11')).toEqual({ from: '2026-10-01', to: '2026-10-31' });
+    expect(monthPeriod('2026-10-01')).toEqual({ from: '2026-10-01', to: '2026-10-31' });
+    expect(monthPeriod('2026-10-31')).toEqual({ from: '2026-10-01', to: '2026-10-31' });
+    expect(monthPeriod('2026-11-30')).toEqual({ from: '2026-11-01', to: '2026-11-30' });
+    expect(monthPeriod('2026-12-15')).toEqual({ from: '2026-12-01', to: '2026-12-31' });
+    expect(monthPeriod('2027-02-10')).toEqual({ from: '2027-02-01', to: '2027-02-28' });
+    expect(monthPeriod('2028-02-10')).toEqual({ from: '2028-02-01', to: '2028-02-29' });
+  });
+});
+
+describe('weekdayShortLabel', () => {
+  it('spells the weekday as the grid header does, Monday first', () => {
+    expect(weekdayShortLabel('2026-10-12')).toBe('seg');
+    expect(weekdayShortLabel('2026-10-13')).toBe('ter');
+    expect(weekdayShortLabel('2026-10-14')).toBe('qua');
+    expect(weekdayShortLabel('2026-10-15')).toBe('qui');
+    expect(weekdayShortLabel('2026-10-16')).toBe('sex');
+    expect(weekdayShortLabel('2026-10-17')).toBe('sáb');
+    expect(weekdayShortLabel('2026-10-18')).toBe('dom');
   });
 });
 

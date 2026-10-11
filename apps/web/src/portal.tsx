@@ -37,7 +37,7 @@ export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9
 
 const PORTAL_TABS = [
   { slug: 'inicio', label: 'Início' },
-  { slug: 'calendario', label: 'Calendário' },
+  { slug: 'conteudos', label: 'Conteúdos' },
   { slug: 'marca', label: 'Marca' },
   { slug: 'relatorios', label: 'Relatórios' }
 ] as const;
@@ -203,7 +203,7 @@ export function PortalHomePage() {
   return <section className="portal-home" aria-labelledby="portal-home-title">
     <h1 id="portal-home-title">Olá, {session.user?.name ?? ''}</h1>
     {awaiting > 0
-      ? <Link className="portal-home__action" to={`/portal/${clienteId}/calendario`}>
+      ? <Link className="portal-home__action" to={`/portal/${clienteId}/conteudos`}>
         <span className="portal-home__action-text">{awaiting} {awaiting === 1 ? 'conteúdo esperando' : 'conteúdos esperando'} sua aprovação</span>
         <span className="portal-home__action-link">ver</span>
       </Link>
@@ -217,8 +217,7 @@ export function PortalHomePage() {
 
 /**
  * A reserved area of the portal shell (`docs/design-system.md` §23): it says what will come, in the
- * client's language, and offers no control and no fake data. Calendário and Relatórios wait for
- * Conteúdo; the Marca address is reserved here until #143 fills it.
+ * client's language, and offers no control and no fake data. Relatórios waits for its module.
  */
 export function PortalSkeletonPage({ title, description }: { title: string; description: string }) {
   const titleId = `portal-${title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}-title`;
