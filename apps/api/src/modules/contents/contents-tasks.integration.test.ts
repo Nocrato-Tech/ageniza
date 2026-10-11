@@ -17,6 +17,7 @@ const { people } = w;
 
 const NO_DATABASE_DETAIL = /A00\d\d|deadlock|40P01|42501|pg_|relation|process|constraint/i;
 const TASK_STATEMENT = /content_tasks|public\.contents\b/;
+const TASK_WRITE = /(insert into|update) public\.content_tasks\b/;
 
 type Person = PersonKey | TransitionPerson;
 const cookieOf = (person: Person): string => (person in people ? people[person as PersonKey].cookie : f.people[person as TransitionPerson].cookie);
@@ -64,6 +65,7 @@ const validTask = async (assignee: PersonKey = 'production') => ({
 });
 
 const mentionsTasks = (): boolean => w.statements.some((statement) => TASK_STATEMENT.test(statement));
+const writesTasks = (): boolean => w.statements.some((statement) => TASK_WRITE.test(statement));
 
 beforeAll(async () => {
   await w.setup();
@@ -524,9 +526,11 @@ describe('the person in charge of a task: an active collaborator of this agency 
     const contentId = await w.seedContent(clientA, { ownerUserId: people.manager.id });
 
     await t.withRemovedLink('production', async () => {
+      w.statements.length = 0;
       const reply = await create('admin', contentId, await validTask('production'));
       expect(reply.statusCode).toBe(400);
       expect(reply.json().error).toEqual(INVALID);
+      expect(writesTasks()).toBe(false);
     });
 
     expect(await t.countTasks(contentId)).toBe(0);
@@ -537,9 +541,11 @@ describe('the person in charge of a task: an active collaborator of this agency 
     const before = await t.taskRow(ids.taskId);
 
     await t.withRemovedLink('manager', async () => {
+      w.statements.length = 0;
       const reply = await patch('admin', ids, { assigneeMembershipId: await t.linkOf('manager'), title: 'Outro título' });
       expect(reply.statusCode).toBe(400);
       expect(reply.json().error).toEqual(INVALID);
+      expect(writesTasks()).toBe(false);
     });
 
     expect(await t.taskRow(ids.taskId)).toEqual(before);

@@ -729,8 +729,9 @@ describe('uploading a media into a folder of a client (issue #253)', () => {
         expect(await app.media!.storage.headObject({ key: objectKey })).toBeUndefined();
       }, 20_000);
 
-      // The archive commits while the copy is held: the route's own second read of the client refuses it (the 409 of the
-      // application, not of the trigger), so this variant pins the answer and the nothing-confirmed state, not the trigger.
+      // The archive commits while the copy is held. Two guards cover it: the route's second read of the client after the quota
+      // lock, and the trigger of 20261011000700 on the UPDATE. So this variant is red only with both removed (the double mutation
+      // is listed in the PR); with one alone it stays green.
       it('is a 409 when the archive commits during the wait on the bucket, and nothing is confirmed', async () => {
         const clientId = await freshClient();
         const { assetId, objectKey } = await startedUpload(clientId);
