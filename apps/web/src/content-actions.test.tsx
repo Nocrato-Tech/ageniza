@@ -55,6 +55,12 @@ const complete = (overrides: Partial<Stored> = {}): Stored => stored({ format: '
 const clickMove = (label: string): void => { fireEvent.click(within(dialog()).getByRole('button', { name: label })); };
 const status = (contents: readonly Stored[], id: string) => contents.find((content) => content.id === id)!.status;
 
+/** A close that follows a refusal comes a moment later (a navigation, a timer): look only after the shell settled. */
+const staysOpen = async (): Promise<void> => {
+  await new Promise<void>((resolve) => { setTimeout(resolve, 500); });
+  expect(screen.queryByRole('dialog')).not.toBeNull();
+};
+
 describe('which button shows: the state AND the permission', () => {
   // Written by hand, value by value: the table is not derived from the rule it checks.
   it.each([
@@ -151,6 +157,50 @@ describe('which button shows: the state AND the permission', () => {
     expect(within(dialog()).getByText('Salve as mudanças antes de usar estas ações.')).toBeTruthy();
     type('Título', 'Lançamento do pão');
     expect(submit.disabled).toBe(false);
+  });
+
+  it.each([
+    ['approve', 'awaiting_approval', APPROVE, 'Aprovar pela agência', 'Confirmar aprovação', '/approve-by-agency'],
+    ['publish', 'approved', PUBLISH, 'Marcar como publicado', 'Confirmar publicação', '/publish']
+  ] as const)('holds the confirmation of %s while the form has changes that were not saved, and sends nothing', async (_name, state, permission, opener, confirm, segment) => {
+    const { calls, contents } = await openContent(stored({ status: state, caption: 'Pão fresquinho' }), { permissions: [VISUALIZE, READ_CLIENTS, OPERATE, permission] });
+    await settled(calls);
+    clickMove(opener);
+    if (permission === APPROVE) fireEvent.change(within(dialog()).getByLabelText('Motivo da aprovação'), { target: { value: 'Por telefone' } });
+    const confirmation = within(dialog()).getByRole('button', { name: confirm }) as HTMLButtonElement;
+    expect(confirmation.disabled).toBe(false);
+
+    type('Legenda', 'Legenda nova, ainda sem salvar');
+    expect(confirmation.disabled).toBe(true);
+    expect(within(dialog()).getByText('Salve as mudanças antes de usar estas ações.')).toBeTruthy();
+    fireEvent.click(confirmation);
+    await new Promise<void>((resolve) => { setTimeout(resolve, 100); });
+    expect(moves(calls).filter((call) => call.path.endsWith(segment))).toHaveLength(0);
+    expect(screen.queryByRole('dialog')).not.toBeNull();
+    expect((within(dialog()).getByLabelText('Legenda') as HTMLTextAreaElement).value).toBe('Legenda nova, ainda sem salvar');
+    expect(contents.find((content) => content.status !== state)).toBeUndefined();
+
+    type('Legenda', 'Pão fresquinho');
+    expect(confirmation.disabled).toBe(false);
+  });
+
+  it('holds every other move while one is on its way', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const { calls } = await openContent(complete(), {
+      permissions: [VISUALIZE, READ_CLIENTS, OPERATE, CANCEL],
+      override: (call) => (call.path.endsWith('/submit') ? held.then(() => undefined) as never : undefined)
+    });
+    await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
+    clickMove(SUBMIT);
+    await waitFor(() => expect(moves(calls)).toHaveLength(1));
+    const cancel = within(dialog()).getByRole('button', { name: 'Cancelar conteúdo' }) as HTMLButtonElement;
+    expect(cancel.disabled).toBe(true);
+    fireEvent.click(cancel);
+    expect(moves(calls)).toHaveLength(1);
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(moves(calls).map((call) => call.path.split('/').pop())).toEqual(['submit']);
   });
 });
 
@@ -269,8 +319,8 @@ describe('Enviar para aprovação', () => {
     clickMove(SUBMIT);
     expect(await within(dialog()).findByText('O conteúdo tem mídia que ainda não terminou de subir. Espere o envio terminar ou troque a mídia.')).toBeTruthy();
     expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
-    expect(screen.queryByRole('dialog')).not.toBeNull();
     expect(moves(calls)).toHaveLength(1);
+    await staysOpen();
   });
 });
 
@@ -329,7 +379,8 @@ describe('Aprovar pela agência', () => {
     expect(await within(dialog()).findByText('O conteúdo mudou desde que você o abriu. Feche, abra de novo e confira antes de aprovar.')).toBeTruthy();
     expect((within(dialog()).getByLabelText('Motivo da aprovação') as HTMLTextAreaElement).value).toBe('Motivo digitado');
     expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
-    expect(screen.queryByRole('dialog')).not.toBeNull();
+    await staysOpen();
+    expect((within(dialog()).getByLabelText('Motivo da aprovação') as HTMLTextAreaElement).value).toBe('Motivo digitado');
   });
 
   it('says in its own words that the API did not accept the reason', async () => {
@@ -426,7 +477,7 @@ describe('Marcar como publicado e Desfazer publicação', () => {
     await settled(calls);
     clickMove('Desfazer publicação');
     expect(await within(dialog()).findByText('A publicação só se desfaz no dia em que foi marcada.')).toBeTruthy();
-    expect(screen.queryByRole('dialog')).not.toBeNull();
+    await staysOpen();
   });
 });
 
@@ -511,7 +562,7 @@ describe('what the API refuses', () => {
     act();
     expect(await within(dialog()).findByText(STATE_TEXT[segment]!)).toBeTruthy();
     expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
-    expect(screen.queryByRole('dialog')).not.toBeNull();
+    await staysOpen();
   });
 
   it.each([
@@ -534,6 +585,7 @@ describe('what the API refuses', () => {
     expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
     expect(screen.queryByRole('dialog')).not.toBeNull();
     await waitFor(() => expect(periodCalls(calls).length).toBeGreaterThan(before));
+    await staysOpen();
   });
 
   it('uses the one text of the move for a failure it does not know, per move', async () => {
@@ -545,6 +597,7 @@ describe('what the API refuses', () => {
     await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
     clickMove(SUBMIT);
     expect(await within(dialog()).findByText('Não foi possível enviar o conteúdo para aprovação. Tente de novo.')).toBeTruthy();
+    await staysOpen();
   });
 
   it('is ready for the next try after a refusal: the button works again', async () => {

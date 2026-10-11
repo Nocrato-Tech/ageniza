@@ -65,7 +65,7 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone 
   const available = actionsFor(content.status, (permission) => permissions.has(permission));
   const canSubmit = available.includes('submit');
 
-  const assets = useFolderAssets(clientId, canSubmit ? content.folderId : '');
+  const assets = useFolderAssets(clientId, content.folderId);
   const missing = missingForSubmit(content, assets.data);
 
   const [panel, setPanel] = useState<Panel | null>(null);
@@ -169,7 +169,7 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone 
       />
       {problem !== undefined && <FieldMessage id={`${ids}-problem`} role="alert">{problem}</FieldMessage>}
       <div className="form-actions">
-        <Button loading={busy} disabled={busy} onClick={confirmApprove}>Confirmar aprovação</Button>
+        <Button loading={busy} disabled={waiting} onClick={confirmApprove}>Confirmar aprovação</Button>
       </div>
     </div>}
     {panel === 'publish' && available.includes('publish') && <div className="form-field content-actions__panel">
@@ -186,7 +186,7 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone 
       />
       {problem !== undefined && <FieldMessage id={`${ids}-problem`} role="alert">{problem}</FieldMessage>}
       <div className="form-actions">
-        <Button loading={busy} disabled={busy} onClick={confirmPublish}>Confirmar publicação</Button>
+        <Button loading={busy} disabled={waiting} onClick={confirmPublish}>Confirmar publicação</Button>
       </div>
     </div>}
     {panel === 'reschedule' && available.includes('reschedule') && <div className="form-field content-actions__panel">
@@ -202,7 +202,7 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone 
       />
       {problem !== undefined && <FieldMessage id={`${ids}-problem`} role="alert">{problem}</FieldMessage>}
       <div className="form-actions">
-        <Button loading={busy} disabled={busy} onClick={confirmReschedule}>Confirmar novo dia</Button>
+        <Button loading={busy} disabled={waiting} onClick={confirmReschedule}>Confirmar novo dia</Button>
       </div>
     </div>}
     {error !== undefined && <FieldMessage role="alert">{error}</FieldMessage>}
