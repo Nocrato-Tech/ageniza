@@ -42,7 +42,7 @@ const VISUALIZE = 'conteudo.visualizar';
 const READ_CLIENTS = 'cliente.visualizar';
 
 const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[]) => ({
-  agencyId, agencyName, isOwner: false, role: { key: 'custom', name: 'Papel' }, permissions
+  agencyId, agencyName, isOwner: false, membershipId: null, role: { key: 'custom', name: 'Papel' }, permissions
 });
 
 const clientFixture = (id: string, name: string, handle: string | null, status: 'active' | 'archived' = 'active') => ({

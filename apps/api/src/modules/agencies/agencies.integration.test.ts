@@ -29,6 +29,7 @@ interface AgencyMeJson {
   readonly agencyId: string;
   readonly agencyName: string;
   readonly isOwner: boolean;
+  readonly membershipId: string | null;
   readonly role: { key: string; name: string };
   readonly permissions: string[];
 }
@@ -67,8 +68,10 @@ const createAgency = async (name: string, ownerUserId: string | null, status: 'a
   return id;
 };
 
-const addAgencyMembership = async (agencyId: string, userId: string, roleId: string, status: 'active' | 'removed' = 'active'): Promise<void> => {
-  await owner.knex('agency_memberships').insert({ agency_id: agencyId, user_id: userId, role_id: roleId, status });
+const addAgencyMembership = async (agencyId: string, userId: string, roleId: string, status: 'active' | 'removed' = 'active'): Promise<string> => {
+  const id = randomUUID();
+  await owner.knex('agency_memberships').insert({ id, agency_id: agencyId, user_id: userId, role_id: roleId, status });
+  return id;
 };
 
 const setAgencyStatus = async (agencyId: string, status: 'active' | 'suspended'): Promise<void> => {
@@ -198,6 +201,43 @@ describe('agencies module (issue #180)', () => {
     // The `admin` fallback label belongs to the owner without a membership role, and to nobody else.
     expect(response.body.role).toEqual({ key: 'admin', name: 'Admin' });
     await expectEquivalentToRls(user.id, agency, response.body);
+  });
+
+  it('#265: the person receives the id of her OWN link with the agency asked for, and never a user id', async () => {
+    const user = await makeUser('agency-me-membership');
+    const other = await makeUser('agency-me-membership-other');
+    const agencyA = await createAgency('Agency Me Membership A', null);
+    const agencyB = await createAgency('Agency Me Membership B', null);
+    const ofUserInA = await addAgencyMembership(agencyA, user.id, presetRoleIds.production);
+    const ofUserInB = await addAgencyMembership(agencyB, user.id, presetRoleIds.finance);
+    const ofOtherInA = await addAgencyMembership(agencyA, other.id, presetRoleIds.admin);
+    const cookie = await loginCookie(user);
+
+    const inA = await getAgencyMe(cookie, agencyA);
+    const inB = await getAgencyMe(cookie, agencyB);
+
+    expect(inA.body.membershipId).toBe(ofUserInA);
+    expect(inB.body.membershipId).toBe(ofUserInB);
+    expect(ofUserInA).not.toBe(ofUserInB);
+    expect(inA.body.membershipId).not.toBe(ofOtherInA);
+    for (const reply of [inA, inB]) {
+      expect(JSON.stringify(reply.body)).not.toContain(user.id);
+      expect(JSON.stringify(reply.body)).not.toContain(other.id);
+    }
+  });
+
+  it('#265: an Owner with a link receives it, and an Owner by ownership alone receives null', async () => {
+    const linked = await makeUser('agency-me-membership-owner-linked');
+    const linkedAgency = await createAgency('Agency Me Owner Linked', linked.id);
+    const linkId = await addAgencyMembership(linkedAgency, linked.id, presetRoleIds.admin);
+    const bare = await makeUser('agency-me-membership-owner-bare');
+    const bareAgency = await createAgency('Agency Me Owner Bare', bare.id);
+
+    expect((await getAgencyMe(await loginCookie(linked), linkedAgency)).body.membershipId).toBe(linkId);
+    const bareReply = await getAgencyMe(await loginCookie(bare), bareAgency);
+    expect(bareReply.status).toBe(200);
+    expect(bareReply.body.membershipId).toBeNull();
+    expect(bareReply.body.isOwner).toBe(true);
   });
 
   it('#180: each of the five presets receives exactly its role_permissions keys, equivalent to has_agency_permission', async () => {

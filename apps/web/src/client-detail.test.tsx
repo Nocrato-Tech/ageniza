@@ -40,7 +40,7 @@ const json = (body: unknown, status = 200): Response =>
 const noContent = (): Response => new Response(null, { status: 204 });
 
 const agencyMe = (agencyId: string, permissions: readonly string[]) => ({
-  agencyId, agencyName: agencyId === AGENCY_B ? 'Agência Dois' : 'Agência Um', isOwner: false, role: { key: 'admin', name: 'Admin' }, permissions
+  agencyId, agencyName: agencyId === AGENCY_B ? 'Agência Dois' : 'Agência Um', isOwner: false, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions
 });
 
 /** Every permission of the module: Admin and Owner see everything (specs/clientes.md §2). */
