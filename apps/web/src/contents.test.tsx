@@ -439,6 +439,52 @@ describe('the stories (/agencia/:agenciaId/conteudos)', () => {
   });
 });
 
+describe('the ring on the stories (contentIndicators of #261)', () => {
+  const indicators = (overrides: Partial<Record<'pending' | 'inReview' | 'overdue' | 'adjusting' | 'dueSoon', number>>) =>
+    ({ pending: 0, inReview: 0, overdue: 0, adjusting: 0, dueSoon: 0, ...overrides });
+  const withIndicators = (id: string, name: string, contentIndicators?: ReturnType<typeof indicators>) =>
+    ({ ...clientFixture(id, name, null), ...(contentIndicators === undefined ? {} : { contentIndicators }) });
+  const ringed = (link: HTMLElement): boolean => link.querySelector('.content-story__avatar--attention') !== null;
+
+  it.each([
+    ['a change asked by the client (adjusting)', { adjusting: 1 }, 'em ajuste'],
+    ['a content past its day (overdue)', { overdue: 2 }, 'em atraso'],
+    ['a content due in two days (dueSoon)', { dueSoon: 1 }, 'com prazo em dois dias']
+  ] as const)('draws the ring, and says why to a screen reader, for %s', async (_name, counts, reason) => {
+    const ringedClient = withIndicators('5e5e5e5e-5555-4555-8555-555555555555', 'Cliente com Pedido', indicators(counts));
+    const quiet = withIndicators('6f6f6f6f-6666-4666-8666-666666666666', 'Cliente Quieto', indicators({}));
+    const { impl } = makeFetch({ roster: [ringedClient, quiet] });
+    render_(impl);
+
+    const link = await screen.findByRole('link', { name: new RegExp(`^Cliente com Pedido\\s*,\\s*${reason}$`) });
+    expect(ringed(link)).toBe(true);
+    expect(ringed(screen.getByRole('link', { name: 'Cliente Quieto' }))).toBe(false);
+  });
+
+  it('lists every reason that applies, and nothing for the flow itself (em produção and aguardando aprovação)', async () => {
+    const everything = withIndicators('5e5e5e5e-5555-4555-8555-555555555555', 'Tudo Junto', indicators({ adjusting: 1, overdue: 1, dueSoon: 1 }));
+    const flowOnly = withIndicators('6f6f6f6f-6666-4666-8666-666666666666', 'Só Fluxo', indicators({ pending: 7, inReview: 3 }));
+    const unknown = withIndicators('7a7a7a7a-7777-4777-8777-777777777777', 'Sem Indicadores');
+    const { impl } = makeFetch({ roster: [everything, flowOnly, unknown] });
+    render_(impl);
+
+    const all = await screen.findByRole('link', { name: /^Tudo Junto\s*,\s*em ajuste, em atraso, com prazo em dois dias$/ });
+    expect(ringed(all)).toBe(true);
+    expect(ringed(screen.getByRole('link', { name: 'Só Fluxo' }))).toBe(false);
+    expect(ringed(screen.getByRole('link', { name: 'Sem Indicadores' }))).toBe(false);
+  });
+
+  it('keeps the ring on the client that is open, beside the others', async () => {
+    const ringedClient = withIndicators(padaria.id, 'Padaria Central', indicators({ overdue: 1 }));
+    const { impl } = makeFetch({ roster: [ringedClient, academia, barbearia, confeitaria] });
+    render_(impl, contentsUrl(padaria.id));
+
+    const link = await screen.findByRole('link', { name: /^Padaria Central\s*,\s*em atraso$/ });
+    expect(link.getAttribute('aria-current')).toBe('page');
+    expect(ringed(link)).toBe(true);
+  });
+});
+
 describe('the client in the address', () => {
   it('survives a reload: the same address opens the same client, with its name and handle', async () => {
     const { impl, calls } = makeFetch({ contents: { [academia.id]: [contentFixture({ title: 'Treino da semana', publishOn: '2026-10-14' })] } });

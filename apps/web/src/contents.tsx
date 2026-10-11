@@ -8,6 +8,7 @@ import {
   ClientSchema,
   ContentDetailSchema,
   ContentPeriodResponseSchema,
+  type ClientListItem,
   type ContentListItem,
   type UpdateContentRequest
 } from '@ageniza/contracts';
@@ -47,6 +48,20 @@ const useStoryClients = () => {
 type StoryClients = ReturnType<typeof useStoryClients>;
 
 /**
+ * What puts a ring on a story (`specs/conteudo.md` section 7): a content the client asked to change, one past its
+ * day, or one due in two days. "Em produção" and "aguardando aprovação" alone are the normal flow and draw nothing.
+ * A caller without `conteudo.visualizar` has no indicators at all, and so no ring.
+ */
+const ATTENTION_REASONS = [
+  ['adjusting', 'em ajuste'],
+  ['overdue', 'em atraso'],
+  ['dueSoon', 'com prazo em dois dias']
+] as const;
+
+const attentionOf = (client: ClientListItem): string[] =>
+  ATTENTION_REASONS.filter(([key]) => (client.contentIndicators?.[key] ?? 0) > 0).map(([, label]) => label);
+
+/**
  * Clients as stories (`specs/conteudo.md` section 7): photo or initials and the name, in the
  * roster's order, active ones only (the listing's default). Every link carries the navigation
  * state forward, so the roster address a person came from is never lost here.
@@ -71,17 +86,25 @@ function ContentStories({ stories, selectedId }: { stories: StoryClients; select
   return <>
     <nav aria-label="Clientes">
       <ul className="content-stories">
-        {stories.data.data.map((client) => <li key={client.id}>
-          <Link
-            className="content-story"
-            to={`/agencia/${agency.agencyId}/conteudos/${client.id}`}
-            state={location.state}
-            aria-current={client.id === selectedId ? 'page' : undefined}
-          >
-            <Avatar name={client.name} photoUrl={client.photoUrl} size="lg" />
-            <span className="content-story__name">{client.name}</span>
-          </Link>
-        </li>)}
+        {stories.data.data.map((client) => {
+          const attention = attentionOf(client);
+          return <li key={client.id}>
+            <Link
+              className="content-story"
+              to={`/agencia/${agency.agencyId}/conteudos/${client.id}`}
+              state={location.state}
+              aria-current={client.id === selectedId ? 'page' : undefined}
+            >
+              <span className={`content-story__avatar${attention.length > 0 ? ' content-story__avatar--attention' : ''}`}>
+                <Avatar name={client.name} photoUrl={client.photoUrl} size="lg" />
+              </span>
+              <span className="content-story__name">
+                {client.name}
+                {attention.length > 0 && <span className="visually-hidden">, {attention.join(', ')}</span>}
+              </span>
+            </Link>
+          </li>;
+        })}
       </ul>
     </nav>
     {total > stories.data.data.length && <p className="content-stories__note">Mostrando {stories.data.data.length} de {total} clientes.</p>}

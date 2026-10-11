@@ -2491,6 +2491,16 @@ a.client-general__block:hover {
   background: var(--bg-hover);
 }
 
+.content-story__avatar {
+  display: inline-flex;
+  border-radius: var(--radius-full);
+}
+
+/* The ring: something of this client asks for action (a change asked, a day passed, a deadline in two days). */
+.content-story__avatar--attention {
+  box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--action-primary-bg);
+}
+
 .content-story__name {
   max-width: 100%;
   font: var(--label-sm);
