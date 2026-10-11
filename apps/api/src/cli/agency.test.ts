@@ -76,6 +76,41 @@ describe('agency operator CLI', () => {
     expect(() => normalizeAgencyName('🙂'.repeat(200))).toThrow(/256 bytes/);
   });
 
+  it('refuses an agency name with an invisible, bidi or tag character, and keeps an accented name', () => {
+    expect(normalizeAgencyName('Ação Pão & Cia')).toBe('Ação Pão & Cia');
+    // A tag letter (U+E0041), a bidi override (U+202E) and a zero-width space (U+200B): each one is a character the e-mail would show as
+    // something other than what is stored, so the CLI refuses the name before it writes anything.
+    for (const code of [0xe0041, 0x202e, 0x200b]) {
+      const name = `Acme${String.fromCodePoint(code)}`;
+      expect(() => normalizeAgencyName(name)).toThrow(/invisible/);
+    }
+  });
+
+  it('exits non-zero with the reason, and writes nothing, when the CLI gets an agency name with a bidi override', async () => {
+    const { database, calls } = fakeDatabase(createQuery);
+    const { mailer, sent } = fakeMailer();
+    const output: string[] = [];
+    const errors: string[] = [];
+    const exitCode = await runAgencyCli({
+      argv: ['create', '--name', `Acme${String.fromCodePoint(0x202e)}`, '--owner-email', 'owner@example.com'],
+      environment: {
+        MIGRATION_DATABASE_URL: 'postgresql://postgres:owner-password@postgres:5432/ageniza',
+        SMTP_URL: 'smtps://smtp-user:smtp-password@smtp.example.com:465',
+        EMAIL_FROM: 'Ageniza <no-reply@example.com>',
+        APP_PUBLIC_URL: 'https://app.example.com'
+      },
+      database,
+      mailer,
+      io: { stdout: { write: (value) => output.push(value) }, stderr: { write: (value) => errors.push(value) } }
+    });
+
+    expect(exitCode).not.toBe(0);
+    expect(errors.join('')).toContain('name must not contain control, bidi or invisible characters.');
+    expect(output).toEqual([]);
+    expect(calls).toEqual([]);
+    expect(sent).toHaveLength(0);
+  });
+
   it('validates required settings without echoing a migration or SMTP secret', () => {
     const environment = loadAgencyCliEnvironment({
       MIGRATION_DATABASE_URL: 'postgresql://postgres:owner-password@postgres:5432/ageniza',
