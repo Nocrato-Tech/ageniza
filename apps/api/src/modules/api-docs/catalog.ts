@@ -2,7 +2,7 @@ import type { z } from 'zod';
 
 import { COLLABORATOR_ROLES_READ_PERMISSIONS, COLLABORATOR_UPDATE_PERMISSIONS } from '../collaborators/permissions.js';
 import { CONVERSATION_READ_PERMISSIONS, CONVERSATION_WRITE_PERMISSIONS } from '../clients/policy.js';
-import { MEDIA_UPLOAD_PERMISSIONS } from '../media/policy.js';
+import { MEDIA_READ_PERMISSIONS, MEDIA_UPLOAD_PERMISSIONS } from '../media/policy.js';
 import type { RoutePermission } from '../../plugins/infra/route-metadata.js';
 import {
   AcceptLegalDocumentRequestSchema,
@@ -2446,9 +2446,9 @@ path: '/agencies/:agencyId/roles',
     operationId: 'getMediaDownloadUrl',
     module: 'media',
     summary: 'Emite uma URL assinada de leitura',
-    description: 'Válida por poucos minutos, só GET, e apenas para um objeto confirmado da agência.',
+    description: 'Válida por poucos minutos, só GET, e apenas para um objeto confirmado e não removido da agência. A mídia sem cliente exige `midia.enviar`; a de um cliente exige `conteudo.visualizar` (a que o papel não lê é o mesmo 404). Em `variant=thumbnail`, a imagem devolve o próprio original e o vídeo devolve a miniatura quando processada, senão 409 `VARIANT_NOT_READY`. Só o pedido do original grava a auditoria `media.download_url_issued`.',
     access: 'Sessão + vínculo com a agência',
-    permission: 'midia.enviar',
+    permission: MEDIA_READ_PERMISSIONS,
     params: AgencyMediaAssetPathParamsSchema,
     query: MediaDownloadUrlQuerySchema,
     requestExample: { variant: 'original' },

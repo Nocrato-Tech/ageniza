@@ -2375,7 +2375,7 @@ Lista os papéis atribuíveis na agência.
 | `POST` | `/agencies/:agencyId/media/uploads` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.operar` | Inicia um upload de mídia |
 | `POST` | `/agencies/:agencyId/media/uploads/:assetId/parts` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.operar` | Pede URLs assinadas de partes do multipart |
 | `POST` | `/agencies/:agencyId/media/uploads/:assetId/complete` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.operar` | Confirma o upload e valida o objeto |
-| `GET` | `/agencies/:agencyId/media/:assetId/download-url` | Sessão + vínculo com a agência | `midia.enviar` | Emite uma URL assinada de leitura |
+| `GET` | `/agencies/:agencyId/media/:assetId/download-url` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.visualizar` | Emite uma URL assinada de leitura |
 | `GET` | `/agencies/:agencyId/clients/:clientId/media-folders` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista as pastas de mídia de um cliente |
 | `POST` | `/agencies/:agencyId/clients/:clientId/media-folders` | Sessão + vínculo com a agência | `conteudo.operar` | Cria uma pasta de mídia do cliente |
 | `GET` | `/agencies/:agencyId/clients/:clientId/media-folders/:folderId/assets` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista as mídias de uma pasta |
@@ -2487,7 +2487,7 @@ Confirma o upload e valida o objeto.
 Emite uma URL assinada de leitura.
 
 - Acesso: Sessão + vínculo com a agência.
-- Permissão: `midia.enviar`.
+- Permissão: `midia.enviar` ou `conteudo.visualizar`.
 
 **Requisição** (`application/json`):
 
