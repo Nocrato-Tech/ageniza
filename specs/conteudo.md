@@ -207,6 +207,7 @@ Todas sob `requireAgencyAccess`; o cliente de `:clientId` precisa pertencer a `:
 | `GET` | `…/media-folders/:folderId/assets` | `conteudo.visualizar` | mídias da pasta, paginado |
 | `POST` | `…/media-folders/:folderId/assets/:assetId/remove` | `conteudo.operar` | `409` se usada, como arquivo ou capa, em conteúdo aguardando aprovação, aprovado ou publicado (regra 12) |
 | `POST` | `/agencies/:agencyId/clients/:clientId/story-scripts` | `conteudo.operar` | `201` com o roteiro em rascunho |
+| `GET` | `/agencies/:agencyId/clients/:clientId/story-scripts/:scriptId` | `conteudo.visualizar` | o roteiro, em qualquer estado, com as cenas |
 | `PATCH` | `…/story-scripts/:scriptId` | `conteudo.operar` | o roteiro |
 | `POST` | `…/story-scripts/:scriptId/send` | `conteudo.operar` | enviado |
 
