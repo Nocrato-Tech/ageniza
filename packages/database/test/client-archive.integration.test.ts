@@ -427,7 +427,40 @@ describe('a write that races the archive of its client does not survive it (issu
       expect(await w.contentRow(id)).toEqual(before);
     });
 
-    it('an edit that holds the content and then asks for the client can lose the cycle with the archive: one gets 40P01 and nothing is half done', async () => {
+    describe.each([
+      ['the caption, then the date', () => ({ caption: 'Legenda do ciclo' }), (t: Knex.Transaction, id: string, day: string) => edit(id, { publish_on: day })(t)],
+      ['the date, then the caption', (day: string) => ({ publish_on: day }), (t: Knex.Transaction, id: string) => edit(id, { caption: 'Legenda do ciclo' })(t)],
+      ['the caption, then a subtask', () => ({ caption: 'Legenda do ciclo' }), (t: Knex.Transaction, id: string, _day: string, client: string) => t('content_tasks').insert({
+        content_id: id, client_id: client, title: 'Subtarefa do ciclo', assignee_user_id: ids.adminA, due_on: '2026-10-15'
+      })]
+    ] as const)('an approved content planned after the closing, edited in two statements: %s', (_label, first, second) => {
+      it('makes the archive wait for the whole transaction instead of deadlocking with it, and then cancels the content', async () => {
+        const client = await newClient();
+        const id = await w.seedContent(client, { status: 'approved', publishOn: await daysFromToday(10) });
+        const later = await daysFromToday(12);
+        const editor = await w.openTransactionAs(ids.adminA);
+        let archiving: Promise<unknown> | undefined;
+        let committed = false;
+
+        try {
+          expect(await edit(id, first(later))(editor)).toBe(1);
+          archiving = w.asUser(ids.adminA, archive(client)).then(() => 'archived' as const, (error: unknown) => error);
+          await w.waitUntilSomeoneWaitsOnALock();
+
+          await second(editor, id, later, client);
+          await editor.commit();
+          committed = true;
+        } finally {
+          if (!committed) await editor.rollback();
+        }
+
+        expect(await archiving).toBe('archived');
+        expect(await clientStatus(client)).toBe('archived');
+        expect(await w.contentRow(id)).toMatchObject({ status: 'cancelled', caption: 'Legenda do ciclo' });
+      });
+    });
+
+    it('a transaction that locks the content row by itself before any edit can still lose the cycle with the archive: one gets 40P01 and nothing is half done', async () => {
       const client = await newClient();
       const id = await w.seedContent(client, { publishOn: await daysFromToday(10) });
       const before = await w.contentRow(id);
