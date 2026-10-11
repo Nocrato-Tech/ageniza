@@ -51,29 +51,47 @@ describe('buildIndex', () => {
       .toThrow('e.md aparece em "Clientes" e em "Infra"');
   });
 
-  it('move decisão de banco de "Autorização e transversais" para "Infra" pelo título', () => {
-    const readme = `${README_INTRO}\n## Autorização e transversais\n\n- 2026-10-07 — [g](g.md)\n`;
-    const { text } = buildIndex({
-      files: { 'g.md': decision('`ageniza_app` não tem DELETE', '2026-10-07') },
-      readme,
-    });
-
-    expect(text).toMatch(/## Infra\n\n- 2026-10-07 — \[`ageniza_app` não tem DELETE\]\(g\.md\)/);
-    expect(text).toMatch(/## Autorização e transversais\n\n_Nenhuma decisão\._/);
-  });
-
-  it('move decisão de mídia de "Autorização e transversais" para "Mídia", e não mexe em Conteúdo', () => {
-    const readme = `${README_INTRO}\n## Conteúdo\n\n- 2026-10-01 — [c](c.md)\n\n## Autorização e transversais\n\n- 2026-09-16 — [m](m.md)\n`;
-    const { text } = buildIndex({
+  it('não move decisão pelo título: a seção que o índice dá é a que vale', () => {
+    const readme = `${README_INTRO}\n## Autorização e transversais\n\n- 2026-09-16 — [m](m.md)\n- 2026-10-07 — [g](g.md)\n\n## Conteúdo\n\n- 2026-10-01 — [c](c.md)\n`;
+    const { text, warnings } = buildIndex({
       files: {
         'c.md': decision('Conteúdo: pastas de mídia', '2026-10-01'),
         'm.md': decision('Mídia vai direto do navegador', '2026-09-16'),
+        'g.md': decision('`ageniza_app` não tem DELETE', '2026-10-07'),
       },
       readme,
     });
 
-    expect(text).toContain('## Mídia\n\n- 2026-09-16 — [Mídia vai direto do navegador](m.md)\n');
+    expect(text).toContain(
+      '## Autorização e transversais\n\n- 2026-09-16 — [Mídia vai direto do navegador](m.md)\n- 2026-10-07 — [`ageniza_app` não tem DELETE](g.md)\n',
+    );
     expect(text).toContain('## Conteúdo\n\n- 2026-10-01 — [Conteúdo: pastas de mídia](c.md)\n');
+    expect(text).toContain('## Mídia\n\n_Nenhuma decisão._\n');
+    expect(text).toContain('## Infra\n\n_Nenhuma decisão._\n');
+    expect(warnings).toEqual([]);
+  });
+
+  it('avisa seção do índice que não está em MODULES e manda suas decisões para "A classificar"', () => {
+    const readme = `${README_INTRO}\n## Módulo novo\n\n- 2026-01-01 — [n](n.md)\n`;
+    const { text, warnings } = buildIndex({
+      files: { 'n.md': decision('N', '2026-01-01') },
+      readme,
+    });
+
+    expect(text).toContain('## A classificar\n\n- 2026-01-01 — [N](n.md)\n');
+    expect(warnings).toContain('seção "Módulo novo" não está em MODULES: as decisões dela vão para "A classificar"');
+  });
+
+  it('normaliza CRLF do índice: a saída tem só LF, inclusive na introdução', () => {
+    const readme = `# Índice\r\n\r\nTexto de apoio.\r\n\r\n## Infra\r\n\r\n- 2026-01-01 — [a](a.md)\r\n`;
+    const { text } = buildIndex({
+      files: { 'a.md': decision('A', '2026-01-01') },
+      readme,
+    });
+
+    expect(text).not.toContain('\r');
+    expect(text.startsWith('# Índice\n\nTexto de apoio.\n')).toBe(true);
+    expect(text).toContain('## Infra\n\n- 2026-01-01 — [A](a.md)\n');
   });
 
   it('ordena por data dentro de cada módulo', () => {

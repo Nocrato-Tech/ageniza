@@ -3,8 +3,8 @@
 //
 // Título (linha "# ") e data ("**Data.**") vêm de cada arquivo. O módulo de cada decisão
 // vem das seções atuais do índice: o índice guarda o agrupamento, e uma decisão nova sem
-// linha cai em "A classificar" até ser movida para o módulo. As regras de MOVES mudam a
-// seção de uma faixa inteira pelo título. Roda fora dos PRs de entrega, ao fim de cada onda.
+// linha cai em "A classificar" até ser movida para o módulo. O script não move decisão pelo
+// título. Módulo novo exige editar MODULES. Roda fora dos PRs de entrega, ao fim de cada onda.
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -23,21 +23,19 @@ export const MODULES = [
   UNCLASSIFIED,
 ];
 
-// Decisões de "Autorização e transversais" que são de banco ou de mídia saem para a faixa certa.
-export const MOVES = [
-  {
-    from: 'Autorização e transversais',
-    to: 'Infra',
-    title: /^`ageniza_app` |^O SQL do papel de runtime|^Grants por coluna/,
-  },
-  {
-    from: 'Autorização e transversais',
-    to: 'Mídia',
-    title: /mídia|upload|original nunca|quota|cota de armazenamento|vídeo|pasta pai|envio de mídia/i,
-  },
-];
-
 const LINK = /\]\(([^)\s]+\.md)\)/;
+
+// Fim de linha CRLF (core.autocrlf=true no Windows) vira LF antes de qualquer leitura.
+const toLf = (text) => text.replace(/\r\n/g, '\n');
+
+// Seções "## " do índice que não estão em MODULES: as decisões delas caem em "A classificar".
+export function unknownSections(readme) {
+  return readme
+    .split('\n')
+    .filter((line) => line.startsWith('## '))
+    .map((line) => line.slice(3).trim())
+    .filter((section) => !MODULES.includes(section));
+}
 
 export function parseGroups(readme) {
   const groups = Object.fromEntries(MODULES.map((m) => [m, []]));
@@ -68,12 +66,17 @@ export function readDecision(text, name) {
 }
 
 // Monta o índice. `files` é { nome: conteúdo }; `readme` é o índice atual (intro e agrupamento).
-export function buildIndex({ files, readme }) {
+export function buildIndex({ files, readme: rawReadme }) {
+  const readme = toLf(rawReadme);
   const intro = readme.split('\n## ')[0].trimEnd() + '\n';
   const warnings = [];
   const decisions = Object.fromEntries(
-    Object.entries(files).map(([name, text]) => [name, readDecision(text, name)]),
+    Object.entries(files).map(([name, text]) => [name, readDecision(toLf(text), name)]),
   );
+
+  for (const section of unknownSections(readme)) {
+    warnings.push(`seção "${section}" não está em MODULES: as decisões dela vão para "${UNCLASSIFIED}"`);
+  }
 
   const groups = parseGroups(readme);
   const placed = new Map();
@@ -89,16 +92,6 @@ export function buildIndex({ files, readme }) {
       placed.set(name, module);
       return true;
     });
-  }
-
-  for (const move of MOVES) {
-    for (const name of [...groups[move.from]]) {
-      if (move.title.test(decisions[name].title)) {
-        groups[move.from] = groups[move.from].filter((n) => n !== name);
-        groups[move.to].push(name);
-        placed.set(name, move.to);
-      }
-    }
   }
 
   for (const name of Object.keys(decisions).sort()) {
