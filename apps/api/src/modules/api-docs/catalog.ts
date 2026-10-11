@@ -11,6 +11,7 @@ import {
   AgencyClientMemberPathParamsSchema,
   AgencyClientPathParamsSchema,
   AgencyClientContentPathParamsSchema,
+  AgencyClientContentTaskPathParamsSchema,
   AgencyClientPersonaPathParamsSchema,
   AgencyClientStoryScriptPathParamsSchema,
   AgencyClientThreadPathParamsSchema,
@@ -52,9 +53,12 @@ import {
   ContentDetailSchema,
   ContentPeriodQuerySchema,
   ContentPeriodResponseSchema,
+  ContentTaskSchema,
   CreateContentRequestSchema,
+  CreateContentTaskRequestSchema,
   PublishContentRequestSchema,
   RescheduleContentRequestSchema,
+  ReturnContentTaskRequestSchema,
   CollaboratorDetailQuerySchema,
   CollaboratorInvitationRequestSchema,
   CollaboratorJobTitlesQuerySchema,
@@ -125,6 +129,7 @@ import {
   UploadClientPhotoRequestSchema,
   UploadClientPhotoResponseSchema,
   UpdateContentRequestSchema,
+  UpdateContentTaskRequestSchema,
   UploadMyPhotoRequestSchema,
   UploadMyPhotoResponseSchema
 } from '@ageniza/contracts';
@@ -205,7 +210,7 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
   clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; agendar, desmarcar, arquivar e reativar o contrato; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.',
-  contents: 'Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar.',
+  contents: 'Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; e as subtarefas: criar, editar, entregar, aprovar e devolver.',
   collaborators: 'A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.',
   media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia; as pastas de mídia de um cliente, a listagem do que há nelas e a remoção.',
   profile: 'Edição do próprio nome e da própria foto de perfil.',
@@ -338,20 +343,22 @@ const contentExample = {
   createdAt: '2026-10-11T12:00:00.000Z'
 } as const;
 
+const contentTaskExample = {
+  id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0',
+  title: 'Gravar o vídeo',
+  description: null,
+  assignee: { membershipId, name: 'Ana Souza' },
+  dueOn: '2026-10-15',
+  status: 'pending',
+  returnComment: null,
+  approvedBy: null,
+  approvedAt: null
+} as const;
+
 const contentDetailExample = {
   ...contentExample,
   media: [{ id: assetId, position: 1 }],
-  tasks: [{
-    id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0',
-    title: 'Gravar o vídeo',
-    description: null,
-    assignee: { membershipId, name: 'Ana Souza' },
-    dueOn: '2026-10-15',
-    status: 'pending',
-    returnComment: null,
-    approvedBy: null,
-    approvedAt: null
-  }],
+  tasks: [contentTaskExample],
   conversation: { threadId: null, commentCount: 0, lastCommentAt: null }
 } as const;
 
@@ -1337,6 +1344,167 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
       { status: 409, code: 'CONTENT_STATE', message: 'Só um conteúdo cancelado é reagendado.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/contents/:contentId/tasks',
+    operationId: 'createContentTask',
+    module: 'contents',
+    summary: 'Cria uma subtarefa do conteúdo',
+    description: [
+      'A subtarefa nasce pendente. Exige `conteudo.operar` e também `conteudo.visualizar`. `assigneeMembershipId` é o vínculo ativo',
+      'de um colaborador da agência que vê Conteúdo (nunca um id de usuário); qualquer outro vínculo (removido, de outra agência, do',
+      'portal, inexistente ou de quem não vê Conteúdo) é `400 CONTENT_TASK_ASSIGNEE_INVALID`, sem dizer qual foi o motivo. O título',
+      'segue o do conteúdo (uma linha, até 120 caracteres) e a descrição aceita quebras de linha, até 20000 bytes; texto só com',
+      'caractere de controle ou invisível é `400 VALIDATION_ERROR`. Conteúdo publicado ou cancelado não recebe subtarefa',
+      '(`409 CONTENT_TASK_STATE`). Um conteúdo tem até 50 subtarefas, em qualquer estado: a 51ª é `409 CONTENT_TASK_LIMIT`. O percentual do conteúdo (`tasksApproved` sobre `tasksTotal` da consulta por período) conta a nova.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientContentPathParamsSchema,
+    body: CreateContentTaskRequestSchema,
+    requestExample: { title: 'Gravar o vídeo', description: null, assigneeMembershipId: membershipId, dueOn: '2026-10-15' },
+    responses: [{ status: 201, description: 'Subtarefa criada, pendente.', schema: ContentTaskSchema, example: contentTaskExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'CONTENT_TASK_ASSIGNEE_INVALID' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'CONTENT_TASK_STATE', message: 'Um conteúdo publicado ou cancelado não recebe subtarefas.' },
+      { status: 409, code: 'CONTENT_TASK_LIMIT' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'patch',
+    path: '/agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId',
+    operationId: 'updateContentTask',
+    module: 'contents',
+    summary: 'Edita uma subtarefa do conteúdo',
+    description: [
+      'Qualquer subconjunto de `title`, `description` (`null` limpa), `assigneeMembershipId` (o vínculo ativo do novo responsável) e',
+      '`dueOn`; exige `conteudo.operar` e também `conteudo.visualizar`. O estado nunca é um campo: ele só muda por entregar, aprovar',
+      'e devolver. As regras do responsável são as da criação (`400 CONTENT_TASK_ASSIGNEE_INVALID`). Uma subtarefa aprovada, ou de um',
+      'conteúdo publicado ou cancelado, não se edita (`409 CONTENT_TASK_STATE`). A subtarefa precisa ser do conteúdo do caminho, senão',
+      '`404`.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientContentTaskPathParamsSchema,
+    body: UpdateContentTaskRequestSchema,
+    requestExample: { dueOn: '2026-10-16', assigneeMembershipId: membershipId },
+    responses: [{ status: 200, description: 'Subtarefa atualizada.', schema: ContentTaskSchema, example: { ...contentTaskExample, dueOn: '2026-10-16' } }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'CONTENT_TASK_ASSIGNEE_INVALID' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Task not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'CONTENT_TASK_STATE', message: 'Uma subtarefa aprovada, ou de um conteúdo publicado ou cancelado, não é editada.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/deliver',
+    operationId: 'deliverContentTask',
+    module: 'contents',
+    summary: 'Entrega uma subtarefa',
+    description: [
+      'Só a pessoa responsável pela subtarefa entrega (`403` para qualquer outra, com ou sem outras permissões); a rota exige apenas',
+      '`conteudo.visualizar`, porque quem entrega é um valor da linha e não uma permissão. A subtarefa pendente passa a entregue; entregar',
+      'de novo uma entregue não muda nada. Uma subtarefa devolvida volta a pendente com o comentário e, ao ser entregue outra vez,',
+      'o comentário some. Conteúdo publicado ou cancelado não muda (`409 CONTENT_TASK_STATE`).'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientContentTaskPathParamsSchema,
+    responses: [{ status: 200, description: 'Subtarefa entregue.', schema: ContentTaskSchema, example: { ...contentTaskExample, status: 'delivered' } }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Task not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'CONTENT_TASK_STATE', message: 'Só uma subtarefa pendente, de um conteúdo que não foi publicado nem cancelado, é entregue.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/approve',
+    operationId: 'approveContentTask',
+    module: 'contents',
+    summary: 'Aprova uma subtarefa entregue',
+    description: [
+      'Só a pessoa responsável pelo CONTEÚDO, ou quem tem `conteudo.aprovar_pela_agencia`, aprova (`403` para qualquer outra); a rota exige',
+      'apenas `conteudo.visualizar`, porque o responsável do conteúdo é um valor da linha. A subtarefa entregue passa a aprovada, e',
+      'quem aprovou e quando são fixados pelo banco; aprovar de novo uma aprovada não muda nada e mantém quem aprovou primeiro.',
+      'O percentual do conteúdo passa a contar a subtarefa. Conteúdo publicado ou cancelado não muda (`409 CONTENT_TASK_STATE`).'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientContentTaskPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'Subtarefa aprovada.',
+      schema: ContentTaskSchema,
+      example: { ...contentTaskExample, status: 'approved', approvedBy: { name: 'Ana Souza', side: 'agency' }, approvedAt: '2026-10-11T12:30:00.000Z' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Task not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'CONTENT_TASK_STATE', message: 'Só uma subtarefa entregue, de um conteúdo que não foi publicado nem cancelado, é aprovada.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/return',
+    operationId: 'returnContentTask',
+    module: 'contents',
+    summary: 'Devolve uma subtarefa entregue, com comentário',
+    description: [
+      'Quem pode é quem aprova (a pessoa responsável pelo conteúdo ou `conteudo.aprovar_pela_agencia`; `403` para qualquer outra). A',
+      'subtarefa entregue volta a pendente e o comentário fica nela (`returnComment`), até ser entregue de novo. O comentário é',
+      'obrigatório, sem caractere de controle nem invisível (`400 VALIDATION_ERROR`), com até 5000 bytes. Ele não vai para a conversa',
+      'do conteúdo: essa conversa é do cliente, e o portal nunca vê subtarefa.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientContentTaskPathParamsSchema,
+    body: ReturnContentTaskRequestSchema,
+    requestExample: { comment: 'Falta a legenda em português no vídeo.' },
+    responses: [{
+      status: 200,
+      description: 'Subtarefa pendente de novo, com o comentário.',
+      schema: ContentTaskSchema,
+      example: { ...contentTaskExample, returnComment: 'Falta a legenda em português no vídeo.' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'CONTENT_TASK_COMMENT_INVALID' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Task not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'CONTENT_TASK_STATE', message: 'Só uma subtarefa entregue, de um conteúdo que não foi publicado nem cancelado, é devolvida.' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
   },
