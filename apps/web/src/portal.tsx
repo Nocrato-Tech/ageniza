@@ -33,7 +33,7 @@ export const usePortalClient = (): PortalClientResponse => {
 };
 
 /** Same shape the API guard accepts; a malformed id never becomes a request (security review #190). */
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const PORTAL_TABS = [
   { slug: 'inicio', label: 'Início' },

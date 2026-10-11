@@ -15,6 +15,7 @@ import { createQueryClient } from './query.js';
 import { portalClientQueryKey } from './portal.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
+import { todayInSaoPaulo } from './content-dates.js';
 import { createPortalContentsApi } from './portal-contents-fixture.js';
 import { createPortalScriptsApi, portalStudyBody, scriptError } from './portal-fixture.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
@@ -193,6 +194,9 @@ const renderPortal = (impl: typeof fetch, entry = portalUrl()) => {
   return { container: rendered.container, probe, queryClient };
 };
 
+/** What the client's portal never says: the words of the system and of the agency's side. */
+const INTERNAL_TERMS = /thread|status|arquivad|onboarding|persona/i;
+
 const nav = () => screen.getByRole('navigation', { name: 'Navegação do portal' });
 const clickTab = (label: string): void => { fireEvent.click(within(nav()).getByRole('link', { name: label })); };
 
@@ -329,7 +333,23 @@ describe('client portal shell (#141)', () => {
     clickTab('Conteúdos');
     await screen.findByRole('heading', { name: 'Conteúdos' });
 
-    expect(container.textContent).not.toMatch(/thread|status|arquivad|onboarding|persona/i);
+    expect(container.textContent).not.toMatch(INTERNAL_TERMS);
+  });
+
+  it('never shows an internal term in the contents of the portal, with the month, with the month empty and with the filter empty', async () => {
+    const contents = createPortalContentsApi(CLIENT_ID);
+    contents.seed({ title: 'Um post do mês', publishOn: `${todayInSaoPaulo().slice(0, 8)}01`, status: 'approved' });
+    const { container } = renderPortal(makeFetch({ contents }).impl, portalUrl('conteudos'));
+    await screen.findByText('Um post do mês');
+    expect(container.textContent).not.toMatch(INTERNAL_TERMS);
+
+    fireEvent.change(screen.getByLabelText('Filtro'), { target: { value: 'adjusting' } });
+    expect(await screen.findByText('Nenhum conteúdo nesta situação neste mês')).toBeTruthy();
+    expect(container.textContent).not.toMatch(INTERNAL_TERMS);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }));
+    expect(await screen.findByText('Nenhum conteúdo planejado para este mês')).toBeTruthy();
+    expect(container.textContent).not.toMatch(INTERNAL_TERMS);
   });
 
   it('turns the next navigation into the ordinary not-found when the link is gone', async () => {

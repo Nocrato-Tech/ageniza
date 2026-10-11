@@ -11,12 +11,13 @@
 4. **"O que precisa de você"** mostra os seis conteúdos aguardando aprovação de data mais próxima, cada um com a capa, o título e o dia, e a contagem **da API** entre parênteses ("(8)"); com mais de seis, diz "Mostrando 6 de 8". Não depende do mês que a pessoa está vendo, e não existe quando nada espera.
 5. **O endereço antigo continua valendo.** `/portal/:clienteId/calendario` redireciona para `/portal/:clienteId/conteudos`, trocando a entrada do histórico (voltar não cai no endereço velho) e levando a query. O e-mail do #571 não muda.
 6. **O card é um link para o post em tela cheia** (`/portal/:clienteId/conteudos/:conteudoId`: legenda, mídias, Aprovar, Pedir ajuste, conversa, que são das #270 e #600). O título é o link e a caixa dele cobre o card inteiro; vale para o card da lista, inclusive o de um conteúdo em produção (cujo post é só título, data e formato), e para a casa do bloco "O que precisa de você". As casas do feed, que são a prévia do perfil, não são links.
+7. **O tour do portal segue só com Início e Marca no MVP; Conteúdos fica fora dele.** A `specs/clientes.md` (§ do tour) previa que Calendário entrasse no tour "com o seu módulo"; com o item novo da barra, o tour poderia ganhar um passo, mas o dono pediu para não abrir feature nova agora. O item **Conteúdos** existe na barra e funciona, e o tour não aponta para ele. Quando o dono quiser o passo, é uma entrada a mais no tour (`portal-tour.tsx`) e uma linha na SPEC. Este item é próprio e tem a sua validação.
 
 **Consequência.**
-- O rótulo do filtro é "Filtro", como no esboço: a tela do cliente não usa a palavra "status" (o teste do portal que proíbe termos internos continua valendo).
+- O rótulo do filtro é "Filtro" e o estado vazio do filtro diz "Nenhum conteúdo nesta situação neste mês", como no esboço: a tela do cliente não usa a palavra "status" (o teste do portal que proíbe termos internos continua valendo e cobre o mês, o mês vazio e o filtro vazio).
 - Quem decidir mostrar "Publicado" como "Aprovado" para o cliente, ou tirar a opção, muda uma linha do mapa de rótulos e uma do filtro.
 - A rota do post é de outro PR (#600): sem ela, o link cai no "não encontrado" do portal, e os dois PRs entram na mesma janela.
 
 **Origem.** Issue #269, decidido pelo implementador a partir do esboço da SPEC.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Pendente de validação do dono (inclusive o item 7, que o maestro decidiu a pedido do dono para não abrir feature nova).

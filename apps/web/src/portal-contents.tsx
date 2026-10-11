@@ -201,7 +201,7 @@ export function PortalContentsPage() {
           : vista === 'feed'
             ? <Feed clientId={clientId} contents={shown} today={today} handle={client.instagramHandle} />
             : shown.length === 0
-              ? <p className="portal-contents__empty">Nenhum conteúdo com este status neste mês</p>
+              ? <p className="portal-contents__empty">Nenhum conteúdo nesta situação neste mês</p>
               : <MonthList clientId={clientId} contents={shown} />}
   </section>;
 }

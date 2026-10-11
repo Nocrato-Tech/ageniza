@@ -623,7 +623,7 @@ describe('the portal Conteúdos (#269)', () => {
       await ready();
       await screen.findByText('Só aprovado');
       fireEvent.change(screen.getByLabelText('Filtro'), { target: { value: 'adjusting' } });
-      expect(await screen.findByText('Nenhum conteúdo com este status neste mês')).toBeTruthy();
+      expect(await screen.findByText('Nenhum conteúdo nesta situação neste mês')).toBeTruthy();
       expect(screen.queryByText('Só aprovado')).toBeNull();
       expect(screen.queryByText('Nenhum conteúdo planejado para este mês')).toBeNull();
     });

@@ -425,7 +425,9 @@ describe('one content', () => {
     const folderId = await w.folderOf(clientId);
     const cover = await w.seedAsset(clientId, folderId, { category: 'image' });
     // The first place goes to the asset with the HIGHER id, so an answer ordered by id is the wrong one.
-    const [lower, higher] = [await w.seedAsset(clientId, folderId, { category: 'image' }), await w.seedAsset(clientId, folderId, { category: 'image' })].sort();
+    const ids = [await w.seedAsset(clientId, folderId, { category: 'image' }), await w.seedAsset(clientId, folderId, { category: 'video' })];
+    const [lower, higher] = [...ids].sort();
+    const kindOf = (id: string): 'image' | 'video' => (id === ids[0] ? 'image' : 'video');
     const contentId = await w.seedContent(clientId, { status: 'awaiting_approval', format: 'carousel', title: 'Carrossel', caption: 'Legenda\ncom quebra', folderId, coverAssetId: cover });
     await w.attach(contentId, [higher, lower]);
     await seedInternal(contentId);
@@ -435,7 +437,7 @@ describe('one content', () => {
       expect(reply.json(), person).toEqual({
         id: contentId, title: 'Carrossel', platform: 'instagram', format: 'carousel', publishOn: '2026-10-20', publishAtTime: '18:30',
         status: 'awaiting_approval', coverAssetId: cover, publishedOn: null,
-        caption: 'Legenda\ncom quebra', revision: 1, media: [{ id: higher, position: 1 }, { id: lower, position: 2 }]
+        caption: 'Legenda\ncom quebra', revision: 1, media: [{ id: higher, position: 1, kind: kindOf(higher) }, { id: lower, position: 2, kind: kindOf(lower) }]
       });
       expectNoInternal(reply);
     }
@@ -480,7 +482,7 @@ describe('one content', () => {
     await w.attach(contentId, [ready, pending, removed]);
 
     const reply = await get('portalOne', oneUrl(clientId, contentId));
-    expect(reply.json().media).toEqual([{ id: ready, position: 1 }]);
+    expect(reply.json().media).toEqual([{ id: ready, position: 1, kind: 'image' }]);
   });
 
   it('never selects from the table of the contents: the portal reads by the function that answers for the link', async () => {
@@ -510,7 +512,7 @@ describe('approving', () => {
     expect(reply.statusCode).toBe(200);
     expect(reply.json()).toEqual({
       id: contentId, title: 'Post', platform: 'instagram', format: 'image', publishOn: '2026-10-20', publishAtTime: '18:30',
-      status: 'approved', coverAssetId: null, publishedOn: null, caption: 'Legenda', revision: 1, media: [{ id: asset, position: 1 }]
+      status: 'approved', coverAssetId: null, publishedOn: null, caption: 'Legenda', revision: 1, media: [{ id: asset, position: 1, kind: 'image' }]
     });
     expectNoInternal(reply);
     const row = await w.contentRow(contentId);

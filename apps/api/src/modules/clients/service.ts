@@ -20,6 +20,7 @@ import {
 import { databaseErrorCode, raw, type DatabaseClient, type SqlBinding } from '@ageniza/database';
 
 import { foldTextSql } from '../../plugins/infra/sql-text.js';
+import { contentDeadlineSql } from '../contents/deadline-sql.js';
 import { latestCommentSideSql, openThreadSql } from './thread-state.js';
 
 export type ClientTransaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
@@ -374,11 +375,10 @@ export const listClients = async (
     : 'null::bigint';
   // Vendas e Financeiro do not see Conteúdo (specs/conteudo.md section 2): a caller without
   // `conteudo.visualizar` gets nulls, not zeros, and the policy of `contents` is the second barrier.
-  // "Atrasado" is derived (specs/conteudo.md section 4): a planned day before today in São Paulo that
-  // is neither published nor cancelled. "Prazo em dois dias" is the same set with the planned day from
-  // today to two days ahead, both ends in. "Pendente" is the agency's own work (em produção, em ajuste),
-  // "em ajuste" is the second of those on its own, and "em revisão" is what waits for the client
-  // (aguardando aprovação).
+  // "Atrasado" and "prazo em dois dias" are the one definition of `contentDeadline` (packages/contracts), written as SQL by
+  // `contentDeadlineSql`. "Pendente" is the agency's own work (em produção, em ajuste), "em ajuste" is the second of those on its
+  // own, and "em revisão" is what waits for the client (aguardando aprovação).
+  const deadline = contentDeadlineSql('app_private.sao_paulo_date(?::timestamptz)');
   const contentSignalsCte = filters.includeContentSignals
     ? `content_signals as materialized (
         select
@@ -386,15 +386,12 @@ export const listClients = async (
           count(*) filter (where content.status in ('in_production', 'adjusting')) as pending_count,
           count(*) filter (where content.status = 'awaiting_approval') as in_review_count,
           count(*) filter (where content.status = 'adjusting') as adjusting_count,
-          count(*) filter (where content.publish_on < app_private.sao_paulo_date(?::timestamptz)) as overdue_count,
-          count(*) filter (
-            where content.publish_on between app_private.sao_paulo_date(?::timestamptz)
-              and app_private.sao_paulo_date(?::timestamptz) + 2
-          ) as due_soon_count
+          count(*) filter (where ${deadline.overdue}) as overdue_count,
+          count(*) filter (where ${deadline.dueSoon}) as due_soon_count
         from public.contents content
         join public.clients content_client on content_client.id = content.client_id
         where content_client.agency_id = ?::uuid
-          and content.status in ('in_production', 'adjusting', 'awaiting_approval', 'approved')
+          and content.status in (${deadline.openStatuses})
         group by content.client_id
       )`
     : '';

@@ -27,6 +27,7 @@ import { ClientAccessTab } from './portal-access.js';
 import { PortalAreaLayout, PortalHomePage, PortalSkeletonPage } from './portal.js';
 import { PortalContentsPage } from './portal-contents.js';
 import { PortalBrandPage } from './portal-brand.js';
+import { PortalContentPage } from './portal-content.js';
 import { ResetPasswordPage } from './reset-password.js';
 import { SessionWatch } from './session-watch.js';
 import { LoadingPage, NotFoundPage, SessionGate } from './status-pages.js';
@@ -140,6 +141,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route index element={<Navigate to="inicio" replace />} />
       <Route path="inicio" element={<PortalHomePage />} />
       <Route path="conteudos" element={<PortalContentsPage />} />
+      <Route path="conteudos/:conteudoId" element={<PortalContentPage />} />
       <Route path="calendario" element={<PortalCalendarRedirect />} />
       <Route path="marca" element={<PortalBrandPage />} />
       <Route path="relatorios" element={<PortalSkeletonPage title="Relatórios" description="Aqui você vai ver os resultados do trabalho que sua agência faz para você." />} />

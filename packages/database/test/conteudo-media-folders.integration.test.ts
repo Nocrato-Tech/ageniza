@@ -310,7 +310,7 @@ describe('the default folders (issue #247)', () => {
 
 describe('the grants on media_folders (issue #247)', () => {
   it('lets ageniza_app select, insert only client_id, parent_id and name, update only name, and delete nothing', async () => {
-    expect(await columnsWithPrivilege('media_folders', 'insert')).toEqual(['client_id', 'id', 'name', 'parent_id']);
+    expect(await columnsWithPrivilege('media_folders', 'insert')).toEqual(['client_id', 'name', 'parent_id']);
     expect(await columnsWithPrivilege('media_folders', 'update')).toEqual(['name']);
 
     const { rows } = await getOwner().knex.raw<{ rows: Array<Record<string, boolean>> }>(`
@@ -367,12 +367,12 @@ describe('the grants on media_folders (issue #247)', () => {
 
 describe('the two levels, and the folder of the same client (issue #247)', () => {
   it('lets an operator create an own first-level folder and a working folder inside it', async () => {
-    const parent = randomUUID();
-    const child = randomUUID();
+    let parent = '';
+    let child = '';
 
     await asUser(managerA, async (transaction) => {
-      await transaction('media_folders').insert({ id: parent, client_id: clientA1, name: 'Campanha de inverno' });
-      await transaction('media_folders').insert({ id: child, client_id: clientA1, parent_id: parent, name: 'Ensaio da loja' });
+      [{ id: parent }] = await transaction('media_folders').insert({ client_id: clientA1, name: 'Campanha de inverno' }).returning('id');
+      [{ id: child }] = await transaction('media_folders').insert({ client_id: clientA1, parent_id: parent, name: 'Ensaio da loja' }).returning('id');
     });
 
     expect(await getOwner().knex('media_folders').where({ id: child }).first('parent_id', 'client_id', 'is_default'))
@@ -381,28 +381,28 @@ describe('the two levels, and the folder of the same client (issue #247)', () =>
 
   it('lets a working folder live inside a default folder', async () => {
     const parent = await firstLevelFolderId(clientA1, 'Imagens');
-    const child = randomUUID();
 
-    await asUser(adminA, (transaction) => transaction('media_folders').insert({ id: child, client_id: clientA1, parent_id: parent, name: 'Fotos da loja' }));
+    const [{ id: child }] = await asUser(adminA, (transaction) => transaction('media_folders').insert({ client_id: clientA1, parent_id: parent, name: 'Fotos da loja' }).returning('id'));
 
     expect(await getOwner().knex('media_folders').where({ id: child }).first('parent_id')).toEqual({ parent_id: parent });
   });
 
   it('refuses a third level, as the application and as the schema owner, leaving no row', async () => {
-    const top = randomUUID();
-    const second = randomUUID();
+    let top = '';
+    let second = '';
     await asUser(adminA, async (transaction) => {
-      await transaction('media_folders').insert({ id: top, client_id: clientA1, name: `Nível 1 ${top}` });
-      await transaction('media_folders').insert({ id: second, client_id: clientA1, parent_id: top, name: `Nível 2 ${second}` });
+      [{ id: top }] = await transaction('media_folders').insert({ client_id: clientA1, name: `Nível 1 ${randomUUID()}` }).returning('id');
+      [{ id: second }] = await transaction('media_folders').insert({ client_id: clientA1, parent_id: top, name: `Nível 2 ${randomUUID()}` }).returning('id');
     });
     const third = randomUUID();
 
-    await expect(asUser(adminA, (transaction) => transaction('media_folders').insert({ id: third, client_id: clientA1, parent_id: second, name: 'Nível 3' })))
+    await expect(asUser(adminA, (transaction) => transaction('media_folders').insert({ client_id: clientA1, parent_id: second, name: 'Nível 3' })))
       .rejects.toMatchObject(foreignKey('media_folders_parent_fk'));
     await expect(getOwner().knex('media_folders').insert({ id: third, client_id: clientA1, parent_id: second, name: 'Nível 3' }))
       .rejects.toMatchObject(foreignKey('media_folders_parent_fk'));
 
     expect(await getOwner().knex('media_folders').where({ id: third }).select('id')).toHaveLength(0);
+    expect(await getOwner().knex('media_folders').where({ parent_id: second }).select('id')).toHaveLength(0);
   });
 
   it('refuses a parent that belongs to another client of the same agency, and to a client of another agency', async () => {
@@ -411,13 +411,14 @@ describe('the two levels, and the folder of the same client (issue #247)', () =>
     const id = randomUUID();
 
     for (const parent of [otherClientParent, otherAgencyParent]) {
-      await expect(asUser(adminA, (transaction) => transaction('media_folders').insert({ id, client_id: clientA1, parent_id: parent, name: 'Sequestrada' })), parent)
+      await expect(asUser(adminA, (transaction) => transaction('media_folders').insert({ client_id: clientA1, parent_id: parent, name: 'Sequestrada' })), parent)
         .rejects.toMatchObject(foreignKey('media_folders_parent_fk'));
       await expect(getOwner().knex('media_folders').insert({ id, client_id: clientA1, parent_id: parent, name: 'Sequestrada' }), parent)
         .rejects.toMatchObject(foreignKey('media_folders_parent_fk'));
     }
 
     expect(await getOwner().knex('media_folders').where({ id }).select('id')).toHaveLength(0);
+    expect(await getOwner().knex('media_folders').where({ client_id: clientA1, name: 'Sequestrada' }).select('id')).toHaveLength(0);
   });
 
   it.each([
@@ -481,9 +482,9 @@ describe('who reads and writes folders (issue #247)', () => {
   ] as const)('lets %s create a folder', async (_label, user) => {
     const id = randomUUID();
 
-    await asUser(user(), (transaction) => transaction('media_folders').insert({ id, client_id: clientA2, name: `Pasta ${id}` }));
+    await asUser(user(), (transaction) => transaction('media_folders').insert({ client_id: clientA2, name: `Pasta ${id}` }));
 
-    expect(await getOwner().knex('media_folders').where({ id }).select('id')).toHaveLength(1);
+    expect(await getOwner().knex('media_folders').where({ client_id: clientA2, name: `Pasta ${id}` }).select('id')).toHaveLength(1);
   });
 
   it.each([
@@ -496,19 +497,21 @@ describe('who reads and writes folders (issue #247)', () => {
   ] as const)('refuses %s a folder', async (_label, user) => {
     const id = randomUUID();
 
-    await expect(asUser(user(), (transaction) => transaction('media_folders').insert({ id, client_id: clientA1, name: `Pasta ${id}` })))
+    await expect(asUser(user(), (transaction) => transaction('media_folders').insert({ client_id: clientA1, name: `Pasta ${id}` })))
       .rejects.toMatchObject(rlsViolation);
 
-    expect(await getOwner().knex('media_folders').where({ id }).select('id')).toHaveLength(0);
+    expect(await getOwner().knex('media_folders').where({ name: `Pasta ${id}` }).select('id')).toHaveLength(0);
+    expect(await getOwner().knex('media_folders').where({ client_id: clientA1, name: 'Sequestrada' }).select('id')).toHaveLength(0);
   });
 
   it('refuses a folder for an archived client', async () => {
     const id = randomUUID();
 
-    await expect(asUser(adminA, (transaction) => transaction('media_folders').insert({ id, client_id: clientArchived, name: `Pasta ${id}` })))
+    await expect(asUser(adminA, (transaction) => transaction('media_folders').insert({ client_id: clientArchived, name: `Pasta ${id}` })))
       .rejects.toMatchObject(rlsViolation);
 
-    expect(await getOwner().knex('media_folders').where({ id }).select('id')).toHaveLength(0);
+    expect(await getOwner().knex('media_folders').where({ name: `Pasta ${id}` }).select('id')).toHaveLength(0);
+    expect(await getOwner().knex('media_folders').where({ client_id: clientA1, name: 'Sequestrada' }).select('id')).toHaveLength(0);
   });
 
   it('lets an operator rename an own folder, and changes nothing for a default folder, an archived client or another role', async () => {
