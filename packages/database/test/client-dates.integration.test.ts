@@ -100,7 +100,8 @@ describe('the closing-date functions', () => {
   // keeps a clock of its own: both ask the function above, whose fixed-instant tests are the ones
   // that turn red when the zone changes.
   it.each([
-    'app_private.archive_due_clients()',
+    'app_private.archive_due_client(uuid)',
+    'app_private.due_client_ids()',
     'app_private.set_client_closing_date(uuid, date)'
   ])('%s asks sao_paulo_date for today and names no time zone of its own', async (signature) => {
     const definition = await definitionOf(signature);
@@ -112,6 +113,8 @@ describe('the closing-date functions', () => {
 
   it.each([
     'app_private.archive_due_clients()',
+    'app_private.archive_due_client(uuid)',
+    'app_private.due_client_ids()',
     'app_private.set_client_closing_date(uuid, date)'
   ])('%s is still security definer, with a fixed search_path, closed to PUBLIC and open to the application role', async (signature) => {
     const { rows } = await raw<{ rows: readonly { definer: boolean; fixed_path: boolean; app: boolean; public_role: boolean }[] }>(getOwner().knex, `
