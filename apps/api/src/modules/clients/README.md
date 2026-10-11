@@ -75,11 +75,12 @@ declara é 400.
   cliente que o índice `client_thread_comments (thread_id, created_at)` da #122 atende. Conta só
   conversa do estudo de marca (`brandStudyThreadSql`): a conversa de um conteúdo fica fora, aqui, no
   resumo do detalhe e no Início do portal (decisão de 2026-10-11).
-- **`contentIndicators`** (`pending`, `inReview`, `overdue`) vem de uma CTE materializada sobre
+- **`contentIndicators`** (`pending`, `inReview`, `overdue`, `adjusting`, `dueSoon`) vem de uma CTE materializada sobre
   `contents`, agrupada por cliente e filtrada pela agência, **uma vez por página**. Pendente é em
   produção ou em ajuste; em revisão é aguardando aprovação; atrasado é a data planejada anterior ao dia de
   hoje em São Paulo (`app_private.sao_paulo_date` sobre o instante `asOf` que a rota passa), sem
-  publicado nem cancelado. **Só é computada** para quem tem `conteudo.visualizar` (ou é Owner): para os
+  publicado nem cancelado. `adjusting` é só o em ajuste (já contado em `pending`) e `dueSoon` é a data
+  planejada de hoje a dois dias à frente, os dois extremos dentro. **Só é computada** para quem tem `conteudo.visualizar` (ou é Owner): para os
   demais o campo é **omitido**, nunca zero, e a ordem não muda. Na ordem `attention`, para quem a recebe,
   "tem atraso" é o primeiro critério, antes de "tem sugestão aguardando"; `name:asc` não muda
   (decisão de 2026-10-11).

@@ -270,7 +270,11 @@ export const ClientContentIndicatorsSchema = z.object({
   /** Aguardando aprovação: what waits for the client. */
   inReview: z.number().int().nonnegative(),
   /** Planned day before today in São Paulo, neither published nor cancelled; overlaps the other two. */
-  overdue: z.number().int().nonnegative()
+  overdue: z.number().int().nonnegative(),
+  /** Em ajuste, on its own: the client asked for changes. Also counted in `pending`. */
+  adjusting: z.number().int().nonnegative(),
+  /** Planned from today to two days ahead in São Paulo, neither published nor cancelled; overlaps the others. */
+  dueSoon: z.number().int().nonnegative()
 }).strict();
 
 export const ClientListItemSchema = z.object({

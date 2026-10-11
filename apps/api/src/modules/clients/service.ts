@@ -288,6 +288,8 @@ export interface ClientListRow {
   readonly content_pending: string | number | null;
   readonly content_in_review: string | number | null;
   readonly content_overdue: string | number | null;
+  readonly content_adjusting: string | number | null;
+  readonly content_due_soon: string | number | null;
 }
 
 export interface ClientListPage {
@@ -371,15 +373,22 @@ export const listClients = async (
   // Vendas e Financeiro do not see Conteúdo (specs/conteudo.md section 2): a caller without
   // `conteudo.visualizar` gets nulls, not zeros, and the policy of `contents` is the second barrier.
   // "Atrasado" is derived (specs/conteudo.md section 4): a planned day before today in São Paulo that
-  // is neither published nor cancelled. "Pendente" is the agency's own work (em produção, em ajuste) and
-  // "em revisão" is what waits for the client (aguardando aprovação).
+  // is neither published nor cancelled. "Prazo em dois dias" is the same set with the planned day from
+  // today to two days ahead, both ends in. "Pendente" is the agency's own work (em produção, em ajuste),
+  // "em ajuste" is the second of those on its own, and "em revisão" is what waits for the client
+  // (aguardando aprovação).
   const contentSignalsCte = filters.includeContentSignals
     ? `content_signals as materialized (
         select
           content.client_id as client_id,
           count(*) filter (where content.status in ('in_production', 'adjusting')) as pending_count,
           count(*) filter (where content.status = 'awaiting_approval') as in_review_count,
-          count(*) filter (where content.publish_on < app_private.sao_paulo_date(?::timestamptz)) as overdue_count
+          count(*) filter (where content.status = 'adjusting') as adjusting_count,
+          count(*) filter (where content.publish_on < app_private.sao_paulo_date(?::timestamptz)) as overdue_count,
+          count(*) filter (
+            where content.publish_on between app_private.sao_paulo_date(?::timestamptz)
+              and app_private.sao_paulo_date(?::timestamptz) + 2
+          ) as due_soon_count
         from public.contents content
         join public.clients content_client on content_client.id = content.client_id
         where content_client.agency_id = ?::uuid
@@ -396,7 +405,9 @@ export const listClients = async (
   // The CTEs come before the WHERE in the statement text, so their binds do too.
   const itemBindings: SqlBinding[] = [
     ...(filters.includePendingInvitations ? [agencyId] : []),
-    ...(filters.includeContentSignals ? [filters.asOf.toISOString(), agencyId] : []),
+    ...(filters.includeContentSignals
+      ? [filters.asOf.toISOString(), filters.asOf.toISOString(), filters.asOf.toISOString(), agencyId]
+      : []),
     ...bindings
   ];
 
@@ -425,6 +436,8 @@ export const listClients = async (
       listing.content_pending,
       listing.content_in_review,
       listing.content_overdue,
+      listing.content_adjusting,
+      listing.content_due_soon,
       count(*) over () as total
     from (
       select
@@ -446,7 +459,9 @@ export const listClients = async (
         ${pendingInvitationsColumn} as pending_invitations,
         ${contentColumn('pending_count')} as content_pending,
         ${contentColumn('in_review_count')} as content_in_review,
-        ${contentColumn('overdue_count')} as content_overdue
+        ${contentColumn('overdue_count')} as content_overdue,
+        ${contentColumn('adjusting_count')} as content_adjusting,
+        ${contentColumn('due_soon_count')} as content_due_soon
       from public.clients client
       ${pendingInvitationsJoin}
       ${contentSignalsJoin}

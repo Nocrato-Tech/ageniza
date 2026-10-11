@@ -256,13 +256,16 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
         : { ...item, pendingInvitations: Number(row.pending_invitations) };
       // Omitted, not zeroed, for a caller without `conteudo.visualizar` (issue #261).
       return row.content_pending === null || row.content_in_review === null || row.content_overdue === null
+        || row.content_adjusting === null || row.content_due_soon === null
         ? withInvitations
         : {
             ...withInvitations,
             contentIndicators: {
               pending: Number(row.content_pending),
               inReview: Number(row.content_in_review),
-              overdue: Number(row.content_overdue)
+              overdue: Number(row.content_overdue),
+              adjusting: Number(row.content_adjusting),
+              dueSoon: Number(row.content_due_soon)
             }
           };
     }));

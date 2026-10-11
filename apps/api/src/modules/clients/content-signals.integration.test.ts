@@ -26,7 +26,13 @@ interface ListItemJson {
   readonly id: string;
   readonly name: string;
   readonly threadsAwaitingAgency: number;
-  readonly contentIndicators?: { readonly pending: number; readonly inReview: number; readonly overdue: number };
+  readonly contentIndicators?: {
+    readonly pending: number;
+    readonly inReview: number;
+    readonly overdue: number;
+    readonly adjusting: number;
+    readonly dueSoon: number;
+  };
 }
 
 let app: TestApp;
@@ -133,12 +139,15 @@ const saoPauloDay = async (days: number): Promise<string> => {
 };
 
 /** `listClients` as the user, at a fixed instant: the day of "atrasado" is a function of this instant alone. */
-const listAsOf = async (userId: string, agencyId: string, asOf: string): Promise<readonly { name: string; overdue: number | null }[]> => {
+const listAsOf = async (userId: string, agencyId: string, asOf: string): Promise<readonly { overdue: number | null; dueSoon: number | null }[]> => {
   const page = await withAuthenticatedUserTransaction(app.database, createVerifiedUserClaims({ userId }), (transaction) =>
     listClients(transaction, agencyId, {
       status: 'active', sort: 'attention', includePendingInvitations: false, includeContentSignals: true, asOf: new Date(asOf)
     }, { pageSize: 50, offset: 0 }));
-  return page.items.map((item) => ({ name: item.name, overdue: item.content_overdue === null ? null : Number(item.content_overdue) }));
+  return page.items.map((item) => ({
+    overdue: item.content_overdue === null ? null : Number(item.content_overdue),
+    dueSoon: item.content_due_soon === null ? null : Number(item.content_due_soon)
+  }));
 };
 
 describe('CLIENTS content signals on the card and in the triage order (#261)', () => {
@@ -195,6 +204,8 @@ describe('CLIENTS content signals on the card and in the triage order (#261)', (
       await seedContent(beta, responsible, 'in_production', yesterday);
       await seedContent(beta, responsible, 'in_production', today);
       await seedContent(beta, responsible, 'adjusting', tomorrow);
+      await seedContent(beta, responsible, 'approved', await saoPauloDay(2));
+      await seedContent(beta, responsible, 'approved', await saoPauloDay(3));
       await seedContent(beta, responsible, 'awaiting_approval', yesterday);
       await seedContent(beta, responsible, 'approved', yesterday);
       await seedContent(beta, responsible, 'published', '2026-09-01');
@@ -214,11 +225,12 @@ describe('CLIENTS content signals on the card and in the triage order (#261)', (
         const byId = new Map(data.map((item) => [item.id, item]));
         // Beta: em produção (yesterday), em produção (today) and em ajuste are the agency's work; the one
         // awaiting approval is the client's; yesterday's em produção, aguardando and aprovado are late,
-        // today's is not, and published and cancelled never count.
-        expect(byId.get(ids.beta)?.contentIndicators, person.email).toEqual({ pending: 3, inReview: 1, overdue: 3 });
-        expect(byId.get(ids.gama)?.contentIndicators, person.email).toEqual({ pending: 0, inReview: 0, overdue: 0 });
-        expect(byId.get(ids.alfa)?.contentIndicators, person.email).toEqual({ pending: 0, inReview: 0, overdue: 0 });
-        expect(byId.get(ids.delta)?.contentIndicators, person.email).toEqual({ pending: 0, inReview: 1, overdue: 0 });
+        // today's is not, and published and cancelled never count. Due soon is today, tomorrow and two
+        // days ahead (the approved of three days ahead is out).
+        expect(byId.get(ids.beta)?.contentIndicators, person.email).toEqual({ pending: 3, inReview: 1, overdue: 3, adjusting: 1, dueSoon: 3 });
+        expect(byId.get(ids.gama)?.contentIndicators, person.email).toEqual({ pending: 0, inReview: 0, overdue: 0, adjusting: 0, dueSoon: 1 });
+        expect(byId.get(ids.alfa)?.contentIndicators, person.email).toEqual({ pending: 0, inReview: 0, overdue: 0, adjusting: 0, dueSoon: 0 });
+        expect(byId.get(ids.delta)?.contentIndicators, person.email).toEqual({ pending: 0, inReview: 1, overdue: 0, adjusting: 0, dueSoon: 1 });
       }
     });
 
@@ -281,8 +293,8 @@ describe('CLIENTS content signals on the card and in the triage order (#261)', (
       await seedContent(zeta, admin.id, 'in_production', '2026-01-10');
       const { data } = await getList(await loginCookie(admin), agencyId, '?status=archived');
       expect(data.map((item) => item.id)).toEqual([zeta, alfa]);
-      expect(data[0]?.contentIndicators).toEqual({ pending: 1, inReview: 0, overdue: 1 });
-      expect(data[1]?.contentIndicators).toEqual({ pending: 0, inReview: 0, overdue: 0 });
+      expect(data[0]?.contentIndicators).toEqual({ pending: 1, inReview: 0, overdue: 1, adjusting: 0, dueSoon: 0 });
+      expect(data[1]?.contentIndicators).toEqual({ pending: 0, inReview: 0, overdue: 0, adjusting: 0, dueSoon: 0 });
     });
 
     it('counts a client of the agency in the URL only, for a caller who belongs to two agencies', async () => {
@@ -291,38 +303,43 @@ describe('CLIENTS content signals on the card and in the triage order (#261)', (
       await owner.knex('agency_memberships').insert({ agency_id: other.agencyId, user_id: people.admin.id, role_id: presetRoleIds.admin });
       const { data } = await getList(await loginCookie(people.admin), agencyId);
       expect(data.map((item) => item.id).sort()).toEqual(Object.values(ids).sort());
-      expect(data.find((item) => item.id === ids.beta)?.contentIndicators).toEqual({ pending: 3, inReview: 1, overdue: 3 });
+      expect(data.find((item) => item.id === ids.beta)?.contentIndicators).toEqual({ pending: 3, inReview: 1, overdue: 3, adjusting: 1, dueSoon: 3 });
     });
   });
 
-  describe('the São Paulo day of "atrasado", at fixed instants', () => {
+  describe('the São Paulo day of "atrasado" and "prazo em dois dias", at fixed instants', () => {
     const setup = async () => {
       const agencyId = await createAgency();
       const admin = await addMember(agencyId, presetRoleIds.admin, 'admin');
       const client = await createClient(agencyId, 'Cliente do dia');
-      // One content planned the day before and one planned on the day of 2026-10-11 in São Paulo.
-      await seedContent(client, admin.id, 'in_production', '2026-10-10');
-      await seedContent(client, admin.id, 'in_production', '2026-10-11');
+      // Planned on the 10th, 11th, 12th, 13th and 15th of October 2026; none on the 14th, so a window that
+      // starts a day late or ends a day early (or reads the UTC day) changes the count. The published and
+      // the cancelled of the 12th are never counted.
+      for (const day of ['2026-10-10', '2026-10-11', '2026-10-12', '2026-10-13', '2026-10-15']) {
+        await seedContent(client, admin.id, 'in_production', day);
+      }
+      await seedContent(client, admin.id, 'published', '2026-10-12');
+      await seedContent(client, admin.id, 'cancelled', '2026-10-12');
       return { agencyId, admin };
     };
 
-    it('01:30Z is still the evening before in São Paulo: the day before is late and the day itself is not', async () => {
+    it('01:30Z is still the evening before in São Paulo: the day before is late, the day itself and the two after are due soon', async () => {
       const { agencyId, admin } = await setup();
-      // 2026-10-12T01:30Z is 2026-10-11 22:30 in São Paulo. A day taken in UTC would be the 12th and
-      // would count both, a day taken in the server's zone could count either.
-      expect(await listAsOf(admin.id, agencyId, '2026-10-12T01:30:00.000Z')).toEqual([{ name: 'Cliente do dia', overdue: 1 }]);
+      // 2026-10-12T01:30Z is 2026-10-11 22:30 in São Paulo. A day taken in UTC would be the 12th: two late
+      // and the 12th and 13th due soon.
+      expect(await listAsOf(admin.id, agencyId, '2026-10-12T01:30:00.000Z')).toEqual([{ overdue: 1, dueSoon: 3 }]);
     });
 
     it('the day turns at 03:00Z, the midnight of São Paulo: one second before it, today is not late; at it, it is', async () => {
       const { agencyId, admin } = await setup();
-      expect(await listAsOf(admin.id, agencyId, '2026-10-12T02:59:59.000Z')).toEqual([{ name: 'Cliente do dia', overdue: 1 }]);
-      expect(await listAsOf(admin.id, agencyId, '2026-10-12T03:00:00.000Z')).toEqual([{ name: 'Cliente do dia', overdue: 2 }]);
+      expect(await listAsOf(admin.id, agencyId, '2026-10-12T02:59:59.000Z')).toEqual([{ overdue: 1, dueSoon: 3 }]);
+      expect(await listAsOf(admin.id, agencyId, '2026-10-12T03:00:00.000Z')).toEqual([{ overdue: 2, dueSoon: 2 }]);
     });
 
-    it('a day before every planned date has nothing late, and a day long after has everything unfinished late', async () => {
+    it('a day before every planned date has nothing late, and a day long after has everything unfinished late and nothing due soon', async () => {
       const { agencyId, admin } = await setup();
-      expect(await listAsOf(admin.id, agencyId, '2026-10-10T02:59:59.000Z')).toEqual([{ name: 'Cliente do dia', overdue: 0 }]);
-      expect(await listAsOf(admin.id, agencyId, '2027-01-01T12:00:00.000Z')).toEqual([{ name: 'Cliente do dia', overdue: 2 }]);
+      expect(await listAsOf(admin.id, agencyId, '2026-10-10T02:59:59.000Z')).toEqual([{ overdue: 0, dueSoon: 2 }]);
+      expect(await listAsOf(admin.id, agencyId, '2027-01-01T12:00:00.000Z')).toEqual([{ overdue: 5, dueSoon: 0 }]);
     });
   });
 });

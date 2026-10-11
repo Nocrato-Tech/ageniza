@@ -1238,7 +1238,7 @@ path: '/agencies/:agencyId/roles',
       'thread aguardando a agência vem primeiro, depois nome ascendente, com `id` como desempate; para quem',
       'tem `conteudo.visualizar`, o cliente com conteúdo atrasado (data planejada anterior ao dia de São',
       'Paulo, sem publicado nem cancelado) vem antes de todos. `pendingInvitations` só vem para quem tem',
-      '`cliente.convidar_usuario` e `contentIndicators` (`pending`, `inReview`, `overdue`) só para quem',
+      '`cliente.convidar_usuario` e `contentIndicators` (`pending`, `inReview`, `overdue`, `adjusting`, `dueSoon`) só para quem',
       'tem `conteudo.visualizar`; para os demais o campo é omitido, não zerado, e a ordem não muda. As',
       'conversas de conteúdo não entram em `threadsAwaitingAgency`.'
     ].join('\n'),
@@ -1261,7 +1261,7 @@ path: '/agencies/:agencyId/roles',
           closingDate: null,
           threadsAwaitingAgency: 2,
           pendingInvitations: 1,
-          contentIndicators: { pending: 3, inReview: 1, overdue: 2 }
+          contentIndicators: { pending: 3, inReview: 1, overdue: 2, adjusting: 1, dueSoon: 1 }
         }],
         meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 }
       }
