@@ -19,4 +19,4 @@
 
 **Origem.** Issue #508; achado da revisão do PR #505 (#189).
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-10-11.
