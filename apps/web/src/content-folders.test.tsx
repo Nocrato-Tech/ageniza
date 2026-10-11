@@ -196,6 +196,13 @@ describe('the Pastas view: the calendar behind it', () => {
     expect(world.calls.filter((call) => /\/contents\?/.test(call))).toEqual([]);
   });
 
+  it('keeps the read-only note of the calendar off the folders of an archived client', async () => {
+    open(makeWorld({ clientStatus: 'archived' }), foldersUrl());
+    await heading('Pastas');
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    expect(screen.queryByText('Cliente arquivado: o calendário é só leitura.')).toBeNull();
+  });
+
   it('does not turn the not-found of the calendar into the not-found of the folders', async () => {
     const world = makeWorld({
       override: (_method, path) => (/\/contents$/.test(path) ? apiError(404, 'NOT_FOUND', 'Client not found.') : undefined)
