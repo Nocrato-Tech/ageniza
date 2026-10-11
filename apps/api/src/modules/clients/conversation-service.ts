@@ -432,7 +432,8 @@ const loadThreadContext = async (
 
 /**
  * What the caller may do to a thread that exists for them. The conversation of a content that the agency caller
- * may not read is "not found", like for the policy that hides it; one it may read and not write is a 403.
+ * may not read never gets here: the policy hides it, so `context` is undefined and it is "not found". One the caller
+ * may read and not write is a 403.
  */
 const permissionRefusalOfContext = (
   scope: ConversationScope,
@@ -440,9 +441,7 @@ const permissionRefusalOfContext = (
   access: ConversationAccess
 ): ConversationRefusal | undefined => {
   if (context === undefined) return 'thread-not-found';
-  const about = context.content_id === null ? 'brand-study' : 'content';
-  if (about === 'content' && !agencyHolds(scope, 'content', 'read')) return 'thread-not-found';
-  return agencyHolds(scope, about, access) ? undefined : 'forbidden';
+  return agencyHolds(scope, context.content_id === null ? 'brand-study' : 'content', access) ? undefined : 'forbidden';
 };
 
 const refusalOfContext = (

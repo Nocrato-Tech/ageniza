@@ -627,6 +627,20 @@ describe('CLIENTES conversation of a content (#259)', () => {
       expect(await snapshotOf(clientA1)).toEqual(before);
     });
 
+    it('stops a person who passes the guard through conteudo.operar from writing the brand study, before anything is sent to the database', async () => {
+      const sectionThread = await seedThreadOfSection();
+      const before = await snapshotOf(clientA1);
+      const sent = await writesSentBy(async (proxied) => {
+        for (const key of ['production', 'contentWrite']) {
+          expect((await injectOn(proxied, 'POST', base(), cookies[key]!, { subject: { sectionKey: 'observations' }, body: 'x' })).statusCode, `${key} open`).toBe(403);
+          expect((await commentAs(cookies[key]!, base(), sectionThread, 'x', proxied)).statusCode, `${key} comment`).toBe(403);
+          expect((await resolveAs(cookies[key]!, base(), sectionThread, proxied)).statusCode, `${key} resolve`).toBe(403);
+        }
+      });
+      expect(sent).toEqual([]);
+      expect(await snapshotOf(clientA1)).toEqual(before);
+    });
+
     it('opens, comments and lists in the four states open to the client', async () => {
       for (const status of OPEN_STATUSES) {
         const contentId = await seedContent(clientA1, status);
