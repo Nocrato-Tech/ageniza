@@ -29,6 +29,9 @@ import { ResetPasswordPage } from './reset-password.js';
 import { SessionWatch } from './session-watch.js';
 import { LoadingPage, NotFoundPage, SessionGate } from './status-pages.js';
 
+/** Contents and the roster behind its picker: both are needed to open the area. */
+const CONTENT_AREA_PERMISSIONS = ['conteudo.visualizar', 'cliente.visualizar'] as const;
+
 export function PublicLayout() {
   return <div className="app-shell"><a className="skip-link" href="#main-content">Pular para o conteúdo</a><header><Link to="/">Ageniza</Link></header><main id="main-content"><Outlet /></main></div>;
 }
@@ -78,12 +81,12 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       } />
       <Route path="conteudos">
         <Route index element={
-          <AgencyPermissionRoute permission="conteudo.visualizar">
+          <AgencyPermissionRoute permission={CONTENT_AREA_PERMISSIONS}>
             <ContentsPage />
           </AgencyPermissionRoute>
         } />
         <Route path=":clienteId" element={
-          <AgencyPermissionRoute permission="conteudo.visualizar">
+          <AgencyPermissionRoute permission={CONTENT_AREA_PERMISSIONS}>
             <ContentsClientPage />
           </AgencyPermissionRoute>
         } />

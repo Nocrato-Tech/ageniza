@@ -252,7 +252,7 @@ describe('the Conteúdos item and the guard', () => {
   ])('hides the item and answers "não encontrado" to both addresses: %s', async (_name, permissions) => {
     const { impl, calls } = makeFetch({ permissions });
     const { unmount } = render_(impl, `/agencia/${AGENCY_A}`);
-    await screen.findByRole('link', { name: 'Clientes' });
+    await screen.findByRole('link', { name: 'Início' });
     expect(screen.queryByRole('link', { name: 'Conteúdos' })).toBeNull();
     unmount();
 
@@ -266,10 +266,20 @@ describe('the Conteúdos item and the guard', () => {
     expect(calls.filter((call) => /\/contents|\/clients/.test(call))).toEqual([]);
   });
 
-  it('answers "não encontrado" when the person reads contents but cannot read the roster (403 of the list)', async () => {
-    const { impl } = makeFetch({ permissions: [VISUALIZE] });
-    render_(impl);
-    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
+  // The picker is the roster (decision of 2026-10-11): reading contents without reading clients is not a way in.
+  it('hides the item and answers "não encontrado" to both addresses when the person reads contents but not the roster', async () => {
+    const { impl, calls } = makeFetch({ permissions: [VISUALIZE] });
+    const { unmount } = render_(impl, `/agencia/${AGENCY_A}`);
+    await screen.findByRole('link', { name: 'Início' });
+    expect(screen.queryByRole('link', { name: 'Conteúdos' })).toBeNull();
+    unmount();
+
+    for (const address of [`/agencia/${AGENCY_A}/conteudos`, contentsUrl(padaria.id)]) {
+      const view = render_(impl, address);
+      expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
+      view.unmount();
+    }
+    expect(calls.filter((call) => /\/contents|\/clients/.test(call))).toEqual([]);
   });
 });
 
