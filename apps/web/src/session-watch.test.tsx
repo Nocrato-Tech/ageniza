@@ -31,7 +31,7 @@ const legalAccepted = {
 const portalClient = {
   id: CLIENT_ID, name: 'Padaria Central', status: 'active', photoUrl: null, legalName: null, taxId: null, segment: null, website: null,
   instagramHandle: null, contactName: null, contactPhone: null, contactEmail: null, closingDate: null, archivedAt: null,
-  agencyName: 'Agência Um', onboardingSeenAt: null, home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5 }
+  agencyName: 'Agência Um', onboardingSeenAt: null, home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0 }
 };
 
 interface World {

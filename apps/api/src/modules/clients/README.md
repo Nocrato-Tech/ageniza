@@ -72,7 +72,18 @@ declara é 400.
   sugere, é descartado na comparação com o handle, que é gravado sem ele. O banco não tem
   `unaccent`; a expressão em `service.ts` é a mesma dos dois lados, coluna e termo.
 - **`threadsAwaitingAgency`** sai da definição única de `thread-state.ts`, numa subconsulta por
-  cliente que o índice `client_thread_comments (thread_id, created_at)` da #122 atende.
+  cliente que o índice `client_thread_comments (thread_id, created_at)` da #122 atende. Conta só
+  conversa do estudo de marca (`content_id is null`): a conversa de um conteúdo fica fora, aqui, no
+  resumo do detalhe e no Início do portal (decisão de 2026-10-11, a das rotas de conversa do cliente).
+- **`contentIndicators`** (`pending`, `inReview`, `overdue`, `adjusting`, `dueSoon`) vem de uma CTE materializada sobre
+  `contents`, agrupada por cliente e filtrada pela agência, **uma vez por página**. Pendente é em
+  produção ou em ajuste; em revisão é aguardando aprovação; atrasado é a data planejada anterior ao dia de
+  hoje em São Paulo (`app_private.sao_paulo_date` sobre o instante `asOf` que a rota passa), sem
+  publicado nem cancelado. `adjusting` é só o em ajuste (já contado em `pending`) e `dueSoon` é a data
+  planejada de hoje a dois dias à frente, os dois extremos dentro. **Só é computada** para quem tem `conteudo.visualizar` (ou é Owner): para os
+  demais o campo é **omitido**, nunca zero, e a ordem não muda. Na ordem `attention`, para quem a recebe,
+  "tem atraso" é o primeiro critério, antes de "tem sugestão aguardando"; `name:asc` não muda
+  (decisão de 2026-10-11).
 - **`pendingInvitations`** conta só convite de portal pendente (`client_invite`, não usado, não
   revogado, não expirado) numa CTE materializada, agrupada por `client_id` e filtrada pela agência:
   a contagem acontece **uma vez por página**, não uma subconsulta correlacionada por cliente, e o
@@ -226,7 +237,11 @@ da requisição, e nenhuma consulta daqui lê `auth."user"`: o portal não mostr
 - **`home`**: `threadsAnsweredByAgency` conta threads abertas cujo último comentário é da agência,
   **deste cliente** e **só as que o portal lê** (a de persona arquivada fica de fora); `brandStudyFilled`
   usa a definição única de `service.ts`. Quando a agência responde o número sobe; um comentário novo do
-  cliente o faz cair.
+  cliente o faz cair. `contentsAwaitingApproval` conta os conteúdos do **próprio cliente** em "aguardando
+  aprovação", por `app_private.portal_contents`: a policy de `contents` responde só à agência, e a função
+  é a regra só do portal (vínculo ativo com o cliente, nunca rascunho), então a pessoa do portal puro, a
+  pessoa dupla (`dual`, `dualBare`) e a cruzada (`crossDual`) veem o mesmo número. A conversa de um
+  conteúdo não entra em `threadsAnsweredByAgency`.
 - **Estudo**: as sete seções sempre, só as personas `active`, sem `updatedBy` (a consulta nem seleciona
   `updated_by`). `updatedAt` fica.
 - **A RLS não diz por qual lado**: o colaborador que também tem vínculo de cliente lê a persona

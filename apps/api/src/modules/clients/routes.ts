@@ -235,7 +235,9 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
         status: query.status ?? 'active',
         search: query.search,
         sort: query.sort ?? 'attention',
-        includePendingInvitations: tenant.isOwner || tenant.permissions.has('cliente.convidar_usuario')
+        includePendingInvitations: tenant.isOwner || tenant.permissions.has('cliente.convidar_usuario'),
+        includeContentSignals: tenant.isOwner || tenant.permissions.has('conteudo.visualizar'),
+        asOf: new Date()
       }, pagination));
 
     const data = await Promise.all(page.items.map(async (row): Promise<ClientListItem> => {
@@ -249,7 +251,23 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
         threadsAwaitingAgency: Number(row.threads_awaiting_agency)
       };
       // Omitted, not zeroed, for a caller without `cliente.convidar_usuario` (issue #125).
-      return row.pending_invitations === null ? item : { ...item, pendingInvitations: Number(row.pending_invitations) };
+      const withInvitations = row.pending_invitations === null
+        ? item
+        : { ...item, pendingInvitations: Number(row.pending_invitations) };
+      // Omitted, not zeroed, for a caller without `conteudo.visualizar` (issue #261).
+      return row.content_pending === null || row.content_in_review === null || row.content_overdue === null
+        || row.content_adjusting === null || row.content_due_soon === null
+        ? withInvitations
+        : {
+            ...withInvitations,
+            contentIndicators: {
+              pending: Number(row.content_pending),
+              inReview: Number(row.content_in_review),
+              overdue: Number(row.content_overdue),
+              adjusting: Number(row.content_adjusting),
+              dueSoon: Number(row.content_due_soon)
+            }
+          };
     }));
 
     return reply.send(routeResponse(listDocs, request, {
@@ -441,7 +459,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       try {
         updated = await updatePersona(transaction, { clientId, personaId, actorUserId: auth.userId, changes: body });
       } catch (error) {
-        if (isRowLevelSecurityViolation(error)) return { kind: 'archived' } as const;
+        if (isRowLevelSecurityViolation(error) || isClientNoLongerActive(error)) return { kind: 'archived' } as const;
         throw error;
       }
       if (!updated) return { kind: 'persona-not-found' } as const;
@@ -469,7 +487,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       try {
         updated = await setPersonaStatus(transaction, { clientId, personaId, actorUserId: auth.userId, status });
       } catch (error) {
-        if (isRowLevelSecurityViolation(error)) return { kind: 'archived' } as const;
+        if (isRowLevelSecurityViolation(error) || isClientNoLongerActive(error)) return { kind: 'archived' } as const;
         throw error;
       }
       if (!updated) return { kind: 'persona-not-found' } as const;

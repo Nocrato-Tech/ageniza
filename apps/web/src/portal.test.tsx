@@ -74,7 +74,7 @@ const portalClient = (overrides: Partial<PortalClientResponse> = {}): Record<str
   archivedAt: null,
   agencyName: 'Agência Um',
   onboardingSeenAt: '2026-10-01T12:00:00.000Z',
-  home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5 },
+  home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0 },
   ...overrides
 });
 
@@ -236,13 +236,13 @@ describe('client portal shell (#141)', () => {
     expect(first.probe.pathname).toBe(portalUrl('marca'));
     cleanup();
 
-    const many = makeFetch({ portal: () => json(portalClient({ home: { threadsAnsweredByAgency: 2, brandStudyFilled: 5 } })) });
+    const many = makeFetch({ portal: () => json(portalClient({ home: { threadsAnsweredByAgency: 2, brandStudyFilled: 5, contentsAwaitingApproval: 0 } })) });
     renderPortal(many.impl);
     const action = await screen.findByRole('link', { name: /A agência respondeu 2 sugestões suas/ });
     expect(action.getAttribute('href')).toBe(portalUrl('marca'));
     cleanup();
 
-    const one = makeFetch({ portal: () => json(portalClient({ home: { threadsAnsweredByAgency: 1, brandStudyFilled: 5 } })) });
+    const one = makeFetch({ portal: () => json(portalClient({ home: { threadsAnsweredByAgency: 1, brandStudyFilled: 5, contentsAwaitingApproval: 0 } })) });
     renderPortal(one.impl);
     expect(await screen.findByText('A agência respondeu 1 sugestão sua')).toBeTruthy();
     expect(screen.queryByText('A agência respondeu 2 sugestões suas')).toBeNull();
@@ -321,7 +321,7 @@ describe('client portal shell (#141)', () => {
   });
 
   it('never shows an internal term in the client portal', async () => {
-    const { impl } = makeFetch({ portal: () => json(portalClient({ home: { threadsAnsweredByAgency: 2, brandStudyFilled: 5 } })) });
+    const { impl } = makeFetch({ portal: () => json(portalClient({ home: { threadsAnsweredByAgency: 2, brandStudyFilled: 5, contentsAwaitingApproval: 0 } })) });
     const { container } = renderPortal(impl);
     await screen.findByRole('heading', { name: 'Olá, Maria' });
     clickTab('Calendário');
