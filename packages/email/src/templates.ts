@@ -84,33 +84,47 @@ const compose = (subject: string, lines: readonly string[], input: ActionEmailIn
   };
 };
 
+// A name that goes into a line of text is free text of the agency (the CLI takes it as typed). It is one line, and no invisible
+// format mark reorders what the reader sees: a bidi override such as U+202E can make a name read as another one. The zero-width
+// joiner (U+200D) and the tags (U+E0020-U+E007F) stay: they hold the family emoji and the flags of subdivisions, which come from
+// the title of a content as well.
+const oneLine = (value: string): string => value.replace(/(?:[\p{Cc}\u2028\u2029]|(?![\u200D\u{E0020}-\u{E007F}])\p{Cf})+/gu, ' ').trim();
+
+// The name as it goes into the text: checked as typed, then cleaned, and what is left must still be a name.
+const displayName = (field: string, value: string): string => {
+  assertDisplayName(field, value);
+  const clean = oneLine(value);
+  assertDisplayName(field, clean);
+  return clean;
+};
+
 const invitedBy = (agencyName?: string): string =>
-  agencyName === undefined ? 'Você foi convidado para o Ageniza.' : `Você foi convidado para ${agencyName} no Ageniza.`;
+  agencyName === undefined ? 'Você foi convidado para o Ageniza.' : `Você foi convidado para ${displayName('O nome da agência', agencyName)} no Ageniza.`;
 
 export const invitationEmail = (input: ActionEmailInput): EmailMessage =>
   compose('Convite para o Ageniza', [invitedBy(input.agencyName), 'Abra o link abaixo para ativar sua conta.'], input);
 
 export const agencyActivationEmail = (input: NamedActionEmailInput): EmailMessage => {
-  assertDisplayName('O nome da agência', input.agencyName);
+  const agencyName = displayName('O nome da agência', input.agencyName);
   return compose('Ative sua agência no Ageniza', [
-    `Sua agência ${input.agencyName} está quase pronta.`,
+    `Sua agência ${agencyName} está quase pronta.`,
     'Abra o link abaixo para ativá-la.'
   ], input);
 };
 
 export const collaboratorInvitationEmail = (input: NamedActionEmailInput): EmailMessage => {
-  assertDisplayName('O nome da agência', input.agencyName);
+  const agencyName = displayName('O nome da agência', input.agencyName);
   return compose('Convite para participar da agência', [
-    `Você foi convidado para participar da ${input.agencyName}.`,
+    `Você foi convidado para participar da ${agencyName}.`,
     'Abra o link abaixo para aceitar o convite.'
   ], input);
 };
 
 export const clientInvitationEmail = (input: ClientInvitationEmailInput): EmailMessage => {
-  assertDisplayName('O nome da agência', input.agencyName);
-  assertDisplayName('O nome do cliente', input.clientName);
+  const agencyName = displayName('O nome da agência', input.agencyName);
+  const clientName = displayName('O nome do cliente', input.clientName);
   return compose('Convite para acessar seu cliente', [
-    `Você foi convidado para acessar ${input.clientName}, gerenciado pela ${input.agencyName}.`,
+    `Você foi convidado para acessar ${clientName}, gerenciado pela ${agencyName}.`,
     'Abra o link abaixo para aceitar o convite.'
   ], input);
 };
@@ -147,3 +161,70 @@ export const emailChangedEmail = (): EmailMessage =>
     'O e-mail desta conta no Ageniza foi alterado e todas as sessões foram encerradas.',
     'Se não foi você, fale com a operação do Ageniza.'
   ]);
+
+export interface ContentNotificationItem {
+  /** Free text of the agency: escaped in the HTML, and never trusted anywhere. */
+  readonly title: string;
+  /** The planned date, `YYYY-MM-DD`, or null. */
+  readonly publishOn: string | null;
+}
+
+export interface ClientContentEmailInput {
+  readonly agencyName: string;
+  readonly clientName: string;
+  /** The portal of the client: a link without any token, since the person signs in to open it. */
+  readonly portalUrl: string;
+  readonly items: readonly ContentNotificationItem[];
+}
+
+const formatPlannedDate = (publishOn: string | null): string | undefined => {
+  const match = publishOn === null ? null : /^(\d{4})-(\d{2})-(\d{2})$/.exec(publishOn);
+  return match === null ? undefined : `${match[3]}/${match[2]}/${match[1]}`;
+};
+
+const countOf = (count: number): string => count === 1 ? 'um conteúdo' : `${count} conteúdos`;
+
+const clientContentEmail = (subject: string, introduction: string, invitation: string, input: ClientContentEmailInput): EmailMessage => {
+  assertDisplayName('O nome da agência', input.agencyName);
+  assertDisplayName('O nome do cliente', input.clientName);
+  assertHttpsUrl(input.portalUrl);
+  if (input.items.length === 0) throw new Error('O e-mail precisa de ao menos um conteúdo.');
+  const lines = input.items.map((item) => {
+    const date = formatPlannedDate(item.publishOn);
+    return date === undefined ? oneLine(item.title) : `${oneLine(item.title)} (${date})`;
+  });
+  return {
+    subject,
+    text: [introduction, lines.map((line) => `- ${line}`).join('\n'), `${invitation}\n${input.portalUrl}`].join('\n\n'),
+    html: [
+      `<p>${escapeHtml(introduction)}</p>`,
+      `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`,
+      `<p>${escapeHtml(invitation)}</p>`,
+      `<p><a href="${escapeHtml(input.portalUrl)}">${escapeHtml(input.portalUrl)}</a></p>`
+    ].join('\n')
+  };
+};
+
+/** "Contents to approve": one e-mail per person and client, with everything the agency sent in the burst. */
+export const contentsAwaitingApprovalEmail = (input: ClientContentEmailInput): EmailMessage => {
+  const agencyName = oneLine(input.agencyName);
+  const clientName = oneLine(input.clientName);
+  return clientContentEmail(
+    `${countOf(input.items.length)} para você aprovar: ${clientName}`,
+    `${agencyName} enviou ${countOf(input.items.length)} de ${clientName} para a sua aprovação.`,
+    'Abra o portal para aprovar ou pedir ajuste:',
+    input
+  );
+};
+
+/** The daily summary of what the agency published. */
+export const contentsPublishedEmail = (input: ClientContentEmailInput): EmailMessage => {
+  const agencyName = oneLine(input.agencyName);
+  const clientName = oneLine(input.clientName);
+  return clientContentEmail(
+    `${countOf(input.items.length)} publicado${input.items.length === 1 ? '' : 's'}: ${clientName}`,
+    `${agencyName} publicou ${countOf(input.items.length)} de ${clientName}.`,
+    'Veja no portal:',
+    input
+  );
+};

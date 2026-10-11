@@ -136,6 +136,8 @@ export interface WorkerConfig extends ServerConfig {
   healthHost: '127.0.0.1' | '::1' | '0.0.0.0';
   healthPort: number;
   smokeJob: boolean;
+  /** Origin of the web app, for the links of the e-mail to the client's portal (issue #260). Required in production. */
+  appPublicUrl?: string;
   /** Durable queue handlers run at once; low because the VPS shares CPU with PostgreSQL and the API. */
   concurrency: number;
   /** Undefined only where video processing is genuinely unused (e.g. lightweight worker tests);
@@ -280,6 +282,7 @@ const workerSchema = sharedServerSchema.extend({
   WORKER_HEALTH_HOST: z.enum(['127.0.0.1', '::1', '0.0.0.0']).default('127.0.0.1'),
   WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(3002),
   WORKER_SMOKE_JOB: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  APP_PUBLIC_URL: optionalUrl('must be a valid URL origin; supplied values are redacted'),
   // Bounded on purpose: raising it trades API and database headroom on a shared VPS for throughput.
   // CPU-heavy jobs cap themselves further through the queue's per-job `concurrency` (video
   // processing, issue #24, runs one at a time), so this ceiling stays for lighter jobs.
@@ -551,12 +554,27 @@ export const loadWorkerConfig = (env: ServerEnvironment): WorkerConfig => {
   // Object storage (issue #24): required together, mirroring the API's R2 settings (issue #21).
   const allStoragePresent = validateStorageEnvironment('Worker', serverConfig.environment, result.data, env.APP_CONTAINER_LOCAL === 'true');
 
+  // E-mail to the client (issue #260): the worker sends it, so production needs the same three settings the API needs.
+  if (result.data.APP_PUBLIC_URL !== undefined) {
+    const parsedAppPublicUrl = new URL(result.data.APP_PUBLIC_URL);
+    if (parsedAppPublicUrl.origin !== result.data.APP_PUBLIC_URL || parsedAppPublicUrl.pathname !== '/' || parsedAppPublicUrl.search || parsedAppPublicUrl.hash) {
+      throw new ConfigValidationError('Worker', [{ path: 'APP_PUBLIC_URL', message: 'must be an origin without paths; supplied values are redacted' }]);
+    }
+    assertRuntimeUrlSafety(serverConfig.environment, 'APP_PUBLIC_URL', result.data.APP_PUBLIC_URL, { requireHttpsInProduction: true });
+  }
+  if (serverConfig.environment === 'production') {
+    for (const [path, value] of [['APP_PUBLIC_URL', result.data.APP_PUBLIC_URL], ['SMTP_URL', serverConfig.smtpUrl], ['EMAIL_FROM', serverConfig.emailFrom]] as const) {
+      if (value === undefined) throw new ConfigValidationError('Worker', [{ path, message: 'APP_PUBLIC_URL, SMTP_URL and EMAIL_FROM are required in production' }]);
+    }
+  }
+
   return {
     service: 'worker',
     ...serverConfig,
     healthHost: result.data.WORKER_HEALTH_HOST,
     healthPort: result.data.WORKER_HEALTH_PORT,
     smokeJob: result.data.WORKER_SMOKE_JOB,
+    appPublicUrl: result.data.APP_PUBLIC_URL,
     concurrency: result.data.WORKER_CONCURRENCY,
     storage: allStoragePresent ? {
       endpoint: result.data.R2_ENDPOINT!,

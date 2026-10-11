@@ -50,6 +50,7 @@ describe('server configuration', () => {
       healthHost: '127.0.0.1',
       healthPort: 3002,
       smokeJob: false,
+      appPublicUrl: localEnvironment.APP_PUBLIC_URL,
       concurrency: 1,
       sentryDsn: undefined,
       deployVersion: 'unknown',
@@ -367,6 +368,29 @@ describe('server configuration', () => {
     })).toThrow('must be false in production');
   });
 
+  it('gives the worker the origin of the web app for the portal links of the client e-mail, and requires the three e-mail settings in production (issue #260)', () => {
+    expect(loadWorkerConfig({ ...localEnvironment, APP_PUBLIC_URL: undefined }).appPublicUrl).toBeUndefined();
+    expect(loadWorkerConfig({ ...localEnvironment, APP_PUBLIC_URL: '' }).appPublicUrl).toBeUndefined();
+    expect(() => loadWorkerConfig({ ...localEnvironment, APP_PUBLIC_URL: 'http://127.0.0.1:5173/login' })).toThrow('origin without paths');
+    expect(() => loadWorkerConfig({ ...localEnvironment, APP_PUBLIC_URL: 'http://127.0.0.1:5173/?token=x' })).toThrow('origin without paths');
+
+    const production = {
+      ...localEnvironment,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl,
+      APP_PUBLIC_URL: 'https://app.ageniza.example',
+      ...productionEmailSettings,
+      ...productionStorageSettings
+    };
+    expect(loadWorkerConfig(production).appPublicUrl).toBe('https://app.ageniza.example');
+    expect(() => loadWorkerConfig({ ...production, APP_PUBLIC_URL: 'http://app.ageniza.example' })).toThrow('must use HTTPS');
+    for (const missing of ['APP_PUBLIC_URL', 'SMTP_URL', 'EMAIL_FROM']) {
+      expect(() => loadWorkerConfig({ ...production, [missing]: '' })).toThrow(ConfigValidationError);
+    }
+    // Both e-mail settings gone at once: the rule of the pair must still refuse, not only the one-at-a-time loop above.
+    expect(() => loadWorkerConfig({ ...production, SMTP_URL: undefined, EMAIL_FROM: undefined })).toThrow('APP_PUBLIC_URL, SMTP_URL and EMAIL_FROM are required in production');
+  });
+
   it('leaves storage undefined locally and loads it with defaults when the four R2 settings are present (issue #21)', () => {
     expect(loadApiConfig(localEnvironment).storage).toBeUndefined();
     const withStorage = {
@@ -441,7 +465,9 @@ describe('server configuration', () => {
       ...localEnvironment,
       BETTER_AUTH_SECRET: productionAuthSecret,
       APP_ENV: 'production',
-      DATABASE_URL: productionDatabaseUrl
+      DATABASE_URL: productionDatabaseUrl,
+      APP_PUBLIC_URL: 'https://app.ageniza.example',
+      ...productionEmailSettings
     };
     expect(() => loadWorkerConfig(productionWithoutStorage)).toThrow('required in production');
     expect(loadWorkerConfig({ ...productionWithoutStorage, ...productionStorageSettings }).storage?.bucket).toBe('ageniza-media');

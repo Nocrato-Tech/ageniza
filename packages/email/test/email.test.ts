@@ -90,6 +90,20 @@ describe('transactional email templates', () => {
     expect(() => clientInvitationEmail({ actionUrl, expiresInMinutes: 60, agencyName: 'Ageniza', clientName: '' })).toThrow('nome do cliente');
   });
 
+  it.each([
+    ['invitation', (agencyName: string) => invitationEmail({ actionUrl, expiresInMinutes: 60, agencyName })],
+    ['agency activation', (agencyName: string) => agencyActivationEmail({ actionUrl, expiresInMinutes: 60, agencyName })],
+    ['collaborator invitation', (agencyName: string) => collaboratorInvitationEmail({ actionUrl, expiresInMinutes: 60, agencyName })],
+    ['client invitation', (agencyName: string) => clientInvitationEmail({ actionUrl, expiresInMinutes: 60, agencyName, clientName: 'Cliente A' })]
+  ])('takes the bidi override (U+202E) and the zero-width marks out of the agency name in the %s e-mail', (_kind, compose) => {
+    const message = compose('Agência\u202E\u200BAurora');
+
+    expect(message.text).toContain('Agência Aurora');
+    expect(message.text).not.toMatch(/\p{Cf}/u);
+    expect(message.html).not.toMatch(/\p{Cf}/u);
+    expect(message.subject).not.toMatch(/\p{Cf}/u);
+  });
+
   it('escapes HTML so a crafted name or link cannot inject markup', () => {
     const message = invitationEmail({
       actionUrl: 'https://app.ageniza.example/a?token=x&y=1',

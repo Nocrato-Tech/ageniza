@@ -15,11 +15,14 @@ import {
   type SignalProcess
 } from '@ageniza/core';
 import { createDatabaseClient, type DatabaseClient } from '@ageniza/database';
+import { createEmailSender, type EmailSender } from '@ageniza/email';
 
 import { archiveDueClientsJob } from './archive-due-clients-job.js';
+import { clientContentEmailJob } from './client-content-email-job.js';
 import { createJobProcessor, type JobProcessor } from './jobs.js';
 import { mediaVideoProcessingJob } from './media-video-job.js';
 import { createMediaProcessingStorageClient } from './media-storage.js';
+import { createNotificationQueue } from './notification-queue.js';
 import { createDurableQueue, type DurableQueue } from './queue.js';
 
 type WorkerSignal = 'SIGINT' | 'SIGTERM';
@@ -49,6 +52,8 @@ export interface CreateWorkerRuntimeOptions {
   readonly logger: CoreLogger;
   readonly database?: DatabaseClient;
   readonly queue?: DurableQueue;
+  /** Test seam: the transport of the e-mail to the client. Production builds it from SMTP_URL and EMAIL_FROM. */
+  readonly emailSender?: EmailSender;
   readonly registerSignals?: boolean;
   readonly process?: SignalProcess;
   readonly readinessCheck?: ReadinessCheck;
@@ -105,6 +110,16 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
     }));
   } else if (queue !== undefined) {
     logger.warn({ status: 'skipped' }, 'Object storage is not configured; video processing jobs will not be registered.');
+  }
+  // The e-mail to the client (issue #260) needs the queue, a transport and the origin of the web app for its links; without
+  // the three there is nothing to send with, which production refuses at config load.
+  const emailSender = options.emailSender ?? (options.config.smtpUrl !== undefined && options.config.emailFrom !== undefined
+    ? createEmailSender({ smtpUrl: options.config.smtpUrl, from: options.config.emailFrom, logger })
+    : undefined);
+  if (queue !== undefined && emailSender !== undefined && options.config.appPublicUrl !== undefined) {
+    queue.register(clientContentEmailJob({ queue: createNotificationQueue(database), sender: emailSender, appPublicUrl: options.config.appPublicUrl }));
+  } else if (queue !== undefined) {
+    logger.warn({ status: 'skipped' }, 'E-mail is not configured (SMTP_URL, EMAIL_FROM and APP_PUBLIC_URL); the e-mails to the clients will not be sent.');
   }
   const shutdownManager = createShutdownManager();
   shutdownManager.add('sentry', async () => { await flushServerSentry(); });
@@ -171,6 +186,10 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
 
   shutdownManager.add('database', async () => {
     await database.close();
+  });
+  // Added after the database so LIFO closes the transport first, once the queue has drained its jobs.
+  shutdownManager.add('email', async () => {
+    await emailSender?.close();
   });
   // Added right after database so LIFO runs it before the database closes.
   shutdownManager.add('actor-context-purge', () => {
