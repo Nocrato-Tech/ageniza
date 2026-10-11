@@ -44,6 +44,11 @@ _Ver também os itens 7 a 9 e 25, que estão na faixa Geral._
 31. **Trava com releitura só vale em READ COMMITTED.** A função recusa outro isolamento com `40001`, e o teste de corrida tem variantes em REPEATABLE READ e SERIALIZABLE, com upsert e `MERGE` (#393, #394).
 32. **`CHECK` que chama função não é reavaliado.** Quando a função muda, apertar a regra exige `DROP` e `ADD` da constraint depois do backfill (#482).
 33. **Grant de tabela inteira.** Complementa o item 25: use `has_table_privilege` (enxerga `PUBLIC` e herança, e ignora grant por coluna) e compare um snapshot do catálogo antes e depois da migration (#502).
+59. **Bind de ator primeiro.** Função do worker que recusa ator ligado só confere no momento da chamada; o que fecha a porta para a requisição é o `bind` do ator como primeira instrução da transação de topo. Teste de rota que chame função do worker faz o bind antes (#407).
+60. **Migration antes da API.** Quando a migration sai do PR da API, a decisão estrutural vai junto (o gate exige), e a ordem de merge é migration antes da API: código que lê o retorno novo de uma função falha se vier o tipo antigo (#406, #530).
+61. **Releitura depois da última espera.** Ler o estado do pai "depois das travas" só fecha a janela se a leitura vier depois da última espera antes da escrita. Num `UPDATE` sem policy de cliente ativo, quem fecha o resto é o gatilho do banco. Complementa o item 30 (#541).
+62. **Gatilho com erro em UPDATE de rota existente.** Gatilho novo que levanta erro num `UPDATE` já usado por rota existente exige achar e testar cada rota que faz esse `UPDATE` antes do merge: o `PATCH` de persona virou 500 (#545).
+63. **Lista de colunas do gatilho contra o grant.** Lista de colunas escrita à mão num gatilho precisa de teste de catálogo contra o grant (`tgattr` x `has_column_privilege`); senão coluna gravável nova escapa sem vermelho. Complementa o item 33 (#538).
 
 ## API e portal
 
@@ -52,6 +57,7 @@ _Ver também os itens 7 a 9 e 25, que estão na faixa Geral._
 36. **Erros do banco mapeados.** Além de `42501`, `23505` e `40P01` (item 7), os `A00xx` dos gatilhos viram 4xx. Nenhum erro de banco chega como 500, e o teste provoca cada um.
 37. **Paridade entre Zod e jsonb.** Um caso de surrogate isolado (um `\uD800` sozinho) é aceito pelo JS e recusado pelo jsonb. Sem esse caso, a paridade não está provada (#482).
 38. **Header fora da rota não cobre tudo.** Header posto no `onRequest` da rota não aparece em `frameworkErrors`, em hooks globais nem no preflight. Se precisa estar em toda resposta, vai num hook global e no `frameworkErrors` (#490).
+64. **Texto livre tem uma regra só.** Texto livre usa a regra única de `packages/contracts`: `hasInvisibleCharacters` em `invisible-characters.ts`, e `hasHiddenStoryCharacters` em `story-scripts.ts` para texto com quebras de linha. Nenhuma rota escreve a própria regra de caracteres. Emoji composto fica só no helper (#539), não na rota (#541, #542).
 
 ## Telas
 
@@ -80,5 +86,7 @@ _Ver também os itens 15 a 17, que estão na faixa Geral._
 56. **Censo por regex com uma declaração.** Censo que procura "a variável recebeu o helper" precisa garantir uma declaração só, senão uma sombra o engana (#515).
 57. **Lista permitida, não proibida.** Gate que só proíbe o que existe hoje pega a cópia, mas não o movimento. Use lista permitida fixa, cobrindo `dependencies`, `optional`, `peer` e todo pacote interno que entra na imagem. A regex de declaração ancora o fim (#511, #522).
 58. **Soma com semente em outra agência.** O teste de soma mede o valor com uma semente em outra agência, para que um filtro de agência faltando apareça.
+65. **Exceção tem teste das bordas.** Exceção aceita numa regra de caracteres precisa de teste das bordas dela (repetição, vizinhos, variantes), não só do caso feliz (#533).
+66. **Corrida sem o gatilho fica vermelha.** Quando a proteção de uma rota vem de um gatilho de outro PR, o teste de corrida da rota tem de ficar vermelho sem esse gatilho; senão não prova nada sobre a rota (#542).
 
 As lições completas de segurança estão em `docs/security-review.md` e nas notas do projeto; este checklist só lista o que mais se repete.
