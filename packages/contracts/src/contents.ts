@@ -216,7 +216,7 @@ export const ContentMediaItemSchema = z.object({
   position: z.number().int().positive()
 }).strict();
 
-/** Read only here: the routes that write a subtask are issue #255. */
+/** One subtask of a content, as the agency reads it: the detail of a content and every route of a subtask answer with it. */
 export const ContentTaskSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
@@ -227,6 +227,39 @@ export const ContentTaskSchema = z.object({
   returnComment: z.string().nullable(),
   approvedBy: ContentApproverSchema.nullable(),
   approvedAt: z.string().nullable()
+}).strict();
+
+/** The column of the description of a subtask holds up to 20000 bytes; its title follows the content's (one line, 120 characters). */
+export const CONTENT_TASK_DESCRIPTION_MAX_BYTES = 20_000;
+
+/** A blank description is the same as none, like a caption. */
+export const ContentTaskDescriptionSchema = visibleText()
+  .transform((value) => value.trim())
+  .pipe(z.string().refine((value) => utf8ByteLength(value) <= CONTENT_TASK_DESCRIPTION_MAX_BYTES, `must be at most ${CONTENT_TASK_DESCRIPTION_MAX_BYTES} bytes`))
+  .transform((value) => (value === '' ? null : value));
+
+/**
+ * Body of `POST .../contents/:contentId/tasks`. The person in charge is a link (`assigneeMembershipId`), never a user id, and the
+ * state is not a field: a subtask is born pending and moves only through deliver, approve and return.
+ */
+export const CreateContentTaskRequestSchema = z.object({
+  title: ContentTitleSchema,
+  description: ContentTaskDescriptionSchema.nullable().optional(),
+  assigneeMembershipId: z.string().uuid(),
+  dueOn: CalendarDaySchema
+}).strict();
+
+/** Body of `PATCH .../tasks/:taskId`: any subset of what a subtask carries, never its state. */
+export const UpdateContentTaskRequestSchema = z.object({
+  title: ContentTitleSchema.optional(),
+  description: ContentTaskDescriptionSchema.nullable().optional(),
+  assigneeMembershipId: z.string().uuid().optional(),
+  dueOn: CalendarDaySchema.optional()
+}).strict().refine((value) => Object.keys(value).length > 0, 'at least one field must be provided');
+
+/** Body of `POST .../tasks/:taskId/return`: the comment the person in charge of the subtask reads, by the rule of the reason (5000 bytes). */
+export const ReturnContentTaskRequestSchema = z.object({
+  comment: ContentReasonSchema
 }).strict();
 
 export const ContentConversationSchema = z.object({
@@ -247,6 +280,10 @@ export const AgencyClientContentPathParamsSchema = z.object({
   contentId: z.string().uuid()
 }).strict();
 
+export const AgencyClientContentTaskPathParamsSchema = AgencyClientContentPathParamsSchema.extend({
+  taskId: z.string().uuid()
+}).strict();
+
 export type ContentFormat = z.infer<typeof ContentFormatSchema>;
 export type ContentStatus = z.infer<typeof ContentStatusSchema>;
 export type CreateContentRequest = z.infer<typeof CreateContentRequestSchema>;
@@ -260,3 +297,7 @@ export type StoryScriptListItem = z.infer<typeof StoryScriptListItemSchema>;
 export type ContentPeriodResponse = z.infer<typeof ContentPeriodResponseSchema>;
 export type Content = z.infer<typeof ContentSchema>;
 export type ContentDetail = z.infer<typeof ContentDetailSchema>;
+export type ContentTask = z.infer<typeof ContentTaskSchema>;
+export type CreateContentTaskRequest = z.infer<typeof CreateContentTaskRequestSchema>;
+export type UpdateContentTaskRequest = z.infer<typeof UpdateContentTaskRequestSchema>;
+export type ReturnContentTaskRequest = z.infer<typeof ReturnContentTaskRequestSchema>;

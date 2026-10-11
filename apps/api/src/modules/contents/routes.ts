@@ -38,11 +38,13 @@ import {
   loadContent,
   loadContentDetail,
   replaceContentMedia,
-  resolveOwnerMembership,
+  resolveCollaboratorLink,
   updateContent,
   type ContentChanges,
   type ContentTransaction
 } from './service.js';
+import { idFromRoute } from './route-support.js';
+import { registerContentTaskRoutes } from './task-routes.js';
 import { registerContentTransitionRoutes } from './transition-routes.js';
 
 type PreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
@@ -58,8 +60,6 @@ export interface ContentModuleDependencies {
   readonly now?: () => Date;
 }
 
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth']> => {
   const auth = request.auth;
   if (auth === undefined) throw unauthenticated();
@@ -70,13 +70,6 @@ const requireTenant = (request: FastifyRequest): { readonly agencyId: string; re
   const tenant = request.tenant;
   if (tenant === undefined) throw clientNotFound();
   return tenant;
-};
-
-/** A malformed id is the same 404 as an absent one, never a 400 that confirms the route. */
-const idFromRoute = (request: FastifyRequest, name: 'clientId' | 'contentId', notFound: () => HttpError): string => {
-  const value = (request.params as Record<string, unknown>)[name];
-  if (typeof value !== 'string' || !uuidPattern.test(value)) throw notFound();
-  return value;
 };
 
 export const registerContentModule = (app: FastifyInstance, dependencies: ContentModuleDependencies): void => {
@@ -199,7 +192,7 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
       const { ownerMembershipId, ...fields } = body;
       const ownerUserId = ownerMembershipId === undefined
         ? undefined
-        : await resolveOwnerMembership(transaction, { agencyId: tenant.agencyId, membershipId: ownerMembershipId });
+        : await resolveCollaboratorLink(transaction, { agencyId: tenant.agencyId, membershipId: ownerMembershipId });
       if (ownerMembershipId !== undefined && ownerUserId === undefined) throw ownerInvalid();
       const contentId = await insertContent(transaction, { clientId, body: fields, ownerUserId });
       const row = await loadContent(transaction, { clientId, contentId });
@@ -241,7 +234,7 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
       const { ownerMembershipId, ...fields } = body;
       const ownerUserId = ownerMembershipId === undefined
         ? undefined
-        : await resolveOwnerMembership(transaction, { agencyId: tenant.agencyId, membershipId: ownerMembershipId });
+        : await resolveCollaboratorLink(transaction, { agencyId: tenant.agencyId, membershipId: ownerMembershipId });
 
       // Who is in charge decides who approves a subtask, so changing it is the permission to approve for the agency. Without it the
       // answer is 403 whatever the link is, so the answer never says whether a link is an active one.
@@ -267,5 +260,6 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
   });
 
   registerContentTransitionRoutes(app, dependencies);
+  registerContentTaskRoutes(app, dependencies);
 };
 
