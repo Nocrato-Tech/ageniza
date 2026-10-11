@@ -18,4 +18,5 @@ export * from './pagination.js';
 export * from './params.js';
 export * from './profile.js';
 export * from './search.js';
+export * from './story-scripts.js';
 export * from './auth.js';
