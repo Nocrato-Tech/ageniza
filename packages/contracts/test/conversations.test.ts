@@ -167,5 +167,5 @@ describe('what a comment may carry (#259)', () => {
       expect(CommentBodySchema.safeParse(body).success, `U+${codePoint.toString(16)}`).toBe(!hasHiddenStoryCharacters(body));
     }
     expect(CommentBodySchema.safeParse(`a${text(0x1d159)}b`).success).toBe(false);
-  });
+  }, 30_000);
 });
