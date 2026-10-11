@@ -33,6 +33,15 @@ export const ContentTaskStatusSchema = z.enum(['pending', 'delivered', 'approved
 /** A real day of the calendar in the form the `date` column prints; the route never reads it in a time zone. */
 export const CalendarDaySchema = z.string().refine(isCalendarDay, 'must be a real date in the form YYYY-MM-DD');
 
+/** The earliest day a content is planned or published on: no real post is older, and `0001-01-01` is a typo that the calendar cannot show. */
+export const CONTENT_DAY_FLOOR = '2000-01-01';
+
+/** A day of the calendar a content is planned or published on: real, and not before `CONTENT_DAY_FLOOR`. */
+export const ContentDaySchema = CalendarDaySchema.refine((day) => day >= CONTENT_DAY_FLOOR, `must not be before ${CONTENT_DAY_FLOOR}`);
+
+/** Body of the moves that take none (submit, unpublish, cancel): a body that carries anything is a 400, not ignored. */
+export const ContentMoveRequestSchema = z.object({}).strict();
+
 /** Hour and minute, 24-hour clock: the optional time of a publication. */
 export const ContentTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'must be a time in the form HH:MM');
 
@@ -90,7 +99,7 @@ export const CreateContentRequestSchema = z.object({
   title: ContentTitleSchema,
   platform: ContentPlatformSchema.optional(),
   format: ContentFormatSchema,
-  publishOn: CalendarDaySchema,
+  publishOn: ContentDaySchema,
   publishAtTime: ContentTimeSchema.nullable().optional(),
   caption: ContentCaptionSchema.nullable().optional(),
   folderId: z.string().uuid(),
@@ -106,7 +115,7 @@ export const CreateContentRequestSchema = z.object({
 export const UpdateContentRequestSchema = z.object({
   title: ContentTitleSchema.optional(),
   format: ContentFormatSchema.optional(),
-  publishOn: CalendarDaySchema.optional(),
+  publishOn: ContentDaySchema.optional(),
   publishAtTime: ContentTimeSchema.nullable().optional(),
   caption: ContentCaptionSchema.nullable().optional(),
   folderId: z.string().uuid().optional(),
@@ -138,12 +147,12 @@ export const ApproveContentByAgencyRequestSchema = z.object({
 
 /** Body of `POST .../publish`: the real day of the publication, today in America/Sao_Paulo when absent; never in the future. */
 export const PublishContentRequestSchema = z.object({
-  publishedOn: CalendarDaySchema.optional()
+  publishedOn: ContentDaySchema.optional()
 }).strict();
 
 /** Body of `POST .../reschedule`: the new day of a cancelled content, the day it had when absent. */
 export const RescheduleContentRequestSchema = z.object({
-  publishOn: CalendarDaySchema.optional()
+  publishOn: ContentDaySchema.optional()
 }).strict();
 
 /** `from` and `to`, both inclusive: the same query as the story scripts' period, so the two cannot drift. */

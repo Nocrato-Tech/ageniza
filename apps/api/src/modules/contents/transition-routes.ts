@@ -2,6 +2,7 @@ import {
   AgencyClientContentPathParamsSchema,
   ApproveContentByAgencyRequestSchema,
   ContentDetailSchema,
+  ContentMoveRequestSchema,
   PublishContentRequestSchema,
   RescheduleContentRequestSchema,
   type ContentDetail
@@ -48,13 +49,14 @@ const bodyOrEmpty = <TSchema extends ZodTypeAny>(docs: { readonly schemas: { rea
  */
 export const registerContentTransitionRoutes = (app: FastifyInstance, dependencies: ContentModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
-  const now = dependencies.now ?? ((): Date => new Date());
+  // Only a test injects a clock; in production the day of the publication is the database's own.
+  const { now } = dependencies;
 
   // The same object is the documentation metadata and the source of the schemas the handler validates with.
   const submitDocs = {
     permission: 'conteudo.operar',
     responseStatus: 200,
-    schemas: { params: AgencyClientContentPathParamsSchema, response: ContentDetailSchema }
+    schemas: { params: AgencyClientContentPathParamsSchema, body: ContentMoveRequestSchema, response: ContentDetailSchema }
   } satisfies DocumentedRouteConfig;
   const approveDocs = {
     permission: 'conteudo.aprovar_pela_agencia',
@@ -69,12 +71,12 @@ export const registerContentTransitionRoutes = (app: FastifyInstance, dependenci
   const unpublishDocs = {
     permission: 'conteudo.publicar',
     responseStatus: 200,
-    schemas: { params: AgencyClientContentPathParamsSchema, response: ContentDetailSchema }
+    schemas: { params: AgencyClientContentPathParamsSchema, body: ContentMoveRequestSchema, response: ContentDetailSchema }
   } satisfies DocumentedRouteConfig;
   const cancelDocs = {
     permission: 'conteudo.cancelar',
     responseStatus: 200,
-    schemas: { params: AgencyClientContentPathParamsSchema, response: ContentDetailSchema }
+    schemas: { params: AgencyClientContentPathParamsSchema, body: ContentMoveRequestSchema, response: ContentDetailSchema }
   } satisfies DocumentedRouteConfig;
   const rescheduleDocs = {
     permission: 'conteudo.operar',
@@ -165,10 +167,8 @@ export const registerContentTransitionRoutes = (app: FastifyInstance, dependenci
     });
   };
 
-  const noBody = (): undefined => undefined;
-
   register('submit', submitDocs, 'submit', {
-    body: noBody,
+    body: (request) => bodyOrEmpty(submitDocs, request),
     run: (transaction, { contentId }) => submitContent(transaction, contentId)
   });
 
@@ -185,18 +185,18 @@ export const registerContentTransitionRoutes = (app: FastifyInstance, dependenci
   register('publish', publishDocs, 'publish', {
     body: (request) => bodyOrEmpty(publishDocs, request),
     run: async (transaction, { contentId, body }) => {
-      const publishedOn = body.publishedOn ?? await saoPauloDay(transaction, now());
+      const publishedOn = body.publishedOn ?? await saoPauloDay(transaction, now?.());
       await publishContent(transaction, { contentId, publishedOn });
     }
   });
 
   register('unpublish', unpublishDocs, 'unpublish', {
-    body: noBody,
+    body: (request) => bodyOrEmpty(unpublishDocs, request),
     run: (transaction, { contentId }) => unpublishContent(transaction, contentId)
   });
 
   register('cancel', cancelDocs, 'cancel', {
-    body: noBody,
+    body: (request) => bodyOrEmpty(cancelDocs, request),
     run: (transaction, { contentId }) => cancelContent(transaction, contentId)
   });
 

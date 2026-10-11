@@ -70,13 +70,18 @@ A função confere a permissão antes da trava, toma o cliente `FOR SHARE` antes
 cliente depois da espera, então a rota **não decide** estado, arquivamento nem permissão: traduz. Quem
 aprovou, quando publicou e quando cancelou são do gatilho, nunca do corpo (`.strict()`).
 
-- **Corpo.** `submit`, `unpublish` e `cancel` não têm; `approve-by-agency` leva `{ revision, reason }`
+- **Corpo.** `submit`, `unpublish` e `cancel` não levam campo: aceitam `{}` ou nada, e um campo qualquer é
+  `400 VALIDATION_ERROR` sem chamar o banco (#563); `approve-by-agency` leva `{ revision, reason }`
   (`revision` é a que a pessoa leu: `409 CONTENT_REVISION_CHANGED` se a legenda, a capa, o formato ou a
   mídia mudou; o motivo segue a regra única de texto livre e tem até 5000 bytes); `publish` leva
   `{ publishedOn? }` (hoje em `America/Sao_Paulo` se faltar, nunca no futuro: `400`); `reschedule` leva
   `{ publishOn? }`. Sem corpo vale como `{}`.
-- **O dia de hoje** vem de `now()` do módulo (`dependencies.now`, fixado nos testes) passado por
-  `app_private.sao_paulo_date`. Desfazer a publicação é no dia (de São Paulo) em que ela foi **marcada**, regra
+- **Piso de data.** `publishedOn` (publicar) e `publishOn` (criar, editar e reagendar) não aceitam dia antes de
+  `2000-01-01` (`CONTENT_DAY_FLOOR`, `ContentDaySchema`): `400 VALIDATION_ERROR`, e o piso é aceito. O piso é da API; o banco
+  não o confere (decisão `2026-10-11-conteudo-piso-de-data-corpo-estrito-e-dia-do-banco`).
+- **O dia de hoje**, quando a publicação não traz `publishedOn`, é o do banco: `app_private.sao_paulo_date(pg_catalog.now())`,
+  o mesmo relógio com que o gatilho recusa um dia no futuro. `dependencies.now` só existe para o teste fixar um instante e
+  nunca é passado em produção. Desfazer a publicação é no dia (de São Paulo) em que ela foi **marcada**, regra
   do gatilho (`A0064` -> `409 CONTENT_UNPUBLISH_EXPIRED`).
 - **Repetir** a ação num conteúdo que já está no estado de chegada é `200` sem mudança (a função devolve).
 - **Mídia.** `A0065` é lido de novo numa transação nova: com mídia que não terminou de subir é
@@ -87,6 +92,28 @@ aprovou, quando publicou e quando cancelou são do gatilho, nunca do corpo (`.st
   ou a "publicado"; a rota não escreve nela e o teste confere uma linha por pessoa ativa do portal, sem duplicar.
 - **Cliente arquivado:** `409 CLIENT_ARCHIVED` em toda ação, nas duas janelas da corrida
   (`contents-transitions-race.integration.test.ts`).
+
+### A cobertura em dobro das corridas com o arquivamento
+
+Três travas do banco protegem as seis ações, e algumas ações têm mais de uma. Quem mexer numa delas precisa saber que as outras
+sustentam os mesmos testes:
+
+1. **A trava da função** (`app_private.lock_content_for_agency`, usada pelas seis funções): toma o cliente `FOR SHARE` antes da linha
+   do conteúdo e o lê depois da espera. Basta sozinha para as seis ações. Quem a prova é
+   `contents-transitions-race.integration.test.ts` (18 testes: seis ações, três janelas cada, a do arquivamento em curso, a do
+   arquivamento já confirmado e a da linha presa por outra transação). Sem o `FOR SHARE`, 14 dos 18 ficam vermelhos.
+2. **O gatilho `AFTER INSERT` da fila de e-mail** (`0_notification_queue_lock_active_client`, #407): `submit` e `publish` enfileiram
+   um aviso por pessoa do portal, e o `INSERT` toma o cliente ativo e responde `A0020`. Quem o prova é
+   `packages/database/test/conteudo-notification-queue.integration.test.ts` (o gatilho é o primeiro `AFTER INSERT` da fila e recusa
+   a linha de um cliente arquivado).
+3. **O gatilho de edição `0_contents_edit_lock_active_client`** (migration `20261011000600`, #538): `reagendar` muda `publish_on`, e o
+   `UPDATE` de uma coluna editável do conteúdo toma o cliente ativo. Quem o prova é `contents-archive-race.integration.test.ts` (a
+   edição enquanto o arquivamento está em curso e a que confirma antes do `UPDATE`) e a lista de gatilhos de
+   `packages/database/test/client-archive.integration.test.ts`.
+
+Os 4 dos 18 testes que continuam verdes sem a trava da função são a janela "em curso" de `submit`, `publish` e `reschedule` e a
+"confirmada antes" de `reschedule`: cada um é coberto também pela trava 2 (`submit`, `publish`) ou pela 3 (`reschedule`). Sem as três
+juntas, os 18 ficam vermelhos. Os 4 casos são proteção em dobro, não teste vazio.
 
 ## As subtarefas (issue #255)
 
@@ -134,8 +161,13 @@ legenda com quebras), que recusam caractere de controle e invisível.
 - `contents-transitions-race.integration.test.ts` (#256): por ação, o arquivamento em curso, o
   arquivamento que confirma antes da função e a linha presa por outra transação.
 - `transition-errors.test.ts`: a tradução de cada código das transições, sem banco.
-- `contents-owner-link.integration.test.ts` (#552): o responsável por vínculo, na resposta e no corpo: nenhum id de usuário,
-  vínculo removido, de outra agência, do portal ou inexistente, a pessoa de duas agências e o `403` antes do `400`.
+- `contents-transition-input.integration.test.ts` (#563): o piso de data (`1999-12-31` e `0001-01-01` recusados, `2000-01-01`
+  aceito) em publicar, reagendar, criar e editar; o corpo estrito de `submit`, `unpublish` e `cancel`; e o dia da publicação pelo
+  relógio do banco, com o da API anos atrás.
+- `contents-owner-link.integration.test.ts` (#552, #566): o responsável por vínculo, na resposta e no corpo: nenhum id de usuário
+  (de qualquer pessoa do cenário, a do portal e as das fixtures inclusive), vínculo removido, de outra agência, do portal,
+  inexistente ou de quem não vê Conteúdo (recusado pela rota antes de escrever, e a matriz que a compara com `agency_user_can`),
+  a pessoa de duas agências e o `403` antes do `400`.
 - `contents-tasks.integration.test.ts` (#255): quem entrega, aprova e devolve com papéis de uma permissão só (o responsável da
   subtarefa, o do conteúdo e quem aprova pela agência, e a troca do responsável do conteúdo), criar e editar, o responsável por
   vínculo (removido, de outra agência, do portal, inexistente e de quem não vê Conteúdo, todos a mesma resposta), o texto livre, o
