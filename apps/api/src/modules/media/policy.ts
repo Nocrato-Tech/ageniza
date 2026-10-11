@@ -10,6 +10,10 @@ export interface MediaRateLimitWindow {
 /** Uploading is `midia.enviar` for the agency's own media and `conteudo.operar` for a client's; the route says which. */
 export const MEDIA_UPLOAD_PERMISSIONS = ['midia.enviar', 'conteudo.operar'] as const;
 
+/** The read URL is `midia.enviar` for the agency's own media and `conteudo.visualizar` for a client's (issue #550). The guard lets
+ * either family in; the RLS of `media_assets` decides which rows the role sees, so the other family's media is a 404. */
+export const MEDIA_READ_PERMISSIONS = ['midia.enviar', 'conteudo.visualizar'] as const;
+
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1_000;
 
 export const MEDIA_RATE_LIMITS = {
