@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { hasInvisibleCharacters } from './invisible-characters.js';
+import { hasInvisibleCharacters, withoutEmojiSequences } from './invisible-characters.js';
 
 /**
  * A client's story scripts (specs/conteudo.md sections 3, 4 and 6, issue #258): one script per day of
@@ -36,14 +36,14 @@ const DaySchema = z.string().refine(isCalendarDay, 'must be a real date in the f
 /** Tab, LF and CR are the line breaks a person types; every other control character is refused. */
 const LINE_BREAKS = /[\t\n\r]/g;
 const CONTROL_OR_SEPARATOR = /[\p{Cc}\p{Zl}\p{Zp}]/u;
-/** Every format character: the zero-width space and joiners, the bidi controls, the BOM and the soft hyphen. */
+/** Every format character that is left once the emoji sequences are out: the zero-width space and joiners, the bidi controls, the BOM and the soft hyphen. */
 const FORMAT_CHARACTER = /\p{Cf}/u;
 /** Whether a free text carries a character that is invisible, forged-looking or breaks the line it is on. */
 export const hasHiddenStoryCharacters = (value: string): boolean => {
-  const withoutLineBreaks = value.replace(LINE_BREAKS, '');
-  return CONTROL_OR_SEPARATOR.test(withoutLineBreaks)
-    || FORMAT_CHARACTER.test(withoutLineBreaks)
-    || hasInvisibleCharacters(withoutLineBreaks);
+  const rest = withoutEmojiSequences(value.replace(LINE_BREAKS, ''));
+  return CONTROL_OR_SEPARATOR.test(rest)
+    || FORMAT_CHARACTER.test(rest)
+    || hasInvisibleCharacters(rest);
 };
 
 const visibleText = () => z.string().refine((value) => !hasHiddenStoryCharacters(value), 'must not contain control or invisible characters');

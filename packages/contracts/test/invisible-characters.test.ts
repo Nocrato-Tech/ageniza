@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { CreateMediaFolderRequestSchema, MediaFolderNameSchema, StorySceneTextSchema, hasInvisibleCharacters } from '../src/index.js';
+import {
+  ContentCaptionSchema,
+  ContentTitleSchema,
+  CreateMediaFolderRequestSchema,
+  MediaFolderNameSchema,
+  StorySceneGuidanceSchema,
+  StorySceneTextSchema,
+  hasInvisibleCharacters
+} from '../src/index.js';
 
 // One rule for every free text a person reads (issue #531 for the folder names, #258 for the story scripts): what renders as
 // nothing, or as a space, and is not a control or a separator. The edges live here, once. Each contract that takes such a text is
@@ -55,7 +63,93 @@ interface Contract {
 const CONTRACTS: readonly Contract[] = [
   { label: 'the folder name', accepts: (value) => MediaFolderNameSchema.safeParse(`Pasta ${value}`).success },
   { label: 'the body of the create-folder request', accepts: (value) => CreateMediaFolderRequestSchema.safeParse({ name: `Pasta ${value}` }).success },
-  { label: 'the text of a story scene', accepts: (value) => StorySceneTextSchema.safeParse(`Cena ${value}`).success }
+  { label: 'the text of a story scene', accepts: (value) => StorySceneTextSchema.safeParse(`Cena ${value}`).success },
+  { label: 'the guidance of a story scene', accepts: (value) => StorySceneGuidanceSchema.safeParse(`Dica ${value}`).success },
+  { label: 'the title of a content', accepts: (value) => ContentTitleSchema.safeParse(`Post ${value}`).success },
+  { label: 'the caption of a content', accepts: (value) => ContentCaptionSchema.safeParse(`Legenda ${value}`).success }
+];
+
+// The emoji sequences of UTS #51 that a phone writes. Each is accepted only whole: the matrix after the list breaks every one of them.
+const MAN = 0x1f468;
+const WOMAN = 0x1f469;
+const GIRL = 0x1f467;
+const LAPTOP = 0x1f4bb;
+const THUMBS_UP = 0x1f44d;
+const POINTING_UP = 0x261d;
+const TONE = 0x1f3fd;
+const ZWJ = 0x200d;
+const KEYCAP = 0x20e3;
+const BLACK_FLAG = 0x1f3f4;
+const CANCEL_TAG = 0xe007f;
+const ENGLAND = [BLACK_FLAG, 0xe0067, 0xe0062, 0xe0065, 0xe006e, 0xe0067, CANCEL_TAG];
+
+const SEQUENCES: ReadonlyArray<readonly [string, readonly number[]]> = [
+  ['a family (ZWJ between three pictographs)', [MAN, ZWJ, WOMAN, ZWJ, GIRL]],
+  ['a profession with a skin tone before the ZWJ', [WOMAN, TONE, ZWJ, LAPTOP]],
+  ['a couple with a heart (the heart carries the selector 16)', [WOMAN, ZWJ, 0x2764, SELECTOR_16, ZWJ, MAN]],
+  ['the rainbow flag (a flag with the selector 16, then ZWJ)', [0x1f3f3, SELECTOR_16, ZWJ, 0x1f308]],
+  ['the keycap one with the selector 16', [0x31, SELECTOR_16, KEYCAP]],
+  ['the keycap one without the selector 16', [0x31, KEYCAP]],
+  ['the keycap number sign', [0x23, SELECTOR_16, KEYCAP]],
+  ['the keycap asterisk', [0x2a, SELECTOR_16, KEYCAP]],
+  ['the keycap zero', [0x30, KEYCAP]],
+  ['the flag of England (a subdivision tag sequence)', ENGLAND],
+  ['a skin tone after a base', [THUMBS_UP, TONE]],
+  ['a skin tone after a base that is written with the selector 16 before it', [POINTING_UP, SELECTOR_16, TONE]],
+  ['a skin tone followed by the selector 16', [THUMBS_UP, TONE, SELECTOR_16]],
+  ['the selector 16 after a pictograph', [0x2764, SELECTOR_16]]
+];
+
+/** What each sequence above becomes when it is broken: the same characters out of place. */
+const BROKEN: ReadonlyArray<readonly [string, readonly number[]]> = [
+  ['a ZWJ between two letters', [0x61, ZWJ, 0x62]],
+  ['a ZWJ alone', [ZWJ]],
+  ['a ZWJ at the end of a family', [MAN, ZWJ, WOMAN, ZWJ]],
+  ['a ZWJ at the start of a family', [ZWJ, MAN, ZWJ, WOMAN]],
+  ['two ZWJ in a row between pictographs', [MAN, ZWJ, ZWJ, WOMAN]],
+  ['a ZWJ between a pictograph and a letter', [MAN, ZWJ, 0x61]],
+  ['a ZWJ between a letter and a pictograph', [0x61, ZWJ, MAN]],
+  ['a ZWJ between a pictograph and a space', [MAN, ZWJ, 0x20, WOMAN]],
+  ['a ZWJ before a skin tone that has no base', [TONE, ZWJ, LAPTOP]],
+  ['a ZWNJ where the family has the ZWJ', [MAN, 0x200c, WOMAN]],
+  ['a family cut by the grapheme joiner', [MAN, 0x034f, ZWJ, WOMAN]],
+  ['a family with a zero-width space inside', [MAN, ZWJ, 0x200b, WOMAN]],
+  ['a family with a bidi override inside', [MAN, ZWJ, 0x202e, WOMAN]],
+  ['a family with the musical null notehead inside', [MAN, ZWJ, 0x1d159, WOMAN]],
+  ['a family with the selector 16 twice', [MAN, SELECTOR_16, SELECTOR_16, ZWJ, WOMAN]],
+  ['a family with the text selector 15 inside', [MAN, 0xfe0e, ZWJ, WOMAN]],
+  ['the keycap alone', [KEYCAP]],
+  ['the keycap after a letter', [0x61, KEYCAP]],
+  ['the keycap after a space', [0x20, KEYCAP]],
+  ['the keycap twice', [0x31, SELECTOR_16, KEYCAP, KEYCAP]],
+  ['the keycap with the selector 16 twice', [0x31, SELECTOR_16, SELECTOR_16, KEYCAP]],
+  ['the keycap with the text selector 15', [0x31, 0xfe0e, KEYCAP]],
+  ['the keycap with a ZWJ inside', [0x31, ZWJ, KEYCAP]],
+  ['a digit with the selector 16 and no keycap', [0x31, SELECTOR_16]],
+  ['the keycap after a pictograph', [0x2764, KEYCAP]],
+  ['the flag of England without the cancel tag', ENGLAND.slice(0, -1)],
+  ['the flag of England without the black flag', ENGLAND.slice(1)],
+  ['the cancel tag alone', [CANCEL_TAG]],
+  ['a tag letter alone', [0xe0067]],
+  ['the black flag and the cancel tag, with no letter between', [BLACK_FLAG, CANCEL_TAG]],
+  ['the flag of England and then one more tag letter', [...ENGLAND, 0xe0067]],
+  ['the flag of England and then a second cancel tag', [...ENGLAND, CANCEL_TAG]],
+  ['a subdivision whose black flag is another pictograph', [0x1f600, ...ENGLAND.slice(1)]],
+  ['a subdivision with the tag space inside', [BLACK_FLAG, 0xe0020, 0xe0067, CANCEL_TAG]],
+  ['a subdivision with a tag digit inside', [BLACK_FLAG, 0xe0067, 0xe0031, CANCEL_TAG]],
+  ['a subdivision with the language tag inside',[BLACK_FLAG, 0xe0001, 0xe0067, CANCEL_TAG]],
+  ['a subdivision between letters, cut in the middle by a letter', [BLACK_FLAG, 0xe0067, 0x61, 0xe0062, CANCEL_TAG]],
+  ['a skin tone alone', [TONE]],
+  ['a skin tone after a letter', [0x61, TONE]],
+  ['a skin tone after a pictograph that takes none', [0x2764, TONE]],
+  ['a skin tone twice', [THUMBS_UP, TONE, TONE]],
+  ['a skin tone with the selector 16 twice', [THUMBS_UP, TONE, SELECTOR_16, SELECTOR_16]],
+  ['a skin tone with the text selector 15 after it', [THUMBS_UP, TONE, 0xfe0e]],
+  ['a skin tone with the text selector 15 before it', [THUMBS_UP, 0xfe0e, TONE]],
+  ['a skin tone and then a second one with the selector 16', [THUMBS_UP, SELECTOR_16, TONE, SELECTOR_16, TONE]],
+  // Taking the pictograph out must not join the digit to the keycap: a rule that reads a text twice would see "1" and U+20E3 side by side.
+  ['a keycap mark split from its digit by a pictograph', [0x31, 0x2764, KEYCAP]],
+  ['a keycap mark split from its digit by a family', [0x31, MAN, ZWJ, WOMAN, KEYCAP]]
 ];
 
 describe('hasInvisibleCharacters', () => {
@@ -105,5 +199,75 @@ describe.each(CONTRACTS)('$label runs the same matrix as the helper', ({ accepts
     for (const value of ['Imagens', 'a-c', 'Abril 2026', 'com acento: ação', '✨']) {
       expect({ value, accepted: accepts(value) }).toEqual({ value, accepted: true });
     }
+  });
+});
+
+const around = (codePoints: readonly number[]): string => `Cena ${text(...codePoints)} fim`;
+
+describe('hasInvisibleCharacters and the emoji sequences (#539)', () => {
+  it.each(SEQUENCES)('accepts %s whole, alone, between words, twice in a row and after a line break', (_label, codePoints) => {
+    const sequence = text(...codePoints);
+    for (const value of [sequence, around(codePoints), `${sequence}${sequence}`, `${sequence} ${sequence}`, `a\n${sequence}`]) {
+      expect({ value, hidden: hasInvisibleCharacters(value) }).toEqual({ value, hidden: false });
+    }
+  });
+
+  it.each(SEQUENCES)('refuses %s when a joiner, a keycap or a tag comes right before or after it', (_label, codePoints) => {
+    for (const extra of [[ZWJ], [KEYCAP], [CANCEL_TAG], [0xe0067], [SELECTOR_16, SELECTOR_16]]) {
+      for (const value of [text(...codePoints, ...extra), text(...extra, ...codePoints)]) {
+        expect({ value, hidden: hasInvisibleCharacters(value) }).toEqual({ value, hidden: true });
+      }
+    }
+  });
+
+  it.each(BROKEN)('refuses %s', (_label, codePoints) => {
+    for (const value of [text(...codePoints), around(codePoints), `Ima${text(...codePoints)}gens`]) {
+      expect({ value, hidden: hasInvisibleCharacters(value) }).toEqual({ value, hidden: true });
+    }
+  });
+
+  it('does not let a broken sequence be completed by the one next to it', () => {
+    expect(hasInvisibleCharacters(text(MAN, ZWJ) + text(WOMAN))).toBe(false);
+    expect(hasInvisibleCharacters(text(MAN, ZWJ) + 'x' + text(WOMAN))).toBe(true);
+    expect(hasInvisibleCharacters(text(MAN, ZWJ) + ' ' + text(WOMAN))).toBe(true);
+    expect(hasInvisibleCharacters(text(0x31, SELECTOR_16) + text(KEYCAP))).toBe(false);
+    expect(hasInvisibleCharacters(text(0x31, SELECTOR_16) + 'x' + text(KEYCAP))).toBe(true);
+    expect(hasInvisibleCharacters(text(...ENGLAND.slice(0, 4)) + 'x' + text(...ENGLAND.slice(4)))).toBe(true);
+  });
+
+  it('keeps refusing the invisible characters that are not part of an emoji, next to a sequence', () => {
+    const family = text(MAN, ZWJ, WOMAN);
+    for (const [label, codePoint] of INVISIBLE) {
+      // The selector 16 right after the woman is the one written by a phone, so it is only wrong where no pictograph comes before it.
+      const values = codePoint === SELECTOR_16
+        ? [`${text(codePoint)}${family}`, `${family} ${text(codePoint)}`]
+        : [`${family}${text(codePoint)}`, `${text(codePoint)}${family}`, `${family} ${text(codePoint)}${family}`];
+      for (const value of values) {
+        expect({ label, value, hidden: hasInvisibleCharacters(value) }).toEqual({ label, value, hidden: true });
+      }
+    }
+  });
+});
+
+describe.each(CONTRACTS)('$label and the emoji sequences (#539)', ({ accepts }) => {
+  it.each(SEQUENCES)('accepts %s whole', (_label, codePoints) => {
+    expect(accepts(text(...codePoints))).toBe(true);
+    expect(accepts(around(codePoints))).toBe(true);
+  });
+
+  it.each(BROKEN)('refuses %s', (_label, codePoints) => {
+    expect(accepts(text(...codePoints))).toBe(false);
+    expect(accepts(around(codePoints))).toBe(false);
+  });
+});
+
+describe('a folder name made only of an emoji sequence (#539)', () => {
+  it.each([
+    ['a family', [MAN, ZWJ, WOMAN, ZWJ, GIRL]],
+    ['the flag of England', ENGLAND],
+    ['a thumbs up with a skin tone', [THUMBS_UP, TONE]]
+  ] as const)('refuses %s: a name needs a letter or a number', (_label, codePoints) => {
+    expect(MediaFolderNameSchema.safeParse(text(...codePoints)).success).toBe(false);
+    expect(MediaFolderNameSchema.safeParse(`Time ${text(...codePoints)}`).success).toBe(true);
   });
 });

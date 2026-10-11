@@ -348,6 +348,24 @@ describe('creating a folder (issue #253)', () => {
     expect((await call('POST', foldersUrl(agencyA, clientA1), 'opVis', { name: `Coração ${String.fromCodePoint(0x2764, 0xfe0f)}` })).statusCode).toBe(201);
   });
 
+  it('keeps a complete emoji sequence in the name and refuses the same one broken (issue #539)', async () => {
+    const family = String.fromCodePoint(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467);
+    const england = String.fromCodePoint(0x1f3f4, 0xe0067, 0xe0062, 0xe0065, 0xe006e, 0xe0067, 0xe007f);
+    const keycap = String.fromCodePoint(0x31, 0xfe0f, 0x20e3);
+    for (const name of [`Familia ${family}`, `Time ${england}`, `Top ${keycap}`]) {
+      const reply = await call('POST', foldersUrl(agencyA, clientA1), 'opVis', { name });
+      expect({ name, status: reply.statusCode }).toEqual({ name, status: 201 });
+      expect(reply.json().name).toBe(name);
+    }
+
+    const before = await folderCount(clientA1);
+    for (const name of [`Familia ${family}${String.fromCodePoint(0x200d)}`, `Time ${england.slice(0, -2)}`, `Top ${keycap}${String.fromCodePoint(0x20e3)}`, family]) {
+      const reply = await call('POST', foldersUrl(agencyA, clientA1), 'opVis', { name });
+      expect({ name, status: reply.statusCode }).toEqual({ name, status: 400 });
+    }
+    expect(await folderCount(clientA1)).toBe(before);
+  });
+
   it('refuses an extra field, a folder inside a working folder, a parent of another client and an archived client', async () => {
     const parent = (await call('POST', foldersUrl(agencyA, clientA1), 'opVis', { name: 'Pai' })).json().id as string;
     const child = (await call('POST', foldersUrl(agencyA, clientA1), 'opVis', { name: 'Filha', parentId: parent })).json().id as string;

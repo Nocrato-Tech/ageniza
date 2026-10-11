@@ -554,6 +554,32 @@ describe('create (issue #254)', () => {
   });
 });
 
+describe('emoji sequences in the title and the caption (issue #539)', () => {
+  it('keeps a family, a keycap and a flag of England, and refuses the same ones broken', async () => {
+    const family = String.fromCodePoint(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467);
+    const keycap = String.fromCodePoint(0x31, 0xfe0f, 0x20e3);
+    const england = String.fromCodePoint(0x1f3f4, 0xe0067, 0xe0062, 0xe0065, 0xe006e, 0xe0067, 0xe007f);
+    const title = `Familia ${family} ${keycap}`;
+    const caption = `Jogo ${england}
+Top ${keycap}`;
+    const reply = await w.call('POST', people.admin.cookie, urlA(), { ...create, title, caption, folderId: folderA });
+    expect(reply.statusCode).toBe(201);
+    expect([reply.json().title, reply.json().caption]).toEqual([title, caption]);
+
+    const before = await w.countContents(clientA);
+    for (const body of [
+      { title: `Familia ${family}${String.fromCodePoint(0x200d)}` },
+      { title: `a${String.fromCodePoint(0x200d)}b` },
+      { caption: `Jogo ${england.slice(0, -2)}` },
+      { caption: `Top ${String.fromCodePoint(0x20e3)}` }
+    ]) {
+      const refused = await w.call('POST', people.admin.cookie, urlA(), { ...create, folderId: folderA, ...body });
+      expect({ body, status: refused.statusCode }).toEqual({ body, status: 400 });
+    }
+    expect(await w.countContents(clientA)).toBe(before);
+  });
+});
+
 describe('read one content (issue #254)', () => {
   it('returns the content with its media in order, its subtasks and the summary of its conversation', async () => {
     const folderId = folderA;
