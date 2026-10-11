@@ -56,7 +56,7 @@ export interface ContentModuleDependencies {
   readonly requireAgencyAccess: PreHandler;
   /** Injected by the tenancy module; same named-permission rule the RLS policy enforces. */
   readonly requirePermission: (key: string) => PreHandler;
-  /** The instant "today" is read from when a publication carries no day; only a test sets it. */
+  /** The instant "today" is read from when a publication carries no day; only a test sets it, and without it the day is the database's own. */
   readonly now?: () => Date;
 }
 
