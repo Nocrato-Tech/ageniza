@@ -534,15 +534,15 @@ describe('the media of a folder', () => {
     await waitFor(() => expect(container.querySelector('.media-thumbnail img')).not.toBeNull());
     expect(thumbnailCalls(world)).toHaveLength(1);
 
-    // The URL expires at 01:45 and is kept until 30 s before that; 60 s later the tile is drawn again from the cache.
-    vi.setSystemTime(new Date('2026-10-12T01:31:00Z'));
+    // The URL expires at 01:45 and is kept until 30 s before that: one second before the margin the tile is drawn from the cache.
+    vi.setSystemTime(new Date('2026-10-12T01:44:29Z'));
     act(() => probe.navigate(foldersUrl(`&pasta=${IMAGES}`)));
     await waitFor(() => expect(container.querySelector('.media-thumbnail')).toBeNull());
     act(() => probe.navigate(foldersUrl(`&pasta=${VIDEOS}`)));
     await waitFor(() => expect(container.querySelector('.media-thumbnail img')).not.toBeNull());
     expect(thumbnailCalls(world)).toHaveLength(1);
 
-    // Past the margin the URL is stale, so the same tile asks for a new one.
+    // One second past the margin the URL is stale, so the same tile asks for a new one.
     vi.setSystemTime(new Date('2026-10-12T01:44:31Z'));
     act(() => probe.navigate(foldersUrl(`&pasta=${IMAGES}`)));
     await waitFor(() => expect(container.querySelector('.media-thumbnail')).toBeNull());
