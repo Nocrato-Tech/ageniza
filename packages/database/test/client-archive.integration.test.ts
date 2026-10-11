@@ -949,6 +949,40 @@ describe('archiving a client cancels the content planned after its closing (issu
   });
 });
 
+// Issues #408 and #534. The list of columns of each edit trigger repeats by hand what the application role may write, so a
+// writable column added later would escape the lock with no test turning red; the catalog says it instead.
+describe('the edit lock covers every column the application role may write (issues #408 and #534)', () => {
+  it.each([
+    ['contents', '0_contents_edit_lock_active_client'],
+    ['story_scripts', '0_story_scripts_edit_lock_active_client'],
+    ['story_script_scenes', '0_story_script_scenes_edit_lock_active_client']
+  ])('%s: the columns of %s are exactly the ones ageniza_app has UPDATE on, and the WHEN compares each of them', async (table, trigger) => {
+    const writable = await w.getOwner().knex.raw<{ rows: Array<{ name: string }> }>(
+      `select a.attname as name from pg_attribute a
+       where a.attrelid = ?::regclass and a.attnum > 0 and not a.attisdropped
+         and has_column_privilege('ageniza_app', a.attrelid, a.attnum, 'UPDATE')
+       order by a.attname collate "C"`, [`public.${table}`]
+    );
+    const locked = await w.getOwner().knex.raw<{ rows: Array<{ name: string; definition: string; enabled: string; after_update_row: boolean }> }>(
+      `select a.attname as name, pg_get_triggerdef(t.oid) as definition, t.tgenabled as enabled,
+              (t.tgtype & 1) = 1 and (t.tgtype & 2) = 0 and (t.tgtype & 16) = 16 as after_update_row
+       from pg_trigger t join pg_attribute a on a.attrelid = t.tgrelid and a.attnum = any (t.tgattr::int2[])
+       where t.tgrelid = ?::regclass and t.tgname = ? and not t.tgisinternal
+       order by a.attname collate "C"`, [`public.${table}`, trigger]
+    );
+
+    expect(writable.rows.length).toBeGreaterThan(0);
+    expect(locked.rows.map((row) => row.name)).toEqual(writable.rows.map((row) => row.name));
+    expect(locked.rows.every((row) => row.enabled === 'O' && row.after_update_row)).toBe(true);
+    const condition = locked.rows[0]!.definition.split(' WHEN ')[1] ?? '';
+    for (const row of locked.rows) {
+      // The catalog quotes a reserved word (`position`).
+      const mentions = (side: string): boolean => condition.includes(`${side}.${row.name}`) || condition.includes(`${side}."${row.name}"`);
+      expect({ column: row.name, compared: mentions('old') && mentions('new') }).toEqual({ column: row.name, compared: true });
+    }
+  });
+});
+
 describe('the lock of the children is the first AFTER INSERT trigger of each table (issue #284)', () => {
   it.each([
     'client_brand_sections', 'client_personas', 'client_threads', 'client_thread_comments', 'media_folders', 'media_assets',
