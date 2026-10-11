@@ -13,6 +13,7 @@ import {
   type TestUserFixture
 } from '../auth/test-support/harness.js';
 import type { DatabaseClient } from '@ageniza/database';
+import { revokeInsertId } from '../auth/test-support/insert-id-revoked.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../tenancy/guards.js';
 import { registerClientModule } from './routes.js';
 
@@ -280,6 +281,19 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     const study = await getStudy(adminCookie, agencyA, clientId);
     const archetype = study.json<{ sections: { key: string; archetype: string | null }[] }>().sections.find((section) => section.key === 'archetype');
     expect(archetype?.archetype).toBe(key);
+  });
+
+  it('creates a persona without choosing its id, and answers the id of the row (#601)', async () => {
+    const clientId = await createClient(agencyA);
+    const restoreGrant = await revokeInsertId(owner, ['client_personas']);
+    try {
+      const created = await postPersona(adminCookie, agencyA, clientId, { name: 'Persona sem id escolhido' });
+      expect(created.statusCode).toBe(201);
+      const rows = await owner.knex('client_personas').where({ client_id: clientId });
+      expect(rows.map((row) => [row.id, row.name])).toEqual([[created.json<{ id: string }>().id, 'Persona sem id escolhido']]);
+    } finally {
+      await restoreGrant();
+    }
   });
 
   it('counts an active persona in filled and stops counting it when archived', async () => {

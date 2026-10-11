@@ -10,6 +10,7 @@ import {
   type DatabaseClient
 } from '@ageniza/database';
 
+import { revokeInsertId } from '../modules/auth/test-support/insert-id-revoked.js';
 import {
   buildTestApp,
   ownerClient,
@@ -46,6 +47,10 @@ let first: SeedDemoResult;
 let second: SeedDemoResult;
 /** The most recent run, since every run rotates every demo password. */
 let latest: SeedDemoResult;
+let restoreGrant: () => Promise<void>;
+
+/** No table the seed writes as the application role takes an id chosen in the INSERT (issue #601). */
+const TABLES_WITHOUT_INSERT_ID = ['clients', 'client_personas', 'client_threads', 'client_thread_comments'] as const;
 
 // Counts run through the migration owner: most of these tables are behind RLS, and an
 // unauthenticated application connection would count zero rows instead of the seed's.
@@ -128,12 +133,15 @@ describe('seed:demo (issue #183)', () => {
   beforeAll(async () => {
     owner = ownerClient();
     app = await buildTestApp();
+    // The whole suite runs with the INSERT of the id taken away: a seed that still chooses one fails here, before any assertion.
+    restoreGrant = await revokeInsertId(owner, TABLES_WITHOUT_INSERT_ID);
     first = await runSeedDemo(runOptions);
     second = await runSeedDemo(runOptions);
     latest = second;
   });
 
   afterAll(async () => {
+    await restoreGrant();
     const agencyIds = first.agencyIds;
     const userIds = first.userIds;
     const clientIds = first.clientIds;
@@ -280,6 +288,19 @@ describe('seed:demo (issue #183)', () => {
       { name: 'Creme de trigo', hex: '#F3E3C3' }
     ]);
     expect(await count('select count(*)::text as total from public.client_brand_sections where client_id = any(?::uuid[])', [first.clientIds])).toBe(rowsBefore);
+  });
+
+  it('running the seed again finds a persona by its name and brings its text back, without a second one (issue #601)', async () => {
+    const before = await count('select count(*)::text as total from public.client_personas where client_id = any(?::uuid[])', [first.clientIds]);
+    const [persona] = await owner.knex('client_personas').whereIn('client_id', first.clientIds).where({ name: 'Moradora do bairro' }).select('id', 'description');
+    expect(persona?.description).toBe('Trabalha perto, passa a pé todos os dias e compra para levar.');
+    await owner.knex('client_personas').where({ id: persona!.id }).update({ description: 'Texto que a demonstração não escreve' });
+
+    latest = await runSeedDemo(runOptions);
+
+    const repaired = await owner.knex('client_personas').where({ id: persona!.id }).first('description');
+    expect(repaired?.description).toBe('Trabalha perto, passa a pé todos os dias e compra para levar.');
+    expect(await count('select count(*)::text as total from public.client_personas where client_id = any(?::uuid[])', [first.clientIds])).toBe(before);
   });
 
   it('rotating a demo password ends the previous session', async () => {
