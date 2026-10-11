@@ -2589,7 +2589,7 @@ Cria um roteiro de stories em rascunho.
 
 ```json
 {
-  "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
   "scriptOn": "2026-10-20",
   "status": "draft",
   "scenes": [
@@ -2647,7 +2647,7 @@ Edita o dia e as cenas de um roteiro em rascunho.
 
 ```json
 {
-  "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
   "scriptOn": "2026-10-20",
   "status": "draft",
   "scenes": [
@@ -2683,7 +2683,7 @@ Envia o roteiro ao cliente.
 
 ```json
 {
-  "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
   "scriptOn": "2026-10-20",
   "status": "sent",
   "scenes": [
@@ -2730,7 +2730,7 @@ Lista os roteiros enviados de um período, no portal.
 {
   "data": [
     {
-      "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
       "scriptOn": "2026-10-20",
       "status": "sent",
       "scenes": [
@@ -2770,7 +2770,7 @@ Marca o roteiro como gravado, no portal.
 
 ```json
 {
-  "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
   "scriptOn": "2026-10-20",
   "status": "recorded",
   "scenes": [

@@ -16249,7 +16249,7 @@
                   "$ref": "#/components/schemas/createStoryScriptResponse"
                 },
                 "example": {
-                  "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                  "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
                   "scriptOn": "2026-10-20",
                   "status": "draft",
                   "scenes": [
@@ -16483,7 +16483,7 @@
                   "$ref": "#/components/schemas/createStoryScriptResponse"
                 },
                 "example": {
-                  "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                  "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
                   "scriptOn": "2026-10-20",
                   "status": "draft",
                   "scenes": [
@@ -16690,7 +16690,7 @@
                   "$ref": "#/components/schemas/createStoryScriptResponse"
                 },
                 "example": {
-                  "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                  "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
                   "scriptOn": "2026-10-20",
                   "status": "sent",
                   "scenes": [
@@ -16859,7 +16859,7 @@
                 "example": {
                   "data": [
                     {
-                      "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                      "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
                       "scriptOn": "2026-10-20",
                       "status": "sent",
                       "scenes": [
@@ -17004,7 +17004,7 @@
                   "$ref": "#/components/schemas/recordPortalStoryScriptResponse"
                 },
                 "example": {
-                  "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                  "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
                   "scriptOn": "2026-10-20",
                   "status": "recorded",
                   "scenes": [
