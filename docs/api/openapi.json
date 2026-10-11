@@ -2475,6 +2475,19 @@
                         "personaId"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "contentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      },
+                      "required": [
+                        "contentId"
+                      ],
+                      "additionalProperties": false
                     }
                   ]
                 },
@@ -2652,6 +2665,19 @@
                     },
                     "required": [
                       "personaId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "contentId": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "required": [
+                      "contentId"
                     ],
                     "additionalProperties": false
                   }
@@ -2847,6 +2873,19 @@
                 },
                 "required": [
                   "personaId"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "contentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "contentId"
                 ],
                 "additionalProperties": false
               }
@@ -3059,6 +3098,19 @@
                 },
                 "required": [
                   "personaId"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "contentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "contentId"
                 ],
                 "additionalProperties": false
               }
@@ -11027,6 +11079,15 @@
           {
             "schema": {
               "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "contentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "enum": [
                 "open",
                 "resolved"
@@ -12485,6 +12546,15 @@
             },
             "required": false,
             "name": "personaId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "contentId",
             "in": "query"
           },
           {

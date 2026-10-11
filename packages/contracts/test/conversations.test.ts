@@ -96,30 +96,52 @@ describe('the subject of a conversation about a content (#259)', () => {
   });
 });
 
+// Code points are spelled as numbers so the invisible characters stay visible in this file.
+const text = (...codePoints: readonly number[]): string => String.fromCodePoint(...codePoints);
+const HEART = 0x2764;
+const VS16 = 0xfe0f;
+
 describe('what a comment may carry (#259)', () => {
   it('refuses the invisible characters that are not format characters, anywhere in the text', () => {
+    for (const hidden of [
+      text(0x034f), text(0x2800), text(0x3164), text(0x115f), text(0x1160), text(0xffa0), text(0x180b), text(0x17b4),
+      text(0xfe00), text(0xfe0e), text(0xe0100), text(0x1d159)
+    ]) {
+      for (const body of [hidden, `a${hidden}b`, `a${hidden}`, `${hidden}a`]) {
+        expect(CommentBodySchema.safeParse(body).success, JSON.stringify(body)).toBe(false);
+      }
+    }
+  });
+
+  it('allows the emoji selector once, and only it, right after a pictograph', () => {
+    for (const body of [text(HEART, VS16), text(0x1f600, VS16), text(0x00a9, VS16), text(HEART, VS16, HEART, VS16), `Adorei ${text(0x2600, VS16)}!`]) {
+      expect(CommentBodySchema.safeParse(body).success, JSON.stringify(body)).toBe(true);
+    }
     for (const body of [
-      '͏', 'a͏b', '⠀', 'a⠀', 'ㅤ', 'aㅤb', '᠋', 'a︀', 'a︎', 'a\u{e0100}', 'aᅟ',
-      'a️', '️', '❤︎'
+      text(HEART, VS16, VS16), text(HEART, 0xfe0e), text(HEART, 0xfe00), text(HEART, 0xe0100), text(HEART, VS16, 0xfe00),
+      text(HEART, VS16, 0x034f), text(HEART, VS16, 0x61, VS16), text(0x61, VS16), text(VS16)
     ]) {
       expect(CommentBodySchema.safeParse(body).success, JSON.stringify(body)).toBe(false);
     }
   });
 
   it('refuses the C1 controls and the line and paragraph separators, which the C0 rule does not reach', () => {
-    for (const body of ['a\u0085b', '\u0080', 'a\u009fb', 'a b', 'a b']) {
-      expect(CommentBodySchema.safeParse(body).success, JSON.stringify(body)).toBe(false);
+    for (const hidden of [text(0x0085), text(0x0080), text(0x009f), text(0x2028), text(0x2029)]) {
+      expect(CommentBodySchema.safeParse(`a${hidden}b`).success, JSON.stringify(hidden)).toBe(false);
     }
   });
 
   it('refuses a text of spaces and format characters alone, as the database does for a request for changes', () => {
-    for (const body of ['​', '​ ‍‌', '﻿', '⁠', '‮', ' ​\n⁦ ', '­']) {
+    for (const body of [
+      text(0x200b), text(0x200b, 0x20, 0x200d, 0x200c), text(0xfeff), text(0x2060), text(0x202e), text(0x20, 0x200b, 0x0a, 0x2066, 0x20), text(0x00ad)
+    ]) {
       expect(CommentBodySchema.safeParse(body).success, JSON.stringify(body)).toBe(false);
     }
   });
 
   it('keeps what a person really writes: emoji with their selector and joiners, accents and line breaks', () => {
-    for (const body of ['❤️', 'Adorei ☀️!', '\u{1f468}‍\u{1f469}‍\u{1f467} juntos', 'coração', 'linha 1\nlinha 2\t3', 'a‍b']) {
+    const family = text(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467);
+    for (const body of [text(HEART, VS16), `Adorei ${text(0x2600, VS16)}!`, `${family} juntos`, 'coração', 'linha 1\nlinha 2\t3', text(0x61, 0x200d, 0x62)]) {
       expect(CommentBodySchema.safeParse(body).success, JSON.stringify(body)).toBe(true);
     }
   });

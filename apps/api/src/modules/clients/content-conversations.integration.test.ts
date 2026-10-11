@@ -22,6 +22,9 @@ import { registerClientModule } from './routes.js';
 // to more than one tenant, so a missing filter shows up as a leaked row instead of being hidden by row-level security.
 const origin = { origin: TEST_APP_PUBLIC_URL };
 
+// Invisible characters are spelled as code points so they stay visible in this file.
+const text = (...codePoints: readonly number[]): string => String.fromCodePoint(...codePoints);
+
 type Status = 'in_production' | 'awaiting_approval' | 'adjusting' | 'approved' | 'published' | 'cancelled';
 const OPEN_STATUSES: readonly Status[] = ['awaiting_approval', 'adjusting', 'approved', 'published'];
 const CLOSED_STATUSES: readonly Status[] = ['in_production', 'cancelled'];
@@ -935,7 +938,7 @@ describe('CLIENTES conversation of a content (#259)', () => {
       const threadId = await seedContentThread(clientA1, contentId, [{ author: 'manager', side: 'agency', at: '2026-10-01T10:00:00Z' }]);
       const before = await snapshotOf(clientA1);
       expect((await call('POST', base(), cookies.portalOne!, { subject: { contentId }, body: 'x', side: 'agency' })).statusCode).toBe(400);
-      for (const body of ['͏', 'a͏b', '⠀', 'a︎b', '​‍', 'a\u0085b', 'a\u0000b']) {
+      for (const body of [text(0x034f), `a${text(0x034f)}b`, text(0x2800), `a${text(0xfe0e)}b`, text(0x1d159), text(0x200b, 0x200d), `a${text(0x0085)}b`, `a${text(0)}b`]) {
         const label = JSON.stringify(body);
         expect((await openAs(cookies.portalOne!, base(), contentId, body)).statusCode, `portal open ${label}`).toBe(400);
         expect((await commentAs(cookies.portalOne!, base(), threadId, body)).statusCode, `portal comment ${label}`).toBe(400);
@@ -944,7 +947,7 @@ describe('CLIENTES conversation of a content (#259)', () => {
       }
       expect(await snapshotOf(clientA1)).toEqual(before);
       for (const [cookie, url] of [[cookies.portalOne!, base()], [cookies.manager!, agencyThreads(agencyA, clientA1)]] as const) {
-        expect((await commentAs(cookie, url, threadId, 'Gostei ❤️ \u{1f468}‍\u{1f469}‍\u{1f467}')).statusCode).toBe(201);
+        expect((await commentAs(cookie, url, threadId, `Gostei ${text(0x2764, 0xfe0f)} ${text(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467)}`)).statusCode).toBe(201);
       }
     });
   });
@@ -1031,6 +1034,21 @@ describe('CLIENTES conversation of a content (#259)', () => {
         });
         expect(await snapshotOf(clientA1), side).toEqual(before);
       }
+    });
+
+    it('answers 409 CONTENT_NOT_OPEN to a comment of the agency on an existing conversation whose content closes between the check and the write', async () => {
+      const contentId = await seedContent(clientA1, 'awaiting_approval');
+      const threadId = await seedContentThread(clientA1, contentId, [{ author: 'portalOne', side: 'client', at: '2026-10-01T10:00:00Z' }]);
+      let armed = true;
+      await withProxiedApp(async (statement) => {
+        if (!armed || !isConversationWrite(statement)) return;
+        armed = false;
+        await moveContent(contentId, 'cancelled');
+        throw Object.assign(new Error('new row violates row-level security policy'), { code: '42501' });
+      }, async (proxied) => {
+        expectContentNotOpen(await commentAs(cookies.manager!, agencyThreads(agencyA, clientA1), threadId, 'x', proxied));
+      });
+      expect(await commentRows(threadId)).toHaveLength(1);
     });
 
     it('answers 409 CLIENT_ARCHIVED to the agency, and 404 to the portal, when the archive commits between the check and the write', async () => {
