@@ -10,6 +10,7 @@ import { ClientBrandStudyTab } from './brand-study.js';
 import { ClientDetailPage, ClientGeneralTab, ClientSkeletonTab } from './client-detail.js';
 import { ClientsPage } from './clients.js';
 import { CollaboratorsPage } from './collaborators.js';
+import { ContentsClientPage, ContentsPage } from './contents.js';
 import { ContextSelectPage } from './contexts.js';
 import { ConfirmEmailChangePage } from './email-change.js';
 import { ForgotPasswordPage } from './forgot-password.js';
@@ -27,6 +28,9 @@ import { PortalBrandPage } from './portal-brand.js';
 import { ResetPasswordPage } from './reset-password.js';
 import { SessionWatch } from './session-watch.js';
 import { LoadingPage, NotFoundPage, SessionGate } from './status-pages.js';
+
+/** Contents and the roster behind its picker: both are needed to open the area. */
+const CONTENT_AREA_PERMISSIONS = ['conteudo.visualizar', 'cliente.visualizar'] as const;
 
 export function PublicLayout() {
   return <div className="app-shell"><a className="skip-link" href="#main-content">Pular para o conteúdo</a><header><Link to="/">Ageniza</Link></header><main id="main-content"><Outlet /></main></div>;
@@ -75,6 +79,18 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
           <CollaboratorsPage />
         </AgencyPermissionRoute>
       } />
+      <Route path="conteudos">
+        <Route index element={
+          <AgencyPermissionRoute permission={CONTENT_AREA_PERMISSIONS}>
+            <ContentsPage />
+          </AgencyPermissionRoute>
+        } />
+        <Route path=":clienteId" element={
+          <AgencyPermissionRoute permission={CONTENT_AREA_PERMISSIONS}>
+            <ContentsClientPage />
+          </AgencyPermissionRoute>
+        } />
+      </Route>
       <Route path="clientes">
         <Route index element={
           <AgencyPermissionRoute permission="cliente.visualizar">
