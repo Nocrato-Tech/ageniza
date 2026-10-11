@@ -2,6 +2,7 @@ import type {
   Content,
   ContentDetail,
   ContentListItem,
+  ContentTask,
   CreateContentRequest,
   StoryScriptListItem,
   UpdateContentRequest
@@ -114,7 +115,7 @@ const ownerOf = (row: { readonly owner_membership_id: string | null; readonly ow
  * The user behind an active link of a collaborator of this agency, or `undefined` for a link that is absent, removed, of another
  * agency or of a client's portal (a portal link has its own table, so its id is no id here). A person is named by a link, never by an id.
  */
-export const resolveOwnerMembership = async (
+export const resolveCollaboratorLink = async (
   transaction: ContentTransaction,
   input: { readonly agencyId: string; readonly membershipId: string }
 ): Promise<string | undefined> => {
@@ -299,25 +300,22 @@ export const replaceContentMedia = async (
   await raw(transaction, 'select app_private.set_content_media(?::uuid, ?::uuid[])', [input.contentId, `{${input.assetIds.join(',')}}`]);
 };
 
-export const loadContentDetail = async (
+/**
+ * The subtasks of a content, or the one of `taskId`, as the agency reads them: the person in charge by the link of the agency of the
+ * client, and who approved by name and side. The id of a task that is not of this content is no row, never a row of another content.
+ */
+export const loadContentTasks = async (
   transaction: ContentTransaction,
-  row: ContentRow
-): Promise<ContentDetail> => {
-  const media = await raw<RawRows<{ id: string; position: number }>>(transaction, `
-    select item.asset_id as id, item.position
-    from public.content_media item
-    where item.content_id = ?::uuid
-    order by item.position
-  `, [row.id]);
-
-  const tasks = await raw<RawRows<{
+  input: { readonly contentId: string; readonly taskId?: string }
+): Promise<ContentTask[]> => {
+  const result = await raw<RawRows<{
     id: string;
     title: string;
     description: string | null;
     assignee_membership_id: string | null;
     assignee_name: string | null;
     due_on: string;
-    status: ContentDetail['tasks'][number]['status'];
+    status: ContentTask['status'];
     return_comment: string | null;
     approved: boolean;
     approver_name: string | null;
@@ -333,9 +331,36 @@ export const loadContentDetail = async (
     left join auth."user" assignee_account on assignee_account.id = assignee_link.user_id
     left join auth."user" approver_account on approver_account.id = task.approved_by
       and ${agencyTie('task.approved_by', 'task_client.agency_id')}
-    where task.content_id = ?::uuid
+    where task.content_id = ?::uuid and (?::uuid is null or task.id = ?::uuid)
     order by task.due_on, task.created_at, task.id
+  `, [input.contentId, input.taskId ?? null, input.taskId ?? null]);
+
+  return result.rows.map((task) => ({
+    id: task.id,
+    title: task.title,
+    description: task.description,
+    assignee: task.assignee_membership_id === null || task.assignee_name === null ? null : { membershipId: task.assignee_membership_id, name: task.assignee_name },
+    dueOn: task.due_on,
+    status: task.status,
+    returnComment: task.return_comment,
+    // A subtask is approved by the person in charge of the content or by who approves for the agency: always the agency side.
+    approvedBy: task.approved ? { name: task.approver_name ?? '', side: 'agency' as const } : null,
+    approvedAt: task.approved_at === null ? null : new Date(task.approved_at).toISOString()
+  }));
+};
+
+export const loadContentDetail = async (
+  transaction: ContentTransaction,
+  row: ContentRow
+): Promise<ContentDetail> => {
+  const media = await raw<RawRows<{ id: string; position: number }>>(transaction, `
+    select item.asset_id as id, item.position
+    from public.content_media item
+    where item.content_id = ?::uuid
+    order by item.position
   `, [row.id]);
+
+  const tasks = await loadContentTasks(transaction, { contentId: row.id });
 
   const conversation = await raw<RawRows<{ thread_id: string; comment_count: string | number; last_comment_at: Date | null }>>(transaction, `
     select thread.id as thread_id, count(comment.id) as comment_count, max(comment.created_at) as last_comment_at
@@ -349,18 +374,7 @@ export const loadContentDetail = async (
   return {
     ...contentFromRow(row),
     media: media.rows.map((item) => ({ id: item.id, position: Number(item.position) })),
-    tasks: tasks.rows.map((task) => ({
-      id: task.id,
-      title: task.title,
-      description: task.description,
-      assignee: task.assignee_membership_id === null || task.assignee_name === null ? null : { membershipId: task.assignee_membership_id, name: task.assignee_name },
-      dueOn: task.due_on,
-      status: task.status,
-      returnComment: task.return_comment,
-      // A subtask is approved by the person in charge of the content or by who approves for the agency: always the agency side.
-      approvedBy: task.approved ? { name: task.approver_name ?? '', side: 'agency' as const } : null,
-      approvedAt: task.approved_at === null ? null : new Date(task.approved_at).toISOString()
-    })),
+    tasks,
     conversation: thread === undefined
       ? { threadId: null, commentCount: 0, lastCommentAt: null }
       : {
