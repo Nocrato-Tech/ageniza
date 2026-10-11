@@ -10,6 +10,7 @@ import { ClientBrandStudyTab } from './brand-study.js';
 import { ClientDetailPage, ClientGeneralTab, ClientSkeletonTab } from './client-detail.js';
 import { ClientsPage } from './clients.js';
 import { CollaboratorsPage } from './collaborators.js';
+import { ContentCreateRoute, ContentModalRoute } from './content-modal.js';
 import { ContentsClientPage, ContentsPage } from './contents.js';
 import { ContextSelectPage } from './contexts.js';
 import { ConfirmEmailChangePage } from './email-change.js';
@@ -89,7 +90,11 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
           <AgencyPermissionRoute permission={CONTENT_AREA_PERMISSIONS}>
             <ContentsClientPage />
           </AgencyPermissionRoute>
-        } />
+        }>
+          {/* The modal of a content is a route of its own, over the calendar: the address is shareable and survives a reload. */}
+          <Route path="novo" element={<ContentCreateRoute />} />
+          <Route path=":conteudoId" element={<ContentModalRoute />} />
+        </Route>
       </Route>
       <Route path="clientes">
         <Route index element={
