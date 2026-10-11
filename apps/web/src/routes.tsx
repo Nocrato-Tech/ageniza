@@ -39,13 +39,13 @@ export function ProtectedLayout({ session, children }: { session: AuthSessionSna
   </SessionGate>;
 }
 
-function PublicHome() { return <section><h1>Ageniza</h1><p>Agency operations, in one place.</p><Link to="/status">Service status</Link></section>; }
+function PublicHome() { return <section><h1>Ageniza</h1><p>Operações de agência, em um só lugar.</p><Link to="/status">Status do serviço</Link></section>; }
 function ServiceStatus() {
   const httpClient = useApiClient();
   const health = useQuery({ queryKey: ['health'], queryFn: () => getHealth(httpClient) });
   if (health.isPending) return <LoadingPage />;
-  if (health.isError) return <section><h1>Service status</h1><p role="alert">Status is temporarily unavailable.</p></section>;
-  return <section><h1>Service status</h1><LiveStatus>API is {health.data.status}.</LiveStatus></section>;
+  if (health.isError) return <section><h1>Status do serviço</h1><p role="alert">O status está temporariamente indisponível.</p></section>;
+  return <section><h1>Status do serviço</h1><LiveStatus>A API está {health.data.status}.</LiveStatus></section>;
 }
 
 /**

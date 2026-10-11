@@ -101,6 +101,29 @@ describe('route boundaries', () => {
     expect(screen.getByText('Esta área exige uma sessão ativa.')).toBeTruthy();
   });
 
+  it('shows the public home in Portuguese, behind the skip link of the public layout', () => {
+    renderRoute('/', false);
+    expect(screen.getByRole('heading', { name: 'Ageniza', level: 1 })).toBeTruthy();
+    expect(screen.getByText('Operações de agência, em um só lugar.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Status do serviço' }).getAttribute('href')).toBe('/status');
+    expect(screen.getByRole('link', { name: 'Pular para o conteúdo' }).getAttribute('href')).toBe('#main-content');
+    expect(screen.getByRole('main').id).toBe('main-content');
+  });
+
+  it('shows the service status in Portuguese when the API answers', async () => {
+    const healthy: typeof fetch = async (input) => (String(input).endsWith('/health') ? json({ status: 'ok' }) : new Response(null, { status: 401 }));
+    renderRoute('/status', false, healthy);
+    expect(await screen.findByText('A API está ok.')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Status do serviço', level: 1 })).toBeTruthy();
+  });
+
+  it('says in Portuguese that the service status is unavailable when the API cannot answer', async () => {
+    const down: typeof fetch = async () => json({ error: { code: 'INTERNAL_ERROR', message: 'Unexpected error.' } }, 500);
+    renderRoute('/status', false, down);
+    expect(await screen.findByText('O status está temporariamente indisponível.', {}, { timeout: 4000 })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Status do serviço', level: 1 })).toBeTruthy();
+  });
+
   it('shows the loading page in Portuguese while the session is read', () => {
     const client = new HttpClient('http://127.0.0.1:3001', unauthenticatedFetch);
     render(

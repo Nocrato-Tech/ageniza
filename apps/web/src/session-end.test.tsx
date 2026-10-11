@@ -196,11 +196,11 @@ describe('401 as the end of the session', () => {
     const config: BrowserConfig = { environment: 'test', apiBaseUrl: 'http://127.0.0.1:3001', deployVersion: 'test' };
 
     render(<App config={config} />);
-    await screen.findByText('API is ok.');
+    await screen.findByText('A API está ok.');
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/auth/session'))).toBe(true));
 
     expect(window.location.pathname).toBe('/status');
-    expect(screen.getByRole('heading', { name: 'Service status' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Status do serviço' })).toBeTruthy();
   });
 });
 
