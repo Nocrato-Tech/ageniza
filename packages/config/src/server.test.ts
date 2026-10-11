@@ -388,7 +388,7 @@ describe('server configuration', () => {
       expect(() => loadWorkerConfig({ ...production, [missing]: '' })).toThrow(ConfigValidationError);
     }
     // Both e-mail settings gone at once: the rule of the pair must still refuse, not only the one-at-a-time loop above.
-    expect(() => loadWorkerConfig({ ...production, SMTP_URL: undefined, EMAIL_FROM: undefined })).toThrow('are required in production');
+    expect(() => loadWorkerConfig({ ...production, SMTP_URL: undefined, EMAIL_FROM: undefined })).toThrow('APP_PUBLIC_URL, SMTP_URL and EMAIL_FROM are required in production');
   });
 
   it('leaves storage undefined locally and loads it with defaults when the four R2 settings are present (issue #21)', () => {
