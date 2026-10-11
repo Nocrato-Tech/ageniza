@@ -3,7 +3,7 @@ import { pipeline } from 'node:stream/promises';
 
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
-import type { WorkerStorageConfig } from '@ageniza/config/server';
+import { s3ClientOptions, type WorkerStorageConfig } from '@ageniza/config/server';
 
 /**
  * S3-compatible client the worker uses directly (issue #24): Cloudflare R2 in production, LocalStack
@@ -21,16 +21,7 @@ export interface MediaProcessingStorageClient {
 }
 
 export const createMediaProcessingStorageClient = (config: WorkerStorageConfig): MediaProcessingStorageClient => {
-  const client = new S3Client({
-    region: config.region,
-    forcePathStyle: config.forcePathStyle,
-    endpoint: config.endpoint,
-    credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
-    // Same as the API's media client: the SDK (>= 3.729) would otherwise send the streamed `PutObject` as
-    // `aws-chunked` with a CRC32 trailer, and validate a checksum on every `GetObject` (#292, #306).
-    requestChecksumCalculation: 'WHEN_REQUIRED',
-    responseChecksumValidation: 'WHEN_REQUIRED'
-  });
+  const client = new S3Client({ ...s3ClientOptions(config), endpoint: config.endpoint });
 
   return {
     async downloadToFile({ key, destinationPath, signal }) {

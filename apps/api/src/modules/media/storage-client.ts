@@ -13,7 +13,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-import type { StorageConfig } from '@ageniza/config/server';
+import { s3ClientOptions, type StorageConfig } from '@ageniza/config/server';
 
 export interface HeadObjectResult {
   readonly sizeBytes: number;
@@ -46,17 +46,7 @@ export interface MediaStorageClient {
 }
 
 export const createMediaStorageClient = (config: StorageConfig): MediaStorageClient => {
-  const clientOptions = {
-    region: config.region,
-    forcePathStyle: config.forcePathStyle,
-    credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
-    // Since @aws-sdk/client-s3 3.729 the SDK adds a CRC32 checksum to every request and, worse, bakes
-    // `x-amz-checksum-crc32` and `x-amz-sdk-checksum-algorithm` into presigned PUT/UploadPart URLs: the
-    // browser would have to upload bytes matching a checksum computed for an empty body, so every upload
-    // against R2 or S3 fails. `WHEN_REQUIRED` keeps the behavior this API was written and reviewed with (#292, #306).
-    requestChecksumCalculation: 'WHEN_REQUIRED',
-    responseChecksumValidation: 'WHEN_REQUIRED'
-  } as const;
+  const clientOptions = s3ClientOptions(config);
   const internalClient = new S3Client({ ...clientOptions, endpoint: config.endpoint });
   // A distinct client whose only purpose is to build browser-facing presigned URLs; it never
   // opens a connection of its own (`getSignedUrl` only signs, it does not call the network).
