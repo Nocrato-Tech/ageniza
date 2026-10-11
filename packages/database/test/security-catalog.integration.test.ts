@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { createLocalTestDatabaseClient, raw, type DatabaseClient } from '../src/index.js';
+import { createLocalTestDatabaseClient, raw, type DatabaseClient, resolveIntegrationDatabaseUrls } from '../src/index.js';
 
 // Security catalog assertions against the migrated schema. These protect properties no behavior test
 // observes: a future migration can `grant execute ... to public` or drop `set search_path` from a
 // security definer function, and every functional suite stays green while the authorization surface
 // opens up. Reading the catalog is the only way to hold those properties to their word.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
+const { ownerUrl } = resolveIntegrationDatabaseUrls();
 
 let owner: DatabaseClient | undefined;
 

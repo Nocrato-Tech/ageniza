@@ -1,5 +1,6 @@
 import type { FastifyRequest } from 'fastify';
 
+import { isClientAvatarKey } from '../identity-storage/policy.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
 
 export interface PhotoUrlSignerDependencies {
@@ -26,4 +27,27 @@ export const createPhotoUrlSigner = (
     }, failure.message);
     return null;
   }
+};
+
+/**
+ * The signer for a client's own photo: the stored key is data, not proof, so it is signed only when
+ * it is exactly an avatar key of this agency and client. Anything else would hand out a GET for
+ * another object of the identity bucket; the photo is null and the log carries the code, never the key.
+ */
+export const createClientPhotoUrlSigner = (
+  dependencies: PhotoUrlSignerDependencies,
+  failure: { readonly code: string; readonly message: string }
+) => {
+  const sign = createPhotoUrlSigner(dependencies, failure);
+  return async (
+    request: FastifyRequest,
+    scope: { readonly agencyId: string; readonly clientId: string },
+    photoKey: string | null
+  ): Promise<string | null> => {
+    if (photoKey !== null && !isClientAvatarKey(photoKey, scope.agencyId, scope.clientId)) {
+      request.log.warn({ error: { name: 'ForeignPhotoKey', code: failure.code } }, 'Stored client photo key is not a client avatar key; returning null');
+      return null;
+    }
+    return sign(request, photoKey);
+  };
 };

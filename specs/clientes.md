@@ -91,7 +91,7 @@ Sete seções **fixas, definidas pelo produto**. Uma linha por seção preenchid
 |---|---|
 | `branding` | texto livre |
 | `tone_of_voice` | texto livre |
-| `colors` | lista de `{ nome, código hexadecimal }` |
+| `colors` | lista de `{ name, hex }` (nome e código hexadecimal `#RRGGBB`) |
 | `positioning` | texto livre |
 | `archetype` | um dos doze: Inocente, Sábio, Explorador, Fora-da-lei, Mago, Herói, Amante, Bobo da corte, Cara comum, Cuidador, Governante, Criador |
 | `personas` | a seção agrupa as personas (tabela abaixo); não tem texto próprio |
@@ -159,7 +159,7 @@ Não há pré-condição: arquiva-se com thread aberta, persona ou o que houver.
 
 ```
 (convite aceito) → active    # fluxo de convite que já existe
-active           → removed   # cliente.remover_usuario; perde o acesso na requisição seguinte
+active           → removed   # cliente.remover_usuario; perde o acesso e todas as sessões, na requisição seguinte
 removed          → active    # cliente.remover_usuario; reativação direta, sem convite
 ```
 
@@ -262,7 +262,7 @@ Todas sob `requireSession` e `requireClientAccess` — o mesmo padrão de `POST 
 
 | rota | padrão | ordem | parâmetros nomeados |
 |---|---|---|---|
-| clientes | **20** | `sort=attention` (padrão): com thread aguardando a agência primeiro, depois nome ascendente · `sort=name:asc` | `search` (nome, razão social, @) · `status=active` (padrão) \| `archived` |
+| clientes | **20** | `sort=attention` (padrão): com thread aguardando a agência primeiro, depois nome ascendente · `sort=name:asc`. Nome ascendente **sem distinguir acento nem maiúsculas**, comparado byte a byte no texto dobrado, igual em qualquer banco: `Ágata`, `Ana Maria`, `Ana-Lúcia`, `Ana2`, `Anabela`, `Édson` (2026-10-08, #367, pendente de validação) | `search` (nome, razão social, @) · `status=active` (padrão) \| `archived` |
 | threads | **20** | última atividade, mais recente primeiro | `sectionKey` **ou** `personaId` (obrigatório, um dos dois) · `state=open` \| `resolved` (sem ele, todas) |
 | comentários | **50** | mais antigo primeiro | — |
 | pessoas do portal | **20** | nome ascendente | `status=active` (padrão) \| `removed` |
@@ -296,7 +296,7 @@ Duas migrations, porque são duas estruturais diferentes e a segunda depende da 
 | função | quem chama | faz |
 |---|---|---|
 | `app_private.archive_client(client_id)` | a rota de arquivar | confere `cliente.arquivar` do usuário corrente; arquiva, revoga convites pendentes, audita |
-| `app_private.archive_due_clients()` | o job | arquiva todo cliente com `closing_date < hoje`, com os mesmos efeitos; audita com o job como origem |
+| `app_private.due_client_ids()` e `app_private.archive_due_client(client_id)` | o job, cliente a cliente | a primeira lista os clientes com `closing_date < hoje`; a segunda arquiva um deles, com os mesmos efeitos de `archive_client`, e devolve se arquivou (falso se ele deixou de estar vencido); audita com o job como origem. `app_private.archive_due_clients()` junta as duas e devolve a quantidade |
 | `app_private.set_client_closing_date(client_id, date)` | as rotas de agendar e desmarcar encerramento | confere `cliente.arquivar`; data hoje ou depois, ou nula para desmarcar; audita |
 | `app_private.reactivate_client(client_id)` | a rota de reativar | confere `cliente.arquivar`; recusa nome em uso; reativa, audita |
 | `app_private.set_client_membership_status(membership_id, status)` | as rotas de remover e reativar pessoa | confere `cliente.remover_usuario`; o vínculo precisa ser de cliente da agência corrente |
@@ -477,7 +477,7 @@ Só para `cliente.convidar_usuario`. O mesmo desenho da seção de convites de C
 ```
 
 - **Convidar**: modal só com o e-mail.
-- **Remover** pede confirmação: a pessoa perde o acesso ao portal deste cliente, as outras não são afetadas. Removidas ficam num filtro, com **Reativar**.
+- **Remover** pede confirmação: a pessoa perde o acesso ao portal deste cliente e é deslogada de tudo na hora, porque a sessão é global (2026-10-08, #411); as outras pessoas não são afetadas, e os vínculos dela com outros clientes continuam. Removidas ficam num filtro, com **Reativar**, que não cria sessão: a pessoa entra de novo.
 - **Vazio**: "Ninguém deste cliente acessa o portal ainda", com **Convidar**.
 - Convites vazios: a seção some.
 
@@ -526,7 +526,7 @@ A próxima ação é **uma**: havendo threads abertas com resposta da agência, 
 
 ### Portal — tour
 
-Na primeira entrada daquela pessoa naquele cliente, um tour guiado aponta os itens da navegação. Pode ser pulado e revisto pelo menu de conta. **Mostra só o que funciona**: no MVP, Marca e como sugerir. Calendário e Relatórios entram no tour com seus módulos.
+Na primeira entrada daquela pessoa naquele cliente, um tour guiado aponta os itens da navegação. Pode ser pulado e revisto pelo menu de conta. **Mostra só o que funciona**: no MVP, três passos — Início, Marca e como sugerir (esboço da #144). Calendário e Relatórios entram no tour com seus módulos.
 
 ### Variação por quem olha
 
@@ -552,7 +552,7 @@ Na primeira entrada daquela pessoa naquele cliente, um tour guiado aponta os ite
 
 ## 8. Infraestrutura
 
-- **Job agendado `clients.archive-due`**, no worker existente (pg-boss). Roda aos 10 minutos de cada hora em `America/Sao_Paulo` (a das 00:10 é a que vira o dia) e uma vez cada vez que o worker sobe, e chama `app_private.archive_due_clients()`, que é idempotente: uma virada perdida não deixa o portal aberto por um dia. É o **primeiro job agendado de negócio** do sistema.
+- **Job agendado `clients.archive-due`**, no worker existente (pg-boss). Roda aos 10 minutos de cada hora em `America/Sao_Paulo` (a das 00:10 é a que vira o dia) e uma vez cada vez que o worker sobe, e arquiva **um cliente por chamada**, cada uma uma transação curta (`app_private.due_client_ids()` e `app_private.archive_due_client(cliente)`): o deadlock de um cliente não derruba o lote, ele fica para a hora seguinte e vai para o log pelo id. A operação é idempotente: uma virada perdida não deixa o portal aberto por um dia. É o **primeiro job agendado de negócio** do sistema.
 - **Armazenamento de identidade** para a foto do cliente — criado por **#100**, de Colaboradores. Nenhum bucket novo.
 - **Nenhum e-mail novo.** O convite de portal já tem o seu; notificação está fora (seção 10).
 

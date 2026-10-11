@@ -8,5 +8,5 @@
 
 **Consequência.** Mudança de API aditiva e local a uma rota, sem migration, sem RLS e sem backfill: nada existente muda de forma, e o id devolvido é sempre de um convite da mesma agência (a consulta já filtra por `agency_id`). Reabre quem voltar a usar o cache para saber o que a criação revogou — a resposta é a única fonte. Avaliação estrutural: não altera tabela, policy, autorização nem o formato que outras rotas já usam; o contrato compartilhado permanece o mesmo.
 
-**Origem.** Issue #333 (item da #322, ressalva da revisão do PR #327), decidida pelo maestro. **Pendente de validação** pelo dono do produto.
+**Origem.** Issue #333 (item da #322, ressalva da revisão do PR #327), decidida pelo maestro. Validada pelo dono em 2026-10-08.
 

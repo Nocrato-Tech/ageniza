@@ -1,7 +1,15 @@
 import Fastify from 'fastify';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { registerOriginProtection } from './origin.js';
+
+// The first Fastify() and inject of the process pay their cold start here, not in the first test (#496).
+beforeAll(async () => {
+  const warmup = Fastify();
+  warmup.get('/warmup', async () => ({ ok: true }));
+  await warmup.inject('/warmup');
+  await warmup.close();
+}, 60_000);
 
 describe('global origin protection', () => {
   it('rejects every state-changing method without the exact configured origin', async () => {

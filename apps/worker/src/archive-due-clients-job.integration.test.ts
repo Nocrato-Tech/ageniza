@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { PassThrough } from 'node:stream';
 
 import { createLogger } from '@ageniza/core';
-import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, raw, type DatabaseClient } from '@ageniza/database';
+import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, raw, type DatabaseClient, resolveIntegrationDatabaseUrls } from '@ageniza/database';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ARCHIVE_DUE_CLIENTS_JOB_NAME, ARCHIVE_DUE_CLIENTS_SCHEDULE, archiveDueClientsJob } from './archive-due-clients-job.js';
@@ -12,8 +12,7 @@ import { createDurableQueue, deadLetterQueueName, type DurableJobDefinition, typ
 // uses in production: the job needs data access alone and no identity of its own. The definition under
 // test is the real one with only its queue name changed, so the real `clients.archive-due` queue of a
 // developer's local database is never deleted by the cleanup below.
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 const prefix = `test.${randomUUID().slice(0, 8)}`;
 const jobName = `${prefix}.${ARCHIVE_DUE_CLIENTS_JOB_NAME}`;
 
@@ -235,9 +234,11 @@ describe('clients.archive-due on the durable queue', { timeout: 60_000 }, () => 
     for (const secret of [named, 'Sigilo', 'Padaria', invitationId, '@job.test', agencyId]) expect(captured.text(), secret).not.toContain(secret);
   });
 
-  it('retries a run that loses a deadlock with a concurrent change of the client\'s invitation, and then archives', async () => {
-    const racing = await insertClient('Disputa', { closing_date: await brasiliaDay(-1) });
+  it('leaves the client that loses a deadlock for the next run, archives the others in the same run, and archives it on the next one', async () => {
+    const racing = await insertClient('Disputa', { closing_date: await brasiliaDay(-5) });
     const invitationId = await insertInvitation(racing);
+    // Due later than the racing one, so it is processed after the deadlock: the run goes on.
+    const after = await insertClient('Depois da disputa', { closing_date: await brasiliaDay(-1) });
     const captured = captureLogs();
     const queue = await openQueue([definition()], captured);
 
@@ -250,7 +251,7 @@ describe('clients.archive-due on the durable queue', { timeout: 60_000 }, () => 
       if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one invitation.');
       const holderPid = Number((await raw<{ rows: Array<{ pid: number }> }>(holder, 'select pg_catalog.pg_backend_pid() as pid', [])).rows[0]!.pid);
 
-      const id = await queue.send(jobName, {});
+      const first = await queue.send(jobName, {});
       await vi.waitFor(async () => {
         const blocked = await raw<{ rows: Array<{ pid: number }> }>(getOwner().knex, `
           select activity.pid from pg_catalog.pg_stat_activity activity
@@ -262,12 +263,19 @@ describe('clients.archive-due on the durable queue', { timeout: 60_000 }, () => 
       await holder.rollback();
       released = true;
 
-      await waitForState(id, 'completed');
+      await waitForState(first, 'completed');
       const records = captured.records();
       expect(records).toEqual(expect.arrayContaining([
-        expect.objectContaining({ msg: 'Durable job failed and will be retried', status: 'retrying', attempt: 1, queue: jobName })
+        expect.objectContaining({ msg: 'Clients left for the next run after losing a race', leftForNextRun: 1, clientIds: [racing], queue: jobName })
       ]));
+      expect(records.some((record) => record.msg === 'Durable job failed and will be retried')).toBe(false);
       expect(JSON.stringify(records)).not.toMatch(/deadlock|40P01/i);
+      expect((await statusOf(after)).status).toBe('archived');
+      expect(await statusOf(racing)).toMatchObject({ status: 'active', archived_at: null, closing_date: await brasiliaDay(-5) });
+      expect((await getOwner().knex('invitations').where({ id: invitationId }).first('revoked_at')).revoked_at).toBeNull();
+
+      const second = await queue.send(jobName, {});
+      await waitForState(second, 'completed');
       expect((await statusOf(racing)).status).toBe('archived');
       expect((await getOwner().knex('invitations').where({ id: invitationId }).first('revoked_at')).revoked_at).toBeInstanceOf(Date);
     } finally {

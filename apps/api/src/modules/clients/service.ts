@@ -27,6 +27,8 @@ export type ClientTransaction = Parameters<Parameters<DatabaseClient['transactio
 /** One `clients` row as read or returned by this module; `closing_date` is text, never a Date. */
 export interface ClientRow {
   readonly id: string;
+  /** The row's own tenant: the photo scope is built from it, never from the (case-insensitive) URL. */
+  readonly agency_id: string;
   readonly name: string;
   readonly status: 'active' | 'archived';
   readonly photo_key: string | null;
@@ -54,7 +56,7 @@ interface RawRows<TResult> {
 }
 
 const CLIENT_COLUMNS = `
-  id, name, status, photo_key, legal_name, tax_id, segment, website, instagram_handle,
+  id, agency_id, name, status, photo_key, legal_name, tax_id, segment, website, instagram_handle,
   contact_name, contact_phone, contact_email, closing_date::text as closing_date, archived_at
 `;
 
@@ -110,7 +112,8 @@ export const loadClient = async (
 };
 
 /**
- * Locks an active client of the agency and returns its current photo reference. `for update` also
+ * Locks an active client of the agency and returns its current photo reference with the row's own
+ * ids (the lowercase ones the readers sign against, whatever case the URL carried). `for update` also
  * has to pass the `clients_update` policy, so an archived client, one of another agency, or a
  * caller without `cliente.operar` all come back as `undefined` -- the caller tells 404 from 409
  * with `loadClient`, which only needs the read policy.
@@ -122,15 +125,15 @@ export const loadClient = async (
 export const lockActiveClientPhoto = async (
   transaction: ClientTransaction,
   input: { readonly agencyId: string; readonly clientId: string }
-): Promise<{ readonly photoKey: string | null } | undefined> => {
-  const result = await raw<RawRows<{ photo_key: string | null }>>(transaction, `
-    select photo_key
+): Promise<{ readonly photoKey: string | null; readonly agencyId: string; readonly clientId: string } | undefined> => {
+  const result = await raw<RawRows<{ photo_key: string | null; agency_id: string; id: string }>>(transaction, `
+    select photo_key, agency_id, id
     from public.clients
     where id = ?::uuid and agency_id = ?::uuid and status = 'active'
     for update
   `, [input.clientId, input.agencyId]);
   const row = result.rows[0];
-  return row === undefined ? undefined : { photoKey: row.photo_key };
+  return row === undefined ? undefined : { photoKey: row.photo_key, agencyId: row.agency_id, clientId: row.id };
 };
 
 /**
@@ -266,6 +269,7 @@ export interface ClientListFilters {
 
 export interface ClientListRow {
   readonly id: string;
+  readonly agency_id: string;
   readonly name: string;
   readonly photo_key: string | null;
   readonly instagram_handle: string | null;
@@ -295,7 +299,8 @@ const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, (c
  * The "aguardando a agência" count comes from the single definition in `thread-state.ts`, the same
  * one the detail summary and the portal use, and is a correlated subquery over `client_threads`
  * so the `client_thread_comments (thread_id, created_at)` index from #122 answers the last-comment
- * lookup. The count of the whole filtered set is a second, simple `count(*)`, never all the rows.
+ * lookup. The count of the whole filtered set rides the page's own statement (`count(*) over ()`),
+ * so `data` and `totalItems` come from one snapshot; only a page past the end asks again.
  *
  * A parameter the SPEC does not declare does not exist: the caller only ever adds the named
  * conditions above, and every value is a bind.
@@ -356,33 +361,32 @@ export const listClients = async (
   // The CTE's agency bind appears before the WHERE binds in the statement text.
   const itemBindings: SqlBinding[] = filters.includePendingInvitations ? [agencyId, ...bindings] : [...bindings];
 
-  const countResult = await raw<RawRows<{ total: string | number }>>(transaction, `
-    select count(*) as total
-    from public.clients client
-    where ${where}
-  `, bindings);
-  const totalItems = Number(countResult.rows[0]?.total ?? 0);
-
   // A derived table because PostgreSQL does not accept an output alias inside an ORDER BY
   // expression (`ORDER BY threads_awaiting_agency > 0` over the subquery output is valid).
+  // The folded name is compared byte by byte (`collate "C"`), so space, hyphen and digit order the
+  // same in every database, like the collaborators list (#355).
+  const foldedName = `${foldTextSql('listing.name')} collate "C"`;
   const orderBy = filters.sort === 'name:asc'
-    ? `${foldTextSql('listing.name')} asc, listing.id asc`
-    : `(listing.threads_awaiting_agency > 0) desc, ${foldTextSql('listing.name')} asc, listing.id asc`;
+    ? `${foldedName} asc, listing.id asc`
+    : `(listing.threads_awaiting_agency > 0) desc, ${foldedName} asc, listing.id asc`;
 
-  const itemsResult = await raw<RawRows<ClientListRow>>(transaction, `
+  const itemsResult = await raw<RawRows<ClientListRow & { readonly total: string | number }>>(transaction, `
     ${pendingInvitationsCte}
     select
       listing.id,
+      listing.agency_id,
       listing.name,
       listing.photo_key,
       listing.instagram_handle,
       listing.status,
       listing.closing_date,
       listing.threads_awaiting_agency,
-      listing.pending_invitations
+      listing.pending_invitations,
+      count(*) over () as total
     from (
       select
         client.id,
+        client.agency_id,
         client.name,
         client.photo_key,
         client.instagram_handle,
@@ -404,7 +408,18 @@ export const listClients = async (
     limit ? offset ?
   `, [...itemBindings, pagination.pageSize, pagination.offset]);
 
-  return { items: itemsResult.rows, totalItems };
+  if (itemsResult.rows.length > 0) {
+    return { items: itemsResult.rows, totalItems: Number(itemsResult.rows[0]?.total ?? 0) };
+  }
+  // An empty first page is the whole truth; a second count could only answer from another snapshot.
+  if (pagination.offset === 0) return { items: [], totalItems: 0 };
+
+  const countResult = await raw<RawRows<{ total: string | number }>>(transaction, `
+    select count(*) as total
+    from public.clients client
+    where ${where}
+  `, bindings);
+  return { items: [], totalItems: Number(countResult.rows[0]?.total ?? 0) };
 };
 
 // --- Brand study and personas (specs/clientes.md section 3) ---------------------------------

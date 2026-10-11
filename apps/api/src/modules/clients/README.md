@@ -250,8 +250,8 @@ Decisão: `2026-10-07-acessos-ao-portal-remover-e-reativar-pessoa-sao-idempotent
 Em `lifecycle-routes.ts` e `lifecycle-service.ts`. `status`, `archived_at` e `closing_date` estão fora de
 todo *grant* de `ageniza_app`: o único escritor são as funções `app_private.set_client_closing_date`,
 `archive_client` e `reactivate_client`, que conferem `cliente.arquivar` na agência do próprio cliente
-(a rota é a segunda barreira, não a primeira). O job diário chama `archive_due_clients`, que faz o que
-`archive_client` faz para cada cliente vencido, então rota e job têm o mesmo efeito: portal fechado na
+(a rota é a segunda barreira, não a primeira). O job diário chama `archive_due_client`, uma vez por cliente vencido, que faz o que
+`archive_client` faz, então rota e job têm o mesmo efeito: portal fechado na
 requisição seguinte, convites de portal pendentes revogados, vínculos preservados, `closing_date` limpa,
 evento em `audit.events`. Todas respondem o cliente (`200`), no mesmo formato do `PATCH`.
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ConfigValidationError, loadApiConfig, loadWorkerConfig } from './server.js';
 
@@ -115,6 +115,53 @@ describe('server configuration', () => {
     expect(loadApiConfig({ ...localEnvironment, AUTH_TERMS_VERSION: '2024-02-29' })).toMatchObject({ authTermsVersion: '2024-02-29' });
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
     expect(loadApiConfig({ ...localEnvironment, AUTH_PRIVACY_VERSION: today })).toMatchObject({ authPrivacyVersion: today });
+  });
+
+  // Issue #373. The clock cannot be left to the wall time: between 21:00 and 24:00 in Brasília its date and the UTC date
+  // differ, and only a pinned instant inside that window tells America/Sao_Paulo from UTC (or from the zone of the process).
+  describe('the day a document version is compared with, in America/Sao_Paulo', () => {
+    const originalZone = process.env.TZ;
+    afterEach(() => {
+      vi.useRealTimers();
+      if (originalZone === undefined) delete process.env.TZ;
+      else process.env.TZ = originalZone;
+    });
+
+    // A worker thread cannot change the zone of the process, and every case would then run in the same one without failing.
+    const setProcessZone = (zone: string): void => {
+      process.env.TZ = zone;
+      expect(new Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(zone);
+    };
+
+    const accepts = (version: string): boolean => {
+      try {
+        loadApiConfig({ ...localEnvironment, AUTH_TERMS_VERSION: version });
+        return true;
+      } catch (error) {
+        if (error instanceof ConfigValidationError && error.message.includes('must not be in the future')) return false;
+        throw error;
+      }
+    };
+
+    // 2026-10-07 22:00 in Brasília is 2026-10-08 01:00 UTC: the version dated the 8th is still tomorrow for the product.
+    it.each(['UTC', 'Pacific/Kiritimati', 'America/Los_Angeles', 'Asia/Tokyo'])('at 22:00 in Brasília refuses the next day and accepts today, whatever the zone of the process (%s)', (zone) => {
+      setProcessZone(zone);
+      vi.useFakeTimers({ now: new Date('2026-10-08T01:00:00Z') });
+
+      expect(accepts('2026-10-07')).toBe(true);
+      expect(accepts('2026-10-08')).toBe(false);
+      expect(accepts('2026-10-09')).toBe(false);
+    });
+
+    it('turns the day exactly at Brasília midnight, 03:00 UTC', () => {
+      setProcessZone('UTC');
+      vi.useFakeTimers({ now: new Date('2026-10-08T02:59:59.999Z') });
+      expect(accepts('2026-10-08')).toBe(false);
+
+      vi.setSystemTime(new Date('2026-10-08T03:00:00Z'));
+      expect(accepts('2026-10-08')).toBe(true);
+      expect(accepts('2026-10-09')).toBe(false);
+    });
   });
 
   it('requires a sufficiently long Better Auth secret without exposing supplied values', () => {

@@ -2,7 +2,7 @@
 
 Server-only PostgreSQL infrastructure ([ADR 0011](../../docs/adr/0011-self-hosted-postgres-and-better-auth.md)). Knex is the sole query builder; there is no ORM. Applications create an explicit client with `createDatabaseClient`, use `database.transaction(...)`, and call `await database.close()` during their shutdown lifecycle.
 
-For the local Docker database, use `createLocalTestDatabaseClient`. It refuses a non-loopback PostgreSQL URL, so tests cannot silently target a remote database. `raw(executor, statement, bindings)` keeps values separate from SQL text; SQL structure remains authored application code and user input must always be a binding.
+For the local Docker database, use `createLocalTestDatabaseClient`. It refuses a non-loopback PostgreSQL URL, so tests cannot silently target a remote database. Integration harnesses get their two URLs only from `resolveIntegrationDatabaseUrls()`: `DATABASE_URL` and `MIGRATION_DATABASE_URL` are both required, there is no default, and a database named exactly `ageniza` (the owner's development database) is refused before anything connects (issue #391). `raw(executor, statement, bindings)` keeps values separate from SQL text; SQL structure remains authored application code and user input must always be a binding.
 
 ## Roles and RLS
 

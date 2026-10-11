@@ -4,15 +4,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   createVerifiedUserClaims,
+  integrationDatabaseEnvironment,
   raw,
   withAuthenticatedUserTransaction,
   type DatabaseClient
 } from '@ageniza/database';
 
 import {
-  APPLICATION_DATABASE_URL,
   buildTestApp,
-  OWNER_DATABASE_URL,
   ownerClient,
   TEST_APP_PUBLIC_URL,
   type TestApp
@@ -29,8 +28,7 @@ const silentStdout = { write: () => undefined };
 // developer created with `pnpm seed:demo` in the same database (security review of PR #188).
 const namespace = `seed-test-${randomUUID().slice(0, 8)}`;
 const seedEnvironment = {
-  DATABASE_URL: APPLICATION_DATABASE_URL,
-  MIGRATION_DATABASE_URL: OWNER_DATABASE_URL,
+  ...integrationDatabaseEnvironment(),
   AUTH_TERMS_VERSION: '2026-01-01',
   AUTH_PRIVACY_VERSION: '2026-02-01'
 };
@@ -218,6 +216,70 @@ describe('seed:demo (issue #183)', () => {
         expectSamePermissions(verdicts, []);
       }
     }
+  });
+
+  it('serves the seeded brand study through the agency and the portal routes (issue #471)', async () => {
+    // The seeded colors once used Portuguese keys, which the strict `BrandColorSchema` refuses: the
+    // study answered 500 for every seeded client that has the colors section. Reading it through the
+    // real routes (not counting rows) is what catches a seed shape the contract does not accept.
+    const portalProfile = latest.profiles.find((profile) => profile.agencyId === null)!;
+    const portalCookie = await loginCookie(portalProfile.email, portalProfile.password);
+
+    const portal = await app.app.inject({ method: 'GET', url: `/clients/${portalProfile.clientId!}/brand-study`, headers: { ...origin, cookie: portalCookie } });
+    expect(portal.statusCode).toBe(200);
+    const portalStudy = portal.json<{ filled: number; sections: { key: string; colors: unknown }[] }>();
+    expect(portalStudy.filled).toBe(7);
+    expect(portalStudy.sections.find((section) => section.key === 'colors')?.colors).toEqual([
+      { name: 'Vermelho terracota', hex: '#B4472F' },
+      { name: 'Creme de trigo', hex: '#F3E3C3' }
+    ]);
+
+    // The agency side, for the portal client and for the second seeded client that has colors.
+    const colorRows = await owner.knex('client_brand_sections')
+      .join('clients', 'clients.id', 'client_brand_sections.client_id')
+      .whereIn('client_brand_sections.client_id', first.clientIds)
+      .where('client_brand_sections.section_key', 'colors')
+      .select('client_brand_sections.client_id', 'clients.agency_id', 'clients.name');
+    expect(colorRows.map((row) => row.name as string).sort()).toEqual(['Café do Alto', 'Padaria Central']);
+    for (const row of colorRows) {
+      const adminProfile = latest.profiles.find((profile) => profile.agencyId === row.agency_id && profile.label === 'Owner')!;
+      const adminCookie = await loginCookie(adminProfile.email, adminProfile.password);
+      const response = await app.app.inject({
+        method: 'GET',
+        url: `/agencies/${row.agency_id as string}/clients/${row.client_id as string}/brand-study`,
+        headers: { ...origin, cookie: adminCookie }
+      });
+      expect(response.statusCode, `brand study of ${row.name as string}`).toBe(200);
+      const colors = response.json<{ sections: { key: string; colors: unknown[] | null }[] }>().sections.find((section) => section.key === 'colors')?.colors;
+      expect(colors, `colors of ${row.name as string}`).toHaveLength(2);
+      for (const color of colors!) expect(Object.keys(color as object).sort()).toEqual(['hex', 'name']);
+    }
+  });
+
+  it('running the seed again repairs colors that drifted from the seed, deleting nothing (issues #471 and #476)', async () => {
+    const [padaria] = await owner.knex('client_brand_sections')
+      .whereIn('client_id', first.clientIds)
+      .where('section_key', 'colors')
+      .join('clients', 'clients.id', 'client_brand_sections.client_id')
+      .where('clients.name', 'Padaria Central')
+      .select('client_brand_sections.client_id');
+    const clientId = padaria!.client_id as string;
+    // The old { nome, codigoHexadecimal } shape can no longer be stored (client_brand_sections_colors_format, #476),
+    // so the stale row is one in the contract's shape whose values the seed no longer writes.
+    await owner.knex.raw(
+      `update public.client_brand_sections set colors = '[{"name":"Antiga","hex":"#000000"}]'::jsonb where client_id = ? and section_key = 'colors'`,
+      [clientId]
+    );
+    const rowsBefore = await count('select count(*)::text as total from public.client_brand_sections where client_id = any(?::uuid[])', [first.clientIds]);
+
+    latest = await runSeedDemo(runOptions);
+
+    const repaired = await owner.knex('client_brand_sections').where({ client_id: clientId, section_key: 'colors' }).first('colors');
+    expect(repaired?.colors).toEqual([
+      { name: 'Vermelho terracota', hex: '#B4472F' },
+      { name: 'Creme de trigo', hex: '#F3E3C3' }
+    ]);
+    expect(await count('select count(*)::text as total from public.client_brand_sections where client_id = any(?::uuid[])', [first.clientIds])).toBe(rowsBefore);
   });
 
   it('rotating a demo password ends the previous session', async () => {

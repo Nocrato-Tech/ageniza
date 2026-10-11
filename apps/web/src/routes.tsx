@@ -23,26 +23,29 @@ import { LoginPage } from './login.js';
 import { NoAccessPage } from './no-access.js';
 import { ClientAccessTab } from './portal-access.js';
 import { PortalAreaLayout, PortalHomePage, PortalSkeletonPage } from './portal.js';
+import { PortalBrandPage } from './portal-brand.js';
 import { ResetPasswordPage } from './reset-password.js';
+import { SessionWatch } from './session-watch.js';
 import { LoadingPage, NotFoundPage, SessionGate } from './status-pages.js';
 
 export function PublicLayout() {
-  return <div className="app-shell"><a className="skip-link" href="#main-content">Skip to content</a><header><Link to="/">Ageniza</Link></header><main id="main-content"><Outlet /></main></div>;
+  return <div className="app-shell"><a className="skip-link" href="#main-content">Pular para o conteúdo</a><header><Link to="/">Ageniza</Link></header><main id="main-content"><Outlet /></main></div>;
 }
 
 export function ProtectedLayout({ session, children }: { session: AuthSessionSnapshot; children?: ReactNode }) {
   return <SessionGate session={session}>
-    <div className="app-shell"><a className="skip-link" href="#main-content">Skip to content</a><header className="protected-header"><Link to="/">Ageniza</Link><AccountMenu user={session.user} /></header><main id="main-content">{children ?? <Outlet />}</main></div>
+    <SessionWatch />
+    <div className="app-shell"><a className="skip-link" href="#main-content">Pular para o conteúdo</a><header className="protected-header"><Link to="/">Ageniza</Link><AccountMenu user={session.user} /></header><main id="main-content">{children ?? <Outlet />}</main></div>
   </SessionGate>;
 }
 
-function PublicHome() { return <section><h1>Ageniza</h1><p>Agency operations, in one place.</p><Link to="/status">Service status</Link></section>; }
+function PublicHome() { return <section><h1>Ageniza</h1><p>Operações de agência, em um só lugar.</p><Link to="/status">Status do serviço</Link></section>; }
 function ServiceStatus() {
   const httpClient = useApiClient();
   const health = useQuery({ queryKey: ['health'], queryFn: () => getHealth(httpClient) });
   if (health.isPending) return <LoadingPage />;
-  if (health.isError) return <section><h1>Service status</h1><p role="alert">Status is temporarily unavailable.</p></section>;
-  return <section><h1>Service status</h1><LiveStatus>API is {health.data.status}.</LiveStatus></section>;
+  if (health.isError) return <section><h1>Status do serviço</h1><p role="alert">O status está temporariamente indisponível.</p></section>;
+  return <section><h1>Status do serviço</h1><LiveStatus>A API está {health.data.status}.</LiveStatus></section>;
 }
 
 /**
@@ -65,7 +68,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="termos" element={<LegalDocumentPage document={termsOfUse} sibling={{ title: 'Política de Privacidade', to: '/privacidade' }} />} />
       <Route path="privacidade" element={<LegalDocumentPage document={privacyPolicy} sibling={{ title: 'Termos de Uso', to: '/termos' }} />} />
     </Route>
-    <Route path="agencia/:agenciaId" element={<SessionGate session={session}><AgencyAreaLayout /></SessionGate>}>
+    <Route path="agencia/:agenciaId" element={<SessionGate session={session}><SessionWatch /><AgencyAreaLayout /></SessionGate>}>
       <Route index element={<AgencyHomePage />} />
       <Route path="colaboradores" element={
         <AgencyPermissionRoute permission="colaborador.visualizar">
@@ -100,13 +103,11 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
     </Route>
     {/* The portal carries its own shell (header and bottom bar), like the agency area: the generic
         protected header never stacks above it (specs/clientes.md §7). */}
-    <Route path="portal/:clienteId" element={<SessionGate session={session}><PortalAreaLayout /></SessionGate>}>
+    <Route path="portal/:clienteId" element={<SessionGate session={session}><SessionWatch /><PortalAreaLayout /></SessionGate>}>
       <Route index element={<Navigate to="inicio" replace />} />
       <Route path="inicio" element={<PortalHomePage />} />
       <Route path="calendario" element={<PortalSkeletonPage title="Calendário" description="Aqui você vai ver os posts planejados para sua marca e aprovar cada um." />} />
-      {/* The Marca address belongs to #143; the shell reserves it so the bottom bar has no dead
-          item, and the next action has somewhere to lead. */}
-      <Route path="marca" element={<PortalSkeletonPage title="Marca" description="Aqui você vai ver o estudo da sua marca e conversar com a agência sobre ele." />} />
+      <Route path="marca" element={<PortalBrandPage />} />
       <Route path="relatorios" element={<PortalSkeletonPage title="Relatórios" description="Aqui você vai ver os resultados do trabalho que sua agência faz para você." />} />
       <Route path="*" element={<NotFoundPage as="section" />} />
     </Route>
@@ -116,7 +117,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="app" element={<Navigate to="/contextos" replace />} />
     </Route>
     <Route path="*" element={session.isAuthenticated
-      ? <ProtectedLayout session={session}><NotFoundPage as="section" /></ProtectedLayout>
+      ? <ProtectedLayout session={session}><NotFoundPage as="section" home="/contextos" /></ProtectedLayout>
       : <NotFoundPage />} />
   </Routes>;
 }

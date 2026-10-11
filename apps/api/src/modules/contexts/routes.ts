@@ -13,6 +13,7 @@ import { raw, withAuthenticatedUserTransaction, type DatabaseClient } from '@age
 import type { AuthInstance } from '../auth/better-auth.js';
 import { applyAuthCookies, toAuthHeaders } from '../auth/bridge.js';
 import { createRequireSession } from '../auth/session-guard.js';
+import { noStore } from '../../plugins/infra/no-store.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { findPreferredContext, isValidAgencyContext, isValidClientContext, listValidContexts } from './service.js';
@@ -82,7 +83,7 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
     schemas: { params: ClientPathParamsSchema }
   } satisfies DocumentedRouteConfig;
 
-  app.get('/me/contexts', { preHandler: requireSession, config: listDocs }, async (request, reply) => {
+  app.get('/me/contexts', { onRequest: noStore, preHandler: requireSession, config: listDocs }, async (request, reply) => {
     const auth = requireAuth(request);
     const { contexts } = await withAuthenticatedUserTransaction(
       dependencies.database,

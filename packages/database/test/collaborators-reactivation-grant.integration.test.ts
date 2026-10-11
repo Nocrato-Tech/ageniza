@@ -6,7 +6,8 @@ import {
   createLocalTestDatabaseClient,
   createVerifiedUserClaims,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // Issue #98. The trigger that is the second barrier of the membership UPDATE asked for
@@ -14,8 +15,7 @@ import {
 // Admin kept the same `role_id` and passed it. The suite runs as `ageniza_app`, the only role the
 // trigger governs, and asserts the error code **and** the trigger's own message (an RLS refusal is
 // also 42501) and that the row is intact afterwards.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 const TRIGGER_MESSAGE = 'colaborador.atribuir_admin is required to bring back a link with the admin role.';
 const ROLE_CHANGE_MESSAGE = 'colaborador.atribuir_admin is required to grant the admin role.';

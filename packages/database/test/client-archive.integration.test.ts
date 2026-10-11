@@ -531,7 +531,7 @@ describe('archiving a client cancels the content planned after its closing (issu
       expect(await contentStatus(id)).toBe('in_production');
     });
 
-    it('is written by cancel_content and by the helper of the archive, and the helper is called by the two archive functions only', async () => {
+    it('is written by cancel_content and by the helper of the archive, and the helper is called by the archive of one client, from the route and from the job, only', async () => {
       const knex = w.getOwner().knex;
       const writers = await knex.raw<{ rows: Array<{ proname: string }> }>(
         `select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -543,7 +543,7 @@ describe('archiving a client cancels the content planned after its closing (issu
       );
 
       expect(writers.rows.map((row) => row.proname)).toEqual(['cancel_content', 'cancel_contents_after']);
-      expect(callers.rows.map((row) => row.proname)).toEqual(['archive_client', 'archive_due_clients']);
+      expect(callers.rows.map((row) => row.proname)).toEqual(['archive_client', 'archive_due_client']);
     });
 
     it('does not let the application role, or PUBLIC, call the helper', async () => {
@@ -562,6 +562,8 @@ describe('archiving a client cancels the content planned after its closing (issu
   it.each([
     ['archive_client', 'app_private.archive_client(uuid)', true],
     ['archive_due_clients', 'app_private.archive_due_clients()', true],
+    ['archive_due_client', 'app_private.archive_due_client(uuid)', true],
+    ['due_client_ids', 'app_private.due_client_ids()', true],
     ['cancel_contents_after', 'app_private.cancel_contents_after(uuid, date)', false],
     ['lock_active_client_of_child', 'app_private.lock_active_client_of_child()', false],
     ['lock_content_for_agency', 'app_private.lock_content_for_agency(uuid, text)', false],

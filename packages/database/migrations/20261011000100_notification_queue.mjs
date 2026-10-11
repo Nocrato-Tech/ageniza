@@ -9,8 +9,8 @@
 // may go out (`send_after`, the opening of its grouping window). The worker reads rows of the same recipient, client and type as ONE
 // message.
 //
-//  - `ageniza_app` has no privilege at all on the table, and the table has RLS forced with NO policy, two belts that each deny on
-//    their own. The state of an item (`claimed_at`, `attempts`, `last_error`, `sent_at`, `discarded_at`) is therefore written only by
+//  - `ageniza_app` has no privilege at all on the table (it is never granted one), and the table has RLS forced with NO policy, two
+//    belts that each deny on their own. The state of an item (`claimed_at`, `attempts`, `last_error`, `sent_at`, `discarded_at`) is therefore written only by
 //    the functions below, and a person of the portal or of the agency can neither read the list of e-mail addresses nor write a row.
 //  - Who enqueues is the database, never a route: `contents_enqueue_notification` is an AFTER UPDATE trigger on `contents`, a
 //    `security definer` one (it writes a table the caller cannot), that fires when a content MOVES to "awaiting approval" (also when the
@@ -88,8 +88,7 @@ export async function up(knex) {
 
     alter table public.notification_queue enable row level security;
     alter table public.notification_queue force row level security;
-    -- The default privileges of this schema hand every new table to ageniza_app; this one is for the functions only.
-    revoke all on public.notification_queue from ageniza_app;
+    -- No grant: a new table of public carries no privilege for ageniza_app (20261010000500), and this one is for the functions only.
 
     create trigger "0_notification_queue_lock_active_client"
       after insert on public.notification_queue
@@ -106,7 +105,17 @@ export async function up(knex) {
     set search_path = ''
     as $function$
       select case p_type
-        when 'content_published' then (app_private.sao_paulo_date(p_instant) + 1)::timestamp at time zone 'America/Sao_Paulo'
+        -- The first whole UTC hour at which Brasília is on another day: its midnight is always one, and the day is asked of
+        -- sao_paulo_date alone, as the catalog test of the client dates demands (no time zone of its own here).
+        when 'content_published' then (
+          select pg_catalog.min(hour)
+          from pg_catalog.generate_series(
+            pg_catalog.to_timestamp(pg_catalog.floor(extract(epoch from p_instant) / 3600) * 3600) + interval '1 hour',
+            pg_catalog.to_timestamp(pg_catalog.floor(extract(epoch from p_instant) / 3600) * 3600) + interval '30 hours',
+            interval '1 hour'
+          ) as hour
+          where app_private.sao_paulo_date(hour) > app_private.sao_paulo_date(p_instant)
+        )
         else p_instant + interval '15 minutes'
       end
     $function$;

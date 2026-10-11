@@ -36,7 +36,7 @@ export function Modal({ title, closeLabel, onClose, children }: ModalProps) {
     className="ui-modal"
     aria-labelledby={titleId}
     aria-modal="true"
-    onCancel={(event) => { event.preventDefault(); onClose(); }}
+    onCancel={(event) => { event.preventDefault(); event.stopPropagation(); onClose(); }}
     onPointerDown={(event) => { pointerStartedOutside.current = event.target === event.currentTarget && outside(event.clientX, event.clientY); }}
     onClick={(event) => {
       if (pointerStartedOutside.current && event.target === event.currentTarget && outside(event.clientX, event.clientY)) onClose();

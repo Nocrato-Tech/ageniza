@@ -35,6 +35,8 @@ export class HttpClientError extends Error {
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
+/** A 401 with one of these codes means the session is gone; SESSION_EXPIRED is the 30-day ceiling. */
+const SESSION_DEAD_CODES: ReadonlySet<string> = new Set(['UNAUTHENTICATED', 'SESSION_EXPIRED']);
 
 const invalidRequest = (message: string): HttpClientError => new HttpClientError(message, { code: 'INVALID_REQUEST' });
 
@@ -189,7 +191,7 @@ export class HttpClient {
         const parsedError = ApiErrorResponseSchema.safeParse(payload);
         if (parsedError.success) {
           // INVALID_CREDENTIALS is also a 401, but it answers a login attempt, not a dead session.
-          if (response.status === 401 && parsedError.data.error.code === 'UNAUTHENTICATED') this.endSession(generation);
+          if (response.status === 401 && SESSION_DEAD_CODES.has(parsedError.data.error.code)) this.endSession(generation);
           throw new HttpClientError(parsedError.data.error.message, {
             code: parsedError.data.error.code,
             status: response.status,

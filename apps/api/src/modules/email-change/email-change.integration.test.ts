@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { integrationDatabaseEnvironment } from '@ageniza/database';
+
 import { createAgencyCliDatabase } from '../../cli/agency.js';
 import { runEmailChangeCli, type EmailChangeConfirmationEmail, type EmailChangeMailer } from '../../cli/email-change.js';
 import {
@@ -105,7 +107,7 @@ const operate = async (...argv: string[]) => {
   const code = await runEmailChangeCli({
     argv,
     environment: {
-      MIGRATION_DATABASE_URL: OWNER_DATABASE_URL,
+      ...integrationDatabaseEnvironment(),
       SMTP_URL: 'smtp://127.0.0.1:1025',
       EMAIL_FROM: 'Ageniza <no-reply@ageniza.local>',
       APP_PUBLIC_URL: TEST_APP_PUBLIC_URL

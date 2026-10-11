@@ -1,8 +1,8 @@
-import { createContext, useContext, useEffect } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { PortalClientResponseSchema, type PortalClientResponse } from '@ageniza/contracts';
+import { AuthNoContentResponseSchema, PortalClientResponseSchema, type PortalClientResponse } from '@ageniza/contracts';
 import { AccountMenu } from './account-menu.js';
 import { Avatar, Button, Skeleton } from '@ageniza/ui';
 
@@ -12,7 +12,8 @@ import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';
-import { NotFoundPage } from './status-pages.js';
+import { PortalTour, type PortalTourTarget } from './portal-tour.js';
+import { NotFoundHomeContext, NotFoundPage } from './status-pages.js';
 
 /**
  * The client portal shell (specs/clientes.md §7, issue #141): mobile-first, in the client's
@@ -80,13 +81,14 @@ function PortalShellSkeleton() {
   </div>;
 }
 
-function PortalNav({ clienteId }: { clienteId: string }) {
+function PortalNav({ clienteId, tourTarget, children }: { clienteId: string; tourTarget: PortalTourTarget | null; children?: React.ReactNode }) {
   return <nav className="portal-nav" aria-label="Navegação do portal">
     <ul>
       {PORTAL_TABS.map((tab) => <li key={tab.slug}>
-        <NavLink end to={`/portal/${clienteId}/${tab.slug}`}>{tab.label}</NavLink>
+        <NavLink end to={`/portal/${clienteId}/${tab.slug}`} data-tour-target={tab.slug === tourTarget ? 'true' : undefined}>{tab.label}</NavLink>
       </li>)}
     </ul>
+    {children}
   </nav>;
 }
 
@@ -94,6 +96,16 @@ export function PortalAreaLayout() {
   const { clienteId = '' } = useParams();
   const httpClient = useApiClient();
   const location = useLocation();
+  const queryClient = useQueryClient();
+  const session = useAuthSession(useAuthSessionStore());
+  // The tour is per person and per client: what was closed here is remembered by client, and a
+  // failed "seen" write is deliberately not remembered past this visit (specs/clientes.md §7).
+  const [closedTours, setClosedTours] = useState<ReadonlySet<string>>(new Set());
+  // A review is asked for in one client's portal; it does not follow the person to another.
+  const [reviewingClientId, setReviewingClientId] = useState<string | null>(null);
+  if (reviewingClientId !== null && reviewingClientId !== clienteId) setReviewingClientId(null);
+  const reviewing = reviewingClientId === clienteId;
+  const [tourTarget, setTourTarget] = useState<PortalTourTarget | null>(null);
   const validId = uuidPattern.test(clienteId);
   const { data, error, refetch } = useQuery({
     queryKey: portalClientQueryKey(clienteId),
@@ -113,14 +125,31 @@ export function PortalAreaLayout() {
     void refetch();
   }, [location.pathname, refetch, validId]);
 
-  if (!validId) return <PortalContextlessShell><NotFoundPage as="section" /></PortalContextlessShell>;
+  if (!validId) return <PortalContextlessShell><NotFoundPage as="section" home="/contextos" /></PortalContextlessShell>;
   if (error !== null) {
-    if (isNotFound(error)) return <PortalContextlessShell><NotFoundPage as="section" /></PortalContextlessShell>;
+    if (isNotFound(error)) return <PortalContextlessShell><NotFoundPage as="section" home="/contextos" /></PortalContextlessShell>;
     return <PortalContextlessShell><PortalUnavailable onRetry={() => { void refetch(); }} /></PortalContextlessShell>;
   }
   if (data === undefined) return <PortalShellSkeleton />;
   // Defense in depth: the answer must belong to the client in the address, or it is not shown.
-  if (data.id !== clienteId) return <PortalContextlessShell><NotFoundPage as="section" /></PortalContextlessShell>;
+  if (data.id !== clienteId) return <PortalContextlessShell><NotFoundPage as="section" home="/contextos" /></PortalContextlessShell>;
+
+  const tourMode = reviewing ? 'review'
+    : data.onboardingSeenAt === null && !closedTours.has(clienteId) ? 'first'
+      : null;
+
+  const closeTour = (): void => {
+    if (tourMode === 'review') { setReviewingClientId(null); return; }
+    setClosedTours((previous) => new Set(previous).add(clienteId));
+    httpClient.request({
+      path: apiPath('/clients/:clientId/onboarding/seen', { clientId: clienteId }),
+      method: 'POST',
+      response: AuthNoContentResponseSchema
+    }).then(() => {
+      queryClient.setQueryData<PortalClientResponse>(portalClientQueryKey(clienteId), (previous) =>
+        previous === undefined ? previous : { ...previous, onboardingSeenAt: new Date().toISOString() });
+    }).catch(() => undefined);
+  };
 
   return <PortalClientContext.Provider value={data}>
     <div className="app-shell portal-shell">
@@ -134,11 +163,21 @@ export function PortalAreaLayout() {
           </div>
         </div>
         {/* The account menu (#70) lives here; the active context is the client this portal is. */}
-        <AccountMenu activeContext={data.name} />
+        <AccountMenu activeContext={data.name} onReviewTour={tourMode === null ? () => { setReviewingClientId(clienteId); } : undefined} />
       </header>
       <LegalNotice />
-      <main className="portal-content" id="main-content"><InvitationNotice /><Outlet /></main>
-      <PortalNav clienteId={clienteId} />
+      <main className="portal-content" id="main-content"><InvitationNotice /><NotFoundHomeContext.Provider value={`/portal/${data.id}/inicio`}><Outlet /></NotFoundHomeContext.Provider></main>
+      {/* The card lives in the bar so it sits right above it, whatever the bar's height becomes. */}
+      <PortalNav clienteId={clienteId} tourTarget={tourTarget}>
+        {tourMode !== null && <PortalTour
+          key={`${clienteId}:${tourMode}`}
+          personName={session.user?.name ?? ''}
+          clientName={data.name}
+          agencyName={data.agencyName}
+          onClose={closeTour}
+          onTargetChange={setTourTarget}
+        />}
+      </PortalNav>
     </div>
   </PortalClientContext.Provider>;
 }

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { AuthEmailSchema, AuthNoBodySchema, AuthPasswordSchema } from './auth.js';
-import { createDisplayNameSchema } from './display-name.js';
+import { DisplayNameSchema } from './display-name.js';
 import { createPaginatedResponseSchema } from './pagination.js';
 
 /** Invitation purpose values exposed by the public invitation endpoints. */
@@ -34,19 +34,8 @@ export const InvitationContextSchema = z.object({
   clientId: z.string().trim().min(1).max(128).nullable()
 }).strict();
 
-/**
- * Longest accepted name on `POST /invitations/:token/accept-new-account`. `specs/auth.md` fixes a
- * minimum password length for this flow but no name limit; the previous value (256) is kept, and
- * the open question is recorded in `docs/business/decisions.md` (2026-09-30, pending validation).
- * The name itself goes through the shared display-name rules, so a NUL byte can no longer reach
- * PostgreSQL (22021 -> 500) and bidi overrides or invisible names are refused.
- */
-export const INVITATION_NAME_MAX_LENGTH = 256;
-
-const InvitationNameSchema = createDisplayNameSchema(INVITATION_NAME_MAX_LENGTH);
-
 export const InvitationAcceptNewAccountRequestSchema = z.object({
-  name: InvitationNameSchema,
+  name: DisplayNameSchema,
   password: AuthPasswordSchema,
   acceptTerms: z.literal(true)
 }).strict();

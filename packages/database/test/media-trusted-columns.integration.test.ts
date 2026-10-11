@@ -6,7 +6,8 @@ import {
   createLocalTestDatabaseClient,
   createVerifiedUserClaims,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // Issue #371 (findings of the #369 reviews). After #295 a role holding only `midia.enviar` could still
@@ -15,8 +16,7 @@ import {
 // `multipart_upload_id` in a terminal state. Every attack runs as `ageniza_app` with a custom role that
 // holds that one permission; the trigger refuses with 42501 like the RLS does, so each case checks the
 // trigger's own message.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 const HUNDRED_MB = 104_857_600;
 

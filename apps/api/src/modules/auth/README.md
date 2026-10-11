@@ -17,6 +17,7 @@ Origin/CSRF checking is global (see below); no route repeats it.
 | `POST /auth/logout` | — (session cookie) | `204`, revokes only the current session | `401 UNAUTHENTICATED` |
 | `POST /auth/logout-all` | — (session cookie) | `204`, revokes every session for the user; audits `auth.logout_all` | `401 UNAUTHENTICATED` |
 | `GET /auth/session` | — (session cookie) | `200 { user: { id, name, email }, session: { expiresAt } }` | `401 UNAUTHENTICATED`; `401 SESSION_EXPIRED` |
+| `GET /auth/session/check` | — (session cookie) | the same `200`, but the session is read with `disableRefresh`: no renewal, no cookie (#411) | `401 UNAUTHENTICATED`; `401 SESSION_EXPIRED` |
 | `POST /auth/password/forgot` | `{ email }` | always `202 {}` | `429 RATE_LIMITED` |
 | `POST /auth/password/reset` | `{ token, newPassword, inviteToken? }` | `200 { signedIn: true }` (with a new session cookie) or `200 { signedIn: false, reason }` (no cookie; `reason` is `'NO_CONTEXT_ACCESS'` or `'SIGN_IN_REQUIRED'`); revokes every previous session for the user either way; audits `auth.password_reset` | `400 INVALID_LINK`; `400 VALIDATION_ERROR` |
 
@@ -107,6 +108,13 @@ without the password, the reset token, or the e-mail.
   update window (`session.expiresIn` / `session.updateAge` in `better-auth.ts`).
 - Session state is never cached in the cookie (`cookieCache.enabled: false`): revocation takes
   effect immediately, at the cost of one DB round trip per authenticated request.
+- The auth responses that carry session data (`GET /auth/session`, `GET /auth/session/check`,
+  `POST /auth/login`, and `POST /auth/password/reset`, which issues the cookie) answer
+  `Cache-Control: no-store`, set in `onRequest` so that a `401` from the guard carries it too (#423).
+  The same hook (`plugins/infra/no-store.ts`) covers `GET /invitations/:token`,
+  `POST /invitations/:token/accept-new-account` and `GET /me/contexts` (#432). It runs before the
+  route's rate-limit hook, so a `429` carries it as well; a header set inside the handler would miss
+  the `401` raised by `requireSession`.
 - An **absolute 30-day limit since `createdAt`**, independent of activity, is enforced twice, not
   by Better Auth's own expiry: `session-guard.ts` revokes a session older than that on the next
   request that presents it (the caller gets `401 SESSION_EXPIRED`), and the `databaseHooks` entry in

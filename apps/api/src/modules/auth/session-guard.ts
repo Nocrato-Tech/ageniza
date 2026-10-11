@@ -25,6 +25,15 @@ export interface SessionGuardDependencies {
   readonly auth: AuthInstance;
 }
 
+export interface SessionGuardOptions {
+  /**
+   * Whether this request counts as use of the session. `false` reads the session without renewing it
+   * (Better Auth's `disableRefresh`): `expiresAt` and `updatedAt` stay as they were, and no cookie is
+   * issued. A tab that only asks "is my session still alive?" must not keep it alive.
+   */
+  readonly renew?: boolean;
+}
+
 const unauthenticatedFallback = { statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' } as const;
 
 const unauthenticated = (): HttpError => new HttpError(unauthenticatedFallback);
@@ -48,13 +57,17 @@ const sessionExpired = (): HttpError => new HttpError({
  * call) was silently discarded, and an active user's cookie would go stale and log them out once
  * `expiresIn` (7 days) elapsed since login, despite continued activity.
  */
-export const createRequireSession = (dependencies: SessionGuardDependencies) =>
+export const createRequireSession = (dependencies: SessionGuardDependencies, options: SessionGuardOptions = {}) =>
   async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     const headers = toAuthHeaders(request);
 
     const { response: result, headers: responseHeaders } = await (async () => {
       try {
-        return await dependencies.auth.api.getSession({ headers, returnHeaders: true });
+        return await dependencies.auth.api.getSession({
+          headers,
+          returnHeaders: true,
+          ...(options.renew === false ? { query: { disableRefresh: true } } : {})
+        });
       } catch (error) {
         throw toPublicAuthError(error, unauthenticatedFallback);
       }

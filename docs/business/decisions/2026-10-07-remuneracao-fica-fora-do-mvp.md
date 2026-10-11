@@ -8,5 +8,5 @@
 
 **Consequência.** A linha "Remuneração no crachá e no modal" da seção 10 de `specs/colaboradores.md` segue listada, mas o gatilho passa a ser o pedido do dono, e não a entrevista do Financeiro; a SPEC não foi reescrita neste PR, e esta entrada prevalece sobre ela. Esta decisão restringe a de 2026-09-24 só na parte da remuneração: se o Financeiro básico continua no MVP depois de Tarefas não é tratado aqui e fica a cargo do dono.
 
-**Origem.** Decisão do maestro, com autonomia dada pelo dono em 2026-10-07, registrada no fechamento da issue #109. **Pendente de validação** pelo dono do produto.
+**Origem.** Decisão do maestro, com autonomia dada pelo dono em 2026-10-07, registrada no fechamento da issue #109. Validada pelo dono em 2026-10-08.
 

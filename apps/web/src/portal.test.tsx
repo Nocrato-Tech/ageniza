@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
+import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -15,6 +15,8 @@ import { createQueryClient } from './query.js';
 import { portalClientQueryKey } from './portal.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
+import { portalStudyBody } from './portal-fixture.js';
+import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(cleanup);
 
@@ -71,7 +73,7 @@ const portalClient = (overrides: Partial<PortalClientResponse> = {}): Record<str
   closingDate: null,
   archivedAt: null,
   agencyName: 'Agência Um',
-  onboardingSeenAt: null,
+  onboardingSeenAt: '2026-10-01T12:00:00.000Z',
   home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5 },
   ...overrides
 });
@@ -111,6 +113,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     if (path.endsWith('/me/contexts')) return json(contextsBody);
     if (path.endsWith('/me/legal-acceptances')) return scenario.legal?.() ?? json(legalAccepted);
     if (path === `/clients/${CLIENT_ID}`) return scenario.portal?.() ?? json(portalClient());
+    if (path === `/clients/${CLIENT_ID}/brand-study`) return json(portalStudyBody());
     if (path === `/clients/${OTHER_CLIENT_ID}`) return json(portalClient({ id: OTHER_CLIENT_ID, name: 'Outro Cliente' }));
     if (path.endsWith('/agencies/' + AGENCY_A + '/me')) return json(agencyMe);
     const photo = new RegExp(`/agencies/${AGENCY_A}/clients/([^/]+)/photo$`).exec(path);
@@ -143,10 +146,11 @@ interface ProbeTarget {
 }
 
 function Probe({ probe }: { probe: ProbeTarget }) {
-  const location = useLocation();
-  probe.pathname = location.pathname;
-  probe.search = location.search;
-  probe.navigate = useNavigate();
+  useCommittedLocation((location, navigate) => {
+    probe.pathname = location.pathname;
+    probe.search = location.search;
+    probe.navigate = navigate;
+  });
   return null;
 }
 
@@ -197,13 +201,13 @@ describe('client portal shell (#141)', () => {
     expect(probe.pathname).toBe(portalUrl('relatorios'));
 
     clickTab('Marca');
-    expect(await screen.findByRole('heading', { name: 'Marca' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Sua marca' })).toBeTruthy();
     expect(probe.pathname).toBe(portalUrl('marca'));
 
     clickTab('Início');
     expect(await screen.findByRole('heading', { name: 'Olá, Maria' })).toBeTruthy();
     expect(probe.pathname).toBe(portalUrl('inicio'));
-    expect(screen.queryByRole('heading', { name: 'Page not found' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Página não encontrada' })).toBeNull();
   });
 
   it('shows the client and its agency in the header, and the client inside the account menu', async () => {
@@ -228,7 +232,7 @@ describe('client portal shell (#141)', () => {
     expect(screen.queryByText(/A agência respondeu/)).toBeNull();
     expect(within(screen.getByRole('link', { name: /Conheça o estudo da sua marca/ })).getByText('ver')).toBeTruthy();
     fireEvent.click(screen.getByRole('link', { name: /Conheça o estudo da sua marca/ }));
-    expect(await screen.findByRole('heading', { name: 'Marca' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Sua marca' })).toBeTruthy();
     expect(first.probe.pathname).toBe(portalUrl('marca'));
     cleanup();
 
@@ -257,7 +261,6 @@ describe('client portal shell (#141)', () => {
 
   it.each([
     ['Calendário', 'Aqui você vai ver os posts planejados para sua marca e aprovar cada um.'],
-    ['Marca', 'Aqui você vai ver o estudo da sua marca e conversar com a agência sobre ele.'],
     ['Relatórios', 'Aqui você vai ver os resultados do trabalho que sua agência faz para você.']
   ])('draws %s as a skeleton with its reason and no clickable control', async (label, sentence) => {
     const { impl } = makeFetch();
@@ -282,7 +285,7 @@ describe('client portal shell (#141)', () => {
 
     for (const label of ['Calendário', 'Marca', 'Relatórios']) {
       clickTab(label);
-      await screen.findByRole('heading', { name: label });
+      await screen.findByRole('heading', { name: label === 'Marca' ? 'Sua marca' : label });
       expect(document.title).toBe(`${label} — Portal do cliente — Ageniza`);
     }
 
@@ -337,28 +340,52 @@ describe('client portal shell (#141)', () => {
     active = false;
     clickTab('Calendário');
 
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(probe.pathname).toBe(portalUrl('calendario'));
     // The same not-found as any unknown address: never a message confirming the portal existed.
     expect(screen.queryByText(/acesso/i)).toBeNull();
   });
 
+  it('brings the client back to the portal start from the not-found, never to the agency or the public home', async () => {
+    const { impl } = makeFetch();
+    const { probe } = renderPortal(impl, portalUrl('caminho-inexistente'));
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
+    expect(screen.getByText('Este endereço não corresponde a uma página do Ageniza.')).toBeTruthy();
+    expect(document.title).toBe('Página não encontrada — Ageniza');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Voltar ao início' }));
+
+    expect(await screen.findByRole('heading', { name: 'Olá, Maria' })).toBeTruthy();
+    expect(probe.pathname).toBe(portalUrl('inicio'));
+  });
+
+  it.each([
+    ['the client is not found', () => makeFetch({ portal: () => notFound() }).impl, portalUrl()],
+    ['the id is malformed', () => makeFetch().impl, '/portal/nao-e-uuid/inicio'],
+    ['the answer belongs to another client', () => makeFetch({ portal: () => json(portalClient({ id: OTHER_CLIENT_ID })) }).impl, portalUrl()]
+  ] as const)('points the not-found of an unverified portal address at the context chooser when %s', async (_name, impl, entry) => {
+    renderPortal(impl(), entry);
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
+
+    expect(screen.getByRole('link', { name: 'Voltar ao início' }).getAttribute('href')).toBe('/contextos');
+  });
+
   it('answers the ordinary not-found for a 404, for a malformed id and for another client answer', async () => {
     const gone = makeFetch({ portal: () => notFound() });
     renderPortal(gone.impl);
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     cleanup();
 
     const malformed = makeFetch();
     renderPortal(malformed.impl, '/portal/nao-e-uuid/inicio');
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(malformed.calls.some((call) => call.startsWith('GET /clients/'))).toBe(false);
     cleanup();
 
     // Defense in depth: an answer for another client is not shown as if it were this portal's.
     const wrong = makeFetch({ portal: () => json(portalClient({ id: OTHER_CLIENT_ID, name: 'Outro Cliente' })) });
     renderPortal(wrong.impl);
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(screen.queryByText('Outro Cliente')).toBeNull();
   });
 
@@ -366,7 +393,7 @@ describe('client portal shell (#141)', () => {
     const { impl, calls } = makeFetch({ anonymous: true });
     renderPortal(impl);
 
-    expect(await screen.findByRole('heading', { name: 'Workspace unavailable' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Área indisponível' })).toBeTruthy();
     expect(screen.queryByRole('navigation', { name: 'Navegação do portal' })).toBeNull();
     expect(screen.queryByRole('heading', { name: /Olá/ })).toBeNull();
     expect(calls.some((call) => call.startsWith('GET /clients/'))).toBe(false);
@@ -376,7 +403,7 @@ describe('client portal shell (#141)', () => {
     const { impl } = makeFetch();
     const { probe, container } = renderPortal(impl, portalUrl('qualquer-coisa'));
 
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(probe.pathname).toBe(portalUrl('qualquer-coisa'));
     // Still the portal shell (client header and bar), not the generic protected header: the `*` of the portal answers.
     expect(within(container.querySelector('.portal-header') as HTMLElement).getByText('Padaria Central')).toBeTruthy();
@@ -390,7 +417,7 @@ describe('client portal shell (#141)', () => {
   });
 
   it.each([
-    ['the client is not found', () => notFound(), 'Page not found'],
+    ['the client is not found', () => notFound(), 'Página não encontrada'],
     ['the portal cannot be opened', () => json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, 500), 'Não foi possível abrir o portal']
   ])('keeps the account menu as the way out when %s, without an active client', async (_name, portal, heading) => {
     const { impl } = makeFetch({ portal });

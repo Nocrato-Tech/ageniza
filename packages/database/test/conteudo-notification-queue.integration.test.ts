@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Knex } from 'knex';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { createLocalTestDatabaseClient, type DatabaseClient } from '../src/index.js';
+import { createLocalTestDatabaseClient, resolveIntegrationDatabaseUrls, type DatabaseClient } from '../src/index.js';
 
 import { createContentWorld } from './support/content-world.js';
 
@@ -15,7 +15,7 @@ import { createContentWorld } from './support/content-world.js';
 const w = createContentWorld('conteudo-notification-queue');
 const { ids } = w;
 
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl } = resolveIntegrationDatabaseUrls();
 let worker: DatabaseClient;
 
 const extraClients: string[] = [];
@@ -57,7 +57,7 @@ const sqlText = async (query: string, bindings: readonly unknown[] = []): Promis
   const { rows } = await owner().raw<{ rows: Array<{ value: string }> }>(query, [...bindings]);
   return rows[0]!.value;
 };
-const today = (): Promise<string> => sqlText("select ((now() at time zone 'America/Sao_Paulo')::date)::text as value");
+const today = (): Promise<string> => sqlText('select app_private.sao_paulo_date(pg_catalog.now())::text as value');
 
 const fn = (user: string, signature: string, ...args: unknown[]): Promise<unknown> =>
   w.asUser(user, (transaction) => transaction.raw(`select app_private.${signature}`, args as never[]));
@@ -1214,6 +1214,87 @@ describe('marking an item sent or failed (issue #252)', () => {
 });
 
 // ---- races -----------------------------------------------------------------------------------------------------------
+
+// The send is an upsert on the open item: the row a claim has just stamped is the one it meets.
+describe('races on the open item (issue #252)', () => {
+  const sentAndDue = async (): Promise<string> => {
+    const id = await readyContent();
+    await sendDue(ids.productionA, id);
+    return id;
+  };
+  const takeBack = (id: string): Promise<unknown> =>
+    owner().transaction(async (t) => {
+      await t.raw('select app_private.bind_actor(?::uuid)', [ids.adminA]);
+      await t('contents').where({ id }).update({ status: 'adjusting' });
+    });
+
+  it('a content sent again while a claim of its item is uncommitted leaves the item to the claim', async () => {
+    const id = await sentAndDue();
+    const before = (await itemsOf(id)).map((item) => item.send_after);
+
+    const claiming = await worker.knex.transaction();
+    let outcome: Promise<unknown>;
+    try {
+      expect(forContent(await claimIn(claiming), id)).toHaveLength(PEOPLE_OF_A1.length);
+      await takeBack(id);
+      outcome = submitAs(ids.productionA, id).then(() => 'sent', (error: unknown) => error);
+      await w.waitUntilSomeoneWaitsOnALock();
+    } finally {
+      await claiming.commit();
+    }
+
+    expect(await outcome).toBe('sent');
+    const items = await itemsOf(id);
+    expect(items).toHaveLength(PEOPLE_OF_A1.length);
+    expect(items.every((item) => item.claimed_at !== null && item.claim_token !== null && item.attempts === 1)).toBe(true);
+    expect(items.map((item) => item.send_after)).toEqual(before);
+  });
+
+  it.each(['repeatable read', 'serializable'] as const)(
+    'a content sent again under %s after a claim took its item fails with 40001 and leaves the content and the item as they were',
+    async (level) => {
+      const id = await sentAndDue();
+
+      const sending = await w.openTransactionAs(ids.productionA, level);
+      let outcome: unknown;
+      try {
+        await sending.raw('select 1');
+        expect(forContent(await claim(), id)).toHaveLength(PEOPLE_OF_A1.length);
+        await takeBack(id);
+        outcome = await sending.raw('select app_private.submit_content(?::uuid)', [id]).then(() => 'sent', (error: unknown) => error);
+      } finally {
+        await sending.rollback().catch(() => undefined);
+      }
+
+      expect(outcome).toMatchObject({ code: '40001' });
+      expect((await w.contentRow(id)).status).toBe('adjusting');
+      const items = await itemsOf(id);
+      expect(items).toHaveLength(PEOPLE_OF_A1.length);
+      expect(items.every((item) => item.claimed_at !== null && item.attempts === 1)).toBe(true);
+    }
+  );
+
+  it.each(['repeatable read', 'serializable'] as const)(
+    'a content sent under %s after the client was archived queues nothing, whatever the transaction saw when it began',
+    async (level) => {
+      const client = await freshClient();
+      const id = await readyContent(client, 'in_production', await today());
+
+      const sending = await w.openTransactionAs(ids.productionA, level);
+      let outcome: unknown;
+      try {
+        await sending.raw('select 1');
+        await w.asUser(ids.adminA, (t) => t.raw('select app_private.archive_client(?::uuid)', [client]));
+        outcome = await sending.raw('select app_private.submit_content(?::uuid)', [id]).then(() => 'sent', (error: unknown) => error);
+      } finally {
+        await sending.rollback().catch(() => undefined);
+      }
+
+      expect(outcome).not.toBe('sent');
+      expect(await itemsOf(id)).toEqual([]);
+    }
+  );
+});
 
 describe('races with the archive of the client (issue #252)', () => {
   const archive = (clientId: string) => (t: Knex.Transaction) => t.raw('select app_private.archive_client(?::uuid)', [clientId]);
