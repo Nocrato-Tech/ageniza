@@ -5,7 +5,6 @@ import {
   ContentDetailSchema,
   ContentTaskSchema,
   CONTENT_TASKS_MAX_PER_CONTENT,
-  type AgencyMeResponse,
   type ContentDetail,
   type ContentTask,
   type ReturnContentTaskRequest,
@@ -40,9 +39,6 @@ const TASKS_PATH = `${CONTENT_PATH}/tasks`;
 
 const dayLabel = (day: string): string => `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`;
 
-/** The membership of the person in the session, as the context of the agency carries it; `null` for the owner who has no link (decided by permissions then). */
-const selfMembership = (agency: AgencyMeResponse): string | null => (agency as AgencyMeResponse & { membershipId?: string | null }).membershipId ?? null;
-
 const EMPTY_TASK: NewTaskValues = { title: '', description: '', assigneeMembershipId: '', dueOn: '' };
 
 /** The two blocks of the Atribuição tab (`specs/conteudo.md` section 7): who is in charge of the content, and its subtasks. */
@@ -53,7 +49,8 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
   const canOperate = useCan('conteudo.operar');
   const canApprove = useCan('conteudo.aprovar_pela_agencia');
   const canSeeTeam = useCan('colaborador.visualizar');
-  const self = selfMembership(agency);
+  // `null` for an owner by possession, who has no link: the permissions decide for her.
+  const self = agency.membershipId;
   const writable = !archived && !isClosed(content.status);
   const canChangeOwner = writable && canOperate && canApprove;
   const canCreate = writable && canOperate;
