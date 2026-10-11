@@ -128,6 +128,14 @@ const fail = async (ids_: readonly string[], code: string | null, token?: string
   return asWorker(async (t) => Number((await t.raw<{ rows: Array<{ failed: number }> }>('select app_private.fail_notifications(?::uuid[], ?::uuid, ?::text) as failed', [ids_ as never, claimToken, code])).rows[0]!.failed));
 };
 const forContent = (rows: readonly Claimed[], contentId: string): Claimed[] => rows.filter((row) => row.content_id === contentId);
+// Issue #260: the worker asks again, right before it sends, whether what its claim handed over is still true.
+const RECHECK_SQL = `select item_id, claim_token, notification_type, client_id, client_name, agency_name, recipient_user_id, recipient_email,
+  content_id, content_title, content_publish_on::text as content_publish_on from app_private.recheck_notifications(?::uuid[], ?::uuid)`;
+const recheckIn = async (transaction: Knex.Transaction, items: readonly string[] | null, token: string | null): Promise<Claimed[]> =>
+  (await transaction.raw<{ rows: Claimed[] }>(RECHECK_SQL, [items as never, token])).rows;
+const recheck = (batch: readonly Claimed[], token: string | null = batch[0]?.claim_token ?? randomUUID()): Promise<Claimed[]> =>
+  asWorker((transaction) => recheckIn(transaction, batch.map((row) => row.item_id), token));
+const peopleOf = (rows: readonly Claimed[]): string[] => rows.map((row) => row.recipient_user_id).sort();
 
 const freshClient = async (people: readonly string[] = [ids.portalA1, ids.portalA1Second]): Promise<string> => {
   const id = randomUUID();
@@ -274,12 +282,14 @@ describe('the catalog of the queue (issue #252)', () => {
   const WORKER_FUNCTIONS = [
     'app_private.claim_notification_batch(integer)',
     'app_private.mark_notifications_sent(uuid[], uuid)',
-    'app_private.fail_notifications(uuid[], uuid, text)'
+    'app_private.fail_notifications(uuid[], uuid, text)',
+    'app_private.recheck_notifications(uuid[], uuid)'
   ];
   const INTERNAL = [
     'app_private.contents_enqueue_notification()',
     'app_private.notification_max_wait(text)',
     'app_private.notification_group_ready(uuid, uuid, text)',
+    'app_private.notification_item_still_holds(text, uuid, uuid, uuid)',
     'app_private.notification_send_after(text, timestamptz)'
   ];
 
@@ -299,6 +309,18 @@ describe('the catalog of the queue (issue #252)', () => {
 
   it.each(INTERNAL)('%s is closed to the application role and to PUBLIC', async (signature) => {
     expect(await privilegesOf(signature)).toMatchObject({ app: false, public_acl: false, config: ['search_path=""'] });
+  });
+
+  it('lets the worker execute exactly these functions on the queue, and no other function that touches it', async () => {
+    const { rows } = await owner().raw<{ rows: Array<{ signature: string }> }>(
+      `select p.oid::regprocedure::text as signature
+       from pg_proc p
+       where p.pronamespace = 'app_private'::regnamespace
+         and p.prosrc like '%notification_queue%'
+         and has_function_privilege('ageniza_app', p.oid, 'execute')
+       order by p.oid::regprocedure::text collate "C"`
+    );
+    expect(rows.map((row) => row.signature)).toEqual(WORKER_FUNCTIONS.map((signature) => signature.replaceAll(', ', ',')).sort());
   });
 
   it('keeps the enqueue out of reach of a request: the only writer of the queue is a trigger', async () => {
@@ -587,7 +609,8 @@ describe('what the worker may call (issue #252)', () => {
   it.each([
     ['claim_notification_batch', (t: Knex.Transaction) => t.raw('select * from app_private.claim_notification_batch(?::integer)', [10])],
     ['mark_notifications_sent', (t: Knex.Transaction) => t.raw('select app_private.mark_notifications_sent(?::uuid[], ?::uuid)', [[randomUUID()] as never, randomUUID()])],
-    ['fail_notifications', (t: Knex.Transaction) => t.raw('select app_private.fail_notifications(?::uuid[], ?::uuid, ?::text)', [[randomUUID()] as never, randomUUID(), 'smtp_timeout'])]
+    ['fail_notifications', (t: Knex.Transaction) => t.raw('select app_private.fail_notifications(?::uuid[], ?::uuid, ?::text)', [[randomUUID()] as never, randomUUID(), 'smtp_timeout'])],
+    ['recheck_notifications', (t: Knex.Transaction) => t.raw('select * from app_private.recheck_notifications(?::uuid[], ?::uuid)', [[randomUUID()] as never, randomUUID()])]
   ])('%s refuses a request: a transaction with an actor bound is never the worker', async (_name, call) => {
     await sendDue(ids.productionA, await readyContent());
     const people = [ids.adminA, ids.ownerA, ids.portalA1, ids.dualFull, await w.personWith('conteudo.visualizar', 'conteudo.operar')];
@@ -603,6 +626,7 @@ describe('what the worker may call (issue #252)', () => {
     await expect(call('select * from app_private.claim_notification_batch(?::integer)', [10])).rejects.toMatchObject({ code: '40001' });
     await expect(call('select app_private.mark_notifications_sent(?::uuid[], ?::uuid)', [[randomUUID()], randomUUID()])).rejects.toMatchObject({ code: '40001' });
     await expect(call('select app_private.fail_notifications(?::uuid[], ?::uuid, ?::text)', [[randomUUID()], randomUUID(), 'smtp_timeout'])).rejects.toMatchObject({ code: '40001' });
+    await expect(call('select * from app_private.recheck_notifications(?::uuid[], ?::uuid)', [[randomUUID()], randomUUID()])).rejects.toMatchObject({ code: '40001' });
   });
 
   it.each([null, 0, -1, 101])('claims at most 1 to 100 groups: %s is refused', async (limit) => {
@@ -1359,6 +1383,237 @@ describe('marking an item sent or failed (issue #252)', () => {
   });
 });
 
+// ---- the recheck right before the send (issue #260) ----------------------------------------------------------------------
+
+// What a claim handed over can stop being true before the e-mail leaves, and the worker, which is `ageniza_app` with no actor, can read
+// nothing else: `recheck_notifications` is its only way to ask. Every scenario below runs twice, once through the recheck (the change
+// comes AFTER the claim) and once through the discard of the claim (the change comes BEFORE it), because the two must give one verdict.
+describe('rechecking what a claim handed over, right before the send (issue #260)', () => {
+  const claimed = async (clientId: string = ids.clientA1, owner?: string): Promise<{ id: string; batch: Claimed[] }> => {
+    const id = await readyContent(clientId, 'in_production', undefined, owner);
+    await sendDue(owner ?? ids.productionA, id);
+    return { id, batch: forContent(await claim(), id) };
+  };
+  const discardedOf = async (contentId: string): Promise<string[]> =>
+    (await itemsOf(contentId)).filter((item) => item.discarded_at !== null).map((item) => item.recipient_user_id as string).sort();
+
+  interface Scenario {
+    readonly content: string;
+    readonly people: readonly string[];
+    readonly dropped: readonly string[];
+    readonly change: () => Promise<void>;
+    readonly undo?: () => Promise<void>;
+  }
+  const scenarios: ReadonlyArray<readonly [string, () => Promise<Scenario>]> = [
+    ['the client is archived', async () => {
+      const client = await freshClient();
+      const content = await readyContent(client);
+      await sendDue(ids.productionA, content);
+      return { content, people: [ids.portalA1, ids.portalA1Second].sort(), dropped: [ids.portalA1, ids.portalA1Second].sort(), change: () => w.archiveClient(client) };
+    }],
+    ['the agency is suspended', async () => {
+      const content = await readyContent(ids.clientSuspended, 'in_production', undefined, ids.adminSuspended);
+      await sendDue(ids.adminSuspended, content);
+      return {
+        content, people: [ids.portalSuspended], dropped: [ids.portalSuspended],
+        change: async () => { await owner()('agencies').where({ id: ids.agencySuspended }).update({ status: 'suspended' }); },
+        undo: async () => { await owner()('agencies').where({ id: ids.agencySuspended }).update({ status: 'active' }); }
+      };
+    }],
+    ['one person is removed from the portal: only that person is dropped', async () => {
+      const content = await readyContent();
+      await sendDue(ids.productionA, content);
+      return {
+        content, people: PEOPLE_OF_A1, dropped: [ids.portalA1Second],
+        change: async () => { await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'removed' }); },
+        undo: async () => { await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'active' }); }
+      };
+    }],
+    ['one person is removed from this client while still active in another one: the other link does not hold the item', async () => {
+      await owner()('client_memberships').insert({ client_id: ids.clientA2, user_id: ids.portalA1Second });
+      const content = await readyContent();
+      await sendDue(ids.productionA, content);
+      return {
+        content, people: PEOPLE_OF_A1, dropped: [ids.portalA1Second],
+        change: async () => { await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'removed' }); },
+        undo: async () => {
+          await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'active' });
+          await owner()('client_memberships').where({ client_id: ids.clientA2, user_id: ids.portalA1Second }).delete();
+        }
+      };
+    }],
+    ['the client approved the content', async () => {
+      const content = await readyContent();
+      await sendDue(ids.productionA, content);
+      return { content, people: PEOPLE_OF_A1, dropped: PEOPLE_OF_A1, change: async () => { await approveAs(ids.portalA1, content); } };
+    }],
+    ['the agency cancelled the content', async () => {
+      const content = await readyContent();
+      await sendDue(ids.productionA, content);
+      return { content, people: PEOPLE_OF_A1, dropped: PEOPLE_OF_A1, change: async () => { await cancelAs(ids.adminA, content); } };
+    }],
+    ['the agency took the publication back the same day', async () => {
+      const content = await readyContent(ids.clientA1, 'approved');
+      await publishAs(ids.productionA, content);
+      await setItemsAgo(content, 'send_after', 1);
+      return { content, people: PEOPLE_OF_A1, dropped: PEOPLE_OF_A1, change: async () => { await unpublishAs(ids.productionA, content); } };
+    }]
+  ];
+
+  it.each(scenarios)('%s after the claim: the recheck returns only what still holds and drops the rest', async (_label, build) => {
+    const scenario = await build();
+    const batch = forContent(await claim(), scenario.content);
+    expect(peopleOf(batch)).toEqual([...scenario.people].sort());
+    await scenario.change();
+    try {
+      const kept = await recheck(batch);
+
+      expect(peopleOf(kept)).toEqual(scenario.people.filter((person) => !scenario.dropped.includes(person)).sort());
+      expect(await discardedOf(scenario.content)).toEqual([...scenario.dropped].sort());
+      const droppedIds = batch.filter((row) => scenario.dropped.includes(row.recipient_user_id)).map((row) => row.item_id);
+      expect(await markSent(droppedIds)).toBe(0);
+      expect(await markSent(kept.map((row) => row.item_id))).toBe(kept.length);
+    } finally {
+      await scenario.undo?.();
+    }
+  });
+
+  it.each(scenarios)('%s before the claim: the discard of the claim gives the same verdict', async (_label, build) => {
+    const scenario = await build();
+    await scenario.change();
+    try {
+      const batch = forContent(await claim(), scenario.content);
+
+      expect(peopleOf(batch)).toEqual(scenario.people.filter((person) => !scenario.dropped.includes(person)).sort());
+      expect(await discardedOf(scenario.content)).toEqual([...scenario.dropped].sort());
+    } finally {
+      await scenario.undo?.();
+    }
+  });
+
+  it('returns, for what still holds, the very rows the claim handed over, and changes nothing about them', async () => {
+    const { id, batch } = await claimed();
+    const before = await itemsOf(id);
+
+    const kept = await recheck(batch);
+
+    expect(batch).toHaveLength(PEOPLE_OF_A1.length);
+    expect(kept).toEqual(batch);
+    expect(await itemsOf(id)).toEqual(before);
+  });
+
+  it('judges each client apart: the archived one is dropped and the other is returned', async () => {
+    const client = await freshClient();
+    const archived = await claimed(client);
+    const kept = await claimed();
+    expect(archived.batch[0]!.claim_token).not.toBe(kept.batch[0]!.claim_token);
+    await w.archiveClient(client);
+
+    expect(await recheck(kept.batch)).toEqual(kept.batch);
+    expect(await recheck(archived.batch)).toEqual([]);
+
+    expect(await discardedOf(archived.id)).toEqual([ids.portalA1, ids.portalA1Second].sort());
+    expect(await discardedOf(kept.id)).toEqual([]);
+  });
+
+  it.each([
+    ['a token nobody was given', () => randomUUID()],
+    ['no token', () => null]
+  ])('returns nothing and drops nothing with %s, even when the items no longer hold', async (_label, token) => {
+    const client = await freshClient();
+    const { id, batch } = await claimed(client);
+    await w.archiveClient(client);
+
+    expect(await recheck(batch, token())).toEqual([]);
+
+    expect(await discardedOf(id)).toEqual([]);
+  });
+
+  it('judges only the items it is asked about: another content of the same claim, no longer true, is left to the next claim', async () => {
+    const asked = await readyContent();
+    await sendDue(ids.productionA, asked);
+    const other = await readyContent();
+    await sendDue(ids.productionA, other);
+    const both = await claim();
+    const batch = forContent(both, asked);
+    expect(batch).toHaveLength(PEOPLE_OF_A1.length);
+    expect(forContent(both, other)).toHaveLength(PEOPLE_OF_A1.length);
+    expect(forContent(both, other)[0]!.claim_token).toBe(batch[0]!.claim_token);
+    await approveAs(ids.portalA1, other);
+
+    expect(await recheck(batch)).toEqual(batch);
+
+    expect(await discardedOf(other)).toEqual([]);
+  });
+
+  it('returns nothing for a call without items', async () => {
+    const { batch } = await claimed();
+    const token = batch[0]!.claim_token;
+
+    expect(await asWorker((t) => recheckIn(t, [], token))).toEqual([]);
+    expect(await asWorker((t) => recheckIn(t, null, token))).toEqual([]);
+    expect(await asWorker((t) => recheckIn(t, [randomUUID()], token))).toEqual([]);
+  });
+
+  it('does not return an item that was already sent or already dropped', async () => {
+    const { id, batch } = await claimed();
+    const sent = batch.find((row) => row.recipient_user_id === ids.portalA1)!;
+    const dropped = batch.find((row) => row.recipient_user_id === ids.portalA1Second)!;
+    await markSent([sent.item_id]);
+    await setItems(id, { discarded_at: new Date() }, ids.portalA1Second);
+
+    const kept = await recheck(batch);
+
+    expect(kept.map((row) => row.item_id)).not.toContain(sent.item_id);
+    expect(kept.map((row) => row.item_id)).not.toContain(dropped.item_id);
+    expect(peopleOf(kept)).toEqual(PEOPLE_OF_A1.filter((person) => person !== ids.portalA1 && person !== ids.portalA1Second));
+  });
+
+  describe('the lease of the claim lasts 10 minutes', () => {
+    it('still judges the items at 9:59 of the lease: what stopped being true is dropped', async () => {
+      const client = await freshClient();
+      const { id, batch } = await claimed(client);
+      await w.archiveClient(client);
+      await owner().raw("update public.notification_queue set claimed_at = now() - interval '599 seconds' where content_id = ?::uuid", [id]);
+
+      expect(await recheck(batch)).toEqual([]);
+
+      expect(await discardedOf(id)).toEqual([ids.portalA1, ids.portalA1Second].sort());
+    });
+
+    it('returns and drops nothing once the lease is over: that worker must not send, and the next claim judges the item', async () => {
+      const { id, batch } = await claimed();
+      await setItemsAgo(id, 'claimed_at', 11);
+      await approveAs(ids.portalA1, id);
+
+      expect(await recheck(batch)).toEqual([]);
+
+      expect(await discardedOf(id)).toEqual([]);
+    });
+
+    it('returns the items at 9:59 and nothing at 10:01', async () => {
+      const { id, batch } = await claimed();
+
+      await owner().raw("update public.notification_queue set claimed_at = now() - interval '599 seconds' where content_id = ?::uuid", [id]);
+      expect(await recheck(batch)).toEqual(batch);
+
+      await owner().raw("update public.notification_queue set claimed_at = now() - interval '601 seconds' where content_id = ?::uuid", [id]);
+      expect(await recheck(batch)).toEqual([]);
+    });
+
+    it('answers nothing to the first worker once another claim took the items under another token', async () => {
+      const { id, batch } = await claimed();
+      await setItemsAgo(id, 'claimed_at', 11);
+      const second = forContent(await claim(), id);
+      expect(second).toHaveLength(PEOPLE_OF_A1.length);
+      expect(second[0]!.claim_token).not.toBe(batch[0]!.claim_token);
+
+      expect(await recheck(batch)).toEqual([]);
+      expect(await recheck(second)).toEqual(second);
+    });
+  });
+});
+
 // ---- races -----------------------------------------------------------------------------------------------------------
 
 // The send is an upsert on the open item: the row a claim has just stamped is the one it meets.
@@ -1543,5 +1798,65 @@ describe('races with the archive of the client (issue #252)', () => {
     expect(outcome).toMatchObject({ code: '40001' });
     expect(await itemsOf(id)).toEqual([]);
     expect(await w.contentRow(id)).toMatchObject({ status: 'approved', caption: 'Legenda original' });
+  });
+});
+
+describe('races of the recheck with the archive of the client (issue #260)', () => {
+  const archive = (clientId: string) => (t: Knex.Transaction) => t.raw('select app_private.archive_client(?::uuid)', [clientId]);
+  const claimedFor = async (client: string): Promise<{ id: string; batch: Claimed[] }> => {
+    const id = await readyContent(client, 'in_production', await today());
+    await sendDue(ids.productionA, id);
+    const batch = forContent(await claim(), id);
+    expect(batch).toHaveLength(2);
+    return { id, batch };
+  };
+
+  it('an archive that is uncommitted when the recheck runs makes it wait, and the recheck then drops the items', async () => {
+    const client = await freshClient();
+    const { id, batch } = await claimedFor(client);
+
+    const archiving = await w.openTransactionAs(ids.adminA);
+    let outcome: Promise<Claimed[]>;
+    try {
+      await archive(client)(archiving);
+      outcome = recheck(batch);
+      await w.waitUntilSomeoneWaitsOnALock();
+    } finally {
+      await archiving.commit();
+    }
+
+    expect(await outcome).toEqual([]);
+    expect((await itemsOf(id)).map((item) => item.discarded_at !== null)).toEqual([true, true]);
+    expect(await markSent(batch.map((row) => row.item_id))).toBe(0);
+  });
+
+  it('a recheck that is open makes the archive wait; the items it returned were true when it looked, and the archive then goes through', async () => {
+    const client = await freshClient();
+    const { id, batch } = await claimedFor(client);
+
+    const rechecking = await worker.knex.transaction();
+    let archived: Promise<unknown>;
+    let kept: Claimed[];
+    try {
+      kept = await recheckIn(rechecking, batch.map((row) => row.item_id), batch[0]!.claim_token);
+      archived = w.asUser(ids.adminA, archive(client)).then(() => 'archived', (error: unknown) => error);
+      await w.waitUntilSomeoneWaitsOnALock();
+    } finally {
+      await rechecking.commit();
+    }
+
+    expect(kept).toEqual(batch);
+    expect(await archived).toBe('archived');
+    expect((await owner()('clients').where({ id: client }).first('status'))?.status).toBe('archived');
+    expect(await markSent(kept.map((row) => row.item_id))).toBe(2);
+    expect(await itemsOf(id)).toHaveLength(2);
+  });
+
+  it('an archive committed after the claim and before the recheck is seen by it', async () => {
+    const client = await freshClient();
+    const { batch } = await claimedFor(client);
+    await w.asUser(ids.adminA, archive(client));
+
+    expect(await recheck(batch)).toEqual([]);
   });
 });
