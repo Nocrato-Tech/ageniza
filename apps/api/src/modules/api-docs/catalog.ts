@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 
 import { COLLABORATOR_ROLES_READ_PERMISSIONS, COLLABORATOR_UPDATE_PERMISSIONS } from '../collaborators/permissions.js';
+import { CONVERSATION_READ_PERMISSIONS, CONVERSATION_WRITE_PERMISSIONS } from '../clients/policy.js';
 import { MEDIA_UPLOAD_PERMISSIONS } from '../media/policy.js';
 import type { RoutePermission } from '../../plugins/infra/route-metadata.js';
 import {
@@ -9,6 +10,7 @@ import {
   AgencyClientMediaFolderPathParamsSchema,
   AgencyClientMemberPathParamsSchema,
   AgencyClientPathParamsSchema,
+  AgencyClientContentPathParamsSchema,
   AgencyClientPersonaPathParamsSchema,
   AgencyClientStoryScriptPathParamsSchema,
   AgencyClientThreadPathParamsSchema,
@@ -46,6 +48,10 @@ import {
   CommentListQuerySchema,
   CommentListResponseSchema,
   CommentSchema,
+  ContentDetailSchema,
+  ContentPeriodQuerySchema,
+  ContentPeriodResponseSchema,
+  CreateContentRequestSchema,
   CollaboratorDetailQuerySchema,
   CollaboratorInvitationRequestSchema,
   CollaboratorJobTitlesQuerySchema,
@@ -115,6 +121,7 @@ import {
   UpdateStoryScriptRequestSchema,
   UploadClientPhotoRequestSchema,
   UploadClientPhotoResponseSchema,
+  UpdateContentRequestSchema,
   UploadMyPhotoRequestSchema,
   UploadMyPhotoResponseSchema
 } from '@ageniza/contracts';
@@ -129,7 +136,7 @@ import {
  * schema at generation time; secret-shaped values are angle-bracket placeholders on purpose.
  */
 
-export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'collaborators' | 'media' | 'profile' | 'legal' | 'email-change' | 'story-scripts';
+export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'contents' | 'collaborators' | 'media' | 'profile' | 'legal' | 'email-change' | 'story-scripts';
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
@@ -195,6 +202,7 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
   clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; agendar, desmarcar, arquivar e reativar o contrato; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.',
+  contents: 'Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data.',
   collaborators: 'A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.',
   media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia; as pastas de mídia de um cliente, a listagem do que há nelas e a remoção.',
   profile: 'Edição do próprio nome e da própria foto de perfil.',
@@ -229,6 +237,13 @@ export const ERROR_MESSAGES: Record<string, string> = {
   CLOSING_DATE_NOT_SET: 'Este cliente não tem encerramento agendado.',
   PERSONA_ARCHIVED: 'Persona arquivada: a conversa é somente leitura.',
   SECTION_NOT_FILLED: 'Esta seção ainda não foi preenchida pela agência.',
+  CONTENT_PERIOD_TOO_LARGE: 'O período tem mais de 500 itens. Consulte um período menor.',
+  CONTENT_NOT_EDITABLE: 'Conteúdo publicado ou cancelado não pode ser editado.',
+  CONTENT_MEDIA_INCOMPLETE: 'A mídia do conteúdo não cobre este formato. Para trocar entre carrossel e formato de uma mídia só depois do envio para aprovação, cancele e reagende o conteúdo.',
+  CONTENT_MEDIA_INVALID: 'A mídia ou a capa escolhida não pode ser usada neste conteúdo.',
+  CONTENT_FOLDER_INVALID: 'A pasta escolhida não é uma pasta deste cliente.',
+  CONTENT_FOLDER_IN_USE: 'A pasta não muda enquanto o conteúdo tem mídia ou capa.',
+  CONTENT_OWNER_INVALID: 'O responsável precisa ser um colaborador ativo que vê Conteúdo.',
   TRY_AGAIN: 'Houve um conflito momentâneo. Tente de novo.',
   STORY_SCRIPT_STATE: 'O roteiro não está no estado que esta ação exige.',
   STORY_SCENES_MISMATCH: 'O roteiro mudou: recarregue e envie todas as cenas, na ordem desejada.',
@@ -287,6 +302,69 @@ const portalStoryScriptExample = {
   ],
   recordedBy: null,
   recordedAt: null
+} as const;
+
+const contentId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+
+const contentExample = {
+  id: contentId,
+  clientId,
+  title: 'Lançamento da coleção de outono',
+  platform: 'instagram',
+  format: 'reels',
+  publishOn: '2026-10-20',
+  publishAtTime: '18:30',
+  caption: 'A coleção chegou. Vem ver.',
+  folderId,
+  coverAssetId: null,
+  ownerUserId: userId,
+  status: 'in_production',
+  revision: 1,
+  approvedBy: null,
+  approvedAt: null,
+  approvedByAgencyReason: null,
+  publishedOn: null,
+  cancelledAt: null,
+  createdAt: '2026-10-11T12:00:00.000Z'
+} as const;
+
+const contentDetailExample = {
+  ...contentExample,
+  media: [{ id: assetId, position: 1 }],
+  tasks: [{
+    id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0',
+    title: 'Gravar o vídeo',
+    description: null,
+    assigneeUserId: userId,
+    dueOn: '2026-10-15',
+    status: 'pending',
+    returnComment: null,
+    approvedBy: null,
+    approvedAt: null
+  }],
+  conversation: { threadId: null, commentCount: 0, lastCommentAt: null }
+} as const;
+
+const contentPeriodExample = {
+  data: {
+    contents: [{
+      id: contentId,
+      title: 'Lançamento da coleção de outono',
+      platform: 'instagram',
+      format: 'reels',
+      publishOn: '2026-10-20',
+      publishAtTime: '18:30',
+      status: 'in_production',
+      ownerUserId: userId,
+      coverAssetId: null,
+      revision: 1,
+      publishedOn: null,
+      tasksTotal: 3,
+      tasksApproved: 1
+    }],
+    storyScripts: [{ id: storyScriptId, scriptOn: '2026-10-21', status: 'draft' }]
+  },
+  meta: { from: '2026-10-01', to: '2026-10-31', count: 2 }
 } as const;
 
 const agencyContextExample = {
@@ -929,6 +1007,132 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     ]
   },
 
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/contents',
+    operationId: 'listContentsByPeriod',
+    module: 'contents',
+    summary: 'Consulta os conteúdos e os roteiros de stories de um período',
+    description: [
+      'A consulta por período, o formato que Tarefas e Dashboard copiam: `from` e `to` são dias',
+      '`AAAA-MM-DD`, ambos incluídos, e o período tem no máximo 93 dias contando os dois extremos',
+      '(93 passa, 94 não). Sem paginação: a resposta traz um vetor por tipo de item em `data`, e',
+      '`meta.count` soma os dois. Acima de 500 itens a resposta é `400 CONTENT_PERIOD_TOO_LARGE`, sem',
+      'truncar. Ordem: data, hora (sem hora por último) e id. O conteúdo vem sem legenda e sem mídia;',
+      '`tasksTotal` e `tasksApproved` dão o percentual das subtarefas. Cancelados vêm com o estado',
+      '`cancelled`. Cliente arquivado também responde: o conteúdo dele é só leitura.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientPathParamsSchema,
+    query: ContentPeriodQuerySchema,
+    requestExample: { from: '2026-10-01', to: '2026-10-31' },
+    responses: [{ status: 200, description: 'Conteúdos e roteiros do período.', schema: ContentPeriodResponseSchema, example: contentPeriodExample }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'CONTENT_PERIOD_TOO_LARGE' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/contents',
+    operationId: 'createContent',
+    module: 'contents',
+    summary: 'Cria um conteúdo em produção',
+    description: [
+      'Exige `conteudo.operar` e também `conteudo.visualizar`. O conteúdo nasce em produção; o estado',
+      'não é campo do corpo. `platform` é `instagram` e é o padrão. O responsável é quem cria, a não ser',
+      'que `ownerUserId` nomeie outro colaborador ativo que veja Conteúdo (`400 CONTENT_OWNER_INVALID`).',
+      'A pasta e a capa são do próprio cliente (`400 CONTENT_FOLDER_INVALID`, `400 CONTENT_MEDIA_INVALID`).',
+      'Título de uma linha até 120 caracteres e legenda até 2.200 caracteres recusam caractere de',
+      'controle e invisível. Cliente arquivado responde `409 CLIENT_ARCHIVED`.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientPathParamsSchema,
+    body: CreateContentRequestSchema,
+    requestExample: { title: 'Lançamento da coleção de outono', format: 'reels', publishOn: '2026-10-20', publishAtTime: '18:30', folderId },
+    responses: [{ status: 201, description: 'Conteúdo criado, em produção.', schema: ContentDetailSchema, example: contentDetailExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'CONTENT_FOLDER_INVALID' },
+      { status: 400, code: 'CONTENT_MEDIA_INVALID' },
+      { status: 400, code: 'CONTENT_OWNER_INVALID' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/contents/:contentId',
+    operationId: 'getContent',
+    module: 'contents',
+    summary: 'Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa',
+    description: [
+      'O conteúdo inteiro, mais `media` (id e posição, em ordem), `tasks` (só leitura aqui) e',
+      '`conversation` (`threadId` nulo enquanto ninguém comentou, `commentCount` e `lastCommentAt`).',
+      'Um conteúdo de outro cliente, de outra agência ou que não existe responde o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientContentPathParamsSchema,
+    responses: [{ status: 200, description: 'Conteúdo.', schema: ContentDetailSchema, example: contentDetailExample }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Content not found.' }
+    ]
+  },
+  {
+    method: 'patch',
+    path: '/agencies/:agencyId/clients/:clientId/contents/:contentId',
+    operationId: 'updateContent',
+    module: 'contents',
+    summary: 'Edita um conteúdo; mover de data é editar `publishOn`',
+    description: [
+      'Qualquer subconjunto de `title`, `format`, `publishOn`, `publishAtTime` (`null` limpa),',
+      '`caption`, `folderId`, `coverAssetId` e `ownerUserId`; exige `conteudo.operar` e também',
+      '`conteudo.visualizar`. Mudar a legenda, a capa ou o formato de um conteúdo aprovado o devolve',
+      'a `awaiting_approval` e sobe `revision`; mudar data, hora, título ou responsável mantém a aprovação.',
+      'Trocar o responsável exige `conteudo.aprovar_pela_agencia` (`403` sem ela). `mediaAssetIds` é a lista',
+      'inteira e ordenada das mídias, gravada na mesma transação, depois do formato: assim um conteúdo em',
+      'produção ou em ajuste troca de formato e de mídia numa só chamada. Depois do envio para aprovação, ir de',
+      'carrossel para formato de uma mídia só (ou o inverso) é `409 CONTENT_MEDIA_INCOMPLETE`: cancele e',
+      'reagende. Conteúdo publicado ou cancelado responde `409 CONTENT_NOT_EDITABLE`.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientContentPathParamsSchema,
+    body: UpdateContentRequestSchema,
+    requestExample: { publishOn: '2026-10-22', caption: 'A coleção chegou. Vem ver.' },
+    responses: [{ status: 200, description: 'Conteúdo atualizado.', schema: ContentDetailSchema, example: contentDetailExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'CONTENT_FOLDER_INVALID' },
+      { status: 400, code: 'CONTENT_MEDIA_INVALID' },
+      { status: 400, code: 'CONTENT_OWNER_INVALID' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'CONTENT_NOT_EDITABLE' },
+      { status: 409, code: 'CONTENT_MEDIA_INCOMPLETE' },
+      { status: 409, code: 'CONTENT_FOLDER_IN_USE' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
   {
     method: 'get',
     path: '/agencies/:agencyId/collaborators',
@@ -1683,10 +1887,11 @@ path: '/agencies/:agencyId/roles',
       'juntos, ou nenhum, são 400. `state` filtra por `open` ou `resolved`; sem ele vêm todas. Vinte por',
       'página, a de atividade mais recente primeiro. O estado é derivado: a conversa está resolvida só',
       'enquanto a resolução é posterior ao último comentário. Persona de outro cliente é 404; a conversa',
-      'de persona arquivada continua legível para a agência.'
+      'de persona arquivada continua legível para a agência.',
+      'Com `contentId` o assunto é um conteúdo, que tem uma conversa só, e a permissão é `conteudo.visualizar`. Conteúdo de outro cliente, de outra agência ou inexistente é 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
-    permission: 'cliente.visualizar',
+    permission: CONVERSATION_READ_PERMISSIONS,
     params: AgencyClientPathParamsSchema,
     query: ThreadListQuerySchema,
     requestExample: { sectionKey: 'tone_of_voice', state: 'open' },
@@ -1714,10 +1919,11 @@ path: '/agencies/:agencyId/roles',
       'Cria a conversa e o primeiro comentário na mesma transação, com o lado `agency`. O lado nunca vem',
       'do corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000',
       'bytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`',
-      'e persona de outro cliente 404.'
+      'e persona de outro cliente 404.',
+      'Com `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, e só escreve com o conteúdo em "aguardando aprovação" ou depois (senão 409 `CONTENT_NOT_OPEN`).'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
-    permission: 'cliente.operar',
+    permission: CONVERSATION_WRITE_PERMISSIONS,
     params: AgencyClientPathParamsSchema,
     body: CreateThreadRequestSchema,
     requestExample: { subject: { sectionKey: 'tone_of_voice' }, body: 'Vamos revisar o tom de voz com o time?' },
@@ -1738,7 +1944,9 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
-      { status: 409, code: 'PERSONA_ARCHIVED' }
+      { status: 409, code: 'PERSONA_ARCHIVED' },
+      { status: 409, code: 'CONTENT_NOT_OPEN' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
   {
@@ -1749,10 +1957,11 @@ path: '/agencies/:agencyId/roles',
     summary: 'Lista os comentários de uma conversa',
     description: [
       'Cinquenta por página, do mais antigo ao mais novo. O nome e a foto do autor vêm do vínculo do',
-      'lado do comentário, e a pessoa removida mantém o nome, porque o comentário é histórico.'
+      'lado do comentário, e a pessoa removida mantém o nome, porque o comentário é histórico.',
+      'Numa conversa de conteúdo a permissão é `conteudo.visualizar`.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
-    permission: 'cliente.visualizar',
+    permission: CONVERSATION_READ_PERMISSIONS,
     params: AgencyClientThreadPathParamsSchema,
     query: CommentListQuerySchema,
     requestExample: { page: 1 },
@@ -1779,10 +1988,11 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Grava o comentário com o lado `agency`; comentar numa conversa resolvida a reabre, sem escrever na',
       'conversa, porque o estado é derivado. Não existe rota de editar nem de apagar comentário.',
-      'Cliente arquivado e persona arquivada respondem 409.'
+      'Cliente arquivado e persona arquivada respondem 409.',
+      'Numa conversa de conteúdo, `conteudo.operar` e `conteudo.visualizar`; com o conteúdo em produção ou cancelado, 409 `CONTENT_NOT_OPEN`.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
-    permission: 'cliente.operar',
+    permission: CONVERSATION_WRITE_PERMISSIONS,
     params: AgencyClientThreadPathParamsSchema,
     body: CreateCommentRequestSchema,
     requestExample: { body: 'Combinado, ajustamos esta semana.' },
@@ -1795,7 +2005,9 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
-      { status: 409, code: 'PERSONA_ARCHIVED' }
+      { status: 409, code: 'PERSONA_ARCHIVED' },
+      { status: 409, code: 'CONTENT_NOT_OPEN' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
   {
@@ -1807,10 +2019,11 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Grava `resolved_at` e `resolved_by`. Resolver uma conversa que já está resolvida não escreve nada.',
       'Não existe rota de reabrir: um comentário novo reabre. Só quem tem `cliente.operar` resolve; a',
-      'pessoa do portal nunca.'
+      'pessoa do portal nunca.',
+      'Na conversa de um conteúdo, `conteudo.operar` e `conteudo.visualizar`.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
-    permission: 'cliente.operar',
+    permission: CONVERSATION_WRITE_PERMISSIONS,
     params: AgencyClientThreadPathParamsSchema,
     responses: [{
       status: 200,
@@ -1825,7 +2038,8 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
-      { status: 409, code: 'PERSONA_ARCHIVED' }
+      { status: 409, code: 'PERSONA_ARCHIVED' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
   {
@@ -1958,7 +2172,8 @@ path: '/agencies/:agencyId/roles',
     summary: 'Lista as conversas de um assunto, no portal',
     description: [
       'Mesmos parâmetros, paginação e forma da lista da agência, pelo mesmo serviço. Persona arquivada',
-      'não é assunto válido no portal: responde 404 como se não existisse.'
+      'não é assunto válido no portal: responde 404 como se não existisse.',
+      'Com `contentId`, só enquanto o conteúdo está aberto ao cliente; fora disso, e para conteúdo de outro cliente, 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -1986,7 +2201,8 @@ path: '/agencies/:agencyId/roles',
     summary: 'Abre uma conversa pelo portal, com o primeiro comentário',
     description: [
       'Grava a conversa e o primeiro comentário com o lado `client`, que a rota fixa. Seção que a agência',
-      'ainda não preencheu responde 409 `SECTION_NOT_FILLED`; persona arquivada ou de outro cliente, 404.'
+      'ainda não preencheu responde 409 `SECTION_NOT_FILLED`; persona arquivada ou de outro cliente, 404.',
+      'Com `{ contentId }`, só enquanto o conteúdo está em "aguardando aprovação", "em ajuste", "aprovado" ou "publicado"; fora disso, e para conteúdo de outro cliente, 404. A conversa do conteúdo é uma só: abrir de novo escreve nela.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -2005,7 +2221,8 @@ path: '/agencies/:agencyId/roles',
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
-      { status: 409, code: 'SECTION_NOT_FILLED' }
+      { status: 409, code: 'SECTION_NOT_FILLED' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
   {
@@ -2014,7 +2231,7 @@ path: '/agencies/:agencyId/roles',
     operationId: 'listPortalThreadComments',
     module: 'clients',
     summary: 'Lista os comentários de uma conversa, no portal',
-    description: 'Mesma paginação e forma da lista da agência. Conversa de outro cliente é 404.',
+    description: 'Mesma paginação e forma da lista da agência. Conversa de outro cliente é 404. A conversa de um conteúdo que não está aberto ao cliente também é 404.',
     access: 'Sessão + vínculo com o cliente',
     permission: null,
     params: ClientThreadPathParamsSchema,
@@ -2041,7 +2258,8 @@ path: '/agencies/:agencyId/roles',
     summary: 'Comenta uma conversa pelo portal',
     description: [
       'Grava o comentário com o lado `client`; comentar numa conversa resolvida a reabre. Não existe',
-      'rota de resolver no portal: só a agência resolve.'
+      'rota de resolver no portal: só a agência resolve.',
+      'A conversa de um conteúdo que não está aberto ao cliente é 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -2054,7 +2272,8 @@ path: '/agencies/:agencyId/roles',
       COMMON_ERRORS.internal,
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'UNAUTHENTICATED' },
-      { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' }
+      { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
   {

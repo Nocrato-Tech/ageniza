@@ -172,7 +172,7 @@ export const UpdateClientRequestSchema = z.object({
 const CALENDAR_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /** A real day of the Gregorian calendar ('2026-02-30' and year 0000 are not), in the shape the `date` column prints. */
-const isCalendarDay = (value: string): boolean => {
+export const isCalendarDay = (value: string): boolean => {
   const parts = CALENDAR_DAY.exec(value);
   if (parts === null) return false;
   const [year, month, day] = [Number(parts[1]), Number(parts[2]), Number(parts[3])];

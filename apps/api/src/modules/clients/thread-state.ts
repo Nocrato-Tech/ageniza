@@ -16,11 +16,3 @@ export const latestCommentSideSql = (threadAlias: string): string =>
 /** True while the thread is open: no resolution, or a resolution older than its latest comment. */
 export const openThreadSql = (threadAlias: string): string =>
   `(${threadAlias}.resolved_at is null or ${threadAlias}.resolved_at < (select max(comment.created_at) from public.client_thread_comments comment where comment.thread_id = ${threadAlias}.id))`;
-
-/**
- * True for a thread about the brand study (a section or a persona). A content's conversation is the
- * third subject of `client_threads` and is read from the Conteúdos screens, so the brand-study
- * counters (the card's "aguardando a agência", the detail summary and the portal's "com resposta da
- * agência") leave it out: a comment on a post never lights the brand study's badge.
- */
-export const brandStudyThreadSql = (threadAlias: string): string => `${threadAlias}.content_id is null`;

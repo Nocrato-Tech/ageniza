@@ -14,6 +14,7 @@ import { createEmailService } from './modules/auth/email-service.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requireAnyPermission, requirePermission } from './modules/tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from './modules/invitations/routes.js';
 import type { ClientModuleDependencies } from './modules/clients/routes.js';
+import type { ContentModuleDependencies } from './modules/contents/routes.js';
 import { createIdentityStorageClient } from './modules/identity-storage/storage-client.js';
 import type { ContextModuleDependencies } from './modules/contexts/routes.js';
 import { countValidContexts } from './modules/contexts/service.js';
@@ -82,6 +83,12 @@ export const startApi = async (): Promise<void> => {
     photoUrlExpirySeconds: config.identityStorage?.downloadUrlExpirySeconds ?? 300,
     photoMaxImageBytes: config.identityStorage?.maxImageBytes
   };
+  const contentDependencies: ContentModuleDependencies = {
+    database,
+    auth,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    requirePermission
+  };
   // The collaborator listing signs the user's avatar, so it needs identity storage; like media,
   // the module is only registered when that storage is configured (production always configures it).
   const collaboratorDependencies: CollaboratorModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
@@ -149,6 +156,7 @@ export const startApi = async (): Promise<void> => {
     contexts: contextDependencies,
     agencies: agencyDependencies,
     clients: clientDependencies,
+    contents: contentDependencies,
     collaborators: collaboratorDependencies,
     media: mediaDependencies,
     profile: profileDependencies,
