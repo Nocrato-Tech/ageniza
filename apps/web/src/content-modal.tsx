@@ -90,7 +90,11 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   const ids = useId();
   const { clientId } = context;
 
-  const [saved, setSaved] = useState<ContentDetail | null>(initial);
+  // The content as the server holds it. An open content is the one the query reads again after every write of the Atribuição tab (a
+  // subtask approved or created there moves "what is missing" and the send button here), so it is never copied into state: what is
+  // typed lives in `form` and is untouched by a new read. A content born in this modal is held until the query of its own exists.
+  const [born, setBorn] = useState<ContentDetail | null>(null);
+  const saved = initial ?? born;
   const [form, setForm] = useState<ContentFormValues>(() => initial === null
     ? { title: '', format: 'image', publishOn: initialDay, publishAtTime: '', folderId: '', caption: '', mediaAssetIds: [], coverAssetId: null }
     : valuesOf(initial));
@@ -127,7 +131,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
         }
         created = true;
         // What the server stored is what is on screen from now on: a retry of the rest edits this content, never creates another.
-        setSaved(current);
+        setBorn(current);
       }
       const rest: UpdateContentRequest = changesOf(valuesOf(current), form);
       if (Object.keys(rest).length === 0) return current;
@@ -158,8 +162,11 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
     }
   });
 
-  // The calendar card shows the last message and the count; a write in the conversation moves both.
-  const refreshContents = (): void => { void queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'contents', clientId] }); };
+  // The calendar card shows the last message and the count; a write in the conversation moves both. The content of this modal is not read
+  // again from here: a refused message must keep its text in the box, and the box is gone once the state read says the content is closed.
+  const refreshContents = (): void => {
+    void queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'contents', clientId], predicate: (query) => query.queryKey[4] !== 'modal' });
+  };
 
   const [moving, setMoving] = useState(false);
   const busy = save.isPending || moving;

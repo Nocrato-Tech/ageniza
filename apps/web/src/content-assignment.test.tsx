@@ -59,6 +59,12 @@ const taskItem = (row: Stored, title: string): HTMLElement => {
   return item;
 };
 const settled = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 60); });
+const changeOwnerTo = async (row: Stored, person: { membershipId: string }): Promise<void> => {
+  const select = (await within(panel(row)).findByLabelText('Novo responsável')) as HTMLSelectElement;
+  await waitFor(() => expect(select.options.length).toBeGreaterThan(1));
+  fireEvent.change(select, { target: { value: person.membershipId } });
+  click(row, 'Trocar responsável');
+};
 
 describe('the tab', () => {
   it('opens from the Geral tab, shows its own panel, and gives the form back as it was left', async () => {
@@ -86,6 +92,73 @@ describe('the tab', () => {
     render_(impl, `${base()}/novo`);
     await screen.findByLabelText('Título');
     expect((screen.getByRole('tab', { name: 'Atribuição' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+const SUBMIT = 'Enviar para aprovação';
+const MISSING_ONE = 'Falta aprovar 1 subtarefa.';
+const submitButton = (row: Stored): HTMLButtonElement => within(dialogOf(row)).getByRole('button', { name: SUBMIT }) as HTMLButtonElement;
+const goTo = (row: Stored, tab: 'Geral' | 'Atribuição'): void => { fireEvent.click(within(dialogOf(row)).getByRole('tab', { name: tab })); };
+
+describe('the Geral tab follows what the Atribuição tab wrote', () => {
+  const open = async (options: AssignmentOptions) => {
+    const row = complete();
+    const { world, scenario } = assignmentWorld(options);
+    const opened = await openContent(row, scenario([row]));
+    await waitFor(() => expect((within(dialogOf(row)).getByRole('tab', { name: 'Atribuição' }) as HTMLButtonElement).disabled).toBe(false));
+    return { row, world, ...opened };
+  };
+  const delivered = (): WorldTask[] => [task({ title: 'Edição', assignee: BRUNO, status: 'delivered' })];
+
+  it('releases the send when the last subtask is approved in Atribuição, and says no more that one is missing', async () => {
+    const { row } = await open({ permissions: MANAGER, self: ANA.membershipId, tasks: delivered() });
+    expect(within(dialogOf(row)).getByText(MISSING_ONE)).toBeTruthy();
+    expect(submitButton(row).disabled).toBe(true);
+
+    goTo(row, 'Atribuição');
+    click(row, 'Aprovar “Edição”');
+    await waitFor(() => expect(within(panel(row)).getByRole('status').textContent).toBe('1 de 1 aprovada (100%)'));
+    goTo(row, 'Geral');
+
+    await waitFor(() => expect(within(dialogOf(row)).queryByText(MISSING_ONE)).toBeNull());
+    await waitFor(() => expect(submitButton(row).disabled).toBe(false));
+  });
+
+  it('keeps what was typed and not saved, and sends nothing of it, while the tab follows the other one', async () => {
+    const { row, calls } = await open({ permissions: MANAGER, self: ANA.membershipId, tasks: delivered() });
+    fireEvent.change(within(dialogOf(row)).getByLabelText('Título'), { target: { value: 'Título que ainda não foi salvo' } });
+    fireEvent.change(within(dialogOf(row)).getByLabelText('Legenda'), { target: { value: 'Legenda ainda sem salvar' } });
+
+    goTo(row, 'Atribuição');
+    click(row, 'Aprovar “Edição”');
+    await waitFor(() => expect(within(panel(row)).getByRole('status').textContent).toBe('1 de 1 aprovada (100%)'));
+    goTo(row, 'Geral');
+
+    await waitFor(() => expect(within(dialogOf(row)).queryByText(MISSING_ONE)).toBeNull());
+    expect((within(dialogOf(row)).getByLabelText('Título') as HTMLInputElement).value).toBe('Título que ainda não foi salvo');
+    expect((within(dialogOf(row)).getByLabelText('Legenda') as HTMLTextAreaElement).value).toBe('Legenda ainda sem salvar');
+    // Still not saved: the form still asks to be saved before an action, and the only write was the approval.
+    expect(within(dialogOf(row)).getByText('Salve as mudanças antes de usar estas ações.')).toBeTruthy();
+    expect(writes(calls).map((call) => [call.method, lastSegment(call.path)])).toEqual([['POST', 'approve']]);
+  });
+
+  it('holds the send back when a subtask is created in Atribuição, instead of sending to be refused', async () => {
+    const { row } = await open({ permissions: OPERATOR, self: ANA.membershipId, tasks: [] });
+    await waitFor(() => expect(submitButton(row).disabled).toBe(false));
+    expect(within(dialogOf(row)).queryByText(MISSING_ONE)).toBeNull();
+
+    goTo(row, 'Atribuição');
+    click(row, 'Nova subtarefa');
+    await waitFor(() => expect((within(dialogOf(row)).getByLabelText('Responsável pela subtarefa') as HTMLSelectElement).options.length).toBeGreaterThan(1));
+    fireEvent.change(within(dialogOf(row)).getByLabelText('Título da subtarefa'), { target: { value: 'Gravar o vídeo' } });
+    fireEvent.change(within(dialogOf(row)).getByLabelText('Responsável pela subtarefa'), { target: { value: CARLA.membershipId } });
+    fireEvent.change(within(dialogOf(row)).getByLabelText('Prazo da subtarefa'), { target: { value: '2026-10-18' } });
+    click(row, 'Criar subtarefa');
+    await waitFor(() => expect(taskItem(row, 'Gravar o vídeo')).toBeTruthy());
+    goTo(row, 'Geral');
+
+    await waitFor(() => expect(within(dialogOf(row)).getByText(MISSING_ONE)).toBeTruthy());
+    expect(submitButton(row).disabled).toBe(true);
   });
 });
 
@@ -800,6 +873,40 @@ describe('what the API refuses on a move, in the screen\'s own words', () => {
     await waitFor(() => expect(taskItem(row, 'Primeira').textContent).toContain('Aprovada'));
     expect(posts(calls)).toHaveLength(1);
     expect(taskItem(row, 'Segunda').textContent).toContain('Entregue');
+  });
+});
+
+describe('the refusals in the screen\'s own words that the others did not reach', () => {
+  it.each([
+    ['400 CONTENT_TASK_COMMENT_INVALID on Devolver', async () => {
+      const row = complete();
+      const { world } = await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId, tasks: [task({ title: 'Edição', status: 'delivered' })] });
+      world.failNext = { match: /\/return$/, response: () => failure(400, 'CONTENT_TASK_COMMENT_INVALID') };
+      click(row, 'Devolver “Edição”');
+      fireEvent.change(within(dialogOf(row)).getByLabelText('Comentário da devolução de “Edição”'), { target: { value: 'Falta o áudio' } });
+      click(row, 'Confirmar devolução');
+      expect(await within(taskItem(row, 'Edição')).findByText('O comentário da devolução não foi aceito. Revise o texto.')).toBeTruthy();
+      expect((within(dialogOf(row)).getByLabelText('Comentário da devolução de “Edição”') as HTMLTextAreaElement).value).toBe('Falta o áudio');
+    }],
+    ['409 CONTENT_NOT_EDITABLE on the change of the person in charge', async () => {
+      const row = complete();
+      const { world } = await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId });
+      world.failNext = { match: /\/contents\/[^/]+$/, response: () => failure(409, 'CONTENT_NOT_EDITABLE') };
+      await changeOwnerTo(row, BRUNO);
+      expect(await within(panel(row)).findByText('Este conteúdo já foi publicado ou cancelado e não pode mudar de responsável.')).toBeTruthy();
+    }],
+    ['403 FORBIDDEN on the change of the person in charge', async () => {
+      const row = complete();
+      const { world } = await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId });
+      world.failNext = { match: /\/contents\/[^/]+$/, response: () => failure(403, 'FORBIDDEN') };
+      await changeOwnerTo(row, BRUNO);
+      expect(await within(panel(row)).findByText('Só quem pode aprovar pela agência troca o responsável pelo conteúdo.')).toBeTruthy();
+    }]
+  ])('answers %s, keeps the modal open and shows nothing from the server', async (_name, run) => {
+    await run();
+    expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
+    await settled();
+    expect(screen.queryByRole('dialog')).not.toBeNull();
   });
 });
 
