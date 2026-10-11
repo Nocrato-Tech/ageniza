@@ -1601,6 +1601,36 @@ describe('rechecking what a claim handed over, right before the send (issue #260
       expect(await recheck(batch)).toEqual([]);
     });
 
+    it('pins the edge of the lease to within half a second: 599.5 seconds still hold, 600.5 do not', async () => {
+      const { id, batch } = await claimed();
+
+      await owner().raw("update public.notification_queue set claimed_at = now() - interval '599.5 seconds' where content_id = ?::uuid", [id]);
+      expect(await recheck(batch)).toEqual(batch);
+
+      await owner().raw("update public.notification_queue set claimed_at = now() - interval '600.5 seconds' where content_id = ?::uuid", [id]);
+      expect(await recheck(batch)).toEqual([]);
+    });
+
+    it('measures the lease after the wait for the clients: a lease that runs out while the recheck waits is no longer returned', async () => {
+      const client = await freshClient();
+      const { id, batch } = await claimed(client);
+      await owner().raw("update public.notification_queue set claimed_at = now() - interval '599.5 seconds' where content_id = ?::uuid", [id]);
+
+      const holding = await owner().transaction();
+      let outcome: Promise<Claimed[]>;
+      try {
+        await holding('clients').where({ id: client }).update({ name: `Cliente ${client}` });
+        outcome = recheck(batch);
+        await w.waitUntilSomeoneWaitsOnALock();
+        await new Promise((resolve) => setTimeout(resolve, 1_200));
+      } finally {
+        await holding.commit();
+      }
+
+      expect(await outcome).toEqual([]);
+      expect(await discardedOf(id)).toEqual([]);
+    });
+
     it('answers nothing to the first worker once another claim took the items under another token', async () => {
       const { id, batch } = await claimed();
       await setItemsAgo(id, 'claimed_at', 11);
@@ -1611,6 +1641,91 @@ describe('rechecking what a claim handed over, right before the send (issue #260
       expect(await recheck(batch)).toEqual([]);
       expect(await recheck(second)).toEqual(second);
     });
+  });
+});
+
+describe('what commits between the two statements of the recheck (issue #260)', () => {
+  const HOOK_LOCK = 726_001;
+  const discardedOf = async (contentId: string): Promise<string[]> =>
+    (await itemsOf(contentId)).filter((item) => item.discarded_at !== null).map((item) => item.recipient_user_id as string).sort();
+  beforeAll(async () => {
+    await owner().raw(`
+      create function app_private.queue_test_hook() returns trigger language plpgsql as $$
+      begin
+        if current_setting('queuetest.hook', true) = 'on' then perform pg_catalog.pg_advisory_xact_lock(${HOOK_LOCK}); end if;
+        return null;
+      end $$;
+      create trigger zz_queue_test_hook after update on public.notification_queue for each statement execute function app_private.queue_test_hook();
+    `);
+  });
+  afterAll(async () => {
+    await owner().raw('drop function if exists app_private.queue_test_hook() cascade');
+  });
+
+  // The discard of one content makes the UPDATE of the recheck fire the hook, which waits for a lock the test holds: that pause is
+  // the only place between the UPDATE and the final SELECT where something else can commit.
+  const pauseAfterTheDiscard = async (batch: readonly Claimed[], whileItWaits: () => Promise<unknown>): Promise<Claimed[]> => {
+    const blocker = await owner().transaction();
+    let outcome: Promise<Claimed[]>;
+    try {
+      await blocker.raw('select pg_advisory_xact_lock(?)', [HOOK_LOCK]);
+      outcome = asWorker(async (transaction) => {
+        await transaction.raw("select set_config('queuetest.hook', 'on', true)");
+        return recheckIn(transaction, batch.map((row) => row.item_id), batch[0]!.claim_token);
+      });
+      await w.waitUntilSomeoneWaitsOnALock();
+      await whileItWaits();
+    } finally {
+      await blocker.commit();
+    }
+    return outcome;
+  };
+  const twoContents = async (): Promise<{ gone: string; kept: string; batch: Claimed[] }> => {
+    const gone = await readyContent();
+    const kept = await readyContent();
+    await sendDue(ids.productionA, gone);
+    await sendDue(ids.productionA, kept);
+    const everything = await claim();
+    return { gone, kept, batch: [...forContent(everything, gone), ...forContent(everything, kept)] };
+  };
+
+  it.each([
+    ['a person removed from the portal', async () => { await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'removed' }); },
+      async () => { await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'active' }); },
+      PEOPLE_OF_A1.filter((person) => person !== ids.portalA1Second)],
+    ['the agency suspended', async () => { await owner()('agencies').where({ id: ids.agencyA }).update({ status: 'suspended' }); },
+      async () => { await owner()('agencies').where({ id: ids.agencyA }).update({ status: 'active' }); },
+      []]
+  ])('does not return what stopped being true between the discard and the final read: %s', async (_label, change, undo, expectedPeople) => {
+    const first = await readyContent();
+    const second = await readyContent();
+    await sendDue(ids.productionA, first);
+    await sendDue(ids.productionA, second);
+    const everything = await claim();
+    const batch = [...forContent(everything, first), ...forContent(everything, second)];
+    expect(batch).toHaveLength(2 * PEOPLE_OF_A1.length);
+    await approveAs(ids.portalA1, first);
+
+    let kept: Claimed[];
+    try {
+      kept = await pauseAfterTheDiscard(batch, change);
+    } finally {
+      await undo();
+    }
+
+    expect(await discardedOf(first)).toEqual(PEOPLE_OF_A1);
+    expect(peopleOf(kept)).toEqual([...expectedPeople].sort());
+    expect(kept.every((row) => row.content_id === second)).toBe(true);
+  });
+
+  it('does not return a content cancelled between the discard and the final read', async () => {
+    const { gone, kept, batch } = await twoContents();
+    expect(batch).toHaveLength(2 * PEOPLE_OF_A1.length);
+    await approveAs(ids.portalA1, gone);
+
+    const answer = await pauseAfterTheDiscard(batch, () => cancelAs(ids.adminA, kept));
+
+    expect(answer).toEqual([]);
   });
 });
 

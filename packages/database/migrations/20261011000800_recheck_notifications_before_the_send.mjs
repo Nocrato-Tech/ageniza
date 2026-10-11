@@ -17,7 +17,8 @@
 //    state; discards the ones that stopped being true; and returns the ones that hold, with what the e-mail needs, so the worker sends
 //    only what comes back. Like its three sisters it refuses a caller with an actor bound (42501) and any isolation other than READ
 //    COMMITTED (40001): it locks and reads again. An item whose lease ran out, or that another claim holds under another token, is
-//    neither returned nor discarded: that worker must not send it, and the next claim judges it. The lock lasts until the
+//    neither returned nor discarded: that worker must not send it, and the next claim judges it (the lease is measured after the wait for
+//    the clients, with `clock_timestamp()`, not with the `now()` of the start of the transaction). The lock lasts until the
 //    transaction of the recheck ends, so the worker rechecks in a transaction of its own, never around the send. What stays is the
 //    time of the send itself, which is the inherent window of an asynchronous e-mail.
 //
@@ -184,6 +185,7 @@ export async function up(knex) {
     #variable_conflict use_column
     declare
       v_item_ids uuid[] := coalesce(p_item_ids, '{}'::uuid[]);
+      v_now timestamptz;
     begin
       perform app_private.require_read_committed();
       if app_private.current_user_id() is not null then
@@ -205,6 +207,10 @@ export async function up(knex) {
       order by client.id
       for share of client;
 
+      -- The lease is measured here, after the wait above: now() is the start of the transaction, and an archive in flight can hold this
+      -- call for longer than what is left of a lease, which would then be judged as if it still ran.
+      v_now := pg_catalog.clock_timestamp();
+
       update public.notification_queue item
       set discarded_at = pg_catalog.now()
       where item.id in (
@@ -214,7 +220,7 @@ export async function up(knex) {
           and candidate.claim_token = p_claim_token
           and candidate.sent_at is null
           and candidate.discarded_at is null
-          and candidate.claimed_at >= pg_catalog.now() - interval '${LEASE}'
+          and candidate.claimed_at >= v_now - interval '${LEASE}'
           and not app_private.notification_item_still_holds(candidate.type, candidate.client_id, candidate.recipient_user_id, candidate.content_id)
         for update
       );
@@ -231,7 +237,9 @@ export async function up(knex) {
         and item.claim_token = p_claim_token
         and item.sent_at is null
         and item.discarded_at is null
-        and item.claimed_at >= pg_catalog.now() - interval '${LEASE}'
+        and item.claimed_at >= v_now - interval '${LEASE}'
+        -- Not redundant with the discard above: each statement has a snapshot of its own, and the lock holds only the clients, so a suspension of
+        -- the agency, a removal from the portal or a change of the content that commits between the two statements is seen only here.
         and app_private.notification_item_still_holds(item.type, item.client_id, item.recipient_user_id, item.content_id)
       order by item.recipient_user_id, item.client_id, item.type, item.send_after, item.id;
     end;
