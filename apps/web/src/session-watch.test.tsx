@@ -76,7 +76,7 @@ const makeWorld = (): { world: World; impl: typeof fetch } => {
       return json({ contexts: [{ type: 'client', clientId: CLIENT_ID, clientName: 'Padaria Central', agencyId: AGENCY_ID, agencyName: 'Agência Um', onboardingPending: false }] });
     }
     if (path === `/agencies/${AGENCY_ID}/me`) {
-      return json({ agencyId: AGENCY_ID, agencyName: 'Agência Um', isOwner: false, role: { key: 'admin', name: 'Admin' }, permissions: ['cliente.visualizar'] });
+      return json({ agencyId: AGENCY_ID, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: ['cliente.visualizar'] });
     }
     if (path === `/clients/${CLIENT_ID}`) return json(portalClient);
     return json({ error: { code: 'NOT_FOUND', message: 'Not found.' } }, 404);

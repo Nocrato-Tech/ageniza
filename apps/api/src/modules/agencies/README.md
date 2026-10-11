@@ -31,6 +31,9 @@ trocar a permissão na consulta deixa a suíte vermelha.
 O rótulo do papel de um Owner sem vínculo cai no preset `admin`, como já acontece em
 `GET /me/contexts`; as permissões continuam sendo o campo autoritativo.
 
+`membershipId` (#265) é o id do vínculo ativo da própria pessoa na agência pedida (`null` para o Owner que é dono só por posse), o mesmo
+id que `owner.membershipId` de um conteúdo carrega, para a tela saber se a pessoa é o responsável sem expor id de usuário.
+
 ## O que ficou de fora
 
 - A montagem do menu e o cache por agência no frontend (#181).

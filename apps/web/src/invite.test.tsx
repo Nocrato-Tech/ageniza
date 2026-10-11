@@ -80,7 +80,7 @@ const makeFetch = (scenario: Scenario = {}) => {
       return noContent();
     }
     if (url.endsWith(`/agencies/${AGENCY_A}/me`)) {
-      return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] });
+      return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] });
     }
     if (url.endsWith('/auth/logout')) { calls.push('logout'); serverLoggedIn = false; return noContent(); }
     throw new Error(`unexpected ${method} ${url}`);
@@ -478,7 +478,7 @@ describe('InvitationPage (/convite/:token)', () => {
     await screen.findByRole('heading', { name: 'Você foi convidado' });
     await waitFor(() => expect(probe.sessionStatus).toBe('ready'));
     queryClient.setQueryData(['agency', AGENCY_A, 'me'], {
-      agencyId: AGENCY_A, agencyName: 'Agência ANTIGA', isOwner: true, role: { key: 'admin', name: 'Admin' }, permissions: []
+      agencyId: AGENCY_A, agencyName: 'Agência ANTIGA', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: []
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
@@ -500,7 +500,7 @@ describe('InvitationPage (/convite/:token)', () => {
     await screen.findByRole('heading', { name: 'Você foi convidado' });
     await waitFor(() => expect(probe.sessionStatus).toBe('ready'));
     queryClient.setQueryData(['agency', AGENCY_A, 'me'], {
-      agencyId: AGENCY_A, agencyName: 'Agência ANTIGA', isOwner: true, role: { key: 'admin', name: 'Admin' }, permissions: []
+      agencyId: AGENCY_A, agencyName: 'Agência ANTIGA', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: []
     });
 
     fillNewAccount();

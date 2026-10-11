@@ -201,7 +201,7 @@ describe('ContextSelectPage (/contextos)', () => {
       if (url.endsWith('/me/contexts/resolve')) return json({ decision: 'enter', context: agencyA });
       if (url.endsWith('/me/last-context') && init?.method === 'PUT') { putBodies.push(JSON.parse(String(init.body))); return noContent(); }
       if (url.endsWith(`/agencies/${AGENCY_A}/me`)) {
-        return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] });
+        return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] });
       }
       throw new Error(`unexpected ${init?.method ?? 'GET'} ${url}`);
     });
