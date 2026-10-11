@@ -199,7 +199,8 @@ beforeAll(async () => {
     ['owner', 'Dona da Agência'], ['ownerB', 'Dono da Outra'], ['opVis', 'Operadora Completa'], ['onlyOperar', 'Só Opera'],
     ['onlyVisualizar', 'Só Visualiza'], ['sales', 'Vera Vendas'], ['dual', 'Duda Dupla'], ['dualBare', 'Eva Dupla Sem Papel'],
     ['crossDual', 'Admin da Outra com Vínculo'], ['portalOne', 'Pessoa Um'], ['portalTwo', 'Pessoa Dois'], ['portalOther', 'Pessoa do Outro Cliente'],
-    ['portalB', 'Pessoa da Outra Agência'], ['portalRemoved', 'Pessoa Removida'], ['portalArchived', 'Pessoa do Arquivado']
+    ['portalB', 'Pessoa da Outra Agência'], ['portalRemoved', 'Pessoa Removida'], ['portalArchived', 'Pessoa do Arquivado'],
+    ['finance', 'Fábio Financeiro'], ['twoAgencies', 'Leitora de Duas Agências']
   ];
   for (const [key, name] of people) {
     const user = await insertTestUser(app.pool, app.auth, { emailLabel: `scripts-${key.toLowerCase()}`, name });
@@ -235,6 +236,10 @@ beforeAll(async () => {
     { agency_id: agencyA, user_id: users.onlyOperar!.id, role_id: await customRole(agencyA, 'conteudo.operar') },
     { agency_id: agencyA, user_id: users.onlyVisualizar!.id, role_id: await customRole(agencyA, 'conteudo.visualizar') },
     { agency_id: agencyA, user_id: users.sales!.id, role_id: await system('sales') },
+    { agency_id: agencyA, user_id: users.finance!.id, role_id: await system('finance') },
+    // Reads Conteúdo in BOTH agencies: the policy shows this person the rows of either, so only the route tells them apart.
+    { agency_id: agencyA, user_id: users.twoAgencies!.id, role_id: await customRole(agencyA, 'conteudo.visualizar') },
+    { agency_id: agencyB, user_id: users.twoAgencies!.id, role_id: await customRole(agencyB, 'conteudo.visualizar') },
     { agency_id: agencyA, user_id: users.dual!.id, role_id: await system('production') },
     { agency_id: agencyA, user_id: users.dualBare!.id, role_id: await customRole(agencyA, 'midia.enviar') },
     { agency_id: agencyB, user_id: users.crossDual!.id, role_id: await system('admin') }
@@ -975,6 +980,108 @@ describe('the portal marks a script as recorded (issue #258)', () => {
 
     expect(await stateOf(script.id)).toMatchObject({ status: 'sent', recordedBy: null });
     expect((await call('POST', recordedUrl(cMain, script.id), 'portalOne')).statusCode).toBe(200);
+  });
+});
+
+describe('reading a story script (issue #268)', () => {
+  it('reads a script in any state with its scenes in the order of their positions, and writes nothing', async () => {
+    const draft = await seedScript(cMain, { scenes: [['Primeira', 'Filmar de perto'], ['Segunda', null], ['Terceira', 'Com a equipe']], insertLastSceneFirst: true });
+    const sent = await seedScript(cMain, { status: 'sent', scriptOn: '2026-10-21', scenes: [['Só uma', null]] });
+    const recorded = await seedScript(cMain, { status: 'recorded', scriptOn: '2026-10-22', recordedBy: users.portalOne!.id, scenes: [['Gravada', 'Pronto']] });
+    const before = await Promise.all([draft, sent, recorded].map((script) => stateOf(script.id)));
+
+    const draftReply = await call('GET', agencyScript(agencyA, cMain, draft.id), 'opVis');
+    expect(draftReply.statusCode).toBe(200);
+    expect(draftReply.json()).toEqual({
+      id: draft.id,
+      scriptOn: '2026-10-20',
+      status: 'draft',
+      scenes: [
+        { id: draft.sceneIds[0], position: 1, text: 'Primeira', guidance: 'Filmar de perto' },
+        { id: draft.sceneIds[1], position: 2, text: 'Segunda', guidance: null },
+        { id: draft.sceneIds[2], position: 3, text: 'Terceira', guidance: 'Com a equipe' }
+      ],
+      recordedBy: null,
+      recordedAt: null,
+      createdAt: expect.any(String)
+    });
+    const sentReply = await call('GET', agencyScript(agencyA, cMain, sent.id), 'opVis');
+    expect(sentReply.statusCode).toBe(200);
+    expect(sentReply.json()).toMatchObject({ id: sent.id, status: 'sent', scriptOn: '2026-10-21', scenes: [{ id: sent.sceneIds[0], position: 1, text: 'Só uma', guidance: null }] });
+    const recordedReply = await call('GET', agencyScript(agencyA, cMain, recorded.id), 'opVis');
+    expect(recordedReply.statusCode).toBe(200);
+    expect(recordedReply.json()).toMatchObject({
+      id: recorded.id,
+      status: 'recorded',
+      scriptOn: '2026-10-22',
+      recordedBy: { name: names.portalOne },
+      recordedAt: '2026-10-19T15:00:00.000Z'
+    });
+    expect(await Promise.all([draft, sent, recorded].map((script) => stateOf(script.id)))).toEqual(before);
+  });
+
+  it('reads with conteudo.visualizar alone, and the Owner without a role; conteudo.operar alone, Vendas, Financeiro and no key are a 403', async () => {
+    const script = await seedScript(cMain);
+    const url = agencyScript(agencyA, cMain, script.id);
+
+    for (const as of ['onlyVisualizar', 'owner', 'opVis', 'dual']) {
+      expect({ as, status: (await call('GET', url, as)).statusCode }).toEqual({ as, status: 200 });
+    }
+    for (const as of ['onlyOperar', 'sales', 'finance', 'dualBare']) {
+      const reply = await call('GET', url, as);
+      expect({ as, status: reply.statusCode, code: reply.json().error.code }).toEqual({ as, status: 403, code: 'FORBIDDEN' });
+      expect(JSON.stringify(reply.json())).not.toContain('Cena um');
+    }
+    expect((await call('GET', url)).statusCode).toBe(401);
+  });
+
+  it('answers a person who has only a client link, or another agency\'s admin, as a stranger to the agency', async () => {
+    const script = await seedScript(cMain, { status: 'sent' });
+
+    for (const as of ['portalOne', 'portalTwo', 'crossDual', 'ownerB']) {
+      const reply = await call('GET', agencyScript(agencyA, cMain, script.id), as);
+      expectNotFound(reply, 'Agency not found.');
+      expect(JSON.stringify(reply.json())).not.toContain('Cena um');
+    }
+  });
+
+  it('answers the same 404 for a script of another client, of another agency, absent or malformed', async () => {
+    const ofOther = await seedScript(cOther);
+    const ofB = await seedScript(cB);
+
+    for (const url of [
+      agencyScript(agencyA, cMain, ofOther.id), agencyScript(agencyA, cMain, ofB.id), agencyScript(agencyA, cB, ofB.id),
+      agencyScript(agencyA, cMain, randomUUID()), agencyScript(agencyA, cMain, 'not-a-uuid'), agencyScript(agencyA, 'not-a-uuid', ofOther.id)
+    ]) {
+      const reply = await call('GET', url, 'opVis');
+      expect({ url, status: reply.statusCode }).toEqual({ url, status: 404 });
+      expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
+    }
+    expectNotFound(await call('GET', agencyScript(agencyA, cMain, ofOther.id), 'opVis'), 'Story script not found.');
+    expectNotFound(await call('GET', agencyScript(agencyA, cMain, ofB.id), 'opVis'), 'Story script not found.');
+    expectNotFound(await call('GET', agencyScript(agencyA, cB, ofB.id), 'opVis'), 'Client not found.');
+  });
+
+  it('keeps the two agencies apart for a person who reads Conteúdo in both: the client is the agency\'s of the URL', async () => {
+    const ofMain = await seedScript(cMain);
+    const ofB = await seedScript(cB);
+
+    expect((await call('GET', agencyScript(agencyA, cMain, ofMain.id), 'twoAgencies')).statusCode).toBe(200);
+    expect((await call('GET', agencyScript(agencyB, cB, ofB.id), 'twoAgencies')).statusCode).toBe(200);
+    expectNotFound(await call('GET', agencyScript(agencyB, cMain, ofMain.id), 'twoAgencies'), 'Client not found.');
+    expectNotFound(await call('GET', agencyScript(agencyA, cB, ofB.id), 'twoAgencies'), 'Client not found.');
+  });
+
+  it('reads the script of an archived client, drafts included: archived is read-only, not hidden', async () => {
+    const draft = await seedScript(cArchived);
+    const sent = await seedScript(cArchived, { status: 'sent' });
+
+    for (const script of [draft, sent]) {
+      const reply = await call('GET', agencyScript(agencyA, cArchived, script.id), 'opVis');
+      expect({ id: script.id, status: reply.statusCode }).toEqual({ id: script.id, status: 200 });
+      expect(reply.json().scenes.map((scene: { id: string }) => scene.id)).toEqual(script.sceneIds);
+    }
+    expect((await stateOf(draft.id)).status).toBe('draft');
   });
 });
 

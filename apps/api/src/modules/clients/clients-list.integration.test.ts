@@ -265,6 +265,8 @@ describe('clients listing (issue #125)', () => {
     for (const preset of ['account_manager', 'production', 'sales', 'finance'] as const) {
       members.push(await addMember(agencyId, { name: `Pessoa ${preset}`, emailLabel: `presets-${preset}`, roleId: presetRoleIds[preset] }));
     }
+    const salesMember = members[3]!;
+    const financeMember = members[4]!;
 
     const clientsInA = [
       await createClient({ agencyId, name: 'Alfa Presets' }),
@@ -290,9 +292,15 @@ describe('clients listing (issue #125)', () => {
       expect(ids(response.body).sort()).toEqual([...clientsInA].sort());
       expect(ids(response.body)).not.toContain(clientInB);
       // The exact item shape: Admin's preset carries `cliente.convidar_usuario`, so only its items
-      // gain `pendingInvitations`; the other four presets never see the key.
+      // gain `pendingInvitations`; Admin, Gestor de conta and Produção carry `conteudo.visualizar`
+      // and gain `contentIndicators`; Vendas and Financeiro get neither key (#261).
       const keys = Object.keys(response.body.data[0]!).sort();
-      expect(keys).toEqual(member === admin ? [...ITEM_KEYS, 'pendingInvitations'].sort() : ITEM_KEYS);
+      const readsContent = member !== salesMember && member !== financeMember;
+      expect(keys).toEqual([
+        ...ITEM_KEYS,
+        ...(member === admin ? ['pendingInvitations'] : []),
+        ...(readsContent ? ['contentIndicators'] : [])
+      ].sort());
     }
 
     const dualCookie = await loginCookie(dual);
@@ -597,7 +605,7 @@ describe('clients listing (issue #125)', () => {
         const { page, statements } = await listWithWriteBetweenStatements(
           admin.id,
           agencyId,
-          { status: 'active', sort, includePendingInvitations: false },
+          { status: 'active', sort, includePendingInvitations: false, includeContentSignals: false, asOf: new Date() },
           { pageSize: 20, offset: 0 },
           async () => { await createClient({ agencyId, name: 'Delta Concorrente' }); }
         );
@@ -613,7 +621,7 @@ describe('clients listing (issue #125)', () => {
       const { page, statements } = await listWithWriteBetweenStatements(
         admin.id,
         agencyId,
-        { status: 'active', sort: 'attention', includePendingInvitations: true },
+        { status: 'active', sort: 'attention', includePendingInvitations: true, includeContentSignals: true, asOf: new Date() },
         { pageSize: 20, offset: 0 },
         async () => { await createClient({ agencyId, name: 'Nascido Depois' }); }
       );

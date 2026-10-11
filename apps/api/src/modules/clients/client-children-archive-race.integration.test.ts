@@ -35,7 +35,7 @@ interface Reply {
   json<T = any>(): T; // eslint-disable-line @typescript-eslint/no-explicit-any -- test helper over untyped JSON
 }
 
-const call = async (method: 'POST' | 'PUT', url: string, cookie: string, payload: unknown): Promise<Reply> =>
+const call = async (method: 'POST' | 'PUT' | 'PATCH', url: string, cookie: string, payload: unknown): Promise<Reply> =>
   (await app.app.inject({ method, url, headers: { ...origin, cookie }, payload: payload as Record<string, unknown> })) as unknown as Reply;
 
 const makeUser = async (key: string, name: string): Promise<void> => {
@@ -63,9 +63,9 @@ const withPortalPerson = async (clientId: string): Promise<void> => {
   await owner.knex('client_memberships').insert({ client_id: clientId, user_id: users.portal!.id });
 };
 
-const withPersona = async (clientId: string): Promise<string> => {
+const withPersona = async (clientId: string, status: 'active' | 'archived' = 'active'): Promise<string> => {
   const id = randomUUID();
-  await owner.knex('client_personas').insert({ id, client_id: clientId, name: 'Persona da corrida', updated_by: users.writer!.id });
+  await owner.knex('client_personas').insert({ id, client_id: clientId, name: 'Persona da corrida', status, updated_by: users.writer!.id });
   return id;
 };
 
@@ -243,4 +243,75 @@ describe('CLIENTS routes that write into the children of a client being archived
     expect(await statusOf(clientId)).toBe('archived');
     expect(await countOf('client_thread_comments', clientId)).toBe(1);
   }, 30_000);
+
+  // Issue #545. The edit triggers of 20261011000700 make an UPDATE of a child wait for the archive and raise A0020 once it
+  // commits, like the INSERT above. Every route of the inventory that UPDATEs one of those tables answers it as the archived
+  // client, never as the 500 an untranslated A0020 is: the edit of a persona and its archive and unarchive, the brand study
+  // section that already exists (the update half of the upsert), the resolution of a thread, and the reopening of a resolved
+  // thread by the comment of the portal. The confirmation of a media is in media-folders.integration.test.ts.
+  describe('an UPDATE of a child of the client that waits for the archive (#545)', () => {
+    const personaOf = async (personaId: string): Promise<{ name: string; status: string }> =>
+      await owner.knex('client_personas').where({ id: personaId }).first('name', 'status');
+
+    it('answers 409 CLIENT_ARCHIVED to a persona edited while the client is archived, and edits none', async () => {
+      const clientId = await newClient('persona-edicao');
+      const personaId = await withPersona(clientId);
+      const reply = await archiveWhileRouteWaits(clientId, () =>
+        call('PATCH', `${agencyClient(clientId)}/personas/${personaId}`, cookies.writer!, { name: 'Chegou tarde' }));
+
+      expectArchived(reply);
+      expect(await statusOf(clientId)).toBe('archived');
+      expect(await personaOf(personaId)).toEqual({ name: 'Persona da corrida', status: 'active' });
+    }, 30_000);
+
+    it.each([
+      ['archive', 'active'],
+      ['unarchive', 'archived']
+    ] as const)('answers 409 CLIENT_ARCHIVED to a persona on %s while the client is archived, and changes none', async (action, from) => {
+      const clientId = await newClient(`persona-${action}`);
+      const personaId = await withPersona(clientId, from);
+      const reply = await archiveWhileRouteWaits(clientId, () =>
+        call('POST', `${agencyClient(clientId)}/personas/${personaId}/${action}`, cookies.writer!, undefined));
+
+      expectArchived(reply);
+      expect(await statusOf(clientId)).toBe('archived');
+      expect(await personaOf(personaId)).toEqual({ name: 'Persona da corrida', status: from });
+    }, 30_000);
+
+    it('answers 409 CLIENT_ARCHIVED to a brand study section that already exists, rewritten while the client is archived, and keeps the old text', async () => {
+      const clientId = await newClient('secao-existente');
+      await owner.knex('client_brand_sections').insert({ client_id: clientId, section_key: 'branding', body: 'Texto antigo', updated_by: users.writer!.id });
+      const reply = await archiveWhileRouteWaits(clientId, () =>
+        call('PUT', `${agencyClient(clientId)}/brand-study/sections/branding`, cookies.writer!, { body: 'Chegou tarde' }));
+
+      expectArchived(reply);
+      expect(await statusOf(clientId)).toBe('archived');
+      expect((await owner.knex('client_brand_sections').where({ client_id: clientId }).first('body')).body).toBe('Texto antigo');
+    }, 30_000);
+
+    it('answers 409 CLIENT_ARCHIVED to a thread resolved while the client is archived, and leaves it open', async () => {
+      const clientId = await newClient('resolver');
+      const threadId = await withThread(clientId, await withPersona(clientId));
+      const reply = await archiveWhileRouteWaits(clientId, () =>
+        call('POST', `${agencyClient(clientId)}/threads/${threadId}/resolve`, cookies.writer!, undefined));
+
+      expectArchived(reply);
+      expect(await statusOf(clientId)).toBe('archived');
+      expect((await owner.knex('client_threads').where({ id: threadId }).first('resolved_at')).resolved_at).toBeNull();
+    }, 30_000);
+
+    it('answers the portal 404 to a comment that would reopen a resolved thread while the client is archived, and leaves it resolved', async () => {
+      const clientId = await newClient('reabrir');
+      await withPortalPerson(clientId);
+      const threadId = await withThread(clientId, await withPersona(clientId));
+      await owner.knex('client_threads').where({ id: threadId }).update({ resolved_at: new Date(), resolved_by: users.writer!.id });
+      const reply = await archiveWhileRouteWaits(clientId, () =>
+        call('POST', `/clients/${clientId}/threads/${threadId}/comments`, cookies.portal!, { body: 'Chegou tarde' }));
+
+      expectGoneForThePortal(reply);
+      expect(await statusOf(clientId)).toBe('archived');
+      expect((await owner.knex('client_threads').where({ id: threadId }).first('resolved_at')).resolved_at).not.toBeNull();
+      expect(await countOf('client_thread_comments', clientId)).toBe(1);
+    }, 30_000);
+  });
 });
