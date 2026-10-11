@@ -68,6 +68,14 @@ If the installed pg-boss expects a different schema version, the worker refuses 
 
 The handler is idempotent (a run that finds nothing due archives none, which is what lets it run hourly and at every start) and lets a database error through, so a lost race with a concurrent change of the client's invitations is retried by the queue. The log carries the queue, job id, attempt and `archived`, no client, no person. To fire it by hand locally see [`docs/local-environment.md`](../../docs/local-environment.md). Decision: `docs/business/decisions/2026-10-07-o-job-diario-de-encerramento-liga-o-agendamento-do-worker.md`.
 
+## E-mail to the client (issue #260)
+
+`src/client-content-email-job.ts` registers `notifications.send-client-content-emails`: every minute in `America/Sao_Paulo`, and once at every start, it sends the e-mail of "contents to approve" and the daily summary of "published" that the notification queue says are due. It is registered only when `SMTP_URL`, `EMAIL_FROM` and `APP_PUBLIC_URL` are set (production refuses to start without them); otherwise the worker logs that e-mail is off. The queue decides *when* (15 minutes after the last send for approval, the end of the day in Brasília for the summary: `app_private.notification_send_after`); this job only asks.
+
+Each pass is four short transactions of the queue's functions (`src/notification-queue.ts`), because `ageniza_app` has no privilege on the table and the worker binds no actor: `claim_notification_batch` (the lease of 10 minutes, one worker per group), then, per group, `recheck_notifications` (drops what stopped being true, so a client archived after the claim never gets the e-mail; it waits for an archive in flight and refuses an item whose lease ran out), the send, and `mark_notifications_sent` (or `fail_notifications` with a code `smtp_*`, never the text of the provider, which carries the address). One e-mail per person, client and type, listing every content of the group by title and planned date; the link is `APP_PUBLIC_URL/portal/<client>/calendario`, with no token. What comes from the content is escaped in the HTML.
+
+A run claims at most 10 groups at a time and 6 times, and starts no claim after 4 minutes, so the last group is rechecked well inside the lease. Delivery is at least once: an e-mail repeats only if the worker dies between the send and the stamp, which is why the stamp is tried three times. The log carries counts and codes only. Decisions: `docs/business/decisions/2026-10-11-email-ao-cliente-link-texto-e-cadencia-do-worker.md` and `2026-10-11-a-fila-reconfere-o-item-logo-antes-do-envio.md`.
+
 ## Video processing (issue #24)
 
 `src/media-video-job.ts` registers the durable video job,
@@ -110,7 +118,7 @@ pnpm db:start && pnpm db:migrate && pnpm storage:start
 pnpm --filter @ageniza/worker test:integration   # queue + video processing against local PostgreSQL/MinIO
 ```
 
-The queue integration suite covers a job surviving a worker restart, backoff retries, a permanent failure reaching its dead letter queue, draining on shutdown, and a job that outlives the drain being completed by the next worker. `archive-due-clients-job.integration.test.ts` covers the daily job against the real function (yesterday archived, today not, none the second time), its retry after a lost deadlock, the single schedule across restarts, and the cron monitor turning a due schedule into a running job.
+The queue integration suite covers a job surviving a worker restart, backoff retries, a permanent failure reaching its dead letter queue, draining on shutdown, and a job that outlives the drain being completed by the next worker. `client-content-email-job.integration.test.ts` covers the e-mail to the client against the real queue functions (three sends in a row make one e-mail, nothing for an archived client or a suspended agency, even when it happens after the claim, no token or internal data in the body or the log, two concurrent workers, a provider that fails). `archive-due-clients-job.integration.test.ts` covers the daily job against the real function (yesterday archived, today not, none the second time), its retry after a lost deadlock, the single schedule across restarts, and the cron monitor turning a due schedule into a running job.
 
 The video processing suite requires a real `ffmpeg`/`ffprobe` on `PATH` (issue #24) -- there is no
 useful way to fake process spawning without losing coverage of real timeouts, exit codes, and the
