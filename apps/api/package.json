@@ -3,6 +3,11 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/**/test-support/**"
+  ],
   "scripts": {
     "dev": "tsx --env-file=../../.env --env-file=../../.local/storage.env watch src/index.ts",
     "cli:agency": "node dist/cli/agency.js",
