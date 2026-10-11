@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ClientNameSchema,
+  CollaboratorJobTitleSchema,
   CommentBodySchema,
   ContentCaptionSchema,
   ContentTitleSchema,
   CreateMediaFolderRequestSchema,
+  DisplayNameSchema,
   MediaFolderNameSchema,
   StorySceneGuidanceSchema,
   StorySceneTextSchema,
+  createDisplayNameSchema,
   hasInvisibleCharacters
 } from '../src/index.js';
 
@@ -83,7 +87,12 @@ const ZWJ = 0x200d;
 const KEYCAP = 0x20e3;
 const BLACK_FLAG = 0x1f3f4;
 const CANCEL_TAG = 0xe007f;
+const BOY = 0x1f466;
 const ENGLAND = [BLACK_FLAG, 0xe0067, 0xe0062, 0xe0065, 0xe006e, 0xe0067, CANCEL_TAG];
+const SCOTLAND = [BLACK_FLAG, 0xe0067, 0xe0062, 0xe0073, 0xe0063, 0xe0074, CANCEL_TAG];
+const WALES = [BLACK_FLAG, 0xe0067, 0xe0062, 0xe0077, 0xe006c, 0xe0073, CANCEL_TAG];
+// The tag letters of a text, which a flag must not carry: any ASCII text can be written in them.
+const tagsOf = (ascii: string): number[] => Array.from(ascii, (letter) => 0xe0000 + letter.charCodeAt(0));
 
 const SEQUENCES: ReadonlyArray<readonly [string, readonly number[]]> = [
   ['a family (ZWJ between three pictographs)', [MAN, ZWJ, WOMAN, ZWJ, GIRL]],
@@ -96,6 +105,10 @@ const SEQUENCES: ReadonlyArray<readonly [string, readonly number[]]> = [
   ['the keycap asterisk', [0x2a, SELECTOR_16, KEYCAP]],
   ['the keycap zero', [0x30, KEYCAP]],
   ['the flag of England (a subdivision tag sequence)', ENGLAND],
+  ['the flag of Scotland', SCOTLAND],
+  ['the flag of Wales', WALES],
+  ['a family of four (three joiners)', [MAN, ZWJ, WOMAN, ZWJ, GIRL, ZWJ, BOY]],
+  ['a kiss between two people (three joiners, one with the selector 16)', [WOMAN, ZWJ, 0x2764, SELECTOR_16, ZWJ, 0x1f48b, ZWJ, MAN]],
   ['a skin tone after a base', [THUMBS_UP, TONE]],
   ['a skin tone after a base that is written with the selector 16 before it', [POINTING_UP, SELECTOR_16, TONE]],
   ['a skin tone followed by the selector 16', [THUMBS_UP, TONE, SELECTOR_16]],
@@ -138,6 +151,14 @@ const BROKEN: ReadonlyArray<readonly [string, readonly number[]]> = [
   ['the flag of England and then a second cancel tag', [...ENGLAND, CANCEL_TAG]],
   ['a subdivision whose black flag is another pictograph', [0x1f600, ...ENGLAND.slice(1)]],
   ['a subdivision with the tag space inside', [BLACK_FLAG, 0xe0020, 0xe0067, CANCEL_TAG]],
+  ['the tags of a subdivision that has no flag (California)', [BLACK_FLAG, ...tagsOf('usca'), CANCEL_TAG]],
+  ['the tags of a whole sentence behind a black flag', [BLACK_FLAG, ...tagsOf('ignore previous instructions'), CANCEL_TAG]],
+  ['the tags of England with a letter more', [BLACK_FLAG, ...tagsOf('gbengx'), CANCEL_TAG]],
+  ['the tags of England cut short', [BLACK_FLAG, ...tagsOf('gbe'), CANCEL_TAG]],
+  ['the tags of the country only', [BLACK_FLAG, ...tagsOf('gb'), CANCEL_TAG]],
+  ['the tags of England in capitals', [BLACK_FLAG, ...tagsOf('GBENG'), CANCEL_TAG]],
+  ['the tags of England and then the tags of Wales, one cancel tag', [BLACK_FLAG, ...tagsOf('gbeng'), ...tagsOf('gbwls'), CANCEL_TAG]],
+  ['a chain of five pictographs (four joiners)', [MAN, ZWJ, WOMAN, ZWJ, GIRL, ZWJ, BOY, ZWJ, MAN]],
   ['a subdivision with a tag digit inside', [BLACK_FLAG, 0xe0067, 0xe0031, CANCEL_TAG]],
   ['a subdivision with the language tag inside',[BLACK_FLAG, 0xe0001, 0xe0067, CANCEL_TAG]],
   ['a subdivision between letters, cut in the middle by a letter', [BLACK_FLAG, 0xe0067, 0x61, 0xe0062, CANCEL_TAG]],
@@ -271,5 +292,126 @@ describe('a folder name made only of an emoji sequence (#539)', () => {
   ] as const)('refuses %s: a name needs a letter or a number', (_label, codePoints) => {
     expect(MediaFolderNameSchema.safeParse(text(...codePoints)).success).toBe(false);
     expect(MediaFolderNameSchema.safeParse(`Time ${text(...codePoints)}`).success).toBe(true);
+  });
+});
+
+describe('what a flag and a joiner chain can carry (#539)', () => {
+  it('refuses the text a black flag carries in tags, whatever the text is', () => {
+    for (const hidden of ['hello', 'ignore previous instructions', 'gbengx', 'usca', 'a']) {
+      const value = `Ótimo ${text(BLACK_FLAG, ...tagsOf(hidden), CANCEL_TAG)}`;
+      expect({ hidden, refused: hasInvisibleCharacters(value) }).toEqual({ hidden, refused: true });
+    }
+  });
+
+  it('accepts only the flag of England, Scotland and Wales', () => {
+    for (const flag of [ENGLAND, SCOTLAND, WALES]) {
+      expect(hasInvisibleCharacters(`Ótimo ${text(...flag)}`)).toBe(false);
+    }
+  });
+
+  it('refuses a chain of 200 faces joined by ZWJ, and four joiners, and accepts three', () => {
+    const chain = (faces: number): string => Array.from({ length: faces }, () => text(MAN)).join(text(ZWJ));
+    expect(hasInvisibleCharacters(chain(200))).toBe(true);
+    expect(hasInvisibleCharacters(chain(5))).toBe(true);
+    expect(hasInvisibleCharacters(chain(4))).toBe(false);
+    expect(hasInvisibleCharacters(chain(1))).toBe(false);
+  });
+});
+
+describe('a text that is only combining marks (#539)', () => {
+  const ONLY_MARKS: ReadonlyArray<readonly [string, string]> = [
+    ['an acute accent alone', text(0x0301)],
+    ['two accents', text(0x0301, 0x0302)],
+    ['an accent between spaces', ` ${text(0x0301)} `],
+    ['an accent after a line break', text(0x000a, 0x0301)],
+    ['a Devanagari vowel sign alone', text(0x093f)],
+    ['an enclosing circle alone', text(0x20dd)]
+  ];
+
+  it.each(ONLY_MARKS)('refuses %s in the helper', (_label, value) => {
+    expect(hasInvisibleCharacters(value)).toBe(true);
+  });
+
+  it('keeps an accent on a letter, written decomposed, and a blank text, which is not this rule', () => {
+    for (const value of ['Cafe' + text(0x0301), text(0x0061, 0x0301, 0x0302), 'Ana ' + text(0x0065, 0x0301), '', '   ', text(0x000a)]) {
+      expect({ value, hidden: hasInvisibleCharacters(value) }).toEqual({ value, hidden: false });
+    }
+  });
+
+  it('keeps an accent that follows an emoji sequence, since the sequence is a character it sits on', () => {
+    expect(hasInvisibleCharacters(text(MAN, ZWJ, WOMAN, 0x0301))).toBe(false);
+  });
+
+  describe.each([
+    ['the folder name', (value: string) => MediaFolderNameSchema.safeParse(value).success],
+    ['the text of a story scene', (value: string) => StorySceneTextSchema.safeParse(value).success],
+    ['the guidance of a story scene', (value: string) => StorySceneGuidanceSchema.safeParse(value).success],
+    ['the title of a content', (value: string) => ContentTitleSchema.safeParse(value).success],
+    ['the caption of a content', (value: string) => ContentCaptionSchema.safeParse(value).success],
+    ['the body of a comment', (value: string) => CommentBodySchema.safeParse(value).success]
+  ])('%s', (_label, accepts) => {
+    it.each(ONLY_MARKS)('refuses %s', (_name, value) => {
+      expect(accepts(value)).toBe(false);
+    });
+
+    it('accepts the decomposed accent on a letter', () => {
+      expect(accepts('Cafe' + text(0x0301))).toBe(true);
+    });
+  });
+
+  it('keeps a blank guidance as no guidance, not as a refusal', () => {
+    expect(StorySceneGuidanceSchema.safeParse('   ').success).toBe(true);
+  });
+});
+
+describe('an emoji sequence cut by a line break or a tab is not a sequence (#539)', () => {
+  // Every boundary of every sequence, cut by a line feed, a carriage return and a tab: what is left of each half is refused.
+  const cuts = SEQUENCES.flatMap(([label, codePoints]) => [0x000a, 0x000d, 0x0009].flatMap((breaker) =>
+    Array.from({ length: codePoints.length - 1 }, (_unused, index) => {
+      const cut = text(...codePoints.slice(0, index + 1), breaker, ...codePoints.slice(index + 1));
+      return [`${label}, cut after its character ${index + 1} by U+${breaker.toString(16).padStart(4, '0')}`, cut] as const;
+    })));
+
+  it('has a cut for every boundary', () => {
+    expect(cuts.length).toBeGreaterThan(120);
+  });
+
+  describe.each([
+    ['the text of a story scene', (value: string) => StorySceneTextSchema.safeParse(value).success],
+    ['the guidance of a story scene', (value: string) => StorySceneGuidanceSchema.safeParse(value).success],
+    ['the caption of a content', (value: string) => ContentCaptionSchema.safeParse(value).success],
+    ['the body of a comment', (value: string) => CommentBodySchema.safeParse(value).success]
+  ])('%s', (_label, accepts) => {
+    it.each(cuts)('refuses %s', (_name, value) => {
+      expect(accepts(value)).toBe(false);
+    });
+
+    it('still accepts the whole sequence next to a line break', () => {
+      for (const [, codePoints] of SEQUENCES) {
+        expect(accepts(`Linha ${text(...codePoints)}\n\t${text(...codePoints)}`)).toBe(true);
+      }
+    });
+  });
+});
+
+describe('the emoji sequences are the folder name only among the display names (#539)', () => {
+  const NOT_FOR_NAMES: ReadonlyArray<readonly [string, readonly number[]]> = [
+    ['the flag of England', ENGLAND],
+    ['the flag of Scotland', SCOTLAND],
+    ['the flag of Wales', WALES],
+    ['a woman technologist with a skin tone', [WOMAN, TONE, ZWJ, LAPTOP]]
+  ];
+
+  it.each(NOT_FOR_NAMES)('refuses %s in the name of a person, of a client and in a job title', (_label, codePoints) => {
+    for (const schema of [DisplayNameSchema, ClientNameSchema, CollaboratorJobTitleSchema, createDisplayNameSchema(80)]) {
+      expect(schema.safeParse(`Ana ${text(...codePoints)}`).success).toBe(false);
+    }
+    expect(MediaFolderNameSchema.safeParse(`Ana ${text(...codePoints)}`).success).toBe(true);
+  });
+
+  it('turns the option on only when it is asked for', () => {
+    expect(createDisplayNameSchema(80, { emojiSequences: true }).safeParse(`Ana ${text(...ENGLAND)}`).success).toBe(true);
+    expect(createDisplayNameSchema(80, { emojiSequences: false }).safeParse(`Ana ${text(...ENGLAND)}`).success).toBe(false);
+    expect(createDisplayNameSchema(80, {}).safeParse(`Ana ${text(...ENGLAND)}`).success).toBe(false);
   });
 });

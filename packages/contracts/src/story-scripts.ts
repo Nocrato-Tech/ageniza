@@ -40,7 +40,9 @@ const CONTROL_OR_SEPARATOR = /[\p{Cc}\p{Zl}\p{Zp}]/u;
 const FORMAT_CHARACTER = /\p{Cf}/u;
 /** Whether a free text carries a character that is invisible, forged-looking or breaks the line it is on. */
 export const hasHiddenStoryCharacters = (value: string): boolean => {
-  const rest = withoutEmojiSequences(value.replace(LINE_BREAKS, ''));
+  // The sequences go first, and a line break becomes a space instead of nothing: a keycap cut by a line feed must stay cut, not be
+  // closed again by taking the feed out (and read as a keycap by the helper below).
+  const rest = withoutEmojiSequences(value).replace(LINE_BREAKS, ' ');
   return CONTROL_OR_SEPARATOR.test(rest)
     || FORMAT_CHARACTER.test(rest)
     || hasInvisibleCharacters(rest);
