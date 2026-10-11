@@ -204,13 +204,14 @@ describe('agencies module (issue #180)', () => {
   });
 
   it('#265: the person receives the id of her OWN link with the agency asked for, and never a user id', async () => {
-    const user = await makeUser('agency-me-membership');
-    const other = await makeUser('agency-me-membership-other');
+    // The other person has the lower user id and the link created first, so a read that does not filter by the person finds her
+    // link before the one of the person asking, whether the rows come in the order of insertion or in the one of the user index.
+    const [other, user] = [await makeUser('agency-me-membership-a'), await makeUser('agency-me-membership-b')].sort((a, b) => (a.id < b.id ? -1 : 1));
     const agencyA = await createAgency('Agency Me Membership A', null);
     const agencyB = await createAgency('Agency Me Membership B', null);
+    const ofOtherInA = await addAgencyMembership(agencyA, other.id, presetRoleIds.admin);
     const ofUserInA = await addAgencyMembership(agencyA, user.id, presetRoleIds.production);
     const ofUserInB = await addAgencyMembership(agencyB, user.id, presetRoleIds.finance);
-    const ofOtherInA = await addAgencyMembership(agencyA, other.id, presetRoleIds.admin);
     const cookie = await loginCookie(user);
 
     const inA = await getAgencyMe(cookie, agencyA);
