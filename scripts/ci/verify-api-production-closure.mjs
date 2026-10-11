@@ -111,7 +111,9 @@ export const checkDeployedApi = (target, { boot = bootFromDeploy } = {}) => {
   }
 
   const bootError = boot(target);
-  if (bootError !== undefined) failures.push(`${BOOT_MODULES.join(' and ')} do not load in the deploy: ${bootError}`);
+  if (bootError !== undefined) {
+    failures.push(`${BOOT_MODULES.join(' and ')} do not load in the deploy: ${bootError}\nThe deploy ships the compiled dist, so the API has to be built first (pnpm build).`);
+  }
 
   return failures;
 };

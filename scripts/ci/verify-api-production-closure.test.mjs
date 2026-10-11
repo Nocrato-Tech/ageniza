@@ -156,6 +156,13 @@ describe('checking a deployed API', () => {
     expect(failures[0]).toContain("do not load in the deploy: Cannot find package 'pg'");
   });
 
+  it('says the API has to be built first when nothing loads, which is what a gate run before the build looks like', () => {
+    const failures = checkDeployedApi(deployed({ files: ['package.json'] }));
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain('do not load in the deploy');
+    expect(failures[0]).toContain('pnpm build');
+  });
+
   it('reports every problem at once', () => {
     const failures = checkDeployedApi(deployed({ store: ['better-auth@1.7.5', 'vitest@3.2.7'], files: [...CLEAN_FILES, 'src/app.ts'] }), { boot: () => 'boom' });
     expect(failures).toHaveLength(3);

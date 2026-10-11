@@ -115,16 +115,17 @@ jobs:
         run: pnpm test
       - name: Run repository script tests
         run: pnpm test:scripts
-      # The .pnpmfile.cjs hook keeps the vitest chain out of `pnpm deploy --prod` (issue #281);
-      # this fails if a regenerated lockfile or a new dependency brings it back.
-      - name: Verify the API production closure
-        run: node scripts/ci/verify-api-production-closure.mjs
       - name: Run root build gate
         env:
           VITE_API_BASE_URL: http://127.0.0.1:3001
           VITE_SUPABASE_URL: http://127.0.0.1:54321
           VITE_SUPABASE_ANON_KEY: ci-local-public-placeholder
         run: pnpm build
+      # The .pnpmfile.cjs hook keeps the vitest chain out of `pnpm deploy --prod` (issue #281); this
+      # fails if it comes back, if the image carries more than the runtime reads, or if the deployed
+      # dist does not load (issue #305). It runs after the build because the deploy ships dist.
+      - name: Verify the API production closure
+        run: node scripts/ci/verify-api-production-closure.mjs
       # docs/api is generated from packages/contracts; a route or schema change that forgets to
       # regenerate it fails here instead of shipping stale documentation (issue #182).
       - name: Verify the generated API documentation is current
