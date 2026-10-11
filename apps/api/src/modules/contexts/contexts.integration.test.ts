@@ -331,6 +331,20 @@ describe('contexts module (AUTH-20C)', () => {
     ]);
   });
 
+  it('#432 GET /me/contexts answers Cache-Control: no-store on the 200 that lists the contexts and on the 401', async () => {
+    const user = await makeUser('ctx-no-store');
+    await createAgency('No Store Agency', user.id);
+    const cookie = await loginCookie(user);
+
+    const listed = await app.app.inject({ method: 'GET', url: '/me/contexts', headers: { ...origin, cookie } });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.headers['cache-control']).toBe('no-store');
+
+    const unauthenticated = await app.app.inject({ method: 'GET', url: '/me/contexts', headers: origin });
+    expect(unauthenticated.statusCode).toBe(401);
+    expect(unauthenticated.headers['cache-control']).toBe('no-store');
+  });
+
   it('#12 a client context carries agencyName and onboardingPending, which flips exactly once and stays fixed after', async () => {
     const owner1 = await makeUser('ctx-onboarding-owner');
     const member = await makeUser('ctx-onboarding-member');

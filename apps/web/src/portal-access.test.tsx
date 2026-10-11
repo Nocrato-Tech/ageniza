@@ -641,7 +641,7 @@ describe('portal access tab (#140)', () => {
     });
     const { container } = renderAccess(impl);
 
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(container.textContent).not.toContain('sensitive detail');
     expect(screen.queryByRole('heading', { name: 'Pessoas com acesso ao portal' })).toBeNull();
   });

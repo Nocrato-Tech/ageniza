@@ -29,13 +29,13 @@ import { SessionWatch } from './session-watch.js';
 import { LoadingPage, NotFoundPage, SessionGate } from './status-pages.js';
 
 export function PublicLayout() {
-  return <div className="app-shell"><a className="skip-link" href="#main-content">Skip to content</a><header><Link to="/">Ageniza</Link></header><main id="main-content"><Outlet /></main></div>;
+  return <div className="app-shell"><a className="skip-link" href="#main-content">Pular para o conteúdo</a><header><Link to="/">Ageniza</Link></header><main id="main-content"><Outlet /></main></div>;
 }
 
 export function ProtectedLayout({ session, children }: { session: AuthSessionSnapshot; children?: ReactNode }) {
   return <SessionGate session={session}>
     <SessionWatch />
-    <div className="app-shell"><a className="skip-link" href="#main-content">Skip to content</a><header className="protected-header"><Link to="/">Ageniza</Link><AccountMenu user={session.user} /></header><main id="main-content">{children ?? <Outlet />}</main></div>
+    <div className="app-shell"><a className="skip-link" href="#main-content">Pular para o conteúdo</a><header className="protected-header"><Link to="/">Ageniza</Link><AccountMenu user={session.user} /></header><main id="main-content">{children ?? <Outlet />}</main></div>
   </SessionGate>;
 }
 
@@ -117,7 +117,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="app" element={<Navigate to="/contextos" replace />} />
     </Route>
     <Route path="*" element={session.isAuthenticated
-      ? <ProtectedLayout session={session}><NotFoundPage as="section" /></ProtectedLayout>
+      ? <ProtectedLayout session={session}><NotFoundPage as="section" home="/contextos" /></ProtectedLayout>
       : <NotFoundPage />} />
   </Routes>;
 }

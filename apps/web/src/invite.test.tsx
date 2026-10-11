@@ -377,7 +377,7 @@ describe('InvitationPage (/convite/:token)', () => {
   it('does not show the notice on the not-found route', async () => {
     const { impl } = makeFetch({ authenticated: true });
     renderInvite(impl, { path: '/endereco-inexistente', state: { invitationNotice: { agencyName: 'Agência Um' } } });
-    await screen.findByRole('heading', { name: 'Page not found' });
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
     expect(screen.queryByRole('status')).toBeNull();
   });
 

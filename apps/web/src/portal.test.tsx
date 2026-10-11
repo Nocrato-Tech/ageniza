@@ -205,7 +205,7 @@ describe('client portal shell (#141)', () => {
     clickTab('Início');
     expect(await screen.findByRole('heading', { name: 'Olá, Maria' })).toBeTruthy();
     expect(probe.pathname).toBe(portalUrl('inicio'));
-    expect(screen.queryByRole('heading', { name: 'Page not found' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Página não encontrada' })).toBeNull();
   });
 
   it('shows the client and its agency in the header, and the client inside the account menu', async () => {
@@ -338,28 +338,52 @@ describe('client portal shell (#141)', () => {
     active = false;
     clickTab('Calendário');
 
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(probe.pathname).toBe(portalUrl('calendario'));
     // The same not-found as any unknown address: never a message confirming the portal existed.
     expect(screen.queryByText(/acesso/i)).toBeNull();
   });
 
+  it('brings the client back to the portal start from the not-found, never to the agency or the public home', async () => {
+    const { impl } = makeFetch();
+    const { probe } = renderPortal(impl, portalUrl('caminho-inexistente'));
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
+    expect(screen.getByText('Este endereço não corresponde a uma página do Ageniza.')).toBeTruthy();
+    expect(document.title).toBe('Página não encontrada — Ageniza');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Voltar ao início' }));
+
+    expect(await screen.findByRole('heading', { name: 'Olá, Maria' })).toBeTruthy();
+    expect(probe.pathname).toBe(portalUrl('inicio'));
+  });
+
+  it.each([
+    ['the client is not found', () => makeFetch({ portal: () => notFound() }).impl, portalUrl()],
+    ['the id is malformed', () => makeFetch().impl, '/portal/nao-e-uuid/inicio'],
+    ['the answer belongs to another client', () => makeFetch({ portal: () => json(portalClient({ id: OTHER_CLIENT_ID })) }).impl, portalUrl()]
+  ] as const)('points the not-found of an unverified portal address at the context chooser when %s', async (_name, impl, entry) => {
+    renderPortal(impl(), entry);
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
+
+    expect(screen.getByRole('link', { name: 'Voltar ao início' }).getAttribute('href')).toBe('/contextos');
+  });
+
   it('answers the ordinary not-found for a 404, for a malformed id and for another client answer', async () => {
     const gone = makeFetch({ portal: () => notFound() });
     renderPortal(gone.impl);
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     cleanup();
 
     const malformed = makeFetch();
     renderPortal(malformed.impl, '/portal/nao-e-uuid/inicio');
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(malformed.calls.some((call) => call.startsWith('GET /clients/'))).toBe(false);
     cleanup();
 
     // Defense in depth: an answer for another client is not shown as if it were this portal's.
     const wrong = makeFetch({ portal: () => json(portalClient({ id: OTHER_CLIENT_ID, name: 'Outro Cliente' })) });
     renderPortal(wrong.impl);
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(screen.queryByText('Outro Cliente')).toBeNull();
   });
 
@@ -367,7 +391,7 @@ describe('client portal shell (#141)', () => {
     const { impl, calls } = makeFetch({ anonymous: true });
     renderPortal(impl);
 
-    expect(await screen.findByRole('heading', { name: 'Workspace unavailable' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Área indisponível' })).toBeTruthy();
     expect(screen.queryByRole('navigation', { name: 'Navegação do portal' })).toBeNull();
     expect(screen.queryByRole('heading', { name: /Olá/ })).toBeNull();
     expect(calls.some((call) => call.startsWith('GET /clients/'))).toBe(false);
@@ -377,7 +401,7 @@ describe('client portal shell (#141)', () => {
     const { impl } = makeFetch();
     const { probe, container } = renderPortal(impl, portalUrl('qualquer-coisa'));
 
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(probe.pathname).toBe(portalUrl('qualquer-coisa'));
     // Still the portal shell (client header and bar), not the generic protected header: the `*` of the portal answers.
     expect(within(container.querySelector('.portal-header') as HTMLElement).getByText('Padaria Central')).toBeTruthy();
@@ -391,7 +415,7 @@ describe('client portal shell (#141)', () => {
   });
 
   it.each([
-    ['the client is not found', () => notFound(), 'Page not found'],
+    ['the client is not found', () => notFound(), 'Página não encontrada'],
     ['the portal cannot be opened', () => json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, 500), 'Não foi possível abrir o portal']
   ])('keeps the account menu as the way out when %s, without an active client', async (_name, portal, heading) => {
     const { impl } = makeFetch({ portal });

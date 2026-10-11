@@ -68,7 +68,7 @@ const expectAccountMenu = (): void => {
 describe('route boundaries', () => {
   it('keeps protected workspace content out of an anonymous route', () => {
     renderRoute('/app', false);
-    expect(screen.getByRole('heading', { name: 'Workspace unavailable' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Área indisponível' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Workspace' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Pessoa/ })).toBeNull();
   });
@@ -83,7 +83,42 @@ describe('route boundaries', () => {
 
   it('sends unknown paths to an accessible not-found boundary', () => {
     renderRoute('/missing', false);
-    expect(screen.getByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
+  });
+
+  it('shows the system pages in Portuguese, with the exact text and a way back', () => {
+    renderRoute('/missing', false);
+    expect(screen.getByRole('heading', { name: 'Página não encontrada', level: 1 })).toBeTruthy();
+    expect(screen.getByText('Este endereço não corresponde a uma página do Ageniza.')).toBeTruthy();
+    expect(document.title).toBe('Página não encontrada — Ageniza');
+    expect(screen.getByRole('link', { name: 'Voltar ao início' }).getAttribute('href')).toBe('/');
+    cleanup();
+
+    renderRoute('/app', false);
+    expect(screen.getByRole('heading', { name: 'Área indisponível', level: 1 })).toBeTruthy();
+    expect(screen.getByText('Esta área exige uma sessão ativa.')).toBeTruthy();
+  });
+
+  it('shows the loading page in Portuguese while the session is read', () => {
+    const client = new HttpClient('http://127.0.0.1:3001', unauthenticatedFetch);
+    render(
+      <AuthSessionProvider store={createAuthSessionStore(client)}>
+        <QueryClientProvider client={createQueryClient()}>
+          <ApiClientProvider client={client}><MemoryRouter initialEntries={['/app']}>
+            <ApplicationRoutes session={{ status: 'loading', isAuthenticated: false, user: null }} />
+          </MemoryRouter></ApiClientProvider>
+        </QueryClientProvider>
+      </AuthSessionProvider>
+    );
+    expect(screen.getByText('Carregando…')).toBeTruthy();
+  });
+
+  it('sends a signed-in person from the global not-found to the context chooser', () => {
+    const { probe } = renderRoute('/rota-inexistente', true);
+    expect(screen.getByRole('link', { name: 'Pular para o conteúdo' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: 'Voltar ao início' }));
+    expect(probe.pathname).toBe('/contextos');
+    expect(screen.getByRole('heading', { name: 'Onde você quer entrar?' })).toBeTruthy();
   });
 
   it('keeps the account menu with the person identity on the context resolver', async () => {
@@ -104,7 +139,7 @@ describe('route boundaries', () => {
   it('keeps the account menu on the global not-found when there is a session', () => {
     renderRoute('/rota-inexistente', true);
     expectAccountMenu();
-    expect(screen.getByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
   });
 });
 

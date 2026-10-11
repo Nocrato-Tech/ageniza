@@ -733,8 +733,8 @@ describe('collaborator detail (#103)', () => {
     for (const scenario of [{ permissions: [] }, { authenticated: false }]) {
       const { impl, calls } = makeFetch(scenario);
       renderCollaborators(impl, detailUrl());
-      if (scenario.authenticated === false) await screen.findByRole('heading', { name: 'Workspace unavailable' });
-      else await screen.findByRole('heading', { name: 'Page not found' });
+      if (scenario.authenticated === false) await screen.findByRole('heading', { name: 'Área indisponível' });
+      else await screen.findByRole('heading', { name: 'Página não encontrada' });
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(detailCalls(calls)).toEqual([]);
       cleanup();
@@ -2510,7 +2510,7 @@ describe('removed filter and reactivation (#105)', () => {
     renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
 
     expect(await screen.findByText('Ana Prado')).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Page not found' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Página não encontrada' })).toBeNull();
     expect(screen.getByText('Você não tem permissão para ver colaboradores removidos. Mostrando os ativos.')).toBeTruthy();
     expect(queries.some((query) => query.includes('page=1'))).toBe(true);
     expect(calls.some((call) => call.includes('status=removed'))).toBe(false);
