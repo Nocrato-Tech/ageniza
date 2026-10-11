@@ -183,6 +183,8 @@ export interface TestAppOptions {
    * statements a module sends through it (issue #304). Never used by production code.
    */
   readonly wrapDatabase?: (database: DatabaseClient) => DatabaseClient;
+  /** Test-only clock of the contents module: the instant "today" is read from when a publication carries no day (issue #256). */
+  readonly contentsClock?: () => Date;
   /**
    * Test-only wrapper around the identity storage the clients module signs photo URLs with, so a
    * test can make the bucket refuse a signature the way the real one does (issue #470).
@@ -253,7 +255,13 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
         photoUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds,
         photoMaxImageBytes: config.identityStorage.maxImageBytes
       };
-  const contents: ContentModuleDependencies = { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }), requirePermission };
+  const contents: ContentModuleDependencies = {
+    database,
+    auth,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    requirePermission,
+    ...(options.contentsClock === undefined ? {} : { now: options.contentsClock })
+  };
   const collaborators: CollaboratorModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
     database,
     auth,

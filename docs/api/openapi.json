@@ -32,7 +32,7 @@
     },
     {
       "name": "contents",
-      "description": "Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data."
+      "description": "Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar."
     },
     {
       "name": "collaborators",
@@ -1708,6 +1708,42 @@
               "format": "uuid"
             },
             "maxItems": 20
+          }
+        },
+        "additionalProperties": false
+      },
+      "approveContentByAgencyRequest": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 2147483647
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "publishContentRequest": {
+        "type": "object",
+        "properties": {
+          "publishedOn": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "rescheduleContentRequest": {
+        "type": "object",
+        "properties": {
+          "publishOn": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -8565,6 +8601,1255 @@
           },
           "409": {
             "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_NOT_EDITABLE: Conteúdo publicado ou cancelado não pode ser editado. | CONTENT_MEDIA_INCOMPLETE: A mídia do conteúdo não cobre este formato. Para trocar entre carrossel e formato de uma mídia só depois do envio para aprovação, cancele e reagende o conteúdo. | CONTENT_FOLDER_IN_USE: A pasta não muda enquanto o conteúdo tem mídia ou capa. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/contents/{contentId}/submit": {
+      "post": {
+        "operationId": "submitContent",
+        "summary": "Envia o conteúdo para aprovação",
+        "description": "Conteúdo em produção ou em ajuste passa a aguardar aprovação e entra na fila de e-mail do cliente (uma vez por pessoa\nativa do portal). Repetir o envio de um conteúdo que já aguarda não muda nada e não é erro. Exige `conteudo.operar` e\n`conteudo.visualizar`. Recusa com `409` o conteúdo sem mídia completa para o formato (`CONTENT_MEDIA_INCOMPLETE`, também\nquando a capa foi removida da pasta), com mídia que ainda não terminou de subir (`CONTENT_MEDIA_NOT_CONFIRMED`) e com\nsubtarefa que não está aprovada (`CONTENT_TASKS_NOT_APPROVED`). Cliente arquivado responde `409 CLIENT_ARCHIVED`,\ntambém quando o arquivamento termina durante a chamada.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conteúdo aguardando aprovação.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createContentResponse"
+                },
+                "example": {
+                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                  "clientId": "77777777-7777-4777-8777-777777777777",
+                  "title": "Lançamento da coleção de outono",
+                  "platform": "instagram",
+                  "format": "reels",
+                  "publishOn": "2026-10-20",
+                  "publishAtTime": "18:30",
+                  "caption": "A coleção chegou. Vem ver.",
+                  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                  "coverAssetId": null,
+                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "status": "awaiting_approval",
+                  "revision": 1,
+                  "approvedBy": null,
+                  "approvedAt": null,
+                  "approvedByAgencyReason": null,
+                  "publishedOn": null,
+                  "cancelledAt": null,
+                  "createdAt": "2026-10-11T12:00:00.000Z",
+                  "media": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "position": 1
+                    }
+                  ],
+                  "tasks": [
+                    {
+                      "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+                      "title": "Gravar o vídeo",
+                      "description": null,
+                      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+                      "dueOn": "2026-10-15",
+                      "status": "pending",
+                      "returnComment": null,
+                      "approvedBy": null,
+                      "approvedAt": null
+                    }
+                  ],
+                  "conversation": {
+                    "threadId": null,
+                    "commentCount": 0,
+                    "lastCommentAt": null
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Content not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Content not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_STATE: Só um conteúdo em produção ou em ajuste é enviado para aprovação. | CONTENT_MEDIA_INCOMPLETE: A mídia ou a capa do conteúdo não está completa para este formato: falta mídia, ou a mídia ou a capa foi removida da pasta. | CONTENT_MEDIA_NOT_CONFIRMED: O conteúdo tem mídia que ainda não terminou de subir. Espere o envio terminar ou troque a mídia. | CONTENT_TASKS_NOT_APPROVED: Todas as subtarefas precisam estar aprovadas antes do envio. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/contents/{contentId}/approve-by-agency": {
+      "post": {
+        "operationId": "approveContentByAgency",
+        "summary": "Registra a aprovação feita fora da plataforma",
+        "description": "Conteúdo que aguarda aprovação passa a aprovado (\"pronto para publicar\"), com o motivo. Exige\n`conteudo.aprovar_pela_agencia` e `conteudo.visualizar`. `revision` é a revisão que a pessoa leu: se a legenda, a capa, o\nformato ou a mídia mudou desde então, a resposta é `409 CONTENT_REVISION_CHANGED` e nada é aprovado. O motivo é obrigatório,\nsem caractere de controle nem invisível (`400 VALIDATION_ERROR`), com até 5000 bytes. Quem aprovou e quando são fixados\npelo banco, nunca campos do corpo. Aprovar de novo um conteúdo aprovado não muda nada e mantém quem aprovou primeiro.\nConteúdo com mídia que não terminou de subir não é aprovado (`409 CONTENT_MEDIA_NOT_CONFIRMED`).\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.aprovar_pela_agencia`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.aprovar_pela_agencia",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/approveContentByAgencyRequest"
+              },
+              "example": {
+                "revision": 1,
+                "reason": "O cliente aprovou por telefone em 11/10."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conteúdo aprovado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createContentResponse"
+                },
+                "example": {
+                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                  "clientId": "77777777-7777-4777-8777-777777777777",
+                  "title": "Lançamento da coleção de outono",
+                  "platform": "instagram",
+                  "format": "reels",
+                  "publishOn": "2026-10-20",
+                  "publishAtTime": "18:30",
+                  "caption": "A coleção chegou. Vem ver.",
+                  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                  "coverAssetId": null,
+                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "status": "approved",
+                  "revision": 1,
+                  "approvedBy": "55555555-5555-4555-8555-555555555555",
+                  "approvedAt": "2026-10-11T12:30:00.000Z",
+                  "approvedByAgencyReason": "O cliente aprovou por telefone em 11/10.",
+                  "publishedOn": null,
+                  "cancelledAt": null,
+                  "createdAt": "2026-10-11T12:00:00.000Z",
+                  "media": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "position": 1
+                    }
+                  ],
+                  "tasks": [
+                    {
+                      "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+                      "title": "Gravar o vídeo",
+                      "description": null,
+                      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+                      "dueOn": "2026-10-15",
+                      "status": "pending",
+                      "returnComment": null,
+                      "approvedBy": null,
+                      "approvedAt": null
+                    }
+                  ],
+                  "conversation": {
+                    "threadId": null,
+                    "commentCount": 0,
+                    "lastCommentAt": null
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed | CONTENT_REASON_INVALID: Informe o motivo da aprovação, com até 5000 bytes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Content not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Content not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_STATE: Só um conteúdo aguardando aprovação é aprovado. | CONTENT_REVISION_CHANGED: O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar. | CONTENT_MEDIA_NOT_CONFIRMED: O conteúdo tem mídia que ainda não terminou de subir. Espere o envio terminar ou troque a mídia. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/contents/{contentId}/publish": {
+      "post": {
+        "operationId": "publishContent",
+        "summary": "Marca o conteúdo aprovado como publicado",
+        "description": "Exige `conteudo.publicar` e `conteudo.visualizar`. `publishedOn` é o dia real da publicação; sem ele vale hoje, no dia de\nAmerica/Sao_Paulo. Pode ser anterior, nunca futuro (`400 CONTENT_PUBLISHED_ON_INVALID`). O corpo pode ir vazio. Só conteúdo aprovado\né publicado (`409 CONTENT_STATE`), e a mídia é conferida de novo (`409 CONTENT_MEDIA_INCOMPLETE` ou\n`CONTENT_MEDIA_NOT_CONFIRMED`). Marcar de novo um conteúdo publicado não muda nada. A fila de e-mail recebe o resumo do dia.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.publicar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.publicar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/publishContentRequest"
+              },
+              "example": {
+                "publishedOn": "2026-10-10"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conteúdo publicado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createContentResponse"
+                },
+                "example": {
+                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                  "clientId": "77777777-7777-4777-8777-777777777777",
+                  "title": "Lançamento da coleção de outono",
+                  "platform": "instagram",
+                  "format": "reels",
+                  "publishOn": "2026-10-20",
+                  "publishAtTime": "18:30",
+                  "caption": "A coleção chegou. Vem ver.",
+                  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                  "coverAssetId": null,
+                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "status": "published",
+                  "revision": 1,
+                  "approvedBy": null,
+                  "approvedAt": null,
+                  "approvedByAgencyReason": null,
+                  "publishedOn": "2026-10-10",
+                  "cancelledAt": null,
+                  "createdAt": "2026-10-11T12:00:00.000Z",
+                  "media": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "position": 1
+                    }
+                  ],
+                  "tasks": [
+                    {
+                      "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+                      "title": "Gravar o vídeo",
+                      "description": null,
+                      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+                      "dueOn": "2026-10-15",
+                      "status": "pending",
+                      "returnComment": null,
+                      "approvedBy": null,
+                      "approvedAt": null
+                    }
+                  ],
+                  "conversation": {
+                    "threadId": null,
+                    "commentCount": 0,
+                    "lastCommentAt": null
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed | CONTENT_PUBLISHED_ON_INVALID: A data real da publicação não pode ser futura (dia de São Paulo).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Content not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Content not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_STATE: Só um conteúdo aprovado é marcado como publicado. | CONTENT_MEDIA_INCOMPLETE: A mídia ou a capa do conteúdo não está completa para este formato: falta mídia, ou a mídia ou a capa foi removida da pasta. | CONTENT_MEDIA_NOT_CONFIRMED: O conteúdo tem mídia que ainda não terminou de subir. Espere o envio terminar ou troque a mídia. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/contents/{contentId}/unpublish": {
+      "post": {
+        "operationId": "unpublishContent",
+        "summary": "Desfaz a publicação no mesmo dia",
+        "description": "Conteúdo publicado volta a aprovado, e a data real e o instante da marcação são apagados; a aprovação continua. Vale só no\ndia (America/Sao_Paulo) em que a publicação foi marcada, não no dia da data real informada: em outro dia a resposta é\n`409 CONTENT_UNPUBLISH_EXPIRED`. Exige `conteudo.publicar` e `conteudo.visualizar`. Desfazer um conteúdo que já está aprovado\nnão muda nada.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.publicar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.publicar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conteúdo aprovado de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createContentResponse"
+                },
+                "example": {
+                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                  "clientId": "77777777-7777-4777-8777-777777777777",
+                  "title": "Lançamento da coleção de outono",
+                  "platform": "instagram",
+                  "format": "reels",
+                  "publishOn": "2026-10-20",
+                  "publishAtTime": "18:30",
+                  "caption": "A coleção chegou. Vem ver.",
+                  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                  "coverAssetId": null,
+                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "status": "approved",
+                  "revision": 1,
+                  "approvedBy": null,
+                  "approvedAt": null,
+                  "approvedByAgencyReason": null,
+                  "publishedOn": null,
+                  "cancelledAt": null,
+                  "createdAt": "2026-10-11T12:00:00.000Z",
+                  "media": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "position": 1
+                    }
+                  ],
+                  "tasks": [
+                    {
+                      "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+                      "title": "Gravar o vídeo",
+                      "description": null,
+                      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+                      "dueOn": "2026-10-15",
+                      "status": "pending",
+                      "returnComment": null,
+                      "approvedBy": null,
+                      "approvedAt": null
+                    }
+                  ],
+                  "conversation": {
+                    "threadId": null,
+                    "commentCount": 0,
+                    "lastCommentAt": null
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Content not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Content not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_STATE: Só um conteúdo publicado volta a aprovado. | CONTENT_UNPUBLISH_EXPIRED: A publicação só se desfaz no dia em que foi marcada. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/contents/{contentId}/cancel": {
+      "post": {
+        "operationId": "cancelContent",
+        "summary": "Cancela o conteúdo (ele fica guardado)",
+        "description": "Qualquer estado menos publicado passa a cancelado, sem apagar nada, e a aprovação é desfeita. Exige `conteudo.cancelar` e\n`conteudo.visualizar`. Conteúdo publicado não se cancela (`409 CONTENT_STATE`); cancelar de novo um cancelado não muda nada.\nO conteúdo de cliente arquivado é só leitura: `409 CLIENT_ARCHIVED`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.cancelar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.cancelar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conteúdo cancelado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createContentResponse"
+                },
+                "example": {
+                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                  "clientId": "77777777-7777-4777-8777-777777777777",
+                  "title": "Lançamento da coleção de outono",
+                  "platform": "instagram",
+                  "format": "reels",
+                  "publishOn": "2026-10-20",
+                  "publishAtTime": "18:30",
+                  "caption": "A coleção chegou. Vem ver.",
+                  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                  "coverAssetId": null,
+                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "status": "cancelled",
+                  "revision": 1,
+                  "approvedBy": null,
+                  "approvedAt": null,
+                  "approvedByAgencyReason": null,
+                  "publishedOn": null,
+                  "cancelledAt": "2026-10-11T12:30:00.000Z",
+                  "createdAt": "2026-10-11T12:00:00.000Z",
+                  "media": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "position": 1
+                    }
+                  ],
+                  "tasks": [
+                    {
+                      "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+                      "title": "Gravar o vídeo",
+                      "description": null,
+                      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+                      "dueOn": "2026-10-15",
+                      "status": "pending",
+                      "returnComment": null,
+                      "approvedBy": null,
+                      "approvedAt": null
+                    }
+                  ],
+                  "conversation": {
+                    "threadId": null,
+                    "commentCount": 0,
+                    "lastCommentAt": null
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Content not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Content not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_STATE: Um conteúdo publicado não é cancelado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/contents/{contentId}/reschedule": {
+      "post": {
+        "operationId": "rescheduleContent",
+        "summary": "Reagenda um conteúdo cancelado",
+        "description": "Conteúdo cancelado volta a em produção, com `publishOn` como novo dia (o dia que tinha, se o corpo vier vazio). Exige\n`conteudo.operar` e `conteudo.visualizar`. Só conteúdo cancelado é reagendado (`409 CONTENT_STATE`); para mover a data de\noutro conteúdo, edite `publishOn`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/rescheduleContentRequest"
+              },
+              "example": {
+                "publishOn": "2026-11-03"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conteúdo em produção de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createContentResponse"
+                },
+                "example": {
+                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                  "clientId": "77777777-7777-4777-8777-777777777777",
+                  "title": "Lançamento da coleção de outono",
+                  "platform": "instagram",
+                  "format": "reels",
+                  "publishOn": "2026-11-03",
+                  "publishAtTime": "18:30",
+                  "caption": "A coleção chegou. Vem ver.",
+                  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                  "coverAssetId": null,
+                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "status": "in_production",
+                  "revision": 1,
+                  "approvedBy": null,
+                  "approvedAt": null,
+                  "approvedByAgencyReason": null,
+                  "publishedOn": null,
+                  "cancelledAt": null,
+                  "createdAt": "2026-10-11T12:00:00.000Z",
+                  "media": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "position": 1
+                    }
+                  ],
+                  "tasks": [
+                    {
+                      "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+                      "title": "Gravar o vídeo",
+                      "description": null,
+                      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+                      "dueOn": "2026-10-15",
+                      "status": "pending",
+                      "returnComment": null,
+                      "approvedBy": null,
+                      "approvedAt": null
+                    }
+                  ],
+                  "conversation": {
+                    "threadId": null,
+                    "commentCount": 0,
+                    "lastCommentAt": null
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Content not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Content not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_STATE: Só um conteúdo cancelado é reagendado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
