@@ -281,18 +281,214 @@ describe('a write that races the archive of its client does not survive it (issu
       expect(await contentStatus(id)).toBe('cancelled');
     });
 
-    it('does not take the lock for a change that leaves the date alone', async () => {
+    it('takes the lock for a change that leaves the date alone too (issue #408), and not for an UPDATE that changes nothing', async () => {
       const client = await newClient();
       const id = await w.seedContent(client, { publishOn: await daysFromToday(0) });
+      const before = await w.contentRow(id);
 
       await holdingTheClient(client, async () => {
-        await w.asUser(ids.adminA, async (t) => {
+        const noChange = await w.asUser(ids.adminA, async (t) => {
+          await t.raw("set local lock_timeout = '250ms'");
+          return t('contents').where({ id }).update({ title: before.title as string });
+        });
+        expect(noChange).toBe(1);
+
+        await expect(w.asUser(ids.adminA, async (t) => {
           await t.raw("set local lock_timeout = '250ms'");
           await t('contents').where({ id }).update({ title: 'Só o título' });
-        });
+        })).rejects.toMatchObject({ code: '55P03' });
       });
 
-      expect((await w.contentRow(id)).title).toBe('Só o título');
+      expect(await w.contentRow(id)).toEqual(before);
+    });
+  });
+
+  describe('every edit of a content is serialized with the archive of its client (issue #408)', () => {
+    const levels = ['repeatable read', 'serializable'] as const;
+    const rlsViolation = { code: '42501', message: expect.stringContaining('row-level security') };
+    // Planned before today: the archive never cancels it, with the edit or without it, so the lock is what decides the edit.
+    const edits: ReadonlyArray<readonly [string, (clientId: string) => Promise<Record<string, string>>]> = [
+      ['title', async () => ({ title: 'Outro título' })],
+      ['caption', async () => ({ caption: 'Outra legenda' })],
+      ['format', async () => ({ format: 'image' })],
+      ['publish_on', async () => ({ publish_on: await daysFromToday(-2) })],
+      ['publish_at_time', async () => ({ publish_at_time: '09:15:00' })],
+      ['folder_id', async (clientId) => ({ folder_id: await w.folderOf(clientId, 'Imagens') })],
+      ['cover_asset_id', async (clientId) => ({ cover_asset_id: await w.seedAsset(clientId, await w.folderOf(clientId)) })],
+      ['owner_user_id', async () => ({ owner_user_id: ids.managerA })]
+    ];
+
+    const seed = async (status: 'in_production' | 'approved' = 'in_production'): Promise<{ client: string; id: string }> => {
+      const client = await newClient();
+      return { client, id: await w.seedContent(client, { status, publishOn: await daysFromToday(-1) }) };
+    };
+    const edit = (id: string, payload: Record<string, string>) => (t: Knex.Transaction) => t('contents').where({ id }).update(payload);
+    const valueOf = (id: string, column: string): Promise<string> => sqlText('select ??::text as value from public.contents where id = ?', [column, id]);
+
+    describe.each(edits)('%s', (column, payloadOf) => {
+      it('written while the archive is uncommitted, it is refused as A0020 and the content is as it was', async () => {
+        const { client, id } = await seed();
+        const payload = await payloadOf(client);
+        const before = await w.contentRow(id);
+
+        const outcome = await writeWhileArchiving(client, ids.adminA, edit(id, payload));
+
+        expect(outcome).toMatchObject({ code: 'A0020' });
+        expect(await clientStatus(client)).toBe('archived');
+        expect(await w.contentRow(id)).toEqual(before);
+      });
+
+      it('written first, it makes the archive wait, and both commit', async () => {
+        const { client, id } = await seed();
+        const payload = await payloadOf(client);
+
+        const outcome = await archiveWhileWriting(client, ids.adminA, async (t) => {
+          expect(await edit(id, payload)(t)).toBe(1);
+        });
+
+        expect(outcome).toBe('archived');
+        expect(await clientStatus(client)).toBe('archived');
+        expect(await valueOf(id, column)).toBe(payload[column]);
+      });
+
+      it('written after the archive committed, it is refused by the policy and the content is as it was', async () => {
+        const { client, id } = await seed();
+        const payload = await payloadOf(client);
+        const before = await w.contentRow(id);
+        await w.asUser(ids.adminA, archive(client));
+
+        await expect(w.asUser(ids.adminA, edit(id, payload))).rejects.toMatchObject(rlsViolation);
+
+        expect(await w.contentRow(id)).toEqual(before);
+      });
+
+      it.each(levels)('%s: written from a snapshot older than the archive, it fails with 40001 and the content is as it was', async (level) => {
+        const { client, id } = await seed();
+        const payload = await payloadOf(client);
+        const before = await w.contentRow(id);
+        const stale = await w.openTransactionAs(ids.adminA, level);
+
+        try {
+          await w.asUser(ids.adminA, archive(client));
+          await expect(edit(id, payload)(stale)).rejects.toMatchObject({ code: '40001' });
+        } finally {
+          await stale.rollback();
+        }
+
+        expect(await clientStatus(client)).toBe('archived');
+        expect(await w.contentRow(id)).toEqual(before);
+      });
+    });
+
+    it('an approved content whose caption is edited while the archive is uncommitted stays approved, with the revision it had', async () => {
+      const { client, id } = await seed('approved');
+      const before = await w.contentRow(id);
+
+      const outcome = await writeWhileArchiving(client, ids.adminA, edit(id, { caption: 'Legenda nova' }));
+
+      expect(outcome).toMatchObject({ code: 'A0020' });
+      expect(before).toMatchObject({ status: 'approved', revision: 1, caption: 'Legenda original' });
+      expect(await w.contentRow(id)).toEqual(before);
+    });
+
+    it('an approved content whose caption is edited first goes back to approval, and the archive that waited for it commits', async () => {
+      const { client, id } = await seed('approved');
+
+      const outcome = await archiveWhileWriting(client, ids.adminA, async (t) => {
+        expect(await edit(id, { caption: 'Legenda nova' })(t)).toBe(1);
+      });
+
+      expect(outcome).toBe('archived');
+      expect(await w.contentRow(id)).toMatchObject({ status: 'awaiting_approval', revision: 2, caption: 'Legenda nova', approved_by: null });
+    });
+
+    it('a content that the archive cancels is refused by the guard, not by the lock, when the edit waited for its row', async () => {
+      const client = await newClient();
+      const id = await w.seedContent(client, { publishOn: await daysFromToday(10) });
+
+      const outcome = await writeWhileArchiving(client, ids.adminA, edit(id, { title: 'Depois do arquivo' }));
+
+      expect(outcome).toMatchObject({ code: 'A0062' });
+      expect(await contentStatus(id)).toBe('cancelled');
+    });
+
+    it('a person of another agency finds no row to edit, so it locks nothing while the client row is held', async () => {
+      const { client, id } = await seed();
+      const before = await w.contentRow(id);
+
+      await holdingTheClient(client, async () => {
+        const updated = await w.asUser(ids.adminB, async (t) => {
+          await t.raw("set local lock_timeout = '250ms'");
+          return t('contents').where({ id }).update({ title: 'De outra agência' });
+        });
+        expect(updated).toBe(0);
+      });
+
+      expect(await w.contentRow(id)).toEqual(before);
+    });
+
+    describe.each([
+      ['the caption, then the date', () => ({ caption: 'Legenda do ciclo' }), (t: Knex.Transaction, id: string, day: string) => edit(id, { publish_on: day })(t)],
+      ['the date, then the caption', (day: string) => ({ publish_on: day }), (t: Knex.Transaction, id: string) => edit(id, { caption: 'Legenda do ciclo' })(t)],
+      ['the caption, then a subtask', () => ({ caption: 'Legenda do ciclo' }), (t: Knex.Transaction, id: string, _day: string, client: string) => t('content_tasks').insert({
+        content_id: id, client_id: client, title: 'Subtarefa do ciclo', assignee_user_id: ids.adminA, due_on: '2026-10-15'
+      })]
+    ] as const)('an approved content planned after the closing, edited in two statements: %s', (_label, first, second) => {
+      it('makes the archive wait for the whole transaction instead of deadlocking with it, and then cancels the content', async () => {
+        const client = await newClient();
+        const id = await w.seedContent(client, { status: 'approved', publishOn: await daysFromToday(10) });
+        const later = await daysFromToday(12);
+        const editor = await w.openTransactionAs(ids.adminA);
+        let archiving: Promise<unknown> | undefined;
+        let committed = false;
+
+        try {
+          expect(await edit(id, first(later))(editor)).toBe(1);
+          archiving = w.asUser(ids.adminA, archive(client)).then(() => 'archived' as const, (error: unknown) => error);
+          await w.waitUntilSomeoneWaitsOnALock();
+
+          await second(editor, id, later, client);
+          await editor.commit();
+          committed = true;
+        } finally {
+          if (!committed) await editor.rollback();
+        }
+
+        expect(await archiving).toBe('archived');
+        expect(await clientStatus(client)).toBe('archived');
+        expect(await w.contentRow(id)).toMatchObject({ status: 'cancelled', caption: 'Legenda do ciclo' });
+      });
+    });
+
+    it('a transaction that locks the content row by itself before any edit can still lose the cycle with the archive: one gets 40P01 and nothing is half done', async () => {
+      const client = await newClient();
+      const id = await w.seedContent(client, { publishOn: await daysFromToday(10) });
+      const before = await w.contentRow(id);
+      const editor = await w.openTransactionAs(ids.adminA);
+      let archiving: Promise<unknown> | undefined;
+      let editing: unknown;
+
+      try {
+        const locked = await editor.raw('select id from public.contents where id = ?::uuid for update', [id]);
+        expect(locked.rows).toHaveLength(1);
+        archiving = w.asUser(ids.adminA, archive(client)).then(() => 'archived' as const, (error: unknown) => error);
+        await w.waitUntilSomeoneWaitsOnALock();
+        editing = await edit(id, { caption: 'Legenda do ciclo' })(editor).then(() => 'edited' as const, (error: unknown) => error);
+      } finally {
+        if (editing === 'edited') await editor.commit(); else await editor.rollback();
+      }
+      const archived = await archiving;
+
+      const failures = [editing, archived].filter((outcome) => outcome !== 'edited' && outcome !== 'archived');
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatchObject({ code: '40P01' });
+      if (editing === 'edited') {
+        expect(await clientStatus(client)).toBe('active');
+        expect(await w.contentRow(id)).toMatchObject({ caption: 'Legenda do ciclo', status: 'in_production' });
+      } else {
+        expect(await clientStatus(client)).toBe('archived');
+        expect(await w.contentRow(id)).toMatchObject({ caption: before.caption, status: 'cancelled' });
+      }
     });
   });
 
@@ -344,6 +540,57 @@ describe('a write that races the archive of its client does not survive it (issu
 
       expect((await w.taskRow(task)).status).toBe('delivered');
       expect(await clientStatus(client)).toBe('archived');
+    });
+
+    describe('set_content_media (issue #408)', () => {
+      const setMedia = (id: string, asset: string) => (t: Knex.Transaction) =>
+        t.raw('select app_private.set_content_media(?::uuid, ?::uuid[])', [id, [asset]]);
+      const mediaOf = (id: string): Promise<string[]> => w.getOwner().knex('content_media').where({ content_id: id }).pluck('asset_id');
+      const seedWithMedia = async (): Promise<{ client: string; id: string; asset: string }> => {
+        const client = await newClient();
+        return {
+          client,
+          id: await w.seedContent(client, { publishOn: await daysFromToday(0) }),
+          asset: await w.seedAsset(client, await w.folderOf(client), { category: 'video' })
+        };
+      };
+
+      it('a swap that waited for the archive answers A0061 and leaves the media as it was', async () => {
+        const { client, id, asset } = await seedWithMedia();
+
+        const outcome = await writeWhileArchiving(client, ids.adminA, setMedia(id, asset));
+
+        expect(outcome).toMatchObject({ code: 'A0061' });
+        expect(await mediaOf(id)).toEqual([]);
+        expect(await contentStatus(id)).toBe('in_production');
+      });
+
+      it('a swap that came first makes the archive wait, and both commit', async () => {
+        const { client, id, asset } = await seedWithMedia();
+
+        const outcome = await archiveWhileWriting(client, ids.adminA, async (t) => {
+          await setMedia(id, asset)(t);
+          expect(await t('content_media').where({ content_id: id }).pluck('asset_id')).toEqual([asset]);
+        });
+
+        expect(outcome).toBe('archived');
+        expect(await mediaOf(id)).toEqual([asset]);
+        expect(await clientStatus(client)).toBe('archived');
+      });
+
+      it.each(['repeatable read', 'serializable'] as const)('%s: a swap from a snapshot older than the archive fails with 40001 and leaves the media as it was', async (level) => {
+        const { client, id, asset } = await seedWithMedia();
+        const stale = await w.openTransactionAs(ids.adminA, level);
+
+        try {
+          await w.asUser(ids.adminA, archive(client));
+          await expect(setMedia(id, asset)(stale)).rejects.toMatchObject({ code: '40001' });
+        } finally {
+          await stale.rollback();
+        }
+
+        expect(await mediaOf(id)).toEqual([]);
+      });
     });
   });
 
@@ -402,6 +649,128 @@ describe('a write that races the archive of its client does not survive it (issu
       await holdingTheClient(client, async () => {
         expect(await refusedFast((t) => t.raw('select app_private.deliver_content_task(?::uuid)', [task]))).toMatchObject({ code: 'A0070' });
       });
+    });
+  });
+});
+
+describe('the story scripts are serialized with the archive of their client (issue #534)', () => {
+  const levels = ['repeatable read', 'serializable'] as const;
+  const rlsViolation = { code: '42501', message: expect.stringContaining('row-level security') };
+
+  const seedScript = async (status: 'draft' | 'sent' = 'draft'): Promise<{ client: string; id: string }> => {
+    const client = await newClient();
+    const id = randomUUID();
+    await w.getOwner().knex('story_scripts').insert({ id, client_id: client, script_on: '2026-10-20', status });
+    await w.getOwner().knex('story_script_scenes').insert([
+      { script_id: id, client_id: client, position: 1, text: 'Cena 1', guidance: 'Direção' },
+      { script_id: id, client_id: client, position: 2, text: 'Cena 2' }
+    ]);
+    return { client, id };
+  };
+  const scriptState = async (id: string): Promise<string> => sqlText(
+    "select concat_ws('|', s.script_on::text, s.status, (select string_agg(concat_ws(',', c.position::text, c.text, c.guidance), ';' order by c.position) from public.story_script_scenes c where c.script_id = s.id)) as value from public.story_scripts s where s.id = ?",
+    [id]
+  );
+
+  const edits: ReadonlyArray<readonly [string, (id: string) => (t: Knex.Transaction) => Promise<number>]> = [
+    ['script_on', (id) => (t) => t('story_scripts').where({ id }).update({ script_on: '2026-10-21' })],
+    ['scene text', (id) => (t) => t('story_script_scenes').where({ script_id: id, position: 1 }).update({ text: 'Cena nova' })],
+    ['scene guidance', (id) => (t) => t('story_script_scenes').where({ script_id: id, position: 1 }).update({ guidance: 'Outra direção' })],
+    ['scene position', (id) => (t) => t('story_script_scenes').where({ script_id: id, position: 2 }).update({ position: 5 })]
+  ];
+
+  describe.each(edits)('an edit of %s', (_column, editOf) => {
+    it('written while the archive is uncommitted, it is refused as A0020 and the script is as it was', async () => {
+      const { client, id } = await seedScript();
+      const before = await scriptState(id);
+
+      const outcome = await writeWhileArchiving(client, ids.adminA, editOf(id));
+
+      expect(outcome).toMatchObject({ code: 'A0020' });
+      expect(await clientStatus(client)).toBe('archived');
+      expect(await scriptState(id)).toBe(before);
+    });
+
+    it('written first, it makes the archive wait, and both commit', async () => {
+      const { client, id } = await seedScript();
+      const before = await scriptState(id);
+
+      const outcome = await archiveWhileWriting(client, ids.adminA, async (t) => {
+        expect(await editOf(id)(t)).toBe(1);
+      });
+
+      expect(outcome).toBe('archived');
+      expect(await clientStatus(client)).toBe('archived');
+      expect(await scriptState(id)).not.toBe(before);
+    });
+
+    it('written after the archive committed, it is refused by the policy and the script is as it was', async () => {
+      const { client, id } = await seedScript();
+      const before = await scriptState(id);
+      await w.asUser(ids.adminA, archive(client));
+
+      await expect(w.asUser(ids.adminA, editOf(id))).rejects.toMatchObject(rlsViolation);
+
+      expect(await scriptState(id)).toBe(before);
+    });
+
+    it.each(levels)('%s: written from a snapshot older than the archive, it fails with 40001 and the script is as it was', async (level) => {
+      const { client, id } = await seedScript();
+      const before = await scriptState(id);
+      const stale = await w.openTransactionAs(ids.adminA, level);
+
+      try {
+        await w.asUser(ids.adminA, archive(client));
+        await expect(editOf(id)(stale)).rejects.toMatchObject({ code: '40001' });
+      } finally {
+        await stale.rollback();
+      }
+
+      expect(await scriptState(id)).toBe(before);
+    });
+  });
+
+  describe.each([
+    ['send_story_script', 'draft', ids.adminA, 'A0051', 'sent', 'select app_private.send_story_script(?::uuid)'],
+    ['record_story_script', 'sent', ids.portalA1, 'A0050', 'recorded', 'select app_private.record_story_script(?::uuid)']
+  ] as const)('%s', (_name, from, actor, refusal, to, call) => {
+    const statusOf = (id: string): Promise<string> => sqlText('select status as value from public.story_scripts where id = ?', [id]);
+    const run = (id: string) => (t: Knex.Transaction) => t.raw(call, [id]);
+
+    it('a call that waited for the archive is refused and leaves the script as it was', async () => {
+      const { client, id } = await seedScript(from);
+
+      const outcome = await writeWhileArchiving(client, actor, run(id));
+
+      expect(outcome).toMatchObject({ code: refusal });
+      expect(await statusOf(id)).toBe(from);
+    });
+
+    it('a call that came first makes the archive wait, and both commit', async () => {
+      const { client, id } = await seedScript(from);
+
+      const outcome = await archiveWhileWriting(client, actor, async (t) => {
+        await run(id)(t);
+        expect((await t.raw<{ rows: Array<{ status: string }> }>('select status from public.story_scripts where id = ?::uuid', [id])).rows).toEqual([{ status: to }]);
+      });
+
+      expect(outcome).toBe('archived');
+      expect(await statusOf(id)).toBe(to);
+      expect(await clientStatus(client)).toBe('archived');
+    });
+
+    it.each(levels)('%s: a call from a snapshot older than the archive fails with 40001 and leaves the script as it was', async (level) => {
+      const { client, id } = await seedScript(from);
+      const stale = await w.openTransactionAs(actor, level);
+
+      try {
+        await w.asUser(ids.adminA, archive(client));
+        await expect(run(id)(stale)).rejects.toMatchObject({ code: '40001' });
+      } finally {
+        await stale.rollback();
+      }
+
+      expect(await statusOf(id)).toBe(from);
     });
   });
 });
@@ -577,6 +946,40 @@ describe('archiving a client cancels the content planned after its closing (issu
        from pg_proc p where p.oid = ?::regprocedure`, [signature]
     );
     expect(row.rows).toEqual([{ definer: true, config: ['search_path=""'], public_execute: false, app_execute: applicationMayCall }]);
+  });
+});
+
+// Issues #408 and #534. The list of columns of each edit trigger repeats by hand what the application role may write, so a
+// writable column added later would escape the lock with no test turning red; the catalog says it instead.
+describe('the edit lock covers every column the application role may write (issues #408 and #534)', () => {
+  it.each([
+    ['contents', '0_contents_edit_lock_active_client'],
+    ['story_scripts', '0_story_scripts_edit_lock_active_client'],
+    ['story_script_scenes', '0_story_script_scenes_edit_lock_active_client']
+  ])('%s: the columns of %s are exactly the ones ageniza_app has UPDATE on, and the WHEN compares each of them', async (table, trigger) => {
+    const writable = await w.getOwner().knex.raw<{ rows: Array<{ name: string }> }>(
+      `select a.attname as name from pg_attribute a
+       where a.attrelid = ?::regclass and a.attnum > 0 and not a.attisdropped
+         and has_column_privilege('ageniza_app', a.attrelid, a.attnum, 'UPDATE')
+       order by a.attname collate "C"`, [`public.${table}`]
+    );
+    const locked = await w.getOwner().knex.raw<{ rows: Array<{ name: string; definition: string; enabled: string; after_update_row: boolean }> }>(
+      `select a.attname as name, pg_get_triggerdef(t.oid) as definition, t.tgenabled as enabled,
+              (t.tgtype & 1) = 1 and (t.tgtype & 2) = 0 and (t.tgtype & 16) = 16 as after_update_row
+       from pg_trigger t join pg_attribute a on a.attrelid = t.tgrelid and a.attnum = any (t.tgattr::int2[])
+       where t.tgrelid = ?::regclass and t.tgname = ? and not t.tgisinternal
+       order by a.attname collate "C"`, [`public.${table}`, trigger]
+    );
+
+    expect(writable.rows.length).toBeGreaterThan(0);
+    expect(locked.rows.map((row) => row.name)).toEqual(writable.rows.map((row) => row.name));
+    expect(locked.rows.every((row) => row.enabled === 'O' && row.after_update_row)).toBe(true);
+    const condition = locked.rows[0]!.definition.split(' WHEN ')[1] ?? '';
+    for (const row of locked.rows) {
+      // The catalog quotes a reserved word (`position`).
+      const mentions = (side: string): boolean => condition.includes(`${side}.${row.name}`) || condition.includes(`${side}."${row.name}"`);
+      expect({ column: row.name, compared: mentions('old') && mentions('new') }).toEqual({ column: row.name, compared: true });
+    }
   });
 });
 
