@@ -10,10 +10,11 @@ export const MEDIA_FOLDER_NAME_MAX_LENGTH = 80;
 /**
  * What renders as nothing (or as a space) and is not `\p{Cf}`, so the display-name rule lets it through: the combining
  * grapheme joiner (U+034F), the variation selectors and the Khmer vowels are `Default_Ignorable_Code_Point`, and the
- * Braille blank (U+2800) is a symbol. "Imagens" plus one of them looks like the default folder and is not the same name.
+ * Braille blank (U+2800) and the musical null notehead (U+1D159, drawn as a space by most fonts) are symbols. "Imagens"
+ * plus one of them looks like the default folder and is not the same name.
  * U+FE0F right after a pictograph is how an emoji such as the heart is written, so that pair stays.
  */
-const INVISIBLE_IN_FOLDER_NAME = /[\p{Default_Ignorable_Code_Point}\u2800]/u;
+const INVISIBLE_IN_FOLDER_NAME = /[\p{Default_Ignorable_Code_Point}\u2800\u{1D159}]/u;
 const EMOJI_PRESENTATION_SELECTOR = /(\p{Extended_Pictographic})\uFE0F/gu;
 
 // A folder name keeps the display-name rules (control, bidi and invisible characters, at least one

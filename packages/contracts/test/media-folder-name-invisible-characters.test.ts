@@ -21,6 +21,7 @@ const INVISIBLE_IN_A_FOLDER_NAME: ReadonlyArray<readonly [string, number]> = [
   ['Khmer inherent vowel U+17B4', 0x17b4],
   ['Khmer inherent vowel U+17B5', 0x17b5],
   ['Braille pattern blank U+2800 (renders as a space)', 0x2800],
+  ['musical null notehead U+1D159 (drawn as a space)', 0x1d159],
   ['Hangul filler U+3164', 0x3164],
   ['Hangul half-width filler U+FFA0', 0xffa0],
   ['language tag U+E0001', 0xe0001],
