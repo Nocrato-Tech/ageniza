@@ -1,0 +1,23 @@
+# Toda edição das demais filhas do cliente trava o cliente ativo, e só a confirmação da mídia
+
+**Data.** 2026-10-11
+
+**Contexto.** A decisão de 2026-10-11 ([`2026-10-11-toda-edicao-de-conteudo-trava-o-cliente-ativo`](./2026-10-11-toda-edicao-de-conteudo-trava-o-cliente-ativo.md), PR #538) estendeu a trava do cliente de `INSERT` para toda edição de `contents`, `story_scripts` e `story_script_scenes`, e deixou as outras filhas com trava só de `INSERT`, fora dela. A revisão de segurança do #538 reproduziu o buraco que sobrou (issue #540): uma tarefa de conteúdo editada a partir de um instantâneo `REPEATABLE READ` grava depois do arquivamento. O mesmo vale para as pastas, as personas, as seções da marca e as conversas do cliente. A issue #532 acrescenta a confirmação do envio de mídia: o `UPDATE` do `complete` (`pending` para `confirmed`) não tomava o cliente, e a policy `media_assets_update` não pergunta se o cliente está ativo, então uma mídia podia ser confirmada depois do arquivamento, ou durante um arquivamento ainda não confirmado, sem erro.
+
+**Decisão.**
+
+1. Esta decisão estende a de 2026-10-11 acima a `content_tasks`, `media_folders`, `client_personas`, `client_brand_sections` e `client_threads`, e corrige, para essas cinco, a parte que as deixava sem trava em `UPDATE` (item 5 de `2026-10-07-arquivar-o-cliente-cancela-o-conteudo-e-trava-as-filhas.md`, já corrigido ali para o conteúdo): vale esta decisão onde divergirem. Cada uma ganha o gatilho `AFTER UPDATE OF <colunas>` com a mesma função das outras dez filhas (`lock_active_client_of_child`), disparado só quando um dos valores muda (`WHEN` compara `OLD` e `NEW`). As colunas do gatilho são exatamente as que o `ageniza_app` pode atualizar na tabela, e um teste de catálogo compara `pg_trigger.tgattr` com `has_column_privilege('ageniza_app', ..., 'UPDATE')`, de modo que uma coluna gravável nova sem trava deixa o teste vermelho.
+2. As colunas que só uma função escreve (`status` e comentário de devolução da tarefa, `parent_id` e `is_default` da pasta) não têm grant de `UPDATE` e ficam fora. As funções que as escrevem já tomam o cliente antes da linha (decisão de 2026-10-07, item 6).
+3. A mídia (`media_assets`) é a exceção à regra "toda coluna gravável": só a **confirmação** é serializada, por um gatilho `AFTER UPDATE OF status` com `WHEN` para a transição que termina em `confirmed`. As outras colunas gravadas pelo `ageniza_app` são escritas pelo worker depois da confirmação (miniatura, pré-visualização, estado do processamento do vídeo) ou pela recusa de um envio (`rejected`); recusá-las num cliente arquivado deixaria um vídeo processando para sempre e um envio nem confirmado nem recusado. Um teste fixa as duas pontas: o gatilho tem só `status`, e o worker e a recusa continuam gravando depois do arquivamento. A mídia da biblioteca da agência, sem cliente, passa direto, como no `INSERT`.
+4. Os códigos são os da decisão de 2026-10-11: `A0020` com o arquivamento em curso ou já confirmado (para a mídia, onde a policy não olha o cliente, a janela confirmada também é `A0020`, do gatilho), `40001` quando a edição vem de um instantâneo `REPEATABLE READ` ou `SERIALIZABLE` anterior ao arquivamento. Nas outras quatro tabelas com policy que exige cliente ativo, o `UPDATE` depois do arquivamento confirmado não acha a linha (zero linhas) ou é recusado pelo `WITH CHECK` (`42501`), como já era.
+5. Nenhum ciclo novo com o arquivamento. O `archive_client` escreve só `clients`, `invitations` e `contents`: nenhuma linha dessas seis tabelas é uma que ele espere. A ordem de um `UPDATE` direto continua "linha da filha, depois cliente"; o ciclo só existe numa transação que já segura uma linha de conteúdo e depois pede o cliente, que é o ciclo que a decisão de 2026-10-10 já aceita (`40P01`, `TRY_AGAIN`).
+
+**Consequência.**
+
+- Uma migration nova, `20261011000700_every_child_edit_locks_the_active_client.mjs`, que só cria seis gatilhos: nenhuma tabela, coluna, policy ou grant muda, e não há backfill.
+- A rota `complete` de mídia já lê o cliente depois do lock da mídia e mapeia `A0020` para 409 `CLIENT_ARCHIVED` (PR #541, issue #532 na API); com a migration, o arquivamento em curso é recusado também.
+- As rotas de edição de tarefa, pasta, persona, seção da marca e conversa devem mapear `A0020` e `40P01` para `409 CLIENT_ARCHIVED` e `409 TRY_AGAIN`, como as demais escritas das filhas; a API do conteúdo (#254) e a dos clientes são das suas issues.
+
+**Origem.** Issue #540, follow-up da revisão de segurança da Coruja no PR #538, e issue #532, revisão de segurança do PR #406. Decisão de 2026-10-11 estendida a pedido do maestro.
+
+**Validação.** Pendente de validação do dono.

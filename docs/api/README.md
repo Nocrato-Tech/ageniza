@@ -654,7 +654,14 @@ Lista a carteira de clientes com ordem de triagem.
       "status": "active",
       "closingDate": null,
       "threadsAwaitingAgency": 2,
-      "pendingInvitations": 1
+      "pendingInvitations": 1,
+      "contentIndicators": {
+        "pending": 3,
+        "inReview": 1,
+        "overdue": 2,
+        "adjusting": 1,
+        "dueSoon": 1
+      }
     }
   ],
   "meta": {
@@ -1760,7 +1767,8 @@ Lê o cadastro do próprio cliente e o resumo do Início, no portal.
   "onboardingSeenAt": "2026-10-01T12:00:00.000Z",
   "home": {
     "threadsAnsweredByAgency": 2,
-    "brandStudyFilled": 3
+    "brandStudyFilled": 3,
+    "contentsAwaitingApproval": 2
   }
 }
 ```
@@ -3264,6 +3272,7 @@ Confirma a troca de e-mail pelo link enviado ao e-mail novo.
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
 | `POST` | `/agencies/:agencyId/clients/:clientId/story-scripts` | Sessão + vínculo com a agência | `conteudo.operar` | Cria um roteiro de stories em rascunho |
+| `GET` | `/agencies/:agencyId/clients/:clientId/story-scripts/:scriptId` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê um roteiro de stories, com as cenas |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/story-scripts/:scriptId` | Sessão + vínculo com a agência | `conteudo.operar` | Edita o dia e as cenas de um roteiro em rascunho |
 | `POST` | `/agencies/:agencyId/clients/:clientId/story-scripts/:scriptId/send` | Sessão + vínculo com a agência | `conteudo.operar` | Envia o roteiro ao cliente |
 | `GET` | `/clients/:clientId/story-scripts` | Sessão + vínculo com o cliente | — | Lista os roteiros enviados de um período, no portal |
@@ -3321,6 +3330,42 @@ Cria um roteiro de stories em rascunho.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/story-scripts/:scriptId`
+
+Lê um roteiro de stories, com as cenas.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Resposta `200`** — O roteiro, com as cenas.
+
+```json
+{
+  "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+  "scriptOn": "2026-10-20",
+  "status": "draft",
+  "scenes": [
+    {
+      "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "position": 1,
+      "text": "Abrir a loja e mostrar a vitrine nova.",
+      "guidance": "Filmar na vertical, com luz natural."
+    },
+    {
+      "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "position": 2,
+      "text": "Contar a promoção da semana.",
+      "guidance": null
+    }
+  ],
+  "recordedBy": null,
+  "recordedAt": null,
+  "createdAt": "2026-10-11T12:00:00.000Z"
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `PATCH /agencies/:agencyId/clients/:clientId/story-scripts/:scriptId`
 
