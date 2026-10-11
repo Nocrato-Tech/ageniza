@@ -15,19 +15,21 @@ import {
   buildPaginationMetadata,
   resolvePagination,
   threadSubjectOfQuery,
+  type ConversationSubject,
   type ThreadComment,
-  type ThreadListQuery,
-  type ThreadSubject
+  type ThreadListQuery
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
-import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+import { isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
-import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
+import { tryAgain } from '../../plugins/infra/conflict.js';
+import type { DocumentedRouteConfig, RoutePermission } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
+import { tenantHolds } from '../tenancy/guards.js';
 import {
   ConversationWriteRefused,
   addComment,
@@ -81,6 +83,9 @@ const refusalError = (refusal: ConversationRefusal): HttpError => {
       return new HttpError({ statusCode: 409, code: 'PERSONA_ARCHIVED', message: 'Persona arquivada: a conversa é somente leitura.' });
     case 'section-not-filled':
       return new HttpError({ statusCode: 409, code: 'SECTION_NOT_FILLED', message: 'Esta seção ainda não foi preenchida pela agência.' });
+    case 'content-not-open':
+      return new HttpError({ statusCode: 409, code: 'CONTENT_NOT_OPEN', message: 'A conversa do conteúdo só existe a partir de "aguardando aprovação".' });
+    case 'forbidden': return forbidden();
   }
 };
 
@@ -97,15 +102,15 @@ const uuidFromRoute = (request: FastifyRequest, name: string, message: string): 
   return value;
 };
 
-/** A listing names exactly one subject; naming none or both is a validation error, like any other bad query. */
-const subjectOfQuery = (query: ThreadListQuery): ThreadSubject => {
+/** A listing names exactly one subject; naming none or several is a validation error, like any other bad query. */
+const subjectOfQuery = (query: ThreadListQuery): ConversationSubject => {
   const subject = threadSubjectOfQuery(query);
   if (subject === undefined) {
     throw new HttpError({
       statusCode: 400,
       code: 'VALIDATION_ERROR',
       message: 'Request validation failed',
-      details: { issues: [{ path: 'sectionKey', code: 'custom', message: 'exactly one of sectionKey and personaId is required' }] }
+      details: { issues: [{ path: 'sectionKey', code: 'custom', message: 'exactly one of sectionKey, personaId and contentId is required' }] }
     });
   }
   return subject;
@@ -145,13 +150,14 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
   const write = async <TResult>(
     request: FastifyRequest,
     scope: ConversationScope,
-    target: { readonly personaId?: string; readonly threadId?: string },
+    target: { readonly personaId?: string; readonly threadId?: string; readonly contentId?: string },
     work: (transaction: ClientTransaction) => Promise<TResult>
   ): Promise<TResult> => {
     const auth = requireAuth(request);
     try {
       return await withAuthenticatedUserTransaction(dependencies.database, auth.claims, work);
     } catch (error) {
+      if (isRetryableConflict(error)) throw tryAgain();
       // The archive won the race for the client; the portal never learns that, an archived client is "not found" there.
       if (isClientNoLongerActive(error)) throw refusalError(scope.side === 'agency' ? 'client-archived' : 'client-not-found');
       if (!isRowLevelSecurityViolation(error) && !(error instanceof ConversationWriteRefused)) throw error;
@@ -171,7 +177,8 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
       side: 'agency',
       agencyId: tenant.agencyId,
       clientId: uuidFromRoute(request, 'clientId', 'Client not found.'),
-      userId: requireAuth(request).userId
+      userId: requireAuth(request).userId,
+      holds: (permission) => tenantHolds(tenant, permission)
     };
   };
 
@@ -184,8 +191,18 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
   // The same objects are the documentation and the schemas each handler validates with.
   const agencyParams = AgencyClientPathParamsSchema;
   const agencyThreadParams = AgencyClientThreadPathParamsSchema;
-  const agencyGuards = (docs: DocumentedRouteConfig & { permission: string }) => ({
-    preHandler: [requireSession, dependencies.requireAgencyAccess, dependencies.requirePermission(docs.permission)],
+  // A route serves a brand study subject and a content, which ask different permissions; this lets in whoever holds one of
+  // them, and the service holds the call to the permissions of the subject it is about (`agencyPermissions`).
+  const requireEither = (keys: readonly [string, ...string[]]): PreHandler => async (request) => {
+    const tenant = request.tenant;
+    if (tenant === undefined || !keys.some((key) => tenantHolds(tenant, key))) throw forbidden();
+  };
+  const agencyGuards = (docs: DocumentedRouteConfig & { permission: NonNullable<RoutePermission> }) => ({
+    preHandler: [
+      requireSession,
+      dependencies.requireAgencyAccess,
+      typeof docs.permission === 'string' ? dependencies.requirePermission(docs.permission) : requireEither(docs.permission)
+    ],
     config: { permission: docs.permission, responseStatus: docs.responseStatus, schemas: docs.schemas }
   });
   const portalGuards = (docs: DocumentedRouteConfig) => ({
@@ -225,7 +242,8 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
     const scope = scopeOf(request);
     const body = routeBody(docs, request);
 
-    const outcome = await write(request, scope, { personaId: 'personaId' in body.subject ? body.subject.personaId : undefined }, async (transaction) => {
+    const target = { personaId: 'personaId' in body.subject ? body.subject.personaId : undefined, contentId: 'contentId' in body.subject ? body.subject.contentId : undefined };
+    const outcome = await write(request, scope, target, async (transaction) => {
       const opened = await openThread(transaction, scope, body);
       if (opened.kind !== 'ok') return opened;
       const thread = await loadThreadRow(transaction, { clientId: scope.clientId, threadId: opened.threadId });
@@ -288,27 +306,27 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
   // --- The agency side (#128) ----------------------------------------------------------------
 
   const agencyListThreadsDocs = {
-    permission: 'cliente.visualizar',
+    permission: ['cliente.visualizar', 'conteudo.visualizar'],
     responseStatus: 200,
     schemas: { params: agencyParams, query: ThreadListQuerySchema, response: ThreadListResponseSchema }
   } satisfies DocumentedRouteConfig;
   const agencyOpenThreadDocs = {
-    permission: 'cliente.operar',
+    permission: ['cliente.operar', 'conteudo.operar'],
     responseStatus: 201,
     schemas: { params: agencyParams, body: CreateThreadRequestSchema, response: CreateThreadResponseSchema }
   } satisfies DocumentedRouteConfig;
   const agencyListCommentsDocs = {
-    permission: 'cliente.visualizar',
+    permission: ['cliente.visualizar', 'conteudo.visualizar'],
     responseStatus: 200,
     schemas: { params: agencyThreadParams, query: CommentListQuerySchema, response: CommentListResponseSchema }
   } satisfies DocumentedRouteConfig;
   const agencyAddCommentDocs = {
-    permission: 'cliente.operar',
+    permission: ['cliente.operar', 'conteudo.operar'],
     responseStatus: 201,
     schemas: { params: agencyThreadParams, body: CreateCommentRequestSchema, response: CommentSchema }
   } satisfies DocumentedRouteConfig;
   const agencyResolveDocs = {
-    permission: 'cliente.operar',
+    permission: ['cliente.operar', 'conteudo.operar'],
     responseStatus: 200,
     schemas: { params: agencyThreadParams, response: ThreadSchema }
   } satisfies DocumentedRouteConfig;
