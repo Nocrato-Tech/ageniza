@@ -127,6 +127,12 @@ describe('server configuration', () => {
       else process.env.TZ = originalZone;
     });
 
+    // A worker thread cannot change the zone of the process, and every case would then run in the same one without failing.
+    const setProcessZone = (zone: string): void => {
+      process.env.TZ = zone;
+      expect(new Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(zone);
+    };
+
     const accepts = (version: string): boolean => {
       try {
         loadApiConfig({ ...localEnvironment, AUTH_TERMS_VERSION: version });
@@ -139,7 +145,7 @@ describe('server configuration', () => {
 
     // 2026-10-07 22:00 in Brasília is 2026-10-08 01:00 UTC: the version dated the 8th is still tomorrow for the product.
     it.each(['UTC', 'Pacific/Kiritimati', 'America/Los_Angeles', 'Asia/Tokyo'])('at 22:00 in Brasília refuses the next day and accepts today, whatever the zone of the process (%s)', (zone) => {
-      process.env.TZ = zone;
+      setProcessZone(zone);
       vi.useFakeTimers({ now: new Date('2026-10-08T01:00:00Z') });
 
       expect(accepts('2026-10-07')).toBe(true);
@@ -148,7 +154,7 @@ describe('server configuration', () => {
     });
 
     it('turns the day exactly at Brasília midnight, 03:00 UTC', () => {
-      process.env.TZ = 'UTC';
+      setProcessZone('UTC');
       vi.useFakeTimers({ now: new Date('2026-10-08T02:59:59.999Z') });
       expect(accepts('2026-10-08')).toBe(false);
 
