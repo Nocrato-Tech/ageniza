@@ -155,10 +155,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     }
   };
 
-  // Keyed by the session user, not the IP and not the agency: the audit does not cover a thumbnail, so the ceiling follows the
-  // account, and one user's reads never use up a colleague's. `hook: 'preHandler'` puts it after the session and permission
-  // guards (which the plugin appends to), so `request.auth` is populated when the key is read and a refused request counts for nobody.
-  // The headers stay on: `Retry-After` is what the screen waits for.
+  // Per session user, not IP or agency, since the audit skips thumbnails. `preHandler` runs after the guards: `request.auth` is set and a refused request counts for nobody.
   const downloadUrlRateLimit = {
     rateLimit: {
       max: MEDIA_RATE_LIMITS.downloadUrlPerUser.max,

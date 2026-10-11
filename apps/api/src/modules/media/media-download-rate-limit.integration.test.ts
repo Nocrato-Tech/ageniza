@@ -105,7 +105,7 @@ beforeAll(async () => {
   owner = ownerClient();
   app = await buildTestApp();
 
-  for (const key of ['owner', 'ownerB', 'heavy', 'colleague', 'normal', 'sales', 'fresh']) {
+  for (const key of ['owner', 'ownerB', 'heavy', 'colleague', 'normal', 'sales', 'fresh', 'prober']) {
     const user = await insertTestUser(app.pool, app.auth, { emailLabel: `download-limit-${key.toLowerCase()}`, name: key });
     userIds.push(user.id);
     users[key] = user;
@@ -136,6 +136,7 @@ beforeAll(async () => {
     { agency_id: agencyA, user_id: users.colleague!.id, role_id: await customRole(agencyA, 'conteudo.visualizar') },
     { agency_id: agencyA, user_id: users.normal!.id, role_id: await customRole(agencyA, 'conteudo.visualizar') },
     { agency_id: agencyA, user_id: users.fresh!.id, role_id: await customRole(agencyA, 'conteudo.visualizar') },
+    { agency_id: agencyA, user_id: users.prober!.id, role_id: await customRole(agencyA, 'conteudo.visualizar') },
     { agency_id: agencyA, user_id: users.sales!.id, role_id: await systemRole('sales') }
   ]);
 
@@ -143,7 +144,7 @@ beforeAll(async () => {
   videoPendingA = await seedAsset(agencyA, clientA, 'video');
   imageB = await seedAsset(agencyB, clientB, 'image');
 
-  for (const key of ['heavy', 'colleague', 'normal', 'sales', 'fresh']) {
+  for (const key of ['heavy', 'colleague', 'normal', 'sales', 'fresh', 'prober']) {
     const response = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email: users[key]!.email, password: users[key]!.password } });
     expect(response.statusCode).toBe(200);
     cookies[key] = cookieOf(response);
@@ -251,6 +252,18 @@ describe('the normal use of the screens (issue #558)', () => {
     expect(tally(carousels)).toEqual({ 200: 40 });
     // The 384th request left 216 of the 600: the count is what the screens spent, not a smaller one.
     expect(Math.min(...carousels.map((reply) => Number(reply.headers['x-ratelimit-remaining'])))).toBe(LIMIT - 200 - 144 - 40);
+  }, 120_000);
+});
+
+describe('a request that finds nothing still spends the budget (issue #558)', () => {
+  it('limits the guessing of ids: 600 answers of 404 and then 429, with the real asset still behind the same wall', async () => {
+    const missing = randomUUID();
+
+    const guesses = await readMany(LIMIT, agencyA, missing, 'prober');
+    const next = await read(agencyA, imageA, 'prober');
+
+    expect(tally(guesses)).toEqual({ 404: LIMIT });
+    expect(next.statusCode).toBe(429);
   }, 120_000);
 });
 
