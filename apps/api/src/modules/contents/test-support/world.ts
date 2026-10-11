@@ -8,7 +8,8 @@ import {
   insertTestUser,
   ownerClient,
   TEST_APP_PUBLIC_URL,
-  type TestApp
+  type TestApp,
+  type TestAppOptions
 } from '../../auth/test-support/harness.js';
 
 type Transaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
@@ -273,12 +274,13 @@ export const createContentsWorld = (label: string) => {
     },
     mentionsContents: (): boolean => statements.some((statement) => /public\.contents\b/.test(statement)),
 
-    async setup(options: { readonly contentsClock?: () => Date } = {}): Promise<void> {
+    async setup(options: { readonly contentsClock?: () => Date; readonly wrapMediaStorage?: TestAppOptions['wrapMediaStorage'] } = {}): Promise<void> {
       owner = ownerClient();
       app = await buildTestApp({
         sender: createFakeEmailSender(),
         wrapDatabase: instrument,
-        ...(options.contentsClock === undefined ? {} : { contentsClock: options.contentsClock })
+        ...(options.contentsClock === undefined ? {} : { contentsClock: options.contentsClock }),
+        ...(options.wrapMediaStorage === undefined ? {} : { wrapMediaStorage: options.wrapMediaStorage })
       });
 
       const system = await owner.knex('roles').whereNull('agency_id').whereIn('key', ['admin', 'account_manager', 'production', 'sales', 'finance']).select('id', 'key');
