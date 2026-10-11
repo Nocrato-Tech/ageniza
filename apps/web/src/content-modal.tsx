@@ -26,6 +26,7 @@ import {
 } from './content-form.js';
 import { ContentActions } from './content-action-bar.js';
 import { FORMAT_LABELS, isClosed, STATUS_LABELS } from './content-labels.js';
+import { ContentAssignment } from './content-assignment.js';
 import { CoverField, FolderField, MediaField } from './content-media.js';
 import { captionCounter, ContentPreview } from './content-preview.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -292,20 +293,27 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   </div>;
 }
 
-/** The modal around the editor: the tabs (Atribuição, #265, has its place and stays closed) and a close that waits for a write. */
-function ContentDialog({ title, onClose, busy, children }: {
+/**
+ * The modal around the editor: the tabs and a close that waits for a write. Geral stays mounted while Atribuição is open, so what was typed
+ * in the form is still there when the person comes back. Atribuição exists once there is a content to attribute (`assignment`).
+ */
+function ContentDialog({ title, onClose, busy, assignment, children }: {
   title: string;
   onClose: () => void;
   busy: boolean;
+  assignment?: ReactNode;
   children: ReactNode;
 }) {
+  const [tab, setTab] = useState<'general' | 'assignment'>('general');
+  const shown = assignment === undefined ? 'general' : tab;
   // Closing in the middle of a write would leave its success to close whatever is open by then.
   return <Modal title={title} closeLabel="Fechar conteúdo" onClose={() => { if (!busy) onClose(); }}>
     <div className="content-modal__tabs" role="tablist" aria-label="Seções do conteúdo">
-      <Button role="tab" aria-selected="true" variant="secondary">Geral</Button>
-      <Button role="tab" aria-selected="false" disabled variant="ghost">Atribuição</Button>
+      <Button role="tab" aria-selected={shown === 'general'} variant={shown === 'general' ? 'secondary' : 'ghost'} onClick={() => setTab('general')}>Geral</Button>
+      <Button role="tab" aria-selected={shown === 'assignment'} disabled={assignment === undefined} variant={shown === 'assignment' ? 'secondary' : 'ghost'} onClick={() => setTab('assignment')}>Atribuição</Button>
     </div>
-    <div role="tabpanel" aria-label="Geral">{children}</div>
+    <div role="tabpanel" aria-label="Geral" hidden={shown !== 'general'}>{children}</div>
+    {assignment !== undefined && shown === 'assignment' && <div role="tabpanel" aria-label="Atribuição">{assignment}</div>}
   </Modal>;
 }
 
@@ -339,7 +347,8 @@ export function ContentModalRoute() {
   const hidden = !validId || (content.isError && content.error instanceof HttpClientError && (content.error.status === 403 || content.error.status === 404))
     || (content.data !== undefined && data === undefined);
 
-  return <ContentDialog title={data?.title ?? 'Conteúdo'} onClose={close} busy={busy}>
+  const assignment = data === undefined || !context.ready ? undefined : <ContentAssignment clientId={context.clientId} content={data} archived={context.archived} />;
+  return <ContentDialog title={data?.title ?? 'Conteúdo'} onClose={close} busy={busy} assignment={assignment}>
     {hidden
       ? <div className="form-stack" role="alert">
         <p>Este conteúdo não existe mais ou você não tem acesso a ele.</p>
