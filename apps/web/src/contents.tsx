@@ -1,10 +1,20 @@
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 
-import { ClientDetailResponseSchema, ClientListResponseSchema, ContentPeriodResponseSchema, ClientSchema } from '@ageniza/contracts';
+import {
+  ClientDetailResponseSchema,
+  ClientListResponseSchema,
+  ClientSchema,
+  ContentDetailSchema,
+  ContentPeriodResponseSchema,
+  type ClientListItem,
+  type ContentListItem,
+  type UpdateContentRequest
+} from '@ageniza/contracts';
 import { Avatar, Button, Skeleton } from '@ageniza/ui';
 
-import { useAgencyContext } from './agency.js';
+import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
 import { clientDetailQueryKey } from './client-detail.js';
 import { ContentCalendar } from './content-calendar.js';
@@ -13,6 +23,7 @@ import { daysOf, parseAnchor, periodOf, periodTitle, shiftAnchor, todayInSaoPaul
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { NotFoundPage } from './status-pages.js';
+import { useStoryScriptLayer } from './story-scripts.js';
 
 /** The listing's own ceiling (`PaginationInputSchema`): the stories show one page of the roster, in the roster's order. */
 const STORIES_PAGE_SIZE = 100;
@@ -36,6 +47,20 @@ const useStoryClients = () => {
 };
 
 type StoryClients = ReturnType<typeof useStoryClients>;
+
+/**
+ * What puts a ring on a story (`specs/conteudo.md` section 7): a content the client asked to change, one past its
+ * day, or one due in two days. "Em produção" and "aguardando aprovação" alone are the normal flow and draw nothing.
+ * A caller without `conteudo.visualizar` has no indicators at all, and so no ring.
+ */
+const ATTENTION_REASONS = [
+  ['adjusting', 'em ajuste'],
+  ['overdue', 'em atraso'],
+  ['dueSoon', 'com prazo em dois dias']
+] as const;
+
+const attentionOf = (client: ClientListItem): string[] =>
+  ATTENTION_REASONS.filter(([key]) => (client.contentIndicators?.[key] ?? 0) > 0).map(([, label]) => label);
 
 /**
  * Clients as stories (`specs/conteudo.md` section 7): photo or initials and the name, in the
@@ -62,17 +87,25 @@ function ContentStories({ stories, selectedId }: { stories: StoryClients; select
   return <>
     <nav aria-label="Clientes">
       <ul className="content-stories">
-        {stories.data.data.map((client) => <li key={client.id}>
-          <Link
-            className="content-story"
-            to={`/agencia/${agency.agencyId}/conteudos/${client.id}`}
-            state={location.state}
-            aria-current={client.id === selectedId ? 'page' : undefined}
-          >
-            <Avatar name={client.name} photoUrl={client.photoUrl} size="lg" />
-            <span className="content-story__name">{client.name}</span>
-          </Link>
-        </li>)}
+        {stories.data.data.map((client) => {
+          const attention = attentionOf(client);
+          return <li key={client.id}>
+            <Link
+              className="content-story"
+              to={`/agencia/${agency.agencyId}/conteudos/${client.id}`}
+              state={location.state}
+              aria-current={client.id === selectedId ? 'page' : undefined}
+            >
+              <span className={`content-story__avatar${attention.length > 0 ? ' content-story__avatar--attention' : ''}`}>
+                <Avatar name={client.name} photoUrl={client.photoUrl} size="lg" />
+              </span>
+              <span className="content-story__name">
+                {client.name}
+                {attention.length > 0 && <span className="visually-hidden">, {attention.join(', ')}</span>}
+              </span>
+            </Link>
+          </li>;
+        })}
       </ul>
     </nav>
     {total > stories.data.data.length && <p className="content-stories__note">Mostrando {stories.data.data.length} de {total} clientes.</p>}
@@ -91,6 +124,17 @@ export function ContentsPage() {
     {stories.data !== undefined && stories.data.data.length > 0 && <p>Escolha um cliente para ver o calendário editorial.</p>}
   </section>;
 }
+
+/** The screen's own words for each refusal of a move: what the server wrote is never shown. */
+const moveErrorMessage = (error: unknown): string => {
+  if (error instanceof HttpClientError) {
+    if (error.status === 409 && error.code === 'CONTENT_NOT_EDITABLE') return 'Este conteúdo já foi publicado ou cancelado e não pode mudar de data.';
+    if (error.status === 409 && error.code === 'CLIENT_ARCHIVED') return 'Este cliente está arquivado: o calendário é só leitura.';
+    if (error.status === 403) return 'Você não tem permissão para mover conteúdos.';
+    if (error.status === 404) return 'Este conteúdo não existe mais.';
+  }
+  return 'Não foi possível mover o conteúdo. Tente de novo.';
+};
 
 const parseView = (raw: string | null): CalendarView => (raw === 'semana' ? 'week' : 'month');
 
@@ -141,10 +185,29 @@ export function ContentsClientPage() {
       previousQuery?.queryKey[1] === agency.agencyId && previousQuery.queryKey[3] === normalizedId ? previous : undefined
   });
 
+  const queryClient = useQueryClient();
+  const canOperate = useCan('conteudo.operar');
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const move = useMutation({
+    mutationFn: ({ content, day }: { content: ContentListItem; day: string }) => httpClient.request({
+      path: apiPath('/agencies/:agencyId/clients/:clientId/contents/:contentId', { agencyId: agency.agencyId, clientId: normalizedId, contentId: content.id }),
+      method: 'PATCH',
+      body: { publishOn: day } satisfies UpdateContentRequest,
+      response: ContentDetailSchema
+    }),
+    onMutate: () => setMoveError(null),
+    onError: (error) => setMoveError(moveErrorMessage(error)),
+    // Settled only after the period is read again: the card never waits on its old day with the move already done.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'contents', normalizedId] })
+  });
+  const canWriteScripts = canOperate && client.data?.id.toLowerCase() === normalizedId && client.data.status !== 'archived';
+  const scriptLayer = useStoryScriptLayer({ clientId: normalizedId, canOperate: canWriteScripts, scripts: contents.data?.data.storyScripts ?? [] });
+
   const name = client.data?.name;
   useDocumentTitle(name === undefined ? 'Conteúdos — Ageniza' : `Conteúdos de ${name} — Ageniza`);
 
   const setPeriod = (nextView: CalendarView, nextAnchor: string | null): void => {
+    setMoveError(null);
     const next = new URLSearchParams(searchParams);
     if (nextView === 'week') next.set('visao', 'semana'); else next.delete('visao');
     if (nextAnchor === null) next.delete('data'); else next.set('data', nextAnchor);
@@ -165,6 +228,8 @@ export function ContentsClientPage() {
   const failed = (client.isError && clientData === undefined) || (contents.isError && contents.data === undefined);
   const loaded = contents.data;
   const unitLabel = view === 'week' ? 'semana' : 'mês';
+  const archived = clientData?.status === 'archived';
+  const canMove = canOperate && clientData !== undefined && !archived;
 
   return <section aria-labelledby="contents-title" className="contents">
     <h1 id="contents-title" className="visually-hidden">Conteúdos</h1>
@@ -205,6 +270,9 @@ export function ContentsClientPage() {
             <Button role="tab" aria-selected="false" disabled variant="ghost">Pastas</Button>
           </div>
         </div>
+        {archived && <p className="contents__note">Cliente arquivado: o calendário é só leitura.</p>}
+        {moveError !== null && <p className="contents__move-error" role="alert">{moveError}</p>}
+        {move.isPending && <p className="list-refreshing" role="status">Movendo conteúdo…</p>}
         {loaded === undefined
           ? (vista === 'feed' ? <ContentFeedSkeleton /> : <div className="contents__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>)
           : <>
@@ -213,7 +281,18 @@ export function ContentsClientPage() {
               ? <section aria-label="Prévia do feed"><ContentFeed contents={loaded.data.contents} today={today} handle={clientData?.instagramHandle ?? null} /></section>
               : <>
                 {loaded.data.contents.length === 0 && !contents.isPlaceholderData && <p className="contents__empty">Nenhum conteúdo planejado neste período.</p>}
-                <ContentCalendar view={view} anchor={anchor} today={today} days={daysOf(period)} contents={loaded.data.contents} />
+                <ContentCalendar
+                  clientId={normalizedId}
+                  view={view}
+                  anchor={anchor}
+                  today={today}
+                  days={daysOf(period)}
+                  contents={loaded.data.contents}
+                  canMove={canMove}
+                  movingId={move.isPending ? move.variables.content.id : null}
+                  onMove={(content, day) => move.mutate({ content, day })}
+                  dayExtras={scriptLayer.dayExtras}
+                />
               </>}
           </>}
       </div>
@@ -223,5 +302,6 @@ export function ContentsClientPage() {
           : <ContentFeed contents={loaded.data.contents} today={today} handle={clientData?.instagramHandle ?? null} />}
       </aside>}
     </div>}
+    {scriptLayer.modal}
   </section>;
 }

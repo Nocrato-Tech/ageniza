@@ -49,7 +49,8 @@ export function ContentCover({ assetId, format, className = 'content-card__cover
     queryFn: ({ signal }) => {
       if (assetId === null) throw new Error('A cover is only read for a content that has one.');
       return httpClient.request({
-        path: apiPath('/agencies/:agencyId/media/:assetId/download-url', { agencyId: agency.agencyId, assetId }),
+        // The thumbnail is what a cover is: only the request of the original is audited (decision 2026-10-11, #550).
+        path: `${apiPath('/agencies/:agencyId/media/:assetId/download-url', { agencyId: agency.agencyId, assetId })}?variant=thumbnail`,
         response: MediaDownloadUrlResponseSchema,
         signal
       });

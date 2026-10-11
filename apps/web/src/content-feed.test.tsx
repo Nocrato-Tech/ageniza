@@ -55,7 +55,7 @@ const contentFixture = (overrides: Partial<ContentListItem> = {}): ContentListIt
     publishOn: '2026-10-20',
     publishAtTime: null,
     status: 'in_production',
-    ownerUserId: '99999999-9999-4999-8999-999999999999',
+    owner: { membershipId: '99999999-9999-4999-8999-999999999999', name: 'Ana Souza' },
     coverAssetId: null,
     revision: 1,
     publishedOn: null,
@@ -394,13 +394,13 @@ describe('the cover of a tile', () => {
   const ASSET = 'a1a1a1a1-0000-4000-8000-000000000001';
   const coverCalls = (calls: readonly string[]): string[] => calls.filter((call) => /\/download-url/.test(call));
 
-  it('is the picture of the cover asset, read once however many times it is drawn', async () => {
+  it('is the thumbnail of the cover asset, never the original, read once however many times it is drawn', async () => {
     const { impl, calls } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Com capa', publishOn: '2026-10-14', coverAssetId: ASSET })] } });
     renderScreen(impl, url(padaria.id));
 
     await waitFor(() => expect(feedRegion().querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${ASSET}.jpg`));
     expect(feedRegion().querySelector('img')?.getAttribute('alt')).toBe('');
-    expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET}/download-url`]);
+    expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET}/download-url?variant=thumbnail`]);
   });
 
   it('is the shape of the format when there is no cover, and when the route refuses', async () => {

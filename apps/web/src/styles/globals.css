@@ -2491,6 +2491,16 @@ a.client-general__block:hover {
   background: var(--bg-hover);
 }
 
+.content-story__avatar {
+  display: inline-flex;
+  border-radius: var(--radius-full);
+}
+
+/* The ring: something of this client asks for action (a change asked, a day passed, a deadline in two days). */
+.content-story__avatar--attention {
+  box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--action-primary-bg);
+}
+
 .content-story__name {
   max-width: 100%;
   font: var(--label-sm);
@@ -2668,6 +2678,125 @@ a.client-general__block:hover {
   list-style: none;
 }
 
+.content-day__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* The "+" is one small control in the corner of the day; its list opens inside the day, away from the grid's edge. */
+.content-day__tools .ui-menu__trigger {
+  min-height: 1.75rem;
+  padding: 0 var(--space-2);
+  border-color: var(--border-default);
+}
+
+.content-day__tools .ui-menu__trigger:hover,
+.content-day__tools .ui-menu__trigger:focus-visible {
+  background: transparent;
+  border-color: var(--focus-ring);
+}
+
+.content-day__tools .ui-menu__content {
+  right: auto;
+  left: 0;
+  min-width: 11rem;
+}
+
+.content-day:nth-child(7n + 6) .content-day__tools .ui-menu__content,
+.content-day:nth-child(7n) .content-day__tools .ui-menu__content {
+  right: 0;
+  left: auto;
+}
+
+.content-day__scripts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-day__script {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font: var(--caption);
+  cursor: pointer;
+}
+
+.content-day__script[data-status='draft'] {
+  border-style: dashed;
+}
+
+.content-day__script:hover,
+.content-day__script:focus-visible {
+  border-color: var(--focus-ring);
+}
+
+.story-script__status {
+  margin: 0;
+}
+
+.story-script__scenes {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.story-script__scene {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.story-script__scene-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.story-script__scene-title {
+  margin: 0;
+  font: var(--label-md);
+}
+
+.story-script__moves {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.story-script__text,
+.story-script__guidance {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.story-script__guidance {
+  color: var(--text-secondary);
+}
+
+.story-script__add {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.story-script__loading {
+  display: grid;
+  gap: var(--space-3);
+}
+
 .content-card {
   display: grid;
   gap: var(--space-1);
@@ -2722,6 +2851,37 @@ a.client-general__block:hover {
   color: var(--text-primary);
 }
 
+.content-card--movable {
+  cursor: grab;
+}
+
+.content-card--busy {
+  opacity: 0.55;
+}
+
+.contents__note,
+.contents__move-error {
+  margin: 0;
+}
+
+.contents__move-error {
+  color: var(--text-danger);
+}
+
+.content-card {
+  position: relative;
+}
+
+.content-card__cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+}
+
+
 .content-feed {
   display: grid;
   gap: var(--space-3);
@@ -2764,15 +2924,55 @@ a.client-general__block:hover {
   height: 100%;
 }
 
+
+.content-card__cover img,
 .content-feed__cover img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
+.content-card__cover--placeholder {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font: var(--heading-md);
+}
+
 .content-feed__cover--placeholder {
   color: var(--text-secondary);
   font: var(--heading-md);
+}
+
+.content-card__detail {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 1;
+  display: grid;
+  gap: var(--space-1);
+  width: 16rem;
+  margin-top: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--body-md);
+}
+
+.content-card__detail p,
+.content-card__detail dl,
+.content-card__detail dd {
+  margin: 0;
+}
+
+.content-card__detail dt {
+  color: var(--text-secondary);
+  font: var(--label-sm);
+}
+
+.content-card__detail dd {
+  overflow-wrap: anywhere;
 }
 
 .content-feed__skeleton {
