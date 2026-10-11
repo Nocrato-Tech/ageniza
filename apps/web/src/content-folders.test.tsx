@@ -171,6 +171,26 @@ describe('the Pastas view: navigation and the address', () => {
   });
 });
 
+describe('the Pastas view inside the Conteúdos tab of the client (#272)', () => {
+  const tabUrl = `/agencia/11111111-1111-4111-8111-111111111111/clientes/${padaria.id}/conteudos`;
+
+  it('lists the folders of that client on the address of the tab, and keeps the folder in the address of the tab', async () => {
+    const world = makeWorld({ assets: [assetFixture(1, VIDEOS)] });
+    const { probe } = open(world, `${tabUrl}?vista=pastas`);
+
+    await heading('Pastas');
+    expect(screen.getByRole('link', { name: 'Vídeos Padrão' })).toBeTruthy();
+    expect(screen.queryByRole('navigation', { name: 'Clientes' })).toBeNull();
+    expect(world.calls.some((call) => /\/media-folders(\?|$)/.test(call) && call.includes(`/clients/${padaria.id}/`))).toBe(true);
+
+    fireEvent.click(screen.getByRole('link', { name: 'Vídeos Padrão' }));
+    await heading('Vídeos');
+    expect(probe.pathname).toBe(tabUrl);
+    expect(new URLSearchParams(probe.search).get('pasta')).toBe(VIDEOS);
+    expect(new URLSearchParams(probe.search).get('vista')).toBe('pastas');
+  });
+});
+
 describe('the Pastas view: the calendar behind it', () => {
   it('does not show a calendar error over the folders when the person comes back to them', async () => {
     const world = makeWorld({

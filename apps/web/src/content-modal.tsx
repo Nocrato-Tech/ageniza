@@ -14,6 +14,7 @@ import { Button, FieldMessage, Modal, Select, Skeleton, Textarea, TextInput } fr
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
+import { useContentsAddress } from './content-address.js';
 import { todayInSaoPaulo } from './content-dates.js';
 import {
   changesOf,
@@ -63,14 +64,14 @@ class SaveFailed extends Error {
 
 /** The way back to the calendar the person came from: the same period, the same roster address. */
 const useCloseTo = (clientId: string): (() => void) => {
-  const agency = useAgencyContext();
+  const address = useContentsAddress(clientId);
   const navigate = useNavigate();
   const location = useLocation();
   return () => {
     const params = new URLSearchParams(location.search);
     params.delete('dia');
     const search = params.toString();
-    navigate({ pathname: `/agencia/${agency.agencyId}/conteudos/${clientId}`, search: search === '' ? '' : `?${search}` }, { state: location.state });
+    navigate({ pathname: address, search: search === '' ? '' : `?${search}` }, { state: location.state });
   };
 };
 
