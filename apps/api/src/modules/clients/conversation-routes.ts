@@ -49,7 +49,7 @@ import {
   type ConversationScope
 } from './conversation-service.js';
 import { createPhotoUrlSigner } from './photo-url.js';
-import { COMMENT_DEFAULT_PAGE_SIZE, THREAD_DEFAULT_PAGE_SIZE } from './policy.js';
+import { COMMENT_DEFAULT_PAGE_SIZE, CONVERSATION_READ_PERMISSIONS, CONVERSATION_WRITE_PERMISSIONS, THREAD_DEFAULT_PAGE_SIZE } from './policy.js';
 import { isClientNoLongerActive, isRowLevelSecurityViolation, type ClientTransaction } from './service.js';
 
 type PreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
@@ -306,27 +306,27 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
   // --- The agency side (#128) ----------------------------------------------------------------
 
   const agencyListThreadsDocs = {
-    permission: ['cliente.visualizar', 'conteudo.visualizar'],
+    permission: CONVERSATION_READ_PERMISSIONS,
     responseStatus: 200,
     schemas: { params: agencyParams, query: ThreadListQuerySchema, response: ThreadListResponseSchema }
   } satisfies DocumentedRouteConfig;
   const agencyOpenThreadDocs = {
-    permission: ['cliente.operar', 'conteudo.operar'],
+    permission: CONVERSATION_WRITE_PERMISSIONS,
     responseStatus: 201,
     schemas: { params: agencyParams, body: CreateThreadRequestSchema, response: CreateThreadResponseSchema }
   } satisfies DocumentedRouteConfig;
   const agencyListCommentsDocs = {
-    permission: ['cliente.visualizar', 'conteudo.visualizar'],
+    permission: CONVERSATION_READ_PERMISSIONS,
     responseStatus: 200,
     schemas: { params: agencyThreadParams, query: CommentListQuerySchema, response: CommentListResponseSchema }
   } satisfies DocumentedRouteConfig;
   const agencyAddCommentDocs = {
-    permission: ['cliente.operar', 'conteudo.operar'],
+    permission: CONVERSATION_WRITE_PERMISSIONS,
     responseStatus: 201,
     schemas: { params: agencyThreadParams, body: CreateCommentRequestSchema, response: CommentSchema }
   } satisfies DocumentedRouteConfig;
   const agencyResolveDocs = {
-    permission: ['cliente.operar', 'conteudo.operar'],
+    permission: CONVERSATION_WRITE_PERMISSIONS,
     responseStatus: 200,
     schemas: { params: agencyThreadParams, response: ThreadSchema }
   } satisfies DocumentedRouteConfig;
