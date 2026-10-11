@@ -36,7 +36,6 @@ import {
   calendarReady,
   openContent,
   setupModalTests,
-  OPERATE,
   type Scenario,
   type Stored
 } from './content-modal-fixture.js';
