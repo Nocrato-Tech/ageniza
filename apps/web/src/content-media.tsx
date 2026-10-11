@@ -52,7 +52,7 @@ export const useClientFolders = (clientId: string) => {
   });
 };
 
-const useFolderAssets = (clientId: string, folderId: string) => {
+export const useFolderAssets = (clientId: string, folderId: string) => {
   const httpClient = useApiClient();
   const agency = useAgencyContext();
   return useQuery({

@@ -3326,3 +3326,33 @@ a.client-general__block:hover {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
 }
+
+.content-modal__main,
+.content-actions {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.content-actions {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-default);
+}
+
+.content-actions__missing {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.content-actions__missing p,
+.content-actions__missing ul {
+  margin: 0;
+}
+
+.content-actions__panel {
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}

@@ -25,6 +25,7 @@ import {
   type ContentFieldErrors,
   type ContentFormValues
 } from './content-form.js';
+import { ContentActions } from './content-action-bar.js';
 import { FORMAT_LABELS, isClosed, STATUS_LABELS } from './content-labels.js';
 import { CoverField, FolderField, MediaField } from './content-media.js';
 import { captionCounter, ContentPreview } from './content-preview.js';
@@ -147,7 +148,8 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
     }
   });
 
-  const busy = save.isPending;
+  const [moving, setMoving] = useState(false);
+  const busy = save.isPending || moving;
   useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
 
   const edit = (patch: Partial<ContentFormValues>, field?: keyof ContentFieldErrors): void => {
@@ -173,6 +175,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
 
   return <div className="content-modal">
     <ContentPreview values={form} handle={context.handle} />
+    <div className="form-stack content-modal__main">
     <form className="form-stack content-modal__form" onSubmit={onSubmit} noValidate>
       {saved !== null && <p className="content-modal__status"><span className="content-card__badge">{STATUS_LABELS[saved.status]}</span></p>}
       {note !== undefined && <p className="form-hint" role="note">{note}</p>}
@@ -275,10 +278,18 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
       {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
       <div className="form-actions">
         {writable && <Button type="submit" loading={busy} disabled={busy || !dirty}>{saved === null ? 'Criar conteúdo' : 'Salvar'}</Button>}
-        <Button variant="ghost" disabled={busy} onClick={onDone}>{writable ? 'Cancelar' : 'Fechar'}</Button>
+        <Button variant="ghost" disabled={busy} onClick={onDone}>Fechar</Button>
       </div>
-      {/* #266: the conversation of the content goes here, at the end of the tab. */}
     </form>
+    {saved !== null && !context.archived && <ContentActions
+      clientId={clientId}
+      content={saved}
+      dirty={dirty}
+      onBusyChange={setMoving}
+      onDone={onDone}
+    />}
+    {/* #266: the conversation of the content goes here, at the end of the tab. */}
+    </div>
   </div>;
 }
 
