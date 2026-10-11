@@ -883,3 +883,90 @@ describe('create client modal (#135)', () => {
     expect(attempts).toBe(2);
   });
 });
+
+describe('the content indicators of the card (#272, contentIndicators of #261)', () => {
+  const indicators = (overrides: Partial<Record<'pending' | 'inReview' | 'overdue' | 'adjusting' | 'dueSoon', number>>) =>
+    ({ pending: 0, inReview: 0, overdue: 0, adjusting: 0, dueSoon: 0, ...overrides });
+  type Row = Record<string, unknown> & { readonly name: string; readonly threadsAwaitingAgency: number; readonly contentIndicators?: ReturnType<typeof indicators> };
+  let sequence = 0;
+  const client = (name: string, threadsAwaitingAgency: number, contentIndicators?: ReturnType<typeof indicators>): Row => ({
+    id: `7a7a7a7a-7777-4777-8777-${String(++sequence).padStart(12, '0')}`,
+    name, photoUrl: null, instagramHandle: null, status: 'active', closingDate: null, threadsAwaitingAgency,
+    ...(contentIndicators === undefined ? {} : { contentIndicators })
+  });
+  // The API's `sort=attention`: whoever reads contents gets overdue first, then suggestions awaiting, then the name.
+  const byAttention = (rows: readonly Row[], readsContents: boolean): Row[] => [...rows].sort((a, b) =>
+    (readsContents ? Number((b.contentIndicators?.overdue ?? 0) > 0) - Number((a.contentIndicators?.overdue ?? 0) > 0) : 0)
+    || Number(b.threadsAwaitingAgency > 0) - Number(a.threadsAwaitingAgency > 0)
+    || a.name.localeCompare(b.name));
+  const withoutIndicators = (row: Row): Row => Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'contentIndicators')) as Row;
+
+  const READER = ['cliente.visualizar', 'conteudo.visualizar'];
+  const ROWS = [
+    client('Alfa Gráfica', 1, indicators({ pending: 1 })),
+    client('Meio Mercado', 0, indicators({ pending: 4, inReview: 2 })),
+    client('Zeta Café', 0, indicators({ pending: 3, inReview: 1, overdue: 2 }))
+  ];
+  const roster = (permissions: readonly string[]) => makeFetch({
+    permissions,
+    clients: () => listResponse(byAttention(permissions.includes('conteudo.visualizar') ? ROWS : ROWS.map(withoutIndicators), permissions.includes('conteudo.visualizar')))
+  });
+  const stripOf = (name: string): HTMLElement => within(cardOf(name)).getByRole('list', { name: 'Indicadores de conteúdo' });
+
+  it('shows the three numbers of each card, in words a screen reader reads whole, and the overdue ahead of everyone', async () => {
+    const { impl, calls } = roster(READER);
+    const { container } = renderClients(impl);
+    await screen.findByText('Zeta Café');
+
+    expect(cardNames(container)).toEqual(['Zeta Café', 'Alfa Gráfica', 'Meio Mercado']);
+    expect(Array.from(stripOf('Zeta Café').children).map((item) => item.textContent)).toEqual(['3 pendentes', '1 em revisão', '2 atrasos']);
+    expect(Array.from(stripOf('Meio Mercado').children).map((item) => item.textContent)).toEqual(['4 pendentes', '2 em revisão', '0 atrasos']);
+    expect(Array.from(stripOf('Alfa Gráfica').children).map((item) => item.textContent)).toEqual(['1 pendente', '0 em revisão', '0 atrasos']);
+    expect(container.querySelectorAll('.clients__indicator--late')).toHaveLength(1);
+    expect(stripOf('Zeta Café').querySelector('.clients__indicator--late')?.textContent).toBe('2 atrasos');
+    // The order is the server's: no order of its own leaves the browser.
+    expect(calls.filter((call) => /\/clients\?/.test(call)).every((call) => !call.includes('sort'))).toBe(true);
+  });
+
+  it('keeps the order of the roster and shows no number to who does not read contents, with a roster where the overdue would change the order', async () => {
+    const { impl } = roster(['cliente.visualizar']);
+    const { container } = renderClients(impl);
+    await screen.findByText('Zeta Café');
+
+    expect(cardNames(container)).toEqual(['Alfa Gráfica', 'Meio Mercado', 'Zeta Café']);
+    expect(container.querySelector('[aria-label="Indicadores de conteúdo"]')).toBeNull();
+    expect(container.querySelectorAll('.clients__indicator--late')).toHaveLength(0);
+    for (const strip of Array.from(container.querySelectorAll('.clients__indicators'))) expect(strip.textContent).not.toMatch(/\d/);
+  });
+
+  it.each([
+    ['only cliente.visualizar (Vendas)', ['cliente.visualizar']],
+    ['cliente.visualizar and conteudo.operar, without conteudo.visualizar', ['cliente.visualizar', 'conteudo.operar']],
+    ['cliente.visualizar and financeiro.visualizar (Financeiro)', ['cliente.visualizar', 'financeiro.visualizar']]
+  ])('shows no number even if the response carried them, for %s', async (_name, permissions) => {
+    const { impl } = makeFetch({ permissions, clients: () => listResponse(byAttention(ROWS, true)) });
+    const { container } = renderClients(impl);
+    await screen.findByText('Zeta Café');
+
+    expect(container.querySelector('[aria-label="Indicadores de conteúdo"]')).toBeNull();
+    expect(container.textContent).not.toContain('2 atrasos');
+    expect(container.textContent).not.toContain('2 em revisão');
+    for (const strip of Array.from(container.querySelectorAll('.clients__indicators'))) expect(strip.textContent).not.toMatch(/\d/);
+  });
+
+  it('says "1 atraso" and "1 pendente" in the singular, and keeps "em revisão" as it is', async () => {
+    const { impl } = makeFetch({ permissions: READER, clients: () => listResponse([client('Cliente Único', 0, indicators({ pending: 1, inReview: 1, overdue: 1 }))]) });
+    renderClients(impl);
+    await screen.findByText('Cliente Único');
+    expect(Array.from(stripOf('Cliente Único').children).map((item) => item.textContent)).toEqual(['1 pendente', '1 em revisão', '1 atraso']);
+  });
+
+  it('draws no strip on an archived card, even with indicators', async () => {
+    const archived: Row = { ...client('Barbearia Arquivada', 0, indicators({ overdue: 3 })), status: 'archived' };
+    const { impl } = makeFetch({ permissions: READER, clients: () => listResponse([archived]) });
+    const { container } = renderClients(impl, `/agencia/${AGENCY_A}/clientes?status=archived`);
+    await screen.findByText('Barbearia Arquivada');
+    expect(container.querySelector('.clients__indicators')).toBeNull();
+    expect(container.textContent).not.toContain('3 atrasos');
+  });
+});

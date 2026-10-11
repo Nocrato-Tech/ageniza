@@ -110,7 +110,11 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
           {/* The tab lives in the URL: a bare address goes to Geral (specs/clientes.md §7). */}
           <Route index element={<Navigate to="geral" replace />} />
           <Route path="geral" element={<ClientGeneralTab />} />
-          <Route path="conteudos" element={<ClientSkeletonTab title="Conteúdos" description="Aqui vai ficar o calendário editorial deste cliente, com os posts, a prévia do feed e as aprovações." />} />
+          {/* The same view of the client as the Conteúdos screen, with its modal over it; the permission gate is in ClientDetailPage. */}
+          <Route path="conteudos" element={<ContentsClientPage pinned />}>
+            <Route path="novo" element={<ContentCreateRoute />} />
+            <Route path=":conteudoId" element={<ContentModalRoute />} />
+          </Route>
           <Route path="tarefas" element={<ClientSkeletonTab title="Tarefas" description="Aqui vão ficar as tarefas deste cliente, com prazos e responsáveis." />} />
           <Route path="estudo-de-marca" element={<ClientBrandStudyTab />} />
           <Route path="relatorios" element={<ClientSkeletonTab title="Relatórios" description="Aqui vai ficar o relatório deste cliente, com os resultados do trabalho." />} />

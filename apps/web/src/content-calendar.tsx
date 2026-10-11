@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 
 import type { ContentListItem } from '@ageniza/contracts';
 
-import { useAgencyContext } from './agency.js';
+import { useContentsAddress } from './content-address.js';
 import { ContentHoverDetail } from './content-card-extras.js';
 import { ContentCover } from './content-cover.js';
 import { fullDayLabel, WEEKDAY_LABELS, type CalendarView } from './content-dates.js';
@@ -26,7 +26,7 @@ export function ContentCard({ content, clientId, today, draggable = false, busy 
   const alert = deadlineAlert(content, today);
   const percent = subtaskPercent(content);
   const detailId = useId();
-  const agency = useAgencyContext();
+  const address = useContentsAddress(clientId);
   const location = useLocation();
   const [pointed, setPointed] = useState(false);
   return <article
@@ -50,7 +50,7 @@ export function ContentCard({ content, clientId, today, draggable = false, busy 
       <Link
         className="content-card__link"
         draggable={false}
-        to={{ pathname: `/agencia/${agency.agencyId}/conteudos/${clientId}/${content.id}`, search: location.search }}
+        to={{ pathname: `${address}/${content.id}`, search: location.search }}
         state={location.state}
       >{content.title}</Link>
     </p>
