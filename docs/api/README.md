@@ -1861,7 +1861,7 @@ Lê o estudo de marca, no portal.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
-### contents — Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; e as subtarefas: criar, editar, entregar, aprovar e devolver.
+### contents — Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; as subtarefas: criar, editar, entregar, aprovar e devolver; e, no portal, os conteúdos de um período, o que espera aprovação, o post, aprovar e pedir ajuste.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
@@ -1880,6 +1880,11 @@ Lê o estudo de marca, no portal.
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/deliver` | Sessão + vínculo com a agência | `conteudo.visualizar` | Entrega uma subtarefa |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/approve` | Sessão + vínculo com a agência | `conteudo.visualizar` | Aprova uma subtarefa entregue |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/return` | Sessão + vínculo com a agência | `conteudo.visualizar` | Devolve uma subtarefa entregue, com comentário |
+| `GET` | `/clients/:clientId/contents` | Sessão + vínculo com o cliente | — | Lista os conteúdos de um período, no portal |
+| `GET` | `/clients/:clientId/contents/awaiting-approval` | Sessão + vínculo com o cliente | — | Lista o que espera a aprovação da pessoa, no portal |
+| `GET` | `/clients/:clientId/contents/:contentId` | Sessão + vínculo com o cliente | — | Lê um conteúdo, no portal |
+| `POST` | `/clients/:clientId/contents/:contentId/approve` | Sessão + vínculo com o cliente | — | Aprova um conteúdo, no portal |
+| `POST` | `/clients/:clientId/contents/:contentId/request-changes` | Sessão + vínculo com o cliente | — | Pede ajuste de um conteúdo, no portal |
 
 #### `GET /agencies/:agencyId/clients/:clientId/contents`
 
@@ -2744,6 +2749,216 @@ Devolve uma subtarefa entregue, com comentário.
 ```
 
 **Erros:** `400 CONTENT_TASK_COMMENT_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_TASK_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId/contents`
+
+Lista os conteúdos de um período, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "from": "2026-10-01",
+  "to": "2026-10-31"
+}
+```
+
+**Resposta `200`** — Conteúdos do período.
+
+```json
+{
+  "data": [
+    {
+      "id": "12121212-1212-4121-8121-121212121212",
+      "title": "Bastidores da produção",
+      "format": "image",
+      "publishOn": "2026-10-18",
+      "status": "in_production"
+    },
+    {
+      "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "title": "Lançamento da coleção de outono",
+      "platform": "instagram",
+      "format": "reels",
+      "publishOn": "2026-10-20",
+      "publishAtTime": "18:30",
+      "status": "awaiting_approval",
+      "coverAssetId": null,
+      "publishedOn": null
+    }
+  ],
+  "meta": {
+    "from": "2026-10-01",
+    "to": "2026-10-31",
+    "count": 2
+  }
+}
+```
+
+**Erros:** `400 CONTENT_PERIOD_TOO_LARGE` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId/contents/awaiting-approval`
+
+Lista o que espera a aprovação da pessoa, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1,
+  "pageSize": 20
+}
+```
+
+**Resposta `200`** — Conteúdos aguardando aprovação.
+
+```json
+{
+  "data": [
+    {
+      "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "title": "Lançamento da coleção de outono",
+      "platform": "instagram",
+      "format": "reels",
+      "publishOn": "2026-10-20",
+      "publishAtTime": "18:30",
+      "status": "awaiting_approval",
+      "coverAssetId": null,
+      "publishedOn": null
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 20,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId/contents/:contentId`
+
+Lê um conteúdo, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Resposta `200`** — O conteúdo.
+
+```json
+{
+  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  "title": "Lançamento da coleção de outono",
+  "platform": "instagram",
+  "format": "reels",
+  "publishOn": "2026-10-20",
+  "publishAtTime": "18:30",
+  "status": "awaiting_approval",
+  "coverAssetId": null,
+  "publishedOn": null,
+  "caption": "Novidades de outono chegando!",
+  "revision": 1,
+  "media": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "position": 1
+    }
+  ]
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /clients/:clientId/contents/:contentId/approve`
+
+Aprova um conteúdo, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "revision": 1
+}
+```
+
+**Resposta `200`** — Conteúdo aprovado.
+
+```json
+{
+  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  "title": "Lançamento da coleção de outono",
+  "platform": "instagram",
+  "format": "reels",
+  "publishOn": "2026-10-20",
+  "publishAtTime": "18:30",
+  "status": "approved",
+  "coverAssetId": null,
+  "publishedOn": null,
+  "caption": "Novidades de outono chegando!",
+  "revision": 1,
+  "media": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "position": 1
+    }
+  ]
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CONTENT_NOT_AWAITING_APPROVAL` · `409 CONTENT_REVISION_CHANGED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /clients/:clientId/contents/:contentId/request-changes`
+
+Pede ajuste de um conteúdo, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "revision": 1,
+  "comment": "Trocar a foto da capa por uma com mais luz."
+}
+```
+
+**Resposta `200`** — Conteúdo em ajuste.
+
+```json
+{
+  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  "title": "Lançamento da coleção de outono",
+  "platform": "instagram",
+  "format": "reels",
+  "publishOn": "2026-10-20",
+  "publishAtTime": "18:30",
+  "status": "adjusting",
+  "coverAssetId": null,
+  "publishedOn": null,
+  "caption": "Novidades de outono chegando!",
+  "revision": 1,
+  "media": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "position": 1
+    }
+  ]
+}
+```
+
+**Erros:** `400 CONTENT_COMMENT_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CONTENT_NOT_AWAITING_APPROVAL` · `409 CONTENT_REVISION_CHANGED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 ### collaborators — A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.
 
