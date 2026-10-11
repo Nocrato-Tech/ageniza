@@ -14,11 +14,16 @@ export const MEDIA_UPLOAD_PERMISSIONS = ['midia.enviar', 'conteudo.operar'] as c
  * either family in; the RLS of `media_assets` decides which rows the role sees, so the other family's media is a 404. */
 export const MEDIA_READ_PERMISSIONS = ['midia.enviar', 'conteudo.visualizar'] as const;
 
+const FIVE_MINUTES_MS = 5 * 60 * 1_000;
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1_000;
 
 export const MEDIA_RATE_LIMITS = {
-  // Applies to every route that emits a signed URL: create-upload and request-parts (download-url has none of its own; decision of 2026-10-11).
-  signedUrlIssuance: { max: 60, windowMs: FIFTEEN_MINUTES_MS }
+  // Applies to the routes that emit an upload URL: create-upload and request-parts, counted by IP.
+  signedUrlIssuance: { max: 60, windowMs: FIFTEEN_MINUTES_MS },
+  // The read URL, counted per user (not per IP, not per agency) across the agencies the user belongs to. The window is the
+  // lifetime of a signed URL (300 s), and the covers are cached per asset until it expires. 600 is about 1.5x the worst
+  // realistic window: two months of covers, three folder pages and two full carousels, 384 URLs (decision 2026-10-11, #558).
+  downloadUrlPerUser: { max: 600, windowMs: FIVE_MINUTES_MS }
 } as const satisfies Readonly<Record<string, MediaRateLimitWindow>>;
 
 /**

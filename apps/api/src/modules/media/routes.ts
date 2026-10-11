@@ -155,6 +155,19 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     }
   };
 
+  // Keyed by the session user, not the IP and not the agency: the audit does not cover a thumbnail, so the ceiling follows the
+  // account, and one user's reads never use up a colleague's. `hook: 'preHandler'` puts it after the session and permission
+  // guards (which the plugin appends to), so `request.auth` is populated when the key is read and a refused request counts for nobody.
+  // The headers stay on: `Retry-After` is what the screen waits for.
+  const downloadUrlRateLimit = {
+    rateLimit: {
+      max: MEDIA_RATE_LIMITS.downloadUrlPerUser.max,
+      timeWindow: MEDIA_RATE_LIMITS.downloadUrlPerUser.windowMs,
+      hook: 'preHandler' as const,
+      keyGenerator: (request: FastifyRequest) => request.auth?.userId ?? request.ip
+    }
+  };
+
   // Declared once per route: the same object is the documentation metadata and the source of the
   // schemas the handler validates with.
   const uploadDocs = {
@@ -425,7 +438,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     }));
   });
 
-  app.get('/agencies/:agencyId/media/:assetId/download-url', guarded(downloadDocs), async (request, reply) => {
+  app.get('/agencies/:agencyId/media/:assetId/download-url', guarded(downloadDocs, downloadUrlRateLimit), async (request, reply) => {
     const auth = requireAuth(request);
     const params = routeParams(downloadDocs, request);
     const query = routeQuery(downloadDocs, request);

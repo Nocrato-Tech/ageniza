@@ -3004,7 +3004,7 @@ path: '/agencies/:agencyId/roles',
     operationId: 'getMediaDownloadUrl',
     module: 'media',
     summary: 'Emite uma URL assinada de leitura',
-    description: 'Válida por poucos minutos, só GET, e apenas para um objeto confirmado e não removido da agência. A mídia sem cliente exige `midia.enviar`; a de um cliente exige `conteudo.visualizar` (a que o papel não lê é o mesmo 404). Em `variant=thumbnail`, a imagem devolve o próprio original e o vídeo devolve a miniatura quando processada, senão 409 `VARIANT_NOT_READY`. Só o pedido do original grava a auditoria `media.download_url_issued`.',
+    description: 'Válida por poucos minutos, só GET, e apenas para um objeto confirmado e não removido da agência. A mídia sem cliente exige `midia.enviar`; a de um cliente exige `conteudo.visualizar` (a que o papel não lê é o mesmo 404). Em `variant=thumbnail`, a imagem devolve o próprio original e o vídeo devolve a miniatura quando processada, senão 409 `VARIANT_NOT_READY`. Só o pedido do original grava a auditoria `media.download_url_issued`. Cada pessoa pede até 600 URLs a cada 5 minutos (qualquer agência, qualquer variante); o pedido seguinte é 429 `RATE_LIMITED` com `Retry-After`, e o limite de uma pessoa não conta para outra.',
     access: 'Sessão + vínculo com a agência',
     permission: MEDIA_READ_PERMISSIONS,
     params: AgencyMediaAssetPathParamsSchema,
@@ -3023,7 +3023,8 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
       { status: 409, code: 'VARIANT_NOT_READY' },
-      { status: 409, code: 'VARIANT_PROCESSING_FAILED' }
+      { status: 409, code: 'VARIANT_PROCESSING_FAILED' },
+      { status: 429, code: 'RATE_LIMITED' }
     ]
   },
 
