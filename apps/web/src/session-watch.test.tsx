@@ -158,10 +158,11 @@ afterEach(() => {
 });
 
 describe.each(AREAS)('the session check in the $label', ({ entry, ready }) => {
-  it('asks the API about the session on a timer and sends the person to the login when it is gone, keeping the address', async () => {
+  it.each(['UNAUTHENTICATED', 'SESSION_EXPIRED'] as const)('asks the API about the session on a timer and sends the person to the login when it answers 401 %s, keeping the address', async (code) => {
     const { world, impl } = makeWorld();
-    renderAt(entry, impl);
+    const { store } = renderAt(entry, impl);
     await ready();
+    const ended = vi.spyOn(store, 'end');
     expect(world.initialLoads).toBe(1);
     expect(world.sessionChecks).toBe(0);
 
@@ -175,37 +176,19 @@ describe.each(AREAS)('the session check in the $label', ({ entry, ready }) => {
 
     // Removed from the agency or the client: the server ends the session; the tab sends nothing itself.
     world.sessionAlive = false;
-    await tick(60_000);
-
-    expect(currentLocation).toBe('/entrar');
-    expect(sessionDestination(currentState)).toBe(entry);
-    expect(screen.getByText('Sessão encerrada')).toBeTruthy();
-
-    // Once signed out nothing keeps asking: not on the timer, and not when the tab comes back to the foreground.
-    const checksAfterEnd = world.sessionChecks;
-    await tick(3 * 60_000);
-    await focus();
-    await tick(15_000);
-    await focus();
-    expect(world.sessionChecks).toBe(checksAfterEnd);
-  });
-
-  it('also ends the session when the API answers 401 SESSION_EXPIRED, once, keeping the address', async () => {
-    const { world, impl } = makeWorld();
-    const { store } = renderAt(entry, impl);
-    await ready();
-    const ended = vi.spyOn(store, 'end');
-
-    world.sessionAlive = false;
-    world.deadCode = 'SESSION_EXPIRED';
+    world.deadCode = code;
     await tick(60_000);
 
     expect(currentLocation).toBe('/entrar');
     expect(sessionDestination(currentState)).toBe(entry);
     expect(screen.getByText('Sessão encerrada')).toBeTruthy();
     expect(ended).toHaveBeenCalledTimes(1);
+
+    // Once signed out nothing keeps asking: not on the timer, and not when the tab comes back to the foreground.
     const checksAfterEnd = world.sessionChecks;
     await tick(3 * 60_000);
+    await focus();
+    await tick(15_000);
     await focus();
     expect(world.sessionChecks).toBe(checksAfterEnd);
   });
