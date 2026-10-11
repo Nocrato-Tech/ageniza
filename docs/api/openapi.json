@@ -49,6 +49,10 @@
     {
       "name": "email-change",
       "description": "Pedido de troca do e-mail da conta, aprovado pela operação, e a confirmação pelo link enviado ao e-mail novo."
+    },
+    {
+      "name": "story-scripts",
+      "description": "Roteiros de stories de um cliente: a agência cria, edita e envia; o portal lê os enviados de um período e marca como gravado."
     }
   ],
   "components": {
@@ -4271,6 +4275,361 @@
         },
         "required": [
           "token"
+        ],
+        "additionalProperties": false
+      },
+      "createStoryScriptResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scriptOn": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "sent",
+              "recorded"
+            ]
+          },
+          "scenes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "position": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "text": {
+                  "type": "string"
+                },
+                "guidance": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "position",
+                "text",
+                "guidance"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "recordedBy": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "recordedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "scriptOn",
+          "status",
+          "scenes",
+          "recordedBy",
+          "recordedAt",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "createStoryScriptRequest": {
+        "type": "object",
+        "properties": {
+          "scriptOn": {
+            "type": "string"
+          },
+          "scenes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "guidance": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 30,
+            "default": []
+          }
+        },
+        "required": [
+          "scriptOn"
+        ],
+        "additionalProperties": false
+      },
+      "updateStoryScriptRequest": {
+        "type": "object",
+        "properties": {
+          "scriptOn": {
+            "type": "string"
+          },
+          "scenes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "guidance": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 30
+          }
+        },
+        "additionalProperties": false
+      },
+      "listPortalStoryScriptsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "scriptOn": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "sent",
+                    "recorded"
+                  ]
+                },
+                "scenes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "position": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "guidance": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "position",
+                      "text",
+                      "guidance"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "recordedBy": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                "recordedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "scriptOn",
+                "status",
+                "scenes",
+                "recordedBy",
+                "recordedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "from",
+              "to",
+              "count"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "recordPortalStoryScriptResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scriptOn": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "recorded"
+            ]
+          },
+          "scenes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "text": {
+                  "type": "string"
+                },
+                "guidance": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "position",
+                "text",
+                "guidance"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "recordedBy": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "recordedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "scriptOn",
+          "status",
+          "scenes",
+          "recordedBy",
+          "recordedAt"
         ],
         "additionalProperties": false
       }
@@ -15800,6 +16159,942 @@
                   "error": {
                     "code": "RATE_LIMITED",
                     "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/story-scripts": {
+      "post": {
+        "operationId": "createStoryScript",
+        "summary": "Cria um roteiro de stories em rascunho",
+        "description": "Um dia (`scriptOn`, `AAAA-MM-DD`) e as cenas na ordem em que foram enviadas, até 30. O roteiro nasce em\nrascunho e o portal não o vê. Pode haver mais de um roteiro por cliente e dia, e um roteiro sem cenas.\nO texto e a orientação da cena recusam caractere de controle (menos tabulação e quebra de linha) e\ninvisível, inclusive o espaço de largura zero e os joiners. Precisa de `conteudo.operar` **e** de\n`conteudo.visualizar`: uma escrita que não lê o que escreveu é cega. Cliente arquivado dá 409, nas duas\njanelas da corrida com o arquivamento.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "tags": [
+          "story-scripts"
+        ],
+        "x-permission": "conteudo.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/createStoryScriptRequest"
+              },
+              "example": {
+                "scriptOn": "2026-10-20",
+                "scenes": [
+                  {
+                    "text": "Abrir a loja e mostrar a vitrine nova.",
+                    "guidance": "Filmar na vertical, com luz natural."
+                  },
+                  {
+                    "text": "Contar a promoção da semana."
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Roteiro criado, em rascunho.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createStoryScriptResponse"
+                },
+                "example": {
+                  "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+                  "scriptOn": "2026-10-20",
+                  "status": "draft",
+                  "scenes": [
+                    {
+                      "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                      "position": 1,
+                      "text": "Abrir a loja e mostrar a vitrine nova.",
+                      "guidance": "Filmar na vertical, com luz natural."
+                    },
+                    {
+                      "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                      "position": 2,
+                      "text": "Contar a promoção da semana.",
+                      "guidance": null
+                    }
+                  ],
+                  "recordedBy": null,
+                  "recordedAt": null,
+                  "createdAt": "2026-10-11T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Request payload is too large"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/story-scripts/{scriptId}": {
+      "patch": {
+        "operationId": "updateStoryScript",
+        "summary": "Edita o dia e as cenas de um roteiro em rascunho",
+        "description": "Só rascunho se edita: um roteiro enviado ou gravado dá 409 `STORY_SCRIPT_STATE`. `scenes` é o roteiro\ninteiro na nova ordem: cena com `id` é uma que já existe (texto, orientação e lugar mudam), cena sem\n`id` é nova. Cena não se remove, então a lista tem de trazer todas as que o roteiro tem; faltar uma, ou\ntrazer o id de outro roteiro, dá 409 `STORY_SCENES_MISMATCH`. Roteiro de outro cliente, de outra agência,\ninexistente ou `:scriptId` inválido devolvem o mesmo 404. Precisa de `conteudo.operar` e de\n`conteudo.visualizar`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "tags": [
+          "story-scripts"
+        ],
+        "x-permission": "conteudo.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "scriptId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/updateStoryScriptRequest"
+              },
+              "example": {
+                "scriptOn": "2026-10-21",
+                "scenes": [
+                  {
+                    "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                    "text": "Contar a promoção da semana."
+                  },
+                  {
+                    "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                    "text": "Abrir a loja e mostrar a vitrine nova.",
+                    "guidance": "Filmar na vertical."
+                  },
+                  {
+                    "text": "Pedir para seguir o perfil."
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Roteiro editado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createStoryScriptResponse"
+                },
+                "example": {
+                  "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+                  "scriptOn": "2026-10-20",
+                  "status": "draft",
+                  "scenes": [
+                    {
+                      "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                      "position": 1,
+                      "text": "Abrir a loja e mostrar a vitrine nova.",
+                      "guidance": "Filmar na vertical, com luz natural."
+                    },
+                    {
+                      "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                      "position": 2,
+                      "text": "Contar a promoção da semana.",
+                      "guidance": null
+                    }
+                  ],
+                  "recordedBy": null,
+                  "recordedAt": null,
+                  "createdAt": "2026-10-11T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Story script not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Story script not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | STORY_SCRIPT_STATE: O roteiro não está no estado que esta ação exige. | STORY_SCENES_MISMATCH: O roteiro mudou: recarregue e envie todas as cenas, na ordem desejada. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Request payload is too large"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/story-scripts/{scriptId}/send": {
+      "post": {
+        "operationId": "sendStoryScript",
+        "summary": "Envia o roteiro ao cliente",
+        "description": "Rascunho passa a enviado e a aparecer no portal. Repetir o envio não muda nada e não é erro. Um roteiro\njá gravado não volta a ser enviado (409 `STORY_SCRIPT_STATE`), e cliente arquivado dá 409. Precisa de\n`conteudo.operar` e de `conteudo.visualizar`; quem só tem vínculo de cliente nunca envia.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "tags": [
+          "story-scripts"
+        ],
+        "x-permission": "conteudo.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "scriptId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Roteiro enviado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createStoryScriptResponse"
+                },
+                "example": {
+                  "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+                  "scriptOn": "2026-10-20",
+                  "status": "sent",
+                  "scenes": [
+                    {
+                      "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                      "position": 1,
+                      "text": "Abrir a loja e mostrar a vitrine nova.",
+                      "guidance": "Filmar na vertical, com luz natural."
+                    },
+                    {
+                      "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                      "position": 2,
+                      "text": "Contar a promoção da semana.",
+                      "guidance": null
+                    }
+                  ],
+                  "recordedBy": null,
+                  "recordedAt": null,
+                  "createdAt": "2026-10-11T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Story script not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Story script not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | STORY_SCRIPT_STATE: O roteiro não está no estado que esta ação exige. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clients/{clientId}/story-scripts": {
+      "get": {
+        "operationId": "listPortalStoryScripts",
+        "summary": "Lista os roteiros enviados de um período, no portal",
+        "description": "Consulta por período, sem paginação: `from` e `to` inclusivos (`AAAA-MM-DD`), no máximo 93 dias (93 passa,\n94 dá 400) e 500 itens (acima disso, 400, sem truncar). Só roteiro enviado ou gravado, do dia mais antigo\nao mais novo; rascunho nunca vem, nem para o colaborador que também tem vínculo de cliente. Um roteiro\ngravado mostra o nome de quem gravou, pelo vínculo com o cliente.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "tags": [
+          "story-scripts"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "to",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Roteiros do período.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listPortalStoryScriptsResponse"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+                      "scriptOn": "2026-10-20",
+                      "status": "sent",
+                      "scenes": [
+                        {
+                          "position": 1,
+                          "text": "Abrir a loja e mostrar a vitrine nova.",
+                          "guidance": "Filmar na vertical, com luz natural."
+                        },
+                        {
+                          "position": 2,
+                          "text": "Contar a promoção da semana.",
+                          "guidance": null
+                        }
+                      ],
+                      "recordedBy": null,
+                      "recordedAt": null
+                    }
+                  ],
+                  "meta": {
+                    "from": "2026-10-01",
+                    "to": "2026-10-31",
+                    "count": 1
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clients/{clientId}/story-scripts/{scriptId}/recorded": {
+      "post": {
+        "operationId": "recordPortalStoryScript",
+        "summary": "Marca o roteiro como gravado, no portal",
+        "description": "Qualquer pessoa ativa do portal deste cliente marca um roteiro enviado como gravado; quem gravou e quando\nsão fixados pelo banco. Repetir não muda nada: a primeira pessoa continua sendo quem gravou. Rascunho,\nroteiro de outro cliente, de outra agência e id inexistente ou inválido devolvem o mesmo 404, também para o\ncolaborador cujo papel lê rascunhos. Um cliente arquivado durante a chamada também é 404.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "tags": [
+          "story-scripts"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "scriptId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Roteiro gravado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/recordPortalStoryScriptResponse"
+                },
+                "example": {
+                  "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+                  "scriptOn": "2026-10-20",
+                  "status": "recorded",
+                  "scenes": [
+                    {
+                      "position": 1,
+                      "text": "Abrir a loja e mostrar a vitrine nova.",
+                      "guidance": "Filmar na vertical, com luz natural."
+                    },
+                    {
+                      "position": 2,
+                      "text": "Contar a promoção da semana.",
+                      "guidance": null
+                    }
+                  ],
+                  "recordedBy": {
+                    "name": "Pessoa do Portal"
+                  },
+                  "recordedAt": "2026-10-20T15:00:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Story script not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Story script not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "TRY_AGAIN",
+                    "message": "Houve um conflito momentâneo. Tente de novo."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
