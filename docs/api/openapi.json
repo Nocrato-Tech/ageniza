@@ -15894,11 +15894,14 @@
       "get": {
         "operationId": "getMediaDownloadUrl",
         "summary": "Emite uma URL assinada de leitura",
-        "description": "Válida por poucos minutos, só GET, e apenas para um objeto confirmado da agência.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar`.",
+        "description": "Válida por poucos minutos, só GET, e apenas para um objeto confirmado e não removido da agência. A mídia sem cliente exige `midia.enviar`; a de um cliente exige `conteudo.visualizar` (a que o papel não lê é o mesmo 404). Em `variant=thumbnail`, a imagem devolve o próprio original e o vídeo devolve a miniatura quando processada, senão 409 `VARIANT_NOT_READY`. Só o pedido do original grava a auditoria `media.download_url_issued`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar` ou `conteudo.visualizar`.",
         "tags": [
           "media"
         ],
-        "x-permission": "midia.enviar",
+        "x-permission": [
+          "midia.enviar",
+          "conteudo.visualizar"
+        ],
         "parameters": [
           {
             "schema": {

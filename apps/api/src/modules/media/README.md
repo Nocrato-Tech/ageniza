@@ -30,7 +30,7 @@ neither the file nor a proxy passes through the VPS.
    defaults to `original`; `thumbnail`/`preview` return 409 `VARIANT_NOT_READY` while processing
    and `VARIANT_PROCESSING_FAILED` with a stable failure reason after a terminal failure.
 
-Every route requires `requireAgencyAccess` then `requirePermission('midia.enviar')` before any
+Every route requires `requireAgencyAccess` then a permission guard before any
 signed URL is produced, so a caller from agency A can never obtain a URL for agency B's asset --
 enforced at three independent layers: the route guard, the SQL scoping every asset lookup by both
 `id` and `agency_id`, and `media_assets`' own row-level security policies.
@@ -85,8 +85,19 @@ of another client and a malformed id are the same 404. The writes need `conteudo
 `conteudo.visualizar`. `POST /agencies/:agencyId/media/uploads` takes an optional `clientId` and
 `folderId`, both or neither; with them the route locks the folder (`app_private.lock_media_folder`),
 checks the pair and the client, and demands the same two permissions instead of `midia.enviar`.
-`parts` and `complete` accept either family, and RLS decides which media a role sees. What is not
-here yet: a signed read URL for a role that only holds `conteudo.visualizar`.
+`parts` and `complete` accept either family, and RLS decides which media a role sees. The signed read URL
+for a role that only holds `conteudo.visualizar` is the next section.
+
+### The read URL of a client's media (issue #550)
+
+`download-url` lets in `midia.enviar` **or** `conteudo.visualizar` (`MEDIA_READ_PERMISSIONS`), and the RLS of
+`media_assets` picks what each role reads: a media with no client is `midia.enviar`, a media of a client is
+`conteudo.visualizar`, and the other family's media is the same 404 as an absent one (a role with `midia.enviar` alone
+never signs a client's media; Gestor and Produção never sign the agency's own). The lookup refuses a removed media
+(`removed_at`), a pending or rejected one and one of another agency, all as 404, and writes `media.download_url_issued`
+only when it signs the **original** (the thumbnail and the preview are not audited, and the route has no rate limit of its own). `variant=thumbnail` of an **image** is its original (no thumbnail is generated for it); of a **video**
+it is the generated thumbnail, and `409 VARIANT_NOT_READY` (or `VARIANT_PROCESSING_FAILED`) until then, the code the screen
+answers with a placeholder. The portal does not use this route (decision of 2026-10-11).
 
 The writes answer the race with the archive of the client in both of its windows: the archive still
 running (`A0020` of the trigger) and the archive committed between the read of the client and the
