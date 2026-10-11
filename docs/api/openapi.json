@@ -32,7 +32,7 @@
     },
     {
       "name": "contents",
-      "description": "Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; e, no portal, os conteúdos de um período, o que espera aprovação, o post, aprovar e pedir ajuste."
+      "description": "Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; as subtarefas: criar, editar, entregar, aprovar e devolver; e, no portal, os conteúdos de um período, o que espera aprovação, o post, aprovar e pedir ajuste."
     },
     {
       "name": "collaborators",
@@ -1826,6 +1826,163 @@
             "type": "string"
           }
         },
+        "additionalProperties": false
+      },
+      "createContentTaskResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assignee": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "membershipId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "membershipId",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "dueOn": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "delivered",
+              "approved"
+            ]
+          },
+          "returnComment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "approvedBy": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "side": {
+                "type": "string",
+                "enum": [
+                  "agency",
+                  "client"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "side"
+            ],
+            "additionalProperties": false
+          },
+          "approvedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "assignee",
+          "dueOn",
+          "status",
+          "returnComment",
+          "approvedBy",
+          "approvedAt"
+        ],
+        "additionalProperties": false
+      },
+      "createContentTaskRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assigneeMembershipId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dueOn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "assigneeMembershipId",
+          "dueOn"
+        ],
+        "additionalProperties": false
+      },
+      "updateContentTaskRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assigneeMembershipId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dueOn": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "returnContentTaskRequest": {
+        "type": "object",
+        "properties": {
+          "comment": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "comment"
+        ],
         "additionalProperties": false
       },
       "listPortalContentsResponse": {
@@ -10520,6 +10677,950 @@
           },
           "409": {
             "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_STATE: Só um conteúdo cancelado é reagendado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/contents/{contentId}/tasks": {
+      "post": {
+        "operationId": "createContentTask",
+        "summary": "Cria uma subtarefa do conteúdo",
+        "description": "A subtarefa nasce pendente. Exige `conteudo.operar` e também `conteudo.visualizar`. `assigneeMembershipId` é o vínculo ativo\nde um colaborador da agência que vê Conteúdo (nunca um id de usuário); qualquer outro vínculo (removido, de outra agência, do\nportal, inexistente ou de quem não vê Conteúdo) é `400 CONTENT_TASK_ASSIGNEE_INVALID`, sem dizer qual foi o motivo. O título\nsegue o do conteúdo (uma linha, até 120 caracteres) e a descrição aceita quebras de linha, até 20000 bytes; texto só com\ncaractere de controle ou invisível é `400 VALIDATION_ERROR`. Conteúdo publicado ou cancelado não recebe subtarefa\n(`409 CONTENT_TASK_STATE`). Um conteúdo tem até 50 subtarefas, em qualquer estado: a 51ª é `409 CONTENT_TASK_LIMIT`. O percentual do conteúdo (`tasksApproved` sobre `tasksTotal` da consulta por período) conta a nova.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/createContentTaskRequest"
+              },
+              "example": {
+                "title": "Gravar o vídeo",
+                "description": null,
+                "assigneeMembershipId": "22222222-2222-4222-8222-222222222222",
+                "dueOn": "2026-10-15"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Subtarefa criada, pendente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createContentTaskResponse"
+                },
+                "example": {
+                  "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+                  "title": "Gravar o vídeo",
+                  "description": null,
+                  "assignee": {
+                    "membershipId": "22222222-2222-4222-8222-222222222222",
+                    "name": "Ana Souza"
+                  },
+                  "dueOn": "2026-10-15",
+                  "status": "pending",
+                  "returnComment": null,
+                  "approvedBy": null,
+                  "approvedAt": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed | CONTENT_TASK_ASSIGNEE_INVALID:",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Content not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Content not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_TASK_STATE: Um conteúdo publicado ou cancelado não recebe subtarefas. | CONTENT_TASK_LIMIT: | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/contents/{contentId}/tasks/{taskId}": {
+      "patch": {
+        "operationId": "updateContentTask",
+        "summary": "Edita uma subtarefa do conteúdo",
+        "description": "Qualquer subconjunto de `title`, `description` (`null` limpa), `assigneeMembershipId` (o vínculo ativo do novo responsável) e\n`dueOn`; exige `conteudo.operar` e também `conteudo.visualizar`. O estado nunca é um campo: ele só muda por entregar, aprovar\ne devolver. As regras do responsável são as da criação (`400 CONTENT_TASK_ASSIGNEE_INVALID`). Uma subtarefa aprovada, ou de um\nconteúdo publicado ou cancelado, não se edita (`409 CONTENT_TASK_STATE`). A subtarefa precisa ser do conteúdo do caminho, senão\n`404`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/updateContentTaskRequest"
+              },
+              "example": {
+                "dueOn": "2026-10-16",
+                "assigneeMembershipId": "22222222-2222-4222-8222-222222222222"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Subtarefa atualizada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createContentTaskResponse"
+                },
+                "example": {
+                  "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+                  "title": "Gravar o vídeo",
+                  "description": null,
+                  "assignee": {
+                    "membershipId": "22222222-2222-4222-8222-222222222222",
+                    "name": "Ana Souza"
+                  },
+                  "dueOn": "2026-10-16",
+                  "status": "pending",
+                  "returnComment": null,
+                  "approvedBy": null,
+                  "approvedAt": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed | CONTENT_TASK_ASSIGNEE_INVALID:",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Task not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Task not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_TASK_STATE: Uma subtarefa aprovada, ou de um conteúdo publicado ou cancelado, não é editada. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/contents/{contentId}/tasks/{taskId}/deliver": {
+      "post": {
+        "operationId": "deliverContentTask",
+        "summary": "Entrega uma subtarefa",
+        "description": "Só a pessoa responsável pela subtarefa entrega (`403` para qualquer outra, com ou sem outras permissões); a rota exige apenas\n`conteudo.visualizar`, porque quem entrega é um valor da linha e não uma permissão. A subtarefa pendente passa a entregue; entregar\nde novo uma entregue não muda nada. Uma subtarefa devolvida volta a pendente com o comentário e, ao ser entregue outra vez,\no comentário some. Conteúdo publicado ou cancelado não muda (`409 CONTENT_TASK_STATE`).\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subtarefa entregue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createContentTaskResponse"
+                },
+                "example": {
+                  "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+                  "title": "Gravar o vídeo",
+                  "description": null,
+                  "assignee": {
+                    "membershipId": "22222222-2222-4222-8222-222222222222",
+                    "name": "Ana Souza"
+                  },
+                  "dueOn": "2026-10-15",
+                  "status": "delivered",
+                  "returnComment": null,
+                  "approvedBy": null,
+                  "approvedAt": null
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Task not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Task not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_TASK_STATE: Só uma subtarefa pendente, de um conteúdo que não foi publicado nem cancelado, é entregue. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/contents/{contentId}/tasks/{taskId}/approve": {
+      "post": {
+        "operationId": "approveContentTask",
+        "summary": "Aprova uma subtarefa entregue",
+        "description": "Só a pessoa responsável pelo CONTEÚDO, ou quem tem `conteudo.aprovar_pela_agencia`, aprova (`403` para qualquer outra); a rota exige\napenas `conteudo.visualizar`, porque o responsável do conteúdo é um valor da linha. A subtarefa entregue passa a aprovada, e\nquem aprovou e quando são fixados pelo banco; aprovar de novo uma aprovada não muda nada e mantém quem aprovou primeiro.\nO percentual do conteúdo passa a contar a subtarefa. Conteúdo publicado ou cancelado não muda (`409 CONTENT_TASK_STATE`).\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subtarefa aprovada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createContentTaskResponse"
+                },
+                "example": {
+                  "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+                  "title": "Gravar o vídeo",
+                  "description": null,
+                  "assignee": {
+                    "membershipId": "22222222-2222-4222-8222-222222222222",
+                    "name": "Ana Souza"
+                  },
+                  "dueOn": "2026-10-15",
+                  "status": "approved",
+                  "returnComment": null,
+                  "approvedBy": {
+                    "name": "Ana Souza",
+                    "side": "agency"
+                  },
+                  "approvedAt": "2026-10-11T12:30:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Task not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Task not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_TASK_STATE: Só uma subtarefa entregue, de um conteúdo que não foi publicado nem cancelado, é aprovada. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/contents/{contentId}/tasks/{taskId}/return": {
+      "post": {
+        "operationId": "returnContentTask",
+        "summary": "Devolve uma subtarefa entregue, com comentário",
+        "description": "Quem pode é quem aprova (a pessoa responsável pelo conteúdo ou `conteudo.aprovar_pela_agencia`; `403` para qualquer outra). A\nsubtarefa entregue volta a pendente e o comentário fica nela (`returnComment`), até ser entregue de novo. O comentário é\nobrigatório, sem caractere de controle nem invisível (`400 VALIDATION_ERROR`), com até 5000 bytes. Ele não vai para a conversa\ndo conteúdo: essa conversa é do cliente, e o portal nunca vê subtarefa.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/returnContentTaskRequest"
+              },
+              "example": {
+                "comment": "Falta a legenda em português no vídeo."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Subtarefa pendente de novo, com o comentário.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createContentTaskResponse"
+                },
+                "example": {
+                  "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+                  "title": "Gravar o vídeo",
+                  "description": null,
+                  "assignee": {
+                    "membershipId": "22222222-2222-4222-8222-222222222222",
+                    "name": "Ana Souza"
+                  },
+                  "dueOn": "2026-10-15",
+                  "status": "pending",
+                  "returnComment": "Falta a legenda em português no vídeo.",
+                  "approvedBy": null,
+                  "approvedAt": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed | CONTENT_TASK_COMMENT_INVALID:",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Task not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Task not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_TASK_STATE: Só uma subtarefa entregue, de um conteúdo que não foi publicado nem cancelado, é devolvida. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
