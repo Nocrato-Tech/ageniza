@@ -2049,6 +2049,39 @@
                 "pendingInvitations": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "contentIndicators": {
+                  "type": "object",
+                  "properties": {
+                    "pending": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "inReview": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "overdue": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "adjusting": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "dueSoon": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "pending",
+                    "inReview",
+                    "overdue",
+                    "adjusting",
+                    "dueSoon"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -3021,6 +3054,19 @@
                         "personaId"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "contentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      },
+                      "required": [
+                        "contentId"
+                      ],
+                      "additionalProperties": false
                     }
                   ]
                 },
@@ -3198,6 +3244,19 @@
                     },
                     "required": [
                       "personaId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "contentId": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "required": [
+                      "contentId"
                     ],
                     "additionalProperties": false
                   }
@@ -3393,6 +3452,19 @@
                 },
                 "required": [
                   "personaId"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "contentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "contentId"
                 ],
                 "additionalProperties": false
               }
@@ -3605,6 +3677,19 @@
                 },
                 "required": [
                   "personaId"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "contentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "contentId"
                 ],
                 "additionalProperties": false
               }
@@ -3965,6 +4050,10 @@
           "home": {
             "type": "object",
             "properties": {
+              "contentsAwaitingApproval": {
+                "type": "integer",
+                "minimum": 0
+              },
               "threadsAnsweredByAgency": {
                 "type": "integer",
                 "minimum": 0
@@ -3976,6 +4065,7 @@
               }
             },
             "required": [
+              "contentsAwaitingApproval",
               "threadsAnsweredByAgency",
               "brandStudyFilled"
             ],
@@ -9793,7 +9883,7 @@
       "get": {
         "operationId": "listClients",
         "summary": "Lista a carteira de clientes com ordem de triagem",
-        "description": "Paginada pelo contrato global de listagem, com busca por nome, razão social e @ (sem\ndiferenciar maiúsculas nem acento), filtro de status e ordem `attention` por padrão: quem tem\nthread aguardando a agência vem primeiro, depois nome ascendente, com `id` como desempate.\n`pendingInvitations` só vem para quem tem `cliente.convidar_usuario`; para os demais o campo\né omitido, não zerado.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
+        "description": "Paginada pelo contrato global de listagem, com busca por nome, razão social e @ (sem\ndiferenciar maiúsculas nem acento), filtro de status e ordem `attention` por padrão: quem tem\nthread aguardando a agência vem primeiro, depois nome ascendente, com `id` como desempate; para quem\ntem `conteudo.visualizar`, o cliente com conteúdo atrasado (data planejada anterior ao dia de São\nPaulo, sem publicado nem cancelado) vem antes de todos. `pendingInvitations` só vem para quem tem\n`cliente.convidar_usuario` e `contentIndicators` (`pending`, `inReview`, `overdue`, `adjusting`, `dueSoon`) só para quem\ntem `conteudo.visualizar`; para os demais o campo é omitido, não zerado, e a ordem não muda. As\nconversas de conteúdo não entram em `threadsAwaitingAgency`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
         "tags": [
           "clients"
         ],
@@ -9884,7 +9974,14 @@
                       "status": "active",
                       "closingDate": null,
                       "threadsAwaitingAgency": 2,
-                      "pendingInvitations": 1
+                      "pendingInvitations": 1,
+                      "contentIndicators": {
+                        "pending": 3,
+                        "inReview": 1,
+                        "overdue": 2,
+                        "adjusting": 1,
+                        "dueSoon": 1
+                      }
                     }
                   ],
                   "meta": {
@@ -12653,11 +12750,14 @@
       "get": {
         "operationId": "listAgencyThreads",
         "summary": "Lista as conversas de um assunto do cliente",
-        "description": "O assunto é obrigatório e é exatamente um: `sectionKey` (uma das sete seções) ou `personaId`; os dois\njuntos, ou nenhum, são 400. `state` filtra por `open` ou `resolved`; sem ele vêm todas. Vinte por\npágina, a de atividade mais recente primeiro. O estado é derivado: a conversa está resolvida só\nenquanto a resolução é posterior ao último comentário. Persona de outro cliente é 404; a conversa\nde persona arquivada continua legível para a agência.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
+        "description": "O assunto é obrigatório e é exatamente um: `sectionKey` (uma das sete seções) ou `personaId`; os dois\njuntos, ou nenhum, são 400. `state` filtra por `open` ou `resolved`; sem ele vêm todas. Vinte por\npágina, a de atividade mais recente primeiro. O estado é derivado: a conversa está resolvida só\nenquanto a resolução é posterior ao último comentário. Persona de outro cliente é 404; a conversa\nde persona arquivada continua legível para a agência.\nCom `contentId` o assunto é um conteúdo, que tem uma conversa só, e a permissão é `conteudo.visualizar`. Conteúdo de outro cliente, de outra agência ou inexistente é 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar` ou `conteudo.visualizar`.",
         "tags": [
           "clients"
         ],
-        "x-permission": "cliente.visualizar",
+        "x-permission": [
+          "cliente.visualizar",
+          "conteudo.visualizar"
+        ],
         "parameters": [
           {
             "schema": {
@@ -12723,6 +12823,15 @@
             },
             "required": false,
             "name": "personaId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "contentId",
             "in": "query"
           },
           {
@@ -12878,11 +12987,14 @@
       "post": {
         "operationId": "openAgencyThread",
         "summary": "Abre uma conversa pela agência, com o primeiro comentário",
-        "description": "Cria a conversa e o primeiro comentário na mesma transação, com o lado `agency`. O lado nunca vem\ndo corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000\nbytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`\ne persona de outro cliente 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "description": "Cria a conversa e o primeiro comentário na mesma transação, com o lado `agency`. O lado nunca vem\ndo corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000\nbytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`\ne persona de outro cliente 404.\nCom `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, e só escreve com o conteúdo em \"aguardando aprovação\" ou depois (senão 409 `CONTENT_NOT_OPEN`).\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar` ou `conteudo.operar`.",
         "tags": [
           "clients"
         ],
-        "x-permission": "cliente.operar",
+        "x-permission": [
+          "cliente.operar",
+          "conteudo.operar"
+        ],
         "parameters": [
           {
             "schema": {
@@ -13038,7 +13150,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | PERSONA_ARCHIVED: Persona arquivada: a conversa é somente leitura.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | PERSONA_ARCHIVED: Persona arquivada: a conversa é somente leitura. | CONTENT_NOT_OPEN: | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13082,11 +13194,14 @@
       "get": {
         "operationId": "listAgencyThreadComments",
         "summary": "Lista os comentários de uma conversa",
-        "description": "Cinquenta por página, do mais antigo ao mais novo. O nome e a foto do autor vêm do vínculo do\nlado do comentário, e a pessoa removida mantém o nome, porque o comentário é histórico.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
+        "description": "Cinquenta por página, do mais antigo ao mais novo. O nome e a foto do autor vêm do vínculo do\nlado do comentário, e a pessoa removida mantém o nome, porque o comentário é histórico.\nNuma conversa de conteúdo a permissão é `conteudo.visualizar`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar` ou `conteudo.visualizar`.",
         "tags": [
           "clients"
         ],
-        "x-permission": "cliente.visualizar",
+        "x-permission": [
+          "cliente.visualizar",
+          "conteudo.visualizar"
+        ],
         "parameters": [
           {
             "schema": {
@@ -13269,11 +13384,14 @@
       "post": {
         "operationId": "addAgencyThreadComment",
         "summary": "Comenta uma conversa pela agência",
-        "description": "Grava o comentário com o lado `agency`; comentar numa conversa resolvida a reabre, sem escrever na\nconversa, porque o estado é derivado. Não existe rota de editar nem de apagar comentário.\nCliente arquivado e persona arquivada respondem 409.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "description": "Grava o comentário com o lado `agency`; comentar numa conversa resolvida a reabre, sem escrever na\nconversa, porque o estado é derivado. Não existe rota de editar nem de apagar comentário.\nCliente arquivado e persona arquivada respondem 409.\nNuma conversa de conteúdo, `conteudo.operar` e `conteudo.visualizar`; com o conteúdo em produção ou cancelado, 409 `CONTENT_NOT_OPEN`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar` ou `conteudo.operar`.",
         "tags": [
           "clients"
         ],
-        "x-permission": "cliente.operar",
+        "x-permission": [
+          "cliente.operar",
+          "conteudo.operar"
+        ],
         "parameters": [
           {
             "schema": {
@@ -13414,7 +13532,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | PERSONA_ARCHIVED: Persona arquivada: a conversa é somente leitura.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | PERSONA_ARCHIVED: Persona arquivada: a conversa é somente leitura. | CONTENT_NOT_OPEN: | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13458,11 +13576,14 @@
       "post": {
         "operationId": "resolveThread",
         "summary": "Resolve uma conversa",
-        "description": "Grava `resolved_at` e `resolved_by`. Resolver uma conversa que já está resolvida não escreve nada.\nNão existe rota de reabrir: um comentário novo reabre. Só quem tem `cliente.operar` resolve; a\npessoa do portal nunca.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "description": "Grava `resolved_at` e `resolved_by`. Resolver uma conversa que já está resolvida não escreve nada.\nNão existe rota de reabrir: um comentário novo reabre. Só quem tem `cliente.operar` resolve; a\npessoa do portal nunca.\nNa conversa de um conteúdo, `conteudo.operar` e `conteudo.visualizar`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar` ou `conteudo.operar`.",
         "tags": [
           "clients"
         ],
-        "x-permission": "cliente.operar",
+        "x-permission": [
+          "cliente.operar",
+          "conteudo.operar"
+        ],
         "parameters": [
           {
             "schema": {
@@ -13582,7 +13703,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | PERSONA_ARCHIVED: Persona arquivada: a conversa é somente leitura.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | PERSONA_ARCHIVED: Persona arquivada: a conversa é somente leitura. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14125,7 +14246,7 @@
       "get": {
         "operationId": "listPortalThreads",
         "summary": "Lista as conversas de um assunto, no portal",
-        "description": "Mesmos parâmetros, paginação e forma da lista da agência, pelo mesmo serviço. Persona arquivada\nnão é assunto válido no portal: responde 404 como se não existisse.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Mesmos parâmetros, paginação e forma da lista da agência, pelo mesmo serviço. Persona arquivada\nnão é assunto válido no portal: responde 404 como se não existisse.\nCom `contentId`, só enquanto o conteúdo está aberto ao cliente; fora disso, e para conteúdo de outro cliente, 404.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -14186,6 +14307,15 @@
             },
             "required": false,
             "name": "personaId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "contentId",
             "in": "query"
           },
           {
@@ -14322,7 +14452,7 @@
       "post": {
         "operationId": "openPortalThread",
         "summary": "Abre uma conversa pelo portal, com o primeiro comentário",
-        "description": "Grava a conversa e o primeiro comentário com o lado `client`, que a rota fixa. Seção que a agência\nainda não preencheu responde 409 `SECTION_NOT_FILLED`; persona arquivada ou de outro cliente, 404.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Grava a conversa e o primeiro comentário com o lado `client`, que a rota fixa. Seção que a agência\nainda não preencheu responde 409 `SECTION_NOT_FILLED`; persona arquivada ou de outro cliente, 404.\nCom `{ contentId }`, só enquanto o conteúdo está em \"aguardando aprovação\", \"em ajuste\", \"aprovado\" ou \"publicado\"; fora disso, e para conteúdo de outro cliente, 404. A conversa do conteúdo é uma só: abrir de novo escreve nela.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -14473,7 +14603,7 @@
             }
           },
           "409": {
-            "description": "SECTION_NOT_FILLED: Esta seção ainda não foi preenchida pela agência.",
+            "description": "SECTION_NOT_FILLED: Esta seção ainda não foi preenchida pela agência. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14517,7 +14647,7 @@
       "get": {
         "operationId": "listPortalThreadComments",
         "summary": "Lista os comentários de uma conversa, no portal",
-        "description": "Mesma paginação e forma da lista da agência. Conversa de outro cliente é 404.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Mesma paginação e forma da lista da agência. Conversa de outro cliente é 404. A conversa de um conteúdo que não está aberto ao cliente também é 404.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -14676,7 +14806,7 @@
       "post": {
         "operationId": "addPortalThreadComment",
         "summary": "Comenta uma conversa pelo portal",
-        "description": "Grava o comentário com o lado `client`; comentar numa conversa resolvida a reabre. Não existe\nrota de resolver no portal: só a agência resolve.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Grava o comentário com o lado `client`; comentar numa conversa resolvida a reabre. Não existe\nrota de resolver no portal: só a agência resolve.\nA conversa de um conteúdo que não está aberto ao cliente é 404.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -14811,6 +14941,25 @@
               }
             }
           },
+          "409": {
+            "description": "TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "TRY_AGAIN",
+                    "message": "Houve um conflito momentâneo. Tente de novo."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
           "500": {
             "description": "INTERNAL_ERROR: An unexpected error occurred",
             "content": {
@@ -14837,7 +14986,7 @@
       "get": {
         "operationId": "getPortalClient",
         "summary": "Lê o cadastro do próprio cliente e o resumo do Início, no portal",
-        "description": "Somente leitura. Traz o cadastro inteiro, a foto assinada, o nome da agência, `onboardingSeenAt` do\nvínculo de quem chama (nunca o de outra pessoa do mesmo cliente) e `home`: as conversas abertas com\nresposta da agência, só as que o portal enxerga, e o preenchimento do estudo. Outro cliente, cliente\narquivado, agência suspensa, vínculo removido e colaborador sem vínculo de cliente (Owner inclusive)\ndevolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Somente leitura. Traz o cadastro inteiro, a foto assinada, o nome da agência, `onboardingSeenAt` do\nvínculo de quem chama (nunca o de outra pessoa do mesmo cliente) e `home`: as conversas abertas com\nresposta da agência, só as que o portal enxerga, o preenchimento do estudo e `contentsAwaitingApproval`,\nos conteúdos do próprio cliente em \"aguardando aprovação\". A conversa de um conteúdo não entra em\n`threadsAnsweredByAgency`. Outro cliente, cliente arquivado, agência suspensa, vínculo removido e\ncolaborador sem vínculo de cliente (Owner inclusive) devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -14880,7 +15029,8 @@
                   "onboardingSeenAt": "2026-10-01T12:00:00.000Z",
                   "home": {
                     "threadsAnsweredByAgency": 2,
-                    "brandStudyFilled": 3
+                    "brandStudyFilled": 3,
+                    "contentsAwaitingApproval": 2
                   }
                 }
               }
@@ -15790,11 +15940,14 @@
       "get": {
         "operationId": "getMediaDownloadUrl",
         "summary": "Emite uma URL assinada de leitura",
-        "description": "Válida por poucos minutos, só GET, e apenas para um objeto confirmado da agência.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar`.",
+        "description": "Válida por poucos minutos, só GET, e apenas para um objeto confirmado e não removido da agência. A mídia sem cliente exige `midia.enviar`; a de um cliente exige `conteudo.visualizar` (a que o papel não lê é o mesmo 404). Em `variant=thumbnail`, a imagem devolve o próprio original e o vídeo devolve a miniatura quando processada, senão 409 `VARIANT_NOT_READY`. Só o pedido do original grava a auditoria `media.download_url_issued`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar` ou `conteudo.visualizar`.",
         "tags": [
           "media"
         ],
-        "x-permission": "midia.enviar",
+        "x-permission": [
+          "midia.enviar",
+          "conteudo.visualizar"
+        ],
         "parameters": [
           {
             "schema": {
@@ -16140,7 +16293,7 @@
       "post": {
         "operationId": "createClientMediaFolder",
         "summary": "Cria uma pasta de mídia do cliente",
-        "description": "No primeiro nível, ou dentro de uma pasta de primeiro nível do mesmo cliente (`parentId`): há só dois níveis.\nExige `conteudo.operar` e também `conteudo.visualizar`, porque a resposta é uma leitura. O nome não aceita\ncaracteres de controle, invisíveis nem os dois joiners, e tem até 80 caracteres.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "description": "No primeiro nível, ou dentro de uma pasta de primeiro nível do mesmo cliente (`parentId`): há só dois níveis.\nExige `conteudo.operar` e também `conteudo.visualizar`, porque a resposta é uma leitura. O nome não aceita\ncaracteres de controle, invisíveis nem joiners fora de uma sequência de emoji completa (família, bandeira de subdivisão, tom de pele), e tem até 80 caracteres.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
         "tags": [
           "media"
         ],
@@ -17535,7 +17688,7 @@
       "post": {
         "operationId": "createStoryScript",
         "summary": "Cria um roteiro de stories em rascunho",
-        "description": "Um dia (`scriptOn`, `AAAA-MM-DD`) e as cenas na ordem em que foram enviadas, até 30. O roteiro nasce em\nrascunho e o portal não o vê. Pode haver mais de um roteiro por cliente e dia, e um roteiro sem cenas.\nO texto e a orientação da cena recusam caractere de controle (menos tabulação e quebra de linha) e\ninvisível, inclusive o espaço de largura zero e os joiners. Precisa de `conteudo.operar` **e** de\n`conteudo.visualizar`: uma escrita que não lê o que escreveu é cega. Cliente arquivado dá 409, nas duas\njanelas da corrida com o arquivamento.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "description": "Um dia (`scriptOn`, `AAAA-MM-DD`) e as cenas na ordem em que foram enviadas, até 30. O roteiro nasce em\nrascunho e o portal não o vê. Pode haver mais de um roteiro por cliente e dia, e um roteiro sem cenas.\nO texto e a orientação da cena recusam caractere de controle (menos tabulação e quebra de linha) e\ninvisível, inclusive o espaço de largura zero e os joiners fora de uma sequência de emoji completa. Precisa de `conteudo.operar` **e** de\n`conteudo.visualizar`: uma escrita que não lê o que escreveu é cega. Cliente arquivado dá 409, nas duas\njanelas da corrida com o arquivamento.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
         "tags": [
           "story-scripts"
         ],
@@ -17752,6 +17905,154 @@
       }
     },
     "/agencies/{agencyId}/clients/{clientId}/story-scripts/{scriptId}": {
+      "get": {
+        "operationId": "getStoryScript",
+        "summary": "Lê um roteiro de stories, com as cenas",
+        "description": "O roteiro em qualquer estado (rascunho, enviado ou gravado), com as cenas na ordem e os ids delas, que é o\nque o `PATCH` pede de volta. Precisa só de `conteudo.visualizar`; `conteudo.operar` sem ela dá 403. O cliente\ntem de ser o da agência da URL: roteiro de outro cliente, de outra agência, inexistente ou `:scriptId`\ninválido devolvem o mesmo 404. Cliente arquivado se lê: a agência vê, só não edita.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
+        "tags": [
+          "story-scripts"
+        ],
+        "x-permission": "conteudo.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "scriptId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "O roteiro, com as cenas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createStoryScriptResponse"
+                },
+                "example": {
+                  "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+                  "scriptOn": "2026-10-20",
+                  "status": "draft",
+                  "scenes": [
+                    {
+                      "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                      "position": 1,
+                      "text": "Abrir a loja e mostrar a vitrine nova.",
+                      "guidance": "Filmar na vertical, com luz natural."
+                    },
+                    {
+                      "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                      "position": 2,
+                      "text": "Contar a promoção da semana.",
+                      "guidance": null
+                    }
+                  ],
+                  "recordedBy": null,
+                  "recordedAt": null,
+                  "createdAt": "2026-10-11T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Story script not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Story script not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "patch": {
         "operationId": "updateStoryScript",
         "summary": "Edita o dia e as cenas de um roteiro em rascunho",

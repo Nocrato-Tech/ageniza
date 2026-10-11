@@ -1,6 +1,6 @@
 # Roteiros de stories (#258)
 
-A API dos roteiros de stories de um cliente (`specs/conteudo.md` seções 3, 4 e 6), sobre a tabela, as funções e a
+A API dos roteiros de stories de um cliente (`specs/conteudo.md` seções 3, 4 e 6; a leitura de um roteiro é da #268), sobre a tabela, as funções e a
 RLS da #248 (`20261007001100_story_scripts.mjs`). Um roteiro é o plano de um dia de stories: uma data, cenas
 ordenadas (texto e orientação) e um estado, `rascunho → enviado → gravado`. A agência escreve e envia; o portal lê o
 que foi enviado e marca como gravado.
@@ -9,13 +9,14 @@ que foi enviado e marca como gravado.
 
 | rota | quem | o que faz |
 |---|---|---|
+| `GET /agencies/:agencyId/clients/:clientId/story-scripts/:scriptId` | `conteudo.visualizar` | lê um roteiro, em qualquer estado, com as cenas e os ids delas |
 | `POST /agencies/:agencyId/clients/:clientId/story-scripts` | `conteudo.operar` e `conteudo.visualizar` | cria o roteiro em rascunho, com as cenas |
 | `PATCH …/story-scripts/:scriptId` | as duas | muda o dia e/ou as cenas; só rascunho |
 | `POST …/story-scripts/:scriptId/send` | as duas | rascunho → enviado; repetir não é erro |
 | `GET /clients/:clientId/story-scripts?from=&to=` | pessoa ativa do portal | os roteiros enviados e gravados de um período |
 | `POST /clients/:clientId/story-scripts/:scriptId/recorded` | pessoa ativa do portal | enviado → gravado; repetir não muda quem gravou |
 
-A escrita da agência exige as **duas** permissões: uma escrita que não lê o que escreveu é cega, e a policy do banco
+A leitura da agência exige só `conteudo.visualizar`; a escrita exige as **duas** permissões: uma escrita que não lê o que escreveu é cega, e a policy do banco
 pede as duas (item 5 da decisão de 2026-10-07 do roteiro no banco). O portal é guardado só pelo vínculo ativo com o
 cliente (`requireClientAccess`); o cliente é sempre o que o guarda provou.
 
@@ -37,6 +38,21 @@ cliente (`requireClientAccess`); o cliente é sempre o que o guarda provou.
   (sem `DELETE`), a lista tem de trazer todas as que o roteiro tem; faltar uma, ou trazer o id de outro roteiro, é 409
   `STORY_SCENES_MISMATCH`. A rota trava o roteiro (`for update`), que é a trava do envio: uma edição e um envio nunca se
   intercalam.
+
+## A leitura de um roteiro (#268)
+
+A consulta por período devolve só `{ id, scriptOn, status }` de cada roteiro, e `PATCH` pede a lista inteira de cenas com
+os ids delas; sem esta rota a tela não teria como abrir um roteiro que já existe, nem somente leitura. É a mesma
+`StoryScriptSchema` das escritas, lida pela mesma consulta (`loadAgencyScript`), então rascunho, enviado e gravado saem iguais.
+
+- **Quem lê é `conteudo.visualizar`**, sozinha: `conteudo.operar` sem ela é 403, e Vendas e Financeiro não têm nenhuma das duas.
+  Quem só tem vínculo com o cliente (portal) não conhece a agência: 404 `Agency not found.`.
+- **O cliente é o da agência da URL.** A policy deixaria uma pessoa que lê Conteúdo em duas agências ver o roteiro de uma pela
+  URL da outra; por isso a rota confere o cliente contra a agência (`clientScopeOf`) antes de ler, e responde 404
+  `Client not found.`. Roteiro de outro cliente, de outra agência, inexistente ou com id malformado: o mesmo 404
+  `Story script not found.`.
+- **Cliente arquivado se lê.** Regra 14 da SPEC: conteúdo de cliente arquivado é só leitura na agência. A rota não olha o
+  estado do cliente; a policy de `SELECT` também não.
 
 ## A consulta por período
 
@@ -72,4 +88,4 @@ O portal nunca aprende que um cliente está arquivado: `A0020` e `A0051` são 40
 Pode haver mais de um roteiro por cliente e dia, e um roteiro sem cenas pode ser enviado: a SPEC não decide nenhum dos
 dois, o banco não impõe, e a API também não. Os limites de 30 cenas, 2000 caracteres de texto e 1000 de orientação são
 da API e estão na decisão de 2026-10-11 sobre este módulo, pendente de validação do dono. Não há listagem da agência:
-a agência vê os roteiros do período junto dos conteúdos, na rota da #254.
+a agência vê os roteiros do período (id, dia e estado) junto dos conteúdos, na rota da #254, e abre um deles pela rota acima.

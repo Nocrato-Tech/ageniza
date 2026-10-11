@@ -783,19 +783,18 @@ describe('the period controls and the URL', () => {
 });
 
 describe('the places left for the next parts', () => {
-  it('has Calendário selected, and Feed and Pastas closed until their own issues', async () => {
+  it('has Calendário selected, the feed open at its side and the Pastas tab closed until its own issue', async () => {
     const { impl } = makeFetch();
     render_(impl, contentsUrl(padaria.id));
     await screen.findByRole('heading', { name: 'Outubro 2026' });
 
     expect(screen.getByRole('tab', { name: 'Calendário' }).getAttribute('aria-selected')).toBe('true');
-    for (const label of ['Feed', 'Pastas']) {
-      const tab = screen.getByRole('tab', { name: label }) as HTMLButtonElement;
-      expect(tab.disabled).toBe(true);
-      expect(tab.getAttribute('aria-selected')).toBe('false');
-    }
+    expect(screen.getByRole('tab', { name: 'Feed' }).getAttribute('aria-selected')).toBe('false');
+    expect((screen.getByRole('tab', { name: 'Feed' }) as HTMLButtonElement).disabled).toBe(false);
+    const pastas = screen.getByRole('tab', { name: 'Pastas' }) as HTMLButtonElement;
+    expect(pastas.disabled).toBe(true);
+    expect(pastas.getAttribute('aria-selected')).toBe('false');
     expect(screen.getByRole('complementary', { name: 'Prévia do feed' })).toBeTruthy();
-    expect(screen.getByText('A prévia do feed ainda não está disponível.')).toBeTruthy();
   });
 });
 

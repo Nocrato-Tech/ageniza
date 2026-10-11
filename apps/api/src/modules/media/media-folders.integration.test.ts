@@ -176,7 +176,7 @@ const NO_DATABASE_DETAIL = /A00\d\d|deadlock|40P01|42501|pg_|relation|process/i;
 const expectClientArchived = (reply: Reply): void => {
   expect(reply.statusCode).toBe(409);
   expect(reply.json().error).toEqual({ code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode ser editado.' });
-  expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+  expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
 };
 
 const firstLevelFolder = async (clientId: string, name: string): Promise<string> => {
@@ -346,6 +346,24 @@ describe('creating a folder (issue #253)', () => {
     }
     expect(await folderCount(clientA1)).toBe(before);
     expect((await call('POST', foldersUrl(agencyA, clientA1), 'opVis', { name: `Coração ${String.fromCodePoint(0x2764, 0xfe0f)}` })).statusCode).toBe(201);
+  });
+
+  it('keeps a complete emoji sequence in the name and refuses the same one broken (issue #539)', async () => {
+    const family = String.fromCodePoint(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467);
+    const england = String.fromCodePoint(0x1f3f4, 0xe0067, 0xe0062, 0xe0065, 0xe006e, 0xe0067, 0xe007f);
+    const keycap = String.fromCodePoint(0x31, 0xfe0f, 0x20e3);
+    for (const name of [`Familia ${family}`, `Time ${england}`, `Top ${keycap}`]) {
+      const reply = await call('POST', foldersUrl(agencyA, clientA1), 'opVis', { name });
+      expect({ name, status: reply.statusCode }).toEqual({ name, status: 201 });
+      expect(reply.json().name).toBe(name);
+    }
+
+    const before = await folderCount(clientA1);
+    for (const name of [`Familia ${family}${String.fromCodePoint(0x200d)}`, `Time ${england.slice(0, -2)}`, `Top ${keycap}${String.fromCodePoint(0x20e3)}`, family]) {
+      const reply = await call('POST', foldersUrl(agencyA, clientA1), 'opVis', { name });
+      expect({ name, status: reply.statusCode }).toEqual({ name, status: 400 });
+    }
+    expect(await folderCount(clientA1)).toBe(before);
   });
 
   it('refuses an extra field, a folder inside a working folder, a parent of another client and an archived client', async () => {
@@ -562,7 +580,7 @@ describe('uploading a media into a folder of a client (issue #253)', () => {
       const refused = await call('POST', uploadUrl(agency), 'both', body(clientId, folderId));
       expect({ agency, status: refused.statusCode }).toEqual({ agency, status: 404 });
       expect(refused.json().error).toEqual({ code: 'NOT_FOUND', message: 'Folder not found.' });
-      expect(JSON.stringify(refused.json())).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify({ ...refused.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
     }
     expect(await mediaCount(agencyA) + await mediaCount(agencyB)).toBe(before);
 
@@ -645,6 +663,22 @@ describe('uploading a media into a folder of a client (issue #253)', () => {
       const reply = await pending!;
 
       expectClientArchived(reply);
+      expect(await owner.knex('media_assets').where({ id: assetId }).first('status', 'confirmed_at')).toEqual({ status: 'pending', confirmed_at: null });
+      expect(await owner.knex('audit.events').where({ target_id: assetId, action: 'media.upload_confirmed' })).toHaveLength(0);
+      expect(await app.media!.storage.headObject({ key: objectKey })).toBeUndefined();
+    });
+
+    // Issue #545. The confirmation (`status` pending -> confirmed) is the UPDATE the trigger of 20261011000700 serializes with the
+    // archive: with the archive still running, the UPDATE waits for the client and raises A0020 once it commits, and the route answers
+    // it as the same 409 (`translateClientMediaError`), with nothing confirmed.
+    it('is a 409 when the archive is still running while the confirmation writes, and nothing is confirmed', async () => {
+      const { clientId, reply } = await duringArchiveOfAFreshClient('in-progress', startedUpload, (_clientId, upload) =>
+        call('POST', `${uploadUrl(agencyA)}/${upload.assetId}/complete`, 'opVis', {}));
+
+      expectClientArchived(reply);
+      const asset = (await owner.knex('media_assets').where({ client_id: clientId }).first('id', 'object_key')) as { id: string; object_key: string };
+      const assetId = asset.id;
+      const objectKey = asset.object_key;
       expect(await owner.knex('media_assets').where({ id: assetId }).first('status', 'confirmed_at')).toEqual({ status: 'pending', confirmed_at: null });
       expect(await owner.knex('audit.events').where({ target_id: assetId, action: 'media.upload_confirmed' })).toHaveLength(0);
       expect(await app.media!.storage.headObject({ key: objectKey })).toBeUndefined();
@@ -971,7 +1005,7 @@ describe('what the database raises inside the writes is never a 500 the route kn
       await withFailing('media_folders', 'insert', `new.name = 'Falha injetada ${errcode}'`, errcode, async () => {
         const failed = await call('POST', foldersUrl(agencyA, clientA1), 'opVis', { name: `Falha injetada ${errcode}` });
         expect({ status: failed.statusCode, code: failed.json().error.code }).toEqual({ status, code });
-        expect(JSON.stringify(failed.json())).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify({ ...failed.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
       });
 
       expect(await folderCount(clientA1)).toBe(before);
@@ -988,7 +1022,7 @@ describe('what the database raises inside the writes is never a 500 the route kn
       await withFailing('media_assets', 'insert', `new.client_id = '${clientA1}'::uuid`, errcode, async () => {
         const failed = await call('POST', `/agencies/${agencyA}/media/uploads`, 'opVis', { ...uploadBody, clientId: clientA1, folderId: folder });
         expect({ status: failed.statusCode, code: failed.json().error.code }).toEqual({ status, code });
-        expect(JSON.stringify(failed.json())).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify({ ...failed.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
       });
 
       expect(await mediaCount(agencyA)).toBe(before);
@@ -1011,7 +1045,7 @@ describe('what the database raises inside the writes is never a 500 the route kn
       await withFailing('media_assets', 'update', `new.id = '${assetId}'::uuid and new.status = 'confirmed'`, errcode, async () => {
         const failed = await call('POST', `/agencies/${agencyA}/media/uploads/${assetId}/complete`, 'opVis', {});
         expect({ status: failed.statusCode, code: failed.json().error.code }).toEqual({ status, code });
-        expect(JSON.stringify(failed.json())).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify({ ...failed.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
       });
 
       expect((await owner.knex('media_assets').where({ id: assetId }).first('status')).status).toBe('pending');
@@ -1029,7 +1063,7 @@ describe('what the database raises inside the writes is never a 500 the route kn
       await withFailing('media_assets', 'update', `new.id = '${asset}'::uuid`, errcode, async () => {
         const failed = await call('POST', removeUrl(agencyA, clientA1, folder, asset), 'opVis');
         expect({ status: failed.statusCode, code: failed.json().error.code }).toEqual({ status, code });
-        expect(JSON.stringify(failed.json())).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify({ ...failed.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
       });
 
       expect(await removedAt(asset)).toBeNull();

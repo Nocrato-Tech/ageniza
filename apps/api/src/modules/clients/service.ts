@@ -225,7 +225,9 @@ export const BRAND_STUDY_FILLED_SQL = `(
 /**
  * The General tab summary (specs/clientes.md section 6). `personas` counts as one filled section
  * when at least one persona is active; "aguardando a agência" and "com resposta da agência" come
- * from the single thread-state definition, so this count cannot drift from the listing (#125).
+ * from the single thread-state definition, so this count cannot drift from the listing (#125). They count the
+ * brand study conversations only: the one of a content is Conteúdo's, and the policy hides it from Sales and Finance, so
+ * counting it would give the same client two different badges (#259).
  */
 export const loadClientSummary = async (transaction: ClientTransaction, clientId: string): Promise<ClientSummary> => {
   const result = await raw<RawRows<SummaryRow>>(transaction, `
@@ -234,12 +236,14 @@ export const loadClientSummary = async (transaction: ClientTransaction, clientId
       (
         select count(*) from public.client_threads thread
         where thread.client_id = ?::uuid
+          and thread.content_id is null
           and ${openThreadSql('thread')}
           and ${latestCommentSideSql('thread')} = 'client'
       ) as threads_awaiting_agency,
       (
         select count(*) from public.client_threads thread
         where thread.client_id = ?::uuid
+          and thread.content_id is null
           and ${openThreadSql('thread')}
           and ${latestCommentSideSql('thread')} = 'agency'
       ) as threads_answered_by_agency,
@@ -265,6 +269,10 @@ export interface ClientListFilters {
   readonly sort: ClientListSort;
   /** False for a caller without `cliente.convidar_usuario`: the count is not even computed. */
   readonly includePendingInvitations: boolean;
+  /** False for a caller without `conteudo.visualizar`: the signals are not computed and do not order. */
+  readonly includeContentSignals: boolean;
+  /** The instant the day of "atrasado" is read from; the route passes the clock, a test passes a fixed instant. */
+  readonly asOf: Date;
 }
 
 export interface ClientListRow {
@@ -278,6 +286,12 @@ export interface ClientListRow {
   readonly threads_awaiting_agency: string | number;
   /** Null when the caller has no `cliente.convidar_usuario`, so the route omits the field. */
   readonly pending_invitations: string | number | null;
+  /** Null when the caller has no `conteudo.visualizar`, so the route omits the indicators. */
+  readonly content_pending: string | number | null;
+  readonly content_in_review: string | number | null;
+  readonly content_overdue: string | number | null;
+  readonly content_adjusting: string | number | null;
+  readonly content_due_soon: string | number | null;
 }
 
 export interface ClientListPage {
@@ -339,7 +353,7 @@ export const listClients = async (
   // a caller without `cliente.convidar_usuario` gets null, so the route omits the field instead of
   // zeroing it.
   const pendingInvitationsCte = filters.includePendingInvitations
-    ? `with pending_invitations as materialized (
+    ? `pending_invitations as materialized (
         select invitation.client_id as client_id, count(*) as pending_count
         from public.invitations invitation
         where invitation.agency_id = ?::uuid
@@ -358,20 +372,59 @@ export const listClients = async (
   const pendingInvitationsColumn = filters.includePendingInvitations
     ? 'coalesce(pending_invitations.pending_count, 0)'
     : 'null::bigint';
-  // The CTE's agency bind appears before the WHERE binds in the statement text.
-  const itemBindings: SqlBinding[] = filters.includePendingInvitations ? [agencyId, ...bindings] : [...bindings];
+  // Vendas e Financeiro do not see Conteúdo (specs/conteudo.md section 2): a caller without
+  // `conteudo.visualizar` gets nulls, not zeros, and the policy of `contents` is the second barrier.
+  // "Atrasado" is derived (specs/conteudo.md section 4): a planned day before today in São Paulo that
+  // is neither published nor cancelled. "Prazo em dois dias" is the same set with the planned day from
+  // today to two days ahead, both ends in. "Pendente" is the agency's own work (em produção, em ajuste),
+  // "em ajuste" is the second of those on its own, and "em revisão" is what waits for the client
+  // (aguardando aprovação).
+  const contentSignalsCte = filters.includeContentSignals
+    ? `content_signals as materialized (
+        select
+          content.client_id as client_id,
+          count(*) filter (where content.status in ('in_production', 'adjusting')) as pending_count,
+          count(*) filter (where content.status = 'awaiting_approval') as in_review_count,
+          count(*) filter (where content.status = 'adjusting') as adjusting_count,
+          count(*) filter (where content.publish_on < app_private.sao_paulo_date(?::timestamptz)) as overdue_count,
+          count(*) filter (
+            where content.publish_on between app_private.sao_paulo_date(?::timestamptz)
+              and app_private.sao_paulo_date(?::timestamptz) + 2
+          ) as due_soon_count
+        from public.contents content
+        join public.clients content_client on content_client.id = content.client_id
+        where content_client.agency_id = ?::uuid
+          and content.status in ('in_production', 'adjusting', 'awaiting_approval', 'approved')
+        group by content.client_id
+      )`
+    : '';
+  const contentSignalsJoin = filters.includeContentSignals
+    ? 'left join content_signals on content_signals.client_id = client.id'
+    : '';
+  const contentColumn = (column: string): string =>
+    filters.includeContentSignals ? `coalesce(content_signals.${column}, 0)` : 'null::bigint';
+  const withClause = [pendingInvitationsCte, contentSignalsCte].filter((cte) => cte !== '').join(', ');
+  // The CTEs come before the WHERE in the statement text, so their binds do too.
+  const itemBindings: SqlBinding[] = [
+    ...(filters.includePendingInvitations ? [agencyId] : []),
+    ...(filters.includeContentSignals
+      ? [filters.asOf.toISOString(), filters.asOf.toISOString(), filters.asOf.toISOString(), agencyId]
+      : []),
+    ...bindings
+  ];
 
   // A derived table because PostgreSQL does not accept an output alias inside an ORDER BY
   // expression (`ORDER BY threads_awaiting_agency > 0` over the subquery output is valid).
   // The folded name is compared byte by byte (`collate "C"`), so space, hyphen and digit order the
   // same in every database, like the collaborators list (#355).
   const foldedName = `${foldTextSql('listing.name')} collate "C"`;
+  const overdueFirst = filters.includeContentSignals ? '(listing.content_overdue > 0) desc, ' : '';
   const orderBy = filters.sort === 'name:asc'
     ? `${foldedName} asc, listing.id asc`
-    : `(listing.threads_awaiting_agency > 0) desc, ${foldedName} asc, listing.id asc`;
+    : `${overdueFirst}(listing.threads_awaiting_agency > 0) desc, ${foldedName} asc, listing.id asc`;
 
   const itemsResult = await raw<RawRows<ClientListRow & { readonly total: string | number }>>(transaction, `
-    ${pendingInvitationsCte}
+    ${withClause === '' ? '' : `with ${withClause}`}
     select
       listing.id,
       listing.agency_id,
@@ -382,6 +435,11 @@ export const listClients = async (
       listing.closing_date,
       listing.threads_awaiting_agency,
       listing.pending_invitations,
+      listing.content_pending,
+      listing.content_in_review,
+      listing.content_overdue,
+      listing.content_adjusting,
+      listing.content_due_soon,
       count(*) over () as total
     from (
       select
@@ -396,12 +454,19 @@ export const listClients = async (
           select count(*)
           from public.client_threads thread
           where thread.client_id = client.id
+            and thread.content_id is null
             and ${openThreadSql('thread')}
             and ${latestCommentSideSql('thread')} = 'client'
         ) as threads_awaiting_agency,
-        ${pendingInvitationsColumn} as pending_invitations
+        ${pendingInvitationsColumn} as pending_invitations,
+        ${contentColumn('pending_count')} as content_pending,
+        ${contentColumn('in_review_count')} as content_in_review,
+        ${contentColumn('overdue_count')} as content_overdue,
+        ${contentColumn('adjusting_count')} as content_adjusting,
+        ${contentColumn('due_soon_count')} as content_due_soon
       from public.clients client
       ${pendingInvitationsJoin}
+      ${contentSignalsJoin}
       where ${where}
     ) as listing
     order by ${orderBy}

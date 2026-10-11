@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { BrandSectionKey, ConversationSide, Thread, ThreadState, ThreadSubject } from '@ageniza/contracts';
+import type { BrandSectionKey, ConversationSide, ConversationSubject, Thread, ThreadState } from '@ageniza/contracts';
 import { raw, type SqlBinding } from '@ageniza/database';
 
 import { THREAD_EXCERPT_LENGTH } from './policy.js';
@@ -19,7 +19,14 @@ import { latestCommentSideSql, openThreadSql } from './thread-state.js';
  * it that reaches a route is read back by `diagnoseConversationRefusal`.
  */
 export type ConversationScope =
-  | { readonly side: 'agency'; readonly agencyId: string; readonly clientId: string; readonly userId: string }
+  | {
+    readonly side: 'agency';
+    readonly agencyId: string;
+    readonly clientId: string;
+    readonly userId: string;
+    /** Whether the caller holds a permission of the agency; the Owner holds every one. The subject picks which are asked. */
+    readonly holds: (permission: string) => boolean;
+  }
   | { readonly side: 'client'; readonly clientId: string; readonly userId: string };
 
 /** Why a conversation write or read finds nothing to act on; the route maps each to one HTTP error. */
@@ -29,7 +36,36 @@ export type ConversationRefusal =
   | 'subject-not-found'
   | 'persona-archived'
   | 'section-not-filled'
-  | 'thread-not-found';
+  | 'thread-not-found'
+  | 'content-not-open'
+  | 'forbidden';
+
+/**
+ * The states in which a content is open to the client (specs/conteudo.md rule 13): the list of
+ * `app_private.content_open_to_client`, which the portal asks the database. The agency reads the status of the content
+ * itself, so it applies the same list here.
+ */
+const CONTENT_OPEN_STATUSES: readonly string[] = ['awaiting_approval', 'adjusting', 'approved', 'published'];
+const isContentOpen = (status: string | null | undefined): boolean => status !== null && status !== undefined && CONTENT_OPEN_STATUSES.includes(status);
+
+type ConversationAccess = 'read' | 'write';
+
+/**
+ * What the agency needs for a conversation, by what the conversation is about. A content has its own
+ * permissions and not the ones of Clientes: writing needs `conteudo.operar` AND `conteudo.visualizar`
+ * (a write needs the read the policies also ask), the same pair `content_open_to_agency_writer` asks.
+ */
+const agencyPermissions = (about: 'brand-study' | 'content', access: ConversationAccess): readonly string[] => {
+  if (about === 'content') return access === 'read' ? ['conteudo.visualizar'] : ['conteudo.operar', 'conteudo.visualizar'];
+  return access === 'read' ? ['cliente.visualizar'] : ['cliente.operar'];
+};
+
+const agencyHolds = (scope: ConversationScope, about: 'brand-study' | 'content', access: ConversationAccess): boolean =>
+  scope.side === 'client' || agencyPermissions(about, access).every((permission) => scope.holds(permission));
+
+/** The route guard lets in whoever holds the permission of either kind; this is where the subject is held to its own. */
+const subjectPermissionRefusal = (scope: ConversationScope, subject: ConversationSubject, access: ConversationAccess): ConversationRefusal | undefined =>
+  agencyHolds(scope, 'contentId' in subject ? 'content' : 'brand-study', access) ? undefined : 'forbidden';
 
 interface RawRows<TResult> {
   readonly rows: readonly TResult[];
@@ -47,6 +83,7 @@ export interface ThreadRow {
   readonly id: string;
   readonly section_key: BrandSectionKey | null;
   readonly persona_id: string | null;
+  readonly content_id: string | null;
   readonly opened_by: string;
   readonly opened_side: ConversationSide;
   readonly resolved_at: Date | null;
@@ -109,7 +146,7 @@ export const loadAuthors = async (transaction: ClientTransaction, threadIds: rea
 // `openThreadSql` and `latestCommentSideSql` are the single definition of the derived state; the
 // statistics below only add what a thread item shows.
 const THREAD_COLUMNS = `
-  thread.id, thread.section_key, thread.persona_id, thread.opened_by, thread.opened_side,
+  thread.id, thread.section_key, thread.persona_id, thread.content_id, thread.opened_by, thread.opened_side,
   thread.resolved_at, thread.resolved_by,
   stats.comment_count, stats.last_comment_at,
   ${latestCommentSideSql('thread')} as last_side,
@@ -133,12 +170,18 @@ const THREAD_FROM = `
   ) last_comment
 `;
 
+const subjectOfRow = (row: ThreadRow): ConversationSubject => {
+  if (row.section_key !== null) return { sectionKey: row.section_key };
+  if (row.content_id !== null) return { contentId: row.content_id };
+  return { personaId: row.persona_id ?? '' };
+};
+
 export const threadFromRow = (row: ThreadRow, authors: ConversationAuthors): Thread => {
   const state: ThreadState = row.is_open ? 'open' : 'resolved';
   const resolved = state === 'resolved' && row.resolved_at !== null && row.resolved_by !== null;
   return {
     id: row.id,
-    subject: row.section_key !== null ? { sectionKey: row.section_key } : { personaId: row.persona_id ?? '' },
+    subject: subjectOfRow(row),
     state,
     openedBy: { name: authorOf(authors, row.id, row.opened_side, row.opened_by)?.name ?? null, side: row.opened_side },
     lastComment: { side: row.last_side, at: new Date(row.last_comment_at).toISOString(), excerpt: row.excerpt },
@@ -211,13 +254,49 @@ const checkClient = async (transaction: ClientTransaction, scope: ConversationSc
   return client.status === 'archived' ? 'client-archived' : undefined;
 };
 
+interface SubjectContentRow {
+  readonly status: string;
+}
+
+/**
+ * The content of a subject, inside the client of the route: another client's content is the same "not found" as a
+ * missing one, whoever asks. The portal reads it only through `portal_contents` (no client link can select from
+ * `public.contents`) and only while it is open to the client, asked of `content_open_to_client` here and not left to
+ * the policies: a collaborator who also has a client link would read a content in production through their agency branch.
+ */
+const loadSubjectContent = async (
+  transaction: ClientTransaction,
+  scope: ConversationScope,
+  contentId: string
+): Promise<SubjectContentRow | undefined> => {
+  if (scope.side === 'agency') {
+    const result = await raw<RawRows<SubjectContentRow>>(transaction, `
+      select content.status from public.contents content
+      where content.id = ?::uuid and content.client_id = ?::uuid
+    `, [contentId, scope.clientId]);
+    return result.rows[0];
+  }
+  const result = await raw<RawRows<SubjectContentRow>>(transaction, `
+    select content.status
+    from app_private.portal_contents(?::uuid, null::date, null::date, null::text[], ?::uuid) content
+    where app_private.content_open_to_client(content.id)
+  `, [scope.clientId, contentId]);
+  return result.rows[0];
+};
+
 /** Who may start a thread on this subject, and whether the subject exists for them. */
 const checkSubject = async (
   transaction: ClientTransaction,
   scope: ConversationScope,
-  subject: ThreadSubject,
+  subject: ConversationSubject,
   options: { readonly forWrite: boolean }
 ): Promise<ConversationRefusal | undefined> => {
+  if ('contentId' in subject) {
+    const content = await loadSubjectContent(transaction, scope, subject.contentId);
+    if (content === undefined) return 'subject-not-found';
+    // The agency reads a content that is not open yet (and an old conversation of it), and writes nothing there.
+    return options.forWrite && !isContentOpen(content.status) ? 'content-not-open' : undefined;
+  }
   if ('personaId' in subject) {
     const persona = await loadSubjectPersona(transaction, scope, subject.personaId);
     if (persona === undefined) return 'subject-not-found';
@@ -248,16 +327,50 @@ const insertComment = async (
   return id;
 };
 
+/**
+ * A content has one conversation, so "opening" it is finding it or creating it and writing the comment into it. The
+ * unique index decides, and a person who arrives while the other is still creating waits on it (never a 23505),
+ * finds the thread the other committed and comments there: two first comments never make two conversations.
+ */
+const openContentThread = async (
+  transaction: ClientTransaction,
+  scope: ConversationScope,
+  input: { readonly contentId: string; readonly body: string }
+): Promise<OpenThreadResult> => {
+  const created = await raw<RawRows<{ id: string }>>(transaction, `
+    insert into public.client_threads (id, client_id, content_id, opened_by, opened_side)
+    values (?::uuid, ?::uuid, ?::uuid, ?::uuid, ?)
+    on conflict (content_id) where content_id is not null do nothing
+    returning id
+  `, [randomUUID(), scope.clientId, input.contentId, scope.userId, scope.side]);
+  let threadId = created.rows[0]?.id;
+  if (threadId === undefined) {
+    const existing = await raw<RawRows<{ id: string }>>(transaction, `
+      select thread.id from public.client_threads thread
+      where thread.content_id = ?::uuid and thread.client_id = ?::uuid
+    `, [input.contentId, scope.clientId]);
+    threadId = existing.rows[0]?.id;
+  }
+  // The conversation exists and the policy hides it from the caller: the content changed under the request.
+  if (threadId === undefined) throw new ConversationWriteRefused();
+  const commentId = await insertComment(transaction, { threadId, clientId: scope.clientId, userId: scope.userId, side: scope.side, body: input.body });
+  return { kind: 'ok', threadId, commentId };
+};
+
 /** Opens a thread and writes its first comment in the same transaction, on the side of the scope. */
 export const openThread = async (
   transaction: ClientTransaction,
   scope: ConversationScope,
-  input: { readonly subject: ThreadSubject; readonly body: string }
+  input: { readonly subject: ConversationSubject; readonly body: string }
 ): Promise<OpenThreadResult> => {
+  const permissionRefusal = subjectPermissionRefusal(scope, input.subject, 'write');
+  if (permissionRefusal !== undefined) return { kind: permissionRefusal };
   const clientRefusal = await checkClient(transaction, scope);
   if (clientRefusal !== undefined) return { kind: clientRefusal };
   const subjectRefusal = await checkSubject(transaction, scope, input.subject, { forWrite: true });
   if (subjectRefusal !== undefined) return { kind: subjectRefusal };
+
+  if ('contentId' in input.subject) return openContentThread(transaction, scope, { contentId: input.subject.contentId, body: input.body });
 
   const threadId = randomUUID();
   await raw(transaction, `
@@ -278,6 +391,9 @@ export const openThread = async (
 interface ThreadContextRow {
   readonly persona_status: 'active' | 'archived' | null;
   readonly client_status: 'active' | 'archived';
+  readonly content_id: string | null;
+  /** Read through `public.contents`, so only the agency side (which may read it) ever sees a value. */
+  readonly content_status: string | null;
 }
 
 /**
@@ -286,6 +402,8 @@ interface ThreadContextRow {
  * thread, another agency's, a missing one and, for the portal, one about an archived persona. That
  * last case is filtered here, not left to row-level security, for the same reason as in
  * `loadSubjectPersona`: a collaborator with a client link crosses the policy through its agency branch.
+ * The conversation of a content is filtered the same way: the portal reaches it only while the content is open
+ * to the client, by `content_open_to_client`, whatever the agency branch of the policy would show that person.
  */
 const loadThreadContext = async (
   transaction: ClientTransaction,
@@ -299,19 +417,40 @@ const loadThreadContext = async (
     bindings.push(scope.agencyId);
   } else {
     conditions.push("(thread.persona_id is null or persona.status = 'active')");
+    conditions.push('(thread.content_id is null or app_private.content_open_to_client(thread.content_id))');
   }
   const result = await raw<RawRows<ThreadContextRow>>(transaction, `
-    select persona.status as persona_status, client.status as client_status
+    select persona.status as persona_status, client.status as client_status, thread.content_id, content.status as content_status
     from public.client_threads thread
     join public.clients client on client.id = thread.client_id
     left join public.client_personas persona on persona.id = thread.persona_id
+    left join public.contents content on content.id = thread.content_id
     where ${conditions.join(' and ')}
   `, bindings);
   return result.rows[0];
 };
 
-const refusalOfContext = (context: ThreadContextRow | undefined): ConversationRefusal | undefined => {
+/**
+ * What the caller may do to a thread that exists for them. The conversation of a content that the agency caller
+ * may not read never gets here: the policy hides it, so `context` is undefined and it is "not found". One the caller
+ * may read and not write is a 403.
+ */
+const permissionRefusalOfContext = (
+  scope: ConversationScope,
+  context: ThreadContextRow | undefined,
+  access: ConversationAccess
+): ConversationRefusal | undefined => {
   if (context === undefined) return 'thread-not-found';
+  return agencyHolds(scope, context.content_id === null ? 'brand-study' : 'content', access) ? undefined : 'forbidden';
+};
+
+const refusalOfContext = (
+  scope: ConversationScope,
+  context: ThreadContextRow | undefined,
+  access: ConversationAccess
+): ConversationRefusal | undefined => {
+  const permissionRefusal = permissionRefusalOfContext(scope, context, access);
+  if (permissionRefusal !== undefined || context === undefined) return permissionRefusal;
   if (context.client_status === 'archived') return 'client-archived';
   return context.persona_status === 'archived' ? 'persona-archived' : undefined;
 };
@@ -326,8 +465,13 @@ export const addComment = async (
   scope: ConversationScope,
   input: { readonly threadId: string; readonly body: string }
 ): Promise<AddCommentResult> => {
-  const refusal = refusalOfContext(await loadThreadContext(transaction, scope, input.threadId));
+  const context = await loadThreadContext(transaction, scope, input.threadId);
+  const refusal = refusalOfContext(scope, context, 'write');
   if (refusal !== undefined) return { kind: refusal };
+  // The agency writes in the conversation of a content only while the content is open to the client.
+  if (context !== undefined && scope.side === 'agency' && context.content_id !== null && !isContentOpen(context.content_status)) {
+    return { kind: 'content-not-open' };
+  }
   const commentId = await insertComment(transaction, {
     threadId: input.threadId,
     clientId: scope.clientId,
@@ -351,7 +495,7 @@ export const resolveThread = async (
   scope: Extract<ConversationScope, { readonly side: 'agency' }>,
   threadId: string
 ): Promise<ResolveThreadResult> => {
-  const refusal = refusalOfContext(await loadThreadContext(transaction, scope, threadId));
+  const refusal = refusalOfContext(scope, await loadThreadContext(transaction, scope, threadId), 'write');
   if (refusal !== undefined) return { kind: refusal };
 
   const current = await loadThreadRow(transaction, { clientId: scope.clientId, threadId });
@@ -386,9 +530,11 @@ export type ListThreadsResult =
 export const listThreads = async (
   transaction: ClientTransaction,
   scope: ConversationScope,
-  input: { readonly subject: ThreadSubject; readonly state?: ThreadState },
+  input: { readonly subject: ConversationSubject; readonly state?: ThreadState },
   pagination: { readonly pageSize: number; readonly offset: number }
 ): Promise<ListThreadsResult> => {
+  const permissionRefusal = subjectPermissionRefusal(scope, input.subject, 'read');
+  if (permissionRefusal !== undefined) return { kind: permissionRefusal };
   const clientRefusal = await checkClient(transaction, scope);
   // An archived client is read-only, not unreadable: only a missing client stops a read.
   if (clientRefusal === 'client-not-found') return { kind: clientRefusal };
@@ -400,6 +546,9 @@ export const listThreads = async (
   if ('sectionKey' in input.subject) {
     conditions.push('thread.section_key = ?');
     bindings.push(input.subject.sectionKey);
+  } else if ('contentId' in input.subject) {
+    conditions.push('thread.content_id = ?::uuid');
+    bindings.push(input.subject.contentId);
   } else {
     conditions.push('thread.persona_id = ?::uuid');
     bindings.push(input.subject.personaId);
@@ -443,7 +592,8 @@ export const listComments = async (
   threadId: string,
   pagination: { readonly pageSize: number; readonly offset: number }
 ): Promise<ListCommentsResult> => {
-  if (await loadThreadContext(transaction, scope, threadId) === undefined) return { kind: 'thread-not-found' };
+  const refusal = permissionRefusalOfContext(scope, await loadThreadContext(transaction, scope, threadId), 'read');
+  if (refusal !== undefined) return { kind: refusal };
 
   const result = await raw<RawRows<CommentRow & { readonly total: string | number }>>(transaction, `
     select comment.id, comment.body, comment.author_user_id, comment.author_side, comment.created_at, count(*) over () as total
@@ -486,14 +636,21 @@ export const loadComment = async (
 export const diagnoseConversationRefusal = async (
   transaction: ClientTransaction,
   scope: ConversationScope,
-  target: { readonly personaId?: string; readonly threadId?: string }
+  target: { readonly personaId?: string; readonly threadId?: string; readonly contentId?: string }
 ): Promise<ConversationRefusal | undefined> => {
   if (scope.side === 'client') return 'client-not-found';
   const clientRefusal = await checkClient(transaction, scope);
   if (clientRefusal !== undefined) return clientRefusal;
   if (target.threadId !== undefined) {
     const context = await loadThreadContext(transaction, scope, target.threadId);
-    return context?.persona_status === 'archived' ? 'persona-archived' : undefined;
+    if (context === undefined) return undefined;
+    if (context.persona_status === 'archived') return 'persona-archived';
+    return context.content_id !== null && !isContentOpen(context.content_status) ? 'content-not-open' : undefined;
+  }
+  if (target.contentId !== undefined) {
+    const content = await loadSubjectContent(transaction, scope, target.contentId);
+    if (content === undefined) return 'subject-not-found';
+    return isContentOpen(content.status) ? undefined : 'content-not-open';
   }
   if (target.personaId !== undefined) {
     const persona = await loadSubjectPersona(transaction, scope, target.personaId);

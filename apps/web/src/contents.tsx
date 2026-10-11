@@ -17,6 +17,7 @@ import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
 import { clientDetailQueryKey } from './client-detail.js';
 import { ContentCalendar } from './content-calendar.js';
+import { ContentFeed, ContentFeedSkeleton } from './content-feed.js';
 import { daysOf, parseAnchor, periodOf, periodTitle, shiftAnchor, todayInSaoPaulo, type CalendarView } from './content-dates.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -113,6 +114,9 @@ const moveErrorMessage = (error: unknown): string => {
 
 const parseView = (raw: string | null): CalendarView => (raw === 'semana' ? 'week' : 'month');
 
+/** The client's two views of the same period: the calendar (the default, so absent from the URL) or the grid of the feed. */
+const parseVista = (raw: string | null): 'calendar' | 'feed' => (raw === 'feed' ? 'feed' : 'calendar');
+
 /**
  * `/agencia/:agenciaId/conteudos/:clienteId`: the calendar of one client. The client is in the
  * path; the view (`visao`) and the day the period is built around (`data`) are in the query, so a
@@ -130,6 +134,7 @@ export function ContentsClientPage() {
   const validId = ClientSchema.shape.id.safeParse(normalizedId).success;
   const today = todayInSaoPaulo();
   const view = parseView(searchParams.get('visao'));
+  const vista = parseVista(searchParams.get('vista'));
   const anchor = parseAnchor(searchParams.get('data'), today);
   const period = periodOf(view, anchor);
 
@@ -183,6 +188,12 @@ export function ContentsClientPage() {
     setSearchParams(next, { replace: true });
   };
 
+  const setVista = (next: 'calendar' | 'feed'): void => {
+    const params = new URLSearchParams(searchParams);
+    if (next === 'feed') params.set('vista', 'feed'); else params.delete('vista');
+    setSearchParams(params, { replace: true });
+  };
+
   if (!validId || (client.isError && isNotVisible(client.error)) || (contents.isError && isNotVisible(contents.error))) {
     return <NotFoundPage as="section" />;
   }
@@ -209,7 +220,6 @@ export function ContentsClientPage() {
               <Avatar name={clientData.name} photoUrl={clientData.photoUrl} size="md" />
               <div>
                 <h2 className="contents__client-name">{clientData.name}</h2>
-                {clientData.instagramHandle !== null && <p className="contents__client-handle">@{clientData.instagramHandle}</p>}
               </div>
             </>}
         </header>
@@ -229,34 +239,41 @@ export function ContentsClientPage() {
             <Button variant={view === 'week' ? 'secondary' : 'ghost'} aria-pressed={view === 'week'} onClick={() => setPeriod('week', searchParams.get('data'))}>Semana</Button>
           </div>
           <div className="contents__views" role="tablist" aria-label="Visão do cliente">
-            <Button role="tab" aria-selected="true" variant="secondary">Calendário</Button>
-            {['Feed', 'Pastas'].map((label) => <Button key={label} role="tab" aria-selected="false" disabled variant="ghost">{label}</Button>)}
+            <Button role="tab" aria-selected={vista === 'calendar'} variant={vista === 'calendar' ? 'secondary' : 'ghost'} onClick={() => setVista('calendar')}>Calendário</Button>
+            <Button role="tab" aria-selected={vista === 'feed'} variant={vista === 'feed' ? 'secondary' : 'ghost'} onClick={() => setVista('feed')}>Feed</Button>
+            <Button role="tab" aria-selected="false" disabled variant="ghost">Pastas</Button>
           </div>
         </div>
         {archived && <p className="contents__note">Cliente arquivado: o calendário é só leitura.</p>}
         {moveError !== null && <p className="contents__move-error" role="alert">{moveError}</p>}
         {move.isPending && <p className="list-refreshing" role="status">Movendo conteúdo…</p>}
         {loaded === undefined
-          ? <div className="contents__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>
+          ? (vista === 'feed' ? <ContentFeedSkeleton /> : <div className="contents__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>)
           : <>
             {contents.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
-            {loaded.data.contents.length === 0 && !contents.isPlaceholderData && <p className="contents__empty">Nenhum conteúdo planejado neste período.</p>}
-            <ContentCalendar
-              clientId={normalizedId}
-              view={view}
-              anchor={anchor}
-              today={today}
-              days={daysOf(period)}
-              contents={loaded.data.contents}
-              canMove={canMove}
-              movingId={move.isPending ? move.variables.content.id : null}
-              onMove={(content, day) => move.mutate({ content, day })}
-            />
+            {vista === 'feed'
+              ? <section aria-label="Prévia do feed"><ContentFeed contents={loaded.data.contents} today={today} handle={clientData?.instagramHandle ?? null} /></section>
+              : <>
+                {loaded.data.contents.length === 0 && !contents.isPlaceholderData && <p className="contents__empty">Nenhum conteúdo planejado neste período.</p>}
+                <ContentCalendar
+                  clientId={normalizedId}
+                  view={view}
+                  anchor={anchor}
+                  today={today}
+                  days={daysOf(period)}
+                  contents={loaded.data.contents}
+                  canMove={canMove}
+                  movingId={move.isPending ? move.variables.content.id : null}
+                  onMove={(content, day) => move.mutate({ content, day })}
+                />
+              </>}
           </>}
       </div>
-      <aside className="contents__feed" aria-label="Prévia do feed">
-        <p>A prévia do feed ainda não está disponível.</p>
-      </aside>
+      {vista === 'calendar' && <aside className="contents__feed" aria-label="Prévia do feed">
+        {loaded === undefined
+          ? <ContentFeedSkeleton />
+          : <ContentFeed contents={loaded.data.contents} today={today} handle={clientData?.instagramHandle ?? null} />}
+      </aside>}
     </div>}
   </section>;
 }
