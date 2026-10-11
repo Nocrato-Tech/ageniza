@@ -45,8 +45,8 @@ type Vista = 'calendar' | 'feed';
 const parseVista = (raw: string | null): Vista => (raw === 'feed' ? 'feed' : 'calendar');
 const parseStatus = (raw: string | null): PortalStatus | '' => STATUS_FILTERS.find((status) => status === raw) ?? '';
 
-/** The cover of a content in production does not exist for the portal: the response has no such field. */
-const coverOf = (content: PortalContentListItem): string | null => (content.status === 'in_production' ? null : content.coverAssetId);
+/** The file that serves as the cover of a content in production does not exist for the portal: the response has no such field. */
+const coverOf = (content: PortalContentListItem): string | null => (content.status === 'in_production' ? null : content.thumbnailAssetId);
 
 /** The grid of the profile, the latest first; the order inside a day is the day's own, read backwards (as in the agency feed). */
 const timeOf = (content: PortalContentListItem): string => (content.status === 'in_production' ? '99:99' : content.publishAtTime ?? '99:99');
@@ -87,7 +87,7 @@ function Awaiting({ clientId }: { clientId: string }) {
     <h2 id="portal-awaiting-title">O que precisa de você <span>({meta.totalItems})</span></h2>
     <ul className="portal-awaiting__list">
       {data.map((content) => <li key={content.id} className="portal-awaiting__item">
-        <PortalContentCover clientId={clientId} contentId={content.id} assetId={content.coverAssetId} format={content.format} className="portal-awaiting__cover" />
+        <PortalContentCover clientId={clientId} contentId={content.id} assetId={content.thumbnailAssetId} format={content.format} className="portal-awaiting__cover" />
         <p className="portal-awaiting__title"><Link className="portal-card-link" to={postAddress(clientId, content.id)}>{content.title}</Link></p>
         <p className="portal-awaiting__day">{dayMonthLabel(content.publishOn)}</p>
       </li>)}

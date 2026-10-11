@@ -450,6 +450,24 @@ describe('the portal Conteúdos (#269)', () => {
       expect(container.querySelectorAll('img')).toHaveLength(1);
     });
 
+    it('draws the first media of a post that has no chosen cover, in the month and in what waits, as the thumbnail (issue #606)', async () => {
+      const world = makeWorld();
+      const post = world.api.seed({ title: 'Post de imagem', format: 'image', publishOn: '2026-10-12', thumbnailAssetId: COVER_ID });
+      const waiting = world.api.seed({ title: 'Carrossel esperando', format: 'carousel', publishOn: '2026-10-13', status: 'awaiting_approval', thumbnailAssetId: COVER_TWO_ID });
+      world.api.seed({ title: 'Sem mídia', format: 'image', publishOn: '2026-10-14' });
+      renderPortal(world);
+      await ready();
+      await screen.findByText('Post de imagem');
+
+      await waitFor(() => expect(cardOf('Post de imagem').querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${COVER_ID}.png?variant=thumbnail`));
+      await waitFor(() => expect(awaitingBlock().querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${COVER_TWO_ID}.png?variant=thumbnail`));
+      expect(within(cardOf('Sem mídia')).getByText('▣')).toBeTruthy();
+      expect([...mediaCalls(world)].sort()).toEqual([
+        `GET /clients/${CLIENT_ID}/contents/${post.id}/media/${COVER_ID}/url?variant=thumbnail`,
+        `GET /clients/${CLIENT_ID}/contents/${waiting.id}/media/${COVER_TWO_ID}/url?variant=thumbnail`
+      ].sort());
+    });
+
     it('goes back to the shape of the format when the picture does not load, and does not ask for it again', async () => {
       const world = makeWorld();
       world.api.seed({ title: 'Imagem quebrada', format: 'image', publishOn: '2026-10-12', coverAssetId: COVER_ID });
