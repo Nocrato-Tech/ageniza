@@ -476,7 +476,7 @@ describe('create (issue #254)', () => {
     const reply = await w.call('POST', people.admin.cookie, urlA(), { ...create, folderId: folder() });
     expect(reply.statusCode).toBe(400);
     expect(reply.json().error.code).toBe('CONTENT_FOLDER_INVALID');
-    expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+    expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
     expect(await w.countContents(clientA)).toBe(before);
   });
 
@@ -489,7 +489,7 @@ describe('create (issue #254)', () => {
     const reply = await w.call('POST', people.admin.cookie, urlA(), { ...create, folderId: folderA, ownerMembershipId: await owner() });
     expect(reply.statusCode).toBe(400);
     expect(reply.json().error.code).toBe('CONTENT_OWNER_INVALID');
-    expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+    expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
     expect(await w.countContents(clientA)).toBe(before);
   });
 
@@ -709,7 +709,7 @@ describe('edit and move (issue #254)', () => {
     for (const reply of [title, move, media]) {
       expect(reply.statusCode).toBe(409);
       expect(reply.json().error.code).toBe('CONTENT_NOT_EDITABLE');
-      expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
     }
     const row = await w.contentRow(contentId);
     expect(row.title).toBe('Fechado');
@@ -834,7 +834,7 @@ describe('edit and move (issue #254)', () => {
 
         expect(reply.statusCode).toBe(403);
         expect(reply.json().error.code).toBe('FORBIDDEN');
-        expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
         expect((await w.contentRow(contentId)).owner_user_id).toBe(people.production.id);
       } finally {
         w.clearHook();
@@ -957,7 +957,7 @@ describe('format, folder, cover and media in one request (issue #254)', () => {
     for (const reply of [withoutList, withList]) {
       expect(reply.statusCode).toBe(409);
       expect(reply.json().error.code).toBe('CONTENT_MEDIA_INCOMPLETE');
-      expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
     }
     const row = await w.contentRow(contentId);
     expect([row.format, row.status, row.revision]).toEqual(['reels', 'approved', 1]);

@@ -71,7 +71,7 @@ const archiveBeforeStatement = async (clientId: string, statement: RegExp, start
 const archived = (reply: Reply): void => {
   expect(reply.statusCode).toBe(409);
   expect(reply.json().error).toEqual({ code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode ser editado.' });
-  expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+  expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
 };
 
 const urlOf = (clientId: string): string => `/agencies/${w.agencyA}/clients/${clientId}/contents`;
@@ -156,7 +156,7 @@ describe('a content written while the client is being archived (issue #254)', ()
 
       expect(reply.statusCode).toBe(403);
       expect(reply.json().error.code).toBe('FORBIDDEN');
-      expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
       expect(await w.countContents(clientId)).toBe(0);
     } finally {
       w.clearHook();
@@ -187,7 +187,7 @@ describe('a content written while another transaction holds the client (issue #2
 
       expect(reply.statusCode).toBe(409);
       expect(reply.json().error).toEqual({ code: 'TRY_AGAIN', message: 'Houve um conflito momentâneo. Tente de novo.' });
-      expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
     } finally {
       await holder.rollback();
       await held;
