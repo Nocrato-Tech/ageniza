@@ -4,7 +4,7 @@ import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { ClientDetailResponseSchema, ClientListResponseSchema, ContentPeriodResponseSchema, ClientSchema } from '@ageniza/contracts';
 import { Avatar, Button, Skeleton } from '@ageniza/ui';
 
-import { useAgencyContext } from './agency.js';
+import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
 import { clientDetailQueryKey } from './client-detail.js';
 import { ContentCalendar } from './content-calendar.js';
@@ -13,6 +13,7 @@ import { daysOf, parseAnchor, periodOf, periodTitle, shiftAnchor, todayInSaoPaul
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { NotFoundPage } from './status-pages.js';
+import { useStoryScriptLayer } from './story-scripts.js';
 
 /** The listing's own ceiling (`PaginationInputSchema`): the stories show one page of the roster, in the roster's order. */
 const STORIES_PAGE_SIZE = 100;
@@ -141,6 +142,9 @@ export function ContentsClientPage() {
       previousQuery?.queryKey[1] === agency.agencyId && previousQuery.queryKey[3] === normalizedId ? previous : undefined
   });
 
+  const canWriteScripts = useCan('conteudo.operar') && client.data?.id.toLowerCase() === normalizedId && client.data.status !== 'archived';
+  const scriptLayer = useStoryScriptLayer({ clientId: normalizedId, canOperate: canWriteScripts, scripts: contents.data?.data.storyScripts ?? [] });
+
   const name = client.data?.name;
   useDocumentTitle(name === undefined ? 'Conteúdos — Ageniza' : `Conteúdos de ${name} — Ageniza`);
 
@@ -213,7 +217,7 @@ export function ContentsClientPage() {
               ? <section aria-label="Prévia do feed"><ContentFeed contents={loaded.data.contents} today={today} handle={clientData?.instagramHandle ?? null} /></section>
               : <>
                 {loaded.data.contents.length === 0 && !contents.isPlaceholderData && <p className="contents__empty">Nenhum conteúdo planejado neste período.</p>}
-                <ContentCalendar view={view} anchor={anchor} today={today} days={daysOf(period)} contents={loaded.data.contents} />
+                <ContentCalendar view={view} anchor={anchor} today={today} days={daysOf(period)} contents={loaded.data.contents} dayExtras={scriptLayer.dayExtras} />
               </>}
           </>}
       </div>
@@ -223,5 +227,6 @@ export function ContentsClientPage() {
           : <ContentFeed contents={loaded.data.contents} today={today} handle={clientData?.instagramHandle ?? null} />}
       </aside>}
     </div>}
+    {scriptLayer.modal}
   </section>;
 }

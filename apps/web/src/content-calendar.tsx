@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 import type { ContentListItem } from '@ageniza/contracts';
 
 import { fullDayLabel, WEEKDAY_LABELS, type CalendarView } from './content-dates.js';
@@ -31,10 +33,12 @@ export interface ContentCalendarProps {
   readonly today: string;
   readonly days: readonly string[];
   readonly contents: readonly ContentListItem[];
+  /** What a day carries besides its contents (the story scripts: the "+" and a mark for each script). */
+  readonly dayExtras?: (day: string) => ReactNode;
 }
 
 /** Whole weeks, Monday first: a month and a week are the same grid with a different number of rows. */
-export function ContentCalendar({ view, anchor, today, days, contents }: ContentCalendarProps) {
+export function ContentCalendar({ view, anchor, today, days, contents, dayExtras }: ContentCalendarProps) {
   const byDay = new Map<string, ContentListItem[]>();
   for (const content of contents) byDay.set(content.publishOn, [...(byDay.get(content.publishOn) ?? []), content]);
 
@@ -57,6 +61,7 @@ export function ContentCalendar({ view, anchor, today, days, contents }: Content
               <span className="visually-hidden">{fullDayLabel(day)}</span>
             </time>
           </p>
+          {dayExtras?.(day)}
           {items.length > 0 && <ul className="content-day__items">
             {items.map((content) => <li key={content.id}><ContentCard content={content} today={today} /></li>)}
           </ul>}
