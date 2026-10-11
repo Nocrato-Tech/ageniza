@@ -527,26 +527,26 @@ describe('CLIENT lifecycle functions (#123)', () => {
     const archivedInvite = randomUUID();
     await expect(
       asUser(adminA, (transaction) => transaction('invitations').insert({
-        id: archivedInvite, agency_id: agencyA, purpose: 'client_invite', client_id: clientArchived,
+        agency_id: agencyA, purpose: 'client_invite', client_id: clientArchived,
         email: `archived-invite-${archivedInvite}@example.test`, token_hash: `hash-${archivedInvite}`, expires_at: new Date(Date.now() + 86_400_000)
       }))
     ).rejects.toThrow(/row-level security/);
-    expect(await getOwner().knex('invitations').where({ id: archivedInvite }).select('id')).toEqual([]);
+    expect(await getOwner().knex('invitations').where({ email: `archived-invite-${archivedInvite}@example.test` }).select('id')).toEqual([]);
 
     const activeInvite = randomUUID();
     await expect(
       asUser(adminA, (transaction) => transaction('invitations').insert({
-        id: activeInvite, agency_id: agencyA, purpose: 'client_invite', client_id: clientA1,
+        agency_id: agencyA, purpose: 'client_invite', client_id: clientA1,
         email: `active-invite-${activeInvite}@example.test`, token_hash: `hash-${activeInvite}`, expires_at: new Date(Date.now() + 86_400_000)
       }))
     ).resolves.toBeDefined();
-    await getOwner().knex('invitations').where({ id: activeInvite }).delete();
+    await getOwner().knex('invitations').where({ email: `active-invite-${activeInvite}@example.test` }).delete();
 
     // The admin-grant gate is not lost in the replacement: a non-Owner admin cannot invite as admin...
     const adminInvite = randomUUID();
     await expect(
       asUser(adminA, (transaction) => transaction('invitations').insert({
-        id: adminInvite, agency_id: agencyA, purpose: 'collaborator_invite', role_id: roleIds.admin,
+        agency_id: agencyA, purpose: 'collaborator_invite', role_id: roleIds.admin,
         email: `admin-invite-${adminInvite}@example.test`, token_hash: `hash-${adminInvite}`, expires_at: new Date(Date.now() + 86_400_000)
       }))
     ).rejects.toThrow(/row-level security/);
@@ -555,11 +555,11 @@ describe('CLIENT lifecycle functions (#123)', () => {
     const collabInvite = randomUUID();
     await expect(
       asUser(adminA, (transaction) => transaction('invitations').insert({
-        id: collabInvite, agency_id: agencyA, purpose: 'collaborator_invite', role_id: roleIds.production,
+        agency_id: agencyA, purpose: 'collaborator_invite', role_id: roleIds.production,
         email: `collab-invite-${collabInvite}@example.test`, token_hash: `hash-${collabInvite}`, expires_at: new Date(Date.now() + 86_400_000)
       }))
     ).resolves.toBeDefined();
-    await getOwner().knex('invitations').whereIn('id', [adminInvite, collabInvite]).delete();
+    await getOwner().knex('invitations').whereIn('email', [`admin-invite-${adminInvite}@example.test`, `collab-invite-${collabInvite}@example.test`]).delete();
   });
 
   it('cannot be redirected by a hijacked search_path', async () => {
@@ -640,11 +640,11 @@ describe('CLIENT lifecycle functions (#123)', () => {
     const inviteId = randomUUID();
     await expect(
       asUser(adminA, (transaction) => transaction('invitations').insert({
-        id: inviteId, agency_id: agencyA, purpose: 'client_invite', client_id: clientB,
+        agency_id: agencyA, purpose: 'client_invite', client_id: clientB,
         email: `cross-agency-${inviteId}@example.test`, token_hash: `hash-${inviteId}`, expires_at: new Date(Date.now() + 86_400_000)
       }))
     ).rejects.toThrow(/row-level security/);
-    expect(await getOwner().knex('invitations').where({ id: inviteId }).select('id')).toEqual([]);
+    expect(await getOwner().knex('invitations').where({ email: `cross-agency-${inviteId}@example.test` }).select('id')).toEqual([]);
   });
 
   it('checks permission before locking, so an unauthorized caller never waits on the row lock', async () => {
@@ -785,10 +785,12 @@ describe('CLIENT lifecycle functions (#123)', () => {
       return Number(rows[0]!.count);
     };
 
+    // The application role does not choose the id of an invitation, so a race invite is told apart by its e-mail.
+    const raceEmail = (inviteId: string): string => `race-${inviteId}@example.test`;
     const insertPortalInvite = (transaction: Knex.Transaction, clientId: string, inviteId: string) =>
       transaction('invitations').insert({
-        id: inviteId, agency_id: agencyA, purpose: 'client_invite', client_id: clientId,
-        email: `race-${inviteId}@example.test`, token_hash: `hash-${inviteId}`, expires_at: new Date(Date.now() + 86_400_000)
+        agency_id: agencyA, purpose: 'client_invite', client_id: clientId,
+        email: raceEmail(inviteId), token_hash: `hash-${inviteId}`, expires_at: new Date(Date.now() + 86_400_000)
       });
 
     const cleanup = async (clientId: string): Promise<void> => {
@@ -831,7 +833,7 @@ describe('CLIENT lifecycle functions (#123)', () => {
         const outcome = await inviteOutcome;
         expect(outcome).toMatchObject({ code: 'A0020' });
         expect((await clientState(client)).status).toBe('archived');
-        expect(await getOwner().knex('invitations').where({ id: inviteId }).select('id')).toEqual([]);
+        expect(await getOwner().knex('invitations').where({ email: raceEmail(inviteId) }).select('id')).toEqual([]);
         expect(await pendingInvites(client)).toBe(0);
       } finally {
         commitArchive();
@@ -871,7 +873,7 @@ describe('CLIENT lifecycle functions (#123)', () => {
 
         expect(await archiveOutcome).toBe('archived');
         expect((await clientState(client)).status).toBe('archived');
-        expect((await invitationState(inviteId))?.revoked_at).not.toBeNull();
+        expect((await getOwner().knex('invitations').where({ email: raceEmail(inviteId) }).first('revoked_at'))?.revoked_at).not.toBeNull();
         expect(await pendingInvites(client)).toBe(0);
       } finally {
         commitInvite();
@@ -887,7 +889,7 @@ describe('CLIENT lifecycle functions (#123)', () => {
 
       try {
         await asUser(inviterA, (transaction) => insertPortalInvite(transaction, client, inviteId));
-        expect(await getOwner().knex('invitations').where({ id: inviteId }).select('id')).toHaveLength(1);
+        expect(await getOwner().knex('invitations').where({ email: raceEmail(inviteId) }).select('id')).toHaveLength(1);
         expect(await pendingInvites(client)).toBe(1);
       } finally {
         await cleanup(client);
@@ -921,7 +923,7 @@ describe('CLIENT lifecycle functions (#123)', () => {
             await raw(transaction, "set local lock_timeout = '250ms'", []);
             await insertPortalInvite(transaction, client, inviteId);
           })).rejects.toThrow(/row-level security/);
-          expect(await getOwner().knex('invitations').where({ id: inviteId }).select('id')).toEqual([]);
+          expect(await getOwner().knex('invitations').where({ email: raceEmail(inviteId) }).select('id')).toEqual([]);
         }
       } finally {
         release();

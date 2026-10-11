@@ -28,5 +28,6 @@ regra é o erro mais repetido.
 22. **Harness no banco certo.** Antes de rodar a integração, exporte `DATABASE_URL` e `MIGRATION_DATABASE_URL` apontando para o seu banco: sem elas, ou com um banco chamado `ageniza`, o harness recusa e diz o motivo (#391). Harness novo obtém as URLs só por `resolveIntegrationDatabaseUrls`, nunca com `?? 'postgresql://...'`.
 23. **Caractere invisível.** A regra de invisível não fica só em `\p{Cf}`: inclua `Default_Ignorable_Code_Point` (CGJ, seletores de variação, FVS) e brancos que são símbolo (U+2800) (#426).
 24. **Mutação por ponto de chamada.** Quando um helper protege várias rotas, mute cada chamada, não só o helper; mutar o helper esconde a rota que ficou sem teste (#426).
+25. **Tabela nova declara os próprios grants.** O `ageniza_app` não tem privilégio padrão em tabela nova de `public` nem de `auth`: a migration que cria a tabela concede, por coluna no `INSERT` e no `UPDATE`, só o que uma rota ou o worker faz, e nunca `DELETE` em entidade de negócio. O teste de catálogo de `least-privilege-grants.integration.test.ts` reprova o grant de tabela inteira (#372).
 
 As lições completas de segurança estão em `docs/security-review.md` e nas notas do projeto; este checklist só lista o que mais se repete.
