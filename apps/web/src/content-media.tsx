@@ -29,7 +29,7 @@ const MAX_PAGES = 20;
 const foldersKey = (agencyId: string, clientId: string) => ['agency', agencyId, 'media-folders', clientId, 'folders'] as const;
 
 /** Every page of a listing, in the server's order: the picker never shows only the first hundred as if they were all. */
-async function readAllPages<T>(readPage: (page: number) => Promise<{ data: readonly T[]; meta: { totalPages: number } }>): Promise<T[]> {
+export async function readAllPages<T>(readPage: (page: number) => Promise<{ data: readonly T[]; meta: { totalPages: number } }>): Promise<T[]> {
   const items: T[] = [];
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const result = await readPage(page);
