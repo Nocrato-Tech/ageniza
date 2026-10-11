@@ -14,6 +14,8 @@ import {
   type DatabaseClient
 } from '@ageniza/database';
 
+import { ensureContentDemo } from './seed-demo-content.js';
+
 /**
  * Demo data for the local environment (issue #183). The command refuses to run anywhere but a
  * loopback database and requires an explicit `--i-know-this-is-local` flag; passwords are random
@@ -1013,6 +1015,17 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
     for (const client of MAIN_CLIENTS) {
       await ensureThreads({ database, userIdByKey, client, idFor });
     }
+    await ensureContentDemo({
+      database,
+      idFor,
+      agencyId: mainAgencyId,
+      people: {
+        admin: adminUserId,
+        manager: mainUserIds.get('user:camila')!,
+        production: mainUserIds.get('user:bruno')!,
+        portal: portalUserId
+      }
+    });
     profiles.push({
       label: 'Portal',
       email: portalEmail,
