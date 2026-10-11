@@ -167,6 +167,16 @@ O worker registra sozinho o `clients.archive-due` quando sobe (`pnpm dev` ou `pn
 
 Sem worker, `select app_private.archive_due_clients();` faz a mesma coisa e devolve a quantidade (o job chama `due_client_ids()` e `archive_due_client(cliente)` um cliente por vez, e a função de lote é feita das duas): o job é só o relógio. Rodar duas vezes seguidas arquiva zero na segunda. Uma virada em que o worker estava parado é reposta quando ele sobe de novo, porque o job roda na inicialização.
 
+## Vendo o e-mail ao cliente
+
+O worker pergunta à fila de notificação a cada minuto (e uma vez ao subir) e envia ao cliente "conteúdos para aprovar" e "publicado", pelo Mailpit (<http://127.0.0.1:8025>), com o link `APP_PUBLIC_URL/portal/<cliente>/calendario`. Ele só se registra com `SMTP_URL`, `EMAIL_FROM` e `APP_PUBLIC_URL` no ambiente (o `.env.example` e o `compose.yml` já os trazem); sem eles o worker avisa no log e segue sem enviar. Para ver um e-mail sem esperar os 15 minutos, depois de enviar um conteúdo para aprovação na agência, adiante o item como dono do banco (troque o `<uuid>` pelo id do conteúdo):
+
+```sh
+docker exec ageniza-local-postgres-1 psql -U postgres -d ageniza -c "update public.notification_queue set send_after = created_at where content_id = '<uuid>' and sent_at is null and discarded_at is null"
+```
+
+No minuto seguinte o Mailpit recebe **um** e-mail por pessoa do portal. O log do worker traz só contagens (`E-mails to the clients processed`) e, numa falha do provedor, um código `smtp_*`: nunca endereço, nome ou link.
+
 ## Rodando os testes
 
 Nem todo teste é igual, e os que dependem de infraestrutura falham de forma confusa quando ela não está no ar.
