@@ -357,6 +357,30 @@ describe('the post of the portal (#270)', () => {
       expect(screen.queryByText('A agência alterou este conteúdo depois que você o abriu. Mostramos a versão atual: leia de novo antes de aprovar.')).toBeNull();
     });
 
+    it('holds both decisions while the post is read again, so no click carries a replaced revision', async () => {
+      const scenario = setup();
+      scenario.contents.seed({ id: CONTENT, clientId: CLIENT, revision: 3 });
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolveGate) => { release = resolveGate; });
+      let reads = 0;
+      const impl: typeof fetch = async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === `/clients/${CLIENT}/contents/${CONTENT}` && (init?.method ?? 'GET') === 'GET' && ++reads > 1) await gate;
+        return scenario.impl(input, init);
+      };
+      renderPost(impl);
+      await screen.findByRole('button', { name: 'Aprovar' });
+      scenario.contents.editCaption(CONTENT, 'Nova');
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
+      await screen.findByText('A agência alterou este conteúdo depois que você o abriu. Mostramos a versão atual: leia de novo antes de aprovar.');
+      expect(screen.getByRole('button', { name: 'Aprovar' }).hasAttribute('disabled')).toBe(true);
+      expect(screen.getByRole('button', { name: 'Pedir ajuste' }).hasAttribute('disabled')).toBe(true);
+      release();
+      await screen.findByText('Nova');
+      await waitFor(() => { expect(screen.getByRole('button', { name: 'Aprovar' }).hasAttribute('disabled')).toBe(false); });
+      expect(screen.getByRole('button', { name: 'Pedir ajuste' }).hasAttribute('disabled')).toBe(false);
+    });
+
     it('refuses what is no longer waiting: its own text and the state read again', async () => {
       const { contents } = await open();
       await screen.findByRole('button', { name: 'Aprovar' });
