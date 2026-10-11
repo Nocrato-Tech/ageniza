@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { loadApiConfig } from '@ageniza/config/server';
 
@@ -15,6 +15,23 @@ const baseConfig = loadApiConfig({
   AUTH_PRIVACY_VERSION: '2026-01-01',
   APP_PUBLIC_URL: 'http://127.0.0.1:5173'
 });
+
+/**
+ * The cold start of the first local `buildApp` is the whole cost of this file: `registerApiDocsModule` is
+ * imported on demand and pulls in the Scalar bundle (a multi-megabyte string module), then registers it and
+ * builds the OpenAPI document. Warm measurement is ~0.1 s a build; cold, inside the first test, it was 0.9 s
+ * alone and 1.4-5.7 s while `pnpm test` ran every package at once, against the default 5 s test timeout (#443).
+ * It is paid here, once, under a hook timeout sized for the slowest observed cold start with room to spare, so
+ * the tests below only measure what they assert.
+ */
+const COLD_START_TIMEOUT_MS = 60_000;
+let expectedDocument: ReturnType<typeof buildOpenApiDocument>;
+
+beforeAll(async () => {
+  const warmup = await buildApp({ config: { ...baseConfig, environment: 'local' } });
+  await warmup.close();
+  expectedDocument = buildOpenApiDocument();
+}, COLD_START_TIMEOUT_MS);
 
 describe('API reference route gating (issue #182)', () => {
   it('serves /docs and the OpenAPI document when the runtime is a local host', async () => {
@@ -58,7 +75,7 @@ describe('API reference route gating (issue #182)', () => {
 
     const document = await app.inject('/docs/openapi.json');
     expect(document.statusCode).toBe(200);
-    expect(document.json()).toEqual(buildOpenApiDocument());
+    expect(document.json()).toEqual(expectedDocument);
 
     // The API's global CSP is untouched.
     const health = await app.inject('/health');
