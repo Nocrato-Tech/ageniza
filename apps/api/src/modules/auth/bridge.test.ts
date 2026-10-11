@@ -1,10 +1,18 @@
 import { APIError } from 'better-auth';
 import Fastify from 'fastify';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { HttpError } from '@ageniza/core';
 
 import { applyAuthCookies, toAuthHeaders, toPublicAuthError } from './bridge.js';
+
+// The first Fastify() and inject of the process pay their cold start here, not in the first test (#496).
+beforeAll(async () => {
+  const warmup = Fastify();
+  warmup.get('/warmup', async () => ({ ok: true }));
+  await warmup.inject('/warmup');
+  await warmup.close();
+}, 60_000);
 
 describe('Fastify -> Better Auth bridge', () => {
   it('forwards only cookie/origin/user-agent and always sets the client IP from request.ip', async () => {
