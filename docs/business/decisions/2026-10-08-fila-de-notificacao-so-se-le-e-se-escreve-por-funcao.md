@@ -19,7 +19,7 @@
 - A #260 (worker) chama as três funções sem ligar ator, e `mark_notifications_sent`/`fail_notifications` só valem para o que a claim entregou.
 - Os próximos tipos de notificação acrescentam o tipo e a coluna de referência na tabela e a regra de quando saem em `notification_send_after`/`notification_max_wait`.
 - **O que está amarrado a Conteúdo e ao portal**, e que um tipo que não seja de cliente do portal (por exemplo, um aviso a colaborador) precisa trocar numa migration nova: `client_id not null` e o gatilho `AFTER INSERT` de travar o cliente ativo; a regra de "ainda vale" e a lista de destinatários (vínculo ativo de `client_memberships`), que estão dentro do descarte da claim; e as colunas `content_*` do que a claim devolve, que obrigam `DROP` e `CREATE` da função e uma mudança no worker. O desenho de reuso fica como está: o segundo tipo decide se generaliza (regra de validade por tipo, retorno com dados por tipo) ou só acrescenta.
-- Item que esgotou as tentativas fica na tabela, sem ser enviado nem descartado, para a operação ver.
+- Item que esgotou as tentativas fica na tabela, sem ser enviado nem descartado, para a operação ver, e não segura o debounce nem o teto dos outros itens do grupo. Enviar o conteúdo de novo antes de alguma claim passar dá ao item esgotado uma chance nova (`attempts` 0, `last_error` nulo), porque o novo envio é o que o cliente deve receber.
 - Preferências do destinatário e notificação dentro do produto continuam adiadas para o segundo tipo (seção 10 da SPEC).
 
 **Origem.** Issue #252 e `specs/conteudo.md`, seções 8 e 9; forma de função de escopo único herdada de `archive_due_clients` (#133).

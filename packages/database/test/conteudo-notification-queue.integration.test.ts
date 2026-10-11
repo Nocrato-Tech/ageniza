@@ -477,6 +477,32 @@ describe('who is enqueued, and by what (issue #252)', () => {
     expect((await itemsOf(id)).map((item) => item.send_after)).toEqual(sendAfter);
   });
 
+  it('gives an item that ran out of attempts a new chance when the content is sent again before any claim, and the new send leaves', async () => {
+    const id = await readyContent();
+    await submitAs(ids.productionA, id);
+    const first = (await itemsOf(id)).map((item) => item.id);
+    await owner().raw(
+      "update public.notification_queue set attempts = 5, last_error = 'smtp_timeout', send_after = now() + interval '25 minutes' where content_id = ?::uuid",
+      [id]
+    );
+    await owner().transaction(async (t) => {
+      await t.raw('select app_private.bind_actor(?::uuid)', [ids.adminA]);
+      await t('contents').where({ id }).update({ status: 'adjusting' });
+    });
+
+    await submitAs(ids.productionA, id);
+
+    const renewed = await itemsOf(id);
+    expect(renewed.map((item) => item.id)).toEqual(first);
+    for (const item of renewed) expect(item).toMatchObject({ attempts: 0, last_error: null, claimed_at: null, sent_at: null, discarded_at: null });
+    const wait = await sqlText('select extract(epoch from (min(send_after) - now()))::integer::text as value from public.notification_queue where content_id = ?::uuid', [id]);
+    expect(Number(wait)).toBeGreaterThan(14 * 60 - 30);
+    expect(Number(wait)).toBeLessThanOrEqual(15 * 60);
+
+    await sentAgo(id, 16);
+    expect(forContent(await claim(), id)).toHaveLength(PEOPLE_OF_A1.length);
+  });
+
   it('opens a new item when a content is sent again after its e-mail left', async () => {
     const id = await readyContent();
     await submitAs(ids.productionA, id);
@@ -938,6 +964,16 @@ describe('claiming a batch (issue #252)', () => {
       expect(await claim()).toEqual([]);
     });
 
+    it('does not let an exhausted item that is still postponed hold the quiet window of its group', async () => {
+      const exhausted = await send();
+      const due = await send();
+      await sentAgo(due, 20);
+      await owner().raw("update public.notification_queue set attempts = 5, send_after = now() + interval '20 minutes' where content_id = ?::uuid", [exhausted]);
+
+      expect(forContent(await claim(), due)).toHaveLength(PEOPLE_OF_A1.length);
+      for (const item of await itemsOf(exhausted)) expect(item).toMatchObject({ attempts: 5, claimed_at: null, sent_at: null, discarded_at: null });
+    });
+
     it('debounces each client apart: a client that went quiet is not held by another that is still sending', async () => {
       const busy = await send();
       const otherClient = await freshClient([ids.portalA1]);
@@ -1012,6 +1048,41 @@ describe('claiming a batch (issue #252)', () => {
       expect(forContent(batch, second)).toHaveLength(PEOPLE_OF_A1.length);
       for (const item of await itemsOf(first)) expect(item.attempts).toBe(2);
       for (const item of await itemsOf(second)) expect(item.attempts).toBe(1);
+    });
+  });
+
+  describe('the lease of an e-mail in flight lasts 10 minutes', () => {
+    const claimedSecondsAgo = (contentId: string, seconds: number): Promise<unknown> =>
+      owner().raw("update public.notification_queue set claimed_at = now() - (?::integer * interval '1 second') where content_id = ?::uuid", [seconds, contentId]);
+
+    it('still holds the group at 9:59 and hands it over at 10:01', async () => {
+      const first = await readyContent();
+      await sendDue(ids.productionA, first);
+      expect(forContent(await claim(), first)).toHaveLength(PEOPLE_OF_A1.length);
+      const second = await readyContent();
+      await sendDue(ids.productionA, second);
+
+      await claimedSecondsAgo(first, 9 * 60 + 59);
+      expect(await claim()).toEqual([]);
+
+      await claimedSecondsAgo(first, 10 * 60 + 1);
+      const batch = await claim();
+      expect(forContent(batch, first)).toHaveLength(PEOPLE_OF_A1.length);
+      expect(forContent(batch, second)).toHaveLength(PEOPLE_OF_A1.length);
+    });
+  });
+
+  describe('the lease of a lone item', () => {
+    it.each([
+      [9 * 60 + 59, false],
+      [10 * 60 + 1, true]
+    ])('an item claimed %s seconds ago is handed over again: %s', async (seconds, handedOver) => {
+      const id = await readyContent();
+      await sendDue(ids.productionA, id);
+      expect(forContent(await claim(), id)).toHaveLength(PEOPLE_OF_A1.length);
+      await owner().raw("update public.notification_queue set claimed_at = now() - (?::integer * interval '1 second') where content_id = ?::uuid", [seconds, id]);
+
+      expect(forContent(await claim(), id)).toHaveLength(handedOver ? PEOPLE_OF_A1.length : 0);
     });
   });
 
@@ -1141,6 +1212,21 @@ describe('claiming a batch (issue #252)', () => {
 
       expect(await discardedOf(id)).toEqual(PEOPLE_OF_A1);
       for (const item of await itemsOf(id)) expect(item).toMatchObject({ attempts: 1, sent_at: null });
+    });
+
+    it('judges an item again only once its lease of 10 minutes is over: not at 9:59, yes at 10:01', async () => {
+      const id = await readyContent();
+      await sendDue(ids.productionA, id);
+      expect(forContent(await claim(), id)).toHaveLength(PEOPLE_OF_A1.length);
+      await approveAs(ids.portalA1, id);
+
+      await owner().raw("update public.notification_queue set claimed_at = now() - interval '599 seconds' where content_id = ?::uuid", [id]);
+      expect(await claim()).toEqual([]);
+      expect(await discardedOf(id)).toEqual([]);
+
+      await owner().raw("update public.notification_queue set claimed_at = now() - interval '601 seconds' where content_id = ?::uuid", [id]);
+      expect(await claim()).toEqual([]);
+      expect(await discardedOf(id)).toEqual(PEOPLE_OF_A1);
     });
 
     it('an item under a running lease is not touched, so the e-mail that is leaving can still be marked sent', async () => {
@@ -1419,7 +1505,7 @@ describe('races with the archive of the client (issue #252)', () => {
     expect(await itemsOf(id)).toEqual([]);
   });
 
-  it('the same edit under REPEATABLE READ does not queue either: it fails with 40001 or is refused, and leaves the content as it was', async () => {
+  it('the same edit under REPEATABLE READ does not queue either: it fails with 40001, and leaves the content as it was', async () => {
     const client = await freshClient();
     const id = await readyContent(client, 'approved', await today());
 

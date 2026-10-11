@@ -160,8 +160,9 @@ export async function up(knex) {
       from public.client_memberships membership
       where membership.client_id = new.client_id and membership.status = 'active'
       -- Sent again before the e-mail left: the same line of the e-mail, and a new send inside the window postpones it (debounce).
+      -- An item that ran out of attempts gets a new chance: otherwise the new send would never leave.
       on conflict (type, content_id, recipient_user_id) where sent_at is null and discarded_at is null
-      do update set send_after = excluded.send_after
+      do update set send_after = excluded.send_after, attempts = 0, last_error = null
       where public.notification_queue.claimed_at is null;
 
       return null;
@@ -193,6 +194,7 @@ export async function up(knex) {
             select 1 from public.notification_queue other
             where other.recipient_user_id = p_recipient_user_id and other.client_id = p_client_id and other.type = p_type
               and other.discarded_at is null
+              and other.attempts < ${MAX_ATTEMPTS}
               and other.send_after > pg_catalog.now()
           )
           or exists (
