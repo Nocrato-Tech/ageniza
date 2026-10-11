@@ -21,6 +21,7 @@ import { createEmailService, type EmailService } from '../email-service.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requireAnyPermission, requirePermission } from '../../tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from '../../invitations/routes.js';
 import type { ClientModuleDependencies } from '../../clients/routes.js';
+import type { ContentModuleDependencies } from '../../contents/routes.js';
 import type { ContextModuleDependencies } from '../../contexts/routes.js';
 import { countValidContexts } from '../../contexts/service.js';
 import { createRequireSession } from '../session-guard.js';
@@ -251,6 +252,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
         photoUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds,
         photoMaxImageBytes: config.identityStorage.maxImageBytes
       };
+  const contents: ContentModuleDependencies = { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }), requirePermission };
   const collaborators: CollaboratorModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
     database,
     auth,
@@ -306,6 +308,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     contexts,
     agencies,
     clients,
+    contents,
     collaborators,
     media,
     profile,

@@ -3,6 +3,7 @@ export * from './client-access.js';
 export * from './clients.js';
 export * from './collaborators.js';
 export * from './common.js';
+export * from './contents.js';
 export * from './contexts.js';
 export * from './conversations.js';
 export * from './display-name.js';
