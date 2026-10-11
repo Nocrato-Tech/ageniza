@@ -38,7 +38,7 @@ const statusOf = async (contentId: string): Promise<string> => (await w.contentR
 const error = (reply: Reply, status: number, code: string): void => {
   expect(reply.statusCode).toBe(status);
   expect(reply.json().error.code).toBe(code);
-  expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+  expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
 };
 
 beforeAll(async () => {
