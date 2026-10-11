@@ -1738,6 +1738,10 @@ describe('the Conteúdos tab of the client (#272)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Criar conteúdo' }));
     await waitFor(() => expect(probe.pathname).toBe(`${tabUrl()}/novo`));
+    // The form of a new content, not the reading of a content called "novo": the route of the creation is in the tab.
+    const modal = await screen.findByRole('dialog', { name: 'Novo conteúdo' });
+    expect(await within(modal).findByRole('button', { name: 'Criar conteúdo' })).toBeTruthy();
+    expect((within(modal).getByLabelText('Título') as HTMLInputElement).value).toBe('');
     expect(new URLSearchParams(probe.search).get('dia')).toBe(TODAY);
     expect(new URLSearchParams(probe.search).get('data')).toBe('2026-10-14');
     expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
