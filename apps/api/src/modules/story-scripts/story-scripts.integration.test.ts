@@ -163,7 +163,7 @@ const duringArchiveOfAFreshClient = async <TPrepared>(
 const expectClientArchived = (reply: Reply): void => {
   expect(reply.statusCode).toBe(409);
   expect(reply.json().error).toEqual({ code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode ser editado.' });
-  expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+  expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
 };
 
 const expectNotFound = (reply: Reply, message: string): void => {
@@ -412,7 +412,7 @@ describe('creating a story script (issue #258)', () => {
       await withFailing('insert', `new.client_id = '${cMain}'::uuid and new.script_on = '2026-11-02'`, errcode, async () => {
         const failed = await call('POST', agencyScripts(agencyA, cMain), 'opVis', { scriptOn: '2026-11-02', scenes: [{ text: 'Falha injetada' }] });
         expect({ status: failed.statusCode, code: failed.json().error.code }).toEqual({ status, code });
-        expect(JSON.stringify(failed.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify({ ...failed.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
       });
 
       expect([await scriptCount(cMain), await sceneCount(cMain)]).toEqual(before);
@@ -622,7 +622,7 @@ describe('editing a story script (issue #258)', () => {
       await withFailing('update', `new.id = '${script.id}'::uuid`, errcode, async () => {
         const failed = await call('PATCH', agencyScript(agencyA, cMain, script.id), 'opVis', { scriptOn: '2026-11-21' });
         expect({ status: failed.statusCode, code: failed.json().error.code }).toEqual({ status, code });
-        expect(JSON.stringify(failed.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify({ ...failed.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
       });
 
       expect(await stateOf(script.id)).toEqual(before);
@@ -718,7 +718,7 @@ describe('sending a story script (issue #258)', () => {
       await withFailing('update', `new.id = '${script.id}'::uuid`, errcode, async () => {
         const failed = await call('POST', `${agencyScript(agencyA, cMain, script.id)}/send`, 'opVis');
         expect({ status: failed.statusCode, code: failed.json().error.code }).toEqual({ status, code });
-        expect(JSON.stringify(failed.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify({ ...failed.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
       });
 
       expect((await stateOf(script.id)).status).toBe('draft');
@@ -945,7 +945,7 @@ describe('the portal marks a script as recorded (issue #258)', () => {
     }, (clientId, script) => call('POST', recordedUrl(clientId, script.id), 'portalOne'));
 
     expect(reply.statusCode).toBe(404);
-    expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+    expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
     expect(await stateOf(prepared.id)).toMatchObject({ status: 'sent', recordedBy: null });
   });
 
@@ -991,7 +991,7 @@ describe('the portal marks a script as recorded (issue #258)', () => {
     await withFailing('update', `new.id = '${script.id}'::uuid`, errcode, async () => {
       const failed = await call('POST', recordedUrl(cMain, script.id), 'portalOne');
       expect({ status: failed.statusCode, code: failed.json().error.code }).toEqual({ status, code });
-      expect(JSON.stringify(failed.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify({ ...failed.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
     });
 
     expect(await stateOf(script.id)).toMatchObject({ status: 'sent', recordedBy: null });
@@ -1071,7 +1071,7 @@ describe('reading a story script (issue #268)', () => {
     ]) {
       const reply = await call('GET', url, 'opVis');
       expect({ url, status: reply.statusCode }).toEqual({ url, status: 404 });
-      expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
     }
     expectNotFound(await call('GET', agencyScript(agencyA, cMain, ofOther.id), 'opVis'), 'Story script not found.');
     expectNotFound(await call('GET', agencyScript(agencyA, cMain, ofB.id), 'opVis'), 'Story script not found.');

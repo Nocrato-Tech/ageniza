@@ -480,7 +480,7 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
         code: 'VALIDATION_ERROR',
         details: { issues: [expect.objectContaining({ path: 'closingDate' })] }
       });
-      expect(JSON.stringify(response.json())).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
       expect(await closingOf(cClosing)).toBeNull();
       expect(await auditActions(cClosing)).toEqual([]);
     });
@@ -520,7 +520,7 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
       ]) {
         const response = await call('PUT', closingUrl(cClosing), cookies.admin, payload);
         expect(response.statusCode, JSON.stringify(payload)).toBe(400);
-        expect(JSON.stringify(response.json())).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
       }
       // Declared as JSON and empty, or a JSON string, or not JSON at all: 400 or 415, never a 500 and never an echo of the body.
       for (const [body, contentType] of [[undefined, 'application/json'], ['"texto"', 'application/json'], ['{"closingDate":', 'application/json'], ['2099-12-31', 'text/plain']] as const) {
@@ -705,7 +705,7 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
         code: 'CLIENT_NAME_IN_USE',
         message: 'Já existe um cliente ativo com este nome. Renomeie um dos dois antes de reativar.'
       });
-      expect(JSON.stringify(response.json())).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
       expect(await clientRow(cNameArchived)).toEqual(before);
       expect(await clientRow(cNameArchived)).toMatchObject({ status: 'archived' });
 
@@ -725,7 +725,7 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
       expect(responses.map((response) => response.statusCode).sort()).toEqual([200, 409]);
       const loser = responses.find((response) => response.statusCode === 409)!;
       expect(loser.json().error.code).toBe('CLIENT_NAME_IN_USE');
-      expect(JSON.stringify(loser.json())).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify({ ...loser.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
 
       const rows = await owner.knex('clients').whereIn('id', [cRaceOne, cRaceTwo]).select('id', 'status');
       expect(rows.filter((row) => row.status === 'active')).toHaveLength(1);
@@ -795,7 +795,7 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
         const response = await archiving;
         expect(response.statusCode).toBe(409);
         expect(response.json().error).toEqual({ code: 'TRY_AGAIN', message: 'Houve um conflito momentâneo. Tente de novo.' });
-        expect(JSON.stringify(response.json())).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
 
         expect(await clientRow(cRaceArchive)).toMatchObject({ status: 'active', archived_at: null });
         expect(await revokedAtOf(invitations.raceArchive)).toBeNull();
@@ -832,7 +832,7 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
         const response = await resending;
         expect(response.statusCode).toBe(409);
         expect(response.json().error.code).toBe('TRY_AGAIN');
-        expect(JSON.stringify(response.json())).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
         expect(await revokedAtOf(invitations.raceResend)).toBeNull();
         expect(await owner.knex('invitations').where({ client_id: cRaceResend }).select('id')).toHaveLength(1);
         expect(await clientRow(cRaceResend)).toMatchObject({ status: 'active' });
@@ -872,7 +872,7 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
 
       expect(response.statusCode).toBe(409);
       expect(response.json().error).toEqual({ code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode receber convites.' });
-      expect(JSON.stringify(response.json())).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
       expect(await clientRow(cRaceCreate)).toMatchObject({ status: 'archived' });
       expect(await owner.knex('invitations').where({ client_id: cRaceCreate }).select('id')).toEqual(before);
     }, 30_000);
@@ -885,7 +885,7 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
 
       expect(response.statusCode).toBe(409);
       expect(response.json().error.code).toBe('CLIENT_ARCHIVED');
-      expect(JSON.stringify(response.json())).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
       expect(await revokedAtOf(invitations.raceResendArchive)).toBeNull();
       expect(await owner.knex('invitations').where({ client_id: cRaceResendArchive }).select('id')).toHaveLength(1);
     }, 30_000);

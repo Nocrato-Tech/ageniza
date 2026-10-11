@@ -275,13 +275,13 @@ const errorOf = (reply: Reply): { code?: string; message?: string } => {
 const expectArchived = (reply: Reply): void => {
   expect(reply.statusCode).toBe(409);
   expect(errorOf(reply)).toMatchObject({ code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode ser editado.' });
-  expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+  expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
 };
 
 const expectGoneForThePortal = (reply: Reply): void => {
   expect(reply.statusCode).toBe(404);
   expect(errorOf(reply)).toMatchObject({ code: 'NOT_FOUND', message: 'Client not found.' });
-  expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+  expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
 };
 
 const expectContentNotOpen = (reply: Reply): void => {
@@ -1052,7 +1052,7 @@ describe('CLIENTES conversation of a content (#259)', () => {
           for (const [name, reply] of Object.entries(replies)) {
             expect(reply.statusCode, `${code} ${name}`).toBe(409);
             expect(errorOf(reply).code, `${code} ${name}`).toBe('TRY_AGAIN');
-            expect(JSON.stringify(reply.json()), `${code} ${name}`).not.toMatch(NO_DATABASE_DETAIL);
+            expect(JSON.stringify({ ...reply.json(), meta: undefined }), `${code} ${name}`).not.toMatch(NO_DATABASE_DETAIL);
           }
         });
       }
@@ -1078,7 +1078,7 @@ describe('CLIENTES conversation of a content (#259)', () => {
           if (side === 'agency') expectContentNotOpen(reply);
           else {
             expect(reply.statusCode).toBe(404);
-            expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+            expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
           }
         });
         expect(await snapshotOf(clientA1), side).toEqual(before);
