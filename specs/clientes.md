@@ -383,7 +383,7 @@ Conteúdos, Tarefas e Relatórios na agência, e Calendário e Relatórios no po
 | Selo *N sugestões aguardando* | threads abertas cujo último comentário é do cliente. É o sinal de triagem do MVP |
 | Selo *encerra em dd/mm* | cliente com encerramento agendado |
 | Selo *convite pendente* | só para quem tem `cliente.convidar_usuario` |
-| Faixa de indicadores | reservada para pendentes, em revisão e atrasos; no MVP não mostra números |
+| Faixa de indicadores | reservada para pendentes, em revisão e atrasos. Mostra os três números de Conteúdo (#261) para quem tem `conteudo.visualizar`; para os demais segue reservada, sem número |
 | Ordem | quem tem sugestão aguardando vem primeiro — a tela é de triagem, não de consulta |
 | Busca | nome, razão social ou @ — quem liga pode lembrar de qualquer um dos três |
 | Filtro de status | Ativos (padrão) e Arquivados |
