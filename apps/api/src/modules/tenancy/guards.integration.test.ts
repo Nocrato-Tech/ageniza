@@ -34,6 +34,7 @@ let productionRoleId: string;
 const createdUserIds: string[] = [];
 const createdAgencyIds: string[] = [];
 const createdRoleIds: string[] = [];
+const createdClientIds: string[] = [];
 
 interface Probe {
   readonly status: number;
@@ -58,6 +59,13 @@ const createAgency = async (name: string, ownerUserId: string | null, status: 'a
 
 const addMembership = async (agencyId: string, userId: string, roleId: string, status: 'active' | 'removed' = 'active'): Promise<void> => {
   await owner.knex('agency_memberships').insert({ agency_id: agencyId, user_id: userId, role_id: roleId, status });
+};
+
+const addClientMembership = async (agencyId: string, userId: string): Promise<void> => {
+  const id = randomUUID();
+  createdClientIds.push(id);
+  await owner.knex('clients').insert({ id, agency_id: agencyId, name: 'Guard Client', status: 'active' });
+  await owner.knex('client_memberships').insert({ client_id: id, user_id: userId, status: 'active' });
 };
 
 const customRole = async (agencyId: string, key: string, permissionKeys: readonly string[]): Promise<string> => {
@@ -114,9 +122,11 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await owner.knex('user_context_preferences').whereIn('user_id', createdUserIds).delete();
+  await owner.knex('client_memberships').whereIn('client_id', createdClientIds).delete();
   await owner.knex('agency_memberships').whereIn('agency_id', createdAgencyIds).delete();
   await owner.knex('role_permissions').whereIn('role_id', createdRoleIds).delete();
   await owner.knex('roles').whereIn('id', createdRoleIds).delete();
+  await owner.knex('clients').whereIn('id', createdClientIds).delete();
   await owner.knex('agencies').whereIn('id', createdAgencyIds).update({ owner_user_id: null });
   await owner.knex('agencies').whereIn('id', createdAgencyIds).delete();
   await app.pool.query('delete from auth."user" where id = any($1::uuid[])', [createdUserIds]);
@@ -208,5 +218,29 @@ describe('requireAgencyAccess builds request.tenant from the one resolution (iss
     const cookie = await loginCookie(ownerOfSuspended);
     expect((await probe(cookie, suspended)).status).toBe(404);
     expect((await probe(cookie, randomUUID())).status).toBe(404);
+  });
+
+  // RLS already hides an agency from a person whose only tie to it was the removed membership, so the 404 above does
+  // not prove the guard's own `membership.status = 'active'`. These two people still SEE the agency (the owner by
+  // ownership, the client user by the portal policy) and their own removed row, which is the only place the filter
+  // is observable.
+  it('a removed membership is not read for an owner: the Owner keeps the catalog but no role key', async () => {
+    const user = await makeUser('guard-owner-removed');
+    const agency = await createAgency('Guard Owner Removed', user.id);
+    await addMembership(agency, user.id, adminRoleId, 'removed');
+
+    const result = await probe(await loginCookie(user), agency);
+
+    expect(result.status).toBe(200);
+    expect(result.tenant).toEqual({ agencyId: agency, isOwner: true, roleKey: null, permissions: catalog });
+  });
+
+  it('a removed collaborator who is still a client user of the agency gets the same 404, not the workspace', async () => {
+    const user = await makeUser('guard-removed-client');
+    const agency = await createAgency('Guard Removed Client', null);
+    await addMembership(agency, user.id, adminRoleId, 'removed');
+    await addClientMembership(agency, user.id);
+
+    expect((await probe(await loginCookie(user), agency)).status).toBe(404);
   });
 });
