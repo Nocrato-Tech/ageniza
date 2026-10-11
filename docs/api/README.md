@@ -1897,7 +1897,10 @@ Consulta os conteúdos e os roteiros de stories de um período.
         "publishOn": "2026-10-20",
         "publishAtTime": "18:30",
         "status": "in_production",
-        "ownerUserId": "55555555-5555-4555-8555-555555555555",
+        "owner": {
+          "membershipId": "22222222-2222-4222-8222-222222222222",
+          "name": "Ana Souza"
+        },
         "coverAssetId": null,
         "revision": 1,
         "publishedOn": null,
@@ -1956,7 +1959,10 @@ Cria um conteúdo em produção.
   "caption": "A coleção chegou. Vem ver.",
   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   "coverAssetId": null,
-  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+  "owner": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
   "status": "in_production",
   "revision": 1,
   "approvedBy": null,
@@ -2015,7 +2021,10 @@ Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa.
   "caption": "A coleção chegou. Vem ver.",
   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   "coverAssetId": null,
-  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+  "owner": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
   "status": "in_production",
   "revision": 1,
   "approvedBy": null,
@@ -2083,7 +2092,10 @@ Edita um conteúdo; mover de data é editar `publishOn`.
   "caption": "A coleção chegou. Vem ver.",
   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   "coverAssetId": null,
-  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+  "owner": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
   "status": "in_production",
   "revision": 1,
   "approvedBy": null,
@@ -2142,7 +2154,10 @@ Envia o conteúdo para aprovação.
   "caption": "A coleção chegou. Vem ver.",
   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   "coverAssetId": null,
-  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+  "owner": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
   "status": "awaiting_approval",
   "revision": 1,
   "approvedBy": null,
@@ -2210,7 +2225,10 @@ Registra a aprovação feita fora da plataforma.
   "caption": "A coleção chegou. Vem ver.",
   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   "coverAssetId": null,
-  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+  "owner": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
   "status": "approved",
   "revision": 1,
   "approvedBy": "55555555-5555-4555-8555-555555555555",
@@ -2277,7 +2295,10 @@ Marca o conteúdo aprovado como publicado.
   "caption": "A coleção chegou. Vem ver.",
   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   "coverAssetId": null,
-  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+  "owner": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
   "status": "published",
   "revision": 1,
   "approvedBy": null,
@@ -2336,7 +2357,10 @@ Desfaz a publicação no mesmo dia.
   "caption": "A coleção chegou. Vem ver.",
   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   "coverAssetId": null,
-  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+  "owner": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
   "status": "approved",
   "revision": 1,
   "approvedBy": null,
@@ -2395,7 +2419,10 @@ Cancela o conteúdo (ele fica guardado).
   "caption": "A coleção chegou. Vem ver.",
   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   "coverAssetId": null,
-  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+  "owner": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
   "status": "cancelled",
   "revision": 1,
   "approvedBy": null,
@@ -2462,7 +2489,10 @@ Reagenda um conteúdo cancelado.
   "caption": "A coleção chegou. Vem ver.",
   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   "coverAssetId": null,
-  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+  "owner": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
   "status": "in_production",
   "revision": 1,
   "approvedBy": null,

@@ -1228,9 +1228,25 @@
                         "cancelled"
                       ]
                     },
-                    "ownerUserId": {
-                      "type": "string",
-                      "format": "uuid"
+                    "owner": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "membershipId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "membershipId",
+                        "name"
+                      ],
+                      "additionalProperties": false
                     },
                     "coverAssetId": {
                       "type": [
@@ -1266,7 +1282,7 @@
                     "publishOn",
                     "publishAtTime",
                     "status",
-                    "ownerUserId",
+                    "owner",
                     "coverAssetId",
                     "revision",
                     "publishedOn",
@@ -1396,9 +1412,25 @@
             ],
             "format": "uuid"
           },
-          "ownerUserId": {
-            "type": "string",
-            "format": "uuid"
+          "owner": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "membershipId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "membershipId",
+              "name"
+            ],
+            "additionalProperties": false
           },
           "status": {
             "type": "string",
@@ -1577,7 +1609,7 @@
           "caption",
           "folderId",
           "coverAssetId",
-          "ownerUserId",
+          "owner",
           "status",
           "revision",
           "approvedBy",
@@ -1641,7 +1673,7 @@
             ],
             "format": "uuid"
           },
-          "ownerUserId": {
+          "ownerMembershipId": {
             "type": "string",
             "format": "uuid"
           }
@@ -1697,7 +1729,7 @@
             ],
             "format": "uuid"
           },
-          "ownerUserId": {
+          "ownerMembershipId": {
             "type": "string",
             "format": "uuid"
           },
@@ -7904,7 +7936,10 @@
                         "publishOn": "2026-10-20",
                         "publishAtTime": "18:30",
                         "status": "in_production",
-                        "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                        "owner": {
+                          "membershipId": "22222222-2222-4222-8222-222222222222",
+                          "name": "Ana Souza"
+                        },
                         "coverAssetId": null,
                         "revision": 1,
                         "publishedOn": null,
@@ -8029,7 +8064,7 @@
       "post": {
         "operationId": "createContent",
         "summary": "Cria um conteúdo em produção",
-        "description": "Exige `conteudo.operar` e também `conteudo.visualizar`. O conteúdo nasce em produção; o estado\nnão é campo do corpo. `platform` é `instagram` e é o padrão. O responsável é quem cria, a não ser\nque `ownerUserId` nomeie outro colaborador ativo que veja Conteúdo (`400 CONTENT_OWNER_INVALID`).\nA pasta e a capa são do próprio cliente (`400 CONTENT_FOLDER_INVALID`, `400 CONTENT_MEDIA_INVALID`).\nTítulo de uma linha até 120 caracteres e legenda até 2.200 caracteres recusam caractere de\ncontrole e invisível. Cliente arquivado responde `409 CLIENT_ARCHIVED`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "description": "Exige `conteudo.operar` e também `conteudo.visualizar`. O conteúdo nasce em produção; o estado\nnão é campo do corpo. `platform` é `instagram` e é o padrão. O responsável é quem cria, a não ser\nque `ownerMembershipId` nomeie o vínculo ativo de outro colaborador da agência que veja Conteúdo (`400 CONTENT_OWNER_INVALID`\npara vínculo removido, de outra agência, do portal ou que não existe). A resposta traz o responsável como `owner: { membershipId, name }`\n(`null` para quem não tem vínculo com a agência); nenhuma rota de conteúdo devolve o id de usuário de outra pessoa.\nA pasta e a capa são do próprio cliente (`400 CONTENT_FOLDER_INVALID`, `400 CONTENT_MEDIA_INVALID`).\nTítulo de uma linha até 120 caracteres e legenda até 2.200 caracteres recusam caractere de\ncontrole e invisível. Cliente arquivado responde `409 CLIENT_ARCHIVED`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
         "tags": [
           "contents"
         ],
@@ -8090,7 +8125,10 @@
                   "caption": "A coleção chegou. Vem ver.",
                   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                   "coverAssetId": null,
-                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "owner": {
+                    "membershipId": "22222222-2222-4222-8222-222222222222",
+                    "name": "Ana Souza"
+                  },
                   "status": "in_production",
                   "revision": 1,
                   "approvedBy": null,
@@ -8301,7 +8339,10 @@
                   "caption": "A coleção chegou. Vem ver.",
                   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                   "coverAssetId": null,
-                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "owner": {
+                    "membershipId": "22222222-2222-4222-8222-222222222222",
+                    "name": "Ana Souza"
+                  },
                   "status": "in_production",
                   "revision": 1,
                   "approvedBy": null,
@@ -8419,7 +8460,7 @@
       "patch": {
         "operationId": "updateContent",
         "summary": "Edita um conteúdo; mover de data é editar `publishOn`",
-        "description": "Qualquer subconjunto de `title`, `format`, `publishOn`, `publishAtTime` (`null` limpa),\n`caption`, `folderId`, `coverAssetId` e `ownerUserId`; exige `conteudo.operar` e também\n`conteudo.visualizar`. Mudar a legenda, a capa ou o formato de um conteúdo aprovado o devolve\na `awaiting_approval` e sobe `revision`; mudar data, hora, título ou responsável mantém a aprovação.\nTrocar o responsável exige `conteudo.aprovar_pela_agencia` (`403` sem ela). `mediaAssetIds` é a lista\ninteira e ordenada das mídias, gravada na mesma transação, depois do formato: assim um conteúdo em\nprodução ou em ajuste troca de formato e de mídia numa só chamada. Depois do envio para aprovação, ir de\ncarrossel para formato de uma mídia só (ou o inverso) é `409 CONTENT_MEDIA_INCOMPLETE`: cancele e\nreagende. Conteúdo publicado ou cancelado responde `409 CONTENT_NOT_EDITABLE`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "description": "Qualquer subconjunto de `title`, `format`, `publishOn`, `publishAtTime` (`null` limpa),\n`caption`, `folderId`, `coverAssetId` e `ownerMembershipId` (o vínculo ativo do novo responsável); exige `conteudo.operar` e também\n`conteudo.visualizar`. Mudar a legenda, a capa ou o formato de um conteúdo aprovado o devolve\na `awaiting_approval` e sobe `revision`; mudar data, hora, título ou responsável mantém a aprovação.\nTrocar o responsável exige `conteudo.aprovar_pela_agencia` (`403` sem ela). `mediaAssetIds` é a lista\ninteira e ordenada das mídias, gravada na mesma transação, depois do formato: assim um conteúdo em\nprodução ou em ajuste troca de formato e de mídia numa só chamada. Depois do envio para aprovação, ir de\ncarrossel para formato de uma mídia só (ou o inverso) é `409 CONTENT_MEDIA_INCOMPLETE`: cancele e\nreagende. Conteúdo publicado ou cancelado responde `409 CONTENT_NOT_EDITABLE`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
         "tags": [
           "contents"
         ],
@@ -8486,7 +8527,10 @@
                   "caption": "A coleção chegou. Vem ver.",
                   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                   "coverAssetId": null,
-                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "owner": {
+                    "membershipId": "22222222-2222-4222-8222-222222222222",
+                    "name": "Ana Souza"
+                  },
                   "status": "in_production",
                   "revision": 1,
                   "approvedBy": null,
@@ -8697,7 +8741,10 @@
                   "caption": "A coleção chegou. Vem ver.",
                   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                   "coverAssetId": null,
-                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "owner": {
+                    "membershipId": "22222222-2222-4222-8222-222222222222",
+                    "name": "Ana Souza"
+                  },
                   "status": "awaiting_approval",
                   "revision": 1,
                   "approvedBy": null,
@@ -8903,7 +8950,10 @@
                   "caption": "A coleção chegou. Vem ver.",
                   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                   "coverAssetId": null,
-                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "owner": {
+                    "membershipId": "22222222-2222-4222-8222-222222222222",
+                    "name": "Ana Souza"
+                  },
                   "status": "approved",
                   "revision": 1,
                   "approvedBy": "55555555-5555-4555-8555-555555555555",
@@ -9127,7 +9177,10 @@
                   "caption": "A coleção chegou. Vem ver.",
                   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                   "coverAssetId": null,
-                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "owner": {
+                    "membershipId": "22222222-2222-4222-8222-222222222222",
+                    "name": "Ana Souza"
+                  },
                   "status": "published",
                   "revision": 1,
                   "approvedBy": null,
@@ -9338,7 +9391,10 @@
                   "caption": "A coleção chegou. Vem ver.",
                   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                   "coverAssetId": null,
-                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "owner": {
+                    "membershipId": "22222222-2222-4222-8222-222222222222",
+                    "name": "Ana Souza"
+                  },
                   "status": "approved",
                   "revision": 1,
                   "approvedBy": null,
@@ -9530,7 +9586,10 @@
                   "caption": "A coleção chegou. Vem ver.",
                   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                   "coverAssetId": null,
-                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "owner": {
+                    "membershipId": "22222222-2222-4222-8222-222222222222",
+                    "name": "Ana Souza"
+                  },
                   "status": "cancelled",
                   "revision": 1,
                   "approvedBy": null,
@@ -9735,7 +9794,10 @@
                   "caption": "A coleção chegou. Vem ver.",
                   "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                   "coverAssetId": null,
-                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "owner": {
+                    "membershipId": "22222222-2222-4222-8222-222222222222",
+                    "name": "Ana Souza"
+                  },
                   "status": "in_production",
                   "revision": 1,
                   "approvedBy": null,

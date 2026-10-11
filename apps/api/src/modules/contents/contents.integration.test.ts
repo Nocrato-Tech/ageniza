@@ -25,6 +25,13 @@ const urlA = (clientId = clientA): string => base(w.agencyA, clientId);
 
 const create = { title: 'Lançamento da coleção', format: 'reels', publishOn: '2026-10-20' };
 
+const linkOf = async (person: PersonKey, agencyId = w.agencyA): Promise<string> => {
+  const row = await w.getOwner().knex('agency_memberships').where({ agency_id: agencyId, user_id: people[person].id }).first('id');
+  if (row === undefined) throw new Error(`${person} has no link with the agency.`);
+  return row.id as string;
+};
+const ownerOf = async (person: PersonKey): Promise<{ membershipId: string; name: string }> => ({ membershipId: await linkOf(person), name: `Pessoa ${person}` });
+
 beforeAll(async () => {
   await w.setup();
   clientA = await w.newClient('a');
@@ -282,7 +289,7 @@ describe('the period query (issue #254)', () => {
       publishOn: '2026-10-12',
       publishAtTime: '18:30',
       status: 'approved',
-      ownerUserId: people.production.id,
+      owner: await ownerOf('production'),
       coverAssetId: null,
       revision: 1,
       publishedOn: null,
@@ -402,7 +409,7 @@ describe('create (issue #254)', () => {
       caption: 'Chegou a coleção.',
       folderId: folderA,
       coverAssetId: null,
-      ownerUserId: people.production.id,
+      owner: await ownerOf('production'),
       status: 'in_production',
       revision: 1,
       approvedBy: null,
@@ -418,9 +425,10 @@ describe('create (issue #254)', () => {
   });
 
   it('creates a content for another responsible when asked, and lets the creator choose without the approval permission', async () => {
-    const reply = await w.call('POST', people.production.cookie, urlA(), { ...create, folderId: folderA, ownerUserId: people.manager.id });
+    const reply = await w.call('POST', people.production.cookie, urlA(), { ...create, folderId: folderA, ownerMembershipId: await linkOf('manager') });
     expect(reply.statusCode).toBe(201);
-    expect(reply.json().ownerUserId).toBe(people.manager.id);
+    expect(reply.json().owner).toEqual(await ownerOf('manager'));
+    expect((await w.contentRow(reply.json().id)).owner_user_id).toBe(people.manager.id);
   });
 
   it('defaults the platform to instagram and the optional fields to none', async () => {
@@ -473,12 +481,12 @@ describe('create (issue #254)', () => {
   });
 
   it.each([
-    ['a person who cannot see Conteúdo', () => people.sales.id],
-    ['a person of another agency', () => people.adminB.id],
-    ['a person that does not exist', () => randomUUID()]
+    ['a link of a person who cannot see Conteúdo', () => linkOf('sales')],
+    ['a link of another agency', () => linkOf('adminB', w.agencyB)],
+    ['a link that does not exist', async () => randomUUID()]
   ])('answers 400 CONTENT_OWNER_INVALID to a responsible that is %s, and creates nothing', async (_label, owner) => {
     const before = await w.countContents(clientA);
-    const reply = await w.call('POST', people.admin.cookie, urlA(), { ...create, folderId: folderA, ownerUserId: owner() });
+    const reply = await w.call('POST', people.admin.cookie, urlA(), { ...create, folderId: folderA, ownerMembershipId: await owner() });
     expect(reply.statusCode).toBe(400);
     expect(reply.json().error.code).toBe('CONTENT_OWNER_INVALID');
     expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
@@ -766,7 +774,7 @@ describe('edit and move (issue #254)', () => {
     it('answers 403 to who operates and does not approve for the agency, and changes nothing', async () => {
       const contentId = await w.seedContent(clientA, { ownerUserId: people.production.id });
       w.statements.length = 0;
-      const reply = await patch(people.production.cookie, contentId, { ownerUserId: people.manager.id });
+      const reply = await patch(people.production.cookie, contentId, { ownerMembershipId: await linkOf('manager') });
       expect(reply.statusCode).toBe(403);
       expect(reply.json().error.code).toBe('FORBIDDEN');
       expect((await w.contentRow(contentId)).owner_user_id).toBe(people.production.id);
@@ -776,35 +784,37 @@ describe('edit and move (issue #254)', () => {
 
     it('does not apply the other fields of a request that asks for the responsible without the permission', async () => {
       const contentId = await w.seedContent(clientA, { title: 'Intacto', ownerUserId: people.production.id });
-      const reply = await patch(people.production.cookie, contentId, { title: 'Trocado', ownerUserId: people.manager.id });
+      const reply = await patch(people.production.cookie, contentId, { title: 'Trocado', ownerMembershipId: await linkOf('manager') });
       expect(reply.statusCode).toBe(403);
       expect((await w.contentRow(contentId)).title).toBe('Intacto');
     });
 
     it('lets who approves for the agency change the responsible', async () => {
       const contentId = await w.seedContent(clientA, { ownerUserId: people.production.id });
-      const reply = await patch(people.manager.cookie, contentId, { ownerUserId: people.admin.id });
+      const reply = await patch(people.manager.cookie, contentId, { ownerMembershipId: await linkOf('admin') });
       expect(reply.statusCode).toBe(200);
-      expect(reply.json().ownerUserId).toBe(people.admin.id);
+      expect(reply.json().owner).toEqual(await ownerOf('admin'));
+      expect((await w.contentRow(contentId)).owner_user_id).toBe(people.admin.id);
     });
 
     it('lets the Owner of the agency change the responsible, by ownership', async () => {
       const contentId = await w.seedContent(clientA, { ownerUserId: people.production.id });
-      const reply = await patch(people.owner.cookie, contentId, { ownerUserId: people.manager.id });
+      const reply = await patch(people.owner.cookie, contentId, { ownerMembershipId: await linkOf('manager') });
       expect(reply.statusCode).toBe(200);
-      expect(reply.json().ownerUserId).toBe(people.manager.id);
+      expect(reply.json().owner).toEqual(await ownerOf('manager'));
+      expect((await w.contentRow(contentId)).owner_user_id).toBe(people.manager.id);
     });
 
     it('lets who only operates send the responsible it already is, which changes nothing', async () => {
       const contentId = await w.seedContent(clientA, { ownerUserId: people.production.id });
-      const reply = await patch(people.production.cookie, contentId, { ownerUserId: people.production.id, title: 'Mesmo responsável' });
+      const reply = await patch(people.production.cookie, contentId, { ownerMembershipId: await linkOf('production'), title: 'Mesmo responsável' });
       expect(reply.statusCode).toBe(200);
       expect(reply.json().title).toBe('Mesmo responsável');
     });
 
     it('answers 400 CONTENT_OWNER_INVALID to a responsible who cannot see Conteúdo', async () => {
       const contentId = await w.seedContent(clientA, { ownerUserId: people.production.id });
-      const reply = await patch(people.manager.cookie, contentId, { ownerUserId: people.sales.id });
+      const reply = await patch(people.manager.cookie, contentId, { ownerMembershipId: await linkOf('sales') });
       expect(reply.statusCode).toBe(400);
       expect(reply.json().error.code).toBe('CONTENT_OWNER_INVALID');
       expect((await w.contentRow(contentId)).owner_user_id).toBe(people.production.id);
@@ -819,7 +829,7 @@ describe('edit and move (issue #254)', () => {
         await w.getOwner().knex('role_permissions').where({ role_id: roleId, permission_key: 'conteudo.aprovar_pela_agencia' }).delete();
       });
       try {
-        const reply = await patch(people.approver.cookie, contentId, { ownerUserId: people.manager.id });
+        const reply = await patch(people.approver.cookie, contentId, { ownerMembershipId: await linkOf('manager') });
 
         expect(reply.statusCode).toBe(403);
         expect(reply.json().error.code).toBe('FORBIDDEN');

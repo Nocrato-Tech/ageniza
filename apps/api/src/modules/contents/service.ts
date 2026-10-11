@@ -26,6 +26,8 @@ interface ContentRow {
   readonly folder_id: string;
   readonly cover_asset_id: string | null;
   readonly owner_user_id: string;
+  readonly owner_membership_id: string | null;
+  readonly owner_name: string | null;
   readonly status: Content['status'];
   readonly revision: number;
   readonly approved_by: string | null;
@@ -44,7 +46,8 @@ interface ListRow {
   readonly publish_on: string;
   readonly publish_at_time: string | null;
   readonly status: ContentListItem['status'];
-  readonly owner_user_id: string;
+  readonly owner_membership_id: string | null;
+  readonly owner_name: string | null;
   readonly cover_asset_id: string | null;
   readonly revision: number;
   readonly published_on: string | null;
@@ -62,10 +65,40 @@ interface ScriptRow {
 const CONTENT_COLUMNS = `
   content.id, content.client_id, content.title, content.platform, content.format,
   content.publish_on::text as publish_on, to_char(content.publish_at_time, 'HH24:MI') as publish_at_time,
-  content.caption, content.folder_id, content.cover_asset_id, content.owner_user_id, content.status, content.revision,
+  content.caption, content.folder_id, content.cover_asset_id, content.owner_user_id, owner_link.id as owner_membership_id,
+  owner_account.name as owner_name, content.status, content.revision,
   content.approved_by, content.approved_at, content.approved_by_agency_reason,
   content.published_on::text as published_on, content.cancelled_at, content.created_at
 `;
+
+/**
+ * The person in charge is shown by the link they have with the agency of the client (the one id of a collaborator the API gives) and
+ * the name of that link's account; a link that was removed still names who was in charge. The link is unique per agency and person.
+ */
+const OWNER_JOINS = `
+  join public.clients owner_client on owner_client.id = content.client_id
+  left join public.agency_memberships owner_link
+    on owner_link.agency_id = owner_client.agency_id and owner_link.user_id = content.owner_user_id
+  left join auth."user" owner_account on owner_account.id = owner_link.user_id
+`;
+
+const ownerOf = (row: { readonly owner_membership_id: string | null; readonly owner_name: string | null }): Content['owner'] =>
+  row.owner_membership_id === null || row.owner_name === null ? null : { membershipId: row.owner_membership_id, name: row.owner_name };
+
+/**
+ * The user behind an active link of a collaborator of this agency, or `undefined` for a link that is absent, removed, of another
+ * agency or of a client's portal (a portal link has its own table, so its id is no id here). A person is named by a link, never by an id.
+ */
+export const resolveOwnerMembership = async (
+  transaction: ContentTransaction,
+  input: { readonly agencyId: string; readonly membershipId: string }
+): Promise<string | undefined> => {
+  const result = await raw<RawRows<{ user_id: string }>>(transaction, `
+    select user_id from public.agency_memberships
+    where id = ?::uuid and agency_id = ?::uuid and status = 'active'
+  `, [input.membershipId, input.agencyId]);
+  return result.rows[0]?.user_id;
+};
 
 /** The state of a client of the agency, `undefined` for one that is not in it (or that this person cannot read). */
 export const loadClientStatus = async (
@@ -89,10 +122,12 @@ export const listPeriod = async (
   const contents = await raw<RawRows<ListRow>>(transaction, `
     select
       content.id, content.title, content.platform, content.format, content.publish_on::text as publish_on,
-      to_char(content.publish_at_time, 'HH24:MI') as publish_at_time, content.status, content.owner_user_id,
+      to_char(content.publish_at_time, 'HH24:MI') as publish_at_time, content.status,
+      owner_link.id as owner_membership_id, owner_account.name as owner_name,
       content.cover_asset_id, content.revision, content.published_on::text as published_on,
       tasks.total as tasks_total, tasks.approved as tasks_approved
     from public.contents content
+    ${OWNER_JOINS}
     left join lateral (
       select count(*) as total, count(*) filter (where task.status = 'approved') as approved
       from public.content_tasks task
@@ -120,7 +155,7 @@ export const listPeriod = async (
       publishOn: row.publish_on,
       publishAtTime: row.publish_at_time,
       status: row.status,
-      ownerUserId: row.owner_user_id,
+      owner: ownerOf(row),
       coverAssetId: row.cover_asset_id,
       revision: Number(row.revision),
       publishedOn: row.published_on,
@@ -138,6 +173,7 @@ export const loadContent = async (
   const result = await raw<RawRows<ContentRow>>(transaction, `
     select ${CONTENT_COLUMNS}
     from public.contents content
+    ${OWNER_JOINS}
     where content.id = ?::uuid and content.client_id = ?::uuid
   `, [input.contentId, input.clientId]);
   return result.rows[0];
@@ -154,7 +190,7 @@ export const contentFromRow = (row: ContentRow): Content => ({
   caption: row.caption,
   folderId: row.folder_id,
   coverAssetId: row.cover_asset_id,
-  ownerUserId: row.owner_user_id,
+  owner: ownerOf(row),
   status: row.status,
   revision: Number(row.revision),
   approvedBy: row.approved_by,
@@ -168,7 +204,7 @@ export const contentFromRow = (row: ContentRow): Content => ({
 /** The owner is omitted, never sent as null, so the column default (who creates) applies. */
 export const insertContent = async (
   transaction: ContentTransaction,
-  input: { readonly clientId: string; readonly body: CreateContentRequest }
+  input: { readonly clientId: string; readonly body: Omit<CreateContentRequest, 'ownerMembershipId'>; readonly ownerUserId: string | undefined }
 ): Promise<string> => {
   const { body } = input;
   const result = await raw<RawRows<{ id: string }>>(transaction, `
@@ -177,15 +213,21 @@ export const insertContent = async (
     returning id
   `, [
     input.clientId, body.title, body.platform ?? 'instagram', body.format, body.publishOn,
-    body.publishAtTime ?? null, body.caption ?? null, body.folderId, body.coverAssetId ?? null, body.ownerUserId ?? null
+    body.publishAtTime ?? null, body.caption ?? null, body.folderId, body.coverAssetId ?? null, input.ownerUserId ?? null
   ]);
   const row = result.rows[0];
   if (row === undefined) throw new Error('Content insert did not return a row.');
   return row.id;
 };
 
+/**
+ * What a PATCH writes into the row: the body without the link that names the owner, and the user that link resolved to. The route
+ * resolves the link, because the column holds a user and no caller is given one.
+ */
+export type ContentChanges = Omit<UpdateContentRequest, 'ownerMembershipId'> & { readonly ownerUserId?: string };
+
 /** Body field -> column and cast: the only columns a PATCH writes, in the order of the grant. */
-const UPDATABLE_COLUMNS: ReadonlyArray<readonly [keyof UpdateContentRequest, string, string]> = [
+const UPDATABLE_COLUMNS: ReadonlyArray<readonly [keyof ContentChanges, string, string]> = [
   ['title', 'title', ''],
   ['format', 'format', ''],
   ['publishOn', 'publish_on', '::date'],
@@ -197,13 +239,13 @@ const UPDATABLE_COLUMNS: ReadonlyArray<readonly [keyof UpdateContentRequest, str
 ];
 
 /** Whether the body carries a column of the row, as opposed to only the media list. */
-export const changesColumns = (changes: UpdateContentRequest): boolean =>
+export const changesColumns = (changes: ContentChanges): boolean =>
   UPDATABLE_COLUMNS.some(([key]) => changes[key] !== undefined);
 
 /** `false` when no row of the client matched: the row went away, or the policy no longer lets this person write it. */
 export const updateContent = async (
   transaction: ContentTransaction,
-  input: { readonly clientId: string; readonly contentId: string; readonly changes: UpdateContentRequest }
+  input: { readonly clientId: string; readonly contentId: string; readonly changes: ContentChanges }
 ): Promise<boolean> => {
   const assignments: string[] = [];
   const bindings: Array<string | null> = [];

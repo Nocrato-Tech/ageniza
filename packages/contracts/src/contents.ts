@@ -64,8 +64,17 @@ export const ContentCaptionSchema = visibleText()
 const MediaAssetIdsSchema = z.array(z.string().uuid()).max(CONTENT_CAROUSEL_MAX_MEDIA);
 
 /**
- * Body of `POST .../contents`. The state is not a field: a content is born in production, and `ownerUserId`
- * defaults to who creates it.
+ * The person in charge of a content as the agency sees them: the link (the only id of a collaborator the API exposes) and the name
+ * the link carries. `null` where the person has no link to the agency (an Owner who holds the agency by ownership alone).
+ */
+export const ContentOwnerSchema = z.object({
+  membershipId: z.string().uuid(),
+  name: z.string()
+}).strict();
+
+/**
+ * Body of `POST .../contents`. The state is not a field: a content is born in production, and the person in charge
+ * (`ownerMembershipId`, an active link of a collaborator of the agency) defaults to who creates it.
  */
 export const CreateContentRequestSchema = z.object({
   title: ContentTitleSchema,
@@ -76,11 +85,11 @@ export const CreateContentRequestSchema = z.object({
   caption: ContentCaptionSchema.nullable().optional(),
   folderId: z.string().uuid(),
   coverAssetId: z.string().uuid().nullable().optional(),
-  ownerUserId: z.string().uuid().optional()
+  ownerMembershipId: z.string().uuid().optional()
 }).strict();
 
 /**
- * Body of `PATCH .../contents/:contentId`: any subset, and moving the date is just `publishOn`. `ownerUserId`
+ * Body of `PATCH .../contents/:contentId`: any subset, and moving the date is just `publishOn`. `ownerMembershipId`
  * is a separate permission, and `mediaAssetIds` is the whole ordered list (never a delta), written in the same
  * transaction as the format so one request changes both.
  */
@@ -92,7 +101,7 @@ export const UpdateContentRequestSchema = z.object({
   caption: ContentCaptionSchema.nullable().optional(),
   folderId: z.string().uuid().optional(),
   coverAssetId: z.string().uuid().nullable().optional(),
-  ownerUserId: z.string().uuid().optional(),
+  ownerMembershipId: z.string().uuid().optional(),
   mediaAssetIds: MediaAssetIdsSchema.optional()
 }).strict().refine((value) => Object.keys(value).length > 0, 'at least one field must be provided');
 
@@ -143,7 +152,7 @@ export const ContentListItemSchema = z.object({
   publishOn: z.string(),
   publishAtTime: z.string().nullable(),
   status: ContentStatusSchema,
-  ownerUserId: z.string().uuid(),
+  owner: ContentOwnerSchema.nullable(),
   coverAssetId: z.string().uuid().nullable(),
   revision: z.number().int().positive(),
   publishedOn: z.string().nullable(),
@@ -181,7 +190,7 @@ export const ContentSchema = z.object({
   caption: z.string().nullable(),
   folderId: z.string().uuid(),
   coverAssetId: z.string().uuid().nullable(),
-  ownerUserId: z.string().uuid(),
+  owner: ContentOwnerSchema.nullable(),
   status: ContentStatusSchema,
   revision: z.number().int().positive(),
   approvedBy: z.string().uuid().nullable(),
