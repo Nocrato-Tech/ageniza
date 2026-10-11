@@ -142,7 +142,7 @@ Depois da correção, a re-revisão refaz **os mesmos ataques** e procura regres
 O registro detalhado vive no ai-memory, em `notes/licoes-seguranca-rls.md`. As regras que viraram padrão:
 
 - *Grant* de `INSERT` e `UPDATE` **por coluna**, sempre.
-- Comparação de valor antigo com novo por **trigger `BEFORE UPDATE`**, `security invoker`, pulando só quando `current_user <> 'ageniza_app'`. Nunca por subselect na `WITH CHECK`.
+- Comparação de valor antigo com novo por **trigger `BEFORE UPDATE`**, `security invoker`. O gatilho pula só para papel com bypass, pelo atributo e nunca pelo nome: `app_private.role_bypasses_rls(current_user)` (ou `session_user`, quando a trava é do login, como em `lock_active_client_of_child`), que lê `rolsuper` e `rolbypassrls` de `pg_roles` (#397). Nunca por subselect na `WITH CHECK`.
 - Valor que o cliente não escolhe (`created_at`, autor, lado, quem resolveu) é fixado pelo banco.
 - O lado de quem escreve (agência ou cliente) vem da rota e é conferido pela credencial, nunca pelo corpo.
 - Teto de página é **limitar**, e `page` gigante não pode virar 500.
