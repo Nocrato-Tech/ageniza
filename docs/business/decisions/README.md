@@ -119,6 +119,7 @@ Uma linha por decisão, agrupada por módulo. Cada decisão é um arquivo `AAAA-
 - 2026-10-07 — [Conteúdo: a conversa do conteúdo no banco](2026-10-07-conteudo-conversa-do-conteudo-no-banco.md)
 - 2026-10-07 — [Conteúdo: pastas de mídia e mídia com cliente no banco](2026-10-07-conteudo-pastas-de-midia-e-midia-com-cliente-no-banco.md)
 - 2026-10-07 — [Conteúdo: roteiro de stories no banco](2026-10-07-conteudo-roteiro-de-stories-no-banco.md)
+- 2026-10-11 — [SPEC de Conteúdo aprovada, com o recorte de implementação](2026-10-11-spec-de-conteudo-aprovada-com-o-recorte.md)
 
 ## Autorização e transversais
 

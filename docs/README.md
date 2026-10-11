@@ -38,7 +38,7 @@ Encontre o documento certo pela tarefa. Cada linha diz **que pergunta o document
 - [SPEC de autorização e transversais](../specs/autorizacao.md) — catálogo de permissões, papéis e convenções de tela que todos os módulos herdam. **Leia quando:** for implementar qualquer tela com permissão.
 - [SPEC de clientes](../specs/clientes.md) — carteira, detalhe, estudo de marca, acessos ao portal e encerramento. **Leia quando:** for implementar ou alterar o módulo de clientes.
 - [SPEC de colaboradores](../specs/colaboradores.md) — equipe, convites pendentes e perfil próprio. **Leia quando:** for implementar ou alterar o módulo de colaboradores.
-- [SPEC de conteúdo](../specs/conteudo.md) — calendário, aprovação, mídia e portal do cliente. **Leia quando:** for implementar o módulo de conteúdo (ainda em revisão).
+- [SPEC de conteúdo](../specs/conteudo.md) — calendário, aprovação, mídia e portal do cliente. **Leia quando:** for implementar o módulo de conteúdo.
 - [Modelo de SPEC](../specs/TEMPLATE.md) — a estrutura de uma SPEC nova. **Leia quando:** for escrever a SPEC de um módulo que ainda não existe.
 
 ## Revisar segurança

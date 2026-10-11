@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | em revisão |
+| **Status** | aprovado |
 | **Submódulos** | calendário e feed; conteúdo e aprovação; subtarefas; biblioteca de mídia por cliente; roteiro de stories; portal; e-mail ao cliente |
 | **Sessões** | 2026-10-01 |
 | **Decidido por** | Pedro Vidal (dono do produto) |
