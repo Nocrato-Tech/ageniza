@@ -119,7 +119,17 @@ Uma linha por decisão, agrupada por módulo. Cada decisão é um arquivo `AAAA-
 - 2026-10-07 — [Conteúdo: a conversa do conteúdo no banco](2026-10-07-conteudo-conversa-do-conteudo-no-banco.md)
 - 2026-10-07 — [Conteúdo: pastas de mídia e mídia com cliente no banco](2026-10-07-conteudo-pastas-de-midia-e-midia-com-cliente-no-banco.md)
 - 2026-10-07 — [Conteúdo: roteiro de stories no banco](2026-10-07-conteudo-roteiro-de-stories-no-banco.md)
+- 2026-10-08 — [A fila descarta o item que deixou de valer, em vez de segurá-lo](2026-10-08-a-fila-descarta-o-item-que-deixou-de-valer-em-vez-de-segura-lo.md)
+- 2026-10-08 — [O e-mail de "conteúdos para aprovar" sai 15 minutos depois do último envio para aprovação](2026-10-08-email-de-conteudos-para-aprovar-sai-15-minutos-depois-do-ultimo-envio.md)
+- 2026-10-08 — [A fila de notificação só se lê e só se escreve por função](2026-10-08-fila-de-notificacao-so-se-le-e-se-escreve-por-funcao.md)
+- 2026-10-08 — [O resumo diário de "publicado" sai na virada do dia em Brasília](2026-10-08-resumo-diario-de-publicados-fecha-na-virada-do-dia-em-brasilia.md)
+- 2026-10-11 — [Conteúdo: editar aceita o responsável e a lista de mídia na mesma chamada](2026-10-11-conteudo-editar-aceita-responsavel-e-lista-de-midia-na-mesma-chamada.md)
+- 2026-10-11 — [Conteúdo: a leitura por id traz as mídias, as subtarefas e o resumo da conversa](2026-10-11-conteudo-leitura-por-id-traz-midias-subtarefas-e-resumo-da-conversa.md)
+- 2026-10-11 — [Conteúdo: o texto livre da rota e os códigos de erro da agência](2026-10-11-conteudo-texto-livre-da-rota-e-codigos-de-erro-da-agencia.md)
+- 2026-10-11 — [O nome de quem gravou o roteiro sai de uma função de leitura de propósito único](2026-10-11-nome-de-quem-gravou-o-roteiro-por-funcao-de-leitura.md)
+- 2026-10-11 — [Roteiro de stories na API: limites, texto livre e edição pela lista inteira](2026-10-11-roteiro-de-stories-na-api-limites-texto-e-edicao-pela-lista-inteira.md)
 - 2026-10-11 — [SPEC de Conteúdo aprovada, com o recorte de implementação](2026-10-11-spec-de-conteudo-aprovada-com-o-recorte.md)
+- 2026-10-11 — [Toda edição de conteúdo trava o cliente ativo, e o ciclo com o arquivamento continua sendo o aceito](2026-10-11-toda-edicao-de-conteudo-trava-o-cliente-ativo.md)
 
 ## Mídia
 
@@ -132,9 +142,12 @@ Uma linha por decisão, agrupada por módulo. Cada decisão é um arquivo `AAAA-
 - 2026-09-18 — [Tipos de mídia aceitos definidos em código](2026-09-18-tipos-de-midia-aceitos-definidos-em-codigo.md)
 - 2026-10-07 — [A cota de armazenamento soma a agência inteira por uma função própria](2026-10-07-a-cota-soma-a-agencia-inteira-por-funcao-propria.md)
 - 2026-10-07 — [A pasta pai se trava por uma função própria](2026-10-07-a-pasta-pai-se-trava-por-funcao-propria.md)
+- 2026-10-07 — [Biblioteca de mídia do cliente: o que a API decide onde a SPEC não fecha](2026-10-07-biblioteca-de-midia-do-cliente-regras-da-api.md)
 - 2026-10-07 — [O estado do envio de mídia só anda para frente, e as colunas que o banco fixa não são gravadas pela aplicação](2026-10-07-estado-do-envio-de-midia-so-anda-para-frente.md)
 - 2026-10-07 — [O banco carimba o autor e a confirmação da mídia, e o vídeo só anda para a frente](2026-10-07-o-banco-carimba-o-autor-e-a-confirmacao-da-midia.md)
 - 2026-10-07 — [Remover mídia é por função e se recusa em conteúdo já enviado para aprovação](2026-10-07-remover-midia-e-por-funcao-e-se-recusa-em-conteudo-ja-enviado.md)
+- 2026-10-11 — [A remoção de mídia diz se foi ela que removeu, e a auditoria sai dessa resposta](2026-10-11-a-remocao-de-midia-diz-se-foi-ela-que-removeu-e-a-auditoria-sai-dessa-resposta.md)
+- 2026-10-11 — [O nome de pasta de mídia recusa os caracteres invisíveis e aceita o seletor de emoji depois de um pictograma](2026-10-11-nome-de-pasta-recusa-invisiveis-e-aceita-vs16-de-emoji.md)
 
 ## Autorização e transversais
 
@@ -162,6 +175,8 @@ Uma linha por decisão, agrupada por módulo. Cada decisão é um arquivo `AAAA-
 - 2026-10-10 — [A API lê a autorização de agência de uma função, e a RLS não](2026-10-10-a-api-le-a-autorizacao-de-agencia-de-uma-funcao-e-a-rls-nao.md)
 - 2026-10-10 — [`agency_user_can` também nega a chave que não existe no catálogo](2026-10-10-agency-user-can-tambem-nega-chave-fora-do-catalogo.md)
 - 2026-10-10 — [O "Voltar ao início" da página não encontrada leva ao início de cada lado](2026-10-10-voltar-ao-inicio-da-pagina-nao-encontrada-leva-ao-inicio-de-cada-lado.md)
+- 2026-10-11 — [Consulta por período: teto de 500 itens e formato da resposta](2026-10-11-consulta-por-periodo-teto-de-500-itens-e-formato-da-resposta.md)
+- 2026-10-11 — [Escrita na filha do cliente recusada pela política é relida: arquivado é 409, só cliente aberto é 403](2026-10-11-escrita-na-filha-do-cliente-recusada-pela-politica-e-relida-como-arquivamento.md)
 
 ## Processo e operação
 
