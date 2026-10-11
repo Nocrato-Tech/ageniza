@@ -175,10 +175,14 @@ describe('app_private.agency_permission_keys (issue #189)', () => {
     try {
       expect(await keysOf(admin, agencyA)).toEqual([]);
       expect(await keysOf(ownerMember, agencyA)).toEqual([]);
+      expect(await holds(admin, agencyA, 'midia.enviar')).toBe(false);
+      expect(await holds(ownerMember, agencyA, 'midia.enviar')).toBe(false);
     } finally {
       await getOwner().knex('agencies').where({ id: agencyA }).update({ status: 'active' });
     }
     expect(await keysOf(admin, agencyA)).toHaveLength(catalog.length - 1);
+    expect(await holds(admin, agencyA, 'midia.enviar')).toBe(true);
+    expect(await holds(ownerMember, agencyA, 'midia.enviar')).toBe(true);
   });
 
   it('a person with no tie to the agency, and an agency that does not exist, get the empty set', async () => {
@@ -223,13 +227,29 @@ describe('app_private.has_agency_permission agrees with the keys, key by key (is
     ['a custom role of two keys', twoKeys, agencyA],
     ['a role of another agency', foreignRole, agencyA],
     ['a removed membership', removed, agencyA],
-    ['someone with no tie', outsider, agencyA]
+    ['someone with no tie', outsider, agencyA],
+    // A suspended agency authorizes nobody, the owner included; and a person of two agencies is compared in each.
+    ['the owner of a suspended agency', ownerSuspended, agencySuspended],
+    ['an Admin of a suspended agency', adminSuspended, agencySuspended],
+    ['a person of two agencies, in A', dual, agencyA],
+    ['a person of two agencies, in B', dual, agencyB]
   ];
 
   it.each(people)('%s: has_agency_permission is true for exactly the keys the function returns, for every key of the catalog', async (_label, person, agencyId) => {
     const keys = await keysOf(person, agencyId);
     for (const key of catalog) {
       expect(await holds(person, agencyId, key), key).toBe(keys.includes(key));
+    }
+  });
+
+  // `agency_user_can` (20261007001200_contents.mjs) is a third SQL copy of the same resolution, for a person passed by
+  // argument: the contents triggers use it to check that an owner or an assignee is a collaborator who can see Conteúdo.
+  // It is not edited here (an applied migration is not), so this is what holds it to the keys when someone changes the rule.
+  it.each(people)('%s: agency_user_can answers like the keys, for every key of the catalog', async (_label, person, agencyId) => {
+    const keys = await keysOf(person, agencyId);
+    for (const key of catalog) {
+      const result = await getOwner().knex.raw('select app_private.agency_user_can(?::uuid, ?::uuid, ?) as held', [agencyId, person, key]);
+      expect((result.rows as { held: boolean }[])[0]?.held, key).toBe(keys.includes(key));
     }
   });
 
@@ -293,19 +313,26 @@ describe('app_private.has_agency_permission agrees with the keys, key by key (is
   });
 
   it('every key a policy or a function asks for by literal exists in the catalog, so failing closed for unknown keys closes nothing that was open', async () => {
-    const result = await getOwner().knex.raw(String.raw`
-      with texts as (
-        select coalesce(qual, '') || ' ' || coalesce(with_check, '') as body from pg_policies
-        union all
-        select prosrc from pg_proc where pronamespace in ('public'::regnamespace, 'app_private'::regnamespace)
-      )
-      select distinct match[1] as key
-      from texts, regexp_matches(body, 'has_agency_permission\(\s*[A-Za-z_.]+\s*,\s*''([^'']+)''', 'g') as match
-      order by key
-    `);
-    const asked = (result.rows as { key: string }[]).map((row) => row.key);
+    // Read in JS, not in SQL: the pattern holds `?`, which knex would take for a binding.
+    // The first argument may be a call (`app_private.client_agency_id(client_id)`), so it allows one level of parentheses.
+    const callWithLiteral = /(?:has_agency_permission|lock_content_for_agency|agency_user_can)\((?:[^()]|\([^()]*\))*?,\s*'([^']+)'/g;
+    const policies = (await getOwner().knex.raw(
+      "select coalesce(qual, '') || ' ' || coalesce(with_check, '') as body from pg_policies"
+    )).rows as { body: string }[];
+    const functions = (await getOwner().knex.raw(
+      "select prosrc as body from pg_proc where pronamespace in ('public'::regnamespace, 'app_private'::regnamespace)"
+    )).rows as { body: string }[];
+
+    // A policy always names the key: if one call has no literal extracted, the pattern missed it and this fails.
+    const policyCalls = policies.reduce((count, row) => count + (row.body.match(/has_agency_permission\(/g)?.length ?? 0), 0);
+    const policyLiterals = policies.reduce((count, row) => count + [...row.body.matchAll(callWithLiteral)].length, 0);
+    expect(policyCalls).toBeGreaterThanOrEqual(80);
+    expect(policyLiterals).toBe(policyCalls);
+
+    const asked = [...new Set([...policies, ...functions].flatMap((row) => [...row.body.matchAll(callWithLiteral)].map((match) => match[1] as string)))].sort();
     expect(asked).toContain('midia.enviar');
-    expect(asked.length).toBeGreaterThanOrEqual(10);
+    expect(asked).toContain('conteudo.operar');
+    expect(asked.length).toBeGreaterThanOrEqual(16);
     expect(asked.filter((key) => !catalog.includes(key))).toEqual([]);
   });
 });
