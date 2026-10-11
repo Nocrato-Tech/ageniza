@@ -653,6 +653,128 @@ describe('a write that races the archive of its client does not survive it (issu
   });
 });
 
+describe('the story scripts are serialized with the archive of their client (issue #534)', () => {
+  const levels = ['repeatable read', 'serializable'] as const;
+  const rlsViolation = { code: '42501', message: expect.stringContaining('row-level security') };
+
+  const seedScript = async (status: 'draft' | 'sent' = 'draft'): Promise<{ client: string; id: string }> => {
+    const client = await newClient();
+    const id = randomUUID();
+    await w.getOwner().knex('story_scripts').insert({ id, client_id: client, script_on: '2026-10-20', status });
+    await w.getOwner().knex('story_script_scenes').insert([
+      { script_id: id, client_id: client, position: 1, text: 'Cena 1', guidance: 'Direção' },
+      { script_id: id, client_id: client, position: 2, text: 'Cena 2' }
+    ]);
+    return { client, id };
+  };
+  const scriptState = async (id: string): Promise<string> => sqlText(
+    "select concat_ws('|', s.script_on::text, s.status, (select string_agg(concat_ws(',', c.position::text, c.text, c.guidance), ';' order by c.position) from public.story_script_scenes c where c.script_id = s.id)) as value from public.story_scripts s where s.id = ?",
+    [id]
+  );
+
+  const edits: ReadonlyArray<readonly [string, (id: string) => (t: Knex.Transaction) => Promise<number>]> = [
+    ['script_on', (id) => (t) => t('story_scripts').where({ id }).update({ script_on: '2026-10-21' })],
+    ['scene text', (id) => (t) => t('story_script_scenes').where({ script_id: id, position: 1 }).update({ text: 'Cena nova' })],
+    ['scene guidance', (id) => (t) => t('story_script_scenes').where({ script_id: id, position: 1 }).update({ guidance: 'Outra direção' })],
+    ['scene position', (id) => (t) => t('story_script_scenes').where({ script_id: id, position: 2 }).update({ position: 5 })]
+  ];
+
+  describe.each(edits)('an edit of %s', (_column, editOf) => {
+    it('written while the archive is uncommitted, it is refused as A0020 and the script is as it was', async () => {
+      const { client, id } = await seedScript();
+      const before = await scriptState(id);
+
+      const outcome = await writeWhileArchiving(client, ids.adminA, editOf(id));
+
+      expect(outcome).toMatchObject({ code: 'A0020' });
+      expect(await clientStatus(client)).toBe('archived');
+      expect(await scriptState(id)).toBe(before);
+    });
+
+    it('written first, it makes the archive wait, and both commit', async () => {
+      const { client, id } = await seedScript();
+      const before = await scriptState(id);
+
+      const outcome = await archiveWhileWriting(client, ids.adminA, async (t) => {
+        expect(await editOf(id)(t)).toBe(1);
+      });
+
+      expect(outcome).toBe('archived');
+      expect(await clientStatus(client)).toBe('archived');
+      expect(await scriptState(id)).not.toBe(before);
+    });
+
+    it('written after the archive committed, it is refused by the policy and the script is as it was', async () => {
+      const { client, id } = await seedScript();
+      const before = await scriptState(id);
+      await w.asUser(ids.adminA, archive(client));
+
+      await expect(w.asUser(ids.adminA, editOf(id))).rejects.toMatchObject(rlsViolation);
+
+      expect(await scriptState(id)).toBe(before);
+    });
+
+    it.each(levels)('%s: written from a snapshot older than the archive, it fails with 40001 and the script is as it was', async (level) => {
+      const { client, id } = await seedScript();
+      const before = await scriptState(id);
+      const stale = await w.openTransactionAs(ids.adminA, level);
+
+      try {
+        await w.asUser(ids.adminA, archive(client));
+        await expect(editOf(id)(stale)).rejects.toMatchObject({ code: '40001' });
+      } finally {
+        await stale.rollback();
+      }
+
+      expect(await scriptState(id)).toBe(before);
+    });
+  });
+
+  describe.each([
+    ['send_story_script', 'draft', ids.adminA, 'A0051', 'sent', 'select app_private.send_story_script(?::uuid)'],
+    ['record_story_script', 'sent', ids.portalA1, 'A0050', 'recorded', 'select app_private.record_story_script(?::uuid)']
+  ] as const)('%s', (_name, from, actor, refusal, to, call) => {
+    const statusOf = (id: string): Promise<string> => sqlText('select status as value from public.story_scripts where id = ?', [id]);
+    const run = (id: string) => (t: Knex.Transaction) => t.raw(call, [id]);
+
+    it('a call that waited for the archive is refused and leaves the script as it was', async () => {
+      const { client, id } = await seedScript(from);
+
+      const outcome = await writeWhileArchiving(client, actor, run(id));
+
+      expect(outcome).toMatchObject({ code: refusal });
+      expect(await statusOf(id)).toBe(from);
+    });
+
+    it('a call that came first makes the archive wait, and both commit', async () => {
+      const { client, id } = await seedScript(from);
+
+      const outcome = await archiveWhileWriting(client, actor, async (t) => {
+        await run(id)(t);
+        expect((await t.raw<{ rows: Array<{ status: string }> }>('select status from public.story_scripts where id = ?::uuid', [id])).rows).toEqual([{ status: to }]);
+      });
+
+      expect(outcome).toBe('archived');
+      expect(await statusOf(id)).toBe(to);
+      expect(await clientStatus(client)).toBe('archived');
+    });
+
+    it.each(levels)('%s: a call from a snapshot older than the archive fails with 40001 and leaves the script as it was', async (level) => {
+      const { client, id } = await seedScript(from);
+      const stale = await w.openTransactionAs(actor, level);
+
+      try {
+        await w.asUser(ids.adminA, archive(client));
+        await expect(run(id)(stale)).rejects.toMatchObject({ code: '40001' });
+      } finally {
+        await stale.rollback();
+      }
+
+      expect(await statusOf(id)).toBe(from);
+    });
+  });
+});
+
 describe('archiving a client cancels the content planned after its closing (issue #251)', () => {
   const seedFour = async (clientId: string, publishOn: string): Promise<Record<'in_production' | 'awaiting_approval' | 'adjusting' | 'approved', string>> => ({
     in_production: await w.seedContent(clientId, { status: 'in_production', publishOn }),
