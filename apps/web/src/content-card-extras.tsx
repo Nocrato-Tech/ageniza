@@ -61,7 +61,7 @@ export function ContentHoverDetail({ id, clientId, contentId }: { id: string; cl
   if (detail.isPending) return <div role="tooltip" id={id} className="content-card__detail"><p>Carregando detalhes…</p></div>;
   if (detail.isError) return <div role="tooltip" id={id} className="content-card__detail"><p>Não foi possível carregar os detalhes.</p></div>;
 
-  const { caption, tasks, conversation } = detail.data;
+  const { caption, owner, tasks, conversation } = detail.data;
   const delivered = tasks.filter((task) => task.status === 'delivered').length;
   const pending = tasks.filter((task) => task.status === 'pending').length;
   const approved = tasks.length - delivered - pending;
@@ -79,6 +79,7 @@ export function ContentHoverDetail({ id, clientId, contentId }: { id: string; cl
   return <div role="tooltip" id={id} className="content-card__detail">
     <dl>
       <dt>Legenda</dt><dd>{captionExcerpt(caption)}</dd>
+      {owner !== null && <><dt>Responsável</dt><dd>{owner.name}</dd></>}
       <dt>Subtarefas</dt><dd>{subtasks}</dd>
       <dt>Conversa</dt><dd>{comments}</dd>
       {conversation.commentCount > 0 && lastMessageRow(lastMessage)}

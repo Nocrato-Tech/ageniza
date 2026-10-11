@@ -110,7 +110,7 @@ const detailOfContent = (clientId: string, row: ReturnType<typeof contentFixture
   caption: null,
   folderId: 'f0f0f0f0-0000-4000-8000-000000000001',
   coverAssetId: row.coverAssetId,
-  ownerUserId: row.ownerUserId,
+  owner: row.owner,
   status: row.status,
   revision: row.revision,
   approvedBy: null,
@@ -1324,7 +1324,7 @@ describe('the detail on a card (hover and focus)', () => {
       content: withDetail(row, {
         caption: 'Hoje tem pão quente na padaria!',
         tasks: ['approved', 'approved', 'delivered', 'pending'].map((status, index) => ({
-          id: `b0b0b0b0-0000-4000-8000-00000000000${index}`, title: `Tarefa ${index}`, description: null, assigneeUserId: row.ownerUserId, dueOn: '2026-10-13', status, returnComment: null, approvedBy: null, approvedAt: null
+          id: `b0b0b0b0-0000-4000-8000-00000000000${index}`, title: `Tarefa ${index}`, description: null, assignee: row.owner, dueOn: '2026-10-13', status, returnComment: null, approvedBy: null, approvedAt: null
         })),
         conversation: { threadId: 'c1c1c1c1-0000-4000-8000-000000000001', commentCount: 3, lastCommentAt: '2026-10-12T01:30:00.000Z' }
       }),
@@ -1459,7 +1459,7 @@ describe('the detail on a card (hover and focus)', () => {
       contents: { [padaria.id]: [row] },
       content: withDetail(row, {
         caption: `${'a'.repeat(140)}b\n\nfim`,
-        tasks: [{ id: 'b0b0b0b0-0000-4000-8000-000000000001', title: 'T', description: null, assigneeUserId: row.ownerUserId, dueOn: '2026-10-13', status: 'pending', returnComment: null, approvedBy: null, approvedAt: null }],
+        tasks: [{ id: 'b0b0b0b0-0000-4000-8000-000000000001', title: 'T', description: null, assignee: row.owner, dueOn: '2026-10-13', status: 'pending', returnComment: null, approvedBy: null, approvedAt: null }],
         conversation: { threadId: 'c1c1c1c1-0000-4000-8000-000000000001', commentCount: 1, lastCommentAt: null }
       })
     });
@@ -1561,15 +1561,33 @@ describe('the detail on a card (hover and focus)', () => {
     await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
   });
 
-  it('does not show the responsible until the API names them (#552)', async () => {
-    const row = contentFixture({ title: 'Sem responsável', publishOn: '2026-10-14' });
+  it('shows the name of the responsible of the card that is pointed at, never the link behind it (#552)', async () => {
+    const ana = contentFixture({ title: 'Da Ana', publishOn: '2026-10-14' });
+    const paulo = contentFixture({ title: 'Do Paulo', publishOn: '2026-10-14', owner: { membershipId: 'e0e0e0e0-0000-4000-8000-000000000002', name: 'Paulo Lima' } });
+    const { impl } = makeFetch({ contents: { [padaria.id]: [ana, paulo] } });
+    const { container } = render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Do Paulo');
+
+    fireEvent.mouseEnter(cardOf('Do Paulo'));
+    const detail = await screen.findByRole('tooltip');
+    expect(await within(detail).findByText('Responsável')).toBeTruthy();
+    expect(within(detail).getByText('Paulo Lima')).toBeTruthy();
+    expect(within(detail).queryByText('Ana Souza')).toBeNull();
+    expect(container.textContent).not.toContain('e0e0e0e0-0000-4000-8000-000000000002');
+    fireEvent.mouseLeave(cardOf('Do Paulo'));
+
+    fireEvent.mouseEnter(cardOf('Da Ana'));
+    expect(await within(await screen.findByRole('tooltip')).findByText('Ana Souza')).toBeTruthy();
+  });
+
+  it('shows no responsible for a content whose person has no link to the agency (owner null)', async () => {
+    const row = contentFixture({ title: 'Sem vínculo', publishOn: '2026-10-14', owner: null });
     const { impl } = makeFetch({ contents: { [padaria.id]: [row] } });
     render_(impl, contentsUrl(padaria.id));
-    await screen.findByText('Sem responsável');
+    await screen.findByText('Sem vínculo');
 
-    fireEvent.mouseEnter(cardOf('Sem responsável'));
+    fireEvent.mouseEnter(cardOf('Sem vínculo'));
     await screen.findByText('Sem legenda');
     expect(screen.queryByText('Responsável')).toBeNull();
-    expect(screen.queryByText(row.ownerUserId)).toBeNull();
   });
 });
