@@ -471,8 +471,8 @@ const insertInvitation = async (
 ): Promise<void> => {
   await raw(transaction, `
     insert into public.invitations
-      (id, agency_id, purpose, email, role_id, client_id, token_hash, expires_at, invited_by_user_id)
-    values (gen_random_uuid(), ?::uuid, ?, ?, ?::uuid, ?::uuid, ?, now() + ${INVITATION_EXPIRY}, ?::uuid)
+      (agency_id, purpose, email, role_id, client_id, token_hash, expires_at, invited_by_user_id)
+    values (?::uuid, ?, ?, ?::uuid, ?::uuid, ?, now() + ${INVITATION_EXPIRY}, ?::uuid)
   `, [
     invitation.agencyId,
     invitation.purpose,

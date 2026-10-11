@@ -324,15 +324,15 @@ describe('invitation state only moves forward (#290)', () => {
     // Resend: the role that only resends revokes the old invitation and creates the replacement.
     const toResend = await insertInvitation({ purpose: 'collaborator_invite', inviteeId: invitee, roleId: productionRoleId });
     const replacementToken = `token-${randomUUID()}`;
-    const replacementId = randomUUID();
-    createdInvitationIds.push(replacementId);
-    await asUser(resenderUser, async (transaction) => {
+    const replacementId = await asUser(resenderUser, async (transaction) => {
       expect(await transaction('invitations').where({ id: toResend.id }).update({ revoked_at: new Date() })).toBe(1);
-      await transaction('invitations').insert({
-        id: replacementId, agency_id: agencyA, purpose: 'collaborator_invite', email: emailOf(invitee), role_id: productionRoleId,
+      const [replacement] = await transaction('invitations').insert({
+        agency_id: agencyA, purpose: 'collaborator_invite', email: emailOf(invitee), role_id: productionRoleId,
         token_hash: hashOf(replacementToken), expires_at: futureDate()
-      });
+      }).returning('id');
+      return replacement!.id as string;
     });
+    createdInvitationIds.push(replacementId);
     expect((await invitationState(toResend.id)).revoked_at).not.toBeNull();
     expect(await invitationState(replacementId)).toEqual({ revoked_at: null, used_at: null });
 

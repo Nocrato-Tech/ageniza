@@ -99,7 +99,7 @@ const inviteAs = (userId: string, agencyId: string, roleId: string): Promise<unk
   return asUser(userId, async (transaction) => {
     expect(await transaction('roles').where({ id: roleId }).select('id')).toHaveLength(1);
     return await transaction('invitations').insert({
-      id, agency_id: agencyId, purpose: 'collaborator_invite', email, role_id: roleId,
+      agency_id: agencyId, purpose: 'collaborator_invite', email, role_id: roleId,
       token_hash: `hash-${id}`, expires_at: new Date(Date.now() + 86_400_000)
     });
   });
