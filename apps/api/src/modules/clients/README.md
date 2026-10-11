@@ -80,7 +80,9 @@ declara é 400.
   produção ou em ajuste; em revisão é aguardando aprovação; atrasado é a data planejada anterior ao dia de
   hoje em São Paulo (`app_private.sao_paulo_date` sobre o instante `asOf` que a rota passa), sem
   publicado nem cancelado. `adjusting` é só o em ajuste (já contado em `pending`) e `dueSoon` é a data
-  planejada de hoje a dois dias à frente, os dois extremos dentro. **Só é computada** para quem tem `conteudo.visualizar` (ou é Owner): para os
+  planejada de hoje a dois dias à frente, os dois extremos dentro. A definição de atrasado e de prazo em dois dias é uma só
+  (`contentDeadline`, em `packages/contracts`), escrita em SQL por `contentDeadlineSql` (`modules/contents/deadline-sql.ts`) e
+  presa à função por um teste de paridade (#549). **Só é computada** para quem tem `conteudo.visualizar` (ou é Owner): para os
   demais o campo é **omitido**, nunca zero, e a ordem não muda. Na ordem `attention`, para quem a recebe,
   "tem atraso" é o primeiro critério, antes de "tem sugestão aguardando"; `name:asc` não muda
   (decisão de 2026-10-11).
