@@ -331,6 +331,20 @@ describe('contexts module (AUTH-20C)', () => {
     ]);
   });
 
+  it('#432 GET /me/contexts answers Cache-Control: no-store on the 200 that lists the contexts and on the 401', async () => {
+    const user = await makeUser('ctx-no-store');
+    await createAgency('No Store Agency', user.id);
+    const cookie = await loginCookie(user);
+
+    const listed = await app.app.inject({ method: 'GET', url: '/me/contexts', headers: { ...origin, cookie } });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.headers['cache-control']).toBe('no-store');
+
+    const unauthenticated = await app.app.inject({ method: 'GET', url: '/me/contexts', headers: origin });
+    expect(unauthenticated.statusCode).toBe(401);
+    expect(unauthenticated.headers['cache-control']).toBe('no-store');
+  });
+
   it('#12 a client context carries agencyName and onboardingPending, which flips exactly once and stays fixed after', async () => {
     const owner1 = await makeUser('ctx-onboarding-owner');
     const member = await makeUser('ctx-onboarding-member');
@@ -445,14 +459,24 @@ describe('contexts module (AUTH-20C)', () => {
     const roleId = randomUUID();
     createdRoleIds.push(roleId);
     await owner.knex('roles').insert({ id: roleId, agency_id: sourceAgency, key: 'bigrole', name: 'Big Role', is_system: false });
+    // The person also belongs to the agency that owns the role. That is what makes this scenario prove the scope
+    // clause of `fetchAgencyContexts`: `roles_select` then shows them the role, and only the
+    // `role.agency_id is null or role.agency_id = agency.id` filter keeps its label out of the home agency. With no
+    // membership in the source agency, RLS alone hides the role and the filter survives a mutation unnoticed (#189).
+    await addAgencyMembership(sourceAgency, user.id, roleId);
     await addAgencyMembership(homeAgency, user.id, roleId);
     const cookie = await loginCookie(user);
 
     const { status, contexts } = await getContexts(cookie);
     expect(status).toBe(200);
-    expect(contexts).toEqual([
+    expect(contexts).toHaveLength(2);
+    expect(contexts).toContainEqual(
       expect.objectContaining({ type: 'agency', agencyId: homeAgency, roleKey: 'sem-papel', roleName: 'Sem papel', isOwner: false })
-    ]);
+    );
+    // Where the role is in scope, its label is shown.
+    expect(contexts).toContainEqual(
+      expect.objectContaining({ type: 'agency', agencyId: sourceAgency, roleKey: 'bigrole', roleName: 'Big Role', isOwner: false })
+    );
   });
 
   it('#17 no log line contains a full email address or a cookie value across the context routes', async () => {

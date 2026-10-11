@@ -27,8 +27,8 @@ Fixar como a autorização é avaliada, como entidades e vínculos terminam, com
 
 Duas barreiras, com a mesma regra dos dois lados:
 
-1. **Banco** — `app_private.has_agency_permission(agency_id, permission)`, da migration `20260919000000_tenancy_and_invitations.mjs`. Owner de agência `active` passa por posse; qualquer outro passa por `agency_memberships` ativo → `roles` → `role_permissions`, com o papel restrito a `role.agency_id is null or role.agency_id = agency.id`.
-2. **API** — `requireAgencyAccess` carrega `isOwner`, `roleKey` e o conjunto de permissões em `request.tenant`; `requirePermission(key)` libera Owner e exige a chave para o resto (`apps/api/src/modules/tenancy/guards.ts`).
+1. **Banco** — `app_private.has_agency_permission(agency_id, permission)`, da migration `20260919000000_tenancy_and_invitations.mjs`. Owner de agência `active` passa por posse; qualquer outro passa por `agency_memberships` ativo → `roles` → `role_permissions`, com o papel restrito a `role.agency_id is null or role.agency_id = agency.id`. A posse vale só para chave que existe em `permissions`: pedir uma chave fora do catálogo nega, também para o Owner. A migration `20261010000600_agency_permission_keys.mjs` acrescenta `app_private.agency_permission_keys(agency_id)`, a leitura única das chaves da pessoa ligada à transação, que a API usa. A RLS **não** chama essa função, porque roda a policy por linha e uma função `security definer` dentro de outra deixou a listagem de 4,5 a 12,6 vezes mais lenta; por isso as duas leituras são presas por teste, chave por chave (`agency-permission-keys.integration.test.ts`). Está registrado em `docs/business/decisions/2026-10-10-a-api-le-a-autorizacao-de-agencia-de-uma-funcao-e-a-rls-nao.md`.
+2. **API** — `requireAgencyAccess` carrega `isOwner`, `roleKey` e o conjunto de permissões em `request.tenant`, lendo as chaves de `app_private.agency_permission_keys` (a mesma função de `GET /agencies/:id/me`; para o Owner, o catálogo inteiro); `requirePermission(key)` libera Owner e exige a chave para o resto (`apps/api/src/modules/tenancy/guards.ts`).
 
 O guard espelha a policy de propósito: uma falha na API ainda encontra a RLS.
 

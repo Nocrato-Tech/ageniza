@@ -3,7 +3,7 @@ import { pipeline } from 'node:stream/promises';
 
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
-import type { WorkerStorageConfig } from '@ageniza/config/server';
+import { s3ClientOptions, type WorkerStorageConfig } from '@ageniza/config/server';
 
 /**
  * S3-compatible client the worker uses directly (issue #24): Cloudflare R2 in production, LocalStack
@@ -21,12 +21,7 @@ export interface MediaProcessingStorageClient {
 }
 
 export const createMediaProcessingStorageClient = (config: WorkerStorageConfig): MediaProcessingStorageClient => {
-  const client = new S3Client({
-    region: config.region,
-    forcePathStyle: config.forcePathStyle,
-    endpoint: config.endpoint,
-    credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }
-  });
+  const client = new S3Client({ ...s3ClientOptions(config), endpoint: config.endpoint });
 
   return {
     async downloadToFile({ key, destinationPath, signal }) {

@@ -7,13 +7,13 @@ import {
   createVerifiedUserClaims,
   raw,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // This suite is intentionally database-only. API acceptance tests can exercise the same functions
 // through the HTTP routes, while these tests prove the RLS boundary when connected as ageniza_app.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 let owner: DatabaseClient | undefined;
 let application: DatabaseClient | undefined;
@@ -256,18 +256,18 @@ describe('AUTH-20B database RLS and invitation functions', () => {
     await expect(asUser(userA, (transaction) => transaction('roles').whereNull('agency_id').select('key'))).resolves.toHaveLength(5);
     await expect(asUser(userA, (transaction) => transaction('role_permissions').select('permission_key'))).resolves.toHaveLength(38);
 
-    await expect(asUser(userA, (transaction) => transaction('agencies').insert({ id: randomUUID(), name: 'Denied' }))).rejects.toThrow(/row-level security/);
+    await expect(asUser(userA, (transaction) => transaction('agencies').insert({ id: randomUUID(), name: 'Denied' }))).rejects.toThrow(/permission denied for table agencies/);
     await expect(asUser(userA, (transaction) => transaction('clients').insert({ id: randomUUID(), agency_id: agencyB, name: 'Denied' }))).rejects.toThrow(/row-level security/);
-    await expect(asUser(userA, (transaction) => transaction('agency_memberships').insert({ id: randomUUID(), agency_id: agencyB, user_id: userA, role_id: adminRoleId }))).rejects.toThrow(/row-level security/);
-    await expect(asUser(userA, (transaction) => transaction('client_memberships').insert({ id: randomUUID(), client_id: clientB, user_id: userA }))).rejects.toThrow(/row-level security/);
+    await expect(asUser(userA, (transaction) => transaction('agency_memberships').insert({ id: randomUUID(), agency_id: agencyB, user_id: userA, role_id: adminRoleId }))).rejects.toThrow(/permission denied for table agency_memberships/);
+    await expect(asUser(userA, (transaction) => transaction('client_memberships').insert({ id: randomUUID(), client_id: clientB, user_id: userA }))).rejects.toThrow(/permission denied for table client_memberships/);
     await expect(asUser(userA, (transaction) => transaction('invitations').insert({
-      id: randomUUID(), agency_id: agencyB, purpose: 'collaborator_invite', email: `denied-${randomUUID()}@example.test`, role_id: productionRoleId,
+      agency_id: agencyB, purpose: 'collaborator_invite', email: `denied-${randomUUID()}@example.test`, role_id: productionRoleId,
       token_hash: `denied-${randomUUID()}`, expires_at: new Date(Date.now() + 86_400_000)
     }))).rejects.toThrow(/row-level security/);
     await expect(asUser(userA, (transaction) => transaction('legal_acceptances').insert({ id: randomUUID(), user_id: userA, document: 'terms', version: `denied-${randomUUID()}` }))).rejects.toThrow(/permission denied for table legal_acceptances/);
-    await expect(asUser(userA, (transaction) => transaction('permissions').insert({ key: `denied.${randomUUID()}`, description: 'Denied' }))).rejects.toThrow(/row-level security/);
-    await expect(asUser(userA, (transaction) => transaction('roles').insert({ id: randomUUID(), agency_id: agencyB, key: `denied-${randomUUID()}`, name: 'Denied', is_system: false }))).rejects.toThrow(/row-level security/);
-    await expect(asUser(userA, (transaction) => transaction('role_permissions').insert({ role_id: randomUUID(), permission_key: 'colaborador.convidar' }))).rejects.toThrow(/row-level security/);
+    await expect(asUser(userA, (transaction) => transaction('permissions').insert({ key: `denied.${randomUUID()}`, description: 'Denied' }))).rejects.toThrow(/permission denied for table permissions/);
+    await expect(asUser(userA, (transaction) => transaction('roles').insert({ id: randomUUID(), agency_id: agencyB, key: `denied-${randomUUID()}`, name: 'Denied', is_system: false }))).rejects.toThrow(/permission denied for table roles/);
+    await expect(asUser(userA, (transaction) => transaction('role_permissions').insert({ role_id: randomUUID(), permission_key: 'colaborador.convidar' }))).rejects.toThrow(/permission denied for table role_permissions/);
 
     // Issue #296 revokes UPDATE and DELETE on the tables without an UPDATE policy, and DELETE on client_memberships: the privilege layer answers before the RLS.
     await expect(asUser(userA, (transaction) => transaction('agencies').where({ id: agencyB }).update({ name: 'Should not change' }))).rejects.toThrow(/permission denied for table agencies/);
@@ -642,7 +642,6 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
     const adminInvite = randomUUID();
     const email = `admin-invite-${adminInvite}@example.test`;
     const inviteRow = {
-      id: adminInvite,
       agency_id: agencyC,
       purpose: 'collaborator_invite',
       email,
@@ -654,9 +653,9 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
     await expect(asUser(adminC, (transaction) => transaction('invitations').insert(inviteRow))).rejects.toThrow(/row-level security/);
 
     await expect(asUser(ownerC, (transaction) => transaction('invitations').insert(inviteRow))).resolves.toBeDefined();
-    await expect(getOwner().knex('invitations').where({ id: adminInvite }).first('role_id')).resolves.toEqual({ role_id: adminRoleId });
+    await expect(getOwner().knex('invitations').where({ email }).first('role_id')).resolves.toEqual({ role_id: adminRoleId });
 
-    await getOwner().knex('invitations').where({ id: adminInvite }).delete();
+    await getOwner().knex('invitations').where({ email }).delete();
   });
 
   // PR #159 review, finding 1: the table-wide UPDATE grant let any actor who passed USING move a
@@ -712,7 +711,6 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
 
       const foreignInvite = randomUUID();
       const inviteRow = {
-        id: foreignInvite,
         agency_id: agencyC,
         purpose: 'collaborator_invite',
         email: `foreign-invite-${foreignInvite}@example.test`,
@@ -721,7 +719,7 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
         expires_at: new Date(Date.now() + 86_400_000)
       };
       await expect(asUser(adminC, (transaction) => transaction('invitations').insert(inviteRow))).rejects.toThrow(/row-level security/);
-      await expect(getOwner().knex('invitations').where({ id: foreignInvite }).select('id')).resolves.toEqual([]);
+      await expect(getOwner().knex('invitations').where({ email: inviteRow.email }).select('id')).resolves.toEqual([]);
     } finally {
       await getOwner().knex('roles').where({ id: foreignRoleId }).delete();
     }
@@ -731,7 +729,6 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
     const collaboratorInviteId = randomUUID();
     const email = `admin-c-collab-invite-${collaboratorInviteId}@example.test`;
     const inviteRow = {
-      id: collaboratorInviteId,
       agency_id: agencyC,
       purpose: 'collaborator_invite',
       email,
@@ -742,15 +739,14 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
     await expect(asUser(adminC, (transaction) => transaction('invitations').insert(inviteRow))).resolves.toBeDefined();
 
     // Resend, as convite.reenviar does in the API: revoke, then insert a replacement.
-    await expect(asUser(adminC, (transaction) => transaction('invitations').where({ id: collaboratorInviteId }).update({ revoked_at: new Date() }))).resolves.toBe(1);
+    await expect(asUser(adminC, (transaction) => transaction('invitations').where({ email }).update({ revoked_at: new Date() }))).resolves.toBe(1);
     const resendId = randomUUID();
     await expect(asUser(adminC, (transaction) => transaction('invitations').insert({
       ...inviteRow,
-      id: resendId,
       token_hash: `admin-c-collab-resend-${resendId}`
     }))).resolves.toBeDefined();
 
-    await getOwner().knex('invitations').whereIn('id', [collaboratorInviteId, resendId]).delete();
+    await getOwner().knex('invitations').where({ email }).delete();
   });
 
   it('keeps client invitations and their resend unaffected by the admin-grant gate', async () => {
@@ -761,7 +757,6 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
       const clientInviteId = randomUUID();
       const email = `client-invite-${clientInviteId}@example.test`;
       await expect(asUser(adminC, (transaction) => transaction('invitations').insert({
-        id: clientInviteId,
         agency_id: agencyC,
         purpose: 'client_invite',
         client_id: clientId,
@@ -770,10 +765,9 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
         expires_at: new Date(Date.now() + 86_400_000)
       }))).resolves.toBeDefined();
 
-      await expect(asUser(adminC, (transaction) => transaction('invitations').where({ id: clientInviteId }).update({ revoked_at: new Date() }))).resolves.toBe(1);
+      await expect(asUser(adminC, (transaction) => transaction('invitations').where({ email }).update({ revoked_at: new Date() }))).resolves.toBe(1);
       const resendId = randomUUID();
       await expect(asUser(adminC, (transaction) => transaction('invitations').insert({
-        id: resendId,
         agency_id: agencyC,
         purpose: 'client_invite',
         client_id: clientId,
@@ -782,7 +776,7 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
         expires_at: new Date(Date.now() + 86_400_000)
       }))).resolves.toBeDefined();
 
-      await getOwner().knex('invitations').whereIn('id', [clientInviteId, resendId]).delete();
+      await getOwner().knex('invitations').where({ email }).delete();
     } finally {
       await getOwner().knex('clients').where({ id: clientId }).delete();
     }

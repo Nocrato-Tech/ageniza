@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
+import { portalClientBody } from './portal-fixture.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
+import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(cleanup);
 
@@ -35,8 +37,9 @@ const signedInFetch: typeof fetch = async (input, init) => {
 };
 
 function LocationProbe({ probe }: { probe: { pathname: string } }) {
-  const location = useLocation();
-  probe.pathname = location.pathname;
+  useCommittedLocation((location) => {
+    probe.pathname = location.pathname;
+  });
   return null;
 }
 
@@ -67,7 +70,7 @@ const expectAccountMenu = (): void => {
 describe('route boundaries', () => {
   it('keeps protected workspace content out of an anonymous route', () => {
     renderRoute('/app', false);
-    expect(screen.getByRole('heading', { name: 'Workspace unavailable' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Área indisponível' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Workspace' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Pessoa/ })).toBeNull();
   });
@@ -82,7 +85,65 @@ describe('route boundaries', () => {
 
   it('sends unknown paths to an accessible not-found boundary', () => {
     renderRoute('/missing', false);
-    expect(screen.getByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
+  });
+
+  it('shows the system pages in Portuguese, with the exact text and a way back', () => {
+    renderRoute('/missing', false);
+    expect(screen.getByRole('heading', { name: 'Página não encontrada', level: 1 })).toBeTruthy();
+    expect(screen.getByText('Este endereço não corresponde a uma página do Ageniza.')).toBeTruthy();
+    expect(document.title).toBe('Página não encontrada — Ageniza');
+    expect(screen.getByRole('link', { name: 'Voltar ao início' }).getAttribute('href')).toBe('/');
+    cleanup();
+
+    renderRoute('/app', false);
+    expect(screen.getByRole('heading', { name: 'Área indisponível', level: 1 })).toBeTruthy();
+    expect(screen.getByText('Esta área exige uma sessão ativa.')).toBeTruthy();
+  });
+
+  it('shows the public home in Portuguese, behind the skip link of the public layout', () => {
+    renderRoute('/', false);
+    expect(screen.getByRole('heading', { name: 'Ageniza', level: 1 })).toBeTruthy();
+    expect(screen.getByText('Operações de agência, em um só lugar.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Status do serviço' }).getAttribute('href')).toBe('/status');
+    expect(screen.getByRole('link', { name: 'Pular para o conteúdo' }).getAttribute('href')).toBe('#main-content');
+    expect(screen.getByRole('main').id).toBe('main-content');
+  });
+
+  it('shows the service status in Portuguese when the API answers', async () => {
+    const healthy: typeof fetch = async (input) => (String(input).endsWith('/health') ? json({ status: 'ok' }) : new Response(null, { status: 401 }));
+    renderRoute('/status', false, healthy);
+    expect(await screen.findByText('A API está ok.')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Status do serviço', level: 1 })).toBeTruthy();
+  });
+
+  it('says in Portuguese that the service status is unavailable when the API cannot answer', async () => {
+    const down: typeof fetch = async () => json({ error: { code: 'INTERNAL_ERROR', message: 'Unexpected error.' } }, 500);
+    renderRoute('/status', false, down);
+    expect(await screen.findByText('O status está temporariamente indisponível.', {}, { timeout: 4000 })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Status do serviço', level: 1 })).toBeTruthy();
+  });
+
+  it('shows the loading page in Portuguese while the session is read', () => {
+    const client = new HttpClient('http://127.0.0.1:3001', unauthenticatedFetch);
+    render(
+      <AuthSessionProvider store={createAuthSessionStore(client)}>
+        <QueryClientProvider client={createQueryClient()}>
+          <ApiClientProvider client={client}><MemoryRouter initialEntries={['/app']}>
+            <ApplicationRoutes session={{ status: 'loading', isAuthenticated: false, user: null }} />
+          </MemoryRouter></ApiClientProvider>
+        </QueryClientProvider>
+      </AuthSessionProvider>
+    );
+    expect(screen.getByText('Carregando…')).toBeTruthy();
+  });
+
+  it('sends a signed-in person from the global not-found to the context chooser', () => {
+    const { probe } = renderRoute('/rota-inexistente', true);
+    expect(screen.getByRole('link', { name: 'Pular para o conteúdo' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: 'Voltar ao início' }));
+    expect(probe.pathname).toBe('/contextos');
+    expect(screen.getByRole('heading', { name: 'Onde você quer entrar?' })).toBeTruthy();
   });
 
   it('keeps the account menu with the person identity on the context resolver', async () => {
@@ -92,15 +153,18 @@ describe('route boundaries', () => {
   });
 
   it('keeps the account menu with the person identity on the client portal', async () => {
-    renderRoute('/portal/11111111-1111-4111-8111-111111111111', true);
+    const clientId = '11111111-1111-4111-8111-111111111111';
+    renderRoute(`/portal/${clientId}/inicio`, true, async (input) => (
+      String(input).endsWith(`/clients/${clientId}`) ? json(portalClientBody(clientId, 'Cliente Um')) : authenticatedFetch(input)
+    ));
+    expect(await screen.findByRole('heading', { name: 'Olá, Pessoa' })).toBeTruthy();
     expectAccountMenu();
-    expect(screen.getByRole('heading', { name: 'Portal do cliente' })).toBeTruthy();
   });
 
   it('keeps the account menu on the global not-found when there is a session', () => {
     renderRoute('/rota-inexistente', true);
     expectAccountMenu();
-    expect(screen.getByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
   });
 });
 

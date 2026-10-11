@@ -1,14 +1,16 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
+import { portalClientBody } from './portal-fixture.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
+import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(cleanup);
 
@@ -27,7 +29,9 @@ const unauthenticated = (): Response => json({ error: { code: 'UNAUTHENTICATED',
 const sessionBody = { user: { id: '11111111-1111-4111-8111-111111111111', name: 'Pessoa', email: 'pessoa@example.test' }, session: { expiresAt: '2026-01-01T00:00:00.000Z' } };
 
 function LocationProbe({ probe }: { probe: { pathname: string } }) {
-  probe.pathname = useLocation().pathname;
+  useCommittedLocation((location) => {
+    probe.pathname = location.pathname;
+  });
   return null;
 }
 
@@ -123,6 +127,8 @@ describe('ContextSelectPage (/contextos)', () => {
     renderContexts(async (input, init) => {
       const url = String(input);
       if (url.endsWith('/me/contexts/resolve')) return json(selectResponse);
+      if (url.endsWith('/auth/session')) return json(sessionBody);
+      if (url.endsWith(`/clients/${CLIENT_C}`)) return json(portalClientBody(CLIENT_C, 'Cliente Um'));
       if (url.endsWith('/me/last-context') && init?.method === 'PUT') {
         putBodies.push(JSON.parse(String(init.body)));
         return noContent();
@@ -135,7 +141,7 @@ describe('ContextSelectPage (/contextos)', () => {
 
     await waitFor(() => expect(putBodies).toEqual([{ type: 'client', clientId: CLIENT_C }]));
     // The client context enters the portal address, never `/app` (issue #181).
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Portal do cliente' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Olá, Pessoa' })).toBeTruthy());
   });
 
   it('reloads the list on a 404 instead of resending the context that vanished', async () => {

@@ -12,5 +12,5 @@
 
 **Consequência.** Todo texto exibido de pessoa (nome, cargo, contato) segue a mesma regra de caracteres do #200; o filtro só de C0 da busca não basta para dado exibido. Cargos legados com esses caracteres continuam existindo e sendo lidos; são corrigidos pelo `PATCH`, que agora recusa o novo valor se tiver algum deles.
 
-**Origem.** Issue #324, ressalva da revisão de segurança do #320. **Pendente de validação** pelo dono do produto: o item 2 (branco limpa em vez de 400) e o item 3 (sem migration nem backfill).
+**Origem.** Issue #324, ressalva da revisão de segurança do #320. Validada pelo dono em 2026-10-08: o item 2 (branco limpa em vez de 400) e o item 3 (sem migration nem backfill).
 

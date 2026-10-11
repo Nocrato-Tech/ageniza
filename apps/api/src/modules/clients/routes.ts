@@ -42,7 +42,7 @@ import {
   type IdentityStorageClient,
   type UploadedIdentityImage
 } from '../identity-storage/storage-client.js';
-import { createPhotoUrlSigner } from './photo-url.js';
+import { createClientPhotoUrlSigner } from './photo-url.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { CLIENT_PHOTO_RATE_LIMIT, clientPhotoBodyLimitBytes } from './policy.js';
@@ -180,7 +180,7 @@ const assertSectionShape = (sectionKey: WritableBrandSectionKey, body: BrandStud
 export const registerClientModule = (app: FastifyInstance, dependencies: ClientModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
 
-  const signPhotoUrl = createPhotoUrlSigner(dependencies, {
+  const signPhotoUrl = createClientPhotoUrlSigner(dependencies, {
     code: 'CLIENT_PHOTO_URL_FAILED',
     message: 'Could not sign the client photo URL; returning null'
   });
@@ -242,7 +242,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       const item: ClientListItem = {
         id: row.id,
         name: row.name,
-        photoUrl: await signPhotoUrl(request, row.photo_key),
+        photoUrl: await signPhotoUrl(request, { agencyId: row.agency_id, clientId: row.id }, row.photo_key),
         instagramHandle: row.instagram_handle,
         status: row.status,
         closingDate: row.closing_date,
@@ -287,7 +287,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     });
     if (result === undefined) throw clientNotFound();
 
-    const photoUrl = await signPhotoUrl(request, result.row.photo_key);
+    const photoUrl = await signPhotoUrl(request, { agencyId: result.row.agency_id, clientId: result.row.id }, result.row.photo_key);
     return reply.send(routeResponse(detailDocs, request, {
       ...clientFromRow(result.row, photoUrl),
       summary: result.summary
@@ -322,7 +322,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
 
     if (outcome.kind === 'not-found') throw clientNotFound();
     if (outcome.kind === 'archived') throw clientArchived();
-    const photoUrl = await signPhotoUrl(request, outcome.row.photo_key);
+    const photoUrl = await signPhotoUrl(request, { agencyId: outcome.row.agency_id, clientId: outcome.row.id }, outcome.row.photo_key);
     return reply.send(routeResponse(updateDocs, request, clientFromRow(outcome.row, photoUrl)));
   });
 
@@ -543,17 +543,20 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       const tenant = requireTenant(request);
       const clientId = clientIdFromRoute(request);
       const body = routeBody(photoDocs, request);
-      const scope = { agencyId: tenant.agencyId, clientId };
 
       // Refuse an absent or archived client before anything is written to the bucket.
-      const target = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) => loadClient(transaction, scope));
+      const target = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
+        loadClient(transaction, { agencyId: tenant.agencyId, clientId }));
       if (target === undefined) throw clientNotFound();
       if (target.status === 'archived') throw clientArchived();
+      // The key is built from the row's ids, never the URL's: an uppercase UUID in the path reaches
+      // the same row but would name a key no reader signs, and the object would be orphaned.
+      const scope = { agencyId: target.agency_id, clientId: target.id };
 
       let uploaded: UploadedIdentityImage;
       try {
         uploaded = await identityStorage.uploadIdentityImage({
-          keyPrefix: buildClientAvatarKeyPrefix(tenant.agencyId, clientId, randomUUID()),
+          keyPrefix: buildClientAvatarKeyPrefix(scope.agencyId, scope.clientId, randomUUID()),
           body: Buffer.from(body.imageBase64, 'base64')
         });
       } catch (error) {
@@ -567,7 +570,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       try {
         outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
           const locked = await lockActiveClientPhoto(transaction, scope);
-          if (locked === undefined) return { refused: await photoTargetRefused(transaction, tenant.agencyId, clientId) };
+          if (locked === undefined) return { refused: await photoTargetRefused(transaction, scope.agencyId, scope.clientId) };
           await setClientPhotoKey(transaction, { ...scope, actorUserId: auth.userId, photoKey: uploaded.key });
           return { previousKey: locked.photoKey };
         });
@@ -590,16 +593,16 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       const auth = requireAuth(request);
       const tenant = requireTenant(request);
       const clientId = clientIdFromRoute(request);
-      const scope = { agencyId: tenant.agencyId, clientId };
 
       const outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
-        const locked = await lockActiveClientPhoto(transaction, scope);
+        const locked = await lockActiveClientPhoto(transaction, { agencyId: tenant.agencyId, clientId });
         if (locked === undefined) throw await photoTargetRefused(transaction, tenant.agencyId, clientId);
+        const scope = { agencyId: locked.agencyId, clientId: locked.clientId };
         if (locked.photoKey !== null) await setClientPhotoKey(transaction, { ...scope, actorUserId: auth.userId, photoKey: null });
-        return { previousKey: locked.photoKey };
+        return { previousKey: locked.photoKey, scope };
       });
 
-      await deleteOwnObject(request, outcome.previousKey, scope, 'CLIENT_PHOTO_PREVIOUS_CLEANUP_FAILED');
+      await deleteOwnObject(request, outcome.previousKey, outcome.scope, 'CLIENT_PHOTO_PREVIOUS_CLEANUP_FAILED');
       return reply.status(204).send();
     });
   }

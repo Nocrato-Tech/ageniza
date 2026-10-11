@@ -7,7 +7,8 @@ import {
   createVerifiedUserClaims,
   raw,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // Issue #290. A role holding only `convite.cancelar` could run `update invitations set revoked_at =
@@ -16,8 +17,7 @@ import {
 // with nobody holding `colaborador.atribuir_admin`. Everything here runs as `ageniza_app` with the
 // user context the application publishes, and every refusal is checked against the final state of
 // the row, never against "it did not throw".
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 let owner: DatabaseClient | undefined;
 let application: DatabaseClient | undefined;
@@ -324,15 +324,15 @@ describe('invitation state only moves forward (#290)', () => {
     // Resend: the role that only resends revokes the old invitation and creates the replacement.
     const toResend = await insertInvitation({ purpose: 'collaborator_invite', inviteeId: invitee, roleId: productionRoleId });
     const replacementToken = `token-${randomUUID()}`;
-    const replacementId = randomUUID();
-    createdInvitationIds.push(replacementId);
-    await asUser(resenderUser, async (transaction) => {
+    const replacementId = await asUser(resenderUser, async (transaction) => {
       expect(await transaction('invitations').where({ id: toResend.id }).update({ revoked_at: new Date() })).toBe(1);
-      await transaction('invitations').insert({
-        id: replacementId, agency_id: agencyA, purpose: 'collaborator_invite', email: emailOf(invitee), role_id: productionRoleId,
+      const [replacement] = await transaction('invitations').insert({
+        agency_id: agencyA, purpose: 'collaborator_invite', email: emailOf(invitee), role_id: productionRoleId,
         token_hash: hashOf(replacementToken), expires_at: futureDate()
-      });
+      }).returning('id');
+      return replacement!.id as string;
     });
+    createdInvitationIds.push(replacementId);
     expect((await invitationState(toResend.id)).revoked_at).not.toBeNull();
     expect(await invitationState(replacementId)).toEqual({ revoked_at: null, used_at: null });
 

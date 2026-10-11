@@ -99,6 +99,11 @@ describe('invitation contracts', () => {
     expect(InvitationAcceptNewAccountRequestSchema.parse({ name: 'Person', password: '1234567890', acceptTerms: true })).toEqual({
       name: 'Person', password: '1234567890', acceptTerms: true
     });
+    // #409: the accepted name has the profile's limit (120), not the 256 it had before.
+    const named = (name: string) => ({ name, password: '1234567890', acceptTerms: true });
+    expect(InvitationAcceptNewAccountRequestSchema.parse(named('a'.repeat(120))).name).toHaveLength(120);
+    expect(() => InvitationAcceptNewAccountRequestSchema.parse(named('a'.repeat(121)))).toThrow();
+    expect(() => InvitationAcceptNewAccountRequestSchema.parse(named('a'.repeat(256)))).toThrow();
     expect(() => InvitationAcceptNewAccountRequestSchema.parse({ name: 'Person', password: '1234567890', acceptTerms: false })).toThrow();
     expect(() => InvitationAcceptNewAccountRequestSchema.parse({ name: 'Person', email: 'other@example.test', password: '1234567890', acceptTerms: true })).toThrow();
     expect(InvitationAcceptNewAccountResponseSchema.parse({ status: 'accepted', context })).toEqual({ status: 'accepted', context });

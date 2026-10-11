@@ -67,6 +67,7 @@ const insertMembership = async (agencyId: string, userId: string, roleId: string
 };
 
 const createClient = async (input: {
+  readonly id?: string;
   readonly agencyId?: string;
   readonly name?: string;
   readonly status?: 'active' | 'archived';
@@ -76,7 +77,7 @@ const createClient = async (input: {
   readonly taxId?: string | null;
   readonly contactPhone?: string | null;
 }): Promise<string> => {
-  const id = randomUUID();
+  const id = input.id ?? randomUUID();
   await owner.knex('clients').insert({
     id,
     agency_id: input.agencyId ?? agencyA,
@@ -287,6 +288,60 @@ describe('CLIENTS HTTP module (#124)', () => {
     expect(cleared.json()).toMatchObject({ taxId: null, instagramHandle: null });
   });
 
+  it('#468: rejects an instagramHandle or a website of the wrong shape with 400 on the field, and the client does not change', async () => {
+    const clientId = await createClient({ agencyId: agencyA });
+    const stored = await patchClient(adminCookie, agencyA, clientId, { instagramHandle: 'padaria.central', website: 'https://padaria.example' });
+    expect(stored.statusCode).toBe(200);
+    const before = await clientRow(clientId);
+
+    const rejected: readonly { readonly field: string; readonly payload: Record<string, unknown> }[] = [
+      { field: 'instagramHandle', payload: { instagramHandle: 'com espaço' } },
+      { field: 'instagramHandle', payload: { instagramHandle: 'padaria!' } },
+      { field: 'instagramHandle', payload: { instagramHandle: 'a'.repeat(31) } },
+      { field: 'instagramHandle', payload: { instagramHandle: '@' } },
+      { field: 'website', payload: { website: 'ftp://padaria.example' } },
+      { field: 'website', payload: { website: 'javascript:alert(1)' } },
+      { field: 'website', payload: { website: 'padaria.example' } },
+      { field: 'website', payload: { website: 'https://padaria .example' } }
+    ];
+    for (const { field, payload } of rejected) {
+      // A valid field next to the invalid one must not be written either: the PATCH is all or nothing.
+      const response = await patchClient(adminCookie, agencyA, clientId, { ...payload, segment: 'Não deve gravar' });
+      expect(response.statusCode, JSON.stringify(payload)).toBe(400);
+      expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR', details: { issues: [expect.objectContaining({ path: field })] } } });
+      await expect(clientRow(clientId)).resolves.toEqual(before);
+    }
+
+    // The same shapes at the edge of the rule are accepted, so the refusals above are the format
+    // and not a blanket 400 on the field.
+    const accepted = await patchClient(adminCookie, agencyA, clientId, { instagramHandle: `@${'a'.repeat(30)}`, website: 'http://padaria.example/cardapio?x=1' });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json()).toMatchObject({ instagramHandle: 'a'.repeat(30), website: 'http://padaria.example/cardapio?x=1' });
+  });
+
+  it('#481: rejects a contactEmail that is not an e-mail or is over 320 characters with 400 on the field, and the client does not change', async () => {
+    const clientId = await createClient({ agencyId: agencyA });
+    expect((await patchClient(adminCookie, agencyA, clientId, { contactEmail: 'maria@padaria.example' })).statusCode).toBe(200);
+    const before = await clientRow(clientId);
+
+    const rejected = ['sem-arroba', 'maria@', '@padaria.example', 'maria padaria@exemplo.test', `${'a'.repeat(314)}@x.test`];
+    for (const contactEmail of rejected) {
+      const response = await patchClient(adminCookie, agencyA, clientId, { contactEmail, segment: 'Não deve gravar' });
+      expect(response.statusCode, contactEmail.slice(0, 40)).toBe(400);
+      const { error } = response.json<{ error: { code: string; details: { issues: { path: string }[] } } }>();
+      expect(error.code).toBe('VALIDATION_ERROR');
+      expect(error.details.issues.map((issue) => issue.path)).toContain('contactEmail');
+      expect(new Set(error.details.issues.map((issue) => issue.path))).toEqual(new Set(['contactEmail']));
+      await expect(clientRow(clientId)).resolves.toEqual(before);
+    }
+
+    // 320 characters is the edge that stays valid; the address is stored in its canonical lower case.
+    const edge = `${'a'.repeat(313)}@x.test`;
+    const accepted = await patchClient(adminCookie, agencyA, clientId, { contactEmail: edge.toUpperCase() });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json()).toMatchObject({ contactEmail: edge });
+  });
+
   it('answers 409 on a PATCH that reuses an active name', async () => {
     const taken = `Tomado ${randomUUID()}`;
     await createClient({ agencyId: agencyA, name: taken });
@@ -302,7 +357,7 @@ describe('CLIENTS HTTP module (#124)', () => {
       { client_id: clientId, section_key: 'branding', body: 'Marca' },
       { client_id: clientId, section_key: 'positioning', body: null }
     ]);
-    await owner.knex.raw(`insert into public.client_brand_sections (client_id, section_key, colors) values (?, 'colors', ?::jsonb)`, [clientId, JSON.stringify([{ nome: 'Vinho', codigo: '#7A1F2B' }])]);
+    await owner.knex.raw(`insert into public.client_brand_sections (client_id, section_key, colors) values (?, 'colors', ?::jsonb)`, [clientId, JSON.stringify([{ name: 'Vinho', hex: '#7A1F2B' }])]);
     const activePersona = randomUUID();
     await owner.knex('client_personas').insert([
       { id: activePersona, client_id: clientId, name: 'Ativa' },
@@ -405,12 +460,145 @@ describe('CLIENTS HTTP module (#124)', () => {
     expect((await postClient(adminCookie, agencyA, { name: '★★★' })).statusCode).toBe(400);
     expect((await postClient(adminCookie, agencyA, { name: '\u00a0\u00a0' })).statusCode).toBe(400);
 
-    // The joiners are accepted only between letters, combining marks or pictographs.
-    expect((await postClient(adminCookie, agencyA, { name: `Café\u200cCentral ${suffix}` })).statusCode).toBe(201);
+    // The joiners are accepted only between letters, combining marks or pictographs, and never
+    // between two Latin letters of a client name (#312).
+    expect((await postClient(adminCookie, agencyA, { name: `Café\u200cCentral ${suffix}` })).statusCode).toBe(400);
+    expect((await postClient(adminCookie, agencyA, { name: `Persa می\u200cخواهم ${suffix}` })).statusCode).toBe(201);
     expect((await postClient(adminCookie, agencyA, { name: `\u200dCafé ${suffix}` })).statusCode).toBe(400);
 
-    // NBSP is a space, not an invisible format character: inside the name it stays.
+    // NBSP is a space, not an invisible format character: it is accepted and stored as a plain space.
     expect((await postClient(adminCookie, agencyA, { name: `Café\u00a0Central ${suffix}` })).statusCode).toBe(201);
+  });
+
+  it('#312: a name that only looks like an active one (non-breaking spaces, NFD) answers CLIENT_NAME_IN_USE and is stored as NFC with plain spaces', async () => {
+    const suffix = randomUUID();
+    await createClient({ agencyId: agencyA, name: `Café Central ${suffix}` });
+    const lookalikes = {
+      'U+2007 figure space': `Café\u2007Central ${suffix}`,
+      'U+202F narrow no-break space': `Café\u202fCentral ${suffix}`,
+      'U+00A0 no-break space': `Café\u00a0Central ${suffix}`,
+      'NFD (e + U+0301)': `Cafe\u0301 Central ${suffix}`
+    };
+    for (const [label, name] of Object.entries(lookalikes)) {
+      const created = await postClient(adminCookie, agencyA, { name });
+      expect(created.statusCode, label).toBe(409);
+      expect(created.json(), label).toMatchObject({ error: { code: 'CLIENT_NAME_IN_USE' } });
+
+      const other = await createClient({ agencyId: agencyA });
+      const patched = await patchClient(adminCookie, agencyA, other, { name });
+      expect(patched.statusCode, label).toBe(409);
+      expect(patched.json(), label).toMatchObject({ error: { code: 'CLIENT_NAME_IN_USE' } });
+    }
+
+    const stored = await postClient(adminCookie, agencyA, { name: `Cafe\u0301\u2007Novo\u202fNome ${suffix}` });
+    expect(stored.statusCode).toBe(201);
+    expect(stored.json()).toMatchObject({ name: `Café Novo Nome ${suffix}` });
+    const row = await clientRow((stored.json() as { id: string }).id);
+    expect(row?.name).toBe(`Café Novo Nome ${suffix}`);
+    expect(row?.name).toBe((row?.name as string).normalize('NFC'));
+  });
+
+  it('#312: ZWJ/ZWNJ between Latin letters never forges a lookalike of an active name, while the persian ZWNJ stays accepted', async () => {
+    const suffix = randomUUID();
+    await createClient({ agencyId: agencyA, name: `Café Central ${suffix}` });
+    for (const joiner of ['\u200d', '\u200c', '\u200c\u200d']) {
+      for (const candidate of [
+        `Ca${joiner}fé Central ${suffix}`,
+        `Cafe\u0301${joiner}x Central ${suffix}`,
+        `Café Cen${joiner}tral ${suffix}`
+      ]) {
+        const created = await postClient(adminCookie, agencyA, { name: candidate });
+        expect(created.statusCode, JSON.stringify(candidate)).toBe(400);
+        const other = await createClient({ agencyId: agencyA });
+        expect((await patchClient(adminCookie, agencyA, other, { name: candidate })).statusCode, JSON.stringify(candidate)).toBe(400);
+        expect((await clientRow(other))?.name).not.toBe(candidate);
+      }
+    }
+
+    const accepted = `می‌خواهم ${suffix}`;
+    const created = await postClient(adminCookie, agencyA, { name: accepted });
+    expect(created.statusCode, accepted).toBe(201);
+    expect(created.json(), accepted).toMatchObject({ name: accepted });
+  });
+
+  it('#427: an invisible or blank character that is not a format character never forges a lookalike of an active name', async () => {
+    const suffix = randomUUID();
+    await createClient({ agencyId: agencyA, name: `Café Central ${suffix}` });
+    // Each one is `Default_Ignorable_Code_Point` (or the Braille blank) and none is `\p{Cf}`, so the
+    // shared display-name rule lets it through and the unique index does not remove it.
+    const invisible = {
+      'U+034F combining grapheme joiner': 0x034f,
+      'U+FE00 variation selector': 0xfe00,
+      'U+FE0F variation selector 16 after a letter': 0xfe0f,
+      'U+E0100 supplementary variation selector': 0xe0100,
+      'U+180B Mongolian free variation selector': 0x180b,
+      'U+17B4 Khmer inherent vowel': 0x17b4,
+      'U+2800 Braille blank': 0x2800
+    };
+    for (const [label, codePoint] of Object.entries(invisible)) {
+      const middle = String.fromCodePoint(codePoint);
+      for (const candidate of [`Ca${middle}fé Central ${suffix}`, `Café${middle}Central ${suffix}`]) {
+        const created = await postClient(adminCookie, agencyA, { name: candidate });
+        expect(created.statusCode, label).toBe(400);
+        const other = await createClient({ agencyId: agencyA });
+        const before = (await clientRow(other))?.name;
+        expect((await patchClient(adminCookie, agencyA, other, { name: candidate })).statusCode, label).toBe(400);
+        expect((await clientRow(other))?.name, label).toBe(before);
+      }
+    }
+    const lookalikes = await owner.knex('clients').where({ agency_id: agencyA }).whereRaw('name like ?', [`%Central ${suffix}`]).select('name');
+    expect(lookalikes.map((row) => row.name)).toEqual([`Café Central ${suffix}`]);
+  });
+
+  it('#436: a client name takes no emoji, so a pictograph never forges a homonym, on POST and on PATCH', async () => {
+    const suffix = randomUUID();
+    await createClient({ agencyId: agencyA, name: `Café ${suffix}` });
+    await createClient({ agencyId: agencyA, name: `Casa ${suffix}` });
+    const heart = String.fromCodePoint(0x2764);
+    const house = String.fromCodePoint(0x1f3e0);
+    const vs16 = String.fromCodePoint(0xfe0f);
+    const zwj = String.fromCodePoint(0x200d);
+    const refused = {
+      'heart with VS16': `Café ${heart}${vs16} ${suffix}`,
+      'house, a default emoji': `Casa ${house} ${suffix}`,
+      'house with a redundant VS16': `Casa ${house}${vs16} ${suffix}`,
+      'heart bound to a letter by a ZWJ': `Cafe ${heart}${zwj}Central ${suffix}`,
+      'a family of emoji': `Família ${String.fromCodePoint(0x1f469, 0x200d, 0x1f469, 0x200d, 0x1f467)} ${suffix}`
+    };
+    for (const [label, candidate] of Object.entries(refused)) {
+      expect((await postClient(adminCookie, agencyA, { name: candidate })).statusCode, label).toBe(400);
+      const other = await createClient({ agencyId: agencyA });
+      const before = (await clientRow(other))?.name;
+      expect((await patchClient(adminCookie, agencyA, other, { name: candidate })).statusCode, label).toBe(400);
+      expect((await clientRow(other))?.name, label).toBe(before);
+    }
+    const stored = await owner.knex('clients').where({ agency_id: agencyA }).whereRaw('name like ?', [`%${suffix}`]).orderBy('name').select('name');
+    expect(stored.map((row) => row.name)).toEqual([`Café ${suffix}`, `Casa ${suffix}`]);
+
+    const plain = await postClient(adminCookie, agencyA, { name: `Casa Verde ${suffix}` });
+    expect(plain.statusCode).toBe(201);
+    expect(plain.json()).toMatchObject({ name: `Casa Verde ${suffix}` });
+  });
+
+  it('#436: a client name keeps the copyright, registered and trademark signs but not their selector 16, nor another pictographic symbol', async () => {
+    const suffix = randomUUID();
+    const vs16 = String.fromCodePoint(0xfe0f);
+    const accepted = [`Nike® ${suffix}`, `Marca™ ${suffix}`, `© Studio ${suffix}`];
+    for (const name of accepted) {
+      const created = await postClient(adminCookie, agencyA, { name });
+      expect(created.statusCode, name).toBe(201);
+      expect(created.json(), name).toMatchObject({ name });
+    }
+    const refused = [`Nike®${vs16} ${suffix}`, `Marca™${vs16} ${suffix}`, `©${vs16} Studio ${suffix}`, `Nota ★ ${suffix}`, `Nota ✔ ${suffix}`, `Nike®\u0301\u200dStudio ${suffix}`, `Mesa 1\u20e3 ${suffix}`, `Loja \u{1F1E7}\u{1F1F7} ${suffix}`, `Loja \u{1F3FB} ${suffix}`];
+    for (const name of refused) {
+      expect((await postClient(adminCookie, agencyA, { name })).statusCode, name).toBe(400);
+      const other = await createClient({ agencyId: agencyA });
+      const before = (await clientRow(other))?.name;
+      expect((await patchClient(adminCookie, agencyA, other, { name })).statusCode, name).toBe(400);
+      expect((await clientRow(other))?.name, name).toBe(before);
+    }
+    const stored = await owner.knex('clients').where({ agency_id: agencyA }).whereRaw('name like ?', [`%${suffix}`]).orderBy('name').select('name');
+    expect(stored.map((row) => row.name).sort()).toEqual([...accepted].sort());
   });
 
   it('applies the same name rule to the PATCH: name, contact fields and legalName', async () => {
@@ -470,12 +658,16 @@ describe('CLIENTS HTTP module (#124)', () => {
   });
 
   it('signs photoUrl when a key exists, returns null with a warning for an unusable key, and null with no key', async () => {
-    const withPhoto = await createClient({ agencyId: agencyA, photoKey: `agencies/${agencyA}/clients/${randomUUID()}/avatar/${randomUUID()}.png` });
+    const withPhotoId = randomUUID();
+    const ownKey = `agencies/${agencyA}/clients/${withPhotoId}/avatar/${randomUUID()}.png`;
+    const withPhoto = await createClient({ id: withPhotoId, agencyId: agencyA, photoKey: ownKey });
     const signed = await getClient(adminCookie, agencyA, withPhoto);
     const photoUrl = (signed.json() as { photoUrl: string }).photoUrl;
     const url = new URL(photoUrl);
+    expect(url.pathname.endsWith(ownKey)).toBe(true);
     expect(url.searchParams.get('X-Amz-Signature')).toBeTruthy();
     expect(url.searchParams.get('X-Amz-Expires')).toBe('300');
+    expect(url.searchParams.get('X-Amz-SignedHeaders')).toBe('host');
 
     const brokenPhoto = await createClient({ agencyId: agencyA, photoKey: 'not-a-real-key' });
     const logsBefore = logs.text().length;
@@ -486,6 +678,96 @@ describe('CLIENTS HTTP module (#124)', () => {
 
     const noPhoto = await createClient({ agencyId: agencyA });
     expect((await getClient(adminCookie, agencyA, noPhoto)).json()).toMatchObject({ photoUrl: null });
+  });
+
+  it('#311: the detail signs a stored photo key only when it is an avatar key of this agency and client', async () => {
+    const sibling = randomUUID();
+    const foreignKeys = [
+      `agencies/${agencyA}/clients/${sibling}/avatar/${randomUUID()}.png`,
+      `agencies/${agencyB}/clients/${randomUUID()}/avatar/${randomUUID()}.png`,
+      `users/${randomUUID()}/avatar/${randomUUID()}.png`,
+      `agencies/${agencyA}/clients/${randomUUID()}/documents/${randomUUID()}.pdf`
+    ];
+    for (const foreignKey of foreignKeys) {
+      const clientId = await createClient({ agencyId: agencyA, photoKey: foreignKey });
+      const logsBefore = logs.text().length;
+      const response = await getClient(adminCookie, agencyA, clientId);
+      expect(response.statusCode, foreignKey).toBe(200);
+      expect(response.json(), foreignKey).toMatchObject({ photoUrl: null });
+      const during = logs.text().slice(logsBefore);
+      expect(during, foreignKey).toContain('CLIENT_PHOTO_URL_FAILED');
+      expect(during, foreignKey).not.toContain(foreignKey);
+    }
+  });
+
+  describe('#427: the stored photo key is signed by the ids of the row, at every call site that answers a client', () => {
+    const send = (method: 'PUT' | 'DELETE' | 'POST' | 'GET', path: string, cookie: string, agencyId: string, clientId: string, payload?: Record<string, unknown>): Promise<InjectResponse> =>
+      app.app.inject({
+        method,
+        url: `/agencies/${agencyId}/clients/${clientId}${path}`,
+        headers: { ...origin, cookie },
+        ...(payload === undefined ? {} : { payload })
+      }) as unknown as Promise<InjectResponse>;
+
+    // The PATCH and the four lifecycle routes (closing set and cleared, archive, reactivate) each
+    // build the photo scope on their own, so each is exercised alone; `seed` is the state the call needs.
+    const callSites: ReadonlyArray<{
+      readonly label: string;
+      readonly seed: { readonly status?: 'active' | 'archived'; readonly closingDate?: string };
+      readonly call: (agencyId: string, clientId: string) => Promise<InjectResponse>;
+    }> = [
+      { label: 'PATCH', seed: {}, call: (agencyId, clientId) => patchClient(adminCookie, agencyId, clientId, { segment: 'Alimentação' }) },
+      { label: 'PUT closing', seed: {}, call: (agencyId, clientId) => send('PUT', '/closing', adminCookie, agencyId, clientId, { closingDate: '2099-12-31' }) },
+      { label: 'DELETE closing', seed: { closingDate: '2099-12-31' }, call: (agencyId, clientId) => send('DELETE', '/closing', adminCookie, agencyId, clientId) },
+      { label: 'archive', seed: {}, call: (agencyId, clientId) => send('POST', '/archive', adminCookie, agencyId, clientId) },
+      { label: 'reactivate', seed: { status: 'archived' }, call: (agencyId, clientId) => send('POST', '/reactivate', adminCookie, agencyId, clientId) }
+    ];
+
+    it.each(callSites)('$label answers photoUrl null, and logs no key, for a stored key that is not an avatar key of this agency and client', async ({ label, seed, call }) => {
+      const foreignKeys = [
+        `agencies/${agencyA}/clients/${randomUUID()}/avatar/${randomUUID()}.png`,
+        `agencies/${agencyB}/clients/${randomUUID()}/avatar/${randomUUID()}.png`,
+        `users/${randomUUID()}/avatar/${randomUUID()}.png`
+      ];
+      for (const foreignKey of foreignKeys) {
+        const clientId = await createClient({ agencyId: agencyA, photoKey: foreignKey, ...seed });
+        const logsBefore = logs.text().length;
+        const response = await call(agencyA, clientId);
+        expect(response.statusCode, `${label} ${foreignKey}`).toBe(200);
+        expect(response.json(), `${label} ${foreignKey}`).toMatchObject({ id: clientId, photoUrl: null });
+        expect(JSON.stringify(response.json()), `${label} ${foreignKey}`).not.toContain(foreignKey);
+        const during = logs.text().slice(logsBefore);
+        expect(during, `${label} ${foreignKey}`).toContain('CLIENT_PHOTO_URL_FAILED');
+        expect(during, `${label} ${foreignKey}`).not.toContain(foreignKey);
+      }
+    });
+
+    it.each(callSites)('$label signs the own key of the client, also when the URL spells the ids in upper case', async ({ label, seed, call }) => {
+      for (const form of ['lower', 'upper'] as const) {
+        const clientId = randomUUID();
+        const ownKey = `agencies/${agencyA}/clients/${clientId}/avatar/${randomUUID()}.png`;
+        await createClient({ id: clientId, agencyId: agencyA, photoKey: ownKey, ...seed });
+        const logsBefore = logs.text().length;
+        const response = await call(form === 'upper' ? agencyA.toUpperCase() : agencyA, form === 'upper' ? clientId.toUpperCase() : clientId);
+        expect(response.statusCode, `${label} ${form}`).toBe(200);
+        const photoUrl = (response.json() as { photoUrl: string | null }).photoUrl;
+        expect(photoUrl, `${label} ${form}`).not.toBeNull();
+        expect(new URL(photoUrl as string).pathname.endsWith(ownKey), `${label} ${form}`).toBe(true);
+        expect(logs.text().slice(logsBefore), `${label} ${form}`).not.toContain('CLIENT_PHOTO_URL_FAILED');
+      }
+    });
+
+    it('the detail signs the own key of the client when the URL spells the ids in upper case', async () => {
+      const clientId = randomUUID();
+      const ownKey = `agencies/${agencyA}/clients/${clientId}/avatar/${randomUUID()}.png`;
+      await createClient({ id: clientId, agencyId: agencyA, photoKey: ownKey });
+      const logsBefore = logs.text().length;
+      const response = await getClient(adminCookie, agencyA.toUpperCase(), clientId.toUpperCase());
+      expect(response.statusCode).toBe(200);
+      const photoUrl = (response.json() as { photoUrl: string | null }).photoUrl;
+      expect(new URL(photoUrl as string).pathname.endsWith(ownKey)).toBe(true);
+      expect(logs.text().slice(logsBefore)).not.toContain('CLIENT_PHOTO_URL_FAILED');
+    });
   });
 
   it('returns archived status and archivedAt, and records the session user as updated_by', async () => {

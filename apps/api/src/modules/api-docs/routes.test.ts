@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { loadApiConfig } from '@ageniza/config/server';
 
@@ -15,6 +15,16 @@ const baseConfig = loadApiConfig({
   AUTH_PRIVACY_VERSION: '2026-01-01',
   APP_PUBLIC_URL: 'http://127.0.0.1:5173'
 });
+
+/** The first local `buildApp` pays the Scalar bundle import here, under its own hook timeout (#443). */
+const COLD_START_TIMEOUT_MS = 60_000;
+let expectedDocument: ReturnType<typeof buildOpenApiDocument>;
+
+beforeAll(async () => {
+  const warmup = await buildApp({ config: { ...baseConfig, environment: 'local' } });
+  await warmup.close();
+  expectedDocument = buildOpenApiDocument();
+}, COLD_START_TIMEOUT_MS);
 
 describe('API reference route gating (issue #182)', () => {
   it('serves /docs and the OpenAPI document when the runtime is a local host', async () => {
@@ -58,7 +68,7 @@ describe('API reference route gating (issue #182)', () => {
 
     const document = await app.inject('/docs/openapi.json');
     expect(document.statusCode).toBe(200);
-    expect(document.json()).toEqual(buildOpenApiDocument());
+    expect(document.json()).toEqual(expectedDocument);
 
     // The API's global CSP is untouched.
     const health = await app.inject('/health');

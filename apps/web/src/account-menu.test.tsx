@@ -9,6 +9,7 @@ import { AccountMenu } from './account-menu.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { createSessionEndSignal, SessionEndRedirect, sessionDestination } from './session-end.js';
+import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(cleanup);
 
@@ -45,8 +46,10 @@ interface LocationCapture {
 
 function LocationProbe({ probe }: { probe: LocationCapture }) {
   const location = useLocation();
-  probe.pathname = location.pathname;
-  probe.state = location.state;
+  useCommittedLocation((committed) => {
+    probe.pathname = committed.pathname;
+    probe.state = committed.state;
+  });
   return <output data-testid='location'>{location.pathname}</output>;
 }
 
@@ -236,7 +239,7 @@ describe('AccountMenu', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: /Trocar de contexto/ }));
     fireEvent.click(await screen.findByRole('menuitem', { name: /Cliente Um/ }));
 
-    await waitFor(() => expect(probe.pathname).toBe(`/portal/${CLIENT_C}`));
+    await waitFor(() => expect(probe.pathname).toBe(`/portal/${CLIENT_C}/inicio`));
     expect(calls).toContainEqual({ path: '/me/last-context', method: 'PUT', body: { type: 'client', clientId: CLIENT_C } });
   });
 

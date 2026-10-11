@@ -590,7 +590,7 @@
           "name": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 256
+            "maxLength": 120
           },
           "password": {
             "type": "string",
@@ -4705,6 +4705,77 @@
         }
       }
     },
+    "/auth/session/check": {
+      "get": {
+        "operationId": "getAuthSessionCheck",
+        "summary": "Confere se a sessão continua válida, sem renová-la",
+        "description": "Para a aba aberta conferir a própria sessão de tempos em tempos (a pessoa removida é deslogada na hora, #411). Responde o mesmo que `GET /auth/session`, mas não conta como uso: `expiresAt` e `updatedAt` não mudam e nenhum cookie é emitido, então uma aba esquecida não mantém a sessão viva além dos 7 dias sem uso. Sessão encerrada ou revogada responde 401.\n\nAcesso: Sessão.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "responses": {
+          "200": {
+            "description": "Sessão válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getAuthSessionResponse"
+                },
+                "example": {
+                  "user": {
+                    "id": "55555555-5555-4555-8555-555555555555",
+                    "name": "Dono da Agência",
+                    "email": "dono@exemplo.test"
+                  },
+                  "session": {
+                    "expiresAt": "2026-10-01T12:00:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required. | SESSION_EXPIRED: Session has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/password/forgot": {
       "post": {
         "operationId": "postAuthPasswordForgot",
@@ -7209,7 +7280,7 @@
       "patch": {
         "operationId": "updateCollaborator",
         "summary": "Altera o cargo e/ou o papel de um colaborador",
-        "description": "Aceita `jobTitle` (até 256 caracteres, com ao menos uma letra ou número e sem caracteres de controle,\nde formato, invisíveis nem separadores de linha, como o nome de uma pessoa; `null` ou texto em branco\nlimpam o cargo),\n`roleId`, ou os dois; corpo vazio é 400. Basta uma das duas permissões para chegar à rota, mas a exigida\né a de cada campo presente:\n`jobTitle` pede `colaborador.alterar_funcao`, `roleId` pede `colaborador.alterar_papel`, e os dois pedem\nas duas. Se o papel for `admin`, pede também `colaborador.atribuir_admin`, que só o Owner tem.\nO papel do Owner não muda e ninguém altera o próprio papel (403). Um vínculo de outra agência,\ninexistente, malformado ou removido devolve o mesmo 404. Devolve o vínculo atualizado, no\nmesmo contrato do detalhe; nunca há 200 sem uma linha alterada.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.alterar_funcao` ou `colaborador.alterar_papel`.",
+        "description": "Aceita `jobTitle` (até 256 caracteres, com ao menos uma letra ou número e sem caracteres de controle,\nde formato, invisíveis nem separadores de linha, como o nome de uma pessoa; `null` ou texto em branco\nlimpam o cargo),\n`roleId`, ou os dois; corpo vazio é 400. Basta uma das duas permissões para chegar à rota, mas a exigida\né a de cada campo presente:\n`jobTitle` pede `colaborador.alterar_funcao`, `roleId` pede `colaborador.alterar_papel`, e os dois pedem\nas duas. Se o papel for `admin`, pede também `colaborador.atribuir_admin`, que só o Owner tem.\nO papel e o cargo do Owner não mudam, e ninguém altera o próprio papel nem o próprio cargo (403). Um vínculo de outra agência,\ninexistente, malformado ou removido devolve o mesmo 404. Devolve o vínculo atualizado, no\nmesmo contrato do detalhe; nunca há 200 sem uma linha alterada.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.alterar_funcao` ou `colaborador.alterar_papel`.",
         "tags": [
           "collaborators"
         ],
@@ -7380,7 +7451,7 @@
       "post": {
         "operationId": "removeCollaborator",
         "summary": "Remove um colaborador do quadro",
-        "description": "Coloca o vínculo em `removed`; a linha permanece e a pessoa perde o acesso à agência na\nrequisição seguinte. O Owner não é removido e ninguém remove a si mesmo (403). Remover um\nvínculo que já está removido é 409. Um vínculo de outra agência, inexistente ou malformado\ndevolve 404. Devolve o vínculo já em `removed`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.remover`.",
+        "description": "Coloca o vínculo em `removed`; a linha permanece e a pessoa perde o acesso à agência na\nrequisição seguinte. Todas as sessões dela são encerradas na mesma transação, também as que ela\ntem em outras agências: o cookie antigo recebe 401, e quem remove não perde a própria sessão.\nO Owner não é removido e ninguém remove a si mesmo (403). Remover um\nvínculo que já está removido é 409. Um vínculo de outra agência, inexistente ou malformado\ndevolve 404. Devolve o vínculo já em `removed`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.remover`.",
         "tags": [
           "collaborators"
         ],
@@ -7509,7 +7580,7 @@
             }
           },
           "409": {
-            "description": "COLLABORATOR_ALREADY_REMOVED:",
+            "description": "COLLABORATOR_ALREADY_REMOVED: | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12043,7 +12114,7 @@
       "post": {
         "operationId": "removeClientMember",
         "summary": "Remove uma pessoa do portal do cliente",
-        "description": "A pessoa perde o acesso ao portal deste cliente na requisição seguinte; as demais pessoas do cliente\ne os outros clientes dela não mudam. O vínculo é preservado como `removed` e pode ser reativado.\nRemover quem já está removido não escreve nada e responde o vínculo como está. Cliente arquivado\nresponde 409; vínculo de outro cliente ou id inválido, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.remover_usuario`.",
+        "description": "A pessoa perde o acesso ao portal deste cliente na requisição seguinte; as demais pessoas do cliente\ne os vínculos dela com outros clientes não mudam. Todas as sessões dela são encerradas na mesma\ntransação (a sessão é global): o cookie antigo recebe 401, e quem remove não perde a própria sessão.\nO vínculo é preservado como `removed` e pode ser reativado, o que não cria sessão.\nRemover quem já está removido não escreve nada, não encerra sessão e responde o vínculo como está. Cliente arquivado\nresponde 409; vínculo de outro cliente ou id inválido, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.remover_usuario`.",
         "tags": [
           "clients"
         ],
@@ -12154,7 +12225,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12309,7 +12380,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {

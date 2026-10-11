@@ -6,7 +6,8 @@ import {
   createLocalTestDatabaseClient,
   createVerifiedUserClaims,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // Issue #356. SPEC colaboradores rule 11: removing never deletes the row. Until migration
@@ -14,8 +15,7 @@ import {
 // the absence of a DELETE policy under forced RLS stopped it. The suite asserts the privilege layer
 // itself (a refusal at the privilege layer reads "permission denied", an RLS one reads "row-level
 // security") and that the legitimate paths, which are UPDATEs, were not revoked with it.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 const TABLES = ['agency_memberships', 'invitations'] as const;
 const denied = (table: string) => ({ code: '42501', message: expect.stringContaining(`permission denied for table ${table}`) });

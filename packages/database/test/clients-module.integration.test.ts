@@ -6,15 +6,15 @@ import {
   createLocalTestDatabaseClient,
   createVerifiedUserClaims,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // Issue #122. This suite proves the invariants of docs/business/decisions.md
 // ("Regras invioláveis de clientes, garantidas pelo banco", 2026-09-26) and specs/clientes.md §5
 // against the real schema, connected as ageniza_app. RLS filters silently, so every assertion here
 // checks either an affected row count or a thrown error, never a bare resolved value.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 let owner: DatabaseClient | undefined;
 let application: DatabaseClient | undefined;
@@ -27,6 +27,7 @@ const managerA = randomUUID();
 const productionA = randomUUID();
 const salesA = randomUUID();
 const financeA = randomUUID();
+const ownerA = randomUUID();
 const adminB = randomUUID();
 
 const clientA1 = randomUUID();
@@ -38,7 +39,7 @@ const portalA1 = randomUUID();
 const portalA2 = randomUUID();
 const portalB = randomUUID();
 
-const allUsers = [adminA, managerA, productionA, salesA, financeA, adminB, portalA1, portalA2, portalB];
+const allUsers = [adminA, managerA, productionA, salesA, financeA, ownerA, adminB, portalA1, portalA2, portalB];
 const allAgencies = [agencyA, agencyB];
 const allClients = [clientA1, clientA2, clientArchived, clientB];
 
@@ -84,7 +85,7 @@ beforeAll(async () => {
     );
 
     await transaction('agencies').insert([
-      { id: agencyA, name: `Agency A ${agencyA}` },
+      { id: agencyA, name: `Agency A ${agencyA}`, owner_user_id: ownerA },
       { id: agencyB, name: `Agency B ${agencyB}` }
     ]);
 
@@ -413,6 +414,75 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
       )
     ).rejects.toThrow(/row-level security/);
     await getOwner().knex('client_threads').where({ id: archivedThreadId }).delete();
+  });
+
+  it('keeps the comments of two threads of the same client apart: a thread the portal cannot read exposes no comment and takes none (#479)', async () => {
+    // Both threads belong to clientA1, so a policy that matched the comment by client_id instead of
+    // thread_id would still find a readable thread (the open one) and let the other thread's comment
+    // through. Only a hidden thread and a readable one of the SAME client tell the two apart.
+    const personaId = randomUUID();
+    await getOwner().knex('client_personas').insert({ id: personaId, client_id: clientA1, name: 'Persona of the hidden thread' });
+    const openThreadId = randomUUID();
+    const hiddenThreadId = randomUUID();
+    const openCommentId = randomUUID();
+    const hiddenCommentId = randomUUID();
+    await getOwner().knex('client_threads').insert([
+      { id: openThreadId, client_id: clientA1, section_key: 'observations', opened_by: portalA1, opened_side: 'client' },
+      { id: hiddenThreadId, client_id: clientA1, persona_id: personaId, opened_by: portalA1, opened_side: 'client' }
+    ]);
+    await getOwner().knex('client_thread_comments').insert([
+      { id: openCommentId, thread_id: openThreadId, client_id: clientA1, author_user_id: portalA1, author_side: 'client', body: 'On the open thread' },
+      { id: hiddenCommentId, thread_id: hiddenThreadId, client_id: clientA1, author_user_id: portalA1, author_side: 'client', body: 'On the hidden thread' }
+    ]);
+    await getOwner().knex('client_personas').where({ id: personaId }).update({ status: 'archived' });
+
+    const commentIdsOf = (userId: string, where: Record<string, string>) =>
+      asUser(userId, (transaction) => transaction('client_thread_comments').where(where).select('id')).then((rows) => rows.map((row) => row.id as string).sort());
+    const storedOn = async (threadId: string) =>
+      Number((await getOwner().knex('client_thread_comments').where({ thread_id: threadId }).count({ total: '*' }))[0]!.total);
+
+    await expect(asUser(portalA1, (transaction) => transaction('client_threads').where({ client_id: clientA1 }).whereIn('id', [openThreadId, hiddenThreadId]).select('id'))).resolves.toEqual([{ id: openThreadId }]);
+    await expect(commentIdsOf(portalA1, { client_id: clientA1 })).resolves.toEqual([openCommentId]);
+    await expect(commentIdsOf(portalA1, { thread_id: openThreadId })).resolves.toEqual([openCommentId]);
+    await expect(commentIdsOf(portalA1, { thread_id: hiddenThreadId })).resolves.toEqual([]);
+    await expect(commentIdsOf(portalA1, { id: hiddenCommentId })).resolves.toEqual([]);
+    // The agency keeps both, each under its own thread.
+    await expect(commentIdsOf(adminA, { thread_id: openThreadId })).resolves.toEqual([openCommentId]);
+    await expect(commentIdsOf(adminA, { thread_id: hiddenThreadId })).resolves.toEqual([hiddenCommentId]);
+    await expect(commentIdsOf(adminA, { client_id: clientA1 })).resolves.toEqual([openCommentId, hiddenCommentId].sort());
+
+    const commentOn = (threadId: string, userId: string, side: 'agency' | 'client') =>
+      asUser(userId, (transaction) =>
+        transaction('client_thread_comments').insert({ id: randomUUID(), thread_id: threadId, client_id: clientA1, author_user_id: userId, author_side: side, body: `Comment by ${userId}` })
+      );
+    await expect(commentOn(hiddenThreadId, portalA1, 'client')).rejects.toThrow(/row-level security/);
+    await expect(commentOn(hiddenThreadId, managerA, 'agency')).rejects.toThrow(/row-level security/);
+    await expect(storedOn(hiddenThreadId)).resolves.toBe(1);
+
+    // A collaborator who also holds the client's portal link reads the hidden thread through the agency branch
+    // of the thread policy, so the portal's own filter never hides it from them: only the persona clause of the
+    // comment policy stops a comment written as the client. The pure portal member above cannot prove that clause.
+    await getOwner().knex('client_memberships').insert({ client_id: clientA1, user_id: productionA });
+    try {
+      await expect(
+        asUser(productionA, (transaction) => transaction('client_threads').whereIn('id', [openThreadId, hiddenThreadId]).select('id'))
+      ).resolves.toHaveLength(2);
+      await expect(commentOn(hiddenThreadId, productionA, 'client')).rejects.toThrow(/row-level security/);
+      await expect(storedOn(hiddenThreadId)).resolves.toBe(1);
+      await commentOn(openThreadId, productionA, 'client');
+    } finally {
+      await getOwner().knex('client_memberships').where({ client_id: clientA1, user_id: productionA }).delete();
+    }
+
+    // The same writers comment on the readable thread of that client: the refusal above is the thread's, not the client's.
+    await commentOn(openThreadId, portalA1, 'client');
+    await commentOn(openThreadId, managerA, 'agency');
+    await expect(storedOn(openThreadId)).resolves.toBe(4);
+    await expect(storedOn(hiddenThreadId)).resolves.toBe(1);
+
+    await getOwner().knex('client_thread_comments').whereIn('thread_id', [openThreadId, hiddenThreadId]).delete();
+    await getOwner().knex('client_threads').whereIn('id', [openThreadId, hiddenThreadId]).delete();
+    await getOwner().knex('client_personas').where({ id: personaId }).delete();
   });
 
   it('hides a sibling client of the same agency from a portal member, and blocks their writes on it', async () => {
@@ -819,5 +889,227 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
     await getOwner().knex('client_threads').where({ id: threadId }).delete();
     await getOwner().knex('client_personas').where({ id: personaId }).delete();
     await getOwner().knex('client_brand_sections').where(sectionId).delete();
+  });
+
+  it('never lets the portal write clients, brand sections or personas of its own client, while cliente.operar can (#466)', async () => {
+    // Every payload below carries the portal member's own id in updated_by, which is what the policies
+    // pin it to: the only thing left to refuse the write is rule 3 (the portal does not write the
+    // study), so a policy of "cliente.operar OR vínculo de cliente" cannot pass. Each denial is
+    // paired with the same payload from a collaborator, to show the refusal is not the payload's.
+    await getOwner().knex('clients').where({ id: clientA1 }).update({ contact_phone: '+55 11 90000-1111' });
+    await expect(
+      asUser(portalA1, (transaction) =>
+        transaction('clients').where({ id: clientA1 }).update({ contact_phone: '+55 11 99999-9999', updated_by: portalA1 })
+      )
+    ).resolves.toBe(0);
+    await expect(getOwner().knex('clients').where({ id: clientA1 }).first('contact_phone', 'updated_by')).resolves.toEqual({
+      contact_phone: '+55 11 90000-1111',
+      updated_by: null
+    });
+    await expect(
+      asUser(managerA, (transaction) =>
+        transaction('clients').where({ id: clientA1 }).update({ contact_phone: '+55 11 99999-9999', updated_by: managerA })
+      )
+    ).resolves.toBe(1);
+    await getOwner().knex('clients').where({ id: clientA1 }).update({ contact_phone: null, updated_by: null });
+
+    const sectionKey = 'positioning' as const;
+    await expect(
+      asUser(portalA1, (transaction) =>
+        transaction('client_brand_sections').insert({ client_id: clientA1, section_key: sectionKey, body: 'Denied', updated_by: portalA1 })
+      )
+    ).rejects.toThrow(/row-level security/);
+    await expect(getOwner().knex('client_brand_sections').where({ client_id: clientA1, section_key: sectionKey }).select('client_id')).resolves.toEqual([]);
+    await expect(
+      asUser(managerA, (transaction) =>
+        transaction('client_brand_sections')
+          .insert({ client_id: clientA1, section_key: sectionKey, body: 'Accepted', updated_by: managerA })
+          .returning('client_id')
+      )
+    ).resolves.toHaveLength(1);
+    await getOwner().knex('client_brand_sections').where({ client_id: clientA1, section_key: sectionKey }).delete();
+
+    const deniedPersonaId = randomUUID();
+    const acceptedPersonaId = randomUUID();
+    await expect(
+      asUser(portalA1, (transaction) =>
+        transaction('client_personas').insert({ id: deniedPersonaId, client_id: clientA1, name: 'Denied', updated_by: portalA1 })
+      )
+    ).rejects.toThrow(/row-level security/);
+    await expect(getOwner().knex('client_personas').where({ id: deniedPersonaId }).select('id')).resolves.toEqual([]);
+    await expect(
+      asUser(managerA, (transaction) =>
+        transaction('client_personas').insert({ id: acceptedPersonaId, client_id: clientA1, name: 'Accepted', updated_by: managerA }).returning('id')
+      )
+    ).resolves.toHaveLength(1);
+    await getOwner().knex('client_personas').where({ id: acceptedPersonaId }).delete();
+  });
+
+  it('refuses at the policy every UPDATE, resolve and INSERT on the sections, personas and threads of an archived client (#467)', async () => {
+    // specs/clientes.md §5, rule 6. The route answers 409 before it writes, so only the database
+    // can be shown to refuse. The rows are seeded by the schema owner, and every attempt carries the
+    // caller's own updated_by/resolved_by and comes from cliente.operar, so what refuses it is the
+    // archive. The INSERTs also pin the message: with the policy clause gone, the AFTER INSERT lock
+    // of 20261007001400 still refuses, but with A0020 and not with "row-level security".
+    const writes = async (clientId: string) => {
+      const sectionBody = { client_id: clientId, section_key: 'branding' as const };
+      const activePersonaId = randomUUID();
+      const archivedPersonaId = randomUUID();
+      const threadId = randomUUID();
+      await getOwner().knex('client_brand_sections').insert({ ...sectionBody, body: 'Original' });
+      await getOwner().knex('client_personas').insert([
+        { id: activePersonaId, client_id: clientId, name: 'Original active' },
+        { id: archivedPersonaId, client_id: clientId, name: 'Original archived', status: 'archived' }
+      ]);
+      await getOwner().knex('client_threads').insert({ id: threadId, client_id: clientId, section_key: 'observations', opened_by: adminA, opened_side: 'agency' });
+      return { sectionBody, activePersonaId, archivedPersonaId, threadId };
+    };
+    const archived = await writes(clientArchived);
+    const active = await writes(clientA1);
+
+    const attempt = (clientId: string, rows: Awaited<ReturnType<typeof writes>>) => ({
+      editSection: () =>
+        asUser(managerA, (transaction) =>
+          transaction('client_brand_sections').where(rows.sectionBody).update({ body: 'Edited', updated_by: managerA })
+        ),
+      renamePersona: () =>
+        asUser(managerA, (transaction) =>
+          transaction('client_personas').where({ id: rows.activePersonaId }).update({ name: 'Edited', updated_by: managerA })
+        ),
+      archivePersona: () =>
+        asUser(managerA, (transaction) =>
+          transaction('client_personas').where({ id: rows.activePersonaId }).update({ status: 'archived', updated_by: managerA })
+        ),
+      unarchivePersona: () =>
+        asUser(managerA, (transaction) =>
+          transaction('client_personas').where({ id: rows.archivedPersonaId }).update({ status: 'active', updated_by: managerA })
+        ),
+      resolveThread: () =>
+        asUser(managerA, (transaction) =>
+          transaction('client_threads').where({ id: rows.threadId }).update({ resolved_at: new Date(), resolved_by: managerA })
+        ),
+      insertSection: () =>
+        asUser(managerA, (transaction) =>
+          transaction('client_brand_sections').insert({ client_id: clientId, section_key: 'observations', body: 'New', updated_by: managerA }).returning('client_id')
+        ),
+      insertPersona: () =>
+        asUser(managerA, (transaction) =>
+          transaction('client_personas').insert({ id: randomUUID(), client_id: clientId, name: 'New', updated_by: managerA }).returning('id')
+        )
+    });
+
+    try {
+      // Control: the same writes, same caller, same payload, on the active client are accepted.
+      const accepted = attempt(clientA1, active);
+      await expect(accepted.editSection()).resolves.toBe(1);
+      await expect(accepted.renamePersona()).resolves.toBe(1);
+      await expect(accepted.archivePersona()).resolves.toBe(1);
+      await expect(accepted.unarchivePersona()).resolves.toBe(1);
+      await expect(accepted.resolveThread()).resolves.toBe(1);
+      await expect(accepted.insertSection()).resolves.toHaveLength(1);
+      await expect(accepted.insertPersona()).resolves.toHaveLength(1);
+
+      const denied = attempt(clientArchived, archived);
+      await expect(denied.editSection()).resolves.toBe(0);
+      await expect(denied.renamePersona()).resolves.toBe(0);
+      await expect(denied.archivePersona()).resolves.toBe(0);
+      await expect(denied.unarchivePersona()).resolves.toBe(0);
+      await expect(denied.resolveThread()).resolves.toBe(0);
+      await expect(denied.insertSection()).rejects.toThrow(/row-level security/);
+      await expect(denied.insertPersona()).rejects.toThrow(/row-level security/);
+
+      const knex = getOwner().knex;
+      await expect(knex('client_brand_sections').where(archived.sectionBody).first('body', 'updated_by')).resolves.toEqual({ body: 'Original', updated_by: null });
+      await expect(knex('client_personas').where({ id: archived.activePersonaId }).first('name', 'status')).resolves.toEqual({ name: 'Original active', status: 'active' });
+      await expect(knex('client_personas').where({ id: archived.archivedPersonaId }).first('name', 'status')).resolves.toEqual({
+        name: 'Original archived',
+        status: 'archived'
+      });
+      await expect(knex('client_threads').where({ id: archived.threadId }).first('resolved_at', 'resolved_by')).resolves.toEqual({
+        resolved_at: null,
+        resolved_by: null
+      });
+      await expect(knex('client_brand_sections').where({ client_id: clientArchived }).select('section_key')).resolves.toEqual([{ section_key: 'branding' }]);
+      await expect(knex('client_personas').where({ client_id: clientArchived }).count({ total: '*' }).first()).resolves.toEqual({ total: '2' });
+    } finally {
+      await getOwner().transaction(async (transaction) => {
+        await transaction('client_threads').whereIn('client_id', [clientArchived, clientA1]).delete();
+        await transaction('client_personas').whereIn('client_id', [clientArchived, clientA1]).delete();
+        await transaction('client_brand_sections').whereIn('client_id', [clientArchived, clientA1]).delete();
+      });
+    }
+  });
+
+  it('refuses a thread opened as the client by anyone without a vínculo with that client (#472)', async () => {
+    // specs/clientes.md §5, rule 10: "um colaborador não escreve como cliente". The route of the
+    // portal asks for requireClientAccess, so only the database can be shown to refuse. Every
+    // attacker below has the right opened_by, an active client and an active subject: the vínculo
+    // is the only thing missing. portalA1 opens the identical thread (the control).
+    const attackers = [
+      ['an Admin, who holds cliente.operar', adminA],
+      ['the Owner, who holds every permission and has no role', ownerA],
+      ['an account manager, who holds cliente.operar', managerA],
+      ['production, who only holds cliente.visualizar', productionA],
+      ['the portal member of another client of the same agency', portalA2],
+      ['the portal member of a client of another agency', portalB]
+    ] as const;
+    const thread = (userId: string) => ({
+      id: randomUUID(), client_id: clientA1, section_key: 'observations' as const, opened_by: userId, opened_side: 'client' as const
+    });
+
+    for (const [label, userId] of attackers) {
+      await expect(
+        asUser(userId, (transaction) => transaction('client_threads').insert(thread(userId))),
+        label
+      ).rejects.toThrow(/row-level security/);
+    }
+    await expect(
+      getOwner().knex('client_threads').where({ client_id: clientA1, opened_side: 'client' }).whereIn('opened_by', attackers.map(([, userId]) => userId)).select('id')
+    ).resolves.toEqual([]);
+
+    const own = thread(portalA1);
+    await expect(asUser(portalA1, (transaction) => transaction('client_threads').insert(own).returning('id'))).resolves.toEqual([{ id: own.id }]);
+    await expect(getOwner().knex('client_threads').where({ id: own.id }).first('opened_side', 'opened_by')).resolves.toEqual({
+      opened_side: 'client',
+      opened_by: portalA1
+    });
+    await getOwner().knex('client_threads').where({ id: own.id }).delete();
+  });
+
+  it('shows each reader only the comments of the clients it may read, while it has a thread of its own visible (#473)', async () => {
+    // specs/clientes.md §5, rule 1. The comment policy delegates to the thread policy through its
+    // `exists`; if the link between the comment and its thread is lost, whoever sees ANY thread reads
+    // every comment. Each reader here has a thread of its own visible, so a lost link shows up as
+    // extra rows instead of hiding behind an empty result.
+    const rows = [
+      { client: clientA1, author: adminA, side: 'agency' as const },
+      { client: clientA2, author: adminA, side: 'agency' as const },
+      { client: clientB, author: adminB, side: 'agency' as const }
+    ].map((row) => ({ ...row, threadId: randomUUID(), commentId: randomUUID() }));
+    const [commentA1, commentA2, commentB] = rows.map((row) => row.commentId);
+
+    for (const row of rows) {
+      await getOwner().knex('client_threads').insert({
+        id: row.threadId, client_id: row.client, section_key: 'observations', opened_by: row.author, opened_side: row.side
+      });
+      await getOwner().knex('client_thread_comments').insert({
+        id: row.commentId, thread_id: row.threadId, client_id: row.client, author_user_id: row.author, author_side: row.side, body: `Comment of ${row.client}`
+      });
+    }
+
+    const commentsRead = async (userId: string) =>
+      (await asUser(userId, (transaction) => transaction('client_thread_comments').whereIn('id', [commentA1, commentA2, commentB]).select('id'))).map(
+        (row) => row.id as string
+      ).sort();
+
+    await expect(commentsRead(portalA1)).resolves.toEqual([commentA1]);
+    await expect(commentsRead(portalA2)).resolves.toEqual([commentA2]);
+    await expect(commentsRead(portalB)).resolves.toEqual([commentB]);
+    await expect(commentsRead(adminA)).resolves.toEqual([commentA1, commentA2].sort());
+    await expect(commentsRead(productionA)).resolves.toEqual([commentA1, commentA2].sort());
+    await expect(commentsRead(adminB)).resolves.toEqual([commentB]);
+
+    for (const row of rows) await getOwner().knex('client_thread_comments').where({ id: row.commentId }).delete();
+    for (const row of rows) await getOwner().knex('client_threads').where({ id: row.threadId }).delete();
   });
 });

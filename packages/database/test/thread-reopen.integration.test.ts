@@ -7,7 +7,8 @@ import {
   createVerifiedUserClaims,
   raw,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // Issue #212. The derived thread state (thread-state.ts) is "open while resolved_at is null or
@@ -17,8 +18,7 @@ import {
 // This suite proves the explicit reopen: a DEFERRABLE INITIALLY DEFERRED trigger clears the
 // resolution on a client comment at COMMIT, and locks the thread row so it serializes with a
 // concurrent resolve. Runs as ageniza_app, with two real connections where the race matters.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 let owner: DatabaseClient | undefined;
 let application: DatabaseClient | undefined;

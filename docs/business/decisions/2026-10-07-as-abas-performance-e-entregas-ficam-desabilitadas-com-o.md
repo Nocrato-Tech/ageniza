@@ -8,5 +8,5 @@
 
 **Consequência.** Nenhuma rota, coluna ou tela nova. O modal não é redesenhado quando o conteúdo chegar, porque a estrutura de abas já existe. A linha "Conteúdo das abas Performance e Entregas" da seção 10 de `specs/colaboradores.md` segue listada, mas o gatilho passa a ser a issue aberta quando o Conteúdo existir, e não "a primeira entrevista que criar tarefa atribuível a colaborador"; a SPEC não foi reescrita neste PR, e esta entrada prevalece sobre ela.
 
-**Origem.** Decisão do maestro, com autonomia dada pelo dono em 2026-10-07, registrada no fechamento da issue #110. **Pendente de validação** pelo dono do produto.
+**Origem.** Decisão do maestro, com autonomia dada pelo dono em 2026-10-07, registrada no fechamento da issue #110. Validada pelo dono em 2026-10-08.
 

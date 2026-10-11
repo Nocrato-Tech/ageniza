@@ -470,11 +470,13 @@ function CollaboratorDetails({ collaborator, isSelf, onRemoved }: { collaborator
   const tabId = useId();
   const panelId = useId();
   const membershipId = collaborator.membershipId.toLowerCase();
-  const canChangeJobTitle = useCan('colaborador.alterar_funcao');
+  const canAlterJobTitle = useCan('colaborador.alterar_funcao');
   const canChangeRole = useCan('colaborador.alterar_papel');
   const canRemove = useCan('colaborador.remover');
-  // SPEC §7: nobody edits the Owner's role or removes the Owner through this modal; the self view
-  // has its own fields, so this branch never renders for the signed-in person.
+  // SPEC §7: nobody edits the Owner's role or job title, or removes the Owner, through this modal
+  // (the API refuses both edits with a 403); the self view has its own fields, so this branch never
+  // renders for the signed-in person.
+  const canChangeJobTitle = canAlterJobTitle && !collaborator.isOwner;
   const roleEditable = canChangeRole && !collaborator.isOwner;
   const removeOffered = canRemove && !collaborator.isOwner;
   const editable = canChangeJobTitle || roleEditable;

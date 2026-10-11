@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
+import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { PROFILE_PHOTO_MAX_BYTES } from '@ageniza/contracts';
@@ -12,6 +12,7 @@ import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
+import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(cleanup);
 
@@ -172,10 +173,11 @@ interface ProbeTarget {
 }
 
 function Probe({ probe }: { probe: ProbeTarget }) {
-  const location = useLocation();
-  probe.pathname = location.pathname;
-  probe.search = location.search;
-  probe.navigate = useNavigate();
+  useCommittedLocation((location, navigate) => {
+    probe.pathname = location.pathname;
+    probe.search = location.search;
+    probe.navigate = navigate;
+  });
   return null;
 }
 
@@ -502,7 +504,7 @@ describe('client detail (#136)', () => {
 
     const manager = makeFetch({ permissions: MANAGER_PERMISSIONS });
     const managerRender = renderClientDetail(manager.impl, clientUrl(CLIENT_ID, 'acessos'));
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Acessos' })).toBeNull();
     expect(managerRender.container.textContent).not.toContain('Padaria Central');
     cleanup();
@@ -617,7 +619,7 @@ describe('client detail (#136)', () => {
     });
     renderClientDetail(impl);
 
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(screen.queryByText('Padaria Central')).toBeNull();
     expect(screen.queryByText('sensitive detail')).toBeNull();
     expect(calls.filter((call) => call.includes('/clients/'))).toHaveLength(1);
@@ -627,7 +629,7 @@ describe('client detail (#136)', () => {
     const { impl, calls } = makeFetch();
     renderClientDetail(impl, `/agencia/${AGENCY_A}/clientes/${encodeURIComponent(id)}/geral`);
 
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(calls.some((call) => call.includes('/clients/'))).toBe(false);
   });
 
@@ -661,7 +663,7 @@ describe('client detail (#136)', () => {
     await screen.findByRole('heading', { name: 'Padaria Central' });
     await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/clientes/${CLIENT_ID}/geral`); });
 
-    await screen.findByRole('heading', { name: 'Page not found' });
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
     expect(screen.queryByText('Padaria Central')).toBeNull();
   });
 });
@@ -770,6 +772,72 @@ describe('edit client modal (#137)', () => {
     expect(await within(dialog).findByText('Informe o nome do cliente.')).toBeTruthy();
     expect(name.getAttribute('aria-invalid')).toBe('true');
     expect(calls.some((call) => call.startsWith('PATCH'))).toBe(false);
+  });
+
+  // A zero-width space is refused today by the name rule; the name was saved before the rule (#446).
+  const legacyName = 'Padaria\u200bCentral';
+  const legacyClient = { ...padaria, name: legacyName };
+
+  it('saves another field of a client whose stored name the current rule refuses (#446)', async () => {
+    const bodies: unknown[] = [];
+    const { impl } = makeFetch({
+      client: () => json(legacyClient),
+      patch: (body) => { bodies.push(body); return json(registrationOf(legacyClient)); }
+    });
+    renderClientDetail(impl);
+    await screen.findByRole('heading', { name: legacyName });
+    const dialog = await openEditDialog();
+    expect(editNameInput(dialog).value).toBe(legacyName);
+
+    fireEvent.change(editTaxIdInput(dialog), { target: { value: '98.765.432/0001-10' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(bodies).toEqual([{ taxId: '98765432000110' }]));
+    expect(within(dialog).queryByText('O nome contém caracteres que não são aceitos.')).toBeNull();
+  });
+
+  it('still holds a changed name to the current rule, sending nothing (#446)', async () => {
+    const { impl, calls } = makeFetch({ client: () => json(legacyClient) });
+    renderClientDetail(impl);
+    await screen.findByRole('heading', { name: legacyName });
+    const dialog = await openEditDialog();
+    const name = editNameInput(dialog);
+
+    fireEvent.change(name, { target: { value: 'Outra\u200bPadaria' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    expect(await within(dialog).findByText('O nome contém caracteres que não são aceitos.')).toBeTruthy();
+    expect(name.getAttribute('aria-invalid')).toBe('true');
+    expect(calls.some((call) => call.startsWith('PATCH'))).toBe(false);
+  });
+
+  it('refuses an invalid new name for a client whose stored name is fine (#446)', async () => {
+    const { impl, calls } = makeFetch();
+    renderClientDetail(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const dialog = await openEditDialog();
+
+    fireEvent.change(editNameInput(dialog), { target: { value: 'Outra\u200bPadaria' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    expect(await within(dialog).findByText('O nome contém caracteres que não são aceitos.')).toBeTruthy();
+    expect(calls.some((call) => call.startsWith('PATCH'))).toBe(false);
+  });
+
+  it('lets a legacy client rename to a valid name (#446)', async () => {
+    const bodies: unknown[] = [];
+    const { impl } = makeFetch({
+      client: () => json(legacyClient),
+      patch: (body) => { bodies.push(body); return json(registrationOf({ ...legacyClient, name: 'Padaria Central' })); }
+    });
+    renderClientDetail(impl);
+    await screen.findByRole('heading', { name: legacyName });
+    const dialog = await openEditDialog();
+
+    fireEvent.change(editNameInput(dialog), { target: { value: 'Padaria Central' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(bodies).toEqual([{ name: 'Padaria Central' }]));
   });
 
   it('shows the name-in-use message on the name field on a 409, keeping the typed value', async () => {

@@ -10,5 +10,5 @@
 
 **Consequência.** Quem consome o contrato precisa do campo: as fixtures do web e os testes de API que montam o item foram atualizados. É um campo novo, não muda nenhum existente, sem migration e sem backfill. Uma próxima rota que devolva uma pessoa de colaborador usa o mesmo item e herda o campo; não recalcula à mão.
 
-**Origem.** Issue #286, follow-up da revisão de código do PR #283 (#108). **Pendente de validação** pelo dono do produto.
+**Origem.** Issue #286, follow-up da revisão de código do PR #283 (#108). Validada pelo dono em 2026-10-08.
 

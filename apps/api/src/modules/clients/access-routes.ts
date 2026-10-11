@@ -11,10 +11,12 @@ import {
   type ClientMemberStatus
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
-import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+import { isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
+import { tryAgain } from '../../plugins/infra/conflict.js';
 import type { AuthInstance } from '../auth/better-auth.js';
+import { revokeUserSessions } from '../auth/session-revocation.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeQuery, routeResponse } from '../../plugins/infra/zod.js';
@@ -177,9 +179,17 @@ export const registerAccessRoutes = (app: FastifyInstance, dependencies: AccessR
         await setClientMemberStatus(transaction, membershipId, status);
         const member = await loadClientMember(transaction, scope);
         if (member === undefined) throw new Error('The member whose access just changed could not be read back.');
+        // Only the transition ends sessions, and it is read from what this transaction wrote: the
+        // function locks the link and decides, so a reading made before it (a reactivation may land
+        // in between) would leave a removed link with live sessions. Removing again or bringing the
+        // person back writes nothing that ends them.
+        if (member.status === 'removed' && member.written_by_this_transaction) {
+          await revokeUserSessions(transaction, member.user_id, auth.sessionId);
+        }
         return { kind: 'ok', member } as const;
       });
     } catch (error) {
+      if (isRetryableConflict(error)) throw tryAgain();
       if (!isMembershipFunctionRefusal(error)) throw error;
       throw await diagnoseRefusal(request, scope);
     }

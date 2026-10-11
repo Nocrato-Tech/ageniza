@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
+import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
@@ -9,6 +9,7 @@ import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
+import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(cleanup);
 
@@ -191,10 +192,11 @@ interface SearchProbeTarget {
 }
 
 function SearchProbe({ probe }: { probe: SearchProbeTarget }) {
-  const location = useLocation();
-  probe.pathname = location.pathname;
-  probe.search = location.search;
-  probe.navigate = useNavigate();
+  useCommittedLocation((location, navigate) => {
+    probe.pathname = location.pathname;
+    probe.search = location.search;
+    probe.navigate = navigate;
+  });
   return null;
 }
 
@@ -348,7 +350,7 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
     const { impl, calls } = makeFetch({ permissions: [] });
     renderClients(impl);
 
-    await screen.findByRole('heading', { name: 'Page not found' });
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
     expect(calls.filter((call) => call.includes('/clients'))).toEqual([]);
   });
 
@@ -360,7 +362,7 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
     });
     renderClients(impl);
 
-    await screen.findByRole('heading', { name: 'Page not found' });
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
     expect(screen.queryByText('sensitive detail')).toBeNull();
     expect(screen.queryByText('Não foi possível carregar os clientes. Tente de novo.')).toBeNull();
   });
@@ -463,6 +465,115 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
     const { container } = renderClients(impl);
 
     await screen.findByRole('heading', { name: 'Clientes' });
+    expect(container.querySelectorAll('.clients__card-skeleton')).toHaveLength(20);
+  });
+
+  it('keeps the rows on screen while a new search loads, with a discreet indicator and no skeleton (#375)', async () => {
+    let release: (response: Response) => void = () => undefined;
+    const { impl } = makeFetch({
+      clients: (query) => query.get('search') === 'academia'
+        ? new Promise<Response>((resolve) => { release = resolve; })
+        : listResponse([padaria])
+    });
+    const { container } = renderClients(impl);
+    await screen.findByText('Padaria Central');
+
+    fireEvent.change(searchBox(), { target: { value: 'academia' } });
+
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Atualizando…'));
+    expect(screen.getByText('Padaria Central')).toBeTruthy();
+    expect(container.querySelectorAll('.clients__card-skeleton')).toHaveLength(0);
+
+    await act(async () => { release(listResponse([academia])); });
+    expect(await screen.findByText('Academia Corpo')).toBeTruthy();
+    expect(screen.queryByText('Padaria Central')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('keeps the rows on screen while the next page loads (#375)', async () => {
+    let release: (response: Response) => void = () => undefined;
+    const { impl } = makeFetch({
+      clients: (query) => query.get('page') === '2'
+        ? new Promise<Response>((resolve) => { release = resolve; })
+        : listResponse([padaria], 1, { totalItems: 21, totalPages: 2 })
+    });
+    const { container, probe } = renderClients(impl);
+    await screen.findByText('Padaria Central');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Próxima página' }));
+    await waitFor(() => expect(probe.search).toContain('page=2'));
+
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Atualizando…'));
+    expect(screen.getByText('Padaria Central')).toBeTruthy();
+    expect(container.querySelectorAll('.clients__card-skeleton')).toHaveLength(0);
+
+    await act(async () => { release(listResponse([academia], 2, { totalItems: 21, totalPages: 2 })); });
+    expect(await screen.findByText('Academia Corpo')).toBeTruthy();
+    expect(screen.queryByText('Padaria Central')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('keeps the skeleton, not the empty state or "0 de 0", while an empty previous filter is the only data (#375)', async () => {
+    let release: (response: Response) => void = () => undefined;
+    const { impl } = makeFetch({
+      clients: (query) => query.get('search') === 'zzz'
+        ? listResponse([])
+        : new Promise<Response>((resolve) => { release = resolve; })
+    });
+    const { container } = renderClients(impl, `/agencia/${AGENCY_A}/clientes?search=zzz`);
+    await screen.findByText('Nenhum cliente encontrado para "zzz"');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar busca' }));
+
+    await waitFor(() => expect(container.querySelectorAll('.clients__card-skeleton')).toHaveLength(20));
+    expect(screen.queryByText('Nenhum cliente ainda')).toBeNull();
+    expect(screen.queryByText(/Nenhum cliente encontrado/)).toBeNull();
+    expect(screen.queryByText('0 de 0 clientes')).toBeNull();
+
+    await act(async () => { release(listResponse([padaria])); });
+    expect(await screen.findByText('Padaria Central')).toBeTruthy();
+    expect(container.querySelectorAll('.clients__card-skeleton')).toHaveLength(0);
+  });
+
+  it("does not rewrite the URL page from the previous filter's totalPages while the new one loads (#375)", async () => {
+    let release: (response: Response) => void = () => undefined;
+    const { impl } = makeFetch({
+      clients: (query) => query.get('page') === '3'
+        ? new Promise<Response>((resolve) => { release = resolve; })
+        : listResponse([padaria], 1, { totalItems: 1, totalPages: 1 })
+    });
+    const { probe } = renderClients(impl, `/agencia/${AGENCY_A}/clientes?search=padaria`);
+    await screen.findByText('Padaria Central');
+
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_A}/clientes?page=3`); });
+    expect(probe.search).toBe('?page=3');
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Atualizando…'));
+    expect(screen.getByText('Padaria Central')).toBeTruthy();
+
+    await act(async () => { release(listResponse([academia], 3, { totalItems: 50, totalPages: 3 })); });
+    expect(await screen.findByText('Academia Corpo')).toBeTruthy();
+    expect(probe.search).toBe('?page=3');
+  });
+
+  it("shows no client of the previous agency, not even while the new agency's list loads (#375)", async () => {
+    // The shell of agency B is already cached, so the page does not remount on the switch: only the placeholder could leak.
+    let holdB = false;
+    const { impl } = makeFetch({
+      clients: (_query, agencyId) => agencyId === AGENCY_B && holdB ? new Promise<Response>(() => undefined) : listResponse([agencyId === AGENCY_B ? barbearia : padaria])
+    });
+    const { container, probe, queryClient } = renderClients(impl);
+    await screen.findByText('Padaria Central');
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/clientes`); });
+    await screen.findByText('Barbearia Lima');
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_A}/clientes`); });
+    await screen.findByText('Padaria Central');
+    holdB = true;
+    queryClient.removeQueries({ queryKey: ['agency', AGENCY_B, 'clients'] });
+
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/clientes`); });
+
+    await screen.findByRole('link', { name: 'Agência Dois' });
+    expect(screen.queryByText('Padaria Central')).toBeNull();
     expect(container.querySelectorAll('.clients__card-skeleton')).toHaveLength(20);
   });
 

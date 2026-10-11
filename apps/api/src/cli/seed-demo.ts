@@ -185,7 +185,7 @@ const PENDING_COLLABORATOR_INVITES = [
 interface DemoSectionSpec {
   readonly sectionKey: 'branding' | 'tone_of_voice' | 'colors' | 'positioning' | 'archetype' | 'observations';
   readonly body?: string;
-  readonly colors?: readonly { readonly nome: string; readonly codigoHexadecimal: string }[];
+  readonly colors?: readonly { readonly name: string; readonly hex: string }[];
   readonly archetype?: string;
 }
 
@@ -254,7 +254,7 @@ const MAIN_CLIENTS: readonly DemoClientSpec[] = [
     sections: [
       { sectionKey: 'branding', body: 'Marca de bairro, feita para o café da manhã de quem mora perto. O pão quente é o herói.' },
       { sectionKey: 'tone_of_voice', body: 'Próxima e calorosa, sem infantilizar. Fala como quem atende no balcão.' },
-      { sectionKey: 'colors', colors: [{ nome: 'Vermelho terracota', codigoHexadecimal: '#B4472F' }, { nome: 'Creme de trigo', codigoHexadecimal: '#F3E3C3' }] },
+      { sectionKey: 'colors', colors: [{ name: 'Vermelho terracota', hex: '#B4472F' }, { name: 'Creme de trigo', hex: '#F3E3C3' }] },
       { sectionKey: 'positioning', body: 'A padaria que conhece o bairro pelo nome, com fermentação natural e preço justo.' },
       { sectionKey: 'archetype', archetype: 'Cara comum' },
       { sectionKey: 'observations', body: 'O horário de pico é entre 7h e 9h; as campanhas devem evitar esse intervalo.' }
@@ -345,7 +345,7 @@ const MAIN_CLIENTS: readonly DemoClientSpec[] = [
     name: 'Café do Alto',
     registration: { segment: 'Cafeteria', instagramHandle: 'cafedoalto' },
     sections: [
-      { sectionKey: 'colors', colors: [{ nome: 'Verde montanha', codigoHexadecimal: '#2F5D50' }, { nome: 'Areia', codigoHexadecimal: '#E5D9C3' }] },
+      { sectionKey: 'colors', colors: [{ name: 'Verde montanha', hex: '#2F5D50' }, { name: 'Areia', hex: '#E5D9C3' }] },
       { sectionKey: 'archetype', archetype: 'Explorador' }
     ]
   },
@@ -471,8 +471,8 @@ const insertInvitation = async (
 ): Promise<void> => {
   await raw(transaction, `
     insert into public.invitations
-      (id, agency_id, purpose, email, role_id, client_id, token_hash, expires_at, invited_by_user_id)
-    values (gen_random_uuid(), ?::uuid, ?, ?, ?::uuid, ?::uuid, ?, now() + ${INVITATION_EXPIRY}, ?::uuid)
+      (agency_id, purpose, email, role_id, client_id, token_hash, expires_at, invited_by_user_id)
+    values (?::uuid, ?, ?, ?::uuid, ?::uuid, ?, now() + ${INVITATION_EXPIRY}, ?::uuid)
   `, [
     invitation.agencyId,
     invitation.purpose,

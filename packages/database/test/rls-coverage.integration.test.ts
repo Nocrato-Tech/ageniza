@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { createLocalTestDatabaseClient, raw, type DatabaseClient } from '../src/index.js';
+import { createLocalTestDatabaseClient, raw, type DatabaseClient, resolveIntegrationDatabaseUrls } from '../src/index.js';
 
 import {
   buildRlsCoverageReport,
@@ -12,7 +12,7 @@ import {
 
 // Runs against the real schema after `pnpm db:migrate`, so it measures coverage rather than the
 // mechanism: a migration that creates a table and forgets RLS fails here (issue #26).
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
+const { ownerUrl } = resolveIntegrationDatabaseUrls();
 
 interface PublicTableRlsRow {
   readonly table: string;

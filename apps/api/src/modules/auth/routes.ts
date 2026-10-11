@@ -19,6 +19,7 @@ import type { AuthInstance } from './better-auth.js';
 import { applyAuthCookies, toAuthHeaders, toPublicAuthError } from './bridge.js';
 import { AUTH_RATE_LIMITS } from './policy.js';
 import { createRequireSession } from './session-guard.js';
+import { noStore } from '../../plugins/infra/no-store.js';
 import { normalizeRateLimitIp } from '../../plugins/infra/rate-limit-ip.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeResponse } from '../../plugins/infra/zod.js';
@@ -75,6 +76,11 @@ const sessionDocs = {
   responseStatus: 200,
   schemas: { response: AuthSessionResponseSchema }
 } satisfies DocumentedRouteConfig;
+const sessionCheckDocs = {
+  permission: null,
+  responseStatus: 200,
+  schemas: { response: AuthSessionResponseSchema }
+} satisfies DocumentedRouteConfig;
 const forgotDocs = {
   permission: null,
   responseStatus: 202,
@@ -114,7 +120,7 @@ const noContextAccessError = {
 export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
 
-  app.post('/auth/login', perIpRateLimit(AUTH_RATE_LIMITS.login.ip, loginDocs), async (request, reply) => {
+  app.post('/auth/login', { ...perIpRateLimit(AUTH_RATE_LIMITS.login.ip, loginDocs), onRequest: noStore }, async (request, reply) => {
     const body = routeBody(loginDocs, request);
     dependencies.limiter.consume('login', normalizeRateLimitIp(request.ip), body.email);
 
@@ -176,13 +182,27 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     return reply.status(204).send();
   });
 
-  app.get('/auth/session', { preHandler: requireSession, config: sessionDocs }, async (request) => {
+  app.get('/auth/session', { onRequest: noStore, preHandler: requireSession, config: sessionDocs }, async (request) => {
     // The `requireSession` preHandler above already called Better Auth's `getSession` once
     // (with `returnHeaders: true`, so a renewed cookie was already applied to the reply, M1) and
     // populated `request.auth`; a second `getSession` call here would be redundant and would
     // discard the renewed cookie the guard already resolved.
     if (request.auth === undefined) throw new HttpError(unauthenticatedFallback);
     return routeResponse(sessionDocs, request, {
+      user: request.auth.user,
+      session: { expiresAt: request.auth.expiresAt }
+    });
+  });
+
+  // The periodic check of an open tab (#411): same answer as `/auth/session`, but it never renews the
+  // session, so a forgotten tab does not keep it alive past the 7 days without use.
+  app.get('/auth/session/check', {
+    onRequest: noStore,
+    preHandler: createRequireSession({ auth: dependencies.auth }, { renew: false }),
+    config: sessionCheckDocs
+  }, async (request) => {
+    if (request.auth === undefined) throw new HttpError(unauthenticatedFallback);
+    return routeResponse(sessionCheckDocs, request, {
       user: request.auth.user,
       session: { expiresAt: request.auth.expiresAt }
     });
@@ -214,7 +234,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     return reply.status(202).send(routeResponse(forgotDocs, request, {}));
   });
 
-  app.post('/auth/password/reset', perIpRateLimit(AUTH_RATE_LIMITS.reset.ip, resetDocs), async (request, reply) => {
+  app.post('/auth/password/reset', { ...perIpRateLimit(AUTH_RATE_LIMITS.reset.ip, resetDocs), onRequest: noStore }, async (request, reply) => {
     const body = routeBody(resetDocs, request);
     // Looked up non-destructively (before `resetPassword` consumes the same verification row)
     // purely so a B10 recovery below has a user id to act on; a lookup failure never blocks the

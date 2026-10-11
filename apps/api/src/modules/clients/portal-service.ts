@@ -33,6 +33,7 @@ interface RawRows<TResult> {
 }
 
 export interface PortalClientRow extends ClientRow {
+  readonly agency_id: string;
   readonly agency_name: string;
   readonly onboarding_seen_at: Date | null;
 }
@@ -52,7 +53,7 @@ export const loadPortalClient = async (
       client.id, client.name, client.status, client.photo_key, client.legal_name, client.tax_id,
       client.segment, client.website, client.instagram_handle, client.contact_name, client.contact_phone,
       client.contact_email, client.closing_date::text as closing_date, client.archived_at,
-      agency.name as agency_name,
+      client.agency_id, agency.name as agency_name,
       membership.onboarding_seen_at
     from public.clients client
     join public.agencies agency on agency.id = client.agency_id

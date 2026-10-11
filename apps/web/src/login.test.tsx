@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
@@ -9,6 +9,7 @@ import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
+import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(cleanup);
 
@@ -74,9 +75,10 @@ function SessionHarness({ store }: { store: AuthSessionStore }) {
 }
 
 function LocationProbe({ probe }: { probe: { pathname: string; state: unknown } }) {
-  const location = useLocation();
-  probe.pathname = location.pathname;
-  probe.state = location.state;
+  useCommittedLocation((location) => {
+    probe.pathname = location.pathname;
+    probe.state = location.state;
+  });
   return null;
 }
 

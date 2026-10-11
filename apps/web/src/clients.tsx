@@ -108,7 +108,10 @@ export function ClientsPage() {
       path: listPath(agency.agencyId, { page, search, status }),
       response: ClientListResponseSchema,
       signal
-    })
+    }),
+    // Keep the rows on screen while the next search/page loads: the skeleton is for the first load only.
+    // Never across agencies: the rows of the previous agency must not show under the new one, not even for a frame.
+    placeholderData: (previous, previousQuery) => previousQuery?.queryKey[1] === agency.agencyId ? previous : undefined
   });
 
   const setFilter = (key: 'search' | 'status', value: string): void => {
@@ -137,7 +140,8 @@ export function ClientsPage() {
   // server's `totalPages` is authoritative, so move to the last valid page instead of reading
   // "nenhum cliente" as if the roster were gone.
   useEffect(() => {
-    if (clients.data === undefined) return;
+    // Placeholder rows belong to the previous filter: their `totalPages` says nothing about this page.
+    if (clients.data === undefined || clients.isPlaceholderData) return;
     const lastPage = Math.max(1, clients.data.meta.totalPages);
     if (page <= lastPage) return;
     setSearchParams((previous) => {
@@ -145,11 +149,13 @@ export function ClientsPage() {
       if (lastPage <= 1) next.delete('page'); else next.set('page', String(lastPage));
       return next;
     }, { replace: true });
-  }, [clients.data, page, setSearchParams]);
+  }, [clients.data, clients.isPlaceholderData, page, setSearchParams]);
 
   if (clients.isError && isNotVisible(clients.error)) return <NotFoundPage as="section" />;
 
-  const outOfRange = clients.data !== undefined && page > Math.max(1, clients.data.meta.totalPages);
+  // Placeholder rows are the previous filter's: an empty one must not become this filter's empty state or "0 de 0" summary, so it keeps the skeleton.
+  const loading = clients.isPending || (clients.isPlaceholderData && clients.data.data.length === 0);
+  const outOfRange = clients.data !== undefined && !clients.isPlaceholderData && page > Math.max(1, clients.data.meta.totalPages);
 
   return (
     <section aria-labelledby="clients-title" className="clients">
@@ -173,7 +179,7 @@ export function ClientsPage() {
         <Select label="Status" value={status} options={STATUS_OPTIONS} onChange={(value) => setFilter('status', value)} />
       </div>
 
-      {clients.isPending ? (
+      {loading ? (
         <ul className="clients__list" aria-hidden="true">
           {Array.from({ length: PAGE_SIZE }, (_value, index) => <li key={index}><Skeleton className="clients__card-skeleton" /></li>)}
         </ul>
@@ -183,6 +189,7 @@ export function ClientsPage() {
           <Button onClick={() => { void clients.refetch(); }}>Tentar de novo</Button>
         </div>
       ) : outOfRange ? null : <>
+        {clients.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
         {clients.data.data.length === 0 ? (
           status === 'archived' && search === '' ? (
             <div className="clients__empty">

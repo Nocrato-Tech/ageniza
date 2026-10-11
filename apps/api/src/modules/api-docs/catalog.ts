@@ -480,6 +480,26 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     errors: [COMMON_ERRORS.internal, { status: 401, code: 'UNAUTHENTICATED' }, { status: 401, code: 'SESSION_EXPIRED' }]
   },
   {
+    method: 'get',
+    path: '/auth/session/check',
+    operationId: 'getAuthSessionCheck',
+    module: 'auth',
+    summary: 'Confere se a sessão continua válida, sem renová-la',
+    description: 'Para a aba aberta conferir a própria sessão de tempos em tempos (a pessoa removida é deslogada na hora, #411). Responde o mesmo que `GET /auth/session`, mas não conta como uso: `expiresAt` e `updatedAt` não mudam e nenhum cookie é emitido, então uma aba esquecida não mantém a sessão viva além dos 7 dias sem uso. Sessão encerrada ou revogada responde 401.',
+    access: 'Sessão',
+    permission: null,
+    responses: [{
+      status: 200,
+      description: 'Sessão válida.',
+      schema: AuthSessionResponseSchema,
+      example: {
+        user: { id: userId, name: 'Dono da Agência', email: 'dono@exemplo.test' },
+        session: { expiresAt: '2026-10-01T12:00:00.000Z' }
+      }
+    }],
+    errors: [COMMON_ERRORS.internal, { status: 401, code: 'UNAUTHENTICATED' }, { status: 401, code: 'SESSION_EXPIRED' }]
+  },
+  {
     method: 'post',
     path: '/auth/password/forgot',
     operationId: 'postAuthPasswordForgot',
@@ -973,7 +993,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       'é a de cada campo presente:',
       '`jobTitle` pede `colaborador.alterar_funcao`, `roleId` pede `colaborador.alterar_papel`, e os dois pedem',
       'as duas. Se o papel for `admin`, pede também `colaborador.atribuir_admin`, que só o Owner tem.',
-      'O papel do Owner não muda e ninguém altera o próprio papel (403). Um vínculo de outra agência,',
+      'O papel e o cargo do Owner não mudam, e ninguém altera o próprio papel nem o próprio cargo (403). Um vínculo de outra agência,',
       'inexistente, malformado ou removido devolve o mesmo 404. Devolve o vínculo atualizado, no',
       'mesmo contrato do detalhe; nunca há 200 sem uma linha alterada.'
     ].join('\n'),
@@ -1018,7 +1038,9 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Remove um colaborador do quadro',
     description: [
       'Coloca o vínculo em `removed`; a linha permanece e a pessoa perde o acesso à agência na',
-      'requisição seguinte. O Owner não é removido e ninguém remove a si mesmo (403). Remover um',
+      'requisição seguinte. Todas as sessões dela são encerradas na mesma transação, também as que ela',
+      'tem em outras agências: o cookie antigo recebe 401, e quem remove não perde a própria sessão.',
+      'O Owner não é removido e ninguém remove a si mesmo (403). Remover um',
       'vínculo que já está removido é 409. Um vínculo de outra agência, inexistente ou malformado',
       'devolve 404. Devolve o vínculo já em `removed`.'
     ].join('\n'),
@@ -1049,7 +1071,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
-      { status: 409, code: 'COLLABORATOR_ALREADY_REMOVED' }
+      { status: 409, code: 'COLLABORATOR_ALREADY_REMOVED' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
 
@@ -1801,8 +1824,10 @@ path: '/agencies/:agencyId/roles',
     summary: 'Remove uma pessoa do portal do cliente',
     description: [
       'A pessoa perde o acesso ao portal deste cliente na requisição seguinte; as demais pessoas do cliente',
-      'e os outros clientes dela não mudam. O vínculo é preservado como `removed` e pode ser reativado.',
-      'Remover quem já está removido não escreve nada e responde o vínculo como está. Cliente arquivado',
+      'e os vínculos dela com outros clientes não mudam. Todas as sessões dela são encerradas na mesma',
+      'transação (a sessão é global): o cookie antigo recebe 401, e quem remove não perde a própria sessão.',
+      'O vínculo é preservado como `removed` e pode ser reativado, o que não cria sessão.',
+      'Remover quem já está removido não escreve nada, não encerra sessão e responde o vínculo como está. Cliente arquivado',
       'responde 409; vínculo de outro cliente ou id inválido, 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
@@ -1820,7 +1845,8 @@ path: '/agencies/:agencyId/roles',
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Member not found.' },
-      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' }
+      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
   {
@@ -1844,7 +1870,8 @@ path: '/agencies/:agencyId/roles',
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Member not found.' },
-      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' }
+      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
   {

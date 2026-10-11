@@ -16,10 +16,12 @@ import {
   type Collaborator
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
-import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+import { isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { AuthInstance } from '../auth/better-auth.js';
+import { tryAgain } from '../../plugins/infra/conflict.js';
+import { revokeUserSessions } from '../auth/session-revocation.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
@@ -80,6 +82,8 @@ const MISSING_PERMISSION_MESSAGES: Readonly<Record<string, string>> = {
 
 const OWNER_ROLE_PROTECTED_MESSAGE = 'O papel do Owner da agência não pode ser alterado.';
 const SELF_ROLE_PROTECTED_MESSAGE = 'Ninguém altera o próprio papel.';
+const OWNER_JOB_TITLE_PROTECTED_MESSAGE = 'O cargo do Owner da agência não pode ser alterado.';
+const SELF_JOB_TITLE_PROTECTED_MESSAGE = 'Ninguém altera o próprio cargo.';
 const OWNER_REMOVAL_PROTECTED_MESSAGE = 'O Owner da agência não pode ser removido.';
 const SELF_REMOVAL_PROTECTED_MESSAGE = 'Ninguém remove a si mesmo.';
 
@@ -369,6 +373,10 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
           if (target.is_owner) throw forbidden(OWNER_ROLE_PROTECTED_MESSAGE);
           if (target.user_id === auth.userId) throw forbidden(SELF_ROLE_PROTECTED_MESSAGE);
         }
+        if (body.jobTitle !== undefined) {
+          if (target.is_owner) throw forbidden(OWNER_JOB_TITLE_PROTECTED_MESSAGE);
+          if (target.user_id === auth.userId) throw forbidden(SELF_JOB_TITLE_PROTECTED_MESSAGE);
+        }
 
         // Zero rows means a policy filtered the row, which Postgres reports as success; answering
         // 200 for it would claim a change that never happened.
@@ -411,10 +419,14 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
         // Zero rows means a policy filtered the row; answering 200 would claim a removal that
         // never happened.
         if (!await removeMembership(transaction, tenant.agencyId, params.membershipId)) throw forbidden();
+        // The session is global: the person is signed out everywhere, other agencies included, in the
+        // same transaction as the removal.
+        await revokeUserSessions(transaction, target.user_id, auth.sessionId);
         return getCollaborator(transaction, tenant.agencyId, params.membershipId, { includeRemoved: true });
       });
     } catch (error) {
       if (isInsufficientPrivilegeError(error)) throw forbidden();
+      if (isRetryableConflict(error)) throw tryAgain();
       throw error;
     }
     if (row === undefined) throw new Error('The removed membership could not be read back.');

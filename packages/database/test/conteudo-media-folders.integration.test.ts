@@ -7,15 +7,15 @@ import {
   createLocalTestDatabaseClient,
   createVerifiedUserClaims,
   withAuthenticatedUserTransaction,
-  type DatabaseClient
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
 } from '../src/index.js';
 
 // Issue #247 (specs/conteudo.md §2, §3, §5 rule 3 and §6). Every attack runs as `ageniza_app`; RLS
 // filters silently, so a read is checked by the rows it returns and a write by the state left in the
 // database. A custom role holding one permission stands in for each guard, because the Admin holds
 // every permission and hides a guard written with the wrong one.
-const ownerUrl = process.env.MIGRATION_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/ageniza';
-const applicationUrl = process.env.DATABASE_URL ?? 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza';
+const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
 const DEFAULT_FOLDERS = ['Carrosséis', 'Ensaio fotográfico', 'Imagens', 'Vídeos'];
 const BACKFILL = 'select app_private.create_default_media_folders(id) from public.clients';

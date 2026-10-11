@@ -33,6 +33,9 @@ export const utf8ByteLength = (value: string): number => {
   return bytes;
 };
 
+// A lone surrogate survives JSON.stringify as a \udXXX escape, which jsonb refuses with 22P02 (a 500).
+const hasLoneSurrogate = (value: string): boolean => /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(value);
+
 const boundedText = (maxBytes: number) =>
   z.string()
     .refine((value) => !hasControlCharacters(value), 'must not contain control characters')
@@ -66,12 +69,59 @@ const nullableDisplayText = (maxChars: number, maxBytes: number) =>
     ]))
     .nullable();
 
+/** ZWJ/ZWNJ between two Latin letters (marks allowed before the joiner) only forge a lookalike of another name. */
+const JOINER_BETWEEN_LATIN_LETTERS = /(?<=\p{Script=Latin}\p{M}*)[‌‍]+(?=\p{Script=Latin})/u;
+
+/**
+ * Invisible or blank characters the shared rule lets through because they are not `\p{Cf}`: the
+ * combining grapheme joiner (U+034F, `Mn`), the variation selectors (U+180B-U+180D, U+FE00-U+FE0F, VS16 included,
+ * U+E0100-U+E01EF), the Khmer inherent vowels (U+17B4, U+17B5), the tag characters and the like are
+ * all `Default_Ignorable_Code_Point`, and the Braille blank (U+2800, `So`) renders as a space. The
+ * unique index removes none of them, so each one forges a homonym of an active name. ZWJ/ZWNJ are
+ * `Default_Ignorable` too but are decided separately (shared rule + the Latin check below).
+ */
+const INVISIBLE_IN_CLIENT_NAME = /(?![\u200C\u200D])[\p{Default_Ignorable_Code_Point}\u2800]/u;
+
+/**
+ * A client name carries no emoji (owner decision of 2026-10-08): every `Extended_Pictographic`
+ * character is refused, which also closes the homonyms an emoji could forge -- a redundant VS16
+ * after a default-emoji pictograph, and a ZWJ between a pictograph and a letter or another
+ * pictograph, both render exactly like the plain name. VS16 itself stays refused by the invisible
+ * characters rule below. The copyright, registered and trademark signs (U+00A9, U+00AE, U+2122)
+ * are the owner's exception: they are common in a company name. Being pictographic, they would
+ * still let the shared rule accept a joiner beside them, even with combining marks in between, so
+ * `JOINER_NEXT_TO_MARK_SIGN` closes it. The combining enclosing keycap (U+20E3, `Me`) is not
+ * pictographic but is the emoji of a digit ("1" + U+20E3), so it is refused too. So are the
+ * regional indicators (U+1F1E6-U+1F1FF, a flag is a pair of them) and the skin tone modifiers
+ * (U+1F3FB-U+1F3FF): Unicode does not class them as pictographic, but they draw as an emoji.
+ */
+const PICTOGRAPH_IN_CLIENT_NAME = /(?![©®™])\p{Extended_Pictographic}/u;
+const JOINER_NEXT_TO_MARK_SIGN = /[\u00A9\u00AE\u2122]\p{M}*[\u200C\u200D]|[\u200C\u200D]\p{M}*[\u00A9\u00AE\u2122]/u;
+const KEYCAP_IN_CLIENT_NAME = /\u20E3/u;
+const REGIONAL_INDICATOR_IN_CLIENT_NAME = /[\u{1F1E6}-\u{1F1FF}]/u;
+const SKIN_TONE_IN_CLIENT_NAME = /[\u{1F3FB}-\u{1F3FF}]/u;
+
 /**
  * Client name: the shared display-name rule (control, bidi and invisible characters rejected, at
  * least one letter or number) plus the 256-byte cap the column and the unique index enforce --
  * "Padaria Central" followed by a zero-width space must not create a visually identical homonym.
+ * The stored form is NFC with every `\p{Zs}` space as a plain space, because the unique index only
+ * folds case and `[[:space:]]` runs: a decomposed "Cafe" + U+0301 or a U+2007 gap would otherwise
+ * be a different key for a name that looks the same.
  */
-export const ClientNameSchema = createDisplayNameSchema(256)
+export const ClientNameSchema = z.string()
+  .trim()
+  .min(1)
+  .max(256)
+  .transform((value) => value.normalize('NFC').replace(/\p{Zs}/gu, ' '))
+  .pipe(createDisplayNameSchema(256))
+  .refine((value) => !JOINER_BETWEEN_LATIN_LETTERS.test(value), 'a zero-width joiner is not allowed between Latin letters')
+  .refine((value) => !PICTOGRAPH_IN_CLIENT_NAME.test(value), 'must not contain emoji or pictographs')
+  .refine((value) => !JOINER_NEXT_TO_MARK_SIGN.test(value), 'a zero-width joiner is not allowed next to a mark sign')
+  .refine((value) => !KEYCAP_IN_CLIENT_NAME.test(value), 'must not contain emoji or pictographs')
+  .refine((value) => !REGIONAL_INDICATOR_IN_CLIENT_NAME.test(value), 'must not contain emoji or pictographs')
+  .refine((value) => !SKIN_TONE_IN_CLIENT_NAME.test(value), 'must not contain emoji or pictographs')
+  .refine((value) => !INVISIBLE_IN_CLIENT_NAME.test(value), 'must not contain invisible or blank characters')
   .refine((value) => utf8ByteLength(value) <= 256, 'must be at most 256 bytes');
 
 /** Digits only, stored without any mask; 11 or 14 digits. */
@@ -278,7 +328,7 @@ export const ARCHETYPE_LABELS: Readonly<Record<z.infer<typeof ArchetypeSchema>, 
 });
 
 export const BrandColorSchema = z.object({
-  name: boundedText(60),
+  name: boundedText(60).refine((value) => !hasLoneSurrogate(value), 'must not contain a lone surrogate'),
   hex: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'hex must be #RRGGBB')
 }).strict();
 

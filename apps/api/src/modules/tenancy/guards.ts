@@ -112,8 +112,11 @@ export const createRequireAgencyAccess = (dependencies: TenancyGuardDependencies
           agency.id as agency_id,
           (agency.owner_user_id = app_private.current_user_id()) as is_owner,
           role.key as role_key,
+          -- The keys come from the one function that resolves them (#189), never from a join of
+          -- this file: the guard cannot allow what RLS would deny because a copy drifted. The Owner
+          -- gets the whole catalog here, and tenantHolds still passes the Owner by ownership.
           coalesce(
-            array_agg(distinct role_permission.permission_key) filter (where role_permission.permission_key is not null),
+            (select array_agg(held.key order by held.key) from app_private.agency_permission_keys(agency.id) as held(key)),
             array[]::text[]
           ) as permissions
         from public.agencies as agency
@@ -121,16 +124,14 @@ export const createRequireAgencyAccess = (dependencies: TenancyGuardDependencies
           on membership.agency_id = agency.id
          and membership.user_id = app_private.current_user_id()
          and membership.status = 'active'
-        -- The role scope mirrors app_private.has_agency_permission: a membership pointing at
-        -- another agency's role grants nothing, so the guard never allows what RLS would deny.
+        -- Only the role's label is read here, with the same scope as the keys: a membership pointing
+        -- at another agency's role has no role key.
         left join public.roles as role
           on role.id = membership.role_id
          and (role.agency_id is null or role.agency_id = agency.id)
-        left join public.role_permissions as role_permission on role_permission.role_id = role.id
         where agency.id = ?::uuid
           and agency.status = 'active'
           and (membership.id is not null or agency.owner_user_id = app_private.current_user_id())
-        group by agency.id, agency.owner_user_id, role.key
       `, [agencyId]);
       return result.rows[0];
     });

@@ -6,6 +6,7 @@ import { ConfigValidationError, formatZodIssues } from './errors.js';
 import { assertRuntimeUrlSafety, loadRuntimeEnvironment, type RuntimeEnvironment } from './runtime.js';
 
 export { ConfigValidationError } from './errors.js';
+export { s3ClientOptions, type S3ConnectionSettings } from './s3.js';
 export type { RuntimeEnvironment } from './runtime.js';
 
 export interface ServerConfig {

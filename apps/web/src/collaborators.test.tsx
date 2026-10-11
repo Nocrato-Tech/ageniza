@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
+import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { PROFILE_PHOTO_MAX_BYTES } from '@ageniza/contracts';
@@ -15,6 +15,7 @@ import { pendingInviteExpiryLabel } from './pending-invitations.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
+import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(cleanup);
 
@@ -278,10 +279,11 @@ interface SearchProbeTarget {
 }
 
 function SearchProbe({ probe }: { probe: SearchProbeTarget }) {
-  const location = useLocation();
-  probe.pathname = location.pathname;
-  probe.search = location.search;
-  probe.navigate = useNavigate();
+  useCommittedLocation((location, navigate) => {
+    probe.pathname = location.pathname;
+    probe.search = location.search;
+    probe.navigate = navigate;
+  });
   return null;
 }
 
@@ -422,6 +424,91 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
     expect(container.querySelectorAll('.ui-badge-card__skeleton')).toHaveLength(24);
   });
 
+  it('keeps the people on screen while a new search loads, with a discreet indicator and no skeleton (#375)', async () => {
+    let release: (response: Response) => void = () => undefined;
+    const { impl } = makeFetch({
+      collaborators: (query) => query.get('q') === 'julia'
+        ? new Promise<Response>((resolve) => { release = resolve; })
+        : listResponse([anaPrado])
+    });
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar por nome ou e-mail' }), { target: { value: 'julia' } });
+
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Atualizando…'));
+    expect(screen.getByText('Ana Prado')).toBeTruthy();
+    expect(container.querySelectorAll('.ui-badge-card__skeleton')).toHaveLength(0);
+
+    await act(async () => { release(listResponse([juliaReis])); });
+    expect(await screen.findByText('Júlia Reis')).toBeTruthy();
+    expect(screen.queryByText('Ana Prado')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('keeps the skeleton, not "0 de 0", while an empty previous filter is the only data (#375)', async () => {
+    let release: (response: Response) => void = () => undefined;
+    const { impl } = makeFetch({
+      collaborators: (query) => query.get('q') === 'zzz'
+        ? listResponse([])
+        : new Promise<Response>((resolve) => { release = resolve; })
+    });
+    const { container } = renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?q=zzz`);
+    await screen.findByText('Nenhuma pessoa encontrada para "zzz"');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar busca' }));
+
+    await waitFor(() => expect(container.querySelectorAll('.ui-badge-card__skeleton')).toHaveLength(24));
+    expect(screen.queryByText('0 de 0 pessoas')).toBeNull();
+    expect(screen.queryByText(/Nenhuma pessoa encontrada/)).toBeNull();
+
+    await act(async () => { release(listResponse([anaPrado])); });
+    expect(await screen.findByText('Ana Prado')).toBeTruthy();
+    expect(container.querySelectorAll('.ui-badge-card__skeleton')).toHaveLength(0);
+  });
+
+  it("does not rewrite the URL page from the previous filter's totalPages while the new one loads (#375)", async () => {
+    let release: (response: Response) => void = () => undefined;
+    const { impl } = makeFetch({
+      collaborators: (query) => query.get('page') === '3'
+        ? new Promise<Response>((resolve) => { release = resolve; })
+        : listResponse([anaPrado])
+    });
+    const { probe } = renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?q=ana`);
+    await screen.findByText('Ana Prado');
+
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_A}/colaboradores?page=3`); });
+    expect(probe.search).toBe('?page=3');
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Atualizando…'));
+    expect(screen.getByText('Ana Prado')).toBeTruthy();
+
+    await act(async () => { release(json({ data: [juliaReis], meta: meta(3, 60, 3) })); });
+    expect(await screen.findByText('Júlia Reis')).toBeTruthy();
+    expect(probe.search).toBe('?page=3');
+  });
+
+  it("shows no person of the previous agency, not even while the new agency's list loads (#375)", async () => {
+    // The shell of agency B is already cached, so the page does not remount on the switch: only the placeholder could leak.
+    let holdB = false;
+    const { impl } = makeFetch({
+      collaborators: (_query, agencyId) => agencyId === AGENCY_B && holdB ? new Promise<Response>(() => undefined) : listResponse([agencyId === AGENCY_B ? biancaSouza : anaPrado])
+    });
+    const { container, probe, queryClient } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/colaboradores`); });
+    await screen.findByText('Bianca Souza');
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_A}/colaboradores`); });
+    await screen.findByText('Ana Prado');
+    holdB = true;
+    queryClient.removeQueries({ queryKey: ['agency', AGENCY_B, 'collaborators'] });
+
+    await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/colaboradores`); });
+
+    await screen.findByRole('link', { name: 'Agência Dois' });
+    expect(screen.queryByText('Ana Prado')).toBeNull();
+    expect(container.querySelectorAll('.ui-badge-card__skeleton')).toHaveLength(24);
+  });
+
   it('offers a retry when the listing fails', async () => {
     let attempts = 0;
     const { impl } = makeFetch({
@@ -453,9 +540,13 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
     const { impl } = makeFetch({ collaborators: () => listResponse([]) });
     const { container } = renderCollaborators(impl);
 
-    await waitFor(() => expect(container.querySelector('.collaborators__grid')).not.toBeNull());
+    // Waits for the real grid, not the loading skeleton, which is also a grid but is aria-hidden.
+    await waitFor(() => expect(container.querySelector('.collaborators__grid:not([aria-hidden])')).not.toBeNull());
+    await waitFor(() => expect(container.querySelector('.collaborators__grid[aria-hidden]')).toBeNull());
     expect(screen.queryByText(/Nenhuma pessoa encontrada/)).toBeNull();
     expect(screen.queryByText(/Nenhum colaborador/)).toBeNull();
+    // "Ninguém foi removido" is the empty state of the removed filter only (SPEC §7).
+    expect(screen.queryByText(/Ninguém foi removido/)).toBeNull();
   });
 
   it('returns to the last valid page when the URL points past the end (#229)', async () => {
@@ -644,8 +735,8 @@ describe('collaborator detail (#103)', () => {
     for (const scenario of [{ permissions: [] }, { authenticated: false }]) {
       const { impl, calls } = makeFetch(scenario);
       renderCollaborators(impl, detailUrl());
-      if (scenario.authenticated === false) await screen.findByRole('heading', { name: 'Workspace unavailable' });
-      else await screen.findByRole('heading', { name: 'Page not found' });
+      if (scenario.authenticated === false) await screen.findByRole('heading', { name: 'Área indisponível' });
+      else await screen.findByRole('heading', { name: 'Página não encontrada' });
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(detailCalls(calls)).toEqual([]);
       cleanup();
@@ -957,8 +1048,44 @@ describe('collaborator admin actions (#104)', () => {
 
     expect(within(dialog).queryByRole('combobox')).toBeNull();
     expect(within(dialog).queryByRole('button', { name: 'Remover do quadro' })).toBeNull();
-    // The cargo stays editable for the roles the SPEC allows (Admin and account manager).
-    expect(within(dialog).getByRole('textbox', { name: 'Cargo' })).toBeTruthy();
+    // The API refuses the Owner's cargo with a 403 (#410), so the modal shows it as text for everyone.
+    expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
+    expect(within(dialog).getByText('Copywriter')).toBeTruthy();
+  });
+
+  // The account manager holds only `colaborador.alterar_funcao` (one permission); the Admin holds the
+  // full set. Each faces the Owner and a common collaborator: only the latter's cargo is a textbox (#418).
+  it.each([
+    { viewer: 'Admin', permissions: ADMIN_PERMISSIONS, who: 'the Owner', target: { ...marioCosta, isOwner: true }, editable: false },
+    { viewer: 'Admin', permissions: ADMIN_PERMISSIONS, who: 'a common collaborator', target: marioCosta, editable: true },
+    { viewer: 'account manager', permissions: MANAGER_PERMISSIONS, who: 'the Owner', target: { ...marioCosta, isOwner: true }, editable: false },
+    { viewer: 'account manager', permissions: MANAGER_PERMISSIONS, who: 'a common collaborator', target: marioCosta, editable: true }
+  ])('shows the cargo of $who to the $viewer with editable=$editable', async ({ permissions, target, editable }) => {
+    const { impl } = makeFetch({
+      permissions,
+      collaborators: () => json({ data: [target], meta: meta(1, 1, 1) }),
+      detail: () => json(target)
+    });
+    renderCollaborators(impl, detailUrl(target.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+    expect(within(dialog).queryByRole('textbox', { name: 'Cargo' }) !== null).toBe(editable);
+    if (!editable) expect(within(dialog).getByText('Copywriter')).toBeTruthy();
+  });
+
+  it('keeps the cargo of the Owner read-only when the Owner opens the own link', async () => {
+    const ownerSelf = { ...anaSelf, isOwner: true };
+    const { impl } = makeFetch({
+      permissions: OWNER_PERMISSIONS,
+      isOwner: true,
+      collaborators: () => json({ data: [ownerSelf], meta: meta(1, 1, 1) }),
+      detail: () => json(ownerSelf)
+    });
+    renderCollaborators(impl, detailUrl(ownerSelf.membershipId));
+    const dialog = await screen.findByRole('dialog', { name: 'Ana Prado' });
+
+    expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
+    expect(within(dialog).getByText('Editora')).toBeTruthy();
   });
 
   it('saves cargo and papel and updates the badge behind without reloading', async () => {
@@ -2385,7 +2512,7 @@ describe('removed filter and reactivation (#105)', () => {
     renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
 
     expect(await screen.findByText('Ana Prado')).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Page not found' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Página não encontrada' })).toBeNull();
     expect(screen.getByText('Você não tem permissão para ver colaboradores removidos. Mostrando os ativos.')).toBeTruthy();
     expect(queries.some((query) => query.includes('page=1'))).toBe(true);
     expect(calls.some((call) => call.includes('status=removed'))).toBe(false);
@@ -2460,6 +2587,32 @@ describe('removed filter and reactivation (#105)', () => {
     expect(confirm.disabled).toBe(false);
     fireEvent.click(confirm);
     await waitFor(() => expect(bodies).toEqual([{ membershipId: pauloLima.membershipId, body: { roleId: PRODUCTION_ROLE_ID } }]));
+  });
+
+  it('refuses to reactivate with no role even if the disabled button is bypassed', async () => {
+    const bodies: unknown[] = [];
+    const { impl, calls } = makeFetch({
+      permissions: reactivatePermissions,
+      collaborators: (query) => listResponse(removedOnly(query)),
+      roles: () => rolesFor(false),
+      reactivate: (membershipId, body) => {
+        bodies.push({ membershipId, body });
+        return json({ ...pauloLima, status: 'active' });
+      }
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar Paulo Lima' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reativar Paulo Lima' });
+    await within(dialog).findByRole('option', { name: 'Produção' });
+    const form = dialog.querySelector('form');
+    if (form === null) throw new Error('The reactivation form was not rendered.');
+
+    fireEvent.submit(form);
+    expect(await within(dialog).findByText('Selecione um papel.')).toBeTruthy();
+    expect(bodies).toEqual([]);
+    expect(calls.some((call) => call.startsWith('POST') && call.includes('reactivate'))).toBe(false);
   });
 
   it('offers Admin in the reactivation roles only to the Owner', async () => {

@@ -69,6 +69,8 @@ ativa      → encerrada    # logout, logout-all, reset de senha, 7 dias sem uso
 
 Não há refresh token e não há nada em JavaScript: cookie httpOnly, `SameSite=lax`.
 
+A conferência periódica da aba aberta (`GET /auth/session/check`, 2026-10-08, #411) **não conta como uso**: lê a sessão sem renová-la, para uma aba esquecida não manter a sessão viva além dos 7 dias sem uso. Quem usa a sessão de verdade (`GET /auth/session`, qualquer rota de negócio) continua renovando.
+
 ### Convite
 
 ```

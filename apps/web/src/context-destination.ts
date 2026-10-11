@@ -4,12 +4,14 @@ import type { HttpClient } from './http.js';
 
 /**
  * Where a context lives in the browser (docs/business/decisions.md, 2026-09-29): the agency area
- * under `/agencia/:agenciaId/...`, the client portal under `/portal/:clienteId`. `/app` is no
+ * under `/agencia/:agenciaId/...`, the client portal under `/portal/:clienteId/inicio`. `/app` is no
  * longer a destination. Takes the two tenant identifiers, so a fresh invitation acceptance — whose
- * response carries only the ids — uses the same mapping as a resolved context.
+ * response carries only the ids — uses the same mapping as a resolved context. The portal goes
+ * straight to its Início: an index redirect would change the path under the one-time
+ * `already_member` notice, which reads that as navigating away and hides itself.
  */
 export const contextDestination = (context: ContextTarget): string =>
-  context.type === 'agency' ? `/agencia/${context.agencyId}` : `/portal/${context.clientId}`;
+  context.type === 'agency' ? `/agencia/${context.agencyId}` : `/portal/${context.clientId}/inicio`;
 
 /** The two tenant identifiers a destination and `PUT /me/last-context` need. */
 export type ContextTarget =
