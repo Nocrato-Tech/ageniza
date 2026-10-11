@@ -737,3 +737,76 @@ describe('the folder that is not there answers the same body in every case (issu
     expect([await folderCount(clientA1), await folderCount(clientA2), await folderCount(clientB)]).toEqual(before);
   });
 });
+
+describe('what the database raises inside the writes is never a 500 the route knows (issue #253)', () => {
+  // A trigger of the test plays the lost race: a deadlock or a serialization failure raised by the statement.
+  const withFailing = async (table: 'media_folders' | 'media_assets', event: 'insert' | 'update', condition: string, errcode: string, run: () => Promise<void>): Promise<void> => {
+    const name = `zz_fail_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    await owner.knex.raw(`
+      create function public.${name}() returns trigger language plpgsql as $$
+      begin
+        if ${condition} then raise exception 'injected failure' using errcode = '${errcode}'; end if;
+        return new;
+      end $$;
+      create trigger ${name} before ${event} on public.${table} for each row execute function public.${name}();
+    `);
+    try {
+      await run();
+    } finally {
+      await owner.knex.raw(`drop trigger if exists ${name} on public.${table}; drop function if exists public.${name}();`);
+    }
+  };
+
+  const uploadBody = { fileName: 'foto.png', contentType: 'image/png', declaredSizeBytes: 10 };
+
+  it.each([['40P01', 409, 'TRY_AGAIN'], ['40001', 409, 'TRY_AGAIN'], ['XX000', 500, 'INTERNAL_ERROR']] as const)(
+    'creating a folder that fails with %s answers %i %s, leaves nothing and works when repeated',
+    async (errcode, status, code) => {
+      const before = await folderCount(clientA1);
+
+      await withFailing('media_folders', 'insert', `new.name = 'Falha injetada ${errcode}'`, errcode, async () => {
+        const failed = await call('POST', foldersUrl(agencyA, clientA1), 'opVis', { name: `Falha injetada ${errcode}` });
+        expect({ status: failed.statusCode, code: failed.json().error.code }).toEqual({ status, code });
+        expect(JSON.stringify(failed.json())).not.toMatch(NO_DATABASE_DETAIL);
+      });
+
+      expect(await folderCount(clientA1)).toBe(before);
+      expect((await call('POST', foldersUrl(agencyA, clientA1), 'opVis', { name: `Falha injetada ${errcode}` })).statusCode).toBe(201);
+    }
+  );
+
+  it.each([['40P01', 409, 'TRY_AGAIN'], ['40001', 409, 'TRY_AGAIN'], ['XX000', 500, 'INTERNAL_ERROR']] as const)(
+    'uploading into a folder that fails with %s answers %i %s and leaves no media',
+    async (errcode, status, code) => {
+      const folder = await defaultFolder(clientA1);
+      const before = await mediaCount(agencyA);
+
+      await withFailing('media_assets', 'insert', `new.client_id = '${clientA1}'::uuid`, errcode, async () => {
+        const failed = await call('POST', `/agencies/${agencyA}/media/uploads`, 'opVis', { ...uploadBody, clientId: clientA1, folderId: folder });
+        expect({ status: failed.statusCode, code: failed.json().error.code }).toEqual({ status, code });
+        expect(JSON.stringify(failed.json())).not.toMatch(NO_DATABASE_DETAIL);
+      });
+
+      expect(await mediaCount(agencyA)).toBe(before);
+    }
+  );
+
+  it.each([['40P01', 409, 'TRY_AGAIN'], ['40001', 409, 'TRY_AGAIN'], ['XX000', 500, 'INTERNAL_ERROR']] as const)(
+    'removing a media that fails with %s answers %i %s, the media stays, nothing is audited and repeating works',
+    async (errcode, status, code) => {
+      const folder = await defaultFolder(clientA1);
+      const asset = await seedAsset(agencyA, clientA1, folder);
+
+      await withFailing('media_assets', 'update', `new.id = '${asset}'::uuid`, errcode, async () => {
+        const failed = await call('POST', removeUrl(agencyA, clientA1, folder, asset), 'opVis');
+        expect({ status: failed.statusCode, code: failed.json().error.code }).toEqual({ status, code });
+        expect(JSON.stringify(failed.json())).not.toMatch(NO_DATABASE_DETAIL);
+      });
+
+      expect(await removedAt(asset)).toBeNull();
+      expect(await auditCount(asset)).toBe(0);
+      expect((await call('POST', removeUrl(agencyA, clientA1, folder, asset), 'opVis')).statusCode).toBe(200);
+      expect(await auditCount(asset)).toBe(1);
+    }
+  );
+});
