@@ -2401,6 +2401,24 @@
           }
         ]
       },
+      "getPortalContentMediaUrlResponse": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "url",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
       "approvePortalContentRequest": {
         "type": "object",
         "properties": {
@@ -12064,6 +12082,170 @@
                   "error": {
                     "code": "NOT_FOUND",
                     "message": "Content not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clients/{clientId}/contents/{contentId}/media/{assetId}/url": {
+      "get": {
+        "operationId": "getPortalContentMediaUrl",
+        "summary": "Emite a URL assinada de uma mídia do conteúdo, no portal",
+        "description": "Assina só a capa ou um item da mídia de um conteúdo que o portal lê (de \"aguardando aprovação\" em diante). Conteúdo em produção,\ncancelado, de outro cliente (mesmo de um que a pessoa também lê), de outra agência ou inexistente, e arquivo removido, não\nconfirmado ou que não é deste conteúdo, devolvem 404, sem assinar nada. `variant=original` (o padrão) assina o arquivo e grava\na auditoria `media.download_url_issued`; `variant=thumbnail` devolve o próprio original para a imagem e a miniatura para o vídeo\nprocessado, senão 409 `VARIANT_NOT_READY` (ou `VARIANT_PROCESSING_FAILED`), e não grava auditoria. A URL é só GET e de poucos\nminutos. O colaborador que também tem vínculo com o cliente recebe o mesmo recorte que qualquer pessoa do portal.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "assetId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "original",
+                "thumbnail"
+              ],
+              "default": "original"
+            },
+            "required": false,
+            "name": "variant",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "URL assinada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getPortalContentMediaUrlResponse"
+                },
+                "example": {
+                  "url": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+                  "expiresAt": "2026-09-29T12:05:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Media asset not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Media asset not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "VARIANT_NOT_READY: This variant has not been generated yet. | VARIANT_PROCESSING_FAILED: Video processing failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VARIANT_NOT_READY",
+                    "message": "This variant has not been generated yet."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
