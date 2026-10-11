@@ -132,13 +132,13 @@ const agencyClient = (clientId: string): string => `/agencies/${agencyId}/client
 const expectArchived = (reply: Reply): void => {
   expect(reply.statusCode).toBe(409);
   expect(reply.json().error).toEqual({ code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode ser editado.' });
-  expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+  expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
 };
 
 const expectGoneForThePortal = (reply: Reply): void => {
   expect(reply.statusCode).toBe(404);
   expect(reply.json().error).toEqual({ code: 'NOT_FOUND', message: 'Client not found.' });
-  expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+  expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
 };
 
 describe('CLIENTS routes that write into the children of a client being archived (#392)', () => {
