@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { contentDeadline } from '@ageniza/contracts';
 import { createVerifiedUserClaims, withAuthenticatedUserTransaction } from '@ageniza/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -340,6 +341,36 @@ describe('CLIENTS content signals on the card and in the triage order (#261)', (
       const { agencyId, admin } = await setup();
       expect(await listAsOf(admin.id, agencyId, '2026-10-10T02:59:59.000Z')).toEqual([{ overdue: 0, dueSoon: 2 }]);
       expect(await listAsOf(admin.id, agencyId, '2027-01-01T12:00:00.000Z')).toEqual([{ overdue: 5, dueSoon: 0 }]);
+    });
+  });
+
+  describe('the carteira and the screens of Conteúdo say the same about the deadline (issue #549)', () => {
+    // The carteira counts the deadline in SQL and the screens read it from `contentDeadline`: both are the one definition of the
+    // contract. A content of every state on every day around "today" is seeded, and the SQL counts must be what the function says of
+    // each one, and also the numbers written out (four open states, two late days, three days of the window).
+    const STATUSES: readonly ContentStatus[] = ['in_production', 'awaiting_approval', 'adjusting', 'approved', 'published', 'cancelled'];
+    const TODAY = '2026-10-11';
+    const DAYS = ['2026-10-09', '2026-10-10', '2026-10-11', '2026-10-12', '2026-10-13', '2026-10-14'];
+
+    it('counts, for every state and every day, what contentDeadline says of that content', async () => {
+      const admin = await addMember(await createAgency(), presetRoleIds.admin, 'deadline-admin');
+      const agencyId = (await owner.knex('agency_memberships').where({ user_id: admin.id }).first('agency_id')).agency_id as string;
+      const client = await createClient(agencyId, 'Prazo Paridade');
+      const everyone: Array<{ status: ContentStatus; publishOn: string }> = [];
+      for (const status of STATUSES) {
+        for (const publishOn of DAYS) {
+          await seedContent(client, admin.id, status, publishOn);
+          everyone.push({ status, publishOn });
+        }
+      }
+
+      const expectedOverdue = everyone.filter((content) => contentDeadline(content, TODAY) === 'overdue').length;
+      const expectedDueSoon = everyone.filter((content) => contentDeadline(content, TODAY) === 'due-soon').length;
+
+      const counted = await listAsOf(admin.id, agencyId, '2026-10-11T15:00:00.000Z');
+
+      expect(counted).toEqual([{ overdue: expectedOverdue, dueSoon: expectedDueSoon }]);
+      expect({ expectedOverdue, expectedDueSoon }).toEqual({ expectedOverdue: 8, expectedDueSoon: 12 });
     });
   });
 });

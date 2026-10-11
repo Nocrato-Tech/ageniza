@@ -159,6 +159,8 @@ export const createTransitionFixtures = (w: ContentsWorld) => {
     urlOf,
     portalMember,
     queueRows,
+    /** Every user id of the scenario, whoever's: the world's people, the fixture people and the portal members made so far. */
+    allUserIds: (): string[] => [...Object.values(w.people).map((person) => person.id), ...extraUserIds],
 
     async setup(): Promise<void> {
       for (const key of Object.keys(ROLES) as TransitionPerson[]) {

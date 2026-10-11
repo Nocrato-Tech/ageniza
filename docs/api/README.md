@@ -2169,6 +2169,12 @@ Envia o conteúdo para aprovação.
 - Acesso: Sessão + vínculo com a agência.
 - Permissão: `conteudo.operar`.
 
+**Requisição** (`application/json`):
+
+```json
+{}
+```
+
 **Resposta `200`** — Conteúdo aguardando aprovação.
 
 ```json
@@ -2225,7 +2231,7 @@ Envia o conteúdo para aprovação.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_STATE` · `409 CONTENT_TASKS_NOT_APPROVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_STATE` · `409 CONTENT_TASKS_NOT_APPROVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/approve-by-agency`
 
@@ -2384,6 +2390,12 @@ Desfaz a publicação no mesmo dia.
 - Acesso: Sessão + vínculo com a agência.
 - Permissão: `conteudo.publicar`.
 
+**Requisição** (`application/json`):
+
+```json
+{}
+```
+
 **Resposta `200`** — Conteúdo aprovado de novo.
 
 ```json
@@ -2440,7 +2452,7 @@ Desfaz a publicação no mesmo dia.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_STATE` · `409 CONTENT_UNPUBLISH_EXPIRED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_STATE` · `409 CONTENT_UNPUBLISH_EXPIRED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/cancel`
 
@@ -2448,6 +2460,12 @@ Cancela o conteúdo (ele fica guardado).
 
 - Acesso: Sessão + vínculo com a agência.
 - Permissão: `conteudo.cancelar`.
+
+**Requisição** (`application/json`):
+
+```json
+{}
+```
 
 **Resposta `200`** — Conteúdo cancelado.
 
@@ -2505,7 +2523,7 @@ Cancela o conteúdo (ele fica guardado).
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/reschedule`
 
