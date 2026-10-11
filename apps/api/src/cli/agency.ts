@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 import { z } from 'zod';
 
-import { createDisplayNameSchema } from '@ageniza/contracts';
+import { createDisplayNameSchema, hasInvisibleCharacters } from '@ageniza/contracts';
 import { createLogger } from '@ageniza/core';
 import { createDatabaseClient, raw, type SqlBinding } from '@ageniza/database';
 import { agencyActivationEmail, assertEmailAddress, createEmailSender, type EmailSender } from '@ageniza/email';
@@ -83,6 +83,12 @@ export const normalizeAgencyName = (value: string): string => {
   const parsed = createDisplayNameSchema(256).safeParse(name);
   if (!parsed.success) {
     throw new AgencyCliError(`name ${parsed.error.issues[0]?.message ?? 'is not a valid display name'}.`);
+  }
+  // The agency name is not in the decision of 2026-10-08 that keeps the person's name as it is, and it goes into the client's e-mail,
+  // so the CLI also refuses what the one rule of invisible characters refuses (variation selectors, the combining grapheme joiner,
+  // the Braille blank and the rest). A whole emoji sequence is still accepted, as the rule reads it.
+  if (hasInvisibleCharacters(parsed.data)) {
+    throw new AgencyCliError('name must not contain invisible characters.');
   }
   return parsed.data;
 };
