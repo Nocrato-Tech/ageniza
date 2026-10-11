@@ -5,7 +5,7 @@ import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PortalClientResponse } from '@ageniza/contracts';
 
@@ -15,7 +15,7 @@ import { createQueryClient } from './query.js';
 import { portalClientQueryKey } from './portal.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
-import { portalStudyBody } from './portal-fixture.js';
+import { createPortalScriptsApi, portalStudyBody, scriptError } from './portal-fixture.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(cleanup);
@@ -100,6 +100,8 @@ interface Scenario {
   readonly patch?: (body: unknown) => Response | Promise<Response>;
   readonly putPhoto?: () => Response | Promise<Response>;
   readonly legal?: () => Response | Promise<Response>;
+  /** The story scripts of the portal; none by default, as a client with nothing sent for any day. */
+  readonly scripts?: ReturnType<typeof createPortalScriptsApi>;
 }
 
 const makeFetch = (scenario: Scenario = {}) => {
@@ -113,6 +115,10 @@ const makeFetch = (scenario: Scenario = {}) => {
     if (path.endsWith('/auth/session')) return json(sessionBody);
     if (path.endsWith('/me/contexts')) return json(contextsBody);
     if (path.endsWith('/me/legal-acceptances')) return scenario.legal?.() ?? json(legalAccepted);
+    if (path.startsWith(`/clients/${CLIENT_ID}/story-scripts`)) {
+      const answered = (scenario.scripts ?? createPortalScriptsApi(CLIENT_ID, () => new Date())).handle(url, method);
+      if (answered !== undefined) return answered;
+    }
     if (path === `/clients/${CLIENT_ID}`) return scenario.portal?.() ?? json(portalClient());
     if (path === `/clients/${CLIENT_ID}/brand-study`) return json(portalStudyBody());
     if (path === `/clients/${OTHER_CLIENT_ID}`) return json(portalClient({ id: OTHER_CLIENT_ID, name: 'Outro Cliente' }));
@@ -247,17 +253,6 @@ describe('client portal shell (#141)', () => {
     renderPortal(one.impl);
     expect(await screen.findByText('A agência respondeu 1 sugestão sua')).toBeTruthy();
     expect(screen.queryByText('A agência respondeu 2 sugestões suas')).toBeNull();
-  });
-
-  it('reserves the content-to-approve space, as text and nothing to click', async () => {
-    const { impl } = makeFetch();
-    const { container } = renderPortal(impl);
-    await screen.findByRole('heading', { name: 'Olá, Maria' });
-
-    const reserved = container.querySelector('.portal-home__reserved') as HTMLElement;
-    expect(reserved.textContent).toBe('conteúdos para aprovar (em breve)');
-    expect(reserved.querySelector('a')).toBeNull();
-    expect(reserved.querySelector('button')).toBeNull();
   });
 
   it.each([
@@ -543,5 +538,289 @@ describe('portal reflects the agency edits (#141 extra acceptance)', () => {
     probe.navigate(portalUrl('inicio'));
     await screen.findByRole('heading', { name: 'Olá, Maria' });
     await waitFor(() => expect(container.querySelector('.portal-header img.ui-avatar__photo')?.getAttribute('src')).toBe('https://storage.test/nova.png'));
+  });
+});
+
+describe('the Início: approvals and the script of today (#271)', () => {
+  // 01:30Z of the 12th is 22:30 of the 11th in São Paulo: a day computed in UTC is the wrong one.
+  const NIGHT = '2026-10-12T01:30:00.000Z';
+  const TODAY = '2026-10-11';
+  const TOMORROW = '2026-10-12';
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(NIGHT));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const withHome = (home: Partial<PortalClientResponse['home']>) => json(portalClient({ home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0, ...home } }));
+  const scriptsApi = () => createPortalScriptsApi(CLIENT_ID, () => new Date());
+  const block = (): HTMLElement => screen.getByRole('region', { name: 'Roteiro de hoje' });
+  const todayCalls = (api: ReturnType<typeof scriptsApi>): string[] => api.calls.filter((call) => call.startsWith('GET'));
+
+  describe('the contents waiting for approval', () => {
+    it.each([
+      [3, '3 conteúdos esperando sua aprovação'],
+      [12, '12 conteúdos esperando sua aprovação'],
+      [1, '1 conteúdo esperando sua aprovação']
+    ])('says %i with the number of the API, in the singular or the plural, and leads to the contents of the portal', async (count, text) => {
+      const { impl } = makeFetch({ portal: () => withHome({ contentsAwaitingApproval: count }) });
+      const { probe } = renderPortal(impl);
+      const link = await screen.findByRole('link', { name: new RegExp(`^${text}\\s*ver$`) });
+      expect(within(link).getByText('ver')).toBeTruthy();
+      expect(link.getAttribute('href')).toBe(portalUrl('calendario'));
+      fireEvent.click(link);
+      expect(await screen.findByRole('heading', { name: 'Calendário' })).toBeTruthy();
+      expect(probe.pathname).toBe(portalUrl('calendario'));
+    });
+
+    it('is the next action over the answer of the agency and the brand study, and gives way to them when nothing waits', async () => {
+      const waiting = makeFetch({ portal: () => withHome({ contentsAwaitingApproval: 2, threadsAnsweredByAgency: 4 }) });
+      renderPortal(waiting.impl);
+      await screen.findByRole('link', { name: /2 conteúdos esperando sua aprovação/ });
+      expect(screen.queryByText(/A agência respondeu/)).toBeNull();
+      expect(screen.queryByText('Conheça o estudo da sua marca')).toBeNull();
+      cleanup();
+
+      const none = makeFetch({ portal: () => withHome({ contentsAwaitingApproval: 0, threadsAnsweredByAgency: 4 }) });
+      renderPortal(none.impl);
+      expect(await screen.findByRole('link', { name: /A agência respondeu 4 sugestões suas/ })).toBeTruthy();
+      expect(screen.queryByText(/esperando sua aprovação/)).toBeNull();
+      cleanup();
+
+      renderPortal(makeFetch().impl);
+      expect(await screen.findByRole('link', { name: /Conheça o estudo da sua marca/ })).toBeTruthy();
+      expect(screen.queryByText(/esperando sua aprovação/)).toBeNull();
+      expect(screen.queryByText(/em breve/)).toBeNull();
+    });
+  });
+
+  describe('the script of today', () => {
+    it('asks for the day of São Paulo, both ends the same, and draws no block when nothing was sent for it', async () => {
+      const api = scriptsApi();
+      api.seed({ scriptOn: TOMORROW });
+      api.seed({ scriptOn: TODAY, status: 'draft', scenes: [{ position: 1, text: 'Rascunho que nunca chega', guidance: null }] });
+      const { impl } = makeFetch({ scripts: api });
+      renderPortal(impl);
+      await screen.findByRole('heading', { name: 'Olá, Maria' });
+      await waitFor(() => expect(todayCalls(api)).toEqual([`GET /clients/${CLIENT_ID}/story-scripts?from=${TODAY}&to=${TODAY}`]));
+      await waitFor(() => expect(document.querySelector('.portal-today')).toBeNull());
+      expect(screen.queryByRole('region', { name: 'Roteiro de hoje' })).toBeNull();
+      expect(screen.queryByText('Rascunho que nunca chega')).toBeNull();
+      expect(screen.queryByRole('button', { name: /Marcar como gravado/ })).toBeNull();
+    });
+
+    it.each([
+      ['a minute before midnight in São Paulo', '2026-10-12T02:59:30.000Z', TODAY, 'Cena de domingo', TOMORROW],
+      ['at midnight in São Paulo', '2026-10-12T03:00:00.000Z', TOMORROW, 'Cena de segunda', TODAY]
+    ])('shows the script of the day it is %s, and never the one of the other side', async (_name, instant, day, text, otherDay) => {
+      vi.setSystemTime(new Date(instant));
+      const api = scriptsApi();
+      api.seed({ scriptOn: TODAY, scenes: [{ position: 1, text: 'Cena de domingo', guidance: null }] });
+      api.seed({ scriptOn: TOMORROW, scenes: [{ position: 1, text: 'Cena de segunda', guidance: null }] });
+      const { impl } = makeFetch({ scripts: api });
+      renderPortal(impl);
+      expect(await screen.findByText(text)).toBeTruthy();
+      expect(todayCalls(api)).toEqual([`GET /clients/${CLIENT_ID}/story-scripts?from=${day}&to=${day}`]);
+      expect(screen.queryByText(otherDay === TODAY ? 'Cena de domingo' : 'Cena de segunda')).toBeNull();
+    });
+
+    it('shows the scenes in order, with their guidance, as text and never as markup, and a button to mark it recorded', async () => {
+      const api = scriptsApi();
+      const hostile = '<img src=x onerror="window.__hacked = 1">‮atrás';
+      api.seed({ scriptOn: TODAY, scenes: [
+        { position: 1, text: hostile, guidance: '<b>Luz natural</b>' },
+        { position: 2, text: 'Segunda cena\ncom quebra de linha', guidance: null },
+        { position: 3, text: 'x'.repeat(300), guidance: 'y'.repeat(300) }
+      ] });
+      const { impl } = makeFetch({ scripts: api });
+      const { container } = renderPortal(impl);
+      await within(await screen.findByRole('region', { name: 'Roteiro de hoje' })).findByRole('button', { name: 'Marcar como gravado' });
+
+      const scenes = Array.from(block().querySelectorAll('.portal-script__scene'));
+      expect(scenes).toHaveLength(3);
+      expect(scenes[0]!.querySelector('.portal-script__text')!.textContent).toBe(hostile);
+      expect(scenes[0]!.querySelector('.portal-script__guidance')!.textContent).toBe('Orientação: <b>Luz natural</b>');
+      expect(scenes[1]!.querySelector('.portal-script__text')!.textContent).toBe('Segunda cena\ncom quebra de linha');
+      expect(scenes[1]!.querySelector('.portal-script__guidance')).toBeNull();
+      expect(block().querySelector('img, b')).toBeNull();
+      expect((window as unknown as { __hacked?: number }).__hacked).toBeUndefined();
+      expect(within(block()).getByRole('heading', { name: 'Roteiro de hoje', level: 2 })).toBeTruthy();
+      expect(container.textContent).not.toMatch(/thread|status|arquivad|onboarding|persona|rascunho|draft/i);
+    });
+
+    it('marks it recorded with one click on that script, shows who and the day in São Paulo, and no button after', async () => {
+      const api = scriptsApi();
+      const script = api.seed({ scriptOn: TODAY, scenes: [{ position: 1, text: 'Abrir com o forno', guidance: null }] });
+      const { impl } = makeFetch({ scripts: api });
+      renderPortal(impl);
+      fireEvent.click(await screen.findByRole('button', { name: 'Marcar como gravado' }));
+
+      await within(block()).findByText('Gravado por Maria em 11/10');
+      expect(within(block()).queryByRole('button', { name: /Marcar como gravado/ })).toBeNull();
+      expect(api.calls.filter((call) => call.startsWith('POST'))).toEqual([`POST /clients/${CLIENT_ID}/story-scripts/${script.id}/recorded`]);
+      expect(api.rows[0]!.status).toBe('recorded');
+      expect(screen.getByText('Abrir com o forno')).toBeTruthy();
+    });
+
+    it('shows a recorded script without the button, with the person and the day, and with no name when the API has none', async () => {
+      const api = scriptsApi();
+      api.seed({ scriptOn: TODAY, status: 'recorded', recordedBy: { name: 'Ana' }, recordedAt: NIGHT, scenes: [{ position: 1, text: 'Já gravada', guidance: null }] });
+      const { impl } = makeFetch({ scripts: api });
+      renderPortal(impl);
+      expect(await within(await screen.findByRole('region', { name: 'Roteiro de hoje' })).findByText('Gravado por Ana em 11/10')).toBeTruthy();
+      expect(within(block()).queryByRole('button')).toBeNull();
+      cleanup();
+
+      const nameless = scriptsApi();
+      nameless.seed({ scriptOn: TODAY, status: 'recorded', recordedBy: { name: null }, recordedAt: NIGHT });
+      renderPortal(makeFetch({ scripts: nameless }).impl);
+      expect(await screen.findByText('Gravado em 11/10')).toBeTruthy();
+    });
+
+    it('marks the script that was clicked among two, and leaves the other one to be marked', async () => {
+      const api = scriptsApi();
+      const first = api.seed({ scriptOn: TODAY, scenes: [{ position: 1, text: 'Primeiro roteiro', guidance: null }] });
+      const second = api.seed({ scriptOn: TODAY, scenes: [{ position: 1, text: 'Segundo roteiro', guidance: null }] });
+      const { impl } = makeFetch({ scripts: api });
+      renderPortal(impl);
+      expect(await within(await screen.findByRole('region', { name: 'Roteiro de hoje' })).findByRole('heading', { name: 'Roteiro 2' })).toBeTruthy();
+      expect(within(block()).getByRole('heading', { name: 'Roteiro 1' })).toBeTruthy();
+
+      fireEvent.click(within(block()).getByRole('button', { name: 'Marcar como gravado o roteiro 2' }));
+      await within(block()).findByText('Gravado por Maria em 11/10');
+      expect(api.calls.filter((call) => call.startsWith('POST'))).toEqual([`POST /clients/${CLIENT_ID}/story-scripts/${second.id}/recorded`]);
+      expect(api.rows.map((row) => row.status)).toEqual(['sent', 'recorded']);
+      expect(within(block()).getByRole('button', { name: 'Marcar como gravado o roteiro 1' })).toBeTruthy();
+      expect(first.status).toBe('sent');
+    });
+
+    it('sends once when the button is clicked twice, and holds both buttons while it is on its way', async () => {
+      const api = scriptsApi();
+      api.seed({ scriptOn: TODAY });
+      api.seed({ scriptOn: TODAY });
+      let release!: () => void;
+      api.holdWrites(new Promise<void>((resolve) => { release = resolve; }));
+      renderPortal(makeFetch({ scripts: api }).impl);
+      const first = await within(await screen.findByRole('region', { name: 'Roteiro de hoje' })).findByRole('button', { name: 'Marcar como gravado o roteiro 1' });
+      fireEvent.click(first);
+      fireEvent.click(first);
+      fireEvent.click(within(block()).getByRole('button', { name: 'Marcar como gravado o roteiro 2' }));
+      await waitFor(() => expect(api.calls.filter((call) => call.startsWith('POST'))).toHaveLength(1));
+      expect((within(block()).getByRole('button', { name: 'Marcar como gravado o roteiro 2' }) as HTMLButtonElement).disabled).toBe(true);
+      release();
+      await waitFor(() => expect(api.rows[0]!.status).toBe('recorded'));
+      expect(api.calls.filter((call) => call.startsWith('POST'))).toHaveLength(1);
+    });
+
+    it.each([
+      [500, 'INTERNAL_ERROR', 'Não foi possível marcar como gravado. Tente de novo.'],
+      [409, 'TRY_AGAIN', 'Outra alteração aconteceu ao mesmo tempo. Tente de novo.'],
+      [403, 'FORBIDDEN', 'Você não tem permissão para esta ação.'],
+      [404, 'NOT_FOUND', 'Este roteiro não existe mais.']
+    ])('keeps the script as it was when the API answers %i %s, says it in its own words, and marks it on the next try', async (status, code, text) => {
+      const api = scriptsApi();
+      api.seed({ scriptOn: TODAY, scenes: [{ position: 1, text: 'Cena que fica', guidance: null }] });
+      api.failNext(() => scriptError(status, code));
+      renderPortal(makeFetch({ scripts: api }).impl);
+      fireEvent.click(await screen.findByRole('button', { name: 'Marcar como gravado' }));
+
+      expect(await within(block()).findByText(text)).toBeTruthy();
+      expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
+      expect(within(block()).getByText('Cena que fica')).toBeTruthy();
+      expect((within(block()).getByRole('button', { name: 'Marcar como gravado' }) as HTMLButtonElement).disabled).toBe(false);
+      expect(screen.getByRole('heading', { name: 'Olá, Maria' })).toBeTruthy();
+
+      fireEvent.click(within(block()).getByRole('button', { name: 'Marcar como gravado' }));
+      await within(block()).findByText('Gravado por Maria em 11/10');
+      expect(within(block()).queryByText(text)).toBeNull();
+    });
+
+    it('treats the 409 of a script that changed meanwhile: says so and shows what is there now', async () => {
+      const api = scriptsApi();
+      const script = api.seed({ scriptOn: TODAY, scenes: [{ position: 1, text: 'Gravada por outra pessoa', guidance: null }] });
+      // Another person of the client marked it recorded between the screen reading it and the click.
+      api.failNext(() => scriptError(409, 'STORY_SCRIPT_STATE'), () => { script.status = 'recorded'; script.recordedBy = { name: 'Ana' }; script.recordedAt = NIGHT; });
+      renderPortal(makeFetch({ scripts: api }).impl);
+      fireEvent.click(await screen.findByRole('button', { name: 'Marcar como gravado' }));
+
+      expect(await within(block()).findByText('Este roteiro mudou e a tela foi atualizada com o que há agora.')).toBeTruthy();
+      await within(block()).findByText('Gravado por Ana em 11/10');
+      expect(within(block()).queryByRole('button', { name: /Marcar como gravado/ })).toBeNull();
+    });
+
+    it('shows a skeleton while it loads, and its own error with "Tentar de novo" without taking the Início away', async () => {
+      let release!: () => void;
+      const api = scriptsApi();
+      api.seed({ scriptOn: TODAY, scenes: [{ position: 1, text: 'Cena do dia', guidance: null }] });
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const slow = { ...api, handle: (url: URL, method: string) => (method === 'GET' ? gate.then(() => api.handle(url, method) as Response) : api.handle(url, method)) } as typeof api;
+      const { container } = renderPortal(makeFetch({ scripts: slow }).impl);
+      await screen.findByRole('heading', { name: 'Olá, Maria' });
+      expect(container.querySelector('.portal-today')?.getAttribute('aria-hidden')).toBe('true');
+      expect(screen.queryByRole('region', { name: 'Roteiro de hoje' })).toBeNull();
+      release();
+      expect(await screen.findByText('Cena do dia')).toBeTruthy();
+      expect(container.querySelector('.portal-today[aria-hidden="true"]')).toBeNull();
+    });
+
+    it('says it could not load, keeps the rest of the Início, and offers to try again', async () => {
+      const api = scriptsApi();
+      api.seed({ scriptOn: TODAY, scenes: [{ position: 1, text: 'Cena do dia', guidance: null }] });
+      let failing = true;
+      const flaky = { ...api, handle: (url: URL, method: string) => (failing && method === 'GET' ? scriptError(403, 'FORBIDDEN') : api.handle(url, method)) } as typeof api;
+      renderPortal(makeFetch({ scripts: flaky }).impl);
+      expect(await screen.findByText('Não foi possível carregar o roteiro de hoje.')).toBeTruthy();
+      expect(screen.getByRole('heading', { name: 'Olá, Maria' })).toBeTruthy();
+      expect(screen.getByRole('link', { name: /Conheça o estudo da sua marca/ })).toBeTruthy();
+      failing = false;
+      fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+      expect(await screen.findByText('Cena do dia')).toBeTruthy();
+      expect(screen.queryByText('Não foi possível carregar o roteiro de hoje.')).toBeNull();
+    });
+
+    it('never draws a draft, even if the answer carried one: the whole block says it could not load', async () => {
+      const api = scriptsApi();
+      api.state.leakDrafts = true;
+      api.seed({ scriptOn: TODAY, status: 'draft', scenes: [{ position: 1, text: 'Rascunho vazado', guidance: null }] });
+      renderPortal(makeFetch({ scripts: api }).impl);
+      expect(await screen.findByText('Não foi possível carregar o roteiro de hoje.', undefined, { timeout: 5000 })).toBeTruthy();
+      expect(screen.queryByText('Rascunho vazado')).toBeNull();
+    });
+  });
+
+  describe('on a phone', () => {
+    const css = (): string => readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
+    const rule = (selector: string): string => {
+      const text = css();
+      const start = text.indexOf(`\n${selector} {`);
+      if (start === -1) throw new Error(`${selector} was not found in globals.css.`);
+      return text.slice(start, text.indexOf('}', start));
+    };
+
+    it('keeps the bottom bar the last piece of the shell with the whole Início drawn, and the content taking the rest', async () => {
+      const api = scriptsApi();
+      api.seed({ scriptOn: TODAY });
+      const { container } = renderPortal(makeFetch({ scripts: api, portal: () => withHome({ contentsAwaitingApproval: 3 }) }).impl);
+      await screen.findByRole('region', { name: 'Roteiro de hoje' });
+      const shell = container.querySelector('.portal-shell') as HTMLElement;
+      expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'header', 'main', 'nav']);
+      expect(shell.lastElementChild).toBe(nav());
+      // jsdom has no layout: the rules that keep a short page's bar at the bottom, and a page of 390 px from scrolling sideways, are read from the stylesheet.
+      expect(rule('.portal-shell')).toMatch(/min-height:\s*100dvh;/);
+      expect(rule('.portal-shell > .portal-content')).toMatch(/flex:\s*1;/);
+      expect(rule('.portal-nav')).toMatch(/position:\s*sticky;/);
+      expect(rule('.portal-nav')).toMatch(/bottom:\s*0;/);
+    });
+
+    it('lets every box of the script shrink and every text wrap, with no fixed width that could push a 390 px screen sideways', async () => {
+      expect(rule('.portal-home')).toMatch(/min-width:\s*0;/);
+      for (const selector of ['.portal-today', '.portal-script']) expect(rule(selector)).toMatch(/min-width:\s*0;/);
+      const text = rule('.portal-script__text,\n.portal-script__guidance,\n.portal-script__recorded');
+      expect(text).toMatch(/overflow-wrap:\s*anywhere;/);
+      expect(text).toMatch(/white-space:\s*pre-line;/);
+      expect(rule('.portal-script > .ui-button')).toMatch(/width:\s*100%;/);
+      expect(rule('.portal-today__skeleton')).toMatch(/width:\s*100%;/);
+      for (const selector of ['.portal-today', '.portal-script', '.portal-script__scenes']) expect(rule(selector)).not.toMatch(/(^|[^-])(width|min-width):\s*[\d.]+(px|rem)/);
+    });
   });
 });

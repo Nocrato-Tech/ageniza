@@ -2351,6 +2351,7 @@ a.client-general__block:hover {
 .portal-home {
   display: grid;
   gap: var(--space-6);
+  min-width: 0;
 }
 
 .portal-home h1 {
@@ -2401,14 +2402,57 @@ a.client-general__block:hover {
   height: 5rem;
 }
 
-.portal-home__reserved {
+.portal-today {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.portal-today h2,
+.portal-script__title {
   margin: 0;
-  padding: var(--space-6) var(--space-4);
-  border: 1px dashed var(--border-default);
+}
+
+.portal-today__skeleton {
+  width: 100%;
+  height: 8rem;
+}
+
+.portal-script {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  color: var(--text-muted);
-  font: var(--body-md);
-  text-align: center;
+  background: var(--bg-surface);
+}
+
+.portal-script__scenes {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding-left: var(--space-6);
+}
+
+.portal-script__text,
+.portal-script__guidance,
+.portal-script__recorded {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.portal-script__guidance {
+  color: var(--text-secondary);
+}
+
+.portal-script__recorded {
+  color: var(--text-secondary);
+}
+
+.portal-script > .ui-button {
+  width: 100%;
 }
 
 .portal-skeleton {
