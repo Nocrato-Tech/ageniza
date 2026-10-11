@@ -75,6 +75,8 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone 
   const [problem, setProblem] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
 
+  // The move on its way is this screen's own state, set in the click: the mutation's reaches the buttons a render later, and a second click in between would send it twice.
+  const [sending, setSending] = useState<ContentAction | null>(null);
   const move = useMutation({
     mutationFn: ({ action, body }: Request) => httpClient.request({
       path: `${apiPath(ACTION_PATH, { agencyId: agency.agencyId, clientId, contentId: content.id })}/${ACTION_RULES[action].segment}`,
@@ -82,6 +84,7 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone 
       ...(body === undefined ? {} : { body }),
       response: ContentDetailSchema
     }),
+    onSettled: () => { setSending(null); },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'contents', clientId] });
       onDone();
@@ -93,12 +96,14 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone 
     }
   });
 
-  const busy = move.isPending;
+  const busy = sending !== null;
   useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
 
   if (available.length === 0) return null;
 
   const send = (request: Request): void => {
+    if (sending !== null) return;
+    setSending(request.action);
     setError(undefined);
     move.mutate(request);
   };
@@ -132,7 +137,7 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone 
     <Button
       key={action}
       variant={action === 'submit' ? 'primary' : 'secondary'}
-      loading={busy && move.variables.action === action}
+      loading={sending === action}
       disabled={waiting || disabled}
       aria-expanded={action === 'approve' || action === 'publish' || action === 'reschedule' ? panel === action : undefined}
       onClick={handler}

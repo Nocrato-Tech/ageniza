@@ -21,7 +21,7 @@ const json = (body: unknown, status = 200): Response =>
 
 export const apiError = (status: number, code: string, message = code): Response => json({ error: { code, message } }, status);
 
-interface StoredThread {
+export interface StoredThread {
   readonly id: string;
   readonly subject: ConversationSubject;
   readonly openedBy: { name: string | null; side: ConversationSide };

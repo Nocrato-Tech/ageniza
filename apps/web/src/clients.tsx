@@ -58,8 +58,10 @@ const suggestionLabel = (count: number): string =>
  * exists. An archived card is dimmed and carries no badge; its only destination is the read-only
  * detail.
  */
-function ClientCard({ client, canSeeInvitations }: { client: ClientListItem; canSeeInvitations: boolean }) {
+function ClientCard({ client, canSeeInvitations, canSeeContents }: { client: ClientListItem; canSeeInvitations: boolean; canSeeContents: boolean }) {
   const archived = client.status === 'archived';
+  // The API omits the field for who cannot read contents; the permission is checked again, as for the invitations.
+  const indicators = canSeeContents ? client.contentIndicators : undefined;
   return <article className={`clients__card${archived ? ' clients__card--archived' : ''}`}>
     <Avatar name={client.name} photoUrl={client.photoUrl} size="lg" />
     <div className="clients__card-body">
@@ -77,7 +79,13 @@ function ClientCard({ client, canSeeInvitations }: { client: ClientListItem; can
         )}
       </ul>}
     </div>
-    {!archived && <p className="clients__indicators">pendentes · em revisão · atrasos</p>}
+    {!archived && (indicators === undefined
+      ? <p className="clients__indicators">pendentes · em revisão · atrasos</p>
+      : <ul className="clients__indicators" aria-label="Indicadores de conteúdo">
+        <li>{indicators.pending} {indicators.pending === 1 ? 'pendente' : 'pendentes'}</li>
+        <li>{indicators.inReview} em revisão</li>
+        <li className={indicators.overdue > 0 ? 'clients__indicator--late' : undefined}>{indicators.overdue} {indicators.overdue === 1 ? 'atraso' : 'atrasos'}</li>
+      </ul>)}
   </article>;
 }
 
@@ -91,6 +99,7 @@ export function ClientsPage() {
   const agency = useAgencyContext();
   const canCreate = useCan('cliente.cadastrar');
   const canSeeInvitations = useCan('cliente.convidar_usuario');
+  const canSeeContents = useCan('conteudo.visualizar');
   const [createOpen, setCreateOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -218,7 +227,7 @@ export function ClientsPage() {
                   state={{ clientListUrl: location.pathname + location.search }}
                   aria-labelledby={`client-${client.id}-name`}
                 >
-                  <ClientCard client={client} canSeeInvitations={canSeeInvitations} />
+                  <ClientCard client={client} canSeeInvitations={canSeeInvitations} canSeeContents={canSeeContents} />
                 </Link>
               </li>
             ))}

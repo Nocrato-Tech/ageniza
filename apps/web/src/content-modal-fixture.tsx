@@ -12,6 +12,7 @@ import {
   UpdateContentRequestSchema
 } from '@ageniza/contracts';
 
+import { createConversationApi } from './conversation-fixture.js';
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
@@ -169,6 +170,8 @@ export const listItemOf = (row: Stored) => ({
   status: row.status, owner: { membershipId: 'e0e0e0e0-0000-4000-8000-000000000001', name: 'Ana Souza' }, coverAssetId: row.coverAssetId, revision: row.revision, publishedOn: null, tasksTotal: 0, tasksApproved: 0
 });
 
+export type ConversationFake = ReturnType<typeof createConversationApi>;
+
 export interface Call { readonly method: string; readonly path: string; readonly body: unknown }
 
 export interface Scenario {
@@ -176,6 +179,8 @@ export interface Scenario {
   readonly contents?: readonly Stored[];
   readonly folders?: ReadonlyArray<ReturnType<typeof folder>>;
   readonly assets?: Readonly<Record<string, ReadonlyArray<ReturnType<typeof asset>>>>;
+  /** Fills the conversation routes before the screen reads them (the thread of a content, its messages). */
+  readonly seedConversation?: (conversation: ConversationFake, forClient: (clientId: string) => ConversationFake) => void;
   /** Answers instead of the fake for a request, when it returns a response. */
   readonly override?: (call: Call, calls: readonly Call[]) => Response | Promise<Response> | undefined;
 }
@@ -200,6 +205,35 @@ export const makeFetch = (scenario: Scenario = {}) => {
   const assets = scenario.assets ?? ASSETS;
   const permissions = scenario.permissions ?? EDITOR;
   let created = 0;
+  const conversations = new Map<string, ConversationFake>();
+  const conversationFor = (clientId: string): ConversationFake => {
+    const known = conversations.get(clientId) ?? createConversationApi({ side: 'agency', clientId });
+    conversations.set(clientId, known);
+    return known;
+  };
+  const conversation = conversationFor(padaria.id);
+  scenario.seedConversation?.(conversation, conversationFor);
+
+  /** The routes of the conversation, as the API answers them: reading asks `conteudo.visualizar`, writing both, and a content in production or cancelled takes no message. */
+  const answerConversation = (url: URL, method: string, body: unknown, clientId: string): Response => {
+    const write = method !== 'GET';
+    if (!permissions.includes(VISUALIZE) || (write && !permissions.includes(OPERATE))) return failure(403, 'FORBIDDEN');
+    const row = ROSTER.find((candidate) => candidate.id === clientId);
+    if (row === undefined) return failure(404, 'NOT_FOUND');
+    if (write && row.status === 'archived') return failure(409, 'CLIENT_ARCHIVED');
+    const named = /\/threads\/([^/]+)\//.exec(url.pathname)?.[1];
+    const subject = named === undefined
+      ? (body as { subject?: { contentId?: string } } | undefined)?.subject
+      : conversationFor(clientId).threads.find((thread) => thread.id === named)?.subject;
+    const contentId = subject !== undefined && 'contentId' in subject ? subject.contentId : undefined;
+    if (write && contentId !== undefined && !url.pathname.endsWith('/resolve')) {
+      const content = contents.find((candidate) => candidate.id === contentId && candidate.clientId === clientId);
+      if (content === undefined) return failure(404, 'NOT_FOUND');
+      if (content.status === 'in_production' || content.status === 'cancelled') return failure(409, 'CONTENT_NOT_OPEN');
+    }
+    return conversationFor(clientId).handle(url, method, body) ?? failure(404, 'NOT_FOUND');
+  };
+
   const impl: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     const method = init?.method ?? 'GET';
@@ -222,6 +256,8 @@ export const makeFetch = (scenario: Scenario = {}) => {
       const row = ROSTER.find((candidate) => candidate.id === one[1]);
       return row === undefined ? failure(404, 'NOT_FOUND') : json(clientDetail(row));
     }
+    const conversationRoute = /\/agencies\/[^/]+\/clients\/([^/]+)\/threads(?:\/[^/]+\/(?:comments|resolve))?$/.exec(url.pathname);
+    if (conversationRoute !== null) return answerConversation(url, method, body, conversationRoute[1]!);
     const media = /\/agencies\/[^/]+\/media\/([^/]+)\/download-url$/.exec(url.pathname);
     if (media !== null) {
       if (!permissions.includes(VISUALIZE)) return failure(403, 'FORBIDDEN');
@@ -363,7 +399,7 @@ export const makeFetch = (scenario: Scenario = {}) => {
     }
     throw new Error(`unexpected ${method} ${url}`);
   };
-  return { impl, calls, contents, folders };
+  return { impl, calls, contents, folders, conversation };
 };
 
 function Harness({ store }: { store: AuthSessionStore }) {

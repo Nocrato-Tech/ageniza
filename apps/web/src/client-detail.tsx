@@ -107,9 +107,11 @@ export function ClientDetailPage() {
   const { agenciaId = '', clienteId = '' } = useParams();
   const [editOpen, setEditOpen] = useState(false);
   const canSeeAccess = useCan('cliente.convidar_usuario');
+  const canSeeContents = useCan('conteudo.visualizar');
   // A tab someone cannot see is not a screen: the whole address is the ordinary not-found, and
   // the header never reveals the client behind a hidden tab (specs/clientes.md §7).
   const accessTab = useMatch('/agencia/:agenciaId/clientes/:clienteId/acessos');
+  const contentsTab = useMatch('/agencia/:agenciaId/clientes/:clienteId/conteudos/*');
   const normalizedId = clienteId.toLowerCase();
   const validId = ClientSchema.shape.id.safeParse(normalizedId).success;
   const detail = useQuery({
@@ -127,7 +129,7 @@ export function ClientDetailPage() {
   const client = !notFound && detail.data?.id.toLowerCase() === normalizedId ? detail.data : undefined;
   useDocumentTitle(client === undefined ? 'Cliente — Ageniza' : `${client.name} — Ageniza`);
 
-  if (notFound || (accessTab !== null && !canSeeAccess)) return <NotFoundPage as="section" />;
+  if (notFound || (accessTab !== null && !canSeeAccess) || (contentsTab !== null && !canSeeContents)) return <NotFoundPage as="section" />;
 
   // The roster passes its own address (filters and page included) when it opens the detail
   // (review of #379, specs/clientes.md §7 "volta à carteira preservando busca, filtro e página").
@@ -166,7 +168,9 @@ export function ClientDetailPage() {
     </section>;
   }
 
-  const tabs = canSeeAccess ? [...CLIENT_TABS, ACCESS_TAB] : CLIENT_TABS;
+  // Vendas and Financeiro do not see Conteúdo, nor what Clientes shows of it (specs/conteudo.md section 2).
+  const visible = canSeeContents ? CLIENT_TABS : CLIENT_TABS.filter((tab) => tab.slug !== 'conteudos');
+  const tabs = canSeeAccess ? [...visible, ACCESS_TAB] : visible;
   return <section className="client-detail" aria-labelledby="client-detail-title">
     {back}
     {client.status === 'archived' && (
