@@ -95,7 +95,7 @@ for a role that only holds `conteudo.visualizar` is the next section.
 `conteudo.visualizar`, and the other family's media is the same 404 as an absent one (a role with `midia.enviar` alone
 never signs a client's media; Gestor and Produção never sign the agency's own). The lookup refuses a removed media
 (`removed_at`), a pending or rejected one and one of another agency, all as 404, and writes `media.download_url_issued`
-only when it signs. `variant=thumbnail` of an **image** is its original (no thumbnail is generated for it); of a **video**
+only when it signs the **original** (the thumbnail and the preview are not audited, and the route has no rate limit of its own). `variant=thumbnail` of an **image** is its original (no thumbnail is generated for it); of a **video**
 it is the generated thumbnail, and `409 VARIANT_NOT_READY` (or `VARIANT_PROCESSING_FAILED`) until then, the code the screen
 answers with a placeholder. The portal does not use this route (decision of 2026-10-11).
 

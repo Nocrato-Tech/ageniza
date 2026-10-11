@@ -17,7 +17,7 @@ export const MEDIA_READ_PERMISSIONS = ['midia.enviar', 'conteudo.visualizar'] as
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1_000;
 
 export const MEDIA_RATE_LIMITS = {
-  // Applies to every route that emits a signed URL: create-upload, request-parts, download-url.
+  // Applies to every route that emits a signed URL: create-upload and request-parts (download-url has none of its own; decision of 2026-10-11).
   signedUrlIssuance: { max: 60, windowMs: FIFTEEN_MINUTES_MS }
 } as const satisfies Readonly<Record<string, MediaRateLimitWindow>>;
 
