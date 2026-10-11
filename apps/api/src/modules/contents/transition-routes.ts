@@ -17,6 +17,7 @@ import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.j
 import { routeBody, routeResponse } from '../../plugins/infra/zod.js';
 import { clientArchived, clientNotFound, contentNotFound, forbidden, unauthenticated } from './errors.js';
 import { CONTENT_READ_PERMISSION } from './policy.js';
+import { idFromRoute } from './route-support.js';
 import type { ContentModuleDependencies } from './routes.js';
 import { loadClientStatus, loadContent, loadContentDetail, type ContentTransaction } from './service.js';
 import { mediaNotComplete, mediaNotConfirmed, translateTransitionError, type TransitionAction } from './transition-errors.js';
@@ -33,15 +34,6 @@ import {
 
 type Scope = { readonly agencyId: string; readonly clientId: string };
 type TransitionDocs = DocumentedRouteConfig & { permission: string };
-
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-/** A malformed id is the same 404 as an absent one, never a 400 that confirms the route. */
-const idFromRoute = (request: FastifyRequest, name: 'clientId' | 'contentId', notFound: () => HttpError): string => {
-  const value = (request.params as Record<string, unknown>)[name];
-  if (typeof value !== 'string' || !uuidPattern.test(value)) throw notFound();
-  return value;
-};
 
 /** A body that was not sent is an empty one; one that was sent is validated by the schema the route declares. */
 const bodyOrEmpty = <TSchema extends ZodTypeAny>(docs: { readonly schemas: { readonly body: TSchema } }, request: FastifyRequest): z.output<TSchema> => {

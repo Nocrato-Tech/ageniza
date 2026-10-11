@@ -1860,7 +1860,7 @@ Lê o estudo de marca, no portal.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
-### contents — Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar.
+### contents — Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; e as subtarefas: criar, editar, entregar, aprovar e devolver.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
@@ -1874,6 +1874,11 @@ Lê o estudo de marca, no portal.
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/unpublish` | Sessão + vínculo com a agência | `conteudo.publicar` | Desfaz a publicação no mesmo dia |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/cancel` | Sessão + vínculo com a agência | `conteudo.cancelar` | Cancela o conteúdo (ele fica guardado) |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/reschedule` | Sessão + vínculo com a agência | `conteudo.operar` | Reagenda um conteúdo cancelado |
+| `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/tasks` | Sessão + vínculo com a agência | `conteudo.operar` | Cria uma subtarefa do conteúdo |
+| `PATCH` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId` | Sessão + vínculo com a agência | `conteudo.operar` | Edita uma subtarefa do conteúdo |
+| `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/deliver` | Sessão + vínculo com a agência | `conteudo.visualizar` | Entrega uma subtarefa |
+| `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/approve` | Sessão + vínculo com a agência | `conteudo.visualizar` | Aprova uma subtarefa entregue |
+| `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/return` | Sessão + vínculo com a agência | `conteudo.visualizar` | Devolve uma subtarefa entregue, com comentário |
 
 #### `GET /agencies/:agencyId/clients/:clientId/contents`
 
@@ -2567,6 +2572,177 @@ Reagenda um conteúdo cancelado.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/tasks`
+
+Cria uma subtarefa do conteúdo.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "title": "Gravar o vídeo",
+  "description": null,
+  "assigneeMembershipId": "22222222-2222-4222-8222-222222222222",
+  "dueOn": "2026-10-15"
+}
+```
+
+**Resposta `201`** — Subtarefa criada, pendente.
+
+```json
+{
+  "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+  "title": "Gravar o vídeo",
+  "description": null,
+  "assignee": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
+  "dueOn": "2026-10-15",
+  "status": "pending",
+  "returnComment": null,
+  "approvedBy": null,
+  "approvedAt": null
+}
+```
+
+**Erros:** `400 CONTENT_TASK_ASSIGNEE_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_TASK_LIMIT` · `409 CONTENT_TASK_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `PATCH /agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId`
+
+Edita uma subtarefa do conteúdo.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "dueOn": "2026-10-16",
+  "assigneeMembershipId": "22222222-2222-4222-8222-222222222222"
+}
+```
+
+**Resposta `200`** — Subtarefa atualizada.
+
+```json
+{
+  "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+  "title": "Gravar o vídeo",
+  "description": null,
+  "assignee": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
+  "dueOn": "2026-10-16",
+  "status": "pending",
+  "returnComment": null,
+  "approvedBy": null,
+  "approvedAt": null
+}
+```
+
+**Erros:** `400 CONTENT_TASK_ASSIGNEE_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_TASK_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/deliver`
+
+Entrega uma subtarefa.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Resposta `200`** — Subtarefa entregue.
+
+```json
+{
+  "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+  "title": "Gravar o vídeo",
+  "description": null,
+  "assignee": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
+  "dueOn": "2026-10-15",
+  "status": "delivered",
+  "returnComment": null,
+  "approvedBy": null,
+  "approvedAt": null
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_TASK_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/approve`
+
+Aprova uma subtarefa entregue.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Resposta `200`** — Subtarefa aprovada.
+
+```json
+{
+  "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+  "title": "Gravar o vídeo",
+  "description": null,
+  "assignee": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
+  "dueOn": "2026-10-15",
+  "status": "approved",
+  "returnComment": null,
+  "approvedBy": {
+    "name": "Ana Souza",
+    "side": "agency"
+  },
+  "approvedAt": "2026-10-11T12:30:00.000Z"
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_TASK_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/return`
+
+Devolve uma subtarefa entregue, com comentário.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "comment": "Falta a legenda em português no vídeo."
+}
+```
+
+**Resposta `200`** — Subtarefa pendente de novo, com o comentário.
+
+```json
+{
+  "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+  "title": "Gravar o vídeo",
+  "description": null,
+  "assignee": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
+  "dueOn": "2026-10-15",
+  "status": "pending",
+  "returnComment": "Falta a legenda em português no vídeo.",
+  "approvedBy": null,
+  "approvedAt": null
+}
+```
+
+**Erros:** `400 CONTENT_TASK_COMMENT_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_TASK_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 ### collaborators — A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.
 
