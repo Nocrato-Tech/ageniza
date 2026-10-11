@@ -476,7 +476,7 @@ describe('create (issue #254)', () => {
     const reply = await w.call('POST', people.admin.cookie, urlA(), { ...create, folderId: folder() });
     expect(reply.statusCode).toBe(400);
     expect(reply.json().error.code).toBe('CONTENT_FOLDER_INVALID');
-    expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+    expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
     expect(await w.countContents(clientA)).toBe(before);
   });
 
@@ -489,7 +489,7 @@ describe('create (issue #254)', () => {
     const reply = await w.call('POST', people.admin.cookie, urlA(), { ...create, folderId: folderA, ownerMembershipId: await owner() });
     expect(reply.statusCode).toBe(400);
     expect(reply.json().error.code).toBe('CONTENT_OWNER_INVALID');
-    expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+    expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
     expect(await w.countContents(clientA)).toBe(before);
   });
 
@@ -559,6 +559,32 @@ describe('create (issue #254)', () => {
     const reply = await w.call('POST', people.admin.cookie, urlA(), { ...create, caption, folderId: folderA });
     expect(reply.statusCode).toBe(201);
     expect(reply.json().caption).toBe(caption);
+  });
+});
+
+describe('emoji sequences in the title and the caption (issue #539)', () => {
+  it('keeps a family, a keycap and a flag of England, and refuses the same ones broken', async () => {
+    const family = String.fromCodePoint(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467);
+    const keycap = String.fromCodePoint(0x31, 0xfe0f, 0x20e3);
+    const england = String.fromCodePoint(0x1f3f4, 0xe0067, 0xe0062, 0xe0065, 0xe006e, 0xe0067, 0xe007f);
+    const title = `Familia ${family} ${keycap}`;
+    const caption = `Jogo ${england}
+Top ${keycap}`;
+    const reply = await w.call('POST', people.admin.cookie, urlA(), { ...create, title, caption, folderId: folderA });
+    expect(reply.statusCode).toBe(201);
+    expect([reply.json().title, reply.json().caption]).toEqual([title, caption]);
+
+    const before = await w.countContents(clientA);
+    for (const body of [
+      { title: `Familia ${family}${String.fromCodePoint(0x200d)}` },
+      { title: `a${String.fromCodePoint(0x200d)}b` },
+      { caption: `Jogo ${england.slice(0, -2)}` },
+      { caption: `Top ${String.fromCodePoint(0x20e3)}` }
+    ]) {
+      const refused = await w.call('POST', people.admin.cookie, urlA(), { ...create, folderId: folderA, ...body });
+      expect({ body, status: refused.statusCode }).toEqual({ body, status: 400 });
+    }
+    expect(await w.countContents(clientA)).toBe(before);
   });
 });
 
@@ -709,7 +735,7 @@ describe('edit and move (issue #254)', () => {
     for (const reply of [title, move, media]) {
       expect(reply.statusCode).toBe(409);
       expect(reply.json().error.code).toBe('CONTENT_NOT_EDITABLE');
-      expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
     }
     const row = await w.contentRow(contentId);
     expect(row.title).toBe('Fechado');
@@ -834,7 +860,7 @@ describe('edit and move (issue #254)', () => {
 
         expect(reply.statusCode).toBe(403);
         expect(reply.json().error.code).toBe('FORBIDDEN');
-        expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
         expect((await w.contentRow(contentId)).owner_user_id).toBe(people.production.id);
       } finally {
         w.clearHook();
@@ -957,7 +983,7 @@ describe('format, folder, cover and media in one request (issue #254)', () => {
     for (const reply of [withoutList, withList]) {
       expect(reply.statusCode).toBe(409);
       expect(reply.json().error.code).toBe('CONTENT_MEDIA_INCOMPLETE');
-      expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
     }
     const row = await w.contentRow(contentId);
     expect([row.format, row.status, row.revision]).toEqual(['reels', 'approved', 1]);

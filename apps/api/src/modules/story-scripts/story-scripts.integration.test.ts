@@ -163,7 +163,7 @@ const duringArchiveOfAFreshClient = async <TPrepared>(
 const expectClientArchived = (reply: Reply): void => {
   expect(reply.statusCode).toBe(409);
   expect(reply.json().error).toEqual({ code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode ser editado.' });
-  expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+  expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
 };
 
 const expectNotFound = (reply: Reply, message: string): void => {
@@ -361,6 +361,22 @@ describe('creating a story script (issue #258)', () => {
     expect([await scriptCount(cMain), await sceneCount(cMain)]).toEqual(before);
   });
 
+  it('keeps a complete emoji sequence in a scene and refuses the same one broken (issue #539)', async () => {
+    const family = text(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467);
+    const keycap = text(0x31, 0xfe0f, 0x20e3);
+    const created = await call('POST', agencyScripts(agencyA, cMain), 'opVis', { scriptOn: '2026-10-21', scenes: [{ text: `Familia ${family}`, guidance: `Passo ${keycap}` }] });
+
+    expect(created.statusCode).toBe(201);
+    expect(created.json().scenes.map((scene: { text: string; guidance: string }) => [scene.text, scene.guidance])).toEqual([[`Familia ${family}`, `Passo ${keycap}`]]);
+
+    const before = [await scriptCount(cMain), await sceneCount(cMain)];
+    for (const broken of [`Familia ${family}${text(0x200d)}`, `Familia ${text(0x61, 0x200d, 0x62)}`, `Passo ${text(0x20e3)}`]) {
+      const reply = await call('POST', agencyScripts(agencyA, cMain), 'opVis', { scriptOn: '2026-10-22', scenes: [{ text: 'Abrir', guidance: broken }] });
+      expect({ broken, status: reply.statusCode }).toEqual({ broken, status: 400 });
+    }
+    expect([await scriptCount(cMain), await sceneCount(cMain)]).toEqual(before);
+  });
+
   it('answers the same 404 for a client of another agency, an absent one and a malformed id', async () => {
     const before = await scriptCount(cB);
 
@@ -396,7 +412,7 @@ describe('creating a story script (issue #258)', () => {
       await withFailing('insert', `new.client_id = '${cMain}'::uuid and new.script_on = '2026-11-02'`, errcode, async () => {
         const failed = await call('POST', agencyScripts(agencyA, cMain), 'opVis', { scriptOn: '2026-11-02', scenes: [{ text: 'Falha injetada' }] });
         expect({ status: failed.statusCode, code: failed.json().error.code }).toEqual({ status, code });
-        expect(JSON.stringify(failed.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify({ ...failed.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
       });
 
       expect([await scriptCount(cMain), await sceneCount(cMain)]).toEqual(before);
@@ -606,7 +622,7 @@ describe('editing a story script (issue #258)', () => {
       await withFailing('update', `new.id = '${script.id}'::uuid`, errcode, async () => {
         const failed = await call('PATCH', agencyScript(agencyA, cMain, script.id), 'opVis', { scriptOn: '2026-11-21' });
         expect({ status: failed.statusCode, code: failed.json().error.code }).toEqual({ status, code });
-        expect(JSON.stringify(failed.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify({ ...failed.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
       });
 
       expect(await stateOf(script.id)).toEqual(before);
@@ -702,7 +718,7 @@ describe('sending a story script (issue #258)', () => {
       await withFailing('update', `new.id = '${script.id}'::uuid`, errcode, async () => {
         const failed = await call('POST', `${agencyScript(agencyA, cMain, script.id)}/send`, 'opVis');
         expect({ status: failed.statusCode, code: failed.json().error.code }).toEqual({ status, code });
-        expect(JSON.stringify(failed.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify({ ...failed.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
       });
 
       expect((await stateOf(script.id)).status).toBe('draft');
@@ -929,7 +945,7 @@ describe('the portal marks a script as recorded (issue #258)', () => {
     }, (clientId, script) => call('POST', recordedUrl(clientId, script.id), 'portalOne'));
 
     expect(reply.statusCode).toBe(404);
-    expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+    expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
     expect(await stateOf(prepared.id)).toMatchObject({ status: 'sent', recordedBy: null });
   });
 
@@ -975,7 +991,7 @@ describe('the portal marks a script as recorded (issue #258)', () => {
     await withFailing('update', `new.id = '${script.id}'::uuid`, errcode, async () => {
       const failed = await call('POST', recordedUrl(cMain, script.id), 'portalOne');
       expect({ status: failed.statusCode, code: failed.json().error.code }).toEqual({ status, code });
-      expect(JSON.stringify(failed.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify({ ...failed.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
     });
 
     expect(await stateOf(script.id)).toMatchObject({ status: 'sent', recordedBy: null });
@@ -1055,7 +1071,7 @@ describe('reading a story script (issue #268)', () => {
     ]) {
       const reply = await call('GET', url, 'opVis');
       expect({ url, status: reply.statusCode }).toEqual({ url, status: 404 });
-      expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
     }
     expectNotFound(await call('GET', agencyScript(agencyA, cMain, ofOther.id), 'opVis'), 'Story script not found.');
     expectNotFound(await call('GET', agencyScript(agencyA, cMain, ofB.id), 'opVis'), 'Story script not found.');
