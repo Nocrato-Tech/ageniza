@@ -63,6 +63,13 @@ const sortContexts = (contexts: readonly Context[], lastUsedKey: string | undefi
     return aId.localeCompare(bId);
   });
 
+/**
+ * The agency contexts of the person, with only the role's label (`role_key`, `role_name`). Permission is not decided here:
+ * the keys are `app_private.agency_permission_keys`, and the access condition and the role scope below are the same
+ * ones, written out because this lists every agency at once. A change to which role counts for a membership has to be
+ * mirrored in this query by hand (decision `2026-10-10-a-api-le-a-autorizacao-de-agencia-de-uma-funcao-e-a-rls-nao.md`,
+ * item 7); the `#18` test of `contexts.integration.test.ts` fails if the scope clause is dropped.
+ */
 const fetchAgencyContexts = async (transaction: ContextTransaction): Promise<Context[]> => {
   const result = await raw<RawRows<AgencyContextRow>>(transaction, `
     select

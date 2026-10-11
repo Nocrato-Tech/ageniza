@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -129,7 +129,7 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     expect(within(nav).getByRole('link', { name: 'Clientes' })).toBeTruthy();
 
     await navigate(probe, `/agencia/${AGENCY_A}/colaboradores`);
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     // "Sem permissão" is not a screen of its own (specs/autorizacao.md section 7).
     expect(screen.queryByText(/sem permiss/i)).toBeNull();
   });
@@ -138,9 +138,9 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     const { impl, calls } = makeFetch();
     renderAgency(impl, `/agencia/${AGENCY_B}`);
 
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(calls).toContain(`me:${AGENCY_B}`);
-    expect(screen.queryByRole('heading', { name: 'Workspace unavailable' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Área indisponível' })).toBeNull();
     // The shell keeps the account menu: this is an authenticated screen with no other way out.
     expect(await screen.findByRole('button', { name: /Pessoa/ })).toBeTruthy();
   });
@@ -164,7 +164,7 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     responses[AGENCY_A] = agencyNotFound;
     await navigate(probe, `/agencia/${AGENCY_A}/clientes`);
 
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Agência Um' })).toBeNull();
   });
 
@@ -173,8 +173,8 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     // `GET /me/contexts/resolve` with the victim's session.
     const traversal = makeFetch();
     renderAgency(traversal.impl, '/agencia/..%2Fme%2Fcontexts%2Fresolve%23');
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
-    expect(document.title).toBe('Page not found — Ageniza');
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
+    expect(document.title).toBe('Página não encontrada — Ageniza');
     expect(traversal.calls).toEqual([]);
     // A bad address still shows the authenticated shell, so the person can leave.
     expect(await screen.findByRole('button', { name: /Pessoa/ })).toBeTruthy();
@@ -182,7 +182,7 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     cleanup();
     const malformed = makeFetch();
     renderAgency(malformed.impl, '/agencia/nao-e-uuid');
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(await screen.findByRole('button', { name: /Pessoa/ })).toBeTruthy();
     // The fake would answer 400, like the API; no call proves the shell never asks.
     expect(malformed.calls).toEqual([]);
@@ -215,7 +215,7 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     expect(within(container).queryByRole('link', { name: 'Agência Um' })).toBeNull();
     expect(within(container).queryByRole('link', { name: 'Colaboradores' })).toBeNull();
     expect(within(container).queryByRole('heading', { name: 'Colaboradores' })).toBeNull();
-    expect(within(container).queryByRole('heading', { name: 'Page not found' })).toBeNull();
+    expect(within(container).queryByRole('heading', { name: 'Página não encontrada' })).toBeNull();
     expect(within(container).queryByRole('link', { name: 'Agência Dois' })).toBeNull();
 
     releaseAgencyB?.();
@@ -228,7 +228,7 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     const { impl } = makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_B, 'Agência Dois', ['cliente.visualizar'])) } });
     renderAgency(impl, `/agencia/${AGENCY_A}`);
 
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Agência Dois' })).toBeNull();
   });
 
@@ -236,7 +236,7 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     const { impl, calls } = makeFetch({ authenticated: false });
     renderAgency(impl, `/agencia/${AGENCY_A}`);
 
-    expect(await screen.findByRole('heading', { name: 'Workspace unavailable' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Área indisponível' })).toBeTruthy();
     expect(calls.filter((call) => call.startsWith('me:'))).toEqual([]);
   });
 
@@ -300,8 +300,32 @@ describe('agency shell landmarks (#193)', () => {
     await screen.findByRole('link', { name: 'Agência Um' });
 
     await navigate(probe, `/agencia/${AGENCY_A}/colaboradores`);
-    await screen.findByRole('heading', { name: 'Page not found' });
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
     expectSingleMain(container);
+  });
+
+  it('brings the person back to the start of the same agency from the not-found', async () => {
+    const { impl } = makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_A, 'Agência Um', ['colaborador.visualizar'])) } });
+    const { probe } = renderAgency(impl, `/agencia/${AGENCY_A}/caminho-inexistente`);
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
+    expect(screen.getByText('Este endereço não corresponde a uma página do Ageniza.')).toBeTruthy();
+    expect(document.title).toBe('Página não encontrada — Ageniza');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Voltar ao início' }));
+
+    expect(await screen.findByRole('heading', { name: 'Agência Um' })).toBeTruthy();
+    expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`);
+  });
+
+  it.each([
+    ['the agency is out of reach', () => makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_A, 'Agência Um', ['cliente.visualizar'])) } }).impl, `/agencia/${AGENCY_B}/clientes`],
+    ['the id is malformed', () => makeFetch().impl, '/agencia/nao-e-uuid'],
+    ['the answer belongs to another agency', () => makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_B, 'Agência Dois', ['cliente.visualizar'])) } }).impl, `/agencia/${AGENCY_A}`]
+  ] as const)('points the not-found at the context chooser, not at that agency, when %s', async (_name, impl, entry) => {
+    renderAgency(impl(), entry);
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
+
+    expect(screen.getByRole('link', { name: 'Voltar ao início' }).getAttribute('href')).toBe('/contextos');
   });
 
   it('keeps one main for an unknown path inside the area (route `*`)', async () => {
@@ -310,7 +334,7 @@ describe('agency shell landmarks (#193)', () => {
     await screen.findByRole('link', { name: 'Agência Um' });
 
     await navigate(probe, `/agencia/${AGENCY_A}/caminho-inexistente`);
-    await screen.findByRole('heading', { name: 'Page not found' });
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
     expectSingleMain(container);
   });
 
@@ -318,7 +342,7 @@ describe('agency shell landmarks (#193)', () => {
     const { impl } = makeFetch();
     const { container } = renderAgency(impl, `/agencia/${AGENCY_B}`);
 
-    await screen.findByRole('heading', { name: 'Page not found' });
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
     expectSingleMain(container);
   });
 
@@ -326,7 +350,7 @@ describe('agency shell landmarks (#193)', () => {
     const { impl, calls } = makeFetch();
     const { container } = renderAgency(impl, '/agencia/nao-e-uuid');
 
-    await screen.findByRole('heading', { name: 'Page not found' });
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
     expectSingleMain(container);
     expect(calls).toEqual([]);
   });
@@ -335,7 +359,7 @@ describe('agency shell landmarks (#193)', () => {
     const { impl } = makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_B, 'Agência Dois', ['cliente.visualizar'])) } });
     const { container } = renderAgency(impl, `/agencia/${AGENCY_A}`);
 
-    await screen.findByRole('heading', { name: 'Page not found' });
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
     expectSingleMain(container);
   });
 
@@ -354,7 +378,7 @@ describe('agency shell landmarks (#193)', () => {
     const { impl } = makeFetch();
     const { container } = renderAgency(impl, '/rota-inexistente');
 
-    await screen.findByRole('heading', { name: 'Page not found' });
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
     await waitFor(() => expect(container.querySelectorAll('main')).toHaveLength(1));
     expectSingleMain(container);
   });

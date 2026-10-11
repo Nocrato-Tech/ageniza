@@ -296,7 +296,7 @@ Duas migrations, porque são duas estruturais diferentes e a segunda depende da 
 | função | quem chama | faz |
 |---|---|---|
 | `app_private.archive_client(client_id)` | a rota de arquivar | confere `cliente.arquivar` do usuário corrente; arquiva, revoga convites pendentes, audita |
-| `app_private.archive_due_clients()` | o job | arquiva todo cliente com `closing_date < hoje`, com os mesmos efeitos; audita com o job como origem |
+| `app_private.due_client_ids()` e `app_private.archive_due_client(client_id)` | o job, cliente a cliente | a primeira lista os clientes com `closing_date < hoje`; a segunda arquiva um deles, com os mesmos efeitos de `archive_client`, e devolve se arquivou (falso se ele deixou de estar vencido); audita com o job como origem. `app_private.archive_due_clients()` junta as duas e devolve a quantidade |
 | `app_private.set_client_closing_date(client_id, date)` | as rotas de agendar e desmarcar encerramento | confere `cliente.arquivar`; data hoje ou depois, ou nula para desmarcar; audita |
 | `app_private.reactivate_client(client_id)` | a rota de reativar | confere `cliente.arquivar`; recusa nome em uso; reativa, audita |
 | `app_private.set_client_membership_status(membership_id, status)` | as rotas de remover e reativar pessoa | confere `cliente.remover_usuario`; o vínculo precisa ser de cliente da agência corrente |
@@ -552,7 +552,7 @@ Na primeira entrada daquela pessoa naquele cliente, um tour guiado aponta os ite
 
 ## 8. Infraestrutura
 
-- **Job agendado `clients.archive-due`**, no worker existente (pg-boss). Roda aos 10 minutos de cada hora em `America/Sao_Paulo` (a das 00:10 é a que vira o dia) e uma vez cada vez que o worker sobe, e chama `app_private.archive_due_clients()`, que é idempotente: uma virada perdida não deixa o portal aberto por um dia. É o **primeiro job agendado de negócio** do sistema.
+- **Job agendado `clients.archive-due`**, no worker existente (pg-boss). Roda aos 10 minutos de cada hora em `America/Sao_Paulo` (a das 00:10 é a que vira o dia) e uma vez cada vez que o worker sobe, e arquiva **um cliente por chamada**, cada uma uma transação curta (`app_private.due_client_ids()` e `app_private.archive_due_client(cliente)`): o deadlock de um cliente não derruba o lote, ele fica para a hora seguinte e vai para o log pelo id. A operação é idempotente: uma virada perdida não deixa o portal aberto por um dia. É o **primeiro job agendado de negócio** do sistema.
 - **Armazenamento de identidade** para a foto do cliente — criado por **#100**, de Colaboradores. Nenhum bucket novo.
 - **Nenhum e-mail novo.** O convite de portal já tem o seu; notificação está fora (seção 10).
 

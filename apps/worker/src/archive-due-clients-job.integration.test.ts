@@ -234,9 +234,11 @@ describe('clients.archive-due on the durable queue', { timeout: 60_000 }, () => 
     for (const secret of [named, 'Sigilo', 'Padaria', invitationId, '@job.test', agencyId]) expect(captured.text(), secret).not.toContain(secret);
   });
 
-  it('retries a run that loses a deadlock with a concurrent change of the client\'s invitation, and then archives', async () => {
-    const racing = await insertClient('Disputa', { closing_date: await brasiliaDay(-1) });
+  it('leaves the client that loses a deadlock for the next run, archives the others in the same run, and archives it on the next one', async () => {
+    const racing = await insertClient('Disputa', { closing_date: await brasiliaDay(-5) });
     const invitationId = await insertInvitation(racing);
+    // Due later than the racing one, so it is processed after the deadlock: the run goes on.
+    const after = await insertClient('Depois da disputa', { closing_date: await brasiliaDay(-1) });
     const captured = captureLogs();
     const queue = await openQueue([definition()], captured);
 
@@ -249,7 +251,7 @@ describe('clients.archive-due on the durable queue', { timeout: 60_000 }, () => 
       if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one invitation.');
       const holderPid = Number((await raw<{ rows: Array<{ pid: number }> }>(holder, 'select pg_catalog.pg_backend_pid() as pid', [])).rows[0]!.pid);
 
-      const id = await queue.send(jobName, {});
+      const first = await queue.send(jobName, {});
       await vi.waitFor(async () => {
         const blocked = await raw<{ rows: Array<{ pid: number }> }>(getOwner().knex, `
           select activity.pid from pg_catalog.pg_stat_activity activity
@@ -261,12 +263,19 @@ describe('clients.archive-due on the durable queue', { timeout: 60_000 }, () => 
       await holder.rollback();
       released = true;
 
-      await waitForState(id, 'completed');
+      await waitForState(first, 'completed');
       const records = captured.records();
       expect(records).toEqual(expect.arrayContaining([
-        expect.objectContaining({ msg: 'Durable job failed and will be retried', status: 'retrying', attempt: 1, queue: jobName })
+        expect.objectContaining({ msg: 'Clients left for the next run after losing a race', leftForNextRun: 1, clientIds: [racing], queue: jobName })
       ]));
+      expect(records.some((record) => record.msg === 'Durable job failed and will be retried')).toBe(false);
       expect(JSON.stringify(records)).not.toMatch(/deadlock|40P01/i);
+      expect((await statusOf(after)).status).toBe('archived');
+      expect(await statusOf(racing)).toMatchObject({ status: 'active', archived_at: null, closing_date: await brasiliaDay(-5) });
+      expect((await getOwner().knex('invitations').where({ id: invitationId }).first('revoked_at')).revoked_at).toBeNull();
+
+      const second = await queue.send(jobName, {});
+      await waitForState(second, 'completed');
       expect((await statusOf(racing)).status).toBe('archived');
       expect((await getOwner().knex('invitations').where({ id: invitationId }).first('revoked_at')).revoked_at).toBeInstanceOf(Date);
     } finally {

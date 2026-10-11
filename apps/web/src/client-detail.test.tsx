@@ -504,7 +504,7 @@ describe('client detail (#136)', () => {
 
     const manager = makeFetch({ permissions: MANAGER_PERMISSIONS });
     const managerRender = renderClientDetail(manager.impl, clientUrl(CLIENT_ID, 'acessos'));
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Acessos' })).toBeNull();
     expect(managerRender.container.textContent).not.toContain('Padaria Central');
     cleanup();
@@ -619,7 +619,7 @@ describe('client detail (#136)', () => {
     });
     renderClientDetail(impl);
 
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(screen.queryByText('Padaria Central')).toBeNull();
     expect(screen.queryByText('sensitive detail')).toBeNull();
     expect(calls.filter((call) => call.includes('/clients/'))).toHaveLength(1);
@@ -629,7 +629,7 @@ describe('client detail (#136)', () => {
     const { impl, calls } = makeFetch();
     renderClientDetail(impl, `/agencia/${AGENCY_A}/clientes/${encodeURIComponent(id)}/geral`);
 
-    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(calls.some((call) => call.includes('/clients/'))).toBe(false);
   });
 
@@ -663,7 +663,7 @@ describe('client detail (#136)', () => {
     await screen.findByRole('heading', { name: 'Padaria Central' });
     await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/clientes/${CLIENT_ID}/geral`); });
 
-    await screen.findByRole('heading', { name: 'Page not found' });
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
     expect(screen.queryByText('Padaria Central')).toBeNull();
   });
 });
