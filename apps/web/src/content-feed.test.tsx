@@ -465,13 +465,13 @@ describe('the Feed tab', () => {
     expect(document.querySelector('.content-calendar')).toBeNull();
     first.unmount();
 
-    renderScreen(makeFetch({ contents: { [padaria.id]: rows() } }).impl, url(padaria.id, '?vista=pastas'));
+    renderScreen(makeFetch({ contents: { [padaria.id]: rows() } }).impl, url(padaria.id, '?vista=inexistente'));
     await ready();
     expect(screen.getByRole('tab', { name: 'Calendário' }).getAttribute('aria-selected')).toBe('true');
     expect(document.querySelector('.content-calendar')).not.toBeNull();
   });
 
-  it('shows the empty grid and the skeleton in the feed view too, and still closes Pastas', async () => {
+  it('shows the empty grid and the skeleton in the feed view too, with Pastas open beside it', async () => {
     const held = deferred<Response>();
     const loading = renderScreen(makeFetch({ period: () => held.promise }).impl, url(padaria.id, '?vista=feed'));
     await waitFor(() => expect(document.querySelectorAll('.content-feed__skeleton')).toHaveLength(9));
@@ -479,6 +479,8 @@ describe('the Feed tab', () => {
 
     renderScreen(makeFetch().impl, url(padaria.id, '?vista=feed'));
     expect(await screen.findByText('Planeje o primeiro post')).toBeTruthy();
-    expect((screen.getByRole('tab', { name: 'Pastas' }) as HTMLButtonElement).disabled).toBe(true);
+    const pastas = screen.getByRole('tab', { name: 'Pastas' }) as HTMLButtonElement;
+    expect(pastas.disabled).toBe(false);
+    expect(pastas.getAttribute('aria-selected')).toBe('false');
   });
 });

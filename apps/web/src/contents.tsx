@@ -19,6 +19,7 @@ import { apiPath } from './api-path.js';
 import { clientDetailQueryKey } from './client-detail.js';
 import { ContentCalendar } from './content-calendar.js';
 import { ContentFeed, ContentFeedSkeleton } from './content-feed.js';
+import { ContentFolders } from './content-folders.js';
 import { daysOf, parseAnchor, periodOf, periodTitle, shiftAnchor, todayInSaoPaulo, type CalendarView } from './content-dates.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -138,14 +139,16 @@ const moveErrorMessage = (error: unknown): string => {
 
 const parseView = (raw: string | null): CalendarView => (raw === 'semana' ? 'week' : 'month');
 
-/** The client's two views of the same period: the calendar (the default, so absent from the URL) or the grid of the feed. */
-const parseVista = (raw: string | null): 'calendar' | 'feed' => (raw === 'feed' ? 'feed' : 'calendar');
+type Vista = 'calendar' | 'feed' | 'folders';
+
+/** The client's views: the calendar (the default, so absent from the URL), the grid of the feed or the folders. */
+const parseVista = (raw: string | null): Vista => (raw === 'feed' ? 'feed' : raw === 'pastas' ? 'folders' : 'calendar');
 
 /**
  * `/agencia/:agenciaId/conteudos/:clienteId`: the calendar of one client. The client is in the
  * path; the view (`visao`) and the day the period is built around (`data`) are in the query, so a
- * reload lands on the same period. The Feed and Pastas views and the right-hand feed belong to
- * #263 and #267 and have their place here, closed.
+ * reload lands on the same period. The Feed and Pastas views are chosen by `vista`, and the folder open in the
+ * Pastas view is in the query too (`content-folders.tsx`).
  */
 export function ContentsClientPage() {
   const httpClient = useApiClient();
@@ -179,7 +182,7 @@ export function ContentsClientPage() {
       response: ContentPeriodResponseSchema,
       signal
     }),
-    enabled: validId,
+    enabled: validId && vista !== 'folders',
     // The previous period stays while the next loads, but never another client's or agency's.
     placeholderData: (previous, previousQuery) =>
       previousQuery?.queryKey[1] === agency.agencyId && previousQuery.queryKey[3] === normalizedId ? previous : undefined
@@ -214,18 +217,19 @@ export function ContentsClientPage() {
     setSearchParams(next, { replace: true });
   };
 
-  const setVista = (next: 'calendar' | 'feed'): void => {
+  const setVista = (next: Vista): void => {
     const params = new URLSearchParams(searchParams);
-    if (next === 'feed') params.set('vista', 'feed'); else params.delete('vista');
+    if (next === 'feed') params.set('vista', 'feed'); else if (next === 'folders') params.set('vista', 'pastas'); else params.delete('vista');
+    for (const name of ['pasta', 'subpasta', 'pagina']) params.delete(name);
     setSearchParams(params, { replace: true });
   };
 
-  if (!validId || (client.isError && isNotVisible(client.error)) || (contents.isError && isNotVisible(contents.error))) {
+  if (!validId || (client.isError && isNotVisible(client.error)) || (vista !== 'folders' && contents.isError && isNotVisible(contents.error))) {
     return <NotFoundPage as="section" />;
   }
   // The answer must be about the client in the address, or it is not shown at all.
   const clientData = client.data?.id.toLowerCase() === normalizedId ? client.data : undefined;
-  const failed = (client.isError && clientData === undefined) || (contents.isError && contents.data === undefined);
+  const failed = (client.isError && clientData === undefined) || (vista !== 'folders' && contents.isError && contents.data === undefined);
   const loaded = contents.data;
   const unitLabel = view === 'week' ? 'semana' : 'mês';
   const archived = clientData?.status === 'archived';
@@ -250,7 +254,7 @@ export function ContentsClientPage() {
             </>}
         </header>
         <div className="contents__toolbar">
-          <div className="contents__period" role="group" aria-label="Período">
+          {vista !== 'folders' && <div className="contents__period" role="group" aria-label="Período">
             <Button variant="secondary" aria-label={`${unitLabel === 'mês' ? 'Mês' : 'Semana'} anterior`} onClick={() => setPeriod(view, shiftAnchor(view, anchor, -1))}>
               <span aria-hidden="true">‹</span>
             </Button>
@@ -259,21 +263,23 @@ export function ContentsClientPage() {
               <span aria-hidden="true">›</span>
             </Button>
             <Button variant="ghost" onClick={() => setPeriod(view, null)}>Hoje</Button>
-          </div>
-          <div className="contents__toggle" role="group" aria-label="Escala do calendário">
+          </div>}
+          {vista !== 'folders' && <div className="contents__toggle" role="group" aria-label="Escala do calendário">
             <Button variant={view === 'month' ? 'secondary' : 'ghost'} aria-pressed={view === 'month'} onClick={() => setPeriod('month', searchParams.get('data'))}>Mês</Button>
             <Button variant={view === 'week' ? 'secondary' : 'ghost'} aria-pressed={view === 'week'} onClick={() => setPeriod('week', searchParams.get('data'))}>Semana</Button>
-          </div>
+          </div>}
           <div className="contents__views" role="tablist" aria-label="Visão do cliente">
             <Button role="tab" aria-selected={vista === 'calendar'} variant={vista === 'calendar' ? 'secondary' : 'ghost'} onClick={() => setVista('calendar')}>Calendário</Button>
             <Button role="tab" aria-selected={vista === 'feed'} variant={vista === 'feed' ? 'secondary' : 'ghost'} onClick={() => setVista('feed')}>Feed</Button>
-            <Button role="tab" aria-selected="false" disabled variant="ghost">Pastas</Button>
+            <Button role="tab" aria-selected={vista === 'folders'} variant={vista === 'folders' ? 'secondary' : 'ghost'} onClick={() => setVista('folders')}>Pastas</Button>
           </div>
         </div>
-        {archived && <p className="contents__note">Cliente arquivado: o calendário é só leitura.</p>}
-        {moveError !== null && <p className="contents__move-error" role="alert">{moveError}</p>}
-        {move.isPending && <p className="list-refreshing" role="status">Movendo conteúdo…</p>}
-        {loaded === undefined
+        {vista !== 'folders' && archived && <p className="contents__note">Cliente arquivado: o calendário é só leitura.</p>}
+        {vista !== 'folders' && moveError !== null && <p className="contents__move-error" role="alert">{moveError}</p>}
+        {vista !== 'folders' && move.isPending && <p className="list-refreshing" role="status">Movendo conteúdo…</p>}
+        {vista === 'folders'
+          ? <ContentFolders clientId={normalizedId} canWrite={clientData?.status === 'active'} />
+          : loaded === undefined
           ? (vista === 'feed' ? <ContentFeedSkeleton /> : <div className="contents__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>)
           : <>
             {contents.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
