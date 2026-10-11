@@ -606,11 +606,11 @@ Devolve as permissões efetivas do contexto de agência.
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/personas/:personaId` | Sessão + vínculo com a agência | `cliente.operar` | Edita uma persona |
 | `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/archive` | Sessão + vínculo com a agência | `cliente.operar` | Arquiva uma persona |
 | `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive` | Sessão + vínculo com a agência | `cliente.operar` | Desarquiva uma persona |
-| `GET` | `/agencies/:agencyId/clients/:clientId/threads` | Sessão + vínculo com a agência | `cliente.visualizar` | Lista as conversas de um assunto do cliente |
-| `POST` | `/agencies/:agencyId/clients/:clientId/threads` | Sessão + vínculo com a agência | `cliente.operar` | Abre uma conversa pela agência, com o primeiro comentário |
-| `GET` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com a agência | `cliente.visualizar` | Lista os comentários de uma conversa |
-| `POST` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com a agência | `cliente.operar` | Comenta uma conversa pela agência |
-| `POST` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/resolve` | Sessão + vínculo com a agência | `cliente.operar` | Resolve uma conversa |
+| `GET` | `/agencies/:agencyId/clients/:clientId/threads` | Sessão + vínculo com a agência | `cliente.visualizar` ou `conteudo.visualizar` | Lista as conversas de um assunto do cliente |
+| `POST` | `/agencies/:agencyId/clients/:clientId/threads` | Sessão + vínculo com a agência | `cliente.operar` ou `conteudo.operar` | Abre uma conversa pela agência, com o primeiro comentário |
+| `GET` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com a agência | `cliente.visualizar` ou `conteudo.visualizar` | Lista os comentários de uma conversa |
+| `POST` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com a agência | `cliente.operar` ou `conteudo.operar` | Comenta uma conversa pela agência |
+| `POST` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/resolve` | Sessão + vínculo com a agência | `cliente.operar` ou `conteudo.operar` | Resolve uma conversa |
 | `GET` | `/agencies/:agencyId/clients/:clientId/members` | Sessão + vínculo com a agência | `cliente.convidar_usuario` | Lista as pessoas com acesso ao portal de um cliente |
 | `POST` | `/agencies/:agencyId/clients/:clientId/members/:membershipId/remove` | Sessão + vínculo com a agência | `cliente.remover_usuario` | Remove uma pessoa do portal do cliente |
 | `POST` | `/agencies/:agencyId/clients/:clientId/members/:membershipId/reactivate` | Sessão + vínculo com a agência | `cliente.remover_usuario` | Reativa uma pessoa do portal do cliente |
@@ -1220,7 +1220,7 @@ Desarquiva uma persona.
 Lista as conversas de um assunto do cliente.
 
 - Acesso: Sessão + vínculo com a agência.
-- Permissão: `cliente.visualizar`.
+- Permissão: `cliente.visualizar` ou `conteudo.visualizar`.
 
 **Requisição** (`application/json`):
 
@@ -1272,7 +1272,7 @@ Lista as conversas de um assunto do cliente.
 Abre uma conversa pela agência, com o primeiro comentário.
 
 - Acesso: Sessão + vínculo com a agência.
-- Permissão: `cliente.operar`.
+- Permissão: `cliente.operar` ou `conteudo.operar`.
 
 **Requisição** (`application/json`):
 
@@ -1321,14 +1321,14 @@ Abre uma conversa pela agência, com o primeiro comentário.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_ARCHIVED` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_NOT_OPEN` · `409 PERSONA_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/threads/:threadId/comments`
 
 Lista os comentários de uma conversa.
 
 - Acesso: Sessão + vínculo com a agência.
-- Permissão: `cliente.visualizar`.
+- Permissão: `cliente.visualizar` ou `conteudo.visualizar`.
 
 **Requisição** (`application/json`):
 
@@ -1370,7 +1370,7 @@ Lista os comentários de uma conversa.
 Comenta uma conversa pela agência.
 
 - Acesso: Sessão + vínculo com a agência.
-- Permissão: `cliente.operar`.
+- Permissão: `cliente.operar` ou `conteudo.operar`.
 
 **Requisição** (`application/json`):
 
@@ -1395,14 +1395,14 @@ Comenta uma conversa pela agência.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_ARCHIVED` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_NOT_OPEN` · `409 PERSONA_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/threads/:threadId/resolve`
 
 Resolve uma conversa.
 
 - Acesso: Sessão + vínculo com a agência.
-- Permissão: `cliente.operar`.
+- Permissão: `cliente.operar` ou `conteudo.operar`.
 
 **Resposta `200`** — Conversa resolvida.
 
@@ -1430,7 +1430,7 @@ Resolve uma conversa.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_ARCHIVED` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/members`
 
@@ -1655,7 +1655,7 @@ Abre uma conversa pelo portal, com o primeiro comentário.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `404 NOT_FOUND` · `409 SECTION_NOT_FILLED` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `404 NOT_FOUND` · `409 SECTION_NOT_FILLED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId/threads/:threadId/comments`
 
@@ -1729,7 +1729,7 @@ Comenta uma conversa pelo portal.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId`
 
@@ -2782,7 +2782,7 @@ Lista os papéis atribuíveis na agência.
 | `POST` | `/agencies/:agencyId/media/uploads` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.operar` | Inicia um upload de mídia |
 | `POST` | `/agencies/:agencyId/media/uploads/:assetId/parts` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.operar` | Pede URLs assinadas de partes do multipart |
 | `POST` | `/agencies/:agencyId/media/uploads/:assetId/complete` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.operar` | Confirma o upload e valida o objeto |
-| `GET` | `/agencies/:agencyId/media/:assetId/download-url` | Sessão + vínculo com a agência | `midia.enviar` | Emite uma URL assinada de leitura |
+| `GET` | `/agencies/:agencyId/media/:assetId/download-url` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.visualizar` | Emite uma URL assinada de leitura |
 | `GET` | `/agencies/:agencyId/clients/:clientId/media-folders` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista as pastas de mídia de um cliente |
 | `POST` | `/agencies/:agencyId/clients/:clientId/media-folders` | Sessão + vínculo com a agência | `conteudo.operar` | Cria uma pasta de mídia do cliente |
 | `GET` | `/agencies/:agencyId/clients/:clientId/media-folders/:folderId/assets` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista as mídias de uma pasta |
@@ -2894,7 +2894,7 @@ Confirma o upload e valida o objeto.
 Emite uma URL assinada de leitura.
 
 - Acesso: Sessão + vínculo com a agência.
-- Permissão: `midia.enviar`.
+- Permissão: `midia.enviar` ou `conteudo.visualizar`.
 
 **Requisição** (`application/json`):
 
