@@ -1,13 +1,17 @@
 import type { z } from 'zod';
 
 import { COLLABORATOR_ROLES_READ_PERMISSIONS, COLLABORATOR_UPDATE_PERMISSIONS } from '../collaborators/permissions.js';
+import { MEDIA_UPLOAD_PERMISSIONS } from '../media/policy.js';
 import type { RoutePermission } from '../../plugins/infra/route-metadata.js';
 import {
   AcceptLegalDocumentRequestSchema,
+  AgencyClientMediaFolderAssetPathParamsSchema,
+  AgencyClientMediaFolderPathParamsSchema,
   AgencyClientMemberPathParamsSchema,
   AgencyClientPathParamsSchema,
   AgencyClientContentPathParamsSchema,
   AgencyClientPersonaPathParamsSchema,
+  AgencyClientStoryScriptPathParamsSchema,
   AgencyClientThreadPathParamsSchema,
   AgencyClientSectionPathParamsSchema,
   AgencyCollaboratorPathParamsSchema,
@@ -37,6 +41,7 @@ import {
   ClientMemberListResponseSchema,
   ClientMemberSchema,
   ClientPathParamsSchema,
+  ClientStoryScriptPathParamsSchema,
   ClientSchema,
   ClientThreadPathParamsSchema,
   CommentListQuerySchema,
@@ -61,7 +66,9 @@ import {
   CreateClientRequestSchema,
   CreateCommentRequestSchema,
   CreateThreadRequestSchema,
+  CreateStoryScriptRequestSchema,
   CreateThreadResponseSchema,
+  CreateMediaFolderRequestSchema,
   CreateMediaUploadRequestSchema,
   CreatePersonaRequestSchema,
   CreateMediaUploadResponseSchema,
@@ -79,8 +86,15 @@ import {
   LegalAcceptancesResponseSchema,
   MeContextsResponseSchema,
   MediaDownloadUrlQuerySchema,
+  MediaFolderAssetListQuerySchema,
+  MediaFolderAssetListResponseSchema,
+  MediaFolderListQuerySchema,
+  MediaFolderListResponseSchema,
+  MediaFolderSchema,
   MediaDownloadUrlResponseSchema,
   PaginationInputSchema,
+  PortalStoryScriptPeriodResponseSchema,
+  PortalStoryScriptSchema,
   PendingInvitationListResponseSchema,
   PersonaSchema,
   PortalBrandStudyResponseSchema,
@@ -92,6 +106,7 @@ import {
   ThreadListQuerySchema,
   ThreadListResponseSchema,
   ThreadSchema,
+  RemoveMediaAssetResponseSchema,
   RequestMediaUploadPartsRequestSchema,
   RequestMediaUploadPartsResponseSchema,
   UpdateClientRequestSchema,
@@ -99,7 +114,10 @@ import {
   UpdateCollaboratorRequestSchema,
   UpdateMyProfileRequestSchema,
   UpdateMyProfileResponseSchema,
+  StoryScriptPeriodQuerySchema,
+  StoryScriptSchema,
   UpdatePersonaRequestSchema,
+  UpdateStoryScriptRequestSchema,
   UploadClientPhotoRequestSchema,
   UploadClientPhotoResponseSchema,
   UpdateContentRequestSchema,
@@ -117,7 +135,7 @@ import {
  * schema at generation time; secret-shaped values are angle-bracket placeholders on purpose.
  */
 
-export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'contents' | 'collaborators' | 'media' | 'profile' | 'legal' | 'email-change';
+export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'contents' | 'collaborators' | 'media' | 'profile' | 'legal' | 'email-change' | 'story-scripts';
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
@@ -185,10 +203,11 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; agendar, desmarcar, arquivar e reativar o contrato; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.',
   contents: 'Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data.',
   collaborators: 'A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.',
-  media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia.',
+  media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia; as pastas de mídia de um cliente, a listagem do que há nelas e a remoção.',
   profile: 'Edição do próprio nome e da própria foto de perfil.',
   legal: 'Versão dos Termos e da Privacidade que a conta aceitou, e o aceite de um documento por vez.',
-  'email-change': 'Pedido de troca do e-mail da conta, aprovado pela operação, e a confirmação pelo link enviado ao e-mail novo.'
+  'email-change': 'Pedido de troca do e-mail da conta, aprovado pela operação, e a confirmação pelo link enviado ao e-mail novo.',
+  'story-scripts': 'Roteiros de stories de um cliente: a agência cria, edita e envia; o portal lê os enviados de um período e marca como gravado.'
 };
 
 export const ERROR_MESSAGES: Record<string, string> = {
@@ -212,6 +231,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   INVALID_ROLE: 'O papel informado não é válido para esta agência.',
   CLIENT_NAME_IN_USE: 'Já existe um cliente ativo com este nome.',
   CLIENT_ARCHIVED: 'Cliente arquivado não pode ser editado.',
+  MEDIA_IN_USE: 'Esta mídia está em um conteúdo enviado para aprovação, aprovado ou publicado e não pode ser removida.',
   CLIENT_NOT_ARCHIVED: 'Este cliente já está ativo.',
   CLOSING_DATE_NOT_SET: 'Este cliente não tem encerramento agendado.',
   PERSONA_ARCHIVED: 'Persona arquivada: a conversa é somente leitura.',
@@ -224,6 +244,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   CONTENT_FOLDER_IN_USE: 'A pasta não muda enquanto o conteúdo tem mídia ou capa.',
   CONTENT_OWNER_INVALID: 'O responsável precisa ser um colaborador ativo que vê Conteúdo.',
   TRY_AGAIN: 'Houve um conflito momentâneo. Tente de novo.',
+  STORY_SCRIPT_STATE: 'O roteiro não está no estado que esta ação exige.',
+  STORY_SCENES_MISMATCH: 'O roteiro mudou: recarregue e envie todas as cenas, na ordem desejada.',
   INVALID_PASSWORD: 'A senha atual não confere.',
   SAME_EMAIL: 'Informe um e-mail diferente do atual.',
   EMAIL_DELIVERY_FAILED: 'Não foi possível entregar o e-mail.',
@@ -252,9 +274,36 @@ const clientId = '77777777-7777-4777-8777-777777777777';
 const personaId = '88888888-8888-4888-8888-888888888888';
 const threadId = '99999999-9999-4999-8999-999999999999';
 const commentId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-const contentId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-const folderId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
-const storyScriptId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const folderId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const storyScriptId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const storySceneId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+const storyScriptExample = {
+  id: storyScriptId,
+  scriptOn: '2026-10-20',
+  status: 'draft',
+  scenes: [
+    { id: storySceneId, position: 1, text: 'Abrir a loja e mostrar a vitrine nova.', guidance: 'Filmar na vertical, com luz natural.' },
+    { id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', position: 2, text: 'Contar a promoção da semana.', guidance: null }
+  ],
+  recordedBy: null,
+  recordedAt: null,
+  createdAt: '2026-10-11T12:00:00.000Z'
+} as const;
+
+const portalStoryScriptExample = {
+  id: storyScriptId,
+  scriptOn: '2026-10-20',
+  status: 'sent',
+  scenes: [
+    { position: 1, text: 'Abrir a loja e mostrar a vitrine nova.', guidance: 'Filmar na vertical, com luz natural.' },
+    { position: 2, text: 'Contar a promoção da semana.', guidance: null }
+  ],
+  recordedBy: null,
+  recordedAt: null
+} as const;
+
+const contentId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 
 const contentExample = {
   id: contentId,
@@ -282,7 +331,7 @@ const contentDetailExample = {
   ...contentExample,
   media: [{ id: assetId, position: 1 }],
   tasks: [{
-    id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0',
     title: 'Gravar o vídeo',
     description: null,
     assigneeUserId: userId,
@@ -2273,9 +2322,14 @@ path: '/agencies/:agencyId/roles',
     operationId: 'createMediaUpload',
     module: 'media',
     summary: 'Inicia um upload de mídia',
-    description: 'Devolve a URL assinada de PUT ou o plano de multipart; o tipo real é validado no fim, pelo conteúdo.',
+    description: [
+      'Devolve a URL assinada de PUT ou o plano de multipart; o tipo real é validado no fim, pelo conteúdo.',
+      'Sem `clientId` e `folderId` a mídia é da agência e exige `midia.enviar`. Com os dois, é a mídia de uma pasta do',
+      'cliente e exige `conteudo.operar` **e** `conteudo.visualizar`: o servidor confere que a pasta é do cliente e o',
+      'cliente é da agência (cliente de outra agência e pasta de outro cliente dão o mesmo 404), e a cota soma a agência inteira.'
+    ].join('\n'),
     access: 'Sessão + vínculo com a agência',
-    permission: 'midia.enviar',
+    permission: MEDIA_UPLOAD_PERMISSIONS,
     params: AgencyPathParamsSchema,
     body: CreateMediaUploadRequestSchema,
     requestExample: { fileName: 'foto.png', contentType: 'image/png', declaredSizeBytes: 1048576 },
@@ -2298,6 +2352,9 @@ path: '/agencies/:agencyId/roles',
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 404, code: 'NOT_FOUND', message: 'Folder not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'TRY_AGAIN' },
       { status: 409, code: 'QUOTA_EXCEEDED' },
       { status: 415, code: 'UNSUPPORTED_MEDIA_TYPE' }
     ]
@@ -2310,7 +2367,7 @@ path: '/agencies/:agencyId/roles',
     summary: 'Pede URLs assinadas de partes do multipart',
     description: 'Repetível para retomar um upload interrompido; pede só os números que ainda faltam.',
     access: 'Sessão + vínculo com a agência',
-    permission: 'midia.enviar',
+    permission: MEDIA_UPLOAD_PERMISSIONS,
     params: AgencyMediaAssetPathParamsSchema,
     body: RequestMediaUploadPartsRequestSchema,
     requestExample: { partNumbers: [1, 2] },
@@ -2339,7 +2396,7 @@ path: '/agencies/:agencyId/roles',
     summary: 'Confirma o upload e valida o objeto',
     description: 'Valida tipo e tamanho pelo conteúdo observado no armazenamento; rejeição vira 422 e fica registrada.',
     access: 'Sessão + vínculo com a agência',
-    permission: 'midia.enviar',
+    permission: MEDIA_UPLOAD_PERMISSIONS,
     params: AgencyMediaAssetPathParamsSchema,
     body: CompleteMediaUploadRequestSchema,
     requestExample: { parts: [{ partNumber: 1, eTag: '"exemplo-de-etag"' }] },
@@ -2388,6 +2445,137 @@ path: '/agencies/:agencyId/roles',
       { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
       { status: 409, code: 'VARIANT_NOT_READY' },
       { status: 409, code: 'VARIANT_PROCESSING_FAILED' }
+    ]
+  },
+
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/media-folders',
+    operationId: 'listClientMediaFolders',
+    module: 'media',
+    summary: 'Lista as pastas de mídia de um cliente',
+    description: [
+      'As quatro pastas padrão e as da agência, as de primeiro nível antes das de trabalho; cem por página.',
+      'Cliente arquivado continua legível; cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientPathParamsSchema,
+    query: MediaFolderListQuerySchema,
+    requestExample: { page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página de pastas.',
+      schema: MediaFolderListResponseSchema,
+      example: {
+        data: [{ id: folderId, parentId: null, name: 'Vídeos', isDefault: true, createdAt: '2026-10-07T12:00:00.000Z' }],
+        meta: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/media-folders',
+    operationId: 'createClientMediaFolder',
+    module: 'media',
+    summary: 'Cria uma pasta de mídia do cliente',
+    description: [
+      'No primeiro nível, ou dentro de uma pasta de primeiro nível do mesmo cliente (`parentId`): há só dois níveis.',
+      'Exige `conteudo.operar` e também `conteudo.visualizar`, porque a resposta é uma leitura. O nome não aceita',
+      'caracteres de controle, invisíveis nem os dois joiners, e tem até 80 caracteres.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientPathParamsSchema,
+    body: CreateMediaFolderRequestSchema,
+    requestExample: { name: 'Lançamento de outubro', parentId: folderId },
+    responses: [{
+      status: 201,
+      description: 'Pasta criada.',
+      schema: MediaFolderSchema,
+      example: { id: '12121212-1212-4121-8121-121212121212', parentId: folderId, name: 'Lançamento de outubro', isDefault: false, createdAt: '2026-10-07T12:00:00.000Z' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/media-folders/:folderId/assets',
+    operationId: 'listMediaFolderAssets',
+    module: 'media',
+    summary: 'Lista as mídias de uma pasta',
+    description: [
+      'Só a mídia confirmada e não removida, a mais recente primeiro; quarenta e oito por página. Nunca devolve chave de',
+      'objeto. Cliente de outra agência, pasta de outro cliente e id inválido devolvem o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientMediaFolderPathParamsSchema,
+    query: MediaFolderAssetListQuerySchema,
+    requestExample: { page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página de mídias.',
+      schema: MediaFolderAssetListResponseSchema,
+      example: {
+        data: [{ id: assetId, category: 'image', contentType: 'image/png', sizeBytes: 1048576, videoProcessingStatus: 'not_applicable', createdAt: '2026-10-07T12:00:00.000Z' }],
+        meta: { page: 1, pageSize: 48, totalItems: 1, totalPages: 1 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Folder not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/media-folders/:folderId/assets/:assetId/remove',
+    operationId: 'removeMediaFolderAsset',
+    module: 'media',
+    summary: 'Remove uma mídia da pasta',
+    description: [
+      'Remoção lógica: o arquivo sai da pasta e não pode mais ser escolhido em conteúdo, mas continua contando na cota',
+      'até a retenção apagá-lo. Recusa (409 `MEDIA_IN_USE`) a mídia de um conteúdo aguardando aprovação, aprovado ou',
+      'publicado, arquivo ou capa. Exige `conteudo.operar` e também `conteudo.visualizar`. Repetir a chamada não é erro.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientMediaFolderAssetPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'Mídia removida da pasta.',
+      schema: RemoveMediaAssetResponseSchema,
+      example: { assetId, removed: true }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'MEDIA_IN_USE' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
 
@@ -2572,6 +2760,171 @@ path: '/agencies/:agencyId/roles',
       { status: 400, code: 'INVALID_LINK' },
       { status: 409, code: 'TRY_AGAIN' },
       { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/story-scripts',
+    operationId: 'createStoryScript',
+    module: 'story-scripts',
+    summary: 'Cria um roteiro de stories em rascunho',
+    description: [
+      'Um dia (`scriptOn`, `AAAA-MM-DD`) e as cenas na ordem em que foram enviadas, até 30. O roteiro nasce em',
+      'rascunho e o portal não o vê. Pode haver mais de um roteiro por cliente e dia, e um roteiro sem cenas.',
+      'O texto e a orientação da cena recusam caractere de controle (menos tabulação e quebra de linha) e',
+      'invisível, inclusive o espaço de largura zero e os joiners. Precisa de `conteudo.operar` **e** de',
+      '`conteudo.visualizar`: uma escrita que não lê o que escreveu é cega. Cliente arquivado dá 409, nas duas',
+      'janelas da corrida com o arquivamento.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientPathParamsSchema,
+    body: CreateStoryScriptRequestSchema,
+    requestExample: {
+      scriptOn: '2026-10-20',
+      scenes: [
+        { text: 'Abrir a loja e mostrar a vitrine nova.', guidance: 'Filmar na vertical, com luz natural.' },
+        { text: 'Contar a promoção da semana.' }
+      ]
+    },
+    responses: [{ status: 201, description: 'Roteiro criado, em rascunho.', schema: StoryScriptSchema, example: storyScriptExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'patch',
+    path: '/agencies/:agencyId/clients/:clientId/story-scripts/:scriptId',
+    operationId: 'updateStoryScript',
+    module: 'story-scripts',
+    summary: 'Edita o dia e as cenas de um roteiro em rascunho',
+    description: [
+      'Só rascunho se edita: um roteiro enviado ou gravado dá 409 `STORY_SCRIPT_STATE`. `scenes` é o roteiro',
+      'inteiro na nova ordem: cena com `id` é uma que já existe (texto, orientação e lugar mudam), cena sem',
+      '`id` é nova. Cena não se remove, então a lista tem de trazer todas as que o roteiro tem; faltar uma, ou',
+      'trazer o id de outro roteiro, dá 409 `STORY_SCENES_MISMATCH`. Roteiro de outro cliente, de outra agência,',
+      'inexistente ou `:scriptId` inválido devolvem o mesmo 404. Precisa de `conteudo.operar` e de',
+      '`conteudo.visualizar`.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientStoryScriptPathParamsSchema,
+    body: UpdateStoryScriptRequestSchema,
+    requestExample: {
+      scriptOn: '2026-10-21',
+      scenes: [
+        { id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', text: 'Contar a promoção da semana.' },
+        { id: storySceneId, text: 'Abrir a loja e mostrar a vitrine nova.', guidance: 'Filmar na vertical.' },
+        { text: 'Pedir para seguir o perfil.' }
+      ]
+    },
+    responses: [{ status: 200, description: 'Roteiro editado.', schema: StoryScriptSchema, example: storyScriptExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Story script not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'STORY_SCRIPT_STATE' },
+      { status: 409, code: 'STORY_SCENES_MISMATCH' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/story-scripts/:scriptId/send',
+    operationId: 'sendStoryScript',
+    module: 'story-scripts',
+    summary: 'Envia o roteiro ao cliente',
+    description: [
+      'Rascunho passa a enviado e a aparecer no portal. Repetir o envio não muda nada e não é erro. Um roteiro',
+      'já gravado não volta a ser enviado (409 `STORY_SCRIPT_STATE`), e cliente arquivado dá 409. Precisa de',
+      '`conteudo.operar` e de `conteudo.visualizar`; quem só tem vínculo de cliente nunca envia.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientStoryScriptPathParamsSchema,
+    responses: [{ status: 200, description: 'Roteiro enviado.', schema: StoryScriptSchema, example: { ...storyScriptExample, status: 'sent' } }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Story script not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'STORY_SCRIPT_STATE' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/clients/:clientId/story-scripts',
+    operationId: 'listPortalStoryScripts',
+    module: 'story-scripts',
+    summary: 'Lista os roteiros enviados de um período, no portal',
+    description: [
+      'Consulta por período, sem paginação: `from` e `to` inclusivos (`AAAA-MM-DD`), no máximo 93 dias (93 passa,',
+      '94 dá 400) e 500 itens (acima disso, 400, sem truncar). Só roteiro enviado ou gravado, do dia mais antigo',
+      'ao mais novo; rascunho nunca vem, nem para o colaborador que também tem vínculo de cliente. Um roteiro',
+      'gravado mostra o nome de quem gravou, pelo vínculo com o cliente.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientPathParamsSchema,
+    query: StoryScriptPeriodQuerySchema,
+    requestExample: { from: '2026-10-01', to: '2026-10-31' },
+    responses: [{
+      status: 200,
+      description: 'Roteiros do período.',
+      schema: PortalStoryScriptPeriodResponseSchema,
+      example: { data: [portalStoryScriptExample], meta: { from: '2026-10-01', to: '2026-10-31', count: 1 } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/clients/:clientId/story-scripts/:scriptId/recorded',
+    operationId: 'recordPortalStoryScript',
+    module: 'story-scripts',
+    summary: 'Marca o roteiro como gravado, no portal',
+    description: [
+      'Qualquer pessoa ativa do portal deste cliente marca um roteiro enviado como gravado; quem gravou e quando',
+      'são fixados pelo banco. Repetir não muda nada: a primeira pessoa continua sendo quem gravou. Rascunho,',
+      'roteiro de outro cliente, de outra agência e id inexistente ou inválido devolvem o mesmo 404, também para o',
+      'colaborador cujo papel lê rascunhos. Um cliente arquivado durante a chamada também é 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientStoryScriptPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'Roteiro gravado.',
+      schema: PortalStoryScriptSchema,
+      example: { ...portalStoryScriptExample, status: 'recorded', recordedBy: { name: 'Pessoa do Portal' }, recordedAt: '2026-10-20T15:00:00.000Z' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Story script not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   }
 ];

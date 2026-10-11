@@ -30,6 +30,7 @@ import type { MediaModuleDependencies } from '../../media/routes.js';
 import { createMediaStorageClient } from '../../media/storage-client.js';
 import type { LegalModuleDependencies } from '../../legal/routes.js';
 import type { EmailChangeModuleDependencies } from '../../email-change/routes.js';
+import type { StoryScriptModuleDependencies } from '../../story-scripts/routes.js';
 import type { ProfileModuleDependencies } from '../../profile/routes.js';
 
 /** Runs only against your own migrated database (`pnpm db:migrate`), as the application role; never `ageniza`. */
@@ -276,6 +277,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     config: config.storage,
     requireAgencyAccess: createRequireAgencyAccess({ database }),
     requirePermission,
+    requireAnyPermission,
     jobs: mediaJobs
   };
   const profile: ProfileModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
@@ -293,6 +295,13 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     config: { authTermsVersion: config.authTermsVersion, authPrivacyVersion: config.authPrivacyVersion }
   };
   const emailChange: EmailChangeModuleDependencies = { database, auth, emailService };
+  const storyScripts: StoryScriptModuleDependencies = {
+    database,
+    auth,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    requirePermission,
+    requireClientAccess
+  };
   const authDependencies = {
     auth,
     limiter,
@@ -314,6 +323,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     profile,
     legal,
     emailChange,
+    storyScripts,
     onRoute: options.onRoute,
     // A handler whose reply status drifts from its own `config.responseStatus` fails the request,
     // so the documented status is enforced by the suites, not only by the catalog.

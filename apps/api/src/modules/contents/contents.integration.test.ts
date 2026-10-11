@@ -188,11 +188,9 @@ describe('a content is the client\'s and the agency\'s, never another\'s (issue 
 
 describe('the period query (issue #254)', () => {
   let periodClient: string;
-  let periodFolder: string;
 
   beforeAll(async () => {
     periodClient = await w.newClient('period');
-    periodFolder = await w.folderOf(periodClient);
   });
 
   const query = (from: string, to: string, clientId = periodClient): Promise<Reply> =>
@@ -205,7 +203,7 @@ describe('the period query (issue #254)', () => {
     expect(accepted.statusCode).toBe(200);
     expect(refused.statusCode).toBe(400);
     expect(refused.json().error.code).toBe('VALIDATION_ERROR');
-    expect(refused.json().error.details.issues).toEqual([{ path: 'to', code: 'custom', message: 'the period is at most 93 days' }]);
+    expect(refused.json().error.details.issues).toEqual([{ path: 'to', code: 'custom', message: 'the period must span at most 93 days' }]);
   });
 
   it('counts a leap day in the 93 days', async () => {

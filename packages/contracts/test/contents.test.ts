@@ -24,7 +24,7 @@ describe('content period bounds', () => {
   it('counts both ends: 93 days passes and 94 does not', () => {
     expect(CONTENT_PERIOD_MAX_DAYS).toBe(93);
     expect(issue('2026-01-01', '2026-04-03')).toBeUndefined();
-    expect(issue('2026-01-01', '2026-04-04')).toEqual({ path: 'to', message: 'the period is at most 93 days' });
+    expect(issue('2026-01-01', '2026-04-04')).toEqual({ path: 'to', message: 'the period must span at most 93 days' });
   });
 
   it('counts a leap day', () => {
@@ -35,7 +35,7 @@ describe('content period bounds', () => {
 
   it('accepts one day and refuses a period that ends before it starts', () => {
     expect(issue('2026-10-11', '2026-10-11')).toBeUndefined();
-    expect(issue('2026-10-11', '2026-10-10')).toEqual({ path: 'to', message: 'to must not be before from' });
+    expect(issue('2026-10-11', '2026-10-10')).toEqual({ path: 'to', message: 'must not be before from' });
   });
 
   it('refuses a date that does not exist or is not a plain day', () => {

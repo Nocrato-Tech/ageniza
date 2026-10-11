@@ -2,17 +2,25 @@ import { z } from 'zod';
 
 import { isCalendarDay } from './clients.js';
 import { JOINER_OUTSIDE_NAME_CHARACTERS } from './display-name.js';
+import {
+  STORY_SCRIPT_PERIOD_MAX_DAYS,
+  STORY_SCRIPT_PERIOD_MAX_ITEMS,
+  StoryScriptPeriodQuerySchema,
+  StoryScriptStatusSchema,
+  storyScriptPeriodIssues
+} from './story-scripts.js';
 
 /**
  * Content of a client, agency side (specs/conteudo.md sections 3, 4 and 6; issue #254).
  *
- * The period query is the format Tarefas and Dashboard copy (decision of 2026-10-01, point 4): both ends
+ * The period query is the format Tarefas and Dashboard copy (docs/business/decisions/2026-10-11-consulta-por-periodo-teto-de-500-itens-e-formato-da-resposta.md): both ends
  * inclusive, a ceiling in days and in items, no pagination, and one `{ data, meta }` envelope whose `data`
  * holds one array per kind of item.
  */
 
-export const CONTENT_PERIOD_MAX_DAYS = 93;
-export const CONTENT_PERIOD_MAX_ITEMS = 500;
+/** The ceilings of the period query are the story scripts' (one decision, one number): 93 days and 500 items. */
+export const CONTENT_PERIOD_MAX_DAYS = STORY_SCRIPT_PERIOD_MAX_DAYS;
+export const CONTENT_PERIOD_MAX_ITEMS = STORY_SCRIPT_PERIOD_MAX_ITEMS;
 export const CONTENT_TITLE_MAX_LENGTH = 120;
 export const CONTENT_CAPTION_MAX_LENGTH = 2_200;
 export const CONTENT_CAROUSEL_MAX_MEDIA = 20;
@@ -21,7 +29,6 @@ export const ContentPlatformSchema = z.enum(['instagram']);
 export const ContentFormatSchema = z.enum(['image', 'carousel', 'reels', 'long_video', 'vsl']);
 export const ContentStatusSchema = z.enum(['in_production', 'awaiting_approval', 'adjusting', 'approved', 'published', 'cancelled']);
 export const ContentTaskStatusSchema = z.enum(['pending', 'delivered', 'approved']);
-export const StoryScriptStatusSchema = z.enum(['draft', 'sent', 'recorded']);
 
 /** A real day of the calendar in the form the `date` column prints; the route never reads it in a time zone. */
 export const CalendarDaySchema = z.string().refine(isCalendarDay, 'must be a real date in the form YYYY-MM-DD');
@@ -102,26 +109,12 @@ export const UpdateContentRequestSchema = z.object({
   mediaAssetIds: MediaAssetIdsSchema.optional()
 }).strict().refine((value) => Object.keys(value).length > 0, 'at least one field must be provided');
 
-/** `from` and `to`, both inclusive; the bounds between them are `contentPeriodIssue`. */
-export const ContentPeriodQuerySchema = z.object({
-  from: CalendarDaySchema,
-  to: CalendarDaySchema
-}).strict();
-
-const dayNumber = (day: string): number => {
-  const [year, month, date] = day.split('-').map(Number) as [number, number, number];
-  const parsed = new Date(0);
-  parsed.setUTCFullYear(year, month - 1, date);
-  return Math.round(parsed.getTime() / 86_400_000);
-};
+/** `from` and `to`, both inclusive: the same query as the story scripts' period, so the two cannot drift. */
+export const ContentPeriodQuerySchema = StoryScriptPeriodQuerySchema;
 
 /** What is wrong with the bounds of a period, or `undefined`. 93 days counts both ends: 93 passes and 94 does not. */
-export const contentPeriodIssue = (query: z.infer<typeof ContentPeriodQuerySchema>): { readonly path: 'to'; readonly message: string } | undefined => {
-  const days = dayNumber(query.to) - dayNumber(query.from) + 1;
-  if (days < 1) return { path: 'to', message: 'to must not be before from' };
-  if (days > CONTENT_PERIOD_MAX_DAYS) return { path: 'to', message: `the period is at most ${CONTENT_PERIOD_MAX_DAYS} days` };
-  return undefined;
-};
+export const contentPeriodIssue = (query: z.infer<typeof ContentPeriodQuerySchema>): { readonly path: string; readonly message: string } | undefined =>
+  storyScriptPeriodIssues(query)[0];
 
 /** One content as the calendar and the feed need it: no caption and no media. */
 export const ContentListItemSchema = z.object({
