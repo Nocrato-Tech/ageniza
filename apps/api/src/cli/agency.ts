@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 
 import { z } from 'zod';
 
+import { createDisplayNameSchema, hasInvisibleCharacters } from '@ageniza/contracts';
 import { createLogger } from '@ageniza/core';
 import { createDatabaseClient, raw, type SqlBinding } from '@ageniza/database';
 import { agencyActivationEmail, assertEmailAddress, createEmailSender, type EmailSender } from '@ageniza/email';
@@ -77,7 +78,19 @@ export const normalizeAgencyName = (value: string): string => {
   // Matches the database constraint, which bounds bytes so the templates' UTF-16 limit always
   // holds; a longer name would create the agency and only then fail every invitation (issue #38).
   if (Buffer.byteLength(name, 'utf8') > 256) throw new AgencyCliError('name must be at most 256 bytes.');
-  return name;
+  // The same rule as a person's display name: the name goes into the e-mails as text, and an invisible or bidi character in it
+  // would be read as something else. The CLI is the only way the name comes in, so it is checked here.
+  const parsed = createDisplayNameSchema(256).safeParse(name);
+  if (!parsed.success) {
+    throw new AgencyCliError(`name ${parsed.error.issues[0]?.message ?? 'is not a valid display name'}.`);
+  }
+  // The agency name is not in the decision of 2026-10-08 that keeps the person's name as it is, and it goes into the client's e-mail,
+  // so the CLI also refuses what the one rule of invisible characters refuses (variation selectors, the combining grapheme joiner,
+  // the Braille blank and the rest). A whole emoji sequence is still accepted, as the rule reads it.
+  if (hasInvisibleCharacters(parsed.data)) {
+    throw new AgencyCliError('name must not contain invisible characters.');
+  }
+  return parsed.data;
 };
 
 export const assertUuid = (value: string, optionName = 'agency-id'): string => {
