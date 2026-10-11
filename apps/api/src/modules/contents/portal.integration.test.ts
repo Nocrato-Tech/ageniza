@@ -280,7 +280,7 @@ describe('the contents of a period', () => {
     expect(reply.json().meta).toEqual({ from: '2026-10-01', to: '2026-10-31', count: 3 });
     expect(reply.json().data[0]).toEqual({
       id: first, title: 'Primeiro dia', platform: 'instagram', format: 'reels', publishOn: '2026-10-01', publishAtTime: '09:00',
-      status: 'approved', coverAssetId: null, publishedOn: null
+      status: 'approved', coverAssetId: null, thumbnailAssetId: null, publishedOn: null
     });
     expect(JSON.stringify(reply.json())).not.toContain(before);
     expect(JSON.stringify(reply.json())).not.toContain(after);
@@ -304,7 +304,10 @@ describe('the contents of a period', () => {
 
   it('shows a content in production by its title, its day and its format, and nothing else, and leaves a cancelled one out', async () => {
     const clientId = await freshClient('production-cut', ['portalOne', ...DUAL_PEOPLE]);
-    const production = await w.seedContent(clientId, { status: 'in_production', title: 'Em produção', caption: 'Legenda de bastidor', publishAtTime: '08:00' });
+    const folderId = await w.folderOf(clientId);
+    const draft = await w.seedAsset(clientId, folderId, { category: 'image' });
+    const production = await w.seedContent(clientId, { status: 'in_production', title: 'Em produção', caption: 'Legenda de bastidor', publishAtTime: '08:00', folderId, coverAssetId: draft });
+    await w.attach(production, [await w.seedAsset(clientId, folderId, { category: 'image' })]);
     await w.seedContent(clientId, { status: 'cancelled', title: 'Cancelado' });
     await seedInternal(production);
 
@@ -312,8 +315,86 @@ describe('the contents of a period', () => {
       const reply = await get(person, listUrl(clientId, '?from=2026-10-01&to=2026-10-31'));
       expect(reply.json().data, person).toEqual([{ id: production, title: 'Em produção', format: 'reels', publishOn: '2026-10-20', status: 'in_production' }]);
       expect(reply.json().meta.count, person).toBe(1);
+      expect(JSON.stringify(reply.json()), person).not.toContain(draft);
       expectNoInternal(reply);
     }
+  });
+
+  describe('the file that serves as the cover of the card (issue #606)', () => {
+    const periodOf = async (clientId: string, person: 'portalOne' | (typeof DUAL_PEOPLE)[number] = 'portalOne'): Promise<Array<Record<string, unknown>>> =>
+      (await get(person, listUrl(clientId, '?from=2026-10-01&to=2026-10-31'))).json().data;
+
+    it('is the chosen cover, else the first media by position, else null, and leaves out a file removed or not confirmed', async () => {
+      const clientId = await freshClient('thumbnail', ['portalOne', ...DUAL_PEOPLE]);
+      const folderId = await w.folderOf(clientId);
+      const image = (extra: Parameters<typeof w.seedAsset>[2] = {}): Promise<string> => w.seedAsset(clientId, folderId, { category: 'image', ...extra });
+      const day = (n: number): string => `2026-10-${String(n).padStart(2, '0')}`;
+
+      const [low, high] = [await image(), await image()].sort() as [string, string];
+      const byPosition = await w.seedContent(clientId, { status: 'awaiting_approval', format: 'carousel', folderId, publishOn: day(1) });
+      await w.attach(byPosition, [high, low]);
+
+      const cover = await image();
+      const chosen = await w.seedContent(clientId, { status: 'approved', format: 'reels', folderId, publishOn: day(2), coverAssetId: cover });
+      await w.attach(chosen, [await w.seedAsset(clientId, folderId, { category: 'video', video: 'ready' })]);
+
+      const video = await w.seedAsset(clientId, folderId, { category: 'video', video: 'ready' });
+      const frame = await w.seedContent(clientId, { status: 'published', format: 'reels', folderId, publishOn: day(3) });
+      await w.attach(frame, [video]);
+
+      const empty = await w.seedContent(clientId, { status: 'awaiting_approval', format: 'image', folderId, publishOn: day(4) });
+
+      const good = await image();
+      const skipping = await w.seedContent(clientId, { status: 'adjusting', format: 'carousel', folderId, publishOn: day(5) });
+      await w.attach(skipping, [await image({ removed: true }), await image({ status: 'pending' }), good]);
+
+      const onlyBad = await w.seedContent(clientId, { status: 'awaiting_approval', format: 'carousel', folderId, publishOn: day(6) });
+      await w.attach(onlyBad, [await image({ removed: true }), await image({ status: 'pending' })]);
+
+      const removedCover = await image();
+      const fallback = await image();
+      const coverGone = await w.seedContent(clientId, { status: 'approved', format: 'reels', folderId, publishOn: day(7), coverAssetId: removedCover });
+      await w.attach(coverGone, [fallback]);
+      await w.getOwner().knex('media_assets').where({ id: removedCover }).update({ removed_at: new Date() });
+
+      for (const person of ['portalOne', ...DUAL_PEOPLE] as const) {
+        const byId = new Map((await periodOf(clientId, person)).map((item) => [item.id, item]));
+        expect(byId.get(byPosition), person).toMatchObject({ coverAssetId: null, thumbnailAssetId: high });
+        expect(byId.get(chosen), person).toMatchObject({ coverAssetId: cover, thumbnailAssetId: cover });
+        expect(byId.get(frame), person).toMatchObject({ coverAssetId: null, thumbnailAssetId: video });
+        expect(byId.get(empty), person).toMatchObject({ coverAssetId: null, thumbnailAssetId: null });
+        expect(byId.get(skipping), person).toMatchObject({ thumbnailAssetId: good });
+        expect(byId.get(onlyBad), person).toMatchObject({ thumbnailAssetId: null });
+        expect(byId.get(coverGone), person).toMatchObject({ thumbnailAssetId: fallback });
+      }
+    });
+
+    it('never returns it for a content in production, whatever it holds', async () => {
+      const clientId = await freshClient('thumbnail-production', ['portalOne', ...DUAL_PEOPLE]);
+      const folderId = await w.folderOf(clientId);
+      const asset = await w.seedAsset(clientId, folderId, { category: 'image' });
+      const production = await w.seedContent(clientId, { status: 'in_production', format: 'image', folderId });
+      await w.attach(production, [asset]);
+
+      for (const person of ['portalOne', ...DUAL_PEOPLE] as const) {
+        const [item] = await periodOf(clientId, person);
+        expect(item, person).toEqual({ id: production, title: expect.any(String), format: 'image', publishOn: '2026-10-20', status: 'in_production' });
+        expect(JSON.stringify(await periodOf(clientId, person)), person).not.toContain(asset);
+      }
+    });
+
+    it('is in the list of what waits, and the post it opens does not repeat it', async () => {
+      const clientId = await freshClient('thumbnail-awaiting', ['portalOne']);
+      const folderId = await w.folderOf(clientId);
+      const asset = await w.seedAsset(clientId, folderId, { category: 'image' });
+      const contentId = await w.seedContent(clientId, { status: 'awaiting_approval', format: 'image', folderId });
+      await w.attach(contentId, [asset]);
+
+      const waiting = await get('portalOne', awaitingUrl(clientId));
+      expect(waiting.json().data).toEqual([expect.objectContaining({ id: contentId, thumbnailAssetId: asset })]);
+      const post = await get('portalOne', oneUrl(clientId, contentId));
+      expect(Object.keys(post.json())).not.toContain('thumbnailAssetId');
+    });
   });
 
   it('accepts 93 days and refuses 94, refuses what is not a period, and says nothing about another client', async () => {
@@ -369,7 +450,7 @@ describe('what waits for the person', () => {
     expect(all.json().meta).toEqual({ page: 1, pageSize: 20, totalItems: 3, totalPages: 1 });
     expect(all.json().data[0]).toEqual({
       id: soon, title: 'Cedo', platform: 'instagram', format: 'reels', publishOn: '2026-10-21', publishAtTime: '10:00',
-      status: 'awaiting_approval', coverAssetId: null, publishedOn: null
+      status: 'awaiting_approval', coverAssetId: null, thumbnailAssetId: null, publishedOn: null
     });
 
     for (const person of DUAL_PEOPLE) {

@@ -20,6 +20,7 @@ export interface PortalContentRow {
   readonly publish_at_time: string | null;
   readonly caption: string | null;
   readonly cover_asset_id: string | null;
+  readonly thumbnail_asset_id: string | null;
   readonly published_on: string | null;
 }
 
@@ -36,7 +37,13 @@ export interface PortalContentRow {
 const PORTAL_COLUMNS = `
   content.id, content.title, content.platform, content.format, content.publish_on::text as publish_on, content.status,
   content.revision, to_char(content.publish_at_time, 'HH24:MI') as publish_at_time, content.caption, content.cover_asset_id,
-  content.published_on::text as published_on
+  content.published_on::text as published_on,
+  (
+    select media.asset_id
+    from app_private.portal_content_media(content.id) media
+    order by (media.role = 'media'), media.item_position, media.asset_id
+    limit 1
+  ) as thumbnail_asset_id
 `;
 
 // A content without an hour comes last in a day: an ascending order puts the null after every hour.
@@ -159,7 +166,7 @@ const inProductionFrom = (row: PortalContentRow & { readonly status: 'in_product
   status: row.status
 });
 
-export const openListItemFrom = (row: PortalContentRow & { readonly status: PortalContentOpenListItem['status'] }): PortalContentOpenListItem => ({
+const openDetailBaseFrom = (row: PortalContentRow & { readonly status: PortalContentOpenListItem['status'] }): Omit<PortalContentOpenListItem, 'thumbnailAssetId'> => ({
   id: row.id,
   title: row.title,
   platform: row.platform,
@@ -171,6 +178,12 @@ export const openListItemFrom = (row: PortalContentRow & { readonly status: Port
   publishedOn: row.published_on
 });
 
+/** `thumbnailAssetId` is the file that serves as the cover of the card: the function's first row, the chosen cover before the media. */
+export const openListItemFrom = (row: PortalContentRow & { readonly status: PortalContentOpenListItem['status'] }): PortalContentOpenListItem => ({
+  ...openDetailBaseFrom(row),
+  thumbnailAssetId: row.thumbnail_asset_id
+});
+
 export const listItemFrom = (row: PortalContentRow): PortalContentListItem =>
   row.status === 'in_production' ? inProductionFrom({ ...row, status: row.status }) : openListItemFrom({ ...row, status: row.status });
 
@@ -178,7 +191,7 @@ export const detailFrom = async (transaction: ContentTransaction, row: PortalCon
   if (row.status === 'in_production') return inProductionFrom({ ...row, status: row.status });
   if (row.revision === null) throw new Error('A content open to the client reached the portal without a revision.');
   return {
-    ...openListItemFrom({ ...row, status: row.status }),
+    ...openDetailBaseFrom({ ...row, status: row.status }),
     caption: row.caption,
     revision: row.revision,
     media: await loadPortalMedia(transaction, row.id)

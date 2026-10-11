@@ -18,6 +18,7 @@ export interface PortalContentRow {
   publishAtTime: string | null;
   status: PortalContentStatus;
   coverAssetId: string | null;
+  thumbnailAssetId: string | null;
   caption: string | null;
   publishedOn: string | null;
   cancelled: boolean;
@@ -63,6 +64,7 @@ export const createPortalContentsApi = (clientId: string) => {
       publishAtTime: null,
       status: 'approved',
       coverAssetId: null,
+      thumbnailAssetId: null,
       caption: null,
       publishedOn: null,
       cancelled: false,
@@ -86,6 +88,7 @@ export const createPortalContentsApi = (clientId: string) => {
       publishAtTime: row.publishAtTime,
       status: row.status,
       coverAssetId: row.coverAssetId,
+      thumbnailAssetId: row.thumbnailAssetId,
       publishedOn: row.publishedOn
     };
   };

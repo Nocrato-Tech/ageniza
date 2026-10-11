@@ -57,6 +57,7 @@ const contentFixture = (overrides: Partial<ContentListItem> = {}): ContentListIt
     status: 'in_production',
     owner: { membershipId: '99999999-9999-4999-8999-999999999999', name: 'Ana Souza' },
     coverAssetId: null,
+    thumbnailAssetId: null,
     revision: 1,
     publishedOn: null,
     tasksTotal: 0,

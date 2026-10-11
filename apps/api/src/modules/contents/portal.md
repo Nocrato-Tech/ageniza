@@ -18,6 +18,9 @@ provou. As decisões estão em `docs/business/decisions/2026-10-11-conteudo-port
 - **O recorte é a forma da resposta.** Um conteúdo em produção é o schema estrito `{ id, title, format, publishOn, status }`
   (`packages/contracts/src/portal-contents.ts`): sem legenda, sem hora, sem capa. Nenhum schema do portal tem subtarefa, responsável,
   prazo interno, quem aprovou, pasta ou id de usuário, e o teste procura essas chaves, e os valores semeados, no corpo inteiro de toda rota.
+- **A capa do card é `thumbnailAssetId`, e só nos itens abertos das listas** (o período e o que espera aprovação; o detalhe do post não a repete):
+  a capa escolhida, senão a primeira mídia por posição, lidas da mesma `app_private.portal_content_media`, que já deixa de fora o arquivo removido
+  ou não confirmado; `null` sem mídia. Um conteúdo em produção nunca a tem (issue #606).
 - **O portal nunca seleciona da tabela.** `portal-service.ts` lê por `app_private.portal_contents` e `app_private.portal_content_media`,
   que respondem pelo vínculo ativo e por mais nada. Uma pessoa que também é colaboradora (a que lê rascunho, legenda e cancelado pelo
   ramo da agência da policy) recebe o mesmo recorte; o teste exercita `dualAdmin`, `dualRead`, `dualBare` e `crossDual` em toda rota, e
