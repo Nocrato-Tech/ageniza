@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { s3ClientOptions } from './s3.js';
+import { s3ClientOptions, type S3ConnectionSettings } from './s3.js';
 
 describe('s3ClientOptions', () => {
   it('asks the SDK for checksums only when the operation requires one', () => {
@@ -19,14 +19,15 @@ describe('s3ClientOptions', () => {
   });
 
   it('ignores extra fields of a bigger storage config instead of leaking them to the client', () => {
-    const options = s3ClientOptions({
+    const storageConfig: S3ConnectionSettings & { readonly bucket: string; readonly endpoint: string } = {
       region: 'auto',
       forcePathStyle: true,
       accessKeyId: 'key-id',
       secretAccessKey: 'secret',
       bucket: 'media',
       endpoint: 'https://r2.test'
-    } as never);
+    };
+    const options = s3ClientOptions(storageConfig);
 
     expect(Object.keys(options).sort()).toEqual(['credentials', 'forcePathStyle', 'region', 'requestChecksumCalculation', 'responseChecksumValidation']);
   });
