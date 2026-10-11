@@ -188,6 +188,9 @@ const makeFetch = (scenario: Scenario = {}) => {
     if (media !== null && method === 'GET') {
       // Reading a client's media follows conteudo.visualizar (#550); the portal never reaches this route.
       if (!permissions.includes(VISUALIZE)) return forbidden();
+      // The API knows three variants; any other value is a 400.
+      const variant = url.searchParams.get('variant');
+      if (variant !== null && !['original', 'thumbnail', 'preview'].includes(variant)) return invalid();
       const custom = scenario.cover?.(media[2]!, url.search);
       if (custom !== undefined) return custom;
       return json({ url: `https://storage.test/${media[2]}.jpg`, expiresAt: '2026-10-12T01:45:00.000Z' });
@@ -1142,7 +1145,7 @@ describe('the cover of a card', () => {
     return card;
   };
 
-  it('reads the address of the cover of its own asset, with no variant, and draws it without a text of its own', async () => {
+  it('reads the thumbnail address of the cover of its own asset, never the original, and draws it without a text of its own', async () => {
     const { impl, calls } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Com capa', publishOn: '2026-10-14', coverAssetId: ASSET_A })] } });
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Com capa');
@@ -1150,7 +1153,7 @@ describe('the cover of a card', () => {
     await waitFor(() => expect(cardOf('Com capa').querySelector('img')).not.toBeNull());
     expect(cardOf('Com capa').querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${ASSET_A}.jpg`);
     expect(cardOf('Com capa').querySelector('img')?.getAttribute('alt')).toBe('');
-    expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET_A}/download-url`]);
+    expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET_A}/download-url?variant=thumbnail`]);
   });
 
   it('asks for nothing and shows the shape of the format when the content has no cover', async () => {
@@ -1208,8 +1211,8 @@ describe('the cover of a card', () => {
     expect(cardOf('Dois').querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${ASSET_B}.jpg`);
     expect(cardOf('Três').querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${ASSET_A}.jpg`);
     expect(coverCalls(calls).sort()).toEqual([
-      `GET /agencies/${AGENCY_A}/media/${ASSET_A}/download-url`,
-      `GET /agencies/${AGENCY_A}/media/${ASSET_B}/download-url`
+      `GET /agencies/${AGENCY_A}/media/${ASSET_A}/download-url?variant=thumbnail`,
+      `GET /agencies/${AGENCY_A}/media/${ASSET_B}/download-url?variant=thumbnail`
     ]);
   });
 
@@ -1284,7 +1287,7 @@ describe('the cover of a card', () => {
       await act(async () => { await new Promise((resolve) => setTimeout(resolve, 40)); });
       expect(coverCalls(calls)).toEqual([]);
       act(() => visible.show(visible.observed[0]!));
-      await waitFor(() => expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET_A}/download-url`]));
+      await waitFor(() => expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET_A}/download-url?variant=thumbnail`]));
       expect(cardOf('Fora da tela').querySelector('img')).toBeNull();
     });
 
