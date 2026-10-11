@@ -129,6 +129,8 @@ interface Scenario {
   readonly cover?: (assetId: string, search: string) => Response | Promise<Response> | undefined;
   /** The answer of `GET .../contents/:contentId` (the hover detail); the default is the bare content. */
   readonly content?: (clientId: string, contentId: string) => Response | Promise<Response> | undefined;
+  /** The last comment of the conversation of a content, as `GET .../threads?contentId=` lists it; none by default. */
+  readonly lastComment?: (contentId: string) => { side: 'agency' | 'client'; at: string; excerpt: string } | Response | Promise<Response> | undefined;
   /** Overrides the answer of a move, after the guard and the body were checked like the API does. */
   readonly patch?: (clientId: string, contentId: string, body: unknown, call: number) => Response | Promise<Response> | undefined;
   readonly permissions?: readonly string[];
@@ -189,6 +191,21 @@ const makeFetch = (scenario: Scenario = {}) => {
       const custom = scenario.cover?.(media[2]!, url.search);
       if (custom !== undefined) return custom;
       return json({ url: `https://storage.test/${media[2]}.jpg`, expiresAt: '2026-10-12T01:45:00.000Z' });
+    }
+    const threads = /\/agencies\/([^/]+)\/clients\/([^/]+)\/threads$/.exec(path);
+    if (threads !== null && method === 'GET') {
+      // The conversation of a content is read with conteudo.visualizar; one subject is mandatory (#259).
+      if (!permissions.includes(VISUALIZE)) return forbidden();
+      if (!roster.some((client) => client.id === threads[2])) return notFound();
+      const contentId = url.searchParams.get('contentId');
+      if (contentId === null || !/^[0-9a-f-]{36}$/i.test(contentId)) return invalid();
+      const answer = scenario.lastComment?.(contentId);
+      if (answer instanceof Response || answer instanceof Promise) return answer;
+      const data = answer === undefined ? [] : [{
+        id: 'c1c1c1c1-0000-4000-8000-000000000001', subject: { contentId }, state: 'open',
+        openedBy: { name: 'Pessoa', side: 'agency' }, lastComment: answer, commentCount: 3, resolvedBy: null, resolvedAt: null
+      }];
+      return json({ data, meta: { page: 1, pageSize: 20, totalItems: data.length, totalPages: 1 } });
     }
     const one = /\/agencies\/([^/]+)\/clients\/([^/]+)\/contents\/([^/]+)$/.exec(path);
     if (one !== null && method === 'GET') {
@@ -1286,7 +1303,8 @@ describe('the detail on a card (hover and focus)', () => {
           id: `b0b0b0b0-0000-4000-8000-00000000000${index}`, title: `Tarefa ${index}`, description: null, assigneeUserId: row.ownerUserId, dueOn: '2026-10-13', status, returnComment: null, approvedBy: null, approvedAt: null
         })),
         conversation: { threadId: 'c1c1c1c1-0000-4000-8000-000000000001', commentCount: 3, lastCommentAt: '2026-10-12T01:30:00.000Z' }
-      })
+      }),
+      lastComment: () => ({ side: 'client', at: '2026-10-12T01:30:00.000Z', excerpt: 'Podemos trocar a foto da capa?' })
     });
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Lançamento');
@@ -1300,12 +1318,102 @@ describe('the detail on a card (hover and focus)', () => {
     expect(within(tooltip).getByText('2 de 4 aprovadas · 1 entregue · 1 pendente')).toBeTruthy();
     // 01:30Z of the 12th is still the 11th in São Paulo.
     expect(within(tooltip).getByText('3 comentários · último em 11/10')).toBeTruthy();
+    expect(await within(tooltip).findByText('Cliente: “Podemos trocar a foto da capa?” · 11/10')).toBeTruthy();
+    expect(calls).toContain(`GET /agencies/${AGENCY_A}/clients/${padaria.id}/threads?contentId=${row.id}`);
     expect(cardOf('Lançamento').getAttribute('aria-describedby')).toBe(tooltip.id);
     expect(detailCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/clients/${padaria.id}/contents/${row.id}`]);
 
     fireEvent.mouseLeave(cardOf('Lançamento'));
     await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
     expect(cardOf('Lançamento').getAttribute('aria-describedby')).toBeNull();
+  });
+
+  const withComments = (row: ReturnType<typeof contentFixture>, count = 2) =>
+    withDetail(row, { conversation: { threadId: 'c1c1c1c1-0000-4000-8000-000000000001', commentCount: count, lastCommentAt: '2026-10-12T01:30:00.000Z' } });
+  const threadCalls = (calls: readonly string[]): string[] => calls.filter((call) => /\/threads\?/.test(call));
+
+  it('asks for the last message only of the content that was pointed at, and only when it has comments', async () => {
+    const withTalk = contentFixture({ title: 'Com conversa', publishOn: '2026-10-14' });
+    const quiet = contentFixture({ title: 'Sem conversa', publishOn: '2026-10-15' });
+    const { impl, calls } = makeFetch({
+      contents: { [padaria.id]: [withTalk, quiet] },
+      content: withComments(withTalk),
+      lastComment: () => ({ side: 'agency', at: '2026-10-12T12:00:00.000Z', excerpt: 'Enviamos a arte nova.' })
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Com conversa');
+    expect(threadCalls(calls)).toEqual([]);
+
+    fireEvent.mouseEnter(cardOf('Sem conversa'));
+    await within(await screen.findByRole('tooltip')).findByText('Sem comentários');
+    expect(threadCalls(calls)).toEqual([]);
+    fireEvent.mouseLeave(cardOf('Sem conversa'));
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+
+    fireEvent.mouseEnter(cardOf('Com conversa'));
+    const tooltip = await screen.findByRole('tooltip');
+    expect(await within(tooltip).findByText('Agência: “Enviamos a arte nova.” · 12/10')).toBeTruthy();
+    expect(threadCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/clients/${padaria.id}/threads?contentId=${withTalk.id}`]);
+  });
+
+  it('shows the message of the card that was pointed at, not of another card', async () => {
+    const first = contentFixture({ title: 'Primeiro', publishOn: '2026-10-14' });
+    const second = contentFixture({ title: 'Segundo', publishOn: '2026-10-15' });
+    const { impl } = makeFetch({
+      contents: { [padaria.id]: [first, second] },
+      content: (client, id) => withComments(id === first.id ? first : second)(client, id),
+      lastComment: (contentId) => ({ side: 'client', at: '2026-10-12T12:00:00.000Z', excerpt: contentId === first.id ? 'Fala do primeiro' : 'Fala do segundo' })
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Segundo');
+
+    // The first card is read before, so a cache that ignored the content would answer the second with its message.
+    fireEvent.mouseEnter(cardOf('Primeiro'));
+    expect(await within(await screen.findByRole('tooltip')).findByText(/Fala do primeiro/)).toBeTruthy();
+    fireEvent.mouseLeave(cardOf('Primeiro'));
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+
+    fireEvent.mouseEnter(cardOf('Segundo'));
+    const tooltip = await screen.findByRole('tooltip');
+    expect(await within(tooltip).findByText(/Fala do segundo/)).toBeTruthy();
+    expect(within(tooltip).queryByText(/Fala do primeiro/)).toBeNull();
+  });
+
+  it('says "carregando" while the message is read, and keeps the rest of the detail when the route refuses', async () => {
+    const row = contentFixture({ title: 'Texto', publishOn: '2026-10-14' });
+    const answer = deferred<Response>();
+    const { impl } = makeFetch({
+      contents: { [padaria.id]: [row] },
+      content: withComments(row),
+      lastComment: () => answer.promise
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Texto');
+
+    fireEvent.mouseEnter(cardOf('Texto'));
+    const tooltip = await screen.findByRole('tooltip');
+    expect(await within(tooltip).findByText('Carregando…')).toBeTruthy();
+    await act(async () => { answer.resolve(json({ error: { code: 'FORBIDDEN', message: 'Forbidden <b>x</b>' } }, 403)); });
+    expect(await within(tooltip).findByText('Não foi possível carregar a última mensagem.')).toBeTruthy();
+    expect(within(tooltip).getByText('2 comentários · último em 11/10')).toBeTruthy();
+    expect(tooltip.textContent).not.toContain('Forbidden');
+  });
+
+  it('never turns the text of a message into markup', async () => {
+    const row = contentFixture({ title: 'Marcação', publishOn: '2026-10-14' });
+    const { impl } = makeFetch({
+      contents: { [padaria.id]: [row] },
+      content: withComments(row),
+      lastComment: () => ({ side: 'client', at: '2026-10-12T12:00:00.000Z', excerpt: '<img src=x onerror=alert(1)> <b>oi</b>' })
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Marcação');
+
+    fireEvent.mouseEnter(cardOf('Marcação'));
+    const tooltip = await screen.findByRole('tooltip');
+    expect(await within(tooltip).findByText(/<img src=x onerror=alert\(1\)> <b>oi<\/b>/)).toBeTruthy();
+    expect(tooltip.querySelector('img')).toBeNull();
+    expect(tooltip.querySelector('b')).toBeNull();
   });
 
   it('says the empty cases in words: no caption, no subtasks, no comments', async () => {
