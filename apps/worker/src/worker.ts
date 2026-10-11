@@ -20,6 +20,7 @@ import { createEmailSender, type EmailSender } from '@ageniza/email';
 import { archiveDueClientsJob } from './archive-due-clients-job.js';
 import { clientContentEmailJob } from './client-content-email-job.js';
 import { createJobProcessor, type JobProcessor } from './jobs.js';
+import { mediaPurgeJob } from './media-purge-job.js';
 import { mediaVideoProcessingJob } from './media-video-job.js';
 import { createMediaProcessingStorageClient } from './media-storage.js';
 import { createNotificationQueue } from './notification-queue.js';
@@ -102,14 +103,17 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
   // Video processing (issue #24): registered whenever object storage is configured, exactly like
   // the API only mounts its media routes when `config.storage` is present. Registration must
   // happen before `queue.start()` (enforced by `queue.register` itself).
+  // The same storage client serves the retention of a removed media (issue #607), which deletes the files 30 days after the removal.
   if (queue !== undefined && options.config.storage !== undefined) {
+    const storage = createMediaProcessingStorageClient(options.config.storage);
     queue.register(mediaVideoProcessingJob({
       database,
-      storage: createMediaProcessingStorageClient(options.config.storage),
+      storage,
       config: options.config.mediaProcessing
     }));
+    queue.register(mediaPurgeJob({ database, storage }));
   } else if (queue !== undefined) {
-    logger.warn({ status: 'skipped' }, 'Object storage is not configured; video processing jobs will not be registered.');
+    logger.warn({ status: 'skipped' }, 'Object storage is not configured; video processing and media purge jobs will not be registered.');
   }
   // The e-mail to the client (issue #260) needs the queue, a transport and the origin of the web app for its links; without
   // the three there is nothing to send with, which production refuses at config load.

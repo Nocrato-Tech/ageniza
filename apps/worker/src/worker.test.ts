@@ -321,6 +321,23 @@ describe('worker runtime', () => {
     expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due']);
   });
 
+  it('registers the purge of the removed media, daily, together with the video processing, only when object storage is configured', () => {
+    const withStorage = createTestQueue();
+    createTestRuntime({
+      queue: withStorage,
+      config: { ...config, storage: { endpoint: 'http://127.0.0.1:9000', region: 'auto', accessKeyId: 'key', secretAccessKey: 'secret', bucket: 'bucket', forcePathStyle: true } }
+    });
+    const registered = vi.mocked(withStorage.register).mock.calls.map(([definition]) => definition);
+    expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due', 'media.process-video', 'media.purge-removed']);
+    const purge = registered.find((definition) => definition.name === 'media.purge-removed');
+    expect(purge?.schedule).toEqual({ cron: '40 3 * * *', timeZone: 'America/Sao_Paulo' });
+    expect(purge?.runOnStart).toBe(true);
+
+    const withoutStorage = createTestQueue();
+    createTestRuntime({ queue: withoutStorage });
+    expect(vi.mocked(withoutStorage.register).mock.calls.map(([definition]) => definition.name)).not.toContain('media.purge-removed');
+  });
+
   it('registers the e-mail to the clients when the transport and the origin of the web app are configured, once a minute', () => {
     const queue = createTestQueue();
     const emailSender = { send: vi.fn(async () => undefined), close: vi.fn(async () => undefined) };
