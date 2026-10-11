@@ -179,6 +179,9 @@ importers:
       '@ageniza/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@ageniza/email':
+        specifier: workspace:*
+        version: link:../../packages/email
       '@aws-sdk/client-s3':
         specifier: 3.1140.0
         version: 3.1140.0
