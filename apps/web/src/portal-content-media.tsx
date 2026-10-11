@@ -21,6 +21,7 @@ const SWIPE_MIN_PX = 40;
 export interface PortalMediaItem {
   readonly id: string;
   readonly position: number;
+  readonly kind: 'image' | 'video';
 }
 
 interface PostIds {
@@ -51,11 +52,7 @@ const usableUrl = (data: PortalContentMediaUrlResponse | undefined): string | un
 
 const isVideoFormat = (format: ContentFormat): boolean => format !== 'image' && format !== 'carousel';
 
-/**
- * The media of the current slide at full width. The API does not say whether an item is an image or a video: a video
- * format is a video, an image format is an image, and an item of a carousel (which holds either) is tried as an image
- * and, when the browser cannot draw it as one, as a video.
- */
+/** The media of the current slide at full width: the API says whether the item is an image or a video (`kind`). */
 function Slide({ ids, format, coverAssetId, item, position, total, title }: {
   ids: PostIds;
   format: ContentFormat;
@@ -65,11 +62,11 @@ function Slide({ ids, format, coverAssetId, item, position, total, title }: {
   total: number;
   title: string;
 }) {
-  const [asVideo, setAsVideo] = useState(isVideoFormat(format));
+  const asVideo = item.kind === 'video';
   const [failed, setFailed] = useState(false);
   const original = usePortalMediaUrl(ids, item.id, 'original', true);
-  // The poster is the cover when the content has one, otherwise the video's own frame; without either the video shows no poster.
-  const poster = usePortalMediaUrl(ids, coverAssetId ?? item.id, 'thumbnail', asVideo);
+  // The cover belongs to the video formats; any other video shows its own frame. Without a ready frame the video has no poster.
+  const poster = usePortalMediaUrl(ids, isVideoFormat(format) ? (coverAssetId ?? item.id) : item.id, 'thumbnail', asVideo);
   const url = usableUrl(original.data);
   const posterUrl = usableUrl(poster.data);
 
@@ -97,7 +94,7 @@ function Slide({ ids, format, coverAssetId, item, position, total, title }: {
     className="portal-media__item"
     src={url}
     alt={label}
-    onError={() => { if (format === 'carousel') setAsVideo(true); else setFailed(true); }}
+    onError={() => setFailed(true)}
   />;
 }
 

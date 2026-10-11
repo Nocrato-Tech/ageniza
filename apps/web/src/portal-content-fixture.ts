@@ -33,7 +33,7 @@ export interface PortalContentRow {
   caption: string | null;
   revision: number;
   coverAssetId: string | null;
-  media: Array<{ id: string; position: number }>;
+  media: Array<{ id: string; position: number; kind: 'image' | 'video' }>;
   publishedOn: string | null;
 }
 
@@ -62,7 +62,7 @@ export const createPortalContentsApi = (
       caption: 'Legenda do post',
       revision: 1,
       coverAssetId: null,
-      media: [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', position: 1 }],
+      media: [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', position: 1, kind: ['image', 'carousel'].includes(input.format ?? 'image') ? 'image' : 'video' }],
       publishedOn: null,
       ...input
     };

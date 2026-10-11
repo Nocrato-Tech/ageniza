@@ -533,7 +533,7 @@ describe('the post of the portal (#270)', () => {
   describe('the media', () => {
     const carousel = (count: number): Partial<PortalContentSeed> => ({
       format: 'carousel',
-      media: Array.from({ length: count }, (_value, index) => ({ id: asset(index + 1), position: index + 1 })).reverse()
+      media: Array.from({ length: count }, (_value, index) => ({ id: asset(index + 1), position: index + 1, kind: 'image' as const })).reverse()
     });
     const shown = (): string | null => document.querySelector('.portal-media__item')?.getAttribute('src') ?? null;
     const region = (): HTMLElement => screen.getByRole('region', { name: 'Mídias do post' });
@@ -581,7 +581,7 @@ describe('the post of the portal (#270)', () => {
     });
 
     it('leaves the arrows to the controls of a video', async () => {
-      await open({ ...carousel(3), format: 'reels' });
+      await open({ ...carousel(3), format: 'reels', media: carousel(3).media!.map((entry) => ({ ...entry, kind: 'video' as const })) });
       const video = await waitFor(() => {
         const found = document.querySelector('video');
         expect(found).not.toBeNull();
@@ -669,14 +669,27 @@ describe('the post of the portal (#270)', () => {
       expect(document.querySelector('video')?.hasAttribute('poster')).toBe(false);
     });
 
-    it('draws an image of a carousel as a video when the browser cannot draw it as an image', async () => {
-      await open(carousel(2));
-      await waitFor(() => { expect(shown()).toBe(`https://storage.test/${asset(1)}/original`); });
-      fireEvent.error(document.querySelector('img.portal-media__item')!);
-      await waitFor(() => { expect(document.querySelector('video.portal-media__item')?.getAttribute('src')).toBe(`https://storage.test/${asset(1)}/original`); });
-      expect(document.querySelector('img.portal-media__item')).toBeNull();
+    it('draws each item of a carousel as what its kind says, an image or a video, with no guessing', async () => {
+      await open({
+        format: 'carousel',
+        coverAssetId: asset(9),
+        media: [{ id: asset(1), position: 1, kind: 'image' }, { id: asset(2), position: 2, kind: 'video' }, { id: asset(3), position: 3, kind: 'image' }]
+      });
+      const original = (n: number): string => `https://storage.test/${asset(n)}/original`;
+      await waitFor(() => { expect(shown()).toBe(original(1)); });
+      expect(document.querySelector('video')).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Próxima' }));
-      await waitFor(() => { expect(document.querySelector('img.portal-media__item')?.getAttribute('src')).toBe(`https://storage.test/${asset(2)}/original`); });
+      const video = await waitFor(() => {
+        const found = document.querySelector('video.portal-media__item');
+        expect(found?.getAttribute('src')).toBe(original(2));
+        return found as HTMLVideoElement;
+      });
+      expect(document.querySelector('img.portal-media__item')).toBeNull();
+      // A video of a carousel shows its own frame: the cover belongs to the video formats.
+      await waitFor(() => { expect(video.getAttribute('poster')).toBe(`https://storage.test/${asset(2)}/thumbnail`); });
+      fireEvent.click(screen.getByRole('button', { name: 'Próxima' }));
+      await waitFor(() => { expect(document.querySelector('img.portal-media__item')?.getAttribute('src')).toBe(original(3)); });
+      expect(document.querySelector('video')).toBeNull();
     });
 
     it('says an image that does not load did not load, and offers to try again', async () => {
@@ -691,7 +704,7 @@ describe('the post of the portal (#270)', () => {
 
     it('says the media did not load when the route refuses to sign it, and keeps the rest of the post', async () => {
       const scenario = setup();
-      scenario.contents.seed({ id: CONTENT, clientId: CLIENT, format: 'carousel', media: [{ id: asset(1), position: 1 }, { id: asset(2), position: 2 }] });
+      scenario.contents.seed({ id: CONTENT, clientId: CLIENT, format: 'carousel', media: [{ id: asset(1), position: 1, kind: 'image' }, { id: asset(2), position: 2, kind: 'image' }] });
       const impl: typeof fetch = async (input, init) => {
         const url = new URL(String(input));
         if (url.pathname.endsWith(`/media/${asset(1)}/url`)) return portalContentError(404, 'NOT_FOUND', 'Media asset not found.');
