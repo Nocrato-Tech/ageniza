@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 import { isCalendarDay } from './clients.js';
-import { JOINER_OUTSIDE_NAME_CHARACTERS } from './display-name.js';
 import {
+  hasHiddenStoryCharacters,
   STORY_SCRIPT_PERIOD_MAX_DAYS,
   STORY_SCRIPT_PERIOD_MAX_ITEMS,
   StoryScriptPeriodQuerySchema,
@@ -36,40 +36,27 @@ export const CalendarDaySchema = z.string().refine(isCalendarDay, 'must be a rea
 /** Hour and minute, 24-hour clock: the optional time of a publication. */
 export const ContentTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'must be a time in the form HH:MM');
 
-// Control characters, line and paragraph separators, the Hangul fillers (letters that draw nothing) and every
-// format character but the two joiners, which `JOINER_OUTSIDE_NAME_CHARACTERS` places.
-const FORBIDDEN_IN_SINGLE_LINE = /[\p{Cc}\p{Zl}\p{Zp}ᅟᅠㅤﾠ]|(?![‌‍])\p{Cf}/u;
-// A caption keeps the tab, the line feed and the carriage return a person types.
-const FORBIDDEN_IN_MULTILINE = /(?![\t\n\r])\p{Cc}|[\p{Zl}\p{Zp}ᅟᅠㅤﾠ]|(?![‌‍])\p{Cf}/u;
-// Not `Cf`, so the rules above let them through: the combining grapheme joiner, the variation selectors, the Khmer
-// inherent vowels, the tags and the like are `Default_Ignorable_Code_Point`, and the Braille blank draws a space.
-const INVISIBLE_NOT_FORMAT = /(?![‌‍])[\p{Default_Ignorable_Code_Point}⠀]/u;
-// The one place a variation selector means something: right after a pictograph (or a keycap base) it picks the
-// text or the emoji drawing, and a caption without "❤️" would be a caption nobody writes.
-const EMOJI_SELECTOR = /(?<=[\p{Extended_Pictographic}#*0-9])[︎️]/gu;
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+const LINE_BREAKS = /[\t\n\r]/;
 
 const characterCount = (value: string): number => Array.from(value).length;
 
-const hasInvisible = (value: string): boolean => INVISIBLE_NOT_FORMAT.test(value.replace(EMOJI_SELECTOR, ''));
-
-const freeText = (forbidden: RegExp) => z.string()
-  .refine((value) => !forbidden.test(value), 'must not contain control, bidi or invisible characters')
-  .refine((value) => !hasInvisible(value), 'must not contain invisible or blank characters')
-  .refine((value) => !JOINER_OUTSIDE_NAME_CHARACTERS.test(value), 'a zero-width joiner is only allowed between letters, combining marks or pictographs')
+// One rule of free text in Conteúdo: the story script's, so a title, a caption and a scene refuse the same characters.
+const visibleText = () => z.string()
+  .refine((value) => !hasHiddenStoryCharacters(value), 'must not contain control, bidi or invisible characters')
   .refine((value) => !LONE_SURROGATE.test(value), 'must be valid text');
 
 /** The title the client also sees: one line, 1 to 120 characters (the column counts characters, not bytes). */
 export const ContentTitleSchema = z.string()
-  .pipe(freeText(FORBIDDEN_IN_SINGLE_LINE))
+  .refine((value) => !LINE_BREAKS.test(value), 'must be one line')
+  .pipe(visibleText())
   .transform((value) => value.trim())
   .pipe(z.string()
     .min(1, 'must not be empty')
     .refine((value) => characterCount(value) <= CONTENT_TITLE_MAX_LENGTH, `must be at most ${CONTENT_TITLE_MAX_LENGTH} characters`));
 
 /** The caption: line breaks allowed, up to 2.200 characters; a blank one is the same as none. */
-export const ContentCaptionSchema = z.string()
-  .pipe(freeText(FORBIDDEN_IN_MULTILINE))
+export const ContentCaptionSchema = visibleText()
   .transform((value) => value.trim())
   .pipe(z.string().refine((value) => characterCount(value) <= CONTENT_CAPTION_MAX_LENGTH, `must be at most ${CONTENT_CAPTION_MAX_LENGTH} characters`))
   .transform((value) => (value === '' ? null : value));

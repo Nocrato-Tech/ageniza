@@ -51,7 +51,7 @@ describe('content title', () => {
   it('trims and keeps what a person writes', () => {
     expect(ContentTitleSchema.parse('  Lançamento da coleção  ')).toBe('Lançamento da coleção');
     expect(ContentTitleSchema.parse('50% OFF 🎬')).toBe('50% OFF 🎬');
-    expect(ContentTitleSchema.parse('Amor ❤️ em família 👨‍👩‍👧')).toBe('Amor ❤️ em família 👨‍👩‍👧');
+    expect(ContentTitleSchema.parse('Amor ❤️ em família')).toBe('Amor ❤️ em família');
   });
 
   it('counts characters, not UTF-16 units: 120 pass and 121 do not', () => {
@@ -113,17 +113,9 @@ describe('content title', () => {
     expect(valid(value)).toBe(false);
   });
 
-  it('accepts a variation selector only right after a pictograph, once', () => {
-    expect(valid('❤️')).toBe(true);
-    expect(valid('❤️️')).toBe(false);
-    expect(valid('1️⃣')).toBe(true);
-  });
-
-  it('accepts a joiner between letters but not at the edges', () => {
-    expect(valid('می‌خواهم')).toBe(true);
-    expect(valid('‍ab')).toBe(false);
-    expect(valid('ab‍')).toBe(false);
-    expect(valid('a ‍ b')).toBe(false);
+  it('accepts the emoji presentation selector only right after a pictograph, once', () => {
+    expect(valid('\u2764\uFE0F')).toBe(true);
+    expect(valid('\u2764\uFE0F\uFE0F')).toBe(false);
   });
 
   it('refuses a lone surrogate', () => {
@@ -217,5 +209,30 @@ describe('content create and update bodies', () => {
     expect(UpdateContentRequestSchema.safeParse({ mediaAssetIds: ids(21) }).success).toBe(false);
     expect(UpdateContentRequestSchema.safeParse({ mediaAssetIds: [] }).success).toBe(true);
     expect(UpdateContentRequestSchema.safeParse({ mediaAssetIds: ['x'] }).success).toBe(false);
+  });
+});
+
+// One rule of free text in Conteudo: the story script's. These four were accepted by an older copy of the rule.
+describe.each([
+  ['title', valid],
+  ['caption', validCaption]
+])('content %s follows the story script rule', (_name, accepts) => {
+  it.each([
+    ['zero-width joiner between letters', 'a\u200Db'],
+    ['zero-width non-joiner between letters', 'a\u200Cb'],
+    ['zero-width joiner of an emoji family', '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}'],
+    ['text selector after a pictograph', '\u2764\uFE0E'],
+    ['emoji selector after a digit (keycap)', '1\uFE0F\u20E3'],
+    ['text selector after a digit', '1\uFE0E'],
+    ['emoji selector after a number sign', '#\uFE0F'],
+    ['musical null notehead U+1D159', 'a\u{1D159}b'],
+    ['musical null notehead alone at the start', '\u{1D159}ab']
+  ])('refuses %s', (_label, value) => {
+    expect(accepts(value)).toBe(false);
+  });
+
+  it('keeps accepting the emoji selector right after a pictograph and plain pictographs', () => {
+    expect(accepts('\u2764\uFE0F')).toBe(true);
+    expect(accepts('\u{1F3AC}')).toBe(true);
   });
 });

@@ -196,3 +196,36 @@ describe('a content written while another transaction holds the client (issue #2
     expect((await w.contentRow(contentId)).title).toBe('Original');
   }, 30_000);
 });
+
+describe('a content edited while the client is archived behind the row the edit waits for (issue #254, trigger of #538)', () => {
+  // The route has read the client (active) and its UPDATE waits for the row, held by another transaction. The archive
+  // commits in that wait, then the row is released: only the trigger `0_contents_edit_lock_active_client` can still
+  // tell the statement that the client is gone, because its policy and its WHERE were evaluated before the wait.
+  it.each([
+    ['title', { title: 'Chegou depois do arquivamento' }, 'title', 'Original'],
+    ['caption', { caption: 'Legenda depois do arquivamento' }, 'caption', 'Legenda original']
+  ] as const)('answers 409 CLIENT_ARCHIVED to a %s edit that waits for the row while the archive commits, and edits none', async (_label, body, column, original) => {
+    const clientId = await w.newClient(`edit-held-${column}`);
+    const contentId = await w.seedContent(clientId, { title: 'Original', caption: 'Legenda original' });
+
+    const holder = await w.getOwner().knex.transaction();
+    let released = false;
+    try {
+      const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.contents where id = ?::uuid for update', [contentId]);
+      if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one content row.');
+      const holderPid = await backendPid(holder);
+
+      const pending = w.call('PATCH', people.production.cookie, `${urlOf(clientId)}/${contentId}`, body);
+      await waitForBackendBlockedBy(holderPid);
+      const archive = await w.getOwner().knex('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
+      expect(archive).toBe(1);
+      await holder.rollback();
+      released = true;
+
+      archived(await pending);
+    } finally {
+      if (!released) await holder.rollback();
+    }
+    expect((await w.contentRow(contentId))[column]).toBe(original);
+  }, 30_000);
+});
