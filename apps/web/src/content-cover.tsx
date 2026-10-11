@@ -9,7 +9,7 @@ import { useApiClient } from './http.js';
 import { signedUrlStaleTime } from './signed-url.js';
 
 /** Whether the element was ever on screen. Without `IntersectionObserver` (an old browser) it counts as seen. */
-function useSeen<T extends Element>(): [RefObject<T | null>, boolean] {
+export function useSeen<T extends Element>(): [RefObject<T | null>, boolean] {
   const ref = useRef<T | null>(null);
   const [seen, setSeen] = useState(typeof IntersectionObserver === 'undefined');
   useEffect(() => {
