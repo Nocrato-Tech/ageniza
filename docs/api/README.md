@@ -1860,7 +1860,7 @@ Lê o estudo de marca, no portal.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
-### contents — Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data.
+### contents — Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
@@ -1868,6 +1868,12 @@ Lê o estudo de marca, no portal.
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents` | Sessão + vínculo com a agência | `conteudo.operar` | Cria um conteúdo em produção |
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | Sessão + vínculo com a agência | `conteudo.operar` | Edita um conteúdo; mover de data é editar `publishOn` |
+| `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/submit` | Sessão + vínculo com a agência | `conteudo.operar` | Envia o conteúdo para aprovação |
+| `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/approve-by-agency` | Sessão + vínculo com a agência | `conteudo.aprovar_pela_agencia` | Registra a aprovação feita fora da plataforma |
+| `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/publish` | Sessão + vínculo com a agência | `conteudo.publicar` | Marca o conteúdo aprovado como publicado |
+| `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/unpublish` | Sessão + vínculo com a agência | `conteudo.publicar` | Desfaz a publicação no mesmo dia |
+| `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/cancel` | Sessão + vínculo com a agência | `conteudo.cancelar` | Cancela o conteúdo (ele fica guardado) |
+| `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/reschedule` | Sessão + vínculo com a agência | `conteudo.operar` | Reagenda um conteúdo cancelado |
 
 #### `GET /agencies/:agencyId/clients/:clientId/contents`
 
@@ -2122,6 +2128,385 @@ Edita um conteúdo; mover de data é editar `publishOn`.
 ```
 
 **Erros:** `400 CONTENT_FOLDER_INVALID` · `400 CONTENT_MEDIA_INVALID` · `400 CONTENT_OWNER_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_FOLDER_IN_USE` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_NOT_EDITABLE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/submit`
+
+Envia o conteúdo para aprovação.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Resposta `200`** — Conteúdo aguardando aprovação.
+
+```json
+{
+  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  "clientId": "77777777-7777-4777-8777-777777777777",
+  "title": "Lançamento da coleção de outono",
+  "platform": "instagram",
+  "format": "reels",
+  "publishOn": "2026-10-20",
+  "publishAtTime": "18:30",
+  "caption": "A coleção chegou. Vem ver.",
+  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "coverAssetId": null,
+  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+  "status": "awaiting_approval",
+  "revision": 1,
+  "approvedBy": null,
+  "approvedAt": null,
+  "approvedByAgencyReason": null,
+  "publishedOn": null,
+  "cancelledAt": null,
+  "createdAt": "2026-10-11T12:00:00.000Z",
+  "media": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "position": 1
+    }
+  ],
+  "tasks": [
+    {
+      "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+      "title": "Gravar o vídeo",
+      "description": null,
+      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+      "dueOn": "2026-10-15",
+      "status": "pending",
+      "returnComment": null,
+      "approvedBy": null,
+      "approvedAt": null
+    }
+  ],
+  "conversation": {
+    "threadId": null,
+    "commentCount": 0,
+    "lastCommentAt": null
+  }
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_STATE` · `409 CONTENT_TASKS_NOT_APPROVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/approve-by-agency`
+
+Registra a aprovação feita fora da plataforma.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.aprovar_pela_agencia`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "revision": 1,
+  "reason": "O cliente aprovou por telefone em 11/10."
+}
+```
+
+**Resposta `200`** — Conteúdo aprovado.
+
+```json
+{
+  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  "clientId": "77777777-7777-4777-8777-777777777777",
+  "title": "Lançamento da coleção de outono",
+  "platform": "instagram",
+  "format": "reels",
+  "publishOn": "2026-10-20",
+  "publishAtTime": "18:30",
+  "caption": "A coleção chegou. Vem ver.",
+  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "coverAssetId": null,
+  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+  "status": "approved",
+  "revision": 1,
+  "approvedBy": "55555555-5555-4555-8555-555555555555",
+  "approvedAt": "2026-10-11T12:30:00.000Z",
+  "approvedByAgencyReason": "O cliente aprovou por telefone em 11/10.",
+  "publishedOn": null,
+  "cancelledAt": null,
+  "createdAt": "2026-10-11T12:00:00.000Z",
+  "media": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "position": 1
+    }
+  ],
+  "tasks": [
+    {
+      "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+      "title": "Gravar o vídeo",
+      "description": null,
+      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+      "dueOn": "2026-10-15",
+      "status": "pending",
+      "returnComment": null,
+      "approvedBy": null,
+      "approvedAt": null
+    }
+  ],
+  "conversation": {
+    "threadId": null,
+    "commentCount": 0,
+    "lastCommentAt": null
+  }
+}
+```
+
+**Erros:** `400 CONTENT_REASON_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_REVISION_CHANGED` · `409 CONTENT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/publish`
+
+Marca o conteúdo aprovado como publicado.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.publicar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "publishedOn": "2026-10-10"
+}
+```
+
+**Resposta `200`** — Conteúdo publicado.
+
+```json
+{
+  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  "clientId": "77777777-7777-4777-8777-777777777777",
+  "title": "Lançamento da coleção de outono",
+  "platform": "instagram",
+  "format": "reels",
+  "publishOn": "2026-10-20",
+  "publishAtTime": "18:30",
+  "caption": "A coleção chegou. Vem ver.",
+  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "coverAssetId": null,
+  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+  "status": "published",
+  "revision": 1,
+  "approvedBy": null,
+  "approvedAt": null,
+  "approvedByAgencyReason": null,
+  "publishedOn": "2026-10-10",
+  "cancelledAt": null,
+  "createdAt": "2026-10-11T12:00:00.000Z",
+  "media": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "position": 1
+    }
+  ],
+  "tasks": [
+    {
+      "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+      "title": "Gravar o vídeo",
+      "description": null,
+      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+      "dueOn": "2026-10-15",
+      "status": "pending",
+      "returnComment": null,
+      "approvedBy": null,
+      "approvedAt": null
+    }
+  ],
+  "conversation": {
+    "threadId": null,
+    "commentCount": 0,
+    "lastCommentAt": null
+  }
+}
+```
+
+**Erros:** `400 CONTENT_PUBLISHED_ON_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/unpublish`
+
+Desfaz a publicação no mesmo dia.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.publicar`.
+
+**Resposta `200`** — Conteúdo aprovado de novo.
+
+```json
+{
+  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  "clientId": "77777777-7777-4777-8777-777777777777",
+  "title": "Lançamento da coleção de outono",
+  "platform": "instagram",
+  "format": "reels",
+  "publishOn": "2026-10-20",
+  "publishAtTime": "18:30",
+  "caption": "A coleção chegou. Vem ver.",
+  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "coverAssetId": null,
+  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+  "status": "approved",
+  "revision": 1,
+  "approvedBy": null,
+  "approvedAt": null,
+  "approvedByAgencyReason": null,
+  "publishedOn": null,
+  "cancelledAt": null,
+  "createdAt": "2026-10-11T12:00:00.000Z",
+  "media": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "position": 1
+    }
+  ],
+  "tasks": [
+    {
+      "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+      "title": "Gravar o vídeo",
+      "description": null,
+      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+      "dueOn": "2026-10-15",
+      "status": "pending",
+      "returnComment": null,
+      "approvedBy": null,
+      "approvedAt": null
+    }
+  ],
+  "conversation": {
+    "threadId": null,
+    "commentCount": 0,
+    "lastCommentAt": null
+  }
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_STATE` · `409 CONTENT_UNPUBLISH_EXPIRED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/cancel`
+
+Cancela o conteúdo (ele fica guardado).
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.cancelar`.
+
+**Resposta `200`** — Conteúdo cancelado.
+
+```json
+{
+  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  "clientId": "77777777-7777-4777-8777-777777777777",
+  "title": "Lançamento da coleção de outono",
+  "platform": "instagram",
+  "format": "reels",
+  "publishOn": "2026-10-20",
+  "publishAtTime": "18:30",
+  "caption": "A coleção chegou. Vem ver.",
+  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "coverAssetId": null,
+  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+  "status": "cancelled",
+  "revision": 1,
+  "approvedBy": null,
+  "approvedAt": null,
+  "approvedByAgencyReason": null,
+  "publishedOn": null,
+  "cancelledAt": "2026-10-11T12:30:00.000Z",
+  "createdAt": "2026-10-11T12:00:00.000Z",
+  "media": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "position": 1
+    }
+  ],
+  "tasks": [
+    {
+      "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+      "title": "Gravar o vídeo",
+      "description": null,
+      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+      "dueOn": "2026-10-15",
+      "status": "pending",
+      "returnComment": null,
+      "approvedBy": null,
+      "approvedAt": null
+    }
+  ],
+  "conversation": {
+    "threadId": null,
+    "commentCount": 0,
+    "lastCommentAt": null
+  }
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/reschedule`
+
+Reagenda um conteúdo cancelado.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "publishOn": "2026-11-03"
+}
+```
+
+**Resposta `200`** — Conteúdo em produção de novo.
+
+```json
+{
+  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  "clientId": "77777777-7777-4777-8777-777777777777",
+  "title": "Lançamento da coleção de outono",
+  "platform": "instagram",
+  "format": "reels",
+  "publishOn": "2026-11-03",
+  "publishAtTime": "18:30",
+  "caption": "A coleção chegou. Vem ver.",
+  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "coverAssetId": null,
+  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+  "status": "in_production",
+  "revision": 1,
+  "approvedBy": null,
+  "approvedAt": null,
+  "approvedByAgencyReason": null,
+  "publishedOn": null,
+  "cancelledAt": null,
+  "createdAt": "2026-10-11T12:00:00.000Z",
+  "media": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "position": 1
+    }
+  ],
+  "tasks": [
+    {
+      "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+      "title": "Gravar o vídeo",
+      "description": null,
+      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+      "dueOn": "2026-10-15",
+      "status": "pending",
+      "returnComment": null,
+      "approvedBy": null,
+      "approvedAt": null
+    }
+  ],
+  "conversation": {
+    "threadId": null,
+    "commentCount": 0,
+    "lastCommentAt": null
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 ### collaborators — A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.
 
@@ -3138,6 +3523,13 @@ Marca o roteiro como gravado, no portal.
 | `CONTENT_FOLDER_INVALID` | A pasta escolhida não é uma pasta deste cliente. |
 | `CONTENT_FOLDER_IN_USE` | A pasta não muda enquanto o conteúdo tem mídia ou capa. |
 | `CONTENT_OWNER_INVALID` | O responsável precisa ser um colaborador ativo que vê Conteúdo. |
+| `CONTENT_STATE` | O conteúdo não está no estado que esta ação exige. |
+| `CONTENT_REVISION_CHANGED` | O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar. |
+| `CONTENT_UNPUBLISH_EXPIRED` | A publicação só se desfaz no dia em que foi marcada. |
+| `CONTENT_TASKS_NOT_APPROVED` | Todas as subtarefas precisam estar aprovadas antes do envio. |
+| `CONTENT_MEDIA_NOT_CONFIRMED` | O conteúdo tem mídia que ainda não terminou de subir. Espere o envio terminar ou troque a mídia. |
+| `CONTENT_PUBLISHED_ON_INVALID` | A data real da publicação não pode ser futura (dia de São Paulo). |
+| `CONTENT_REASON_INVALID` | Informe o motivo da aprovação, com até 5000 bytes. |
 | `TRY_AGAIN` | Houve um conflito momentâneo. Tente de novo. |
 | `STORY_SCRIPT_STATE` | O roteiro não está no estado que esta ação exige. |
 | `STORY_SCENES_MISMATCH` | O roteiro mudou: recarregue e envie todas as cenas, na ordem desejada. |

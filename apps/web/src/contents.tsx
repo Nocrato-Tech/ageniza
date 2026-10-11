@@ -23,6 +23,7 @@ import { daysOf, parseAnchor, periodOf, periodTitle, shiftAnchor, todayInSaoPaul
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { NotFoundPage } from './status-pages.js';
+import { useStoryScriptLayer } from './story-scripts.js';
 
 /** The listing's own ceiling (`PaginationInputSchema`): the stories show one page of the roster, in the roster's order. */
 const STORIES_PAGE_SIZE = 100;
@@ -199,6 +200,8 @@ export function ContentsClientPage() {
     // Settled only after the period is read again: the card never waits on its old day with the move already done.
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'contents', normalizedId] })
   });
+  const canWriteScripts = canOperate && client.data?.id.toLowerCase() === normalizedId && client.data.status !== 'archived';
+  const scriptLayer = useStoryScriptLayer({ clientId: normalizedId, canOperate: canWriteScripts, scripts: contents.data?.data.storyScripts ?? [] });
 
   const name = client.data?.name;
   useDocumentTitle(name === undefined ? 'Conteúdos — Ageniza' : `Conteúdos de ${name} — Ageniza`);
@@ -288,6 +291,7 @@ export function ContentsClientPage() {
                   canMove={canMove}
                   movingId={move.isPending ? move.variables.content.id : null}
                   onMove={(content, day) => move.mutate({ content, day })}
+                  dayExtras={scriptLayer.dayExtras}
                 />
               </>}
           </>}
@@ -298,5 +302,6 @@ export function ContentsClientPage() {
           : <ContentFeed contents={loaded.data.contents} today={today} handle={clientData?.instagramHandle ?? null} />}
       </aside>}
     </div>}
+    {scriptLayer.modal}
   </section>;
 }

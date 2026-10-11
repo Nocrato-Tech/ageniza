@@ -2678,6 +2678,125 @@ a.client-general__block:hover {
   list-style: none;
 }
 
+.content-day__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* The "+" is one small control in the corner of the day; its list opens inside the day, away from the grid's edge. */
+.content-day__tools .ui-menu__trigger {
+  min-height: 1.75rem;
+  padding: 0 var(--space-2);
+  border-color: var(--border-default);
+}
+
+.content-day__tools .ui-menu__trigger:hover,
+.content-day__tools .ui-menu__trigger:focus-visible {
+  background: transparent;
+  border-color: var(--focus-ring);
+}
+
+.content-day__tools .ui-menu__content {
+  right: auto;
+  left: 0;
+  min-width: 11rem;
+}
+
+.content-day:nth-child(7n + 6) .content-day__tools .ui-menu__content,
+.content-day:nth-child(7n) .content-day__tools .ui-menu__content {
+  right: 0;
+  left: auto;
+}
+
+.content-day__scripts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-day__script {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font: var(--caption);
+  cursor: pointer;
+}
+
+.content-day__script[data-status='draft'] {
+  border-style: dashed;
+}
+
+.content-day__script:hover,
+.content-day__script:focus-visible {
+  border-color: var(--focus-ring);
+}
+
+.story-script__status {
+  margin: 0;
+}
+
+.story-script__scenes {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.story-script__scene {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.story-script__scene-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.story-script__scene-title {
+  margin: 0;
+  font: var(--label-md);
+}
+
+.story-script__moves {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.story-script__text,
+.story-script__guidance {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.story-script__guidance {
+  color: var(--text-secondary);
+}
+
+.story-script__add {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.story-script__loading {
+  display: grid;
+  gap: var(--space-3);
+}
+
 .content-card {
   display: grid;
   gap: var(--space-1);

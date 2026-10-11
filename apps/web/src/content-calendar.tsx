@@ -1,4 +1,4 @@
-import { useId, useState, type DragEvent } from 'react';
+import { useId, useState, type DragEvent, type ReactNode } from 'react';
 
 import type { ContentListItem } from '@ageniza/contracts';
 
@@ -67,10 +67,12 @@ export interface ContentCalendarProps {
   /** The content being moved: it and every other card wait for the answer. */
   readonly movingId?: string | null;
   readonly onMove?: (content: ContentListItem, day: string) => void;
+  /** What a day carries besides its contents (the story scripts: the "+" and a mark for each script). */
+  readonly dayExtras?: (day: string) => ReactNode;
 }
 
 /** Whole weeks, Monday first: a month and a week are the same grid with a different number of rows. */
-export function ContentCalendar({ clientId, view, anchor, today, days, contents, canMove = false, movingId = null, onMove }: ContentCalendarProps) {
+export function ContentCalendar({ clientId, view, anchor, today, days, contents, canMove = false, movingId = null, onMove, dayExtras }: ContentCalendarProps) {
   // Which card is being dragged lives here, not in the data transfer: a drop that was not started by a card of this calendar moves nothing.
   const [dragging, setDragging] = useState<ContentListItem | null>(null);
   const byDay = new Map<string, ContentListItem[]>();
@@ -104,6 +106,7 @@ export function ContentCalendar({ clientId, view, anchor, today, days, contents,
               <span className="visually-hidden">{fullDayLabel(day)}</span>
             </time>
           </p>
+          {dayExtras?.(day)}
           {items.length > 0 && <ul className="content-day__items">
             {items.map((content) => <li key={content.id}>
               <ContentCard
