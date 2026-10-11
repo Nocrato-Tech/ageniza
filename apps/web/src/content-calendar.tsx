@@ -1,17 +1,46 @@
+import { useId, useState, type DragEvent, type ReactNode } from 'react';
+
 import type { ContentListItem } from '@ageniza/contracts';
 
+import { ContentHoverDetail } from './content-card-extras.js';
+import { ContentCover } from './content-cover.js';
 import { fullDayLabel, WEEKDAY_LABELS, type CalendarView } from './content-dates.js';
-import { DEADLINE_LABELS, deadlineAlert, FORMAT_LABELS, STATUS_LABELS, subtaskPercent } from './content-labels.js';
+import { DEADLINE_LABELS, deadlineAlert, FORMAT_LABELS, isClosed, STATUS_LABELS, subtaskPercent } from './content-labels.js';
 
 /**
  * The card of the calendar (`specs/conteudo.md` section 7). Every string that came from the server
- * is a React text child, never markup. The cover, the hover detail and the drag belong to the next
- * part of #262.
+ * is a React text child, never markup. A card is draggable only when the caller says it can move and
+ * the content is still open: a published or cancelled one never changes date (specs/conteudo.md section 4).
  */
-export function ContentCard({ content, today }: { content: ContentListItem; today: string }) {
+export function ContentCard({ content, clientId, today, draggable = false, busy = false, onDragStart, onDragEnd }: {
+  content: ContentListItem;
+  clientId: string;
+  today: string;
+  draggable?: boolean;
+  busy?: boolean;
+  onDragStart?: (event: DragEvent<HTMLElement>) => void;
+  onDragEnd?: () => void;
+}) {
   const alert = deadlineAlert(content, today);
   const percent = subtaskPercent(content);
-  return <article className="content-card" data-status={content.status}>
+  const detailId = useId();
+  const [pointed, setPointed] = useState(false);
+  return <article
+    className={`content-card${draggable ? ' content-card--movable' : ''}${busy ? ' content-card--busy' : ''}`}
+    data-status={content.status}
+    draggable={draggable}
+    tabIndex={0}
+    aria-busy={busy || undefined}
+    aria-describedby={pointed ? detailId : undefined}
+    onMouseEnter={() => setPointed(true)}
+    onMouseLeave={() => setPointed(false)}
+    onFocus={() => setPointed(true)}
+    onBlur={() => setPointed(false)}
+    onKeyDown={(event) => { if (event.key === 'Escape') setPointed(false); }}
+    onDragStart={draggable ? (event) => { setPointed(false); onDragStart?.(event); } : undefined}
+    onDragEnd={draggable ? onDragEnd : undefined}
+  >
+    <ContentCover assetId={content.coverAssetId} format={content.format} />
     <p className="content-card__title">{content.title}</p>
     <p className="content-card__meta">
       {FORMAT_LABELS[content.format]}{content.publishAtTime !== null && <> · {content.publishAtTime}</>}
@@ -21,20 +50,31 @@ export function ContentCard({ content, today }: { content: ContentListItem; toda
       {alert !== null && <li className={`content-card__badge content-card__badge--${alert}`}>{DEADLINE_LABELS[alert]}</li>}
       {percent !== null && <li className="content-card__badge">{percent}% das subtarefas</li>}
     </ul>
+    {pointed && <ContentHoverDetail id={detailId} clientId={clientId} contentId={content.id} />}
   </article>;
 }
 
 export interface ContentCalendarProps {
+  readonly clientId: string;
   readonly view: CalendarView;
   /** The day the period is built around; a month view dims the days of its neighbours. */
   readonly anchor: string;
   readonly today: string;
   readonly days: readonly string[];
   readonly contents: readonly ContentListItem[];
+  /** Whether the person may move a content at all (permission, and a client that is not archived). */
+  readonly canMove?: boolean;
+  /** The content being moved: it and every other card wait for the answer. */
+  readonly movingId?: string | null;
+  readonly onMove?: (content: ContentListItem, day: string) => void;
+  /** What a day carries besides its contents (the story scripts: the "+" and a mark for each script). */
+  readonly dayExtras?: (day: string) => ReactNode;
 }
 
 /** Whole weeks, Monday first: a month and a week are the same grid with a different number of rows. */
-export function ContentCalendar({ view, anchor, today, days, contents }: ContentCalendarProps) {
+export function ContentCalendar({ clientId, view, anchor, today, days, contents, canMove = false, movingId = null, onMove, dayExtras }: ContentCalendarProps) {
+  // Which card is being dragged lives here, not in the data transfer: a drop that was not started by a card of this calendar moves nothing.
+  const [dragging, setDragging] = useState<ContentListItem | null>(null);
   const byDay = new Map<string, ContentListItem[]>();
   for (const content of contents) byDay.set(content.publishOn, [...(byDay.get(content.publishOn) ?? []), content]);
 
@@ -50,6 +90,15 @@ export function ContentCalendar({ view, anchor, today, days, contents }: Content
           key={day}
           className={`content-day${outside ? ' content-day--outside' : ''}${day === today ? ' content-day--today' : ''}`}
           aria-current={day === today ? 'date' : undefined}
+          data-day={day}
+          onDragOver={(event) => { if (dragging !== null) event.preventDefault(); }}
+          onDrop={(event) => {
+            if (dragging === null) return;
+            event.preventDefault();
+            const moved = dragging;
+            setDragging(null);
+            if (moved.publishOn !== day) onMove?.(moved, day);
+          }}
         >
           <p className="content-day__number">
             <time dateTime={day}>
@@ -57,8 +106,23 @@ export function ContentCalendar({ view, anchor, today, days, contents }: Content
               <span className="visually-hidden">{fullDayLabel(day)}</span>
             </time>
           </p>
+          {dayExtras?.(day)}
           {items.length > 0 && <ul className="content-day__items">
-            {items.map((content) => <li key={content.id}><ContentCard content={content} today={today} /></li>)}
+            {items.map((content) => <li key={content.id}>
+              <ContentCard
+                content={content}
+                clientId={clientId}
+                today={today}
+                draggable={canMove && movingId === null && !isClosed(content.status)}
+                busy={movingId === content.id}
+                onDragStart={(event) => {
+                  event.dataTransfer?.setData('text/plain', content.id);
+                  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+                  setDragging(content);
+                }}
+                onDragEnd={() => setDragging(null)}
+              />
+            </li>)}
           </ul>}
         </li>;
       })}

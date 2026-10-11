@@ -55,7 +55,7 @@ const contentFixture = (overrides: Partial<ContentListItem> = {}): ContentListIt
     publishOn: '2026-10-20',
     publishAtTime: null,
     status: 'in_production',
-    ownerUserId: '99999999-9999-4999-8999-999999999999',
+    owner: { membershipId: '99999999-9999-4999-8999-999999999999', name: 'Ana Souza' },
     coverAssetId: null,
     revision: 1,
     publishedOn: null,
@@ -394,13 +394,13 @@ describe('the cover of a tile', () => {
   const ASSET = 'a1a1a1a1-0000-4000-8000-000000000001';
   const coverCalls = (calls: readonly string[]): string[] => calls.filter((call) => /\/download-url/.test(call));
 
-  it('is the picture of the cover asset, read once however many times it is drawn', async () => {
+  it('is the thumbnail of the cover asset, never the original, read once however many times it is drawn', async () => {
     const { impl, calls } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Com capa', publishOn: '2026-10-14', coverAssetId: ASSET })] } });
     renderScreen(impl, url(padaria.id));
 
     await waitFor(() => expect(feedRegion().querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${ASSET}.jpg`));
     expect(feedRegion().querySelector('img')?.getAttribute('alt')).toBe('');
-    expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET}/download-url`]);
+    expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET}/download-url?variant=thumbnail`]);
   });
 
   it('is the shape of the format when there is no cover, and when the route refuses', async () => {
@@ -465,13 +465,13 @@ describe('the Feed tab', () => {
     expect(document.querySelector('.content-calendar')).toBeNull();
     first.unmount();
 
-    renderScreen(makeFetch({ contents: { [padaria.id]: rows() } }).impl, url(padaria.id, '?vista=pastas'));
+    renderScreen(makeFetch({ contents: { [padaria.id]: rows() } }).impl, url(padaria.id, '?vista=inexistente'));
     await ready();
     expect(screen.getByRole('tab', { name: 'Calendário' }).getAttribute('aria-selected')).toBe('true');
     expect(document.querySelector('.content-calendar')).not.toBeNull();
   });
 
-  it('shows the empty grid and the skeleton in the feed view too, and still closes Pastas', async () => {
+  it('shows the empty grid and the skeleton in the feed view too, with Pastas open beside it', async () => {
     const held = deferred<Response>();
     const loading = renderScreen(makeFetch({ period: () => held.promise }).impl, url(padaria.id, '?vista=feed'));
     await waitFor(() => expect(document.querySelectorAll('.content-feed__skeleton')).toHaveLength(9));
@@ -479,6 +479,8 @@ describe('the Feed tab', () => {
 
     renderScreen(makeFetch().impl, url(padaria.id, '?vista=feed'));
     expect(await screen.findByText('Planeje o primeiro post')).toBeTruthy();
-    expect((screen.getByRole('tab', { name: 'Pastas' }) as HTMLButtonElement).disabled).toBe(true);
+    const pastas = screen.getByRole('tab', { name: 'Pastas' }) as HTMLButtonElement;
+    expect(pastas.disabled).toBe(false);
+    expect(pastas.getAttribute('aria-selected')).toBe('false');
   });
 });

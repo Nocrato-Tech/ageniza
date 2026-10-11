@@ -1,13 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ApproveContentByAgencyRequestSchema,
+  ContentApproverSchema,
+  ContentListItemSchema,
+  ContentTaskSchema,
+  ContentSchema,
   CONTENT_CAPTION_MAX_LENGTH,
   CONTENT_PERIOD_MAX_DAYS,
+  CONTENT_REASON_MAX_BYTES,
   CONTENT_TITLE_MAX_LENGTH,
   ContentCaptionSchema,
   ContentPeriodQuerySchema,
   ContentTitleSchema,
   CreateContentRequestSchema,
+  PublishContentRequestSchema,
+  RescheduleContentRequestSchema,
   UpdateContentRequestSchema,
   contentPeriodIssue
 } from '../src/index.js';
@@ -241,5 +249,121 @@ describe.each([
     expect(accepts('1️⃣')).toBe(true);
     expect(accepts('\u{1F468}‍\u{1F469}‍')).toBe(false);
     expect(accepts('1️⃣⃣')).toBe(false);
+  });
+});
+
+describe('the body of the approval outside the platform (issue #256)', () => {
+  const parse = (value: unknown) => ApproveContentByAgencyRequestSchema.safeParse(value);
+  const reasonOf = (reason: string) => parse({ revision: 1, reason });
+
+  it('trims the reason and keeps its line breaks', () => {
+    expect(reasonOf('  Aprovado por telefone.\nCliente confirmou.  ')).toMatchObject({ success: true, data: { reason: 'Aprovado por telefone.\nCliente confirmou.' } });
+  });
+
+  it.each([
+    ['empty', ''],
+    ['spaces only', '   '],
+    ['no-break space only', '\u00A0\u00A0'],
+    ['zero-width space only', '\u200B'],
+    ['zero-width joiner only', '\u200D'],
+    ['word joiner only', '\u2060'],
+    ['byte order mark only', '\uFEFF'],
+    ['soft hyphen only', '\u00AD'],
+    ['combining grapheme joiner only', '\u034F'],
+    ['control character only', '\u0001'],
+    ['zero-width space between words', 'ok\u200Bok'],
+    ['control character between words', 'ok\u0007ok'],
+    ['a lone surrogate', 'ok\uD800'],
+    ['a bidi override', 'ok\u202Eok']
+  ])('refuses a reason that is %s', (_label, reason) => {
+    expect(reasonOf(reason).success).toBe(false);
+  });
+
+  it('counts the 5000 bytes of the column, not the characters: 5000 passes and 5001 does not', () => {
+    expect(CONTENT_REASON_MAX_BYTES).toBe(5000);
+    expect(reasonOf('a'.repeat(5000)).success).toBe(true);
+    expect(reasonOf('a'.repeat(5001)).success).toBe(false);
+    expect(reasonOf('é'.repeat(2500)).success).toBe(true);
+    expect(reasonOf('é'.repeat(2501)).success).toBe(false);
+  });
+
+  it('needs the revision the person read, as an integer the column holds', () => {
+    expect(parse({ reason: 'ok' }).success).toBe(false);
+    expect(parse({ revision: 0, reason: 'ok' }).success).toBe(false);
+    expect(parse({ revision: 1.5, reason: 'ok' }).success).toBe(false);
+    expect(parse({ revision: '1', reason: 'ok' }).success).toBe(false);
+    expect(parse({ revision: 2_147_483_647, reason: 'ok' }).success).toBe(true);
+    expect(parse({ revision: 2_147_483_648, reason: 'ok' }).success).toBe(false);
+  });
+
+  it('refuses a field that is the database\'s to fix', () => {
+    expect(parse({ revision: 1, reason: 'ok', approvedBy: '4b241101-e2bb-4255-8caf-4136c566a962' }).success).toBe(false);
+    expect(parse({ revision: 1, reason: 'ok', status: 'approved' }).success).toBe(false);
+  });
+});
+
+describe('the days of publishing and rescheduling (issue #256)', () => {
+  it('takes no body field but the day, and the day is a real one', () => {
+    expect(PublishContentRequestSchema.safeParse({}).success).toBe(true);
+    expect(PublishContentRequestSchema.safeParse({ publishedOn: '2026-10-10' }).success).toBe(true);
+    expect(PublishContentRequestSchema.safeParse({ publishedOn: '2026-02-30' }).success).toBe(false);
+    expect(PublishContentRequestSchema.safeParse({ publishedOn: null }).success).toBe(false);
+    expect(PublishContentRequestSchema.safeParse({ publishedAt: '2026-10-10T10:00:00Z' }).success).toBe(false);
+    expect(RescheduleContentRequestSchema.safeParse({}).success).toBe(true);
+    expect(RescheduleContentRequestSchema.safeParse({ publishOn: '2026-11-03' }).success).toBe(true);
+    expect(RescheduleContentRequestSchema.safeParse({ publishOn: '2026-13-01' }).success).toBe(false);
+    expect(RescheduleContentRequestSchema.safeParse({ publishOn: null }).success).toBe(false);
+    expect(RescheduleContentRequestSchema.safeParse({ status: 'in_production' }).success).toBe(false);
+  });
+});
+
+describe('the person in charge is named by link (issue #552)', () => {
+  const LINK = '5b241101-e2bb-4255-8caf-4136c566a962';
+
+  it('takes the link on create and on edit, and no user id', () => {
+    const base = { title: 'Post', format: 'reels', publishOn: '2026-10-20', folderId: FOLDER };
+    expect(CreateContentRequestSchema.safeParse({ ...base, ownerMembershipId: LINK }).success).toBe(true);
+    expect(CreateContentRequestSchema.safeParse({ ...base, ownerUserId: LINK }).success).toBe(false);
+    expect(UpdateContentRequestSchema.safeParse({ ownerMembershipId: LINK }).success).toBe(true);
+    expect(UpdateContentRequestSchema.safeParse({ ownerUserId: LINK }).success).toBe(false);
+  });
+
+  it('refuses a link that is not an id, and a null one', () => {
+    expect(UpdateContentRequestSchema.safeParse({ ownerMembershipId: 'x' }).success).toBe(false);
+    expect(UpdateContentRequestSchema.safeParse({ ownerMembershipId: null }).success).toBe(false);
+  });
+
+  it('describes the person in charge as { membershipId, name } or null, in the list and in the detail, and never a user id', () => {
+    expect(ContentListItemSchema.shape).toHaveProperty('owner');
+    expect(ContentListItemSchema.shape).not.toHaveProperty('ownerUserId');
+    expect(ContentSchema.shape).toHaveProperty('owner');
+    expect(ContentSchema.shape).not.toHaveProperty('ownerUserId');
+    expect(ContentSchema.shape.owner.safeParse({ membershipId: LINK, name: 'Ana' }).success).toBe(true);
+    expect(ContentSchema.shape.owner.safeParse(null).success).toBe(true);
+    expect(ContentSchema.shape.owner.safeParse({ membershipId: LINK, name: 'Ana', userId: LINK }).success).toBe(false);
+  });
+});
+
+describe('no contract of Conteúdo carries the user id of a person (issue #552)', () => {
+  const LINK = '5b241101-e2bb-4255-8caf-4136c566a962';
+
+  it('says who approved by name and side, and nothing else', () => {
+    expect(ContentApproverSchema.safeParse({ name: 'Ana', side: 'agency' }).success).toBe(true);
+    expect(ContentApproverSchema.safeParse({ name: 'Ana', side: 'client' }).success).toBe(true);
+    expect(ContentApproverSchema.safeParse({ name: 'Ana', side: 'portal' }).success).toBe(false);
+    expect(ContentApproverSchema.safeParse({ name: 'Ana', side: 'agency', userId: LINK }).success).toBe(false);
+    expect(ContentApproverSchema.safeParse(LINK).success).toBe(false);
+    expect(ContentSchema.shape.approvedBy.safeParse(null).success).toBe(true);
+    expect(ContentSchema.shape.approvedBy.safeParse(LINK).success).toBe(false);
+  });
+
+  it('describes a subtask by the person it is for, as { membershipId, name } or null, and who approved it like the content does', () => {
+    expect(ContentTaskSchema.shape).toHaveProperty('assignee');
+    expect(ContentTaskSchema.shape).not.toHaveProperty('assigneeUserId');
+    expect(ContentTaskSchema.shape.assignee.safeParse({ membershipId: LINK, name: 'Ana' }).success).toBe(true);
+    expect(ContentTaskSchema.shape.assignee.safeParse(null).success).toBe(true);
+    expect(ContentTaskSchema.shape.assignee.safeParse(LINK).success).toBe(false);
+    expect(ContentTaskSchema.shape.approvedBy.safeParse({ name: 'Ana', side: 'agency' }).success).toBe(true);
+    expect(ContentTaskSchema.shape.approvedBy.safeParse(LINK).success).toBe(false);
   });
 });
