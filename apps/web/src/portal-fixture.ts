@@ -16,7 +16,7 @@ export const portalClientBody = (clientId: string, name: string, onboardingSeenA
   archivedAt: null,
   agencyName: 'Agência Um',
   onboardingSeenAt,
-  home: { threadsAnsweredByAgency: 0, brandStudyFilled: 0 }
+  home: { threadsAnsweredByAgency: 0, brandStudyFilled: 0, contentsAwaitingApproval: 0 }
 });
 
 const SECTION_KEYS = ['branding', 'tone_of_voice', 'colors', 'positioning', 'archetype', 'personas', 'observations'] as const;

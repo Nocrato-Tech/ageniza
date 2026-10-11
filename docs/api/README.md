@@ -654,7 +654,14 @@ Lista a carteira de clientes com ordem de triagem.
       "status": "active",
       "closingDate": null,
       "threadsAwaitingAgency": 2,
-      "pendingInvitations": 1
+      "pendingInvitations": 1,
+      "contentIndicators": {
+        "pending": 3,
+        "inReview": 1,
+        "overdue": 2,
+        "adjusting": 1,
+        "dueSoon": 1
+      }
     }
   ],
   "meta": {
@@ -1760,7 +1767,8 @@ Lê o cadastro do próprio cliente e o resumo do Início, no portal.
   "onboardingSeenAt": "2026-10-01T12:00:00.000Z",
   "home": {
     "threadsAnsweredByAgency": 2,
-    "brandStudyFilled": 3
+    "brandStudyFilled": 3,
+    "contentsAwaitingApproval": 2
   }
 }
 ```

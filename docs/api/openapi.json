@@ -2049,6 +2049,39 @@
                 "pendingInvitations": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "contentIndicators": {
+                  "type": "object",
+                  "properties": {
+                    "pending": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "inReview": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "overdue": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "adjusting": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "dueSoon": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "pending",
+                    "inReview",
+                    "overdue",
+                    "adjusting",
+                    "dueSoon"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -4017,6 +4050,10 @@
           "home": {
             "type": "object",
             "properties": {
+              "contentsAwaitingApproval": {
+                "type": "integer",
+                "minimum": 0
+              },
               "threadsAnsweredByAgency": {
                 "type": "integer",
                 "minimum": 0
@@ -4028,6 +4065,7 @@
               }
             },
             "required": [
+              "contentsAwaitingApproval",
               "threadsAnsweredByAgency",
               "brandStudyFilled"
             ],
@@ -9845,7 +9883,7 @@
       "get": {
         "operationId": "listClients",
         "summary": "Lista a carteira de clientes com ordem de triagem",
-        "description": "Paginada pelo contrato global de listagem, com busca por nome, razão social e @ (sem\ndiferenciar maiúsculas nem acento), filtro de status e ordem `attention` por padrão: quem tem\nthread aguardando a agência vem primeiro, depois nome ascendente, com `id` como desempate.\n`pendingInvitations` só vem para quem tem `cliente.convidar_usuario`; para os demais o campo\né omitido, não zerado.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
+        "description": "Paginada pelo contrato global de listagem, com busca por nome, razão social e @ (sem\ndiferenciar maiúsculas nem acento), filtro de status e ordem `attention` por padrão: quem tem\nthread aguardando a agência vem primeiro, depois nome ascendente, com `id` como desempate; para quem\ntem `conteudo.visualizar`, o cliente com conteúdo atrasado (data planejada anterior ao dia de São\nPaulo, sem publicado nem cancelado) vem antes de todos. `pendingInvitations` só vem para quem tem\n`cliente.convidar_usuario` e `contentIndicators` (`pending`, `inReview`, `overdue`, `adjusting`, `dueSoon`) só para quem\ntem `conteudo.visualizar`; para os demais o campo é omitido, não zerado, e a ordem não muda. As\nconversas de conteúdo não entram em `threadsAwaitingAgency`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
         "tags": [
           "clients"
         ],
@@ -9936,7 +9974,14 @@
                       "status": "active",
                       "closingDate": null,
                       "threadsAwaitingAgency": 2,
-                      "pendingInvitations": 1
+                      "pendingInvitations": 1,
+                      "contentIndicators": {
+                        "pending": 3,
+                        "inReview": 1,
+                        "overdue": 2,
+                        "adjusting": 1,
+                        "dueSoon": 1
+                      }
                     }
                   ],
                   "meta": {
@@ -14941,7 +14986,7 @@
       "get": {
         "operationId": "getPortalClient",
         "summary": "Lê o cadastro do próprio cliente e o resumo do Início, no portal",
-        "description": "Somente leitura. Traz o cadastro inteiro, a foto assinada, o nome da agência, `onboardingSeenAt` do\nvínculo de quem chama (nunca o de outra pessoa do mesmo cliente) e `home`: as conversas abertas com\nresposta da agência, só as que o portal enxerga, e o preenchimento do estudo. Outro cliente, cliente\narquivado, agência suspensa, vínculo removido e colaborador sem vínculo de cliente (Owner inclusive)\ndevolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Somente leitura. Traz o cadastro inteiro, a foto assinada, o nome da agência, `onboardingSeenAt` do\nvínculo de quem chama (nunca o de outra pessoa do mesmo cliente) e `home`: as conversas abertas com\nresposta da agência, só as que o portal enxerga, o preenchimento do estudo e `contentsAwaitingApproval`,\nos conteúdos do próprio cliente em \"aguardando aprovação\". A conversa de um conteúdo não entra em\n`threadsAnsweredByAgency`. Outro cliente, cliente arquivado, agência suspensa, vínculo removido e\ncolaborador sem vínculo de cliente (Owner inclusive) devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -14984,7 +15029,8 @@
                   "onboardingSeenAt": "2026-10-01T12:00:00.000Z",
                   "home": {
                     "threadsAnsweredByAgency": 2,
-                    "brandStudyFilled": 3
+                    "brandStudyFilled": 3,
+                    "contentsAwaitingApproval": 2
                   }
                 }
               }

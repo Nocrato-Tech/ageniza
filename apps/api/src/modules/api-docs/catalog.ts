@@ -1439,9 +1439,12 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Paginada pelo contrato global de listagem, com busca por nome, razão social e @ (sem',
       'diferenciar maiúsculas nem acento), filtro de status e ordem `attention` por padrão: quem tem',
-      'thread aguardando a agência vem primeiro, depois nome ascendente, com `id` como desempate.',
-      '`pendingInvitations` só vem para quem tem `cliente.convidar_usuario`; para os demais o campo',
-      'é omitido, não zerado.'
+      'thread aguardando a agência vem primeiro, depois nome ascendente, com `id` como desempate; para quem',
+      'tem `conteudo.visualizar`, o cliente com conteúdo atrasado (data planejada anterior ao dia de São',
+      'Paulo, sem publicado nem cancelado) vem antes de todos. `pendingInvitations` só vem para quem tem',
+      '`cliente.convidar_usuario` e `contentIndicators` (`pending`, `inReview`, `overdue`, `adjusting`, `dueSoon`) só para quem',
+      'tem `conteudo.visualizar`; para os demais o campo é omitido, não zerado, e a ordem não muda. As',
+      'conversas de conteúdo não entram em `threadsAwaitingAgency`.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.visualizar',
@@ -1461,7 +1464,8 @@ path: '/agencies/:agencyId/roles',
           status: 'active',
           closingDate: null,
           threadsAwaitingAgency: 2,
-          pendingInvitations: 1
+          pendingInvitations: 1,
+          contentIndicators: { pending: 3, inReview: 1, overdue: 2, adjusting: 1, dueSoon: 1 }
         }],
         meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 }
       }
@@ -2281,9 +2285,10 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Somente leitura. Traz o cadastro inteiro, a foto assinada, o nome da agência, `onboardingSeenAt` do',
       'vínculo de quem chama (nunca o de outra pessoa do mesmo cliente) e `home`: as conversas abertas com',
-      'resposta da agência, só as que o portal enxerga, e o preenchimento do estudo. Outro cliente, cliente',
-      'arquivado, agência suspensa, vínculo removido e colaborador sem vínculo de cliente (Owner inclusive)',
-      'devolvem o mesmo 404.'
+      'resposta da agência, só as que o portal enxerga, o preenchimento do estudo e `contentsAwaitingApproval`,',
+      'os conteúdos do próprio cliente em "aguardando aprovação". A conversa de um conteúdo não entra em',
+      '`threadsAnsweredByAgency`. Outro cliente, cliente arquivado, agência suspensa, vínculo removido e',
+      'colaborador sem vínculo de cliente (Owner inclusive) devolvem o mesmo 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -2297,7 +2302,7 @@ path: '/agencies/:agencyId/roles',
         ...clientExample,
         agencyName: 'Agência Exemplo',
         onboardingSeenAt: '2026-10-01T12:00:00.000Z',
-        home: { threadsAnsweredByAgency: 2, brandStudyFilled: 3 }
+        home: { threadsAnsweredByAgency: 2, brandStudyFilled: 3, contentsAwaitingApproval: 2 }
       }
     }],
     errors: [

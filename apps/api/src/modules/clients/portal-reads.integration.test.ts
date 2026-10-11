@@ -39,6 +39,7 @@ const clientArchived = randomUUID();
 const clientSuspended = randomUUID();
 const clientEmpty = randomUUID();
 const clientHome = randomUUID();
+const clientContents = randomUUID();
 
 const personaActive = randomUUID();
 const personaArchived = randomUUID();
@@ -95,7 +96,7 @@ const sectionOf = (body: { sections: { key: string }[] }, key: string): Record<s
 
 const iso = (value: unknown): string => new Date(value as string).toISOString();
 
-const home = async (cookie: string, clientId = clientHome): Promise<{ threadsAnsweredByAgency: number; brandStudyFilled: number }> => {
+const home = async (cookie: string, clientId = clientHome): Promise<{ threadsAnsweredByAgency: number; brandStudyFilled: number; contentsAwaitingApproval: number }> => {
   const response = await call('GET', portalClient(clientId), cookie);
   expect(response.statusCode).toBe(200);
   return response.json().home;
@@ -118,6 +119,7 @@ describe('CLIENTS portal reads (#129)', () => {
     await makeUser('dual', 'Pessoa Dupla');
     await makeUser('dualBare', 'Pessoa Dupla Sem Cliente');
     await makeUser('crossDual', 'Pessoa Dupla Cruzada');
+    await makeUser('managerB', 'Gestora da Agência B');
 
     const roles = await owner.knex('roles').whereNull('agency_id').select('id', 'key');
     const roleId = (key: string): string => {
@@ -143,7 +145,8 @@ describe('CLIENTS portal reads (#129)', () => {
       { agency_id: agencyA, user_id: users.manager!.id, role_id: roleId('account_manager') },
       { agency_id: agencyA, user_id: users.dual!.id, role_id: roleId('account_manager') },
       { agency_id: agencyA, user_id: users.dualBare!.id, role_id: unrelatedRole },
-      { agency_id: agencyA, user_id: users.crossDual!.id, role_id: roleId('admin') }
+      { agency_id: agencyA, user_id: users.crossDual!.id, role_id: roleId('admin') },
+      { agency_id: agencyB, user_id: users.managerB!.id, role_id: roleId('account_manager') }
     ]);
 
     await owner.knex('clients').insert([
@@ -167,7 +170,8 @@ describe('CLIENTS portal reads (#129)', () => {
       { id: clientArchived, agency_id: agencyA, name: `Portal Arquivado ${clientArchived}`, status: 'archived', archived_at: new Date() },
       { id: clientSuspended, agency_id: agencySuspended, name: `Portal Suspenso ${clientSuspended}` },
       { id: clientEmpty, agency_id: agencyA, name: `Portal Vazio ${clientEmpty}` },
-      { id: clientHome, agency_id: agencyA, name: `Portal Início ${clientHome}` }
+      { id: clientHome, agency_id: agencyA, name: `Portal Início ${clientHome}` },
+      { id: clientContents, agency_id: agencyA, name: `Portal Conteúdos ${clientContents}` }
     ]);
 
     await owner.knex('client_memberships').insert([
@@ -186,7 +190,10 @@ describe('CLIENTS portal reads (#129)', () => {
       { client_id: clientEmpty, user_id: users.dual!.id },
       { client_id: clientHome, user_id: users.portalOne!.id },
       { client_id: clientHome, user_id: users.dual!.id },
-      { client_id: clientHome, user_id: users.dualBare!.id }
+      { client_id: clientHome, user_id: users.dualBare!.id },
+      { client_id: clientContents, user_id: users.portalOne!.id },
+      { client_id: clientContents, user_id: users.dual!.id },
+      { client_id: clientContents, user_id: users.dualBare!.id }
     ]);
 
     await owner.knex('client_personas').insert([
@@ -218,6 +225,8 @@ describe('CLIENTS portal reads (#129)', () => {
     const clientIds = await owner.knex('clients').whereIn('agency_id', agencyIds).pluck('id');
     await owner.knex('client_thread_comments').whereIn('client_id', clientIds).delete();
     await owner.knex('client_threads').whereIn('client_id', clientIds).delete();
+    await owner.knex('contents').whereIn('client_id', clientIds).delete();
+    await owner.knex('media_folders').whereIn('client_id', clientIds).delete();
     await owner.knex('client_personas').whereIn('client_id', clientIds).delete();
     await owner.knex('client_brand_sections').whereIn('client_id', clientIds).delete();
     await owner.knex('client_memberships').whereIn('client_id', clientIds).delete();
@@ -367,7 +376,7 @@ describe('CLIENTS portal reads (#129)', () => {
       const threadsOf = (clientId: string): Promise<{ id: string }[]> => owner.knex('client_threads').where({ client_id: clientId }).select('id');
 
       it('counts the open threads the agency answered last, rises on an agency reply and falls on a client comment', async () => {
-        for (const key of ['portalOne', 'dual', 'dualBare']) expect(await home(cookies[key]!), key).toEqual({ threadsAnsweredByAgency: 0, brandStudyFilled: 2 });
+        for (const key of ['portalOne', 'dual', 'dualBare']) expect(await home(cookies[key]!), key).toEqual({ threadsAnsweredByAgency: 0, brandStudyFilled: 2, contentsAwaitingApproval: 0 });
 
         const opened = await call('POST', `${portalClient(clientHome)}/threads`, cookies.portalOne!, { subject: { sectionKey: 'branding' }, body: 'Posso sugerir algo?' });
         expect(opened.statusCode).toBe(201);
@@ -429,6 +438,81 @@ describe('CLIENTS portal reads (#129)', () => {
         expect(await home(cookies.dual!)).toEqual(before);
         expect(await home(cookies.portalOne!)).toEqual(before);
         expect((await home(cookies.portalOther!, clientA2)).threadsAnsweredByAgency).toBe(1);
+      });
+
+      describe('contents awaiting approval (#261)', () => {
+        type ContentStatus = 'in_production' | 'awaiting_approval' | 'adjusting' | 'approved' | 'published' | 'cancelled';
+
+        const folderOf = async (clientId: string): Promise<string> => {
+          const existing = await owner.knex('media_folders').where({ client_id: clientId }).first('id');
+          if (existing !== undefined) return existing.id as string;
+          const id = randomUUID();
+          await owner.knex('media_folders').insert({ id, client_id: clientId, name: 'Vídeos', is_default: false });
+          return id;
+        };
+
+        const seedContent = async (clientId: string, status: ContentStatus, responsible = users.admin!.id): Promise<string> => {
+          const id = randomUUID();
+          await owner.knex('contents').insert({
+            id,
+            client_id: clientId,
+            title: `Conteúdo ${status} ${id.slice(0, 8)}`,
+            platform: 'instagram',
+            format: 'reels',
+            publish_on: '2026-10-20',
+            folder_id: await folderOf(clientId),
+            owner_user_id: responsible,
+            status,
+            ...(status === 'approved' || status === 'published' ? { approved_by: users.admin!.id, approved_at: '2026-10-05T12:00:00Z' } : {}),
+            ...(status === 'published' ? { published_on: '2026-10-06', published_at: '2026-10-06T15:00:00Z' } : {}),
+            ...(status === 'cancelled' ? { cancelled_at: '2026-10-05T12:00:00Z' } : {})
+          });
+          return id;
+        };
+
+        const seedMany = async (clientId: string, status: ContentStatus, count: number, responsible?: string): Promise<void> => {
+          for (let index = 0; index < count; index += 1) await seedContent(clientId, status, responsible);
+        };
+
+        it('counts only "aguardando aprovação" of the own client: two here, three in a sibling client, five in another agency', async () => {
+          await seedMany(clientContents, 'awaiting_approval', 2);
+          for (const status of ['in_production', 'adjusting', 'approved', 'published', 'cancelled'] as const) await seedContent(clientContents, status);
+          await seedMany(clientA2, 'awaiting_approval', 3);
+          await seedMany(clientB1, 'awaiting_approval', 5, users.managerB!.id);
+
+          // The person of the portal, the collaborator with a link and the one whose agency role reads
+          // nothing of Conteúdo (the policy of `contents` answers the agency alone) see the same two.
+          for (const key of ['portalOne', 'dual', 'dualBare']) {
+            expect((await home(cookies[key]!, clientContents)).contentsAwaitingApproval, key).toBe(2);
+          }
+          expect((await home(cookies.portalOther!, clientA2)).contentsAwaitingApproval).toBe(3);
+          // The admin of agency A who links to a client of agency B counts that client's five, as the person of the portal.
+          for (const key of ['portalB', 'crossDual']) {
+            expect((await home(cookies[key]!, clientB1)).contentsAwaitingApproval, key).toBe(5);
+          }
+          // No link, no portal: a client of the same agency without a link and a sibling client are both a 404.
+          await expectNotFound(portalClient(clientA2), cookies.portalOne, 'portal person of another client');
+          await expectNotFound(portalClient(clientContents), cookies.crossDual, 'agency admin without a link');
+        });
+
+        it('leaves out the conversation of a content: a reply of the agency on a post is not a reply to the brand study', async () => {
+          const before = await home(cookies.portalOne!, clientContents);
+          const contentId = await seedContent(clientContents, 'awaiting_approval');
+          const threadId = randomUUID();
+          await owner.knex('client_threads').insert({ id: threadId, client_id: clientContents, content_id: contentId, opened_by: users.portalOne!.id, opened_side: 'client', created_at: '2026-10-02T10:00:00Z' });
+          await owner.knex('client_thread_comments').insert([
+            { thread_id: threadId, client_id: clientContents, author_user_id: users.portalOne!.id, author_side: 'client', body: 'Posso trocar a legenda?', created_at: '2026-10-02T10:00:00Z' },
+            { thread_id: threadId, client_id: clientContents, author_user_id: users.manager!.id, author_side: 'agency', body: 'Troquei.', created_at: '2026-10-02T11:00:00Z' }
+          ]);
+          // The precondition: the thread is open and the agency spoke last, so only its subject keeps it out.
+          expect(await owner.knex('client_threads').where({ id: threadId }).first()).toMatchObject({ resolved_at: null, section_key: null, persona_id: null });
+
+          for (const key of ['portalOne', 'dual', 'dualBare']) {
+            const after = await home(cookies[key]!, clientContents);
+            expect(after.threadsAnsweredByAgency, key).toBe(before.threadsAnsweredByAgency);
+            expect(after.contentsAwaitingApproval, key).toBe(before.contentsAwaitingApproval + 1);
+          }
+        });
       });
 
       it('fills the study count by the same definition as the brand study, and personas only while active', async () => {
