@@ -55,11 +55,11 @@ const asOwnerWithActor = async (actor: string, work: (transaction: Knex.Transact
   });
 };
 
-const insertTask = (user: string, contentId: string, extra: Record<string, unknown> = {}): Promise<string> => {
-  const id = randomUUID();
-  return w.asUser(user, (transaction) => transaction('content_tasks').insert({
-    id, content_id: contentId, client_id: ids.clientA1, title: 'Gravar o vídeo', assignee_user_id: ids.productionA, due_on: '2026-10-15', ...extra
-  })).then(() => id);
+const insertTask = async (user: string, contentId: string, extra: Record<string, unknown> = {}): Promise<string> => {
+  const [{ id }] = await w.asUser(user, (transaction) => transaction('content_tasks').insert({
+    content_id: contentId, client_id: ids.clientA1, title: 'Gravar o vídeo', assignee_user_id: ids.productionA, due_on: '2026-10-15', ...extra
+  }).returning('id'));
+  return id as string;
 };
 
 const updateTask = (user: string, id: string, patch: Record<string, unknown>): Promise<number> =>
@@ -87,13 +87,13 @@ describe('who creates a subtask (issue #249)', () => {
     ['a collaborator with a link to the client and a role without conteudo.*', () => ids.dualBare],
     ['an Admin of another agency who holds a link to the client', () => ids.crossDual]
   ] as const)('refuses %s a subtask, leaving no row', async (_label, user) => {
-    const id = randomUUID();
+    const title = `x ${randomUUID()}`;
 
     await expect(w.asUser(user(), (transaction) => transaction('content_tasks').insert({
-      id, content_id: content, client_id: ids.clientA1, title: 'x', assignee_user_id: ids.productionA, due_on: '2026-10-15'
+      content_id: content, client_id: ids.clientA1, title, assignee_user_id: ids.productionA, due_on: '2026-10-15'
     }))).rejects.toMatchObject(rlsViolation);
 
-    expect(await w.getOwner().knex('content_tasks').where({ id }).select('id')).toHaveLength(0);
+    expect(await w.getOwner().knex('content_tasks').where({ title }).select('id')).toHaveLength(0);
   });
 
   it('refuses a subtask for a content of an archived client', async () => {

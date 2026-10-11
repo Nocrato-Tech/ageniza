@@ -282,7 +282,7 @@ const archiveClient = async (clientId: string): Promise<void> => {
 
 describe('what ageniza_app may write on the two tables (issue #248)', () => {
   it('inserts only id, client_id and script_on of a script, updates only script_on, and deletes and truncates nothing', async () => {
-    expect(await columnsWithPrivilege('story_scripts', 'insert')).toEqual(['client_id', 'id', 'script_on']);
+    expect(await columnsWithPrivilege('story_scripts', 'insert')).toEqual(['client_id', 'script_on']);
     expect(await columnsWithPrivilege('story_scripts', 'update')).toEqual(['script_on']);
     expect(await tablePrivileges('story_scripts')).toEqual({
       can_select: true, table_insert: false, table_update: false, can_delete: false, can_truncate: false
@@ -290,7 +290,7 @@ describe('what ageniza_app may write on the two tables (issue #248)', () => {
   });
 
   it('inserts the writable columns of a scene, updates only position, text and guidance, and deletes and truncates nothing', async () => {
-    expect(await columnsWithPrivilege('story_script_scenes', 'insert')).toEqual(['client_id', 'guidance', 'id', 'position', 'script_id', 'text']);
+    expect(await columnsWithPrivilege('story_script_scenes', 'insert')).toEqual(['client_id', 'guidance', 'position', 'script_id', 'text']);
     expect(await columnsWithPrivilege('story_script_scenes', 'update')).toEqual(['guidance', 'position', 'text']);
     expect(await tablePrivileges('story_script_scenes')).toEqual({
       can_select: true, table_insert: false, table_update: false, can_delete: false, can_truncate: false
@@ -424,10 +424,10 @@ describe('the portal does not read a draft (issue #248, acceptance 1)', () => {
 });
 
 describe('who creates a script (issue #248)', () => {
-  const create = (userId: string, clientId: string, extra: Record<string, unknown> = {}): Promise<string> => {
-    const id = randomUUID();
-    scriptIds.push(id);
-    return asUser(userId, (transaction) => transaction('story_scripts').insert({ id, client_id: clientId, script_on: '2026-10-21', ...extra })).then(() => id);
+  const create = async (userId: string, clientId: string, extra: Record<string, unknown> = {}): Promise<string> => {
+    const [{ id }] = await asUser(userId, (transaction) => transaction('story_scripts').insert({ client_id: clientId, script_on: '2026-10-21', ...extra }).returning('id'));
+    scriptIds.push(id as string);
+    return id as string;
   };
 
   it.each([
@@ -450,42 +450,41 @@ describe('who creates a script (issue #248)', () => {
     ['a person of the portal of the client', () => portalA1],
     ['a collaborator with a link to the client and a role without conteudo.*', () => dualBare]
   ] as const)('refuses %s a script, leaving no row', async (_label, user) => {
-    const id = randomUUID();
     const before = Number((await getOwner().knex('story_scripts').where({ client_id: clientA1 }).count('* as count').first())?.count);
 
-    await expect(asUser(user(), (transaction) => transaction('story_scripts').insert({ id, client_id: clientA1, script_on: '2026-10-21' })))
+    await expect(asUser(user(), (transaction) => transaction('story_scripts').insert({ client_id: clientA1, script_on: '2026-10-21' })))
       .rejects.toMatchObject(rlsViolation);
 
-    expect(await getOwner().knex('story_scripts').where({ id }).select('id')).toHaveLength(0);
     expect(Number((await getOwner().knex('story_scripts').where({ client_id: clientA1 }).count('* as count').first())?.count)).toBe(before);
   });
 
   it('refuses a script for a client of another agency, even to an Admin of the agency that owns the permission', async () => {
-    const id = randomUUID();
+    const countOf = async (clientId: string): Promise<number> => Number((await getOwner().knex('story_scripts').where({ client_id: clientId }).count('* as count').first())?.count);
+    const before = await countOf(clientB);
 
-    await expect(asUser(adminA, (transaction) => transaction('story_scripts').insert({ id, client_id: clientB, script_on: '2026-10-21' })))
+    await expect(asUser(adminA, (transaction) => transaction('story_scripts').insert({ client_id: clientB, script_on: '2026-10-21' })))
       .rejects.toMatchObject(rlsViolation);
 
-    expect(await getOwner().knex('story_scripts').where({ id }).select('id')).toHaveLength(0);
+    expect(await countOf(clientB)).toBe(before);
   });
 
   it('refuses a script for an archived client (acceptance 4), and for a client of a suspended agency', async () => {
-    const id = randomUUID();
-    const suspendedId = randomUUID();
+    const countOf = async (clientId: string): Promise<number> => Number((await getOwner().knex('story_scripts').where({ client_id: clientId }).count('* as count').first())?.count);
+    const before = [await countOf(clientArchived), await countOf(clientSuspended)];
     await archiveClient(clientArchived);
     await getOwner().knex('agencies').where({ id: agencySuspended }).update({ status: 'suspended' });
 
     try {
-      await expect(asUser(adminA, (transaction) => transaction('story_scripts').insert({ id, client_id: clientArchived, script_on: '2026-10-21' })))
+      await expect(asUser(adminA, (transaction) => transaction('story_scripts').insert({ client_id: clientArchived, script_on: '2026-10-21' })))
         .rejects.toMatchObject(rlsViolation);
-      await expect(asUser(adminSuspended, (transaction) => transaction('story_scripts').insert({ id: suspendedId, client_id: clientSuspended, script_on: '2026-10-21' })))
+      await expect(asUser(adminSuspended, (transaction) => transaction('story_scripts').insert({ client_id: clientSuspended, script_on: '2026-10-21' })))
         .rejects.toMatchObject(rlsViolation);
     } finally {
       await getOwner().knex('agencies').where({ id: agencySuspended }).update({ status: 'active' });
       await getOwner().knex('clients').where({ id: clientArchived }).update({ status: 'active', archived_at: null });
     }
 
-    expect(await getOwner().knex('story_scripts').whereIn('id', [id, suspendedId]).select('id')).toHaveLength(0);
+    expect([await countOf(clientArchived), await countOf(clientSuspended)]).toEqual(before);
   });
 
   it.each([
@@ -495,12 +494,12 @@ describe('who creates a script (issue #248)', () => {
     ['recorded_at', { recorded_at: new Date() }],
     ['created_at', { created_at: new Date(0) }]
   ] as const)('refuses to let the caller choose %s on the INSERT, at the privilege layer', async (_label, extra) => {
-    const id = randomUUID();
+    const before = Number((await getOwner().knex('story_scripts').where({ client_id: clientA1 }).count('* as count').first())?.count);
 
-    await expect(asUser(adminA, (transaction) => transaction('story_scripts').insert({ id, client_id: clientA1, script_on: '2026-10-21', ...extra })))
+    await expect(asUser(adminA, (transaction) => transaction('story_scripts').insert({ client_id: clientA1, script_on: '2026-10-21', ...extra })))
       .rejects.toMatchObject(deniedByGrant('story_scripts'));
 
-    expect(await getOwner().knex('story_scripts').where({ id }).select('id')).toHaveLength(0);
+    expect(Number((await getOwner().knex('story_scripts').where({ client_id: clientA1 }).count('* as count').first())?.count)).toBe(before);
   });
 
   it('refuses a script with no day, and a day that is not a date', async () => {
