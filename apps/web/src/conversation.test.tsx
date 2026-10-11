@@ -41,6 +41,7 @@ interface Options {
   readonly subjectLabel?: string;
   readonly canWrite?: boolean;
   readonly readOnly?: boolean;
+  readonly blockedReason?: string;
   readonly pageSize?: number;
   /** Holds every write until it resolves, to look at the screen while a send is pending. */
   readonly gate?: Promise<void>;
@@ -56,6 +57,7 @@ const mount = (options: Options = {}) => {
   const scope = options.scope ?? agencyScope;
   const api = createConversationApi({ side: scope.side, clientId: CLIENT_ID, pageSize: options.pageSize });
   const onWritten = vi.fn();
+  const onStale = vi.fn();
   const impl: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     const method = init?.method ?? 'GET';
@@ -77,14 +79,16 @@ const mount = (options: Options = {}) => {
     subjectLabel: options.subjectLabel ?? 'Tom de voz',
     canWrite: options.canWrite ?? true,
     readOnly: options.readOnly ?? false,
-    onWritten
+    blockedReason: options.blockedReason,
+    onWritten,
+    onStale
   };
   const view = () => <QueryClientProvider client={queryClient}>
     <ApiClientProvider client={client}><Conversation {...props} /></ApiClientProvider>
   </QueryClientProvider>;
   const queryClient = createQueryClient();
   const rendered = render(view());
-  return { api, onWritten, rendered, queryClient };
+  return { api, onWritten, onStale, rendered, queryClient };
 };
 
 const area = async (label = 'Tom de voz'): Promise<HTMLElement> => await screen.findByRole('region', { name: `Conversas sobre ${label}` });
@@ -660,5 +664,260 @@ describe('conversation component (#142)', () => {
       expect(screen.getByRole('dialog', { name: 'Tom de voz' })).toBe(dialog);
       noRepeatedKey();
     });
+  });
+});
+
+describe('conversation of a content (#266)', () => {
+  const CONTENT_ID = 'c0c0c0c0-1111-4111-8111-111111111111';
+  const CONTENT = { contentId: CONTENT_ID } as const;
+  const TITLE = 'Lançamento do pão';
+  const NOT_OPEN = 'A conversa só aceita mensagens a partir de "Aguardando aprovação". Este conteúdo está em produção ou foi cancelado.';
+  const IN_PRODUCTION = 'A conversa só aceita mensagens a partir de "Aguardando aprovação"; este conteúdo ainda está em produção.';
+  const mountContent = (options: Options = {}) => mount({ subject: CONTENT, subjectLabel: TITLE, ...options });
+  const contentArea = async (): Promise<HTMLElement> => await screen.findByRole('region', { name: `Conversa sobre ${TITLE}` });
+  const openContentThread = async (region: HTMLElement, excerpt: RegExp | string): Promise<HTMLElement> => {
+    fireEvent.click(await within(region).findByRole('button', { name: excerpt }));
+    return await screen.findByRole('dialog', { name: `Conversa sobre ${TITLE}` });
+  };
+  const answerBox = (dialog: HTMLElement): HTMLTextAreaElement => within(dialog).getByRole('textbox', { name: 'Escrever resposta' }) as HTMLTextAreaElement;
+
+  it('asks for the conversation of that content and of no other, with its own title and empty state', async () => {
+    const { api } = mountContent();
+    api.seed({ contentId: 'c0c0c0c0-2222-4222-8222-222222222222' }, [{ side: 'client', body: 'Mensagem de outro conteúdo', at: LATE }]);
+    api.seed({ sectionKey: 'tone_of_voice' }, [{ side: 'client', body: 'Mensagem do estudo', at: LATE }]);
+
+    const region = await contentArea();
+    await within(region).findByText('Nenhuma conversa sobre este conteúdo');
+    expect(within(region).getByRole('heading', { name: 'Conversa' })).toBeTruthy();
+    expect([...api.calls].sort()).toEqual([
+      `GET /agencies/${AGENCY_ID}/clients/${CLIENT_ID}/threads?contentId=${CONTENT_ID}&state=open&pageSize=100`,
+      `GET /agencies/${AGENCY_ID}/clients/${CLIENT_ID}/threads?contentId=${CONTENT_ID}&state=resolved&pageSize=100`
+    ]);
+    expect(within(region).queryByText(/Mensagem de outro conteúdo|Mensagem do estudo/)).toBeNull();
+  });
+
+  it('opens the one conversation of the content with + conversa, writes the content as the subject and then offers no second one', async () => {
+    const { api, onWritten } = mountContent();
+    const region = await contentArea();
+    await within(region).findByText('Nenhuma conversa sobre este conteúdo');
+
+    fireEvent.click(within(region).getByRole('button', { name: `Nova conversa sobre ${TITLE}` }));
+    const dialog = await screen.findByRole('dialog', { name: `Nova conversa sobre ${TITLE}` });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Escreva a primeira mensagem' }), { target: { value: 'Podemos usar outra foto?' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Iniciar conversa' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(api.bodies).toEqual([{ subject: CONTENT, body: 'Podemos usar outra foto?' }]);
+    await within(region).findByText('Podemos usar outra foto?');
+    expect(onWritten).toHaveBeenCalledTimes(1);
+    expect(within(region).queryByRole('button', { name: /Nova conversa/ })).toBeNull();
+  });
+
+  it('offers no new conversation while the list is still loading, because the content may already have one', async () => {
+    let release: () => void = () => undefined;
+    const promise = new Promise<void>((resolve) => { release = resolve; });
+    mountContent({ holdReads: { promise, path: 'threads' } });
+    const region = await contentArea();
+    expect(within(region).queryByRole('button', { name: /Nova conversa/ })).toBeNull();
+    release();
+    await within(region).findByRole('button', { name: `Nova conversa sobre ${TITLE}` });
+  });
+
+  it('shows the thread of the content with the side, the name by the link and the day in São Paulo of each message, and no id', async () => {
+    const { api } = mountContent();
+    api.seed(CONTENT, [
+      { side: 'client', body: 'Gostei, mas troquem a foto', at: EARLIER },
+      { side: 'agency', body: 'Trocamos hoje', at: LATE }
+    ]);
+    const region = await contentArea();
+    const dialog = await openContentThread(region, /Trocamos hoje/);
+    await within(dialog).findByText('Trocamos hoje');
+
+    const metas = Array.from(dialog.querySelectorAll('.conversation__comment-meta')).map((meta) => meta.textContent);
+    expect(metas).toEqual(['Maria · cliente · 12/10 12:00', 'Ana · agência · 12/10 22:30']);
+    expect(dialog.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+    expect(region.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+  });
+
+  it('renders what the client wrote as text, never as HTML', async () => {
+    const hostile = '<script>window.__hacked = 1</script><img src="x" onerror="window.__hacked = 2"><b>negrito</b> ‮atrás⁧';
+    const { api } = mountContent();
+    api.seed(CONTENT, [{ side: 'client', body: hostile, at: LATE }]);
+    const region = await contentArea();
+    const dialog = await openContentThread(region, /negrito/);
+
+    const body = await within(dialog).findByText((_text, element) => element?.classList.contains('conversation__comment-body') === true);
+    expect(body.textContent).toBe(hostile);
+    expect(body.children).toHaveLength(0);
+    expect(dialog.querySelector('script, img, b')).toBeNull();
+    expect(region.querySelector('script, img, b')).toBeNull();
+    expect((window as unknown as { __hacked?: number }).__hacked).toBeUndefined();
+  });
+
+  it.each([
+    ['a bidi override', 'texto ‮oculto'],
+    ['a bidi isolate', 'texto ⁧oculto'],
+    ['a combining grapheme joiner', 'texto͏oculto'],
+    ['a Braille blank', 'texto⠀oculto'],
+    ['a control character', 'texto\u0007oculto']
+  ])('refuses %s with the one rule of the product, without calling the server', async (_name, text) => {
+    const { api } = mountContent();
+    api.seed(CONTENT, [{ side: 'client', body: 'Gostei', at: LATE }]);
+    const dialog = await openContentThread(await contentArea(), /Gostei/);
+
+    fireEvent.change(answerBox(dialog), { target: { value: text } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+    expect(within(dialog).getByText('O texto contém caracteres que não são aceitos.')).toBeTruthy();
+    expect(api.bodies).toEqual([]);
+    expect(answerBox(dialog).value).toBe(text);
+  });
+
+  it('names the other two refusals of the rule: nothing to say, and more than 5.000 bytes', async () => {
+    const { api } = mountContent();
+    api.seed(CONTENT, [{ side: 'client', body: 'Gostei', at: LATE }]);
+    const dialog = await openContentThread(await contentArea(), /Gostei/);
+
+    fireEvent.change(answerBox(dialog), { target: { value: '   \n  ' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+    expect(within(dialog).getByText('Escreva a mensagem.')).toBeTruthy();
+    fireEvent.change(answerBox(dialog), { target: { value: 'é'.repeat(2501) } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+    expect(within(dialog).getByText('A mensagem pode ter no máximo 5.000 bytes.')).toBeTruthy();
+    expect(api.bodies).toEqual([]);
+  });
+
+  it('accepts what the rule accepts: a family emoji, and exactly 5.000 bytes', async () => {
+    const { api } = mountContent();
+    api.seed(CONTENT, [{ side: 'client', body: 'Gostei', at: LATE }]);
+    const dialog = await openContentThread(await contentArea(), /Gostei/);
+    const family = `${'é'.repeat(100)} 👨‍👩‍👧`;
+    fireEvent.change(answerBox(dialog), { target: { value: family } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+    await waitFor(() => expect(api.bodies).toEqual([{ body: family }]));
+
+    const exact = 'é'.repeat(2500);
+    fireEvent.change(answerBox(dialog), { target: { value: exact } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+    await waitFor(() => expect(api.bodies).toEqual([{ body: family }, { body: exact }]));
+  });
+
+  it('keeps the typed answer when the send fails, and clears it when it goes through', async () => {
+    const { api } = mountContent();
+    const threadId = api.seed(CONTENT, [{ side: 'client', body: 'Gostei', at: LATE }]);
+    const dialog = await openContentThread(await contentArea(), /Gostei/);
+
+    api.failNextWrite(() => apiError(500, 'INTERNAL_ERROR'));
+    fireEvent.change(answerBox(dialog), { target: { value: 'Combinado, sigo assim' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+    await within(dialog).findByText('Não foi possível enviar. Tente de novo.');
+    expect(answerBox(dialog).value).toBe('Combinado, sigo assim');
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tentar de novo' }));
+    await waitFor(() => expect(answerBox(dialog).value).toBe(''));
+    await within(dialog).findByText('Combinado, sigo assim');
+    expect(api.calls).toContain(`POST /agencies/${AGENCY_ID}/clients/${CLIENT_ID}/threads/${threadId}/comments`);
+    expect(within(dialog).queryByText('Não foi possível enviar. Tente de novo.')).toBeNull();
+  });
+
+  it('says why nobody can write while the content is not open, and still reads and resolves', async () => {
+    const { api } = mountContent({ blockedReason: IN_PRODUCTION });
+    api.seed(CONTENT, [{ side: 'client', body: 'Gostei', at: LATE }]);
+    const region = await contentArea();
+    expect(within(region).getByText(IN_PRODUCTION)).toBeTruthy();
+    const dialog = await openContentThread(region, /Gostei/);
+    expect(within(dialog).getByText(IN_PRODUCTION)).toBeTruthy();
+    expect(within(dialog).queryByRole('textbox')).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Responder' })).toBeNull();
+    expect(within(dialog).queryByText('Esta conversa é somente leitura.')).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Resolver' }));
+    await waitFor(() => expect(api.calls.filter((call) => call.endsWith('/resolve'))).toHaveLength(1));
+  });
+
+  it('offers no new conversation to a content that is not open, and says why even with no thread', async () => {
+    const reason = 'Este conteúdo foi cancelado: a conversa não recebe mais mensagens.';
+    mountContent({ blockedReason: reason });
+    const region = await contentArea();
+    await within(region).findByText('Nenhuma conversa sobre este conteúdo');
+    expect(within(region).getByText(reason)).toBeTruthy();
+    expect(within(region).queryByRole('button', { name: /Nova conversa/ })).toBeNull();
+  });
+
+  it('does not say why to who could not write anyway: that person reads "somente leitura"', async () => {
+    const { api } = mountContent({ canWrite: false, blockedReason: IN_PRODUCTION });
+    api.seed(CONTENT, [{ side: 'client', body: 'Gostei', at: LATE }]);
+    const region = await contentArea();
+    const dialog = await openContentThread(region, /Gostei/);
+    expect(within(region).queryByText(IN_PRODUCTION)).toBeNull();
+    expect(within(dialog).queryByText(IN_PRODUCTION)).toBeNull();
+    expect(within(dialog).getByText('Esta conversa é somente leitura.')).toBeTruthy();
+  });
+
+  it('answers the 409 of a content that is not open with its own words, keeps the text, and tells the screen around it', async () => {
+    const { api, onStale, onWritten } = mountContent();
+    api.seed(CONTENT, [{ side: 'client', body: 'Gostei', at: LATE }]);
+    const dialog = await openContentThread(await contentArea(), /Gostei/);
+
+    api.failNextWrite(() => apiError(409, 'CONTENT_NOT_OPEN', 'MENSAGEM DO SERVIDOR'));
+    fireEvent.change(answerBox(dialog), { target: { value: 'Texto que não pode sumir' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+    await within(dialog).findByText(NOT_OPEN);
+    expect(within(dialog).queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
+    expect(answerBox(dialog).value).toBe('Texto que não pode sumir');
+    expect(onStale).toHaveBeenCalledTimes(1);
+    expect(onWritten).not.toHaveBeenCalled();
+  });
+
+  it('answers the 409 of opening the conversation of a content that is not open, in the dialog, keeping the text', async () => {
+    const { api } = mountContent();
+    const region = await contentArea();
+    await within(region).findByText('Nenhuma conversa sobre este conteúdo');
+    fireEvent.click(within(region).getByRole('button', { name: `Nova conversa sobre ${TITLE}` }));
+    const dialog = await screen.findByRole('dialog', { name: `Nova conversa sobre ${TITLE}` });
+
+    api.failNextWrite(() => apiError(409, 'CONTENT_NOT_OPEN'));
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Escreva a primeira mensagem' }), { target: { value: 'Texto que não pode sumir' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Iniciar conversa' }));
+    await within(dialog).findByText(NOT_OPEN);
+    expect((within(dialog).getByRole('textbox', { name: 'Escreva a primeira mensagem' }) as HTMLTextAreaElement).value).toBe('Texto que não pode sumir');
+  });
+
+  it('shows a skeleton while the conversation loads, and the error with "Tentar de novo" when it cannot, then recovers', async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const loading = mountContent({ holdReads: { promise: held, path: 'threads' } });
+    loading.api.seed(CONTENT, [{ side: 'client', body: 'Gostei', at: LATE }]);
+    const region = await contentArea();
+    expect(region.querySelector('.conversation__threads-skeleton')?.getAttribute('aria-busy')).toBe('true');
+    release();
+    await within(region).findByText('Gostei');
+    expect(region.querySelector('.conversation__threads-skeleton')).toBeNull();
+    cleanup();
+
+    let failing = true;
+    const { api } = mountContent({
+      fail: (url, method) => (failing && method === 'GET' && url.pathname.endsWith('/threads') ? apiError(403, 'FORBIDDEN') : undefined)
+    });
+    api.seed(CONTENT, [{ side: 'client', body: 'Gostei', at: LATE }]);
+    const failed = await contentArea();
+    await within(failed).findByText('Não foi possível carregar as conversas.');
+    expect(within(failed).queryByText('Nenhuma conversa sobre este conteúdo')).toBeNull();
+    expect(within(failed).queryByRole('button', { name: /Nova conversa/ })).toBeNull();
+    failing = false;
+    fireEvent.click(within(failed).getByRole('button', { name: 'Tentar de novo' }));
+    await within(failed).findByText('Gostei');
+  });
+
+  it('opens a long conversation of a content on its newest messages, and pages back to the earlier ones', async () => {
+    const { api } = mountContent();
+    api.seed(CONTENT, Array.from({ length: 51 }, (_, index) => ({
+      side: index % 2 === 0 ? ('client' as const) : ('agency' as const),
+      body: `mensagem ${String(index + 1).padStart(3, '0')}`,
+      at: new Date(Date.parse(EARLIER) + index * 60_000).toISOString()
+    })));
+    const dialog = await openContentThread(await contentArea(), /mensagem 051/);
+    await within(dialog).findByText('mensagem 051');
+    expect(within(dialog).queryByText('mensagem 001')).toBeNull();
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Ver mensagens anteriores' }));
+    await within(dialog).findByText('mensagem 001');
   });
 });
