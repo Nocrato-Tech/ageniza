@@ -14,6 +14,6 @@
 - Uma advisory futura contra a 4.2.2 é tratada como qualquer outra: sobe-se a versão dentro do `^4.0.0` pelo lockfile.
 - A idade das versões novas continua conferida na revisão (ver `2026-10-11-sem-regra-de-idade-minima-de-publicacao-para-dependencias.md`).
 
-**Origem.** Issue #509, sugestão da revisão do Lupa no PR #501, resposta do dono ao maestro em 2026-10-11 (manter a 4.2.2).
+**Origem.** Issue #509, sugestão da revisão do Lupa no PR #501, decisão do dono em 2026-10-11 (manter a 4.2.2, sem override, com a idade e a avaliação registradas no PR).
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-10-11.
