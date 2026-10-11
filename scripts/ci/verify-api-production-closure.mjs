@@ -1,12 +1,14 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // better-auth declares vitest as an optional peer, so `pnpm deploy --prod` would ship vitest and
 // its chain in the API image (issue #281). The hook in .pnpmfile.cjs keeps it out; this gate fails
-// when a regenerated lockfile or a new dependency brings the chain back.
+// when a regenerated lockfile or a new dependency brings the chain back. The chain cannot be read
+// from a devDependency name, so it stays listed by hand; every devDependency of the workspace is
+// added to it when the gate runs (issue #510).
 export const FORBIDDEN_IN_API_PRODUCTION = [
   'vitest',
   'vite',
@@ -20,6 +22,13 @@ export const FORBIDDEN_IN_API_PRODUCTION = [
 // What the production image carries besides node_modules: the `files` of apps/api/package.json
 // (issue #305). Anything else in the deploy is source, test or tooling the runtime never reads.
 const RUNTIME_ROOT_ENTRIES = new Set(['dist', 'node_modules', 'package.json']);
+
+// The `@ageniza/*` packages reach the image through `pnpm deploy` too, and pnpm honours their
+// `files` (issue #510): dist is the runtime, and package.json and README.md are always packed.
+// `database` also carries bin and migrations because the migrations image deploys that same
+// package and runs them; restricting its `files` further would empty that image.
+const INTERNAL_RUNTIME_ENTRIES = new Set(['dist', 'package.json', 'README.md']);
+export const INTERNAL_RUNTIME_EXTRAS = { '@ageniza/database': ['bin', 'migrations'] };
 
 // Loading these in the deploy proves the closure still has everything the API imports at boot, and
 // the two commands the production runbook runs in the image: a green image build does not
@@ -60,12 +69,42 @@ const isTestArtifact = (path) => /(^|\/)[^/]*\.test\.[^/]*$/.test(path) || path.
 export const unexpectedInDeploy = (paths) =>
   paths.filter((path) => !RUNTIME_ROOT_ENTRIES.has(path.split('/')[0]) || isTestArtifact(path)).sort();
 
+/** Files (posix paths relative to the package) an `@ageniza/*` package carries beyond its runtime. */
+export const unexpectedInInternalPackage = (name, paths) => {
+  const allowed = new Set([...INTERNAL_RUNTIME_ENTRIES, ...(INTERNAL_RUNTIME_EXTRAS[name] ?? [])]);
+  return paths.filter((path) => !allowed.has(path.split('/')[0]) || isTestArtifact(path)).sort();
+};
+
+/** The package.json of every workspace project, the root included, from the globs in pnpm-workspace.yaml. */
+const workspaceManifests = (root) => {
+  const manifests = [JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))];
+  for (const line of readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8').split(/\r?\n/)) {
+    if (!/^\s*-\s/.test(line)) continue;
+    const glob = /^\s*-\s*['"]?([^'"\s*]+)\/\*['"]?\s*$/.exec(line);
+    if (!glob) throw new Error(`pnpm-workspace.yaml has a pattern this gate cannot read: ${line.trim()}`);
+    for (const entry of readdirSync(join(root, glob[1]), { withFileTypes: true })) {
+      const manifest = join(root, glob[1], entry.name, 'package.json');
+      if (entry.isDirectory() && existsSync(manifest)) manifests.push(JSON.parse(readFileSync(manifest, 'utf8')));
+    }
+  }
+  return manifests;
+};
+
+/** Every devDependency the workspace declares, sorted and without repeats. */
+export const devDependenciesOfWorkspace = (root) =>
+  [...new Set(workspaceManifests(root).flatMap((manifest) => Object.keys(manifest.devDependencies ?? {})))].sort();
+
+/** The hand-listed chain plus every devDependency of the workspace: none of them belongs in the API image. */
+export const forbiddenForWorkspace = (root) =>
+  [...new Set([...FORBIDDEN_IN_API_PRODUCTION, ...devDependenciesOfWorkspace(root)])].sort();
+
+// A pnpm virtual-store entry is a real directory; statSync follows the link a Windows junction is.
 const listFiles = (root, relative = '') => {
   const files = [];
   for (const entry of readdirSync(join(root, relative), { withFileTypes: true })) {
     const path = relative === '' ? entry.name : `${relative}/${entry.name}`;
     if (relative === '' && entry.name === 'node_modules') continue;
-    if (entry.isDirectory()) files.push(...listFiles(root, path));
+    if (statSync(join(root, path)).isDirectory()) files.push(...listFiles(root, path));
     else files.push(path);
   }
   return files;
@@ -80,8 +119,27 @@ export const bootFromDeploy = (target, modules = BOOT_MODULES) => {
   return (result.stderr || result.stdout || `node exited with ${result.status}`).trim().split('\n')[0];
 };
 
+/** The `@ageniza/*` packages the deployed API declares: which the store lacks, and the files the others carry beyond their runtime. */
+const inspectInternalPackages = (target, store, entries) => {
+  const declared = Object.keys(JSON.parse(readFileSync(join(target, 'package.json'), 'utf8')).dependencies ?? {})
+    .filter((name) => name.startsWith('@ageniza/'));
+  const missing = [];
+  const unexpected = [];
+  for (const name of declared) {
+    const folders = entries
+      .filter((entry) => packageNameFromStoreEntry(entry) === name)
+      .map((entry) => join(store, entry, 'node_modules', name))
+      .filter((folder) => existsSync(folder));
+    if (folders.length === 0) missing.push(name);
+    for (const folder of folders) {
+      unexpected.push(...unexpectedInInternalPackage(name, listFiles(folder)).map((path) => `${name}/${path}`));
+    }
+  }
+  return { missing, unexpected: unexpected.sort() };
+};
+
 /** Everything wrong with an already deployed API, as messages; an empty list is a closure worth trusting. */
-export const checkDeployedApi = (target, { boot = bootFromDeploy } = {}) => {
+export const checkDeployedApi = (target, { boot = bootFromDeploy, forbidden = FORBIDDEN_IN_API_PRODUCTION } = {}) => {
   const failures = [];
 
   const store = join(target, 'node_modules', '.pnpm');
@@ -94,11 +152,11 @@ export const checkDeployedApi = (target, { boot = bootFromDeploy } = {}) => {
     return failures;
   }
 
-  const forbidden = forbiddenPackagesIn(entries);
-  if (forbidden.length > 0) {
+  const reached = forbiddenPackagesIn(entries, forbidden);
+  if (reached.length > 0) {
     failures.push(
-      `${forbidden.join(', ')} reached the deployed API.\n` +
-      'Keep test-only tooling out of the API production dependencies; see docs/ci/README.md.'
+      `${reached.join(', ')} reached the deployed API.\n` +
+      'Keep test-only and development tooling out of the API production dependencies; see docs/ci/README.md.'
     );
   }
 
@@ -107,6 +165,17 @@ export const checkDeployedApi = (target, { boot = bootFromDeploy } = {}) => {
     failures.push(
       `the deploy carries ${unexpected.length} file(s) the runtime does not read, such as ${unexpected.slice(0, 5).join(', ')}.\n` +
       'Keep them out of `files` in apps/api/package.json; see docs/ci/README.md.'
+    );
+  }
+
+  const internal = inspectInternalPackages(target, store, entries);
+  if (internal.missing.length > 0) {
+    failures.push(`the deploy has no ${internal.missing.join(', ')} to inspect, and the API declares ${internal.missing.length === 1 ? 'it' : 'them'}.`);
+  }
+  if (internal.unexpected.length > 0) {
+    failures.push(
+      `the deploy carries ${internal.unexpected.length} file(s) of @ageniza/* the runtime does not read, such as ${internal.unexpected.slice(0, 5).join(', ')}.\n` +
+      'Keep them out of `files` in the package.json of that package; see docs/ci/README.md.'
     );
   }
 
@@ -132,11 +201,12 @@ const deployWithPnpm = (target) => {
 };
 
 /** Deploys the API into a temporary directory, checks it, and removes it. Returns the failures. */
-export const verifyApiProductionClosure = ({ deploy = deployWithPnpm, boot = bootFromDeploy } = {}) => {
+export const verifyApiProductionClosure = ({ deploy = deployWithPnpm, boot = bootFromDeploy, workspaceRoot = repoRoot } = {}) => {
+  const forbidden = forbiddenForWorkspace(workspaceRoot);
   const target = mkdtempSync(join(tmpdir(), 'ageniza-api-production-'));
   try {
     deploy(target);
-    return checkDeployedApi(target, { boot });
+    return checkDeployedApi(target, { boot, forbidden });
   } finally {
     try {
       rmSync(target, { recursive: true, force: true });
@@ -152,7 +222,7 @@ export const main = (options) => {
     for (const failure of failures) console.error(`API production closure check failed: ${failure}`);
     process.exitCode = 1;
   } else {
-    console.log(`API production closure is free of ${FORBIDDEN_IN_API_PRODUCTION.join(', ')}, carries only what the runtime reads, and boots.`);
+    console.log('API production closure is free of the test tooling and of every workspace devDependency, carries only what the runtime reads (the API and @ageniza/*), and boots.');
   }
 };
 

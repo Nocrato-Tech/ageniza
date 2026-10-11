@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/**/test-support/**"
+  ],
   "exports": {
     "./server": {
       "types": "./dist/server.d.ts",
