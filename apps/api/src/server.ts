@@ -24,6 +24,7 @@ import { createMediaStorageClient } from './modules/media/storage-client.js';
 import type { LegalModuleDependencies } from './modules/legal/routes.js';
 import type { EmailChangeModuleDependencies } from './modules/email-change/routes.js';
 import type { ProfileModuleDependencies } from './modules/profile/routes.js';
+import type { StoryScriptModuleDependencies } from './modules/story-scripts/routes.js';
 
 /** Dedicated to Better Auth (and, since it shares the same `ageniza_app` role and connection
  * settings, to append-only audit writes); small on purpose on a shared VPS. */
@@ -125,6 +126,14 @@ export const startApi = async (): Promise<void> => {
 
   const emailChangeDependencies: EmailChangeModuleDependencies = { database, auth, emailService };
 
+  const storyScriptDependencies: StoryScriptModuleDependencies = {
+    database,
+    auth,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    requirePermission,
+    requireClientAccess: createRequireClientAccess({ database })
+  };
+
   const readiness = createReadiness(false);
   const dependencyChecks: readonly HealthCheck[] = [
     { name: 'auth-database', check: async () => { await authPool.query('select 1'); } }
@@ -143,7 +152,8 @@ export const startApi = async (): Promise<void> => {
     media: mediaDependencies,
     profile: profileDependencies,
     legal: legalDependencies,
-    emailChange: emailChangeDependencies
+    emailChange: emailChangeDependencies,
+    storyScripts: storyScriptDependencies
   });
 
   const shutdown = createShutdownManager();

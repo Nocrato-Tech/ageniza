@@ -2420,6 +2420,249 @@ Confirma a troca de e-mail pelo link enviado ao e-mail novo.
 
 **Erros:** `400 INVALID_LINK` · `400 VALIDATION_ERROR` · `403 CSRF_REJECTED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
+### story-scripts — Roteiros de stories de um cliente: a agência cria, edita e envia; o portal lê os enviados de um período e marca como gravado.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `POST` | `/agencies/:agencyId/clients/:clientId/story-scripts` | Sessão + vínculo com a agência | `conteudo.operar` | Cria um roteiro de stories em rascunho |
+| `PATCH` | `/agencies/:agencyId/clients/:clientId/story-scripts/:scriptId` | Sessão + vínculo com a agência | `conteudo.operar` | Edita o dia e as cenas de um roteiro em rascunho |
+| `POST` | `/agencies/:agencyId/clients/:clientId/story-scripts/:scriptId/send` | Sessão + vínculo com a agência | `conteudo.operar` | Envia o roteiro ao cliente |
+| `GET` | `/clients/:clientId/story-scripts` | Sessão + vínculo com o cliente | — | Lista os roteiros enviados de um período, no portal |
+| `POST` | `/clients/:clientId/story-scripts/:scriptId/recorded` | Sessão + vínculo com o cliente | — | Marca o roteiro como gravado, no portal |
+
+#### `POST /agencies/:agencyId/clients/:clientId/story-scripts`
+
+Cria um roteiro de stories em rascunho.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "scriptOn": "2026-10-20",
+  "scenes": [
+    {
+      "text": "Abrir a loja e mostrar a vitrine nova.",
+      "guidance": "Filmar na vertical, com luz natural."
+    },
+    {
+      "text": "Contar a promoção da semana."
+    }
+  ]
+}
+```
+
+**Resposta `201`** — Roteiro criado, em rascunho.
+
+```json
+{
+  "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "scriptOn": "2026-10-20",
+  "status": "draft",
+  "scenes": [
+    {
+      "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "position": 1,
+      "text": "Abrir a loja e mostrar a vitrine nova.",
+      "guidance": "Filmar na vertical, com luz natural."
+    },
+    {
+      "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "position": 2,
+      "text": "Contar a promoção da semana.",
+      "guidance": null
+    }
+  ],
+  "recordedBy": null,
+  "recordedAt": null,
+  "createdAt": "2026-10-11T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
+#### `PATCH /agencies/:agencyId/clients/:clientId/story-scripts/:scriptId`
+
+Edita o dia e as cenas de um roteiro em rascunho.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "scriptOn": "2026-10-21",
+  "scenes": [
+    {
+      "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "text": "Contar a promoção da semana."
+    },
+    {
+      "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "text": "Abrir a loja e mostrar a vitrine nova.",
+      "guidance": "Filmar na vertical."
+    },
+    {
+      "text": "Pedir para seguir o perfil."
+    }
+  ]
+}
+```
+
+**Resposta `200`** — Roteiro editado.
+
+```json
+{
+  "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "scriptOn": "2026-10-20",
+  "status": "draft",
+  "scenes": [
+    {
+      "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "position": 1,
+      "text": "Abrir a loja e mostrar a vitrine nova.",
+      "guidance": "Filmar na vertical, com luz natural."
+    },
+    {
+      "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "position": 2,
+      "text": "Contar a promoção da semana.",
+      "guidance": null
+    }
+  ],
+  "recordedBy": null,
+  "recordedAt": null,
+  "createdAt": "2026-10-11T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 STORY_SCENES_MISMATCH` · `409 STORY_SCRIPT_STATE` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/story-scripts/:scriptId/send`
+
+Envia o roteiro ao cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Resposta `200`** — Roteiro enviado.
+
+```json
+{
+  "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "scriptOn": "2026-10-20",
+  "status": "sent",
+  "scenes": [
+    {
+      "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "position": 1,
+      "text": "Abrir a loja e mostrar a vitrine nova.",
+      "guidance": "Filmar na vertical, com luz natural."
+    },
+    {
+      "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "position": 2,
+      "text": "Contar a promoção da semana.",
+      "guidance": null
+    }
+  ],
+  "recordedBy": null,
+  "recordedAt": null,
+  "createdAt": "2026-10-11T12:00:00.000Z"
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 STORY_SCRIPT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId/story-scripts`
+
+Lista os roteiros enviados de um período, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "from": "2026-10-01",
+  "to": "2026-10-31"
+}
+```
+
+**Resposta `200`** — Roteiros do período.
+
+```json
+{
+  "data": [
+    {
+      "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "scriptOn": "2026-10-20",
+      "status": "sent",
+      "scenes": [
+        {
+          "position": 1,
+          "text": "Abrir a loja e mostrar a vitrine nova.",
+          "guidance": "Filmar na vertical, com luz natural."
+        },
+        {
+          "position": 2,
+          "text": "Contar a promoção da semana.",
+          "guidance": null
+        }
+      ],
+      "recordedBy": null,
+      "recordedAt": null
+    }
+  ],
+  "meta": {
+    "from": "2026-10-01",
+    "to": "2026-10-31",
+    "count": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /clients/:clientId/story-scripts/:scriptId/recorded`
+
+Marca o roteiro como gravado, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Resposta `200`** — Roteiro gravado.
+
+```json
+{
+  "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "scriptOn": "2026-10-20",
+  "status": "recorded",
+  "scenes": [
+    {
+      "position": 1,
+      "text": "Abrir a loja e mostrar a vitrine nova.",
+      "guidance": "Filmar na vertical, com luz natural."
+    },
+    {
+      "position": 2,
+      "text": "Contar a promoção da semana.",
+      "guidance": null
+    }
+  ],
+  "recordedBy": {
+    "name": "Pessoa do Portal"
+  },
+  "recordedAt": "2026-10-20T15:00:00.000Z"
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
 ## Catálogo de códigos de erro
 
 | código | mensagem padrão |
@@ -2449,6 +2692,8 @@ Confirma a troca de e-mail pelo link enviado ao e-mail novo.
 | `PERSONA_ARCHIVED` | Persona arquivada: a conversa é somente leitura. |
 | `SECTION_NOT_FILLED` | Esta seção ainda não foi preenchida pela agência. |
 | `TRY_AGAIN` | Houve um conflito momentâneo. Tente de novo. |
+| `STORY_SCRIPT_STATE` | O roteiro não está no estado que esta ação exige. |
+| `STORY_SCENES_MISMATCH` | O roteiro mudou: recarregue e envie todas as cenas, na ordem desejada. |
 | `INVALID_PASSWORD` | A senha atual não confere. |
 | `SAME_EMAIL` | Informe um e-mail diferente do atual. |
 | `EMAIL_DELIVERY_FAILED` | Não foi possível entregar o e-mail. |
