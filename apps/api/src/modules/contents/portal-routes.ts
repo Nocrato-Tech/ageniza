@@ -24,7 +24,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
+import { sharedUserRateLimit } from '../../plugins/infra/rate-limit.js';
 import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
+import { MEDIA_RATE_LIMITS, MEDIA_READ_URL_BUCKET } from '../media/policy.js';
 import { auditMediaEvent } from '../media/service.js';
 import type { MediaStorageClient } from '../media/storage-client.js';
 import { isInsufficientPrivilegeError } from '../tenancy/guards.js';
@@ -251,7 +253,10 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
 
     // Signs only a file of a content the portal reads (#584). The original's key is built from the agency the guard proved, because
     // `portal_content_media` does not return it. Only the original is audited, as in the agency's route (#550).
-    app.get('/clients/:clientId/contents/:contentId/media/:assetId/url', portalGuards(mediaUrlDocs), async (request, reply) => {
+    // The same bucket as the agency's read URL (per user, one store): a person of both sides does not get 600 on each.
+    const guards = portalGuards(mediaUrlDocs);
+    const limiter = sharedUserRateLimit(app, MEDIA_READ_URL_BUCKET, MEDIA_RATE_LIMITS.downloadUrlPerUser);
+    app.get('/clients/:clientId/contents/:contentId/media/:assetId/url', { ...guards, preHandler: [...guards.preHandler, limiter] }, async (request, reply) => {
       const { claims, userId } = requireAuth(request);
       const clientContext = request.clientContext;
       if (clientContext === undefined) throw clientNotFound();

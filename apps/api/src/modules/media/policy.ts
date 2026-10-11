@@ -17,6 +17,9 @@ export const MEDIA_READ_PERMISSIONS = ['midia.enviar', 'conteudo.visualizar'] as
 const FIVE_MINUTES_MS = 5 * 60 * 1_000;
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1_000;
 
+/** The one bucket of the read URL: the agency's route and the portal's count the same person in the same store. */
+export const MEDIA_READ_URL_BUCKET = 'media-read-url';
+
 export const MEDIA_RATE_LIMITS = {
   // Applies to the routes that emit an upload URL: create-upload and request-parts, counted by IP.
   signedUrlIssuance: { max: 60, windowMs: FIFTEEN_MINUTES_MS },

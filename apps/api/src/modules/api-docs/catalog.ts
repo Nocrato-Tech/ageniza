@@ -1640,7 +1640,9 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       'confirmado ou que não é deste conteúdo, devolvem 404, sem assinar nada. `variant=original` (o padrão) assina o arquivo e grava',
       'a auditoria `media.download_url_issued`; `variant=thumbnail` devolve o próprio original para a imagem e a miniatura para o vídeo',
       'processado, senão 409 `VARIANT_NOT_READY` (ou `VARIANT_PROCESSING_FAILED`), e não grava auditoria. A URL é só GET e de poucos',
-      'minutos. O colaborador que também tem vínculo com o cliente recebe o mesmo recorte que qualquer pessoa do portal.'
+      'minutos. O colaborador que também tem vínculo com o cliente recebe o mesmo recorte que qualquer pessoa do portal. Cada pessoa pede até',
+      '600 URLs a cada 5 minutos, no mesmo balde da rota da agência (quem lê pelos dois lados não ganha 600 em cada); o pedido seguinte é 429',
+      '`RATE_LIMITED` com `Retry-After`.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -1659,7 +1661,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
       { status: 409, code: 'VARIANT_NOT_READY' },
-      { status: 409, code: 'VARIANT_PROCESSING_FAILED' }
+      { status: 409, code: 'VARIANT_PROCESSING_FAILED' },
+      { status: 429, code: 'RATE_LIMITED' }
     ]
   },
   {

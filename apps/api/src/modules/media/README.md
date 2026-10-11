@@ -101,7 +101,9 @@ answers with a placeholder. The portal does not use this route (decision of 2026
 
 The route is limited **per user**: 600 requests in 5 minutes (`MEDIA_RATE_LIMITS.downloadUrlPerUser`), whatever the variant and the agency, and
 the next one is `429 RATE_LIMITED` with `Retry-After` (seconds until the window ends). The key is the session user, not the IP and not the agency,
-so a colleague behind the same address or in the same agency has a budget of their own, and a user in two agencies has one. The limit runs after the
+so a colleague behind the same address or in the same agency has a budget of their own, and a user in two agencies has one. The portal's read URL
+(`GET /clients/:clientId/contents/:contentId/media/:assetId/url`) counts in the **same bucket**: the plugin makes a store per route, so
+`sharedUserRateLimit` hands one handler to both routes, and a person of both sides does not get 600 on each. The limit runs after the
 session and permission guards (a refused request counts for nobody) and before the lookup (a 429 audits and signs nothing). It lives in the
 memory of the API process. The screens ask one URL per asset and keep it until it is about to expire, so 600 per window is a month of covers, the
 folder page and the modal with room to spare; the numbers and what they do not stop are in the decision of 2026-10-11 on the download limit (#558).
