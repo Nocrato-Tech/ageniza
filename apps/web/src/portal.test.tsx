@@ -44,6 +44,7 @@ const agencyMe = {
   agencyId: AGENCY_A,
   agencyName: 'Agência Um',
   isOwner: false,
+  membershipId: null,
   role: { key: 'admin', name: 'Admin' },
   permissions: ['cliente.visualizar', 'cliente.operar', 'cliente.cadastrar', 'cliente.arquivar']
 };

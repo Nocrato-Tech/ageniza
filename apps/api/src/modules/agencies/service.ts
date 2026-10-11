@@ -11,6 +11,7 @@ interface AgencyMeRow {
   readonly agency_id: string;
   readonly agency_name: string;
   readonly is_owner: boolean;
+  readonly membership_id: string | null;
   readonly role_key: string;
   readonly role_name: string;
   readonly permissions: readonly string[] | null;
@@ -34,6 +35,7 @@ export const loadAgencyMe = async (transaction: AgencyTransaction, agencyId: str
       agency.id as agency_id,
       agency.name as agency_name,
       (agency.owner_user_id = app_private.current_user_id()) as is_owner,
+      membership.id as membership_id,
       -- Owner is not a role, so an owner without an effective membership role is labelled with the
       -- admin preset, exactly like GET /me/contexts. Every other case without a role (a
       -- membership pointing at another agency's role, hidden by the scope above) gets a neutral
@@ -71,6 +73,7 @@ export const loadAgencyMe = async (transaction: AgencyTransaction, agencyId: str
     agencyId: row.agency_id,
     agencyName: row.agency_name,
     isOwner: row.is_owner === true,
+    membershipId: row.membership_id,
     role: { key: row.role_key, name: row.role_name },
     permissions: [...(row.permissions ?? [])]
   };
