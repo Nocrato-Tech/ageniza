@@ -67,7 +67,8 @@ Nunca vê subtarefa, responsável, prazo interno nem roteiro em rascunho.
 |---|---|---|---|
 | `client_id` | uuid | não | preenchido na mídia de conteúdo; a mídia anterior fica sem cliente, só da agência |
 | `folder_id` | uuid | não | a pasta do mesmo cliente |
-| `removed_at` | timestamptz | não | remoção lógica; o arquivo sai pelo fluxo de retenção |
+| `removed_at` | timestamptz | não | remoção lógica; o arquivo sai pelo fluxo de retenção, 30 dias depois (seção 8) |
+| `purged_at` | timestamptz | não | carimbo da purga: os arquivos saíram do armazenamento e a linha fica para a auditoria; só a função do worker o escreve, e só numa mídia removida |
 
 O upload é do **conteúdo pronto**; o material bruto fica fora do sistema.
 
@@ -233,7 +234,7 @@ Calendário e feed consultam por intervalo (`from`, `to`), com **teto de 93 dias
 
 ### Persistência
 
-Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `story_scripts`, `story_script_scenes` e a fila de notificação. Colunas novas: `media_assets.client_id`, `media_assets.folder_id`, `media_assets.removed_at`, `client_threads.content_id`. Permissões novas no catálogo, com os presets da seção 2. Pastas padrão criadas para todos os clientes existentes (backfill) e no cadastro de cada cliente novo.
+Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `story_scripts`, `story_script_scenes` e a fila de notificação. Colunas novas: `media_assets.client_id`, `media_assets.folder_id`, `media_assets.removed_at`, `media_assets.purged_at`, `client_threads.content_id`. Permissões novas no catálogo, com os presets da seção 2. Pastas padrão criadas para todos os clientes existentes (backfill) e no cadastro de cada cliente novo.
 
 ### RLS
 
@@ -356,6 +357,7 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 - **E-mail ao cliente** por uma **fila de notificação** enviada pelo worker, para todas as pessoas ativas do portal: "conteúdos para aprovar" agrupado com espera de 15 minutos após o último envio; "publicado" em resumo diário. Nada para cliente arquivado ou agência suspensa.
 - **Cancelamento** do conteúdo além da data de encerramento **dentro da função de arquivar o cliente** (job e rota), no molde de `archive_due_clients`.
 - **Mídia**: o upload direto e o processamento de vídeo existentes; o quadro automático serve de capa quando não há capa enviada; a remoção lógica entra no fluxo de retenção.
+- **Retenção da mídia removida** ([decisão](../docs/business/decisions/2026-10-11-midia-removida-sai-do-armazenamento-30-dias-depois-e-a-linha-fica.md), pendente do dono): um job diário do worker (`media.purge-removed`), 30 dias depois do `removed_at`, apaga do armazenamento o objeto, a chave de envio e a miniatura e o preview de vídeo, e carimba `purged_at`; a linha fica para a auditoria. Nunca toca mídia em uso por conteúdo aguardando aprovação, aprovado ou publicado (regra 12). A cota deixa de contar o que foi purgado e continua contando o que só foi removido. O banco é `app_private.media_due_for_purge` e `app_private.mark_media_purged`; o job é `apps/worker/src/media-purge-job.ts`.
 
 ## 9. Impacto estrutural
 
