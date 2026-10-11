@@ -121,13 +121,13 @@ function LocationProbe() {
   return null;
 }
 
-const renderScreen = (impl: typeof fetch, entry: string) => {
+const renderScreen = (impl: typeof fetch, entry: string, queryClient = createQueryClient()) => {
   const sessionEnd = createSessionEndSignal();
   const client = new HttpClient('http://127.0.0.1:3001', impl, { onSessionEnded: sessionEnd.notify });
   const store = createAuthSessionStore(client);
   return render(
     <AuthSessionProvider store={store}>
-      <QueryClientProvider client={createQueryClient()}>
+      <QueryClientProvider client={queryClient}>
         <ApiClientProvider client={client}>
           <MemoryRouter initialEntries={[entry]}>
             <SessionEndRedirect signal={sessionEnd} authStore={store} />
@@ -401,6 +401,27 @@ describe('the cover of a tile', () => {
     await waitFor(() => expect(feedRegion().querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${ASSET}.jpg`));
     expect(feedRegion().querySelector('img')?.getAttribute('alt')).toBe('');
     expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET}/download-url?variant=thumbnail`]);
+  });
+
+  it('keeps its URL until 30 s before it expires, and asks for a new one after that', async () => {
+    const queryClient = createQueryClient();
+    const { impl, calls } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Com capa', publishOn: '2026-10-14', coverAssetId: ASSET })] } });
+    const first = renderScreen(impl, url(padaria.id), queryClient);
+    await waitFor(() => expect(feedRegion().querySelector('img')).not.toBeNull());
+    expect(coverCalls(calls)).toHaveLength(1);
+    first.unmount();
+
+    // The URL expires at 01:45 and is kept until 30 s before that: one second before the margin the cover is drawn from the cache.
+    vi.setSystemTime(new Date('2026-10-12T01:44:29Z'));
+    const second = renderScreen(impl, url(padaria.id), queryClient);
+    await waitFor(() => expect(feedRegion().querySelector('img')).not.toBeNull());
+    expect(coverCalls(calls)).toHaveLength(1);
+    second.unmount();
+
+    // One second past the margin the URL is stale, so the same cover asks for a new one.
+    vi.setSystemTime(new Date('2026-10-12T01:44:31Z'));
+    renderScreen(impl, url(padaria.id), queryClient);
+    await waitFor(() => expect(coverCalls(calls)).toHaveLength(2));
   });
 
   it('is the shape of the format when there is no cover, and when the route refuses', async () => {

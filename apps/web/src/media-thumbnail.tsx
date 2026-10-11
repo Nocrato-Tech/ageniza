@@ -6,6 +6,7 @@ import { MediaDownloadUrlResponseSchema, type MediaCategory, type MediaDownloadU
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
 import { useApiClient } from './http.js';
+import { signedUrlStaleTime } from './signed-url.js';
 
 /** Whether the element was ever on screen. Without `IntersectionObserver` (an old browser) it counts as seen. */
 function useSeen<T extends Element>(): [RefObject<T | null>, boolean] {
@@ -41,6 +42,7 @@ export function MediaThumbnail({ assetId, category }: { assetId: string; categor
   const thumbnail = useQuery<MediaDownloadUrlResponse>({
     queryKey: ['agency', agency.agencyId, 'media-thumbnail', assetId],
     enabled: seen,
+    staleTime: signedUrlStaleTime,
     queryFn: ({ signal }) => httpClient.request({
       path: `${apiPath('/agencies/:agencyId/media/:assetId/download-url', { agencyId: agency.agencyId, assetId })}?variant=thumbnail`,
       response: MediaDownloadUrlResponseSchema,
