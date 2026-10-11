@@ -928,6 +928,27 @@ describe('moving a content to another day (drag)', () => {
     expect(second.publishOn).toBe('2026-10-20');
   });
 
+  it('lands on a day that already has a story script, and the script and its mark stay where they were', async () => {
+    const traveller = contentFixture({ title: 'Viajante', publishOn: '2026-10-14' });
+    const script = { id: '5c5c5c5c-5555-4555-8555-555555555555', scriptOn: '2026-10-20', status: 'draft' };
+    const { patches } = open([traveller], {
+      period: (_client, from, to) => {
+        const rows = [traveller].filter((row) => row.publishOn >= from && row.publishOn <= to);
+        return json({ data: { contents: rows, storyScripts: [script] }, meta: { from, to, count: rows.length + 1 } });
+      }
+    });
+    await screen.findByText('Viajante');
+    expect(within(dayCell('2026-10-20')).getByRole('button', { name: 'Stories · Rascunho' })).toBeTruthy();
+
+    drag('Viajante', '2026-10-20');
+    await waitFor(() => expect(within(dayCell('2026-10-20')).queryByText('Viajante')).not.toBeNull());
+    expect(patches).toEqual([{ clientId: padaria.id, contentId: traveller.id, body: { publishOn: '2026-10-20' } }]);
+    expect(within(dayCell('2026-10-20')).getByRole('button', { name: 'Stories · Rascunho' })).toBeTruthy();
+    expect(within(dayCell('2026-10-14')).queryByRole('button', { name: /^Stories/ })).toBeNull();
+    // The "+" of the day is there for the person who operates, beside the card that landed.
+    expect(within(dayCell('2026-10-20')).getByRole('button', { name: /^Adicionar no dia/ })).toBeTruthy();
+  });
+
   it('moves the first of two when the first is the one dragged', async () => {
     const first = contentFixture({ title: 'Primeiro', publishOn: '2026-10-14' });
     const second = contentFixture({ title: 'Segundo', publishOn: '2026-10-14' });
