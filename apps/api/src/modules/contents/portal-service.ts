@@ -100,14 +100,14 @@ export const loadPortalContent = async (
 };
 
 /** The media of the post, in order. The cover is the content's `coverAssetId`, not an item of the list. */
-const loadPortalMedia = async (transaction: ContentTransaction, contentId: string): Promise<Array<{ id: string; position: number }>> => {
-  const result = await raw<RawRows<{ asset_id: string; item_position: number }>>(transaction, `
-    select media.asset_id, media.item_position
+const loadPortalMedia = async (transaction: ContentTransaction, contentId: string): Promise<Array<{ id: string; position: number; kind: 'image' | 'video' }>> => {
+  const result = await raw<RawRows<{ asset_id: string; item_position: number; category: 'image' | 'video' }>>(transaction, `
+    select media.asset_id, media.item_position, media.category
     from app_private.portal_content_media(?::uuid) media
     where media.role = 'media'
     order by media.item_position, media.asset_id
   `, [contentId]);
-  return result.rows.map((row) => ({ id: row.asset_id, position: row.item_position }));
+  return result.rows.map((row) => ({ id: row.asset_id, position: row.item_position, kind: row.category }));
 };
 
 export interface PortalMediaAsset {

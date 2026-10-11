@@ -1800,6 +1800,11 @@
         },
         "additionalProperties": false
       },
+      "submitContentRequest": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
       "approveContentByAgencyRequest": {
         "type": "object",
         "properties": {
@@ -2373,11 +2378,19 @@
                     "position": {
                       "type": "integer",
                       "exclusiveMinimum": 0
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "image",
+                        "video"
+                      ]
                     }
                   },
                   "required": [
                     "id",
-                    "position"
+                    "position",
+                    "kind"
                   ],
                   "additionalProperties": false
                 }
@@ -9493,6 +9506,17 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/submitContentRequest"
+              },
+              "example": {}
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Conteúdo aguardando aprovação.",
@@ -9550,6 +9574,25 @@
                     "threadId": null,
                     "commentCount": 0,
                     "lastCommentAt": null
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
                   }
                 }
               }
@@ -10155,6 +10198,17 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/submitContentRequest"
+              },
+              "example": {}
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Conteúdo aprovado de novo.",
@@ -10212,6 +10266,25 @@
                     "threadId": null,
                     "commentCount": 0,
                     "lastCommentAt": null
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
                   }
                 }
               }
@@ -10353,6 +10426,17 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/submitContentRequest"
+              },
+              "example": {}
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Conteúdo cancelado.",
@@ -10410,6 +10494,25 @@
                     "threadId": null,
                     "commentCount": 0,
                     "lastCommentAt": null
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
                   }
                 }
               }
@@ -12045,7 +12148,8 @@
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
-                      "position": 1
+                      "position": 1,
+                      "kind": "image"
                     }
                   ]
                 }
@@ -12360,7 +12464,8 @@
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
-                      "position": 1
+                      "position": 1,
+                      "kind": "image"
                     }
                   ]
                 }
@@ -12550,7 +12655,8 @@
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
-                      "position": 1
+                      "position": 1,
+                      "kind": "image"
                     }
                   ]
                 }

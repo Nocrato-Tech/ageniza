@@ -43,9 +43,14 @@ export const rescheduleContent = async (
   await raw(transaction, 'select app_private.reschedule_content(?::uuid, ?::date)', [input.contentId, input.publishOn ?? null]);
 };
 
-/** The day of America/Sao_Paulo an instant falls in, by the one function the database converts days with. */
-export const saoPauloDay = async (transaction: ContentTransaction, instant: Date): Promise<string> => {
-  const result = await raw<{ rows: Array<{ day: string }> }>(transaction, 'select app_private.sao_paulo_date(?::timestamptz)::text as day', [instant.toISOString()]);
+/**
+ * The day of America/Sao_Paulo that `instant` falls in, by the one function the database converts days with. Without an instant it is
+ * the database's own `now()`, the clock the trigger of the publication compares the day with; only a test passes one.
+ */
+export const saoPauloDay = async (transaction: ContentTransaction, instant?: Date): Promise<string> => {
+  const result = instant === undefined
+    ? await raw<{ rows: Array<{ day: string }> }>(transaction, 'select app_private.sao_paulo_date(pg_catalog.now())::text as day', [])
+    : await raw<{ rows: Array<{ day: string }> }>(transaction, 'select app_private.sao_paulo_date(?::timestamptz)::text as day', [instant.toISOString()]);
   const row = result.rows[0];
   if (row === undefined) throw new Error('The day of São Paulo could not be read.');
   return row.day;
