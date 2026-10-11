@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import {
@@ -60,8 +60,7 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
   const atLimit = content.tasks.length >= CONTENT_TASKS_MAX_PER_CONTENT;
   const team = useTeam((canChangeOwner || canCreate) && canSeeTeam);
 
-  // What is on its way is this screen's own state, set in the click: a second click before the next render must not send the move twice.
-  const lock = useRef(false);
+  // What is on its way is this screen's own state, set in the click, and every button waits for it.
   const [sending, setSending] = useState<string | null>(null);
   const busy = sending !== null;
 
@@ -77,8 +76,7 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
 
   /** Runs one write, refreshes what the calendar and the modal read, and gives back the error or `undefined`. */
   const run = async (key: string, request: () => Promise<unknown>): Promise<{ failed: unknown } | undefined> => {
-    if (lock.current) return { failed: undefined };
-    lock.current = true;
+    if (sending !== null) return { failed: undefined };
     setSending(key);
     try {
       await request();
@@ -88,7 +86,6 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
       void queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'contents', clientId] });
       return { failed };
     } finally {
-      lock.current = false;
       setSending(null);
     }
   };

@@ -29,13 +29,13 @@ export const taskProgress = (tasks: readonly ContentTask[]): { approved: number;
 /** Derived, never stored: the day to deliver is past and the subtask is not approved (`specs/conteudo.md` section 4). */
 export const isTaskOverdue = (task: ContentTask, today: string): boolean => task.status !== 'approved' && task.dueOn < today;
 
-/** Only the person in charge of the subtask delivers it, whatever else they may do; `self` is `null` for who has no link to the agency. */
+/** Only the person in charge of the subtask delivers it, whatever else they may do; `self` is `null` for who has no link to the agency, and `null` is never a membership. */
 export const canDeliver = (task: ContentTask, self: string | null): boolean =>
-  task.status === 'pending' && self !== null && task.assignee?.membershipId === self;
+  task.status === 'pending' && task.assignee?.membershipId === self;
 
 /** The person in charge of the content, or who holds `conteudo.aprovar_pela_agencia`, approves or returns a delivered subtask. */
 export const canJudge = (task: ContentTask, content: Pick<ContentDetail, 'owner'>, self: string | null, canApproveForAgency: boolean): boolean =>
-  task.status === 'delivered' && ((self !== null && content.owner?.membershipId === self) || canApproveForAgency);
+  task.status === 'delivered' && (content.owner?.membershipId === self || canApproveForAgency);
 
 export const COMMENT_REQUIRED = 'Informe o comentário da devolução.';
 

@@ -167,6 +167,12 @@ describe('Entregar: only the person in charge of the subtask', () => {
     expect(actionNames(row).filter((name) => name.startsWith('Entregar'))).toEqual([]);
   });
 
+  it('shows it to nobody on a subtask with no one in charge, not even to an owner by possession who has no link', async () => {
+    const row = complete();
+    await openAssignment(row, { permissions: READER, self: null, tasks: [task({ title: 'Sem dono', assignee: null })] });
+    expect(actionNames(row)).toEqual([]);
+  });
+
   it('shows it only on a pending subtask', async () => {
     const row = complete();
     const mine = [task({ title: 'Pendente', assignee: CARLA, status: 'pending' }), task({ title: 'Entregue', assignee: CARLA, status: 'delivered' }), task({ title: 'Aprovada', assignee: CARLA, status: 'approved' })];
@@ -210,15 +216,18 @@ describe('Aprovar and Devolver: the person in charge of the content, or conteudo
     expect(actionNames(row)).toEqual([]);
   });
 
-  it('shows neither when there is no one in charge of the content and nobody holds the permission', async () => {
+  it.each([
+    ['a person with a link', ANA.membershipId],
+    ['an owner by possession, who has no link either', null]
+  ])('shows neither when there is no one in charge of the content and nobody holds the permission: %s', async (_name, self) => {
     const row = complete();
-    await openAssignment(row, { permissions: READER, self: ANA.membershipId, owner: null, tasks: delivered() });
+    await openAssignment(row, { permissions: READER, self, owner: null, tasks: delivered() });
     expect(actionNames(row)).toEqual([]);
   });
 
   it('shows them only on a delivered subtask', async () => {
     const row = complete();
-    const tasks = [task({ title: 'Sem entrega', status: 'pending' }), task({ title: 'Em revisão', status: 'delivered' }), task({ title: 'Concluída', status: 'approved' })];
+    const tasks = [task({ title: 'Sem entrega', assignee: BRUNO, status: 'pending' }), task({ title: 'Em revisão', assignee: BRUNO, status: 'delivered' }), task({ title: 'Concluída', assignee: BRUNO, status: 'approved' })];
     await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId, tasks });
     expect(within(taskItem(row, 'Em revisão')).getAllByRole('button').map((button) => button.textContent)).toEqual(['Aprovar', 'Devolver']);
     expect(within(taskItem(row, 'Sem entrega')).queryAllByRole('button')).toEqual([]);
@@ -275,7 +284,7 @@ describe('Aprovar and Devolver: the person in charge of the content, or conteudo
     });
 
     it('sends the trimmed comment to the subtask that was clicked, and the subtask goes back to pending with it', async () => {
-      const { row, tasks, calls } = await open();
+      const { row, tasks, calls, world } = await open();
       click(row, 'Devolver “Legenda”');
       fireEvent.change(within(dialogOf(row)).getByLabelText('Comentário da devolução de “Legenda”'), { target: { value: '  Falta o áudio  ' } });
       click(row, 'Confirmar devolução');
@@ -283,6 +292,13 @@ describe('Aprovar and Devolver: the person in charge of the content, or conteudo
       expect(taskItem(row, 'Legenda').textContent).toContain('Pendente');
       expect(taskItem(row, 'Edição').textContent).toContain('Entregue');
       expect(posts(calls).map((call) => [call.path.split('/').at(-2), lastSegment(call.path), call.body])).toEqual([[tasks[1]!.id, 'return', { comment: 'Falta o áudio' }]]);
+      expect(within(dialogOf(row)).queryByLabelText('Comentário da devolução de “Legenda”')).toBeNull();
+
+      // Delivered again, the subtask asks for a comment again: nothing of the old panel is left open.
+      world.tasks[1]!.status = 'delivered';
+      click(row, 'Aprovar “Edição”');
+      await waitFor(() => expect(taskItem(row, 'Edição').textContent).toContain('Aprovada'));
+      expect(within(taskItem(row, 'Legenda')).getByRole('button', { name: 'Devolver “Legenda”' }).getAttribute('aria-expanded')).toBe('false');
       expect(within(dialogOf(row)).queryByLabelText('Comentário da devolução de “Legenda”')).toBeNull();
     });
 
@@ -323,6 +339,8 @@ describe('who is in charge of the content', () => {
   ])('offers no way to change it to who has %s', async (_name, permissions) => {
     const row = complete();
     await openAssignment(row, { permissions: [...permissions, TEAM], self: ANA.membershipId });
+    // The choice would come from the team, which is read a moment after the tab opens: look only after it answered.
+    await settled();
     expect(within(panel(row)).queryByLabelText('Novo responsável')).toBeNull();
     expect(within(panel(row)).queryByRole('button', { name: 'Trocar responsável' })).toBeNull();
   });
@@ -492,16 +510,28 @@ describe('a new subtask', () => {
       expect(within(panel(row)).getByText('Um conteúdo leva no máximo 50 subtarefas.')).toBeTruthy();
     });
 
-    it('offers it at 49, and the 51st the API refuses (the screen was stale) has its own text and keeps the form', async () => {
+    it('answers the 409 of the limit with its own words inside the form, and keeps what was typed, when the list still says less than 50', async () => {
       const row = complete();
-      const { world } = await openForm(row, { tasks: fifty().slice(0, 49) });
+      const { world } = await openForm(row, { tasks: fifty().slice(0, 40) });
+      world.refuseLimit = true;
+      fill(row, { title: 'Gravar', person: ANA.membershipId, due: '2026-10-18' });
+      click(row, 'Criar subtarefa');
+      expect(await within(dialogOf(row)).findByText('Um conteúdo leva no máximo 50 subtarefas.')).toBeTruthy();
+      expect((within(dialogOf(row)).getByLabelText('Título da subtarefa') as HTMLInputElement).value).toBe('Gravar');
+    });
+
+    it('offers it at 49, and the 51st the API refuses (the screen was stale) has its own text, and the screen then reads the 51 and offers no more', async () => {
+      const row = complete();
+      const { world, calls } = await openForm(row, { tasks: fifty().slice(0, 49) });
       expect(within(panel(row)).queryByText('Um conteúdo leva no máximo 50 subtarefas.')).toBeNull();
       // Another operator created the 50th and the 51st in the meantime.
       world.tasks.push(task({ title: 'Do outro operador' }), task({ title: 'Do outro operador 2' }));
       fill(row, { title: 'Gravar', person: ANA.membershipId, due: '2026-10-18' });
       click(row, 'Criar subtarefa');
       expect(await within(dialogOf(row)).findByText('Um conteúdo leva no máximo 50 subtarefas.')).toBeTruthy();
-      expect((within(dialogOf(row)).getByLabelText('Título da subtarefa') as HTMLInputElement).value).toBe('Gravar');
+      await waitFor(() => expect(within(panel(row)).getByText('Do outro operador 2')).toBeTruthy());
+      expect(within(panel(row)).queryByRole('button', { name: 'Nova subtarefa' })).toBeNull();
+      expect(posts(calls)).toHaveLength(1);
     });
   });
 });
@@ -562,7 +592,7 @@ describe('what the API refuses on a move, in the screen\'s own words', () => {
 });
 
 describe('what cannot be written', () => {
-  const writableOptions = { permissions: MANAGER, self: ANA.membershipId, tasks: [task({ title: 'Minha', assignee: ANA, status: 'pending' }), task({ title: 'Entregue', assignee: BRUNO, status: 'delivered' })] } as const;
+  const writableOptions = { permissions: MANAGER, self: ANA.membershipId, tasks: [task({ title: 'Minha', assignee: ANA, status: 'pending' }), task({ title: 'Em revisão', assignee: BRUNO, status: 'delivered' })] } as const;
 
   it('shows the whole tab and not one control of a content of an archived client', async () => {
     const row = complete({ clientId: barbearia.id });
@@ -576,7 +606,7 @@ describe('what cannot be written', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Atribuição' }));
     const area = await screen.findByRole('tabpanel', { name: 'Atribuição' });
     expect(within(area).getByText('Cliente arquivado: o conteúdo é só leitura.')).toBeTruthy();
-    expect(within(area).getByText('Entregue')).toBeTruthy();
+    expect(within(area).getByText('Em revisão')).toBeTruthy();
     expect(within(area).queryAllByRole('button')).toEqual([]);
     expect(within(area).queryByLabelText('Novo responsável')).toBeNull();
   });

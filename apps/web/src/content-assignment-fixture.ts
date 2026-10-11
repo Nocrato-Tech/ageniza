@@ -36,6 +36,8 @@ export interface World {
   tasks: WorldTask[];
   /** The next write of this kind is answered with this failure, once. */
   failNext: { match: RegExp; response: () => Response } | undefined;
+  /** The creation of a subtask is refused with the limit, whatever the list says (the screen was stale). */
+  refuseLimit: boolean;
   /** Holds the answer of the writes whose path matches. */
   hold: { match: RegExp; promise: Promise<void> } | undefined;
 }
@@ -75,7 +77,7 @@ const collaborator = (person: Person, self: string | null) => ({
 });
 
 export const assignmentWorld = (options: AssignmentOptions) => {
-  const world: World = { owner: options.owner === undefined ? ANA : options.owner, tasks: options.tasks === undefined ? [] : options.tasks.map((item) => ({ ...item })), failNext: undefined, hold: undefined };
+  const world: World = { owner: options.owner === undefined ? ANA : options.owner, tasks: options.tasks === undefined ? [] : options.tasks.map((item) => ({ ...item })), failNext: undefined, refuseLimit: false, hold: undefined };
   const holds = (permission: string): boolean => options.permissions.includes(permission);
   const team = options.team ?? [ANA, BRUNO, CARLA];
   const invalidAssignee = (membershipId: string): boolean => ![ANA, BRUNO, CARLA].some((person) => person.membershipId === membershipId);
@@ -134,7 +136,7 @@ export const assignmentWorld = (options: AssignmentOptions) => {
       if (!parsed.success) return failure(400, 'VALIDATION_ERROR');
       if (invalidAssignee(parsed.data.assigneeMembershipId)) return failure(400, 'CONTENT_TASK_ASSIGNEE_INVALID');
       if (closed) return failure(409, 'CONTENT_TASK_STATE');
-      if (world.tasks.length >= CONTENT_TASKS_MAX_PER_CONTENT) return failure(409, 'CONTENT_TASK_LIMIT');
+      if (world.refuseLimit || world.tasks.length >= CONTENT_TASKS_MAX_PER_CONTENT) return failure(409, 'CONTENT_TASK_LIMIT');
       const made = task({
         title: parsed.data.title, description: parsed.data.description ?? null, dueOn: parsed.data.dueOn,
         assignee: team.find((person) => person.membershipId === parsed.data.assigneeMembershipId) ?? null
