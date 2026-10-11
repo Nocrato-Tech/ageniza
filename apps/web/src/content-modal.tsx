@@ -6,12 +6,13 @@ import {
   CalendarDaySchema,
   ContentDetailSchema,
   type ContentDetail,
+  type ContentStatus,
   type CreateContentRequest,
   type UpdateContentRequest
 } from '@ageniza/contracts';
 import { Button, FieldMessage, Modal, Select, Skeleton, Textarea, TextInput } from '@ageniza/ui';
 
-import { useAgencyContext } from './agency.js';
+import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
 import { todayInSaoPaulo } from './content-dates.js';
 import {
@@ -26,6 +27,7 @@ import {
 } from './content-form.js';
 import { FORMAT_LABELS, isClosed, STATUS_LABELS } from './content-labels.js';
 import { CoverField, FolderField, MediaField } from './content-media.js';
+import { Conversation } from './conversation.js';
 import { captionCounter, ContentPreview } from './content-preview.js';
 import { HttpClientError, useApiClient } from './http.js';
 
@@ -42,6 +44,12 @@ export interface ContentsOutletContext {
 
 const CONTENT_PATH = '/agencies/:agencyId/clients/:clientId/contents/:contentId';
 const CONTENTS_PATH = '/agencies/:agencyId/clients/:clientId/contents';
+
+/** Why the conversation takes no new message at this step of the content (specs/conteudo.md section 6); the API decides, this only says it first. */
+const NOT_OPEN_REASONS: Readonly<Partial<Record<ContentStatus, string>>> = {
+  in_production: 'A conversa só aceita mensagens a partir de "Aguardando aprovação"; este conteúdo ainda está em produção.',
+  cancelled: 'Este conteúdo foi cancelado: a conversa não recebe mais mensagens.'
+};
 
 const FORMAT_OPTIONS = (Object.keys(FORMAT_LABELS) as Array<keyof typeof FORMAT_LABELS>).map((value) => ({ value, label: FORMAT_LABELS[value] }));
 
@@ -75,6 +83,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   const httpClient = useApiClient();
   const agency = useAgencyContext();
   const queryClient = useQueryClient();
+  const canOperate = useCan('conteudo.operar');
   const ids = useId();
   const { clientId } = context;
 
@@ -145,6 +154,9 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
       }
     }
   });
+
+  // The calendar card shows the last message and the count; a write in the conversation moves both.
+  const refreshContents = (): void => { void queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'contents', clientId] }); };
 
   const busy = save.isPending;
   useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
@@ -276,8 +288,21 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
         {writable && <Button type="submit" loading={busy} disabled={busy || !dirty}>{saved === null ? 'Criar conteúdo' : 'Salvar'}</Button>}
         <Button variant="ghost" disabled={busy} onClick={onDone}>{writable ? 'Cancelar' : 'Fechar'}</Button>
       </div>
-      {/* #266: the conversation of the content goes here, at the end of the tab. */}
     </form>
+    {/* Outside the form: the conversation has forms of its own, and a submit inside would also submit this one. */}
+    {saved !== null && <div className="content-modal__conversation">
+      <Conversation
+        scope={{ side: 'agency', agencyId: agency.agencyId, clientId }}
+        subject={{ contentId: saved.id }}
+        subjectLabel={saved.title}
+        canWrite={canOperate}
+        readOnly={context.archived}
+        blockedReason={NOT_OPEN_REASONS[saved.status]}
+        headingLevel={3}
+        onWritten={refreshContents}
+        onStale={refreshContents}
+      />
+    </div>}
   </div>;
 }
 

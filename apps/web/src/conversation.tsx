@@ -2,17 +2,16 @@ import { useId, useState, type FormEvent } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
+  CommentBodySchema,
   CommentListResponseSchema,
   CommentSchema,
   CreateThreadResponseSchema,
   ThreadListResponseSchema,
   ThreadSchema,
-  hasForbiddenControlCharacters,
-  utf8ByteLength,
   type ConversationSide,
+  type ConversationSubject,
   type Thread,
-  type ThreadComment,
-  type ThreadSubject
+  type ThreadComment
 } from '@ageniza/contracts';
 import { Avatar, Button, FieldMessage, Modal, Skeleton, Textarea } from '@ageniza/ui';
 
@@ -22,7 +21,7 @@ import { HttpClientError, useApiClient } from './http.js';
 /**
  * The conversation about one subject (specs/clientes.md sections 4 and 7, issue #142). It knows a
  * subject only as "what is being talked about" and a side only as "who is looking", so the brand
- * study, the portal and, later, a post all use it unchanged. The side decides the routes and
+ * study, the portal and the content all use it unchanged. The side decides the routes and
  * whether Resolver exists; it never travels in a request, the server stamps it.
  */
 
@@ -32,13 +31,15 @@ export type ConversationScope =
 
 export interface ConversationProps {
   readonly scope: ConversationScope;
-  readonly subject: ThreadSubject;
+  readonly subject: ConversationSubject;
   /** How the subject reads to the person: "Tom de voz", "Dona Maria". */
   readonly subjectLabel: string;
   /** Opening, answering and resolving: false leaves a read-only list. */
   readonly canWrite: boolean;
   /** The subject or its client no longer accepts writes: nobody writes, everybody reads. */
   readonly readOnly: boolean;
+  /** Why nobody writes to the subject right now (a content not yet open to the client); reading and resolving stay. */
+  readonly blockedReason?: string | undefined;
   /** Called after a write the conversation cannot invalidate itself (client summary, roster badge). */
   readonly onWritten: () => void;
   /** Called when a write is refused because the subject changed under the person (persona archived, section emptied). */
@@ -48,7 +49,6 @@ export interface ConversationProps {
 }
 
 const THREADS_PAGE_SIZE = 100;
-const BODY_MAX_BYTES = 5000;
 const COMMENTS_PAGE_SIZE = 50;
 const NO_EDIT_NOTE = 'Depois de enviada, a mensagem não pode ser editada nem apagada.';
 const SIDE_LABEL: Record<ConversationSide, string> = { agency: 'agência', client: 'cliente' };
@@ -84,10 +84,18 @@ const OPENING: Record<ConversationSide, {
   }
 };
 
-const subjectKeyOf = (subject: ThreadSubject): string => ('sectionKey' in subject ? `section:${subject.sectionKey}` : `persona:${subject.personaId}`);
+const subjectKeyOf = (subject: ConversationSubject): string => {
+  if ('sectionKey' in subject) return `section:${subject.sectionKey}`;
+  return 'personaId' in subject ? `persona:${subject.personaId}` : `content:${subject.contentId}`;
+};
+
+const subjectQueryOf = (subject: ConversationSubject): string => {
+  if ('sectionKey' in subject) return `sectionKey=${subject.sectionKey}`;
+  return 'personaId' in subject ? `personaId=${subject.personaId}` : `contentId=${subject.contentId}`;
+};
 
 const scopeKeyOf = (scope: ConversationScope) => ['conversation', scope.side, scope.clientId] as const;
-const threadsQueryKey = (scope: ConversationScope, subject: ThreadSubject) => [...scopeKeyOf(scope), 'threads', subjectKeyOf(subject)] as const;
+const threadsQueryKey = (scope: ConversationScope, subject: ConversationSubject) => [...scopeKeyOf(scope), 'threads', subjectKeyOf(subject)] as const;
 // The first page read is part of the key: a thread that grows onto a new page starts again at its end.
 const commentsQueryKey = (scope: ConversationScope, threadId: string, firstPage: number) => [...scopeKeyOf(scope), 'comments', threadId, firstPage] as const;
 
@@ -123,15 +131,18 @@ const formatDay = (value: string): string => {
 const awaitsViewer = (thread: Thread, viewer: ConversationSide): boolean =>
   thread.state === 'open' && thread.lastComment.side !== viewer;
 
+/** The rule of the API, not a copy of it: the screen asks the contract's own schema and only words the answer. */
 const bodyProblem = (body: string): string | undefined => {
-  if (body.trim() === '') return 'Escreva a mensagem.';
-  if (hasForbiddenControlCharacters(body)) return 'O texto contém caracteres que não são aceitos.';
-  if (utf8ByteLength(body.trim()) > BODY_MAX_BYTES) return 'A mensagem pode ter no máximo 5.000 bytes.';
-  return undefined;
+  const parsed = CommentBodySchema.safeParse(body);
+  if (parsed.success) return undefined;
+  const message = parsed.error.issues[0]?.message;
+  if (message === 'must not be empty') return 'Escreva a mensagem.';
+  if (message === 'must be at most 5000 bytes') return 'A mensagem pode ter no máximo 5.000 bytes.';
+  return 'O texto contém caracteres que não são aceitos.';
 };
 
 const isStaleSubject = (error: unknown): boolean =>
-  error instanceof HttpClientError && (error.code === 'PERSONA_ARCHIVED' || error.code === 'SECTION_NOT_FILLED');
+  error instanceof HttpClientError && (error.code === 'PERSONA_ARCHIVED' || error.code === 'SECTION_NOT_FILLED' || error.code === 'CONTENT_NOT_OPEN');
 
 const writeError = (error: unknown, side: ConversationSide): string => {
   if (!(error instanceof HttpClientError)) return 'Não foi possível enviar. Tente de novo.';
@@ -141,6 +152,9 @@ const writeError = (error: unknown, side: ConversationSide): string => {
   }
   if (error.code === 'SECTION_NOT_FILLED') {
     return side === 'client' ? 'Sua agência está preparando esta parte.' : 'Esta parte ainda não foi preenchida.';
+  }
+  if (error.code === 'CONTENT_NOT_OPEN') {
+    return 'A conversa só aceita mensagens a partir de "Aguardando aprovação". Este conteúdo está em produção ou foi cancelado.';
   }
   if (error.status === 403) return 'Você não tem permissão para conversar aqui.';
   if (error.status === 404) return 'Esta conversa não existe mais.';
@@ -206,7 +220,7 @@ function CommentItem({ comment }: { comment: ThreadComment }) {
 }
 
 function OpenThread({ props, thread, onClose }: { props: ConversationProps; thread: Thread; onClose: () => void }) {
-  const { scope, subjectLabel, canWrite, readOnly, onWritten, onStale } = props;
+  const { scope, subjectLabel, canWrite, readOnly, blockedReason, onWritten, onStale } = props;
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
   const routes = routesOf(scope);
@@ -254,7 +268,8 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
   const writable = canWrite && !readOnly;
   const canResolve = writable && scope.side === 'agency' && thread.state === 'open';
 
-  return <Modal title={subjectLabel} closeLabel="Fechar conversa" onClose={onClose}>
+  // Inside the modal of a content, a second dialog with the title of the first would be two dialogs of one name.
+  return <Modal title={'contentId' in props.subject ? `Conversa sobre ${subjectLabel}` : subjectLabel} closeLabel="Fechar conversa" onClose={onClose}>
     <div className="conversation__thread-view">
       {comments.isPending && <div className="conversation__comments-skeleton" aria-busy="true">
         <Skeleton /><Skeleton /><Skeleton />
@@ -275,7 +290,8 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
             : `A agência concluiu esta conversa em ${formatDay(thread.resolvedAt)}`)
           : `Resolvida ${thread.resolvedBy?.name ? `por ${thread.resolvedBy.name}` : 'pela agência'} em ${formatDay(thread.resolvedAt)}`}
       </p>}
-      {writable
+      {writable && blockedReason !== undefined && <p className="conversation__note">{blockedReason}</p>}
+      {writable && blockedReason === undefined
         ? <Composer
           key={`${thread.id}-${sent}`}
           label="Escrever resposta"
@@ -285,7 +301,7 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
           onEdit={() => setSendError(undefined)}
           onSubmit={(body) => { setSendError(undefined); answer.mutate(body); }}
         />
-        : <p className="conversation__note">Esta conversa é somente leitura.</p>}
+        : !writable && <p className="conversation__note">Esta conversa é somente leitura.</p>}
       {canResolve && <div className="conversation__actions">
         <Button variant="secondary" loading={resolve.isPending} onClick={() => { setResolveError(undefined); resolve.mutate(); }}>Resolver</Button>
       </div>}
@@ -350,13 +366,15 @@ function ThreadRow({ thread, viewer, onOpen }: { thread: Thread; viewer: Convers
 }
 
 export function Conversation(props: ConversationProps) {
-  const { scope, subject, subjectLabel, canWrite, readOnly, headingLevel = 4 } = props;
+  const { scope, subject, subjectLabel, canWrite, readOnly, blockedReason, headingLevel = 4 } = props;
   const Heading = `h${headingLevel}` as const;
   const opening = OPENING[scope.side];
   const httpClient = useApiClient();
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const subjectQuery = 'sectionKey' in subject ? `sectionKey=${subject.sectionKey}` : `personaId=${subject.personaId}`;
+  const subjectQuery = subjectQueryOf(subject);
+  // A content has one conversation: a second "new conversation" would write into the first.
+  const ofContent = 'contentId' in subject;
 
   // One query reads both states and answers together: a thread that changes state moves between the
   // two lists, so reading them apart would make it vanish or repeat between the two answers.
@@ -381,16 +399,17 @@ export function Conversation(props: ConversationProps) {
     && (threads.data.open.meta.totalItems > THREADS_PAGE_SIZE || threads.data.resolved.meta.totalItems > THREADS_PAGE_SIZE);
   const awaiting = list.filter((thread) => awaitsViewer(thread, scope.side)).length;
   const current = openId === null ? undefined : list.find((thread) => thread.id === openId);
+  const canStart = writable && blockedReason === undefined && (!ofContent || (threads.data !== undefined && list.length === 0));
 
-  return <section className="conversation" aria-label={`Conversas sobre ${subjectLabel}`}>
+  return <section className="conversation" aria-label={`${ofContent ? 'Conversa' : 'Conversas'} sobre ${subjectLabel}`}>
     <header className="conversation__header">
       <Heading className="conversation__title">
-        Conversas{threads.data === undefined ? '' : ` (${totalItems})`}
+        {ofContent ? 'Conversa' : `Conversas${threads.data === undefined ? '' : ` (${totalItems})`}`}
       </Heading>
       {awaiting > 0 && <span className="conversation__status conversation__status--awaiting">
         {scope.side === 'agency' ? `${awaiting} aguardando` : `${awaiting} com resposta da agência`}
       </span>}
-      {writable && (scope.side === 'client'
+      {canStart && (scope.side === 'client'
         ? <Button variant="secondary" aria-label={opening.buttonName(subjectLabel)} onClick={() => setCreating(true)}>Sugerir</Button>
         : <Button size="sm" variant="secondary" aria-label={opening.buttonName(subjectLabel)} onClick={() => setCreating(true)}><span aria-hidden="true">+</span> conversa</Button>)}
     </header>
@@ -400,7 +419,8 @@ export function Conversation(props: ConversationProps) {
       <p>Não foi possível carregar as conversas.</p>
       <Button size="sm" variant="secondary" loading={threads.isFetching} onClick={() => { void threads.refetch(); }}>Tentar de novo</Button>
     </div>}
-    {threads.data !== undefined && list.length === 0 && <p className="conversation__empty">Nenhuma conversa sobre esta parte</p>}
+    {writable && blockedReason !== undefined && <p className="conversation__note">{blockedReason}</p>}
+    {threads.data !== undefined && list.length === 0 && <p className="conversation__empty">{ofContent ? 'Nenhuma conversa sobre este conteúdo' : 'Nenhuma conversa sobre esta parte'}</p>}
     {list.length > 0 && <ul className="conversation__threads">
       {list.map((thread) => <ThreadRow key={thread.id} thread={thread} viewer={scope.side} onOpen={() => setOpenId(thread.id)} />)}
     </ul>}

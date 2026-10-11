@@ -11,6 +11,7 @@ import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
+import { createConversationApi } from './conversation-fixture.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(() => {
@@ -142,6 +143,8 @@ const listItemOf = (row: Stored) => ({
   status: row.status, owner: { membershipId: 'e0e0e0e0-0000-4000-8000-000000000001', name: 'Ana Souza' }, coverAssetId: row.coverAssetId, revision: row.revision, publishedOn: null, tasksTotal: 0, tasksApproved: 0
 });
 
+type ConversationFake = ReturnType<typeof createConversationApi>;
+
 interface Call { readonly method: string; readonly path: string; readonly body: unknown }
 
 interface Scenario {
@@ -149,6 +152,8 @@ interface Scenario {
   readonly contents?: readonly Stored[];
   readonly folders?: ReadonlyArray<ReturnType<typeof folder>>;
   readonly assets?: Readonly<Record<string, ReadonlyArray<ReturnType<typeof asset>>>>;
+  /** Fills the conversation routes before the screen reads them (the thread of a content, its messages). */
+  readonly seedConversation?: (conversation: ConversationFake, forClient: (clientId: string) => ConversationFake) => void;
   /** Answers instead of the fake for a request, when it returns a response. */
   readonly override?: (call: Call, calls: readonly Call[]) => Response | Promise<Response> | undefined;
 }
@@ -173,6 +178,35 @@ const makeFetch = (scenario: Scenario = {}) => {
   const assets = scenario.assets ?? ASSETS;
   const permissions = scenario.permissions ?? EDITOR;
   let created = 0;
+  const conversations = new Map<string, ConversationFake>();
+  const conversationFor = (clientId: string): ConversationFake => {
+    const known = conversations.get(clientId) ?? createConversationApi({ side: 'agency', clientId });
+    conversations.set(clientId, known);
+    return known;
+  };
+  const conversation = conversationFor(padaria.id);
+  scenario.seedConversation?.(conversation, conversationFor);
+
+  /** The routes of the conversation, as the API answers them: reading asks `conteudo.visualizar`, writing both, and a content in production or cancelled takes no message. */
+  const answerConversation = (url: URL, method: string, body: unknown, clientId: string): Response => {
+    const write = method !== 'GET';
+    if (!permissions.includes(VISUALIZE) || (write && !permissions.includes(OPERATE))) return failure(403, 'FORBIDDEN');
+    const row = ROSTER.find((candidate) => candidate.id === clientId);
+    if (row === undefined) return failure(404, 'NOT_FOUND');
+    if (write && row.status === 'archived') return failure(409, 'CLIENT_ARCHIVED');
+    const named = /\/threads\/([^/]+)\//.exec(url.pathname)?.[1];
+    const subject = named === undefined
+      ? (body as { subject?: { contentId?: string } } | undefined)?.subject
+      : conversationFor(clientId).threads.find((thread) => thread.id === named)?.subject;
+    const contentId = subject !== undefined && 'contentId' in subject ? subject.contentId : undefined;
+    if (write && contentId !== undefined && !url.pathname.endsWith('/resolve')) {
+      const content = contents.find((candidate) => candidate.id === contentId && candidate.clientId === clientId);
+      if (content === undefined) return failure(404, 'NOT_FOUND');
+      if (content.status === 'in_production' || content.status === 'cancelled') return failure(409, 'CONTENT_NOT_OPEN');
+    }
+    return conversationFor(clientId).handle(url, method, body) ?? failure(404, 'NOT_FOUND');
+  };
+
   const impl: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     const method = init?.method ?? 'GET';
@@ -195,6 +229,8 @@ const makeFetch = (scenario: Scenario = {}) => {
       const row = ROSTER.find((candidate) => candidate.id === one[1]);
       return row === undefined ? failure(404, 'NOT_FOUND') : json(clientDetail(row));
     }
+    const conversationRoute = /\/agencies\/[^/]+\/clients\/([^/]+)\/threads(?:\/[^/]+\/(?:comments|resolve))?$/.exec(url.pathname);
+    if (conversationRoute !== null) return answerConversation(url, method, body, conversationRoute[1]!);
     const media = /\/agencies\/[^/]+\/media\/([^/]+)\/download-url$/.exec(url.pathname);
     if (media !== null) {
       if (!permissions.includes(VISUALIZE)) return failure(403, 'FORBIDDEN');
@@ -283,7 +319,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     }
     throw new Error(`unexpected ${method} ${url}`);
   };
-  return { impl, calls, contents, folders };
+  return { impl, calls, contents, folders, conversation };
 };
 
 function Harness({ store }: { store: AuthSessionStore }) {
@@ -1104,5 +1140,281 @@ describe('creating a content', () => {
     expect(screen.queryByLabelText('Título')).toBeNull();
     release();
     expect(await screen.findByLabelText('Título')).toBeTruthy();
+  });
+});
+
+describe('the conversation of the content (#266)', () => {
+  const LATE = '2026-10-13T01:30:00.000Z';
+  const IN_PRODUCTION = 'A conversa só aceita mensagens a partir de "Aguardando aprovação"; este conteúdo ainda está em produção.';
+  const CANCELLED = 'Este conteúdo foi cancelado: a conversa não recebe mais mensagens.';
+  const NOT_OPEN = 'A conversa só aceita mensagens a partir de "Aguardando aprovação". Este conteúdo está em produção ou foi cancelado.';
+  const awaiting = (overrides: Partial<Stored> = {}): Stored => stored({ status: 'awaiting_approval', ...overrides });
+  const withThread = (row: Stored, comments: ReadonlyArray<{ side: 'agency' | 'client'; body: string; at: string }>): Scenario['seedConversation'] =>
+    (conversation) => { conversation.seed({ contentId: row.id }, comments); };
+  const conversationOf = async (row: Stored): Promise<HTMLElement> => await screen.findByRole('region', { name: `Conversa sobre ${row.title}` });
+  const threadDialog = async (row: Stored): Promise<HTMLElement> => await screen.findByRole('dialog', { name: `Conversa sobre ${row.title}` });
+  const openThread = async (row: Stored, excerpt: RegExp | string): Promise<HTMLElement> => {
+    fireEvent.click(await within(await conversationOf(row)).findByRole('button', { name: excerpt }));
+    return await threadDialog(row);
+  };
+
+  it('sits at the end of the Geral tab, after the form and outside it', async () => {
+    const row = awaiting();
+    await openContent(row);
+    const region = await conversationOf(row);
+    const form = dialog().querySelector('form.content-modal__form')!;
+    expect(form.contains(region)).toBe(false);
+    expect(region.closest('[role="tabpanel"]')?.getAttribute('aria-label')).toBe('Geral');
+    expect(form.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(region).getByRole('heading', { name: 'Conversa' })).toBeTruthy();
+    await within(region).findByText('Nenhuma conversa sobre este conteúdo');
+  });
+
+  it('is not there while the content is not created yet', async () => {
+    const { impl } = makeFetch();
+    render_(impl, `${base()}/novo`);
+    await screen.findByLabelText('Título');
+    expect(screen.queryByRole('region', { name: /Conversa/ })).toBeNull();
+  });
+
+  it('shows the thread of this content only, with the side and the day in São Paulo, and no id on the screen', async () => {
+    const row = awaiting();
+    const other = awaiting({ title: 'Outro conteúdo' });
+    await openContent(row, {
+      contents: [other],
+      seedConversation: (conversation) => {
+        conversation.seed({ contentId: other.id }, [{ side: 'client', body: 'Mensagem do outro conteúdo', at: LATE }]);
+        conversation.seed({ contentId: row.id }, [{ side: 'client', body: 'Gostei, mas troquem a foto', at: LATE }]);
+      }
+    });
+    const region = await conversationOf(row);
+    await within(region).findByText('Gostei, mas troquem a foto');
+    expect(within(region).queryByText('Mensagem do outro conteúdo')).toBeNull();
+    const thread = await openThread(row, /Gostei, mas troquem a foto/);
+    await within(thread).findByText('Gostei, mas troquem a foto');
+    expect(Array.from(thread.querySelectorAll('.conversation__comment-meta')).map((meta) => meta.textContent)).toEqual(['Maria · cliente · 12/10 22:30']);
+    expect(region.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+    expect(thread.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+  });
+
+  it('starts the conversation of the content, writes it as the content\'s, and reads the calendar again', async () => {
+    const row = awaiting();
+    const { calls } = await openContent(row);
+    const region = await conversationOf(row);
+    await calendarReady();
+    const before = periodCalls(calls).length;
+
+    fireEvent.click(await within(region).findByRole('button', { name: `Nova conversa sobre ${row.title}` }));
+    const opening = await screen.findByRole('dialog', { name: `Nova conversa sobre ${row.title}` });
+    fireEvent.change(within(opening).getByRole('textbox', { name: 'Escreva a primeira mensagem' }), { target: { value: 'Podemos usar outra foto?' } });
+    fireEvent.click(within(opening).getByRole('button', { name: 'Iniciar conversa' }));
+
+    await within(region).findByText('Podemos usar outra foto?');
+    expect(writes(calls)).toEqual([{ method: 'POST', path: `/agencies/${AGENCY}/clients/${padaria.id}/threads`, body: { subject: { contentId: row.id }, body: 'Podemos usar outra foto?' } }]);
+    await waitFor(() => expect(periodCalls(calls).length).toBeGreaterThan(before));
+    expect(screen.queryByRole('dialog', { name: `Nova conversa sobre ${row.title}` })).toBeNull();
+    expect(screen.getByRole('dialog', { name: row.title })).toBeTruthy();
+  });
+
+  it('answers a thread without saving the content or closing its modal', async () => {
+    const row = awaiting();
+    const { calls, probe } = await openContent(row, { seedConversation: withThread(row, [{ side: 'client', body: 'Gostei, mas troquem a foto', at: LATE }]) });
+    const thread = await openThread(row, /Gostei, mas troquem a foto/);
+
+    fireEvent.change(within(thread).getByRole('textbox', { name: 'Escrever resposta' }), { target: { value: 'Trocamos hoje' } });
+    fireEvent.click(within(thread).getByRole('button', { name: 'Responder' }));
+    await within(thread).findByText('Trocamos hoje');
+    // A submit that also reached the form of the content would save it and close the modal a moment later.
+    await new Promise<void>((resolve) => { setTimeout(resolve, 100); });
+    expect(probe.pathname).toBe(`${base()}/${row.id}`);
+
+    expect(writes(calls).map((call) => `${call.method} ${call.path.replace(/threads\/[^/]+/, 'threads/:id')}`)).toEqual([
+      `POST /agencies/${AGENCY}/clients/${padaria.id}/threads/:id/comments`
+    ]);
+    expect(screen.getByRole('dialog', { name: row.title })).toBeTruthy();
+    expect((within(screen.getByRole('dialog', { name: row.title })).getByLabelText('Título') as HTMLInputElement).value).toBe(row.title);
+  });
+
+  it('keeps what was typed when the answer is refused, and clears it when it goes through', async () => {
+    const row = awaiting();
+    const { conversation } = await openContent(row, { seedConversation: withThread(row, [{ side: 'client', body: 'Gostei, mas troquem a foto', at: LATE }]) });
+    const thread = await openThread(row, /Gostei, mas troquem a foto/);
+    const box = (): HTMLTextAreaElement => within(thread).getByRole('textbox', { name: 'Escrever resposta' }) as HTMLTextAreaElement;
+
+    conversation.failNextWrite(() => failure(500, 'INTERNAL_ERROR'));
+    fireEvent.change(box(), { target: { value: 'Trocamos hoje' } });
+    fireEvent.click(within(thread).getByRole('button', { name: 'Responder' }));
+    await within(thread).findByText('Não foi possível enviar. Tente de novo.');
+    expect(box().value).toBe('Trocamos hoje');
+
+    fireEvent.click(within(thread).getByRole('button', { name: 'Tentar de novo' }));
+    await waitFor(() => expect(box().value).toBe(''));
+    await within(thread).findByText('Trocamos hoje');
+  });
+
+  it('refuses a text the rule refuses, in the screen\'s words, and sends nothing', async () => {
+    const row = awaiting();
+    const { calls } = await openContent(row, { seedConversation: withThread(row, [{ side: 'client', body: 'Gostei', at: LATE }]) });
+    const thread = await openThread(row, /Gostei/);
+    fireEvent.change(within(thread).getByRole('textbox', { name: 'Escrever resposta' }), { target: { value: 'texto ‮oculto' } });
+    fireEvent.click(within(thread).getByRole('button', { name: 'Responder' }));
+    expect(within(thread).getByText('O texto contém caracteres que não são aceitos.')).toBeTruthy();
+    expect(writes(calls)).toEqual([]);
+  });
+
+  it('shows what a client wrote as text, even when it looks like markup', async () => {
+    const row = awaiting();
+    const hostile = '<script>window.__hacked = 1</script><img src="x" onerror="window.__hacked = 2">';
+    await openContent(row, { seedConversation: withThread(row, [{ side: 'client', body: hostile, at: LATE }]) });
+    const thread = await openThread(row, /script/);
+    await within(thread).findByText(hostile);
+    expect(thread.querySelector('script, img')).toBeNull();
+    expect(screen.getByRole('dialog', { name: row.title }).querySelector('.content-modal__conversation script, .content-modal__conversation img')).toBeNull();
+    expect((window as unknown as { __hacked?: number }).__hacked).toBeUndefined();
+  });
+
+  describe('who may write', () => {
+    it('reads and nothing else with only conteudo.visualizar: no composer, no Resolver, no new conversation', async () => {
+      const row = awaiting();
+      const empty = awaiting({ title: 'Sem conversa' });
+      const { calls } = await openContent(row, {
+        permissions: [VISUALIZE, READ_CLIENTS],
+        contents: [empty],
+        seedConversation: withThread(row, [{ side: 'client', body: 'Gostei, mas troquem a foto', at: LATE }])
+      });
+      const region = await conversationOf(row);
+      expect(within(region).queryByRole('button', { name: /Nova conversa/ })).toBeNull();
+      const thread = await openThread(row, /Gostei, mas troquem a foto/);
+      await within(thread).findByText('Gostei, mas troquem a foto');
+      expect(within(thread).getByText('Esta conversa é somente leitura.')).toBeTruthy();
+      expect(within(thread).queryByRole('textbox')).toBeNull();
+      expect(within(thread).queryByRole('button', { name: 'Responder' })).toBeNull();
+      expect(within(thread).queryByRole('button', { name: 'Resolver' })).toBeNull();
+      expect(writes(calls)).toEqual([]);
+    });
+
+    it('offers no way to start a conversation with only conteudo.visualizar', async () => {
+      const row = awaiting();
+      await openContent(row, { permissions: [VISUALIZE, READ_CLIENTS] });
+      const region = await conversationOf(row);
+      await within(region).findByText('Nenhuma conversa sobre este conteúdo');
+      expect(within(region).queryByRole('button')).toBeNull();
+    });
+
+    it('resolves with conteudo.operar and conteudo.visualizar, and the thread reads as resolved', async () => {
+      const row = awaiting();
+      const other = awaiting({ title: 'Outro conteúdo' });
+      const ids: { mine?: string; other?: string } = {};
+      const { calls, conversation } = await openContent(row, {
+        contents: [other],
+        seedConversation: (fake) => {
+          ids.other = fake.seed({ contentId: other.id }, [{ side: 'client', body: 'Mensagem do outro conteúdo', at: LATE }]);
+          ids.mine = fake.seed({ contentId: row.id }, [{ side: 'client', body: 'Gostei, mas troquem a foto', at: LATE }]);
+        }
+      });
+      const thread = await openThread(row, /Gostei, mas troquem a foto/);
+      fireEvent.click(within(thread).getByRole('button', { name: 'Resolver' }));
+      await within(thread).findByText(/Resolvida por Ana em /);
+      expect(writes(calls).map((call) => call.path)).toEqual([`/agencies/${AGENCY}/clients/${padaria.id}/threads/${ids.mine}/resolve`]);
+      expect(conversation.threads.find((candidate) => candidate.id === ids.other)?.resolvedAt).toBeNull();
+    });
+
+    it('is read-only on an archived client', async () => {
+      const row = awaiting({ clientId: barbearia.id });
+      const { impl, calls } = makeFetch({
+        contents: [row],
+        seedConversation: (_padaria, forClient) => { forClient(barbearia.id).seed({ contentId: row.id }, [{ side: 'client', body: 'Gostei', at: LATE }]); }
+      });
+      render_(impl, `${base(barbearia.id)}/${row.id}`);
+      await screen.findByLabelText('Título');
+      const thread = await openThread(row, /Gostei/);
+      await within(thread).findByText('Gostei');
+      expect(within(thread).getByText('Esta conversa é somente leitura.')).toBeTruthy();
+      expect(within(thread).queryByRole('textbox')).toBeNull();
+      expect(within(thread).queryByRole('button', { name: 'Resolver' })).toBeNull();
+      expect(writes(calls)).toEqual([]);
+    });
+  });
+
+  describe('a content that is not open to the client', () => {
+    it.each([
+      ['in_production', IN_PRODUCTION],
+      ['cancelled', CANCELLED]
+    ] as const)('says why nobody writes to a %s content, still reads it and still resolves', async (status, reason) => {
+      const row = stored({ status });
+      const { calls } = await openContent(row, { seedConversation: withThread(row, [{ side: 'client', body: 'Gostei, mas troquem a foto', at: LATE }]) });
+      const region = await conversationOf(row);
+      expect(await within(region).findByText(reason)).toBeTruthy();
+      const thread = await openThread(row, /Gostei, mas troquem a foto/);
+      expect(within(thread).getByText(reason)).toBeTruthy();
+      expect(within(thread).queryByRole('textbox')).toBeNull();
+      expect(within(thread).queryByRole('button', { name: 'Responder' })).toBeNull();
+      fireEvent.click(within(thread).getByRole('button', { name: 'Resolver' }));
+      await within(thread).findByText(/Resolvida por Ana em /);
+      expect(writes(calls)).toHaveLength(1);
+    });
+
+    it.each([
+      ['in_production', IN_PRODUCTION],
+      ['cancelled', CANCELLED]
+    ] as const)('offers no new conversation on a %s content, and says why', async (status, reason) => {
+      const row = stored({ status });
+      await openContent(row);
+      const region = await conversationOf(row);
+      await within(region).findByText('Nenhuma conversa sobre este conteúdo');
+      expect(within(region).getByText(reason)).toBeTruthy();
+      expect(within(region).queryByRole('button')).toBeNull();
+    });
+
+    it('does not tell who only reads that the content is in production: that person reads "somente leitura"', async () => {
+      const row = stored({ status: 'in_production' });
+      await openContent(row, { permissions: [VISUALIZE, READ_CLIENTS], seedConversation: withThread(row, [{ side: 'client', body: 'Gostei', at: LATE }]) });
+      const region = await conversationOf(row);
+      const thread = await openThread(row, /Gostei/);
+      expect(within(region).queryByText(IN_PRODUCTION)).toBeNull();
+      expect(within(thread).queryByText(IN_PRODUCTION)).toBeNull();
+      expect(within(thread).getByText('Esta conversa é somente leitura.')).toBeTruthy();
+    });
+
+    it('says it with the words of the screen when the API refuses a message the screen thought was open, and keeps the text', async () => {
+      const row = awaiting();
+      const { calls } = await openContent(row, { seedConversation: withThread(row, [{ side: 'client', body: 'Gostei', at: LATE }]) });
+      const thread = await openThread(row, /Gostei/);
+      // Another operator sent it back to production after this screen opened.
+      row.status = 'in_production';
+      await calendarReady();
+      const before = periodCalls(calls).length;
+
+      fireEvent.change(within(thread).getByRole('textbox', { name: 'Escrever resposta' }), { target: { value: 'Texto que não pode sumir' } });
+      fireEvent.click(within(thread).getByRole('button', { name: 'Responder' }));
+      await within(thread).findByText(NOT_OPEN);
+      expect((within(thread).getByRole('textbox', { name: 'Escrever resposta' }) as HTMLTextAreaElement).value).toBe('Texto que não pode sumir');
+      expect(writes(calls).map((call) => call.method)).toEqual(['POST']);
+      await waitFor(() => expect(periodCalls(calls).length).toBeGreaterThan(before));
+      expect(screen.getByRole('dialog', { name: row.title })).toBeTruthy();
+    });
+
+    it('says it too when the API refuses to open the conversation', async () => {
+      const row = awaiting();
+      await openContent(row);
+      const region = await conversationOf(row);
+      await within(region).findByText('Nenhuma conversa sobre este conteúdo');
+      row.status = 'in_production';
+      fireEvent.click(within(region).getByRole('button', { name: `Nova conversa sobre ${row.title}` }));
+      const opening = await screen.findByRole('dialog', { name: `Nova conversa sobre ${row.title}` });
+      fireEvent.change(within(opening).getByRole('textbox', { name: 'Escreva a primeira mensagem' }), { target: { value: 'Texto que não pode sumir' } });
+      fireEvent.click(within(opening).getByRole('button', { name: 'Iniciar conversa' }));
+      await within(opening).findByText(NOT_OPEN);
+      expect((within(opening).getByRole('textbox', { name: 'Escreva a primeira mensagem' }) as HTMLTextAreaElement).value).toBe('Texto que não pode sumir');
+    });
+  });
+
+  it('closes only the conversation with Esc, and the content stays open', async () => {
+    const row = awaiting();
+    await openContent(row, { seedConversation: withThread(row, [{ side: 'client', body: 'Gostei', at: LATE }]) });
+    const thread = await openThread(row, /Gostei/);
+    fireEvent(thread, new Event('cancel', { bubbles: false, cancelable: true }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: `Conversa sobre ${row.title}` })).toBeNull());
+    expect(screen.getByRole('dialog', { name: row.title })).toBeTruthy();
   });
 });

@@ -3188,6 +3188,10 @@ a.client-general__block:hover {
   }
 }
 
+.content-modal__conversation {
+  grid-column: 1 / -1;
+}
+
 .content-modal__status {
   margin: 0;
 }
