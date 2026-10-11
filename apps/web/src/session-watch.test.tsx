@@ -18,7 +18,7 @@ const USER_ID = '99999999-9999-4999-8999-999999999999';
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-const unauthenticated = (): Response => json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication is required.' } }, 401);
+const dead = (code: 'UNAUTHENTICATED' | 'SESSION_EXPIRED'): Response => json({ error: { code, message: 'The session is gone.' } }, 401);
 
 const sessionBody = { user: { id: USER_ID, name: 'Maria', email: 'maria@example.test' }, session: { expiresAt: '2026-11-01T00:00:00.000Z' } };
 const legalAccepted = {
@@ -36,6 +36,8 @@ const portalClient = {
 interface World {
   /** What the server says about the session; flipped by the test, never by the page. */
   sessionAlive: boolean;
+  /** The 401 the server answers once the session is gone: removed from the agency, or past the 30-day ceiling. */
+  deadCode: 'UNAUTHENTICATED' | 'SESSION_EXPIRED';
   /** Makes `GET /auth/session/check` fail without a verdict (network error or 5xx) instead of answering. */
   sessionCheck: 'answer' | 'unreachable' | 'unavailable';
   /** Holds the answer of `GET /auth/session/check` until `release` is called. */
@@ -52,7 +54,7 @@ interface World {
 const makeWorld = (): { world: World; impl: typeof fetch } => {
   let open: () => void = () => undefined;
   const world: World = {
-    sessionAlive: true, sessionCheck: 'answer', hold: false, release: () => open(), initialLoads: 0, sessionChecks: 0, renewingChecks: 0
+    sessionAlive: true, deadCode: 'UNAUTHENTICATED', sessionCheck: 'answer', hold: false, release: () => open(), initialLoads: 0, sessionChecks: 0, renewingChecks: 0
   };
   const impl: typeof fetch = async (input) => {
     const path = new URL(String(input)).pathname;
@@ -66,7 +68,7 @@ const makeWorld = (): { world: World; impl: typeof fetch } => {
       if (world.sessionAlive && world.sessionCheck === 'unreachable') throw new TypeError('network down');
       if (world.sessionAlive && world.sessionCheck === 'unavailable') return json({ error: { code: 'INTERNAL_ERROR', message: 'Unexpected error.' } }, 500);
     }
-    if (!world.sessionAlive) return unauthenticated();
+    if (!world.sessionAlive) return dead(world.deadCode);
     if (path === '/auth/session' || path === '/auth/session/check') return json(sessionBody);
     if (path === '/me/legal-acceptances') return json(legalAccepted);
     if (path === '/me/contexts') {
@@ -133,7 +135,11 @@ const AREAS = [
   { label: 'protected layout', entry: '/rota-que-nao-existe', ready: () => screen.findByRole('heading', { name: /não encontrada|not found/i }) }
 ] as const;
 
-const SESSION_DEAD_AREAS = [AREAS[0], AREAS[1]] as const;
+const SESSION_DEAD_AREAS = [
+  { label: 'agency area', entry: AREAS[0].entry },
+  { label: 'portal', entry: AREAS[1].entry },
+  { label: 'context chooser', entry: '/contextos' }
+] as const;
 
 beforeEach(() => {
   // The timers and the clock are faked: the HTTP client and the router keep their real setTimeout.
@@ -182,6 +188,26 @@ describe.each(AREAS)('the session check in the $label', ({ entry, ready }) => {
     expect(world.sessionChecks).toBe(checksAfterEnd);
   });
 
+  it('also ends the session when the API answers 401 SESSION_EXPIRED, once, keeping the address', async () => {
+    const { world, impl } = makeWorld();
+    const { store } = renderAt(entry, impl);
+    await ready();
+    const ended = vi.spyOn(store, 'end');
+
+    world.sessionAlive = false;
+    world.deadCode = 'SESSION_EXPIRED';
+    await tick(60_000);
+
+    expect(currentLocation).toBe('/entrar');
+    expect(sessionDestination(currentState)).toBe(entry);
+    expect(screen.getByText('Sessão encerrada')).toBeTruthy();
+    expect(ended).toHaveBeenCalledTimes(1);
+    const checksAfterEnd = world.sessionChecks;
+    await tick(3 * 60_000);
+    await focus();
+    expect(world.sessionChecks).toBe(checksAfterEnd);
+  });
+
   it('never asks through the route that renews the session: a forgotten tab must not keep it alive', async () => {
     const { world, impl } = makeWorld();
     renderAt(entry, impl);
@@ -214,6 +240,25 @@ describe.each(AREAS)('the session check in the $label', ({ entry, ready }) => {
     expect(world.sessionChecks).toBe(1);
     expect(currentLocation).toBe('/entrar');
     expect(sessionDestination(currentState)).toBe(entry);
+  });
+
+  it('checks on return when the tab was hidden during the timer tick: a skipped tick does not count as a check', async () => {
+    const { world, impl } = makeWorld();
+    renderAt(entry, impl);
+    await ready();
+
+    await tick(44_000);
+    setVisibility('hidden');
+    await tick(1_000);
+    expect(world.sessionChecks).toBe(0);
+
+    // Back at 50 s: the tick at 45 s asked nothing, so the 10 s gap since a check does not apply.
+    await tick(5_000);
+    setVisibility('visible');
+    await focus();
+    await tick(0);
+
+    expect(world.sessionChecks).toBe(1);
   });
 
   it('keeps one check at a time: a focus, a second focus and the timer while the answer is pending ask nothing more', async () => {
