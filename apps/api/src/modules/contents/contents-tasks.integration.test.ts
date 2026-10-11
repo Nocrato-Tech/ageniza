@@ -17,6 +17,7 @@ const { people } = w;
 
 const NO_DATABASE_DETAIL = /A00\d\d|deadlock|40P01|42501|pg_|relation|process|constraint/i;
 const TASK_STATEMENT = /content_tasks|public\.contents\b/;
+const TASK_WRITE = /(insert into|update) public\.content_tasks\b/;
 
 type Person = PersonKey | TransitionPerson;
 const cookieOf = (person: Person): string => (person in people ? people[person as PersonKey].cookie : f.people[person as TransitionPerson].cookie);
@@ -64,6 +65,7 @@ const validTask = async (assignee: PersonKey = 'production') => ({
 });
 
 const mentionsTasks = (): boolean => w.statements.some((statement) => TASK_STATEMENT.test(statement));
+const writesTasks = (): boolean => w.statements.some((statement) => TASK_WRITE.test(statement));
 
 beforeAll(async () => {
   await w.setup();
@@ -488,13 +490,65 @@ describe('the person in charge of a task: an active collaborator of this agency 
     expect(withInvalid.json().error).toEqual(withValid.json().error);
   });
 
+  // Called as the person of two agencies: an admin of agency A cannot see the link of agency B, so the admin would pass a filter that is
+  // missing. Issue #579: without the agency filter in `resolveCollaboratorLink`, the link of agency B is named and this one turns red.
   it('names the person in charge by the link of this agency, once, for a person of two agencies', async () => {
     const contentId = await w.seedContent(clientA, { ownerUserId: people.manager.id });
 
-    const reply = await create('admin', contentId, await validTask('dual'));
+    const reply = await create('dual', contentId, await validTask('dual'));
 
     expect(reply.statusCode).toBe(201);
     expect(reply.json().assignee).toEqual({ membershipId: await t.linkOf('dual', w.agencyA), name: 'Pessoa dual' });
+  });
+
+  it('refuses, to the person of two agencies, their own link in the other agency, and writes nothing', async () => {
+    const contentId = await w.seedContent(clientA, { ownerUserId: people.manager.id });
+
+    const reply = await create('dual', contentId, { ...await validTask(), assigneeMembershipId: await t.linkOf('dual', w.agencyB) });
+
+    expect(reply.statusCode).toBe(400);
+    expect(reply.json().error).toEqual(INVALID);
+    expect(await t.countTasks(contentId)).toBe(0);
+  });
+
+  it('refuses, to the person of two agencies, an edit to their own link in the other agency, and the task keeps its person in charge', async () => {
+    const ids = await t.scenario(clientA, { status: 'pending', assignee: 'production' });
+    const before = await t.taskRow(ids.taskId);
+
+    const reply = await patch('dual', ids, { assigneeMembershipId: await t.linkOf('dual', w.agencyB), title: 'Outro título' });
+
+    expect(reply.statusCode).toBe(400);
+    expect(reply.json().error).toEqual(INVALID);
+    expect(await t.taskRow(ids.taskId)).toEqual(before);
+  });
+
+  it('writes no subtask when the link of the person in charge is removed, and answers the same 400', async () => {
+    const contentId = await w.seedContent(clientA, { ownerUserId: people.manager.id });
+
+    await t.withRemovedLink('production', async () => {
+      w.statements.length = 0;
+      const reply = await create('admin', contentId, await validTask('production'));
+      expect(reply.statusCode).toBe(400);
+      expect(reply.json().error).toEqual(INVALID);
+      expect(writesTasks()).toBe(false);
+    });
+
+    expect(await t.countTasks(contentId)).toBe(0);
+  });
+
+  it('keeps the task as it was when the link of the new person in charge is removed', async () => {
+    const ids = await t.scenario(clientA, { status: 'pending', assignee: 'production' });
+    const before = await t.taskRow(ids.taskId);
+
+    await t.withRemovedLink('manager', async () => {
+      w.statements.length = 0;
+      const reply = await patch('admin', ids, { assigneeMembershipId: await t.linkOf('manager'), title: 'Outro título' });
+      expect(reply.statusCode).toBe(400);
+      expect(reply.json().error).toEqual(INVALID);
+      expect(writesTasks()).toBe(false);
+    });
+
+    expect(await t.taskRow(ids.taskId)).toEqual(before);
   });
 
   it('changes the person in charge by link, and a person who is now the assignee delivers', async () => {

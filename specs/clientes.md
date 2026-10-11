@@ -508,17 +508,31 @@ Barra inferior com quatro itens, o padrão que um dono de negócio já sabe usar
 ### Portal — Início
 
 ```
-│  Olá, Maria                                 │
-│                                             │
-│  ┌───────────────────────────────────────┐  │
-│  │ A agência respondeu 2 sugestões suas  │  │
-│  │                         [ ver ]       │  │
-│  └───────────────────────────────────────┘  │
-│                                             │
-│  ┄┄┄ conteúdos para aprovar (em breve) ┄┄┄   │
+│  Olá, Maria                                │
+│                                            │
+│  ┌──────────────────────────────────────┐  │
+│  │ 2 conteúdos esperando sua aprovação  │  │
+│  │                              [ ver ] │  │
+│  └──────────────────────────────────────┘  │
+│                                            │
+│  Roteiro de hoje                           │
+│  ┌──────────────────────────────────────┐  │
+│  │ Cena 1 — texto do roteiro            │  │
+│  │ Orientação: …                        │  │
+│  │              [ Marcar como gravado ] │  │
+│  └──────────────────────────────────────┘  │
 ```
 
-A próxima ação é **uma**: havendo threads abertas com resposta da agência, é "A agência respondeu N sugestões suas", que leva à Marca; senão, "Conheça o estudo da sua marca". O espaço de aprovação é reservado.
+A próxima ação é **uma**, e a pendência de aprovação vem antes de tudo:
+
+- **Com conteúdos esperando a aprovação do cliente** (o número é o `home.contentsAwaitingApproval` da API): o cartão é "N conteúdos esperando sua aprovação" (singular com 1), com "ver", e leva ao Calendário (`/portal/:clienteId/calendario`). A lista do portal entra na #269, que troca o destino junto com o nome.
+- **Sem pendência**, o cartão volta à próxima ação de antes: "A agência respondeu N sugestões suas", que leva à Marca; senão, "Conheça o estudo da sua marca".
+
+Abaixo do cartão, o bloco **Roteiro de hoje** traz as cenas em ordem (texto e "Orientação: …") dos roteiros **enviados** ou **gravados** do dia de São Paulo. Roteiro em rascunho não aparece para o cliente. Sem roteiro hoje, o bloco não existe.
+
+- **Enviado:** botão "Marcar como gravado". Um clique; o botão espera a resposta. Com mais de um roteiro no dia, cada um tem o seu título, e o botão leva o número.
+- **Gravado:** "Gravado por {nome} em dd/mm", sem botão.
+- **Erro ao carregar o bloco:** "Não foi possível carregar o roteiro de hoje.", com "Tentar de novo". O resto do Início continua na tela.
 
 ### Portal — Marca
 

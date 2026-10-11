@@ -572,6 +572,7 @@ Devolve as permissões efetivas do contexto de agência.
   "agencyId": "11111111-1111-4111-8111-111111111111",
   "agencyName": "Agência Exemplo",
   "isOwner": false,
+  "membershipId": "22222222-2222-4222-8222-222222222222",
   "role": {
     "key": "admin",
     "name": "Admin"

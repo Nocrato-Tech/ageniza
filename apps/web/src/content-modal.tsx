@@ -28,6 +28,7 @@ import {
 } from './content-form.js';
 import { ContentActions } from './content-action-bar.js';
 import { FORMAT_LABELS, isClosed, STATUS_LABELS } from './content-labels.js';
+import { ContentAssignment } from './content-assignment.js';
 import { CoverField, FolderField, MediaField } from './content-media.js';
 import { Conversation } from './conversation.js';
 import { captionCounter, ContentPreview } from './content-preview.js';
@@ -89,7 +90,11 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   const ids = useId();
   const { clientId } = context;
 
-  const [saved, setSaved] = useState<ContentDetail | null>(initial);
+  // The content as the server holds it. An open content is the one the query reads again after every write of the Atribuição tab (a
+  // subtask approved or created there moves "what is missing" and the send button here), so it is never copied into state: what is
+  // typed lives in `form` and is untouched by a new read. A content born in this modal is held until the query of its own exists.
+  const [born, setBorn] = useState<ContentDetail | null>(null);
+  const saved = initial ?? born;
   const [form, setForm] = useState<ContentFormValues>(() => initial === null
     ? { title: '', format: 'image', publishOn: initialDay, publishAtTime: '', folderId: '', caption: '', mediaAssetIds: [], coverAssetId: null }
     : valuesOf(initial));
@@ -126,7 +131,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
         }
         created = true;
         // What the server stored is what is on screen from now on: a retry of the rest edits this content, never creates another.
-        setSaved(current);
+        setBorn(current);
       }
       const rest: UpdateContentRequest = changesOf(valuesOf(current), form);
       if (Object.keys(rest).length === 0) return current;
@@ -157,8 +162,11 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
     }
   });
 
-  // The calendar card shows the last message and the count; a write in the conversation moves both.
-  const refreshContents = (): void => { void queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'contents', clientId] }); };
+  // The calendar card shows the last message and the count; a write in the conversation moves both. The content of this modal is not read
+  // again from here: a refused message must keep its text in the box, and the box is gone once the state read says the content is closed.
+  const refreshContents = (): void => {
+    void queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'contents', clientId], predicate: (query) => query.queryKey[4] !== 'modal' });
+  };
 
   const [moving, setMoving] = useState(false);
   const busy = save.isPending || moving;
@@ -318,20 +326,27 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   </div>;
 }
 
-/** The modal around the editor: the tabs (Atribuição, #265, has its place and stays closed) and a close that waits for a write. */
-function ContentDialog({ title, onClose, busy, children }: {
+/**
+ * The modal around the editor: the tabs and a close that waits for a write. Geral stays mounted while Atribuição is open, so what was typed
+ * in the form is still there when the person comes back. Atribuição exists once there is a content to attribute (`assignment`).
+ */
+function ContentDialog({ title, onClose, busy, assignment, children }: {
   title: string;
   onClose: () => void;
   busy: boolean;
+  assignment?: ReactNode;
   children: ReactNode;
 }) {
+  const [tab, setTab] = useState<'general' | 'assignment'>('general');
+  const shown = assignment === undefined ? 'general' : tab;
   // Closing in the middle of a write would leave its success to close whatever is open by then.
   return <Modal title={title} closeLabel="Fechar conteúdo" onClose={() => { if (!busy) onClose(); }}>
     <div className="content-modal__tabs" role="tablist" aria-label="Seções do conteúdo">
-      <Button role="tab" aria-selected="true" variant="secondary">Geral</Button>
-      <Button role="tab" aria-selected="false" disabled variant="ghost">Atribuição</Button>
+      <Button role="tab" aria-selected={shown === 'general'} variant={shown === 'general' ? 'secondary' : 'ghost'} onClick={() => setTab('general')}>Geral</Button>
+      <Button role="tab" aria-selected={shown === 'assignment'} disabled={assignment === undefined} variant={shown === 'assignment' ? 'secondary' : 'ghost'} onClick={() => setTab('assignment')}>Atribuição</Button>
     </div>
-    <div role="tabpanel" aria-label="Geral">{children}</div>
+    <div role="tabpanel" aria-label="Geral" hidden={shown !== 'general'}>{children}</div>
+    {assignment !== undefined && shown === 'assignment' && <div role="tabpanel" aria-label="Atribuição">{assignment}</div>}
   </Modal>;
 }
 
@@ -365,7 +380,8 @@ export function ContentModalRoute() {
   const hidden = !validId || (content.isError && content.error instanceof HttpClientError && (content.error.status === 403 || content.error.status === 404))
     || (content.data !== undefined && data === undefined);
 
-  return <ContentDialog title={data?.title ?? 'Conteúdo'} onClose={close} busy={busy}>
+  const assignment = data === undefined || !context.ready ? undefined : <ContentAssignment clientId={context.clientId} content={data} archived={context.archived} />;
+  return <ContentDialog title={data?.title ?? 'Conteúdo'} onClose={close} busy={busy} assignment={assignment}>
     {hidden
       ? <div className="form-stack" role="alert">
         <p>Este conteúdo não existe mais ou você não tem acesso a ele.</p>

@@ -151,12 +151,12 @@ describe('the address of a content', () => {
     expect(await screen.findByLabelText('Título')).toBeTruthy();
   });
 
-  it('has the Geral tab selected and the Atribuição tab closed, until its own issue', async () => {
+  it('opens on the Geral tab, with the Atribuição tab there to be opened (#265)', async () => {
     await openContent(stored());
     expect(within(dialog()).getByRole('tab', { name: 'Geral' }).getAttribute('aria-selected')).toBe('true');
     const assignment = within(dialog()).getByRole('tab', { name: 'Atribuição' });
     expect(assignment.getAttribute('aria-selected')).toBe('false');
-    expect((assignment as HTMLButtonElement).disabled).toBe(true);
+    expect((assignment as HTMLButtonElement).disabled).toBe(false);
   });
 });
 

@@ -1029,7 +1029,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     description: [
       'O Owner recebe todas as chaves do catálogo por posse; os demais recebem as chaves do papel',
       'do vínculo ativo, restritas à agência. É só UX: toda operação continua validada pela guarda',
-      'e pela RLS, então forjar esta lista não concede nada.'
+      'e pela RLS, então forjar esta lista não concede nada. `membershipId` é o vínculo da própria pessoa na agência pedida (o mesmo',
+      'id que o responsável de um conteúdo carrega), nunca um id de usuário; `null` para o Owner que é dono só por posse.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: null,
@@ -1042,6 +1043,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
         agencyId,
         agencyName: 'Agência Exemplo',
         isOwner: false,
+        membershipId,
         role: { key: 'admin', name: 'Admin' },
         permissions: ['cliente.visualizar', 'colaborador.visualizar', 'midia.enviar']
       }
