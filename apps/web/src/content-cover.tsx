@@ -6,6 +6,7 @@ import { MediaDownloadUrlResponseSchema, type ContentFormat, type MediaDownloadU
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
 import { useApiClient } from './http.js';
+import { signedUrlStaleTime } from './signed-url.js';
 
 /** Whether the element was ever on screen. Without `IntersectionObserver` (an old browser) it counts as seen. */
 function useSeen<T extends Element>(): [RefObject<T | null>, boolean] {
@@ -29,9 +30,6 @@ const FORMAT_GLYPHS: Readonly<Record<ContentFormat, string>> = { image: '▣', c
 /** The contract validates the URL; a response is untrusted input and only an http(s) address becomes an `src`. */
 const isHttpUrl = (value: string): boolean => /^https?:\/\//i.test(value);
 
-/** The URL is short-lived: it stays cached until shortly before it expires, per asset, for as long as the screen is open. */
-const URL_MARGIN_MS = 30_000;
-
 /**
  * The cover of a content, in the calendar and in the feed. The signed URL of an image is asked only once the
  * element was on screen and only for a content that has a cover; any refusal of the route (no thumbnail, removed,
@@ -45,7 +43,7 @@ export function ContentCover({ assetId, format, className = 'content-card__cover
   const cover = useQuery<MediaDownloadUrlResponse>({
     queryKey: ['agency', agency.agencyId, 'media-cover', assetId],
     enabled: assetId !== null && seen,
-    staleTime: (query) => (query.state.data === undefined ? 0 : Math.max(0, Date.parse(query.state.data.expiresAt) - Date.now() - URL_MARGIN_MS)),
+    staleTime: signedUrlStaleTime,
     queryFn: ({ signal }) => {
       if (assetId === null) throw new Error('A cover is only read for a content that has one.');
       return httpClient.request({
