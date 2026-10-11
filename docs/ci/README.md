@@ -33,7 +33,15 @@ The local equivalents are `pnpm db:start`, `pnpm db:migrate`, and `pnpm db:test:
 
 `better-auth` declares `vitest` as an optional peer, and pnpm resolves it because vitest exists in this workspace, which would ship vitest and its chain in the production API image (issue #281). The `.pnpmfile.cjs` hook removes that peer before resolution; all four Dockerfiles copy the file because `pnpm install --frozen-lockfile` verifies the `pnpmfileChecksum` recorded in `pnpm-lock.yaml` against it and fails when it is missing. Any edit to the file changes the checksum, so the lockfile must be regenerated in the same change. The hook is a silent no-op once `better-auth` stops declaring the peer, and can be deleted then.
 
-`CI / Quality gates` runs `node scripts/ci/verify-api-production-closure.mjs`, which deploys the API with `--prod` into a temporary directory and fails if the closure contains vitest or its chain. It turns the "no vitest in the production image" acceptance into a check instead of a manual inspection.
+`CI / Quality gates` runs `node scripts/ci/verify-api-production-closure.mjs`, which deploys the API with `--prod` into a temporary directory and fails when any of these is true:
+
+- the closure contains vitest or its chain (the list is `FORBIDDEN_IN_API_PRODUCTION`, pinned by value in the test);
+- the deploy carries anything the runtime does not read: only `dist`, `node_modules` and `package.json` are expected, and no compiled test or `test-support` under `dist`. `apps/api/package.json` declares this in `files` (issue #305), because without it `pnpm deploy` also ships `src/`, the Dockerfile, the tsconfig and the vitest configs, and the compiled `*.test.js`;
+- `dist/app.js`, `dist/server.js` and the two commands of the production runbook (`dist/cli/agency.js`, `dist/cli/email-change.js`) do not load from inside the deploy. A green image build does not prove the boot: when a package leaves the closure, this is the check that turns red.
+
+The closure is read from the directory names of pnpm's virtual store (`node_modules/.pnpm/<name>@<version>…`). When pnpm renames those entries or lays `node_modules` out another way, the gate finds no `better-auth` and fails instead of passing, so a format change shows up as a red check, never as a closure nobody inspected; the script and its test pin that. Read this as the reason to fix `packageNameFromStoreEntry` rather than to loosen the sentinel.
+
+To change what the image carries, edit `files` and compare the deploy by hand once: `pnpm --filter @ageniza/api --prod deploy <dir>` on `develop` and on the branch, the same `node_modules/.pnpm` listing, and `node -e "import('./dist/server.js')"` run inside the new `<dir>`.
 
 ## Branch protections and promotion
 
