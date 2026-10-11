@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { hasInvisibleCharacters } from './invisible-characters.js';
+
 /**
  * A client's story scripts (specs/conteudo.md sections 3, 4 and 6, issue #258): one script per day of
  * stories, a few ordered scenes, `draft -> sent -> recorded`. The agency writes and sends; the portal reads
@@ -36,21 +38,12 @@ const LINE_BREAKS = /[\t\n\r]/g;
 const CONTROL_OR_SEPARATOR = /[\p{Cc}\p{Zl}\p{Zp}]/u;
 /** Every format character: the zero-width space and joiners, the bidi controls, the BOM and the soft hyphen. */
 const FORMAT_CHARACTER = /\p{Cf}/u;
-/**
- * What the format rule above does not reach and still renders as nothing: the combining grapheme joiner, the
- * variation selectors, the Hangul fillers and the like (`Default_Ignorable_Code_Point` that is not `Cf`), and the
- * Braille blank and the musical null notehead (U+1D159), which most fonts draw as a space and Unicode does not list as
- * ignorable. The one exception is VS16 right after a pictograph, which is how a phone writes a heart.
- */
-const IGNORABLE_NOT_FORMAT = /(?!\p{Cf})[\p{Default_Ignorable_Code_Point}\u2800\u{1D159}]/u;
-const EMOJI_PRESENTATION = /(?<=\p{Extended_Pictographic})\uFE0F/gu;
-
 /** Whether a free text carries a character that is invisible, forged-looking or breaks the line it is on. */
 export const hasHiddenStoryCharacters = (value: string): boolean => {
   const withoutLineBreaks = value.replace(LINE_BREAKS, '');
   return CONTROL_OR_SEPARATOR.test(withoutLineBreaks)
     || FORMAT_CHARACTER.test(withoutLineBreaks)
-    || IGNORABLE_NOT_FORMAT.test(withoutLineBreaks.replace(EMOJI_PRESENTATION, ''));
+    || hasInvisibleCharacters(withoutLineBreaks);
 };
 
 const visibleText = () => z.string().refine((value) => !hasHiddenStoryCharacters(value), 'must not contain control or invisible characters');
