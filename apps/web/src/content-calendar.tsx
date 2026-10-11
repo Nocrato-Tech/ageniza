@@ -2,7 +2,8 @@ import { useId, useState, type DragEvent } from 'react';
 
 import type { ContentListItem } from '@ageniza/contracts';
 
-import { ContentCover, ContentHoverDetail } from './content-card-extras.js';
+import { ContentHoverDetail } from './content-card-extras.js';
+import { ContentCover } from './content-cover.js';
 import { fullDayLabel, WEEKDAY_LABELS, type CalendarView } from './content-dates.js';
 import { DEADLINE_LABELS, deadlineAlert, FORMAT_LABELS, isClosed, STATUS_LABELS, subtaskPercent } from './content-labels.js';
 

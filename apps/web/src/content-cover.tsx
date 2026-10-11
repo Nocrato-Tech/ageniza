@@ -1,0 +1,65 @@
+import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useQuery } from '@tanstack/react-query';
+
+import { MediaDownloadUrlResponseSchema, type ContentFormat, type MediaDownloadUrlResponse } from '@ageniza/contracts';
+
+import { useAgencyContext } from './agency.js';
+import { apiPath } from './api-path.js';
+import { useApiClient } from './http.js';
+
+/** Whether the element was ever on screen. Without `IntersectionObserver` (an old browser) it counts as seen. */
+function useSeen<T extends Element>(): [RefObject<T | null>, boolean] {
+  const ref = useRef<T | null>(null);
+  const [seen, setSeen] = useState(typeof IntersectionObserver === 'undefined');
+  useEffect(() => {
+    const element = ref.current;
+    if (seen || element === null) return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) setSeen(true);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [seen]);
+  return [ref, seen];
+}
+
+/** What stands for the cover while there is none: the shape of the format, never a cover someone did not choose. */
+const FORMAT_GLYPHS: Readonly<Record<ContentFormat, string>> = { image: '▣', carousel: '▤', reels: '▶', long_video: '▶', vsl: '▶' };
+
+/** The contract validates the URL; a response is untrusted input and only an http(s) address becomes an `src`. */
+const isHttpUrl = (value: string): boolean => /^https?:\/\//i.test(value);
+
+/** The URL is short-lived: it stays cached until shortly before it expires, per asset, for as long as the screen is open. */
+const URL_MARGIN_MS = 30_000;
+
+/**
+ * The cover of a content, in the calendar and in the feed. The signed URL of an image is asked only once the
+ * element was on screen and only for a content that has a cover; any refusal of the route (no thumbnail, removed,
+ * not allowed) leaves the shape of the format. `className` places it in the card that uses it.
+ */
+export function ContentCover({ assetId, format, className = 'content-card__cover' }: { assetId: string | null; format: ContentFormat; className?: string }) {
+  const httpClient = useApiClient();
+  const agency = useAgencyContext();
+  const [ref, seen] = useSeen<HTMLDivElement>();
+  const [broken, setBroken] = useState<string | null>(null);
+  const cover = useQuery<MediaDownloadUrlResponse>({
+    queryKey: ['agency', agency.agencyId, 'media-cover', assetId],
+    enabled: assetId !== null && seen,
+    staleTime: (query) => (query.state.data === undefined ? 0 : Math.max(0, Date.parse(query.state.data.expiresAt) - Date.now() - URL_MARGIN_MS)),
+    queryFn: ({ signal }) => {
+      if (assetId === null) throw new Error('A cover is only read for a content that has one.');
+      return httpClient.request({
+        path: apiPath('/agencies/:agencyId/media/:assetId/download-url', { agencyId: agency.agencyId, assetId }),
+        response: MediaDownloadUrlResponseSchema,
+        signal
+      });
+    }
+  });
+  const url = cover.data?.url;
+  const usable = url !== undefined && isHttpUrl(url) && broken !== url;
+  return <div ref={ref} className={`${className}${usable ? '' : ` ${className}--placeholder`}`}>
+    {usable
+      ? <img src={url} alt="" loading="lazy" onError={() => setBroken(url)} />
+      : <span aria-hidden="true">{FORMAT_GLYPHS[format]}</span>}
+  </div>;
+}
