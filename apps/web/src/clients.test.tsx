@@ -899,7 +899,7 @@ describe('the content indicators of the card (#272, contentIndicators of #261)',
     (readsContents ? Number((b.contentIndicators?.overdue ?? 0) > 0) - Number((a.contentIndicators?.overdue ?? 0) > 0) : 0)
     || Number(b.threadsAwaitingAgency > 0) - Number(a.threadsAwaitingAgency > 0)
     || a.name.localeCompare(b.name));
-  const withoutIndicators = (row: Row): Row => { const { contentIndicators: _omitted, ...rest } = row; return rest as Row; };
+  const withoutIndicators = (row: Row): Row => Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'contentIndicators')) as Row;
 
   const READER = ['cliente.visualizar', 'conteudo.visualizar'];
   const ROWS = [
