@@ -79,11 +79,13 @@ function AgencyShellSkeleton() {
 function AgencyNav({ agenciaId }: { agenciaId: string }) {
   const canSeeCollaborators = useCan('colaborador.visualizar');
   const canSeeClients = useCan('cliente.visualizar');
+  const canSeeContents = useCan('conteudo.visualizar');
   return <nav className="agency-nav" aria-label="Navegação da agência">
     <ul>
       <li><NavLink to={`/agencia/${agenciaId}`} end>Início</NavLink></li>
       {canSeeCollaborators && <li><NavLink to={`/agencia/${agenciaId}/colaboradores`}>Colaboradores</NavLink></li>}
       {canSeeClients && <li><NavLink to={`/agencia/${agenciaId}/clientes`}>Clientes</NavLink></li>}
+      {canSeeContents && <li><NavLink to={`/agencia/${agenciaId}/conteudos`}>Conteúdos</NavLink></li>}
     </ul>
   </nav>;
 }

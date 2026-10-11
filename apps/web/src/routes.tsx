@@ -10,6 +10,7 @@ import { ClientBrandStudyTab } from './brand-study.js';
 import { ClientDetailPage, ClientGeneralTab, ClientSkeletonTab } from './client-detail.js';
 import { ClientsPage } from './clients.js';
 import { CollaboratorsPage } from './collaborators.js';
+import { ContentsClientPage, ContentsPage } from './contents.js';
 import { ContextSelectPage } from './contexts.js';
 import { ConfirmEmailChangePage } from './email-change.js';
 import { ForgotPasswordPage } from './forgot-password.js';
@@ -75,6 +76,18 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
           <CollaboratorsPage />
         </AgencyPermissionRoute>
       } />
+      <Route path="conteudos">
+        <Route index element={
+          <AgencyPermissionRoute permission="conteudo.visualizar">
+            <ContentsPage />
+          </AgencyPermissionRoute>
+        } />
+        <Route path=":clienteId" element={
+          <AgencyPermissionRoute permission="conteudo.visualizar">
+            <ContentsClientPage />
+          </AgencyPermissionRoute>
+        } />
+      </Route>
       <Route path="clientes">
         <Route index element={
           <AgencyPermissionRoute permission="cliente.visualizar">
