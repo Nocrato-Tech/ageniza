@@ -262,7 +262,17 @@ export const ClientListQuerySchema = PaginationInputSchema.extend({
  *
  * `pendingInvitations` is **omitted**, never zeroed, for a caller without
  * `cliente.convidar_usuario`: zero would be a lie the interface would show (issues #125/#134).
+ * `contentIndicators` follows the same rule for a caller without `conteudo.visualizar` (issue #261).
  */
+export const ClientContentIndicatorsSchema = z.object({
+  /** Em produção and em ajuste: what the agency still owes. */
+  pending: z.number().int().nonnegative(),
+  /** Aguardando aprovação: what waits for the client. */
+  inReview: z.number().int().nonnegative(),
+  /** Planned day before today in São Paulo, neither published nor cancelled; overlaps the other two. */
+  overdue: z.number().int().nonnegative()
+}).strict();
+
 export const ClientListItemSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
@@ -271,7 +281,8 @@ export const ClientListItemSchema = z.object({
   status: ClientStatusSchema,
   closingDate: z.string().nullable(),
   threadsAwaitingAgency: z.number().int().nonnegative(),
-  pendingInvitations: z.number().int().nonnegative().optional()
+  pendingInvitations: z.number().int().nonnegative().optional(),
+  contentIndicators: ClientContentIndicatorsSchema.optional()
 }).strict();
 
 export const ClientListResponseSchema = createPaginatedResponseSchema(ClientListItemSchema);
@@ -287,6 +298,7 @@ export type ClientSummary = z.infer<typeof ClientSummarySchema>;
 export type ClientDetailResponse = z.infer<typeof ClientDetailResponseSchema>;
 export type ClientListSort = z.infer<typeof ClientListSortSchema>;
 export type ClientListQuery = z.infer<typeof ClientListQuerySchema>;
+export type ClientContentIndicators = z.infer<typeof ClientContentIndicatorsSchema>;
 export type ClientListItem = z.infer<typeof ClientListItemSchema>;
 export type ClientListResponse = z.infer<typeof ClientListResponseSchema>;
 
@@ -413,6 +425,8 @@ export const PortalClientQuerySchema = z.object({}).strict();
 
 /** The Início summary: what the portal's next action is built from (specs/clientes.md section 6). */
 export const PortalHomeSchema = z.object({
+  /** Contents awaiting this client's approval ("N conteúdos esperando sua aprovação"); none of another client's. */
+  contentsAwaitingApproval: z.number().int().nonnegative(),
   /** Open threads whose latest comment is the agency's, on subjects the portal can read. */
   threadsAnsweredByAgency: z.number().int().nonnegative(),
   brandStudyFilled: z.number().int().min(0).max(7)

@@ -15,7 +15,7 @@ import {
   type ClientRow,
   type ClientTransaction
 } from './service.js';
-import { latestCommentSideSql, openThreadSql } from './thread-state.js';
+import { brandStudyThreadSql, latestCommentSideSql, openThreadSql } from './thread-state.js';
 
 /**
  * The portal's reads of its own client (specs/clientes.md sections 2, 6 and 7).
@@ -71,12 +71,18 @@ export const loadPortalClient = async (
 interface PortalHomeRow {
   readonly brand_study_filled: string | number;
   readonly threads_answered_by_agency: string | number;
+  readonly contents_awaiting_approval: string | number;
 }
 
 /**
  * The Início summary. "Com resposta da agência" is the single thread-state definition, restricted to
  * the threads the portal can read: one about an archived persona is read-only history the portal
  * does not show, so it is not a reply waiting for the person either.
+ *
+ * "Conteúdos esperando sua aprovação" counts only the caller's own client, only in "aguardando
+ * aprovação", through `app_private.portal_contents`: the policy of `contents` answers the agency
+ * alone, and a collaborator who also has a link would otherwise read the agency branch. The function
+ * is the portal-only rule: it asks for an active link to `p_client_id` and never answers a draft.
  */
 export const loadPortalHome = async (transaction: ClientTransaction, clientId: string): Promise<PortalHome> => {
   const result = await raw<RawRows<PortalHomeRow>>(transaction, `
@@ -85,6 +91,7 @@ export const loadPortalHome = async (transaction: ClientTransaction, clientId: s
       (
         select count(*) from public.client_threads thread
         where thread.client_id = ?::uuid
+          and ${brandStudyThreadSql('thread')}
           and ${openThreadSql('thread')}
           and ${latestCommentSideSql('thread')} = 'agency'
           and (
@@ -94,13 +101,17 @@ export const loadPortalHome = async (transaction: ClientTransaction, clientId: s
               where persona.id = thread.persona_id and persona.client_id = thread.client_id and persona.status = 'active'
             )
           )
-      ) as threads_answered_by_agency
-  `, [clientId, clientId, clientId]);
+      ) as threads_answered_by_agency,
+      (
+        select count(*) from app_private.portal_contents(?::uuid, null, null, array['awaiting_approval']::text[])
+      ) as contents_awaiting_approval
+  `, [clientId, clientId, clientId, clientId]);
   const row = result.rows[0];
   if (row === undefined) throw new Error('Portal home query returned no row.');
   return {
     brandStudyFilled: Number(row.brand_study_filled),
-    threadsAnsweredByAgency: Number(row.threads_answered_by_agency)
+    threadsAnsweredByAgency: Number(row.threads_answered_by_agency),
+    contentsAwaitingApproval: Number(row.contents_awaiting_approval)
   };
 };
 
