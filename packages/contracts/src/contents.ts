@@ -229,6 +229,9 @@ export const ContentTaskSchema = z.object({
   approvedAt: z.string().nullable()
 }).strict();
 
+/** A content holds up to 50 subtasks, whatever their state: the 51st is refused (decision of the maestro, issue #255). */
+export const CONTENT_TASKS_MAX_PER_CONTENT = 50;
+
 /** The column of the description of a subtask holds up to 20000 bytes; its title follows the content's (one line, 120 characters). */
 export const CONTENT_TASK_DESCRIPTION_MAX_BYTES = 20_000;
 

@@ -1,3 +1,4 @@
+import { CONTENT_TASKS_MAX_PER_CONTENT } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 import { databaseErrorCode } from '@ageniza/database';
 
@@ -27,6 +28,12 @@ export const taskAssigneeInvalid = (): HttpError => new HttpError({
   statusCode: 400,
   code: 'CONTENT_TASK_ASSIGNEE_INVALID',
   message: 'O responsável precisa ser um colaborador ativo que vê Conteúdo.'
+});
+
+export const taskLimitReached = (): HttpError => new HttpError({
+  statusCode: 409,
+  code: 'CONTENT_TASK_LIMIT',
+  message: `Um conteúdo tem até ${CONTENT_TASKS_MAX_PER_CONTENT} subtarefas.`
 });
 
 export const taskCommentInvalid = (): HttpError => new HttpError({

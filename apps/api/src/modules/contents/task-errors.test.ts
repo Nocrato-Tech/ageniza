@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { taskAssigneeInvalid, taskCommentInvalid, taskNotFound, taskState, translateTaskError, type TaskAction } from './task-errors.js';
+import { taskAssigneeInvalid, taskCommentInvalid, taskLimitReached, taskNotFound, taskState, translateTaskError, type TaskAction } from './task-errors.js';
 
 const databaseError = (code: string, extra: Record<string, unknown> = {}): Error => Object.assign(new Error(`database ${code}`), { code, ...extra });
 
@@ -29,6 +29,10 @@ describe('what a refusal of the database becomes in a subtask route (issue #255)
 
     expect(translateTaskError(databaseError('A0073'), 'create')).toMatchObject(answer);
     expect(translateTaskError(databaseError('23503', { constraint: 'content_tasks_assignee_user_id_fkey' }), 'update')).toMatchObject(answer);
+  });
+
+  it('tells the limit of 50 subtasks in one word of its own: 409 CONTENT_TASK_LIMIT', () => {
+    expect(taskLimitReached()).toMatchObject({ statusCode: 409, code: 'CONTENT_TASK_LIMIT', message: 'Um conteúdo tem até 50 subtarefas.' });
   });
 
   it('turns A0068 into the 400 of the comment of a return', () => {

@@ -1359,7 +1359,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       'portal, inexistente ou de quem não vê Conteúdo) é `400 CONTENT_TASK_ASSIGNEE_INVALID`, sem dizer qual foi o motivo. O título',
       'segue o do conteúdo (uma linha, até 120 caracteres) e a descrição aceita quebras de linha, até 20000 bytes; texto só com',
       'caractere de controle ou invisível é `400 VALIDATION_ERROR`. Conteúdo publicado ou cancelado não recebe subtarefa',
-      '(`409 CONTENT_TASK_STATE`). O percentual do conteúdo (`tasksApproved` sobre `tasksTotal` da consulta por período) conta a nova.'
+      '(`409 CONTENT_TASK_STATE`). Um conteúdo tem até 50 subtarefas, em qualquer estado: a 51ª é `409 CONTENT_TASK_LIMIT`. O percentual do conteúdo (`tasksApproved` sobre `tasksTotal` da consulta por período) conta a nova.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'conteudo.operar',
@@ -1377,6 +1377,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
       { status: 409, code: 'CONTENT_TASK_STATE', message: 'Um conteúdo publicado ou cancelado não recebe subtarefas.' },
+      { status: 409, code: 'CONTENT_TASK_LIMIT' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
   },

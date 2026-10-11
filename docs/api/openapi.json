@@ -10280,7 +10280,7 @@
       "post": {
         "operationId": "createContentTask",
         "summary": "Cria uma subtarefa do conteúdo",
-        "description": "A subtarefa nasce pendente. Exige `conteudo.operar` e também `conteudo.visualizar`. `assigneeMembershipId` é o vínculo ativo\nde um colaborador da agência que vê Conteúdo (nunca um id de usuário); qualquer outro vínculo (removido, de outra agência, do\nportal, inexistente ou de quem não vê Conteúdo) é `400 CONTENT_TASK_ASSIGNEE_INVALID`, sem dizer qual foi o motivo. O título\nsegue o do conteúdo (uma linha, até 120 caracteres) e a descrição aceita quebras de linha, até 20000 bytes; texto só com\ncaractere de controle ou invisível é `400 VALIDATION_ERROR`. Conteúdo publicado ou cancelado não recebe subtarefa\n(`409 CONTENT_TASK_STATE`). O percentual do conteúdo (`tasksApproved` sobre `tasksTotal` da consulta por período) conta a nova.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "description": "A subtarefa nasce pendente. Exige `conteudo.operar` e também `conteudo.visualizar`. `assigneeMembershipId` é o vínculo ativo\nde um colaborador da agência que vê Conteúdo (nunca um id de usuário); qualquer outro vínculo (removido, de outra agência, do\nportal, inexistente ou de quem não vê Conteúdo) é `400 CONTENT_TASK_ASSIGNEE_INVALID`, sem dizer qual foi o motivo. O título\nsegue o do conteúdo (uma linha, até 120 caracteres) e a descrição aceita quebras de linha, até 20000 bytes; texto só com\ncaractere de controle ou invisível é `400 VALIDATION_ERROR`. Conteúdo publicado ou cancelado não recebe subtarefa\n(`409 CONTENT_TASK_STATE`). Um conteúdo tem até 50 subtarefas, em qualquer estado: a 51ª é `409 CONTENT_TASK_LIMIT`. O percentual do conteúdo (`tasksApproved` sobre `tasksTotal` da consulta por período) conta a nova.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
         "tags": [
           "contents"
         ],
@@ -10432,7 +10432,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_TASK_STATE: Um conteúdo publicado ou cancelado não recebe subtarefas. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_TASK_STATE: Um conteúdo publicado ou cancelado não recebe subtarefas. | CONTENT_TASK_LIMIT: | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {

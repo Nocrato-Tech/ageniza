@@ -107,6 +107,9 @@ conteúdo do caminho e o conteúdo, do cliente (o mesmo `404 Task not found.`), 
 - **Estado.** `409 CONTENT_TASK_STATE` para a ação que o estado da subtarefa não aceita, para editar uma subtarefa
   aprovada e para qualquer escrita nas subtarefas de um conteúdo publicado ou cancelado. Entregar uma entregue e
   aprovar uma aprovada são `200` sem mudança.
+- **Teto.** Um conteúdo tem até 50 subtarefas, em qualquer estado: a 51ª criação é `409 CONTENT_TASK_LIMIT` (decisão do
+  maestro). Vale só para criar. A contagem é feita depois de uma trava consultiva por conteúdo, para duas criações ao
+  mesmo tempo não chegarem a 51.
 - **O percentual** do conteúdo (`tasksApproved` sobre `tasksTotal`, na consulta por período e no detalhe) conta as
   linhas de `content_tasks` na hora da leitura, então reflete cada aprovação sem outra escrita.
 - **Cliente arquivado:** `409 CLIENT_ARCHIVED` nas duas janelas da corrida, em criar (gatilho do `INSERT`), editar

@@ -749,6 +749,77 @@ describe('the percentage of a content follows the approved subtasks (issue #255,
   });
 });
 
+describe('a content has up to 50 subtasks, in any state (issue #255, decision of the maestro)', () => {
+  const LIMIT = { code: 'CONTENT_TASK_LIMIT', message: 'Um conteúdo tem até 50 subtarefas.' };
+
+  /** A content with `count` subtasks in every state, made straight in the database. */
+  const contentWith = async (clientId: string, count: number): Promise<string> => {
+    const contentId = await w.seedContent(clientId, { ownerUserId: people.manager.id });
+    const states = ['pending', 'delivered', 'approved'] as const;
+    for (let index = 0; index < count; index += 1) await t.seedTask(contentId, { status: states[index % 3], assignee: 'reader' });
+    return contentId;
+  };
+
+  it('creates the 50th subtask and refuses the 51st with 409 CONTENT_TASK_LIMIT, writing nothing', async () => {
+    const contentId = await contentWith(clientA, 49);
+
+    const fiftieth = await create('admin', contentId, await validTask());
+    const fiftyFirst = await create('admin', contentId, await validTask());
+
+    expect(fiftieth.statusCode).toBe(201);
+    expect(fiftyFirst.statusCode).toBe(409);
+    expect(fiftyFirst.json().error).toEqual(LIMIT);
+    expect(await t.countTasks(contentId)).toBe(50);
+  });
+
+  it('refuses at 50 whatever the state of the ones it has, approved ones included', async () => {
+    const contentId = await w.seedContent(clientA, { ownerUserId: people.manager.id });
+    for (let index = 0; index < 50; index += 1) await t.seedTask(contentId, { status: 'approved', assignee: 'reader' });
+
+    const reply = await create('admin', contentId, await validTask());
+
+    expect(reply.statusCode).toBe(409);
+    expect(reply.json().error).toEqual(LIMIT);
+    expect(await t.countTasks(contentId)).toBe(50);
+  });
+
+  it('counts the subtasks of this content only: another content of the client, full, does not stop this one', async () => {
+    const full = await contentWith(clientA, 50);
+    const other = await w.seedContent(clientA, { ownerUserId: people.manager.id });
+
+    const reply = await create('admin', other, await validTask());
+
+    expect(reply.statusCode).toBe(201);
+    expect(await t.countTasks(full)).toBe(50);
+    expect(await t.countTasks(other)).toBe(1);
+  });
+
+  it('is only about creating: a full content still edits, delivers, approves and returns its subtasks', async () => {
+    const contentId = await contentWith(clientA, 50);
+    const idIn = async (status: string): Promise<string> =>
+      (await w.getOwner().knex('content_tasks').where({ content_id: contentId, status }).first('id'))?.id as string;
+    const pending = await idIn('pending');
+    const delivered = await idIn('delivered');
+
+    expect((await patch('admin', { contentId, taskId: pending }, { title: 'Outro título' })).statusCode).toBe(200);
+    expect((await move('reader', 'deliver', { contentId, taskId: pending })).statusCode).toBe(200);
+    expect((await move('manager', 'return', { contentId, taskId: delivered }, { comment: 'Falta algo.' })).statusCode).toBe(200);
+    expect(await t.countTasks(contentId)).toBe(50);
+  });
+
+  it('answers 403 to who may not create before it counts, and 400 for an invalid person in charge before the limit', async () => {
+    const contentId = await contentWith(clientA, 50);
+    w.statements.length = 0;
+
+    const denied = await create('reader', contentId, await validTask());
+    const invalid = await create('admin', contentId, { ...await validTask(), assigneeMembershipId: randomUUID() });
+
+    expect(denied.statusCode).toBe(403);
+    expect(w.statements.some((statement) => /count\(\*\)/.test(statement))).toBe(false);
+    error(invalid, 400, 'CONTENT_TASK_ASSIGNEE_INVALID');
+  });
+});
+
 describe('a task is the content\'s, the content the client\'s and the client the agency\'s, never another\'s (issue #255)', () => {
   const NOT_FOUND = { code: 'NOT_FOUND', message: 'Task not found.' };
   const ROUTES: ReadonlyArray<readonly [string, (ids: { contentId: string; taskId: string }, clientId?: string, agencyId?: string) => Promise<Reply>]> = [

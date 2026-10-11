@@ -169,3 +169,42 @@ describe('an edit that waits for the row of the task while the archive commits (
     }
   }, 30_000);
 });
+
+describe('two creations of a subtask at the same time, with 49 in the content (issue #255, the limit of 50)', () => {
+  it('lets one in and refuses the other with 409 CONTENT_TASK_LIMIT: the content never has 51', async () => {
+    const clientId = await w.newClient('limit-race');
+    const contentId = await w.seedContent(clientId, { ownerUserId: people.manager.id });
+    for (let index = 0; index < 49; index += 1) await t.seedTask(contentId, { status: 'pending', assignee: 'reader' });
+    const body = { title: 'Gravar o vídeo', assigneeMembershipId: await t.linkOf('production'), dueOn: '2026-10-15' };
+
+    // The lock of the creators of this content is held, so both requests are in front of it, and neither has counted yet.
+    const holder = await w.getOwner().knex.transaction();
+    let released = false;
+    try {
+      await holder.raw('select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(?::text, 0))', [`content_tasks:${contentId}`]);
+      const holderPid = await backendPid(holder);
+      const first = w.call('POST', people.admin.cookie, t.tasksUrl(clientId, contentId), body);
+      await waitForBackendBlockedBy(w, holderPid);
+      const second = w.call('POST', people.admin.cookie, t.tasksUrl(clientId, contentId), body);
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        const waiting = await raw<{ rows: Array<{ total: number }> }>(w.getOwner().knex, `
+          select count(*)::int as total from pg_catalog.pg_stat_activity activity
+          where activity.datname = pg_catalog.current_database() and pg_catalog.pg_blocking_pids(activity.pid) @> array[?::int]
+        `, [holderPid]);
+        if (Number(waiting.rows[0]?.total) === 2) break;
+        if (attempt === 399) throw new Error('The two creations never waited for the lock.');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await holder.rollback();
+      released = true;
+
+      const replies = await Promise.all([first, second]);
+
+      expect(replies.map((reply) => reply.statusCode).sort()).toEqual([201, 409]);
+      expect(replies.find((reply) => reply.statusCode === 409)?.json().error.code).toBe('CONTENT_TASK_LIMIT');
+      expect(await t.countTasks(contentId)).toBe(50);
+    } finally {
+      if (!released) await holder.rollback();
+    }
+  }, 30_000);
+});

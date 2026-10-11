@@ -1,6 +1,7 @@
 import {
   AgencyClientContentPathParamsSchema,
   AgencyClientContentTaskPathParamsSchema,
+  CONTENT_TASKS_MAX_PER_CONTENT,
   ContentTaskSchema,
   CreateContentTaskRequestSchema,
   ReturnContentTaskRequestSchema,
@@ -20,9 +21,10 @@ import { CONTENT_READ_PERMISSION } from './policy.js';
 import { idFromRoute } from './route-support.js';
 import type { ContentModuleDependencies } from './routes.js';
 import { loadClientStatus, loadContent, loadContentTasks, resolveCollaboratorLink, type ContentTransaction } from './service.js';
-import { taskAssigneeInvalid, taskNotFound, translateTaskError, type TaskAction } from './task-errors.js';
+import { taskAssigneeInvalid, taskLimitReached, taskNotFound, translateTaskError, type TaskAction } from './task-errors.js';
 import {
   approveContentTask,
+  countContentTasksLocked,
   deliverContentTask,
   insertContentTask,
   returnContentTask,
@@ -138,6 +140,7 @@ export const registerContentTaskRoutes = (app: FastifyInstance, dependencies: Co
       const { assigneeMembershipId, ...fields } = body;
       const assigneeUserId = await resolveCollaboratorLink(transaction, { agencyId: tenant.agencyId, membershipId: assigneeMembershipId });
       if (assigneeUserId === undefined) throw taskAssigneeInvalid();
+      if (await countContentTasksLocked(transaction, contentId) >= CONTENT_TASKS_MAX_PER_CONTENT) throw taskLimitReached();
       const taskId = await insertContentTask(transaction, { contentId, clientId, body: fields, assigneeUserId });
       return readBack(transaction, contentId, taskId);
     });

@@ -21,6 +21,16 @@ export const returnContentTask = async (transaction: ContentTransaction, input: 
   await raw(transaction, 'select app_private.return_content_task(?::uuid, ?)', [input.taskId, input.comment]);
 };
 
+/**
+ * How many subtasks a content has, counted after the lock of its creators: two creations at the same time wait for each other, so the
+ * second counts the first. The lock is per content and has nothing to do with the client's, so it adds no cycle with an archive.
+ */
+export const countContentTasksLocked = async (transaction: ContentTransaction, contentId: string): Promise<number> => {
+  await raw(transaction, 'select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(?::text, 0))', [`content_tasks:${contentId}`]);
+  const result = await raw<{ rows: Array<{ total: number }> }>(transaction, 'select count(*)::int as total from public.content_tasks where content_id = ?::uuid', [contentId]);
+  return Number(result.rows[0]?.total ?? 0);
+};
+
 /** The person in charge is the user the link resolved to: the route resolves it, because the column holds a user and no caller is given one. */
 export const insertContentTask = async (
   transaction: ContentTransaction,
