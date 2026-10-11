@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CreateStoryScriptRequestSchema,
+  STORY_SCRIPT_PERIOD_MAX_DAYS,
+  STORY_SCRIPT_PERIOD_MAX_ITEMS,
   StoryScriptPeriodQuerySchema,
   UpdateStoryScriptRequestSchema,
   hasHiddenStoryCharacters,
@@ -158,6 +160,11 @@ describe('the period of the portal listing (#258, format of #254)', () => {
     expect(storyScriptPeriodDays(period('2026-10-01', '2026-10-31'))).toBe(31);
     expect(storyScriptPeriodDays(period('2026-12-31', '2027-01-01'))).toBe(2);
     expect(storyScriptPeriodDays(period('2028-02-28', '2028-03-01'))).toBe(3);
+  });
+
+  it('fixes the two ceilings the owner approved for the period query: 93 days and 500 items', () => {
+    expect(STORY_SCRIPT_PERIOD_MAX_DAYS).toBe(93);
+    expect(STORY_SCRIPT_PERIOD_MAX_ITEMS).toBe(500);
   });
 
   it('passes 93 days and refuses 94, across a month that is not the same length', () => {

@@ -12,7 +12,7 @@ export const STORY_SCRIPT_MAX_SCENES = 30;
 export const STORY_SCENE_TEXT_MAX_LENGTH = 2000;
 export const STORY_SCENE_GUIDANCE_MAX_LENGTH = 1000;
 
-/** The period query's two ceilings (decision of #254): 93 days, both ends included, and 500 items. */
+/** The period query's two ceilings: 93 days, both ends included, and 500 items (docs/business/decisions/2026-10-11-consulta-por-periodo-teto-de-500-itens-e-formato-da-resposta.md). */
 export const STORY_SCRIPT_PERIOD_MAX_DAYS = 93;
 export const STORY_SCRIPT_PERIOD_MAX_ITEMS = 500;
 
