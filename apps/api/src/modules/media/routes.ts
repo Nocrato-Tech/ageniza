@@ -14,11 +14,12 @@ import {
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
+import { sharedUserRateLimit } from '../../plugins/infra/rate-limit.js';
 import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { isInsufficientPrivilegeError, tenantHolds } from '../tenancy/guards.js';
 import { clientArchived, explainRefusedClientWrite, translateClientMediaError } from './client-media-errors.js';
@@ -30,6 +31,7 @@ import {
   maxBytesForCategory,
   MEDIA_RATE_LIMITS,
   MEDIA_READ_PERMISSIONS,
+  MEDIA_READ_URL_BUCKET,
   MEDIA_UPLOAD_PERMISSIONS,
   multipartPlan,
   usesMultipartUpload,
@@ -138,12 +140,14 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
   const requireSession = createRequireSession({ auth: dependencies.auth });
   const guarded = (
     docs: DocumentedRouteConfig & { permission: string | readonly [string, ...string[]] },
-    extraConfig: Record<string, unknown> = {}
+    extraConfig: Record<string, unknown> = {},
+    afterGuards: readonly preHandlerAsyncHookHandler[] = []
   ) => ({
     preHandler: [
       requireSession,
       dependencies.requireAgencyAccess,
-      typeof docs.permission === 'string' ? dependencies.requirePermission(docs.permission) : dependencies.requireAnyPermission(docs.permission)
+      typeof docs.permission === 'string' ? dependencies.requirePermission(docs.permission) : dependencies.requireAnyPermission(docs.permission),
+      ...afterGuards
     ],
     config: { permission: docs.permission, responseStatus: docs.responseStatus, schemas: docs.schemas, ...extraConfig }
   });
@@ -154,6 +158,9 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       addHeaders: false
     }
   };
+
+  // Per session user, not IP or agency, since the audit skips thumbnails; the same bucket as the portal's read URL.
+  const downloadUrlLimiter = sharedUserRateLimit(app, MEDIA_READ_URL_BUCKET, MEDIA_RATE_LIMITS.downloadUrlPerUser);
 
   // Declared once per route: the same object is the documentation metadata and the source of the
   // schemas the handler validates with.
@@ -425,7 +432,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     }));
   });
 
-  app.get('/agencies/:agencyId/media/:assetId/download-url', guarded(downloadDocs), async (request, reply) => {
+  app.get('/agencies/:agencyId/media/:assetId/download-url', guarded(downloadDocs, {}, [downloadUrlLimiter]), async (request, reply) => {
     const auth = requireAuth(request);
     const params = routeParams(downloadDocs, request);
     const query = routeQuery(downloadDocs, request);
