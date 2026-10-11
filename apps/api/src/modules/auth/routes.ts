@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import {
   AuthLoginRequestSchema,
@@ -19,6 +19,7 @@ import type { AuthInstance } from './better-auth.js';
 import { applyAuthCookies, toAuthHeaders, toPublicAuthError } from './bridge.js';
 import { AUTH_RATE_LIMITS } from './policy.js';
 import { createRequireSession } from './session-guard.js';
+import { noStore } from '../../plugins/infra/no-store.js';
 import { normalizeRateLimitIp } from '../../plugins/infra/rate-limit-ip.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeResponse } from '../../plugins/infra/zod.js';
@@ -52,15 +53,6 @@ const noRateLimitHeaders = {
     'x-ratelimit-reset': false
   }
 } as const;
-
-/**
- * `Cache-Control: no-store` on every auth response that carries session data (#423): the body names the
- * person (id, name, e-mail) or the response issues the session cookie. Set in `onRequest`, so a 401 raised
- * by the guard later carries it too; a check that answered "signed out" must not be replayed from a cache.
- */
-const noStore = async (_request: FastifyRequest, reply: FastifyReply): Promise<void> => {
-  reply.header('cache-control', 'no-store');
-};
 
 const perIpRateLimit = (limit: { readonly max: number; readonly windowMs: number }, docs: DocumentedRouteConfig) => ({
   config: {
