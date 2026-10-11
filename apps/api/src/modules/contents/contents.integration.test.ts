@@ -213,6 +213,7 @@ describe('the period query (issue #254)', () => {
 
   it.each([
     ['a period that ends before it starts', 'from=2026-10-31&to=2026-10-01'],
+    ['a period that ends the day before it starts', 'from=2026-10-11&to=2026-10-10'],
     ['no bounds', ''],
     ['no end', 'from=2026-10-01'],
     ['a day that does not exist', 'from=2026-02-30&to=2026-03-01'],
