@@ -16293,7 +16293,7 @@
       "post": {
         "operationId": "createClientMediaFolder",
         "summary": "Cria uma pasta de mídia do cliente",
-        "description": "No primeiro nível, ou dentro de uma pasta de primeiro nível do mesmo cliente (`parentId`): há só dois níveis.\nExige `conteudo.operar` e também `conteudo.visualizar`, porque a resposta é uma leitura. O nome não aceita\ncaracteres de controle, invisíveis nem os dois joiners, e tem até 80 caracteres.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "description": "No primeiro nível, ou dentro de uma pasta de primeiro nível do mesmo cliente (`parentId`): há só dois níveis.\nExige `conteudo.operar` e também `conteudo.visualizar`, porque a resposta é uma leitura. O nome não aceita\ncaracteres de controle, invisíveis nem joiners fora de uma sequência de emoji completa (família, bandeira de subdivisão, tom de pele), e tem até 80 caracteres.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
         "tags": [
           "media"
         ],
@@ -17688,7 +17688,7 @@
       "post": {
         "operationId": "createStoryScript",
         "summary": "Cria um roteiro de stories em rascunho",
-        "description": "Um dia (`scriptOn`, `AAAA-MM-DD`) e as cenas na ordem em que foram enviadas, até 30. O roteiro nasce em\nrascunho e o portal não o vê. Pode haver mais de um roteiro por cliente e dia, e um roteiro sem cenas.\nO texto e a orientação da cena recusam caractere de controle (menos tabulação e quebra de linha) e\ninvisível, inclusive o espaço de largura zero e os joiners. Precisa de `conteudo.operar` **e** de\n`conteudo.visualizar`: uma escrita que não lê o que escreveu é cega. Cliente arquivado dá 409, nas duas\njanelas da corrida com o arquivamento.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "description": "Um dia (`scriptOn`, `AAAA-MM-DD`) e as cenas na ordem em que foram enviadas, até 30. O roteiro nasce em\nrascunho e o portal não o vê. Pode haver mais de um roteiro por cliente e dia, e um roteiro sem cenas.\nO texto e a orientação da cena recusam caractere de controle (menos tabulação e quebra de linha) e\ninvisível, inclusive o espaço de largura zero e os joiners fora de uma sequência de emoji completa. Precisa de `conteudo.operar` **e** de\n`conteudo.visualizar`: uma escrita que não lê o que escreveu é cega. Cliente arquivado dá 409, nas duas\njanelas da corrida com o arquivamento.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
         "tags": [
           "story-scripts"
         ],
