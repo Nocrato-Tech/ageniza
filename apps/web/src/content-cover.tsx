@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { MediaDownloadUrlResponseSchema, type ContentFormat, type MediaDownloadUrlResponse } from '@ageniza/contracts';
@@ -7,28 +7,13 @@ import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
 import { useApiClient } from './http.js';
 import { signedUrlStaleTime } from './signed-url.js';
-
-/** Whether the element was ever on screen. Without `IntersectionObserver` (an old browser) it counts as seen. */
-function useSeen<T extends Element>(): [RefObject<T | null>, boolean] {
-  const ref = useRef<T | null>(null);
-  const [seen, setSeen] = useState(typeof IntersectionObserver === 'undefined');
-  useEffect(() => {
-    const element = ref.current;
-    if (seen || element === null) return undefined;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) setSeen(true);
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [seen]);
-  return [ref, seen];
-}
+import { useSeen } from './use-seen.js';
 
 /** What stands for the cover while there is none: the shape of the format, never a cover someone did not choose. */
-const FORMAT_GLYPHS: Readonly<Record<ContentFormat, string>> = { image: '▣', carousel: '▤', reels: '▶', long_video: '▶', vsl: '▶' };
+export const FORMAT_GLYPHS: Readonly<Record<ContentFormat, string>> = { image: '▣', carousel: '▤', reels: '▶', long_video: '▶', vsl: '▶' };
 
 /** The contract validates the URL; a response is untrusted input and only an http(s) address becomes an `src`. */
-const isHttpUrl = (value: string): boolean => /^https?:\/\//i.test(value);
+export const isHttpUrl = (value: string): boolean => /^https?:\/\//i.test(value);
 
 /**
  * The cover of a content, in the calendar and in the feed. The signed URL of an image is asked only once the

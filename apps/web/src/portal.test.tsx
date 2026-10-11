@@ -15,6 +15,7 @@ import { createQueryClient } from './query.js';
 import { portalClientQueryKey } from './portal.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
+import { createPortalContentsApi } from './portal-contents-fixture.js';
 import { createPortalScriptsApi, portalStudyBody, scriptError } from './portal-fixture.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
 
@@ -102,6 +103,8 @@ interface Scenario {
   readonly legal?: () => Response | Promise<Response>;
   /** The story scripts of the portal; none by default, as a client with nothing sent for any day. */
   readonly scripts?: ReturnType<typeof createPortalScriptsApi>;
+  /** The contents of the portal; none by default, as a client with nothing planned for any month. */
+  readonly contents?: ReturnType<typeof createPortalContentsApi>;
 }
 
 const makeFetch = (scenario: Scenario = {}) => {
@@ -117,6 +120,10 @@ const makeFetch = (scenario: Scenario = {}) => {
     if (path.endsWith('/me/legal-acceptances')) return scenario.legal?.() ?? json(legalAccepted);
     if (path.startsWith(`/clients/${CLIENT_ID}/story-scripts`)) {
       const answered = (scenario.scripts ?? createPortalScriptsApi(CLIENT_ID, () => new Date())).handle(url, method);
+      if (answered !== undefined) return answered;
+    }
+    if (path.startsWith(`/clients/${CLIENT_ID}/contents`)) {
+      const answered = (scenario.contents ?? createPortalContentsApi(CLIENT_ID)).handle(url, method);
       if (answered !== undefined) return answered;
     }
     if (path === `/clients/${CLIENT_ID}`) return scenario.portal?.() ?? json(portalClient());
@@ -195,13 +202,13 @@ describe('client portal shell (#141)', () => {
     const { probe } = renderPortal(impl, `/portal/${CLIENT_ID}`);
     expect(await screen.findByRole('heading', { name: 'Olá, Maria' })).toBeTruthy();
     expect(probe.pathname).toBe(portalUrl('inicio'));
-    expect(within(nav()).getAllByRole('link').map((link) => link.textContent)).toEqual(['Início', 'Calendário', 'Marca', 'Relatórios']);
+    expect(within(nav()).getAllByRole('link').map((link) => link.textContent)).toEqual(['Início', 'Conteúdos', 'Marca', 'Relatórios']);
     expect(within(nav()).getByRole('link', { name: 'Início' }).getAttribute('aria-current')).toBe('page');
 
-    clickTab('Calendário');
-    expect(await screen.findByRole('heading', { name: 'Calendário' })).toBeTruthy();
-    expect(probe.pathname).toBe(portalUrl('calendario'));
-    expect(within(nav()).getByRole('link', { name: 'Calendário' }).getAttribute('aria-current')).toBe('page');
+    clickTab('Conteúdos');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Conteúdos' })).toBeTruthy();
+    expect(probe.pathname).toBe(portalUrl('conteudos'));
+    expect(within(nav()).getByRole('link', { name: 'Conteúdos' }).getAttribute('aria-current')).toBe('page');
 
     clickTab('Relatórios');
     expect(await screen.findByRole('heading', { name: 'Relatórios' })).toBeTruthy();
@@ -256,7 +263,6 @@ describe('client portal shell (#141)', () => {
   });
 
   it.each([
-    ['Calendário', 'Aqui você vai ver os posts planejados para sua marca e aprovar cada um.'],
     ['Relatórios', 'Aqui você vai ver os resultados do trabalho que sua agência faz para você.']
   ])('draws %s as a skeleton with its reason and no clickable control', async (label, sentence) => {
     const { impl } = makeFetch();
@@ -279,7 +285,7 @@ describe('client portal shell (#141)', () => {
     await screen.findByRole('heading', { name: 'Olá, Maria' });
     expect(document.title).toBe('Início — Portal do cliente — Ageniza');
 
-    for (const label of ['Calendário', 'Marca', 'Relatórios']) {
+    for (const label of ['Conteúdos', 'Marca', 'Relatórios']) {
       clickTab(label);
       await screen.findByRole('heading', { name: label === 'Marca' ? 'Sua marca' : label });
       expect(document.title).toBe(`${label} — Portal do cliente — Ageniza`);
@@ -320,8 +326,8 @@ describe('client portal shell (#141)', () => {
     const { impl } = makeFetch({ portal: () => json(portalClient({ home: { threadsAnsweredByAgency: 2, brandStudyFilled: 5, contentsAwaitingApproval: 0 } })) });
     const { container } = renderPortal(impl);
     await screen.findByRole('heading', { name: 'Olá, Maria' });
-    clickTab('Calendário');
-    await screen.findByRole('heading', { name: 'Calendário' });
+    clickTab('Conteúdos');
+    await screen.findByRole('heading', { name: 'Conteúdos' });
 
     expect(container.textContent).not.toMatch(/thread|status|arquivad|onboarding|persona/i);
   });
@@ -334,10 +340,10 @@ describe('client portal shell (#141)', () => {
     expect(calls.filter((call) => call === `GET /clients/${CLIENT_ID}`).length).toBe(1);
 
     active = false;
-    clickTab('Calendário');
+    clickTab('Conteúdos');
 
     expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
-    expect(probe.pathname).toBe(portalUrl('calendario'));
+    expect(probe.pathname).toBe(portalUrl('conteudos'));
     // The same not-found as any unknown address: never a message confirming the portal existed.
     expect(screen.queryByText(/acesso/i)).toBeNull();
   });
@@ -567,10 +573,10 @@ describe('the Início: approvals and the script of today (#271)', () => {
       const { probe } = renderPortal(impl);
       const link = await screen.findByRole('link', { name: new RegExp(`^${text}\\s*ver$`) });
       expect(within(link).getByText('ver')).toBeTruthy();
-      expect(link.getAttribute('href')).toBe(portalUrl('calendario'));
+      expect(link.getAttribute('href')).toBe(portalUrl('conteudos'));
       fireEvent.click(link);
-      expect(await screen.findByRole('heading', { name: 'Calendário' })).toBeTruthy();
-      expect(probe.pathname).toBe(portalUrl('calendario'));
+      expect(await screen.findByRole('heading', { level: 1, name: 'Conteúdos' })).toBeTruthy();
+      expect(probe.pathname).toBe(portalUrl('conteudos'));
     });
 
     it('is the next action over the answer of the agency and the brand study, and gives way to them when nothing waits', async () => {

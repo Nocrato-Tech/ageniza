@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Link, Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 
 import type { AuthSessionSnapshot } from './auth.js';
@@ -25,6 +25,7 @@ import { LoginPage } from './login.js';
 import { NoAccessPage } from './no-access.js';
 import { ClientAccessTab } from './portal-access.js';
 import { PortalAreaLayout, PortalHomePage, PortalSkeletonPage } from './portal.js';
+import { PortalContentsPage } from './portal-contents.js';
 import { PortalBrandPage } from './portal-brand.js';
 import { ResetPasswordPage } from './reset-password.js';
 import { SessionWatch } from './session-watch.js';
@@ -42,6 +43,13 @@ export function ProtectedLayout({ session, children }: { session: AuthSessionSna
     <SessionWatch />
     <div className="app-shell"><a className="skip-link" href="#main-content">Pular para o conteúdo</a><header className="protected-header"><Link to="/">Ageniza</Link><AccountMenu user={session.user} /></header><main id="main-content">{children ?? <Outlet />}</main></div>
   </SessionGate>;
+}
+
+/** The portal's address from before it was Conteúdos: the e-mail to the client still points at it (#571). */
+function PortalCalendarRedirect() {
+  const { clienteId = '' } = useParams();
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: `/portal/${encodeURIComponent(clienteId)}/conteudos`, search }} replace />;
 }
 
 function PublicHome() { return <section><h1>Ageniza</h1><p>Operações de agência, em um só lugar.</p><Link to="/status">Status do serviço</Link></section>; }
@@ -131,7 +139,8 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
     <Route path="portal/:clienteId" element={<SessionGate session={session}><SessionWatch /><PortalAreaLayout /></SessionGate>}>
       <Route index element={<Navigate to="inicio" replace />} />
       <Route path="inicio" element={<PortalHomePage />} />
-      <Route path="calendario" element={<PortalSkeletonPage title="Calendário" description="Aqui você vai ver os posts planejados para sua marca e aprovar cada um." />} />
+      <Route path="conteudos" element={<PortalContentsPage />} />
+      <Route path="calendario" element={<PortalCalendarRedirect />} />
       <Route path="marca" element={<PortalBrandPage />} />
       <Route path="relatorios" element={<PortalSkeletonPage title="Relatórios" description="Aqui você vai ver os resultados do trabalho que sua agência faz para você." />} />
       <Route path="*" element={<NotFoundPage as="section" />} />

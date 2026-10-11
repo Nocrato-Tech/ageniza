@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { MediaDownloadUrlResponseSchema, type MediaCategory, type MediaDownloadUrlResponse } from '@ageniza/contracts';
@@ -7,22 +7,7 @@ import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
 import { useApiClient } from './http.js';
 import { signedUrlStaleTime } from './signed-url.js';
-
-/** Whether the element was ever on screen. Without `IntersectionObserver` (an old browser) it counts as seen. */
-function useSeen<T extends Element>(): [RefObject<T | null>, boolean] {
-  const ref = useRef<T | null>(null);
-  const [seen, setSeen] = useState(typeof IntersectionObserver === 'undefined');
-  useEffect(() => {
-    const element = ref.current;
-    if (seen || element === null) return undefined;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) setSeen(true);
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [seen]);
-  return [ref, seen];
-}
+import { useSeen } from './use-seen.js';
 
 const GLYPHS: Readonly<Record<MediaCategory, string>> = { image: '▣', video: '▶' };
 
