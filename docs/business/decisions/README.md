@@ -123,11 +123,9 @@ Uma linha por decisão, agrupada por módulo. Cada decisão é um arquivo `AAAA-
 - 2026-10-08 — [O e-mail de "conteúdos para aprovar" sai 15 minutos depois do último envio para aprovação](2026-10-08-email-de-conteudos-para-aprovar-sai-15-minutos-depois-do-ultimo-envio.md)
 - 2026-10-08 — [A fila de notificação só se lê e só se escreve por função](2026-10-08-fila-de-notificacao-so-se-le-e-se-escreve-por-funcao.md)
 - 2026-10-08 — [O resumo diário de "publicado" sai na virada do dia em Brasília](2026-10-08-resumo-diario-de-publicados-fecha-na-virada-do-dia-em-brasilia.md)
-- 2026-10-11 — [Consulta por período: teto de 500 itens e formato da resposta](2026-10-11-consulta-por-periodo-teto-de-500-itens-e-formato-da-resposta.md)
 - 2026-10-11 — [Conteúdo: editar aceita o responsável e a lista de mídia na mesma chamada](2026-10-11-conteudo-editar-aceita-responsavel-e-lista-de-midia-na-mesma-chamada.md)
 - 2026-10-11 — [Conteúdo: a leitura por id traz as mídias, as subtarefas e o resumo da conversa](2026-10-11-conteudo-leitura-por-id-traz-midias-subtarefas-e-resumo-da-conversa.md)
 - 2026-10-11 — [Conteúdo: o texto livre da rota e os códigos de erro da agência](2026-10-11-conteudo-texto-livre-da-rota-e-codigos-de-erro-da-agencia.md)
-- 2026-10-11 — [Escrita na filha do cliente recusada pela política é relida: arquivado é 409, só cliente aberto é 403](2026-10-11-escrita-na-filha-do-cliente-recusada-pela-politica-e-relida-como-arquivamento.md)
 - 2026-10-11 — [O nome de quem gravou o roteiro sai de uma função de leitura de propósito único](2026-10-11-nome-de-quem-gravou-o-roteiro-por-funcao-de-leitura.md)
 - 2026-10-11 — [Roteiro de stories na API: limites, texto livre e edição pela lista inteira](2026-10-11-roteiro-de-stories-na-api-limites-texto-e-edicao-pela-lista-inteira.md)
 - 2026-10-11 — [SPEC de Conteúdo aprovada, com o recorte de implementação](2026-10-11-spec-de-conteudo-aprovada-com-o-recorte.md)
@@ -177,6 +175,8 @@ Uma linha por decisão, agrupada por módulo. Cada decisão é um arquivo `AAAA-
 - 2026-10-10 — [A API lê a autorização de agência de uma função, e a RLS não](2026-10-10-a-api-le-a-autorizacao-de-agencia-de-uma-funcao-e-a-rls-nao.md)
 - 2026-10-10 — [`agency_user_can` também nega a chave que não existe no catálogo](2026-10-10-agency-user-can-tambem-nega-chave-fora-do-catalogo.md)
 - 2026-10-10 — [O "Voltar ao início" da página não encontrada leva ao início de cada lado](2026-10-10-voltar-ao-inicio-da-pagina-nao-encontrada-leva-ao-inicio-de-cada-lado.md)
+- 2026-10-11 — [Consulta por período: teto de 500 itens e formato da resposta](2026-10-11-consulta-por-periodo-teto-de-500-itens-e-formato-da-resposta.md)
+- 2026-10-11 — [Escrita na filha do cliente recusada pela política é relida: arquivado é 409, só cliente aberto é 403](2026-10-11-escrita-na-filha-do-cliente-recusada-pela-politica-e-relida-como-arquivamento.md)
 
 ## Processo e operação
 
