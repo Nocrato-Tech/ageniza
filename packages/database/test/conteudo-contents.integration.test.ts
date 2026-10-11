@@ -64,11 +64,11 @@ const asOwnerWithActor = async (actor: string, work: (transaction: Knex.Transact
   });
 };
 
-const insertContent = (user: string, extra: Record<string, unknown> = {}): Promise<string> => {
-  const id = randomUUID();
-  return w.asUser(user, (transaction) => transaction('contents').insert({
-    id, client_id: ids.clientA1, title: 'Lançamento', platform: 'instagram', format: 'reels', publish_on: '2026-10-20', folder_id: folderA1, ...extra
-  })).then(() => id);
+const insertContent = async (user: string, extra: Record<string, unknown> = {}): Promise<string> => {
+  const [{ id }] = await w.asUser(user, (transaction) => transaction('contents').insert({
+    client_id: ids.clientA1, title: 'Lançamento', platform: 'instagram', format: 'reels', publish_on: '2026-10-20', folder_id: folderA1, ...extra
+  }).returning('id'));
+  return id as string;
 };
 
 const updateContent = (user: string, id: string, patch: Record<string, unknown>): Promise<number> =>
@@ -83,7 +83,7 @@ const reelsReady = async (status: ContentStatus = 'in_production'): Promise<stri
 describe('what ageniza_app may write on the three tables (issue #249)', () => {
   it('inserts the planning columns of a content, updates the editable ones, and deletes and truncates nothing', async () => {
     expect(await w.columnsWithPrivilege('contents', 'insert')).toEqual(
-      ['caption', 'client_id', 'cover_asset_id', 'folder_id', 'format', 'id', 'owner_user_id', 'platform', 'publish_at_time', 'publish_on', 'title']
+      ['caption', 'client_id', 'cover_asset_id', 'folder_id', 'format', 'owner_user_id', 'platform', 'publish_at_time', 'publish_on', 'title']
     );
     expect(await w.columnsWithPrivilege('contents', 'update')).toEqual(
       ['caption', 'cover_asset_id', 'folder_id', 'format', 'owner_user_id', 'publish_at_time', 'publish_on', 'title']
@@ -99,7 +99,7 @@ describe('what ageniza_app may write on the three tables (issue #249)', () => {
 
   it('inserts the planning columns of a task, updates the editable ones, and deletes and truncates nothing', async () => {
     expect(await w.columnsWithPrivilege('content_tasks', 'insert')).toEqual(
-      ['assignee_user_id', 'client_id', 'content_id', 'description', 'due_on', 'id', 'title']
+      ['assignee_user_id', 'client_id', 'content_id', 'description', 'due_on', 'title']
     );
     expect(await w.columnsWithPrivilege('content_tasks', 'update')).toEqual(['assignee_user_id', 'description', 'due_on', 'title']);
     expect(await w.tablePrivileges('content_tasks')).toEqual({ can_select: true, table_insert: false, table_update: false, can_delete: false, can_truncate: false });
@@ -183,13 +183,13 @@ describe('who creates a content, and what the row may carry (issue #249)', () =>
     ['a collaborator with a link to the client and a role without conteudo.*', () => ids.dualBare],
     ['an Admin of another agency who holds a link to the client', () => ids.crossDual]
   ] as const)('refuses %s a content, leaving no row', async (_label, user) => {
-    const id = randomUUID();
+    const title = `Post ${randomUUID()}`;
 
     await expect(w.asUser(user(), (transaction) => transaction('contents').insert({
-      id, client_id: ids.clientA1, title: 'Post', platform: 'instagram', format: 'image', publish_on: '2026-10-20', folder_id: folderA1, owner_user_id: ids.productionA
+      client_id: ids.clientA1, title, platform: 'instagram', format: 'image', publish_on: '2026-10-20', folder_id: folderA1, owner_user_id: ids.productionA
     }))).rejects.toMatchObject(rlsViolation);
 
-    expect(await w.getOwner().knex('contents').where({ id }).select('id')).toHaveLength(0);
+    expect(await w.getOwner().knex('contents').where({ title }).select('id')).toHaveLength(0);
   });
 
   it('refuses a content for a client of another agency, for an archived client and for a suspended agency', async () => {

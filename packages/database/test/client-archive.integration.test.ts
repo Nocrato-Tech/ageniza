@@ -206,11 +206,13 @@ describe('a write that races the archive of its client does not survive it (issu
   it('contents: a content written first and planned after the closing is cancelled by the archive that waited for it', async () => {
     const client = await newClient();
     const folder = await w.folderOf(client);
-    const id = randomUUID();
+    let id = '';
 
-    expect(await archiveWhileWriting(client, ids.adminA, async (t) => t('contents').insert({
-      id, client_id: client, title: 'Depois do encerramento', platform: 'instagram', format: 'reels', publish_on: await daysFromToday(10), folder_id: folder
-    }))).toBe('archived');
+    expect(await archiveWhileWriting(client, ids.adminA, async (t) => {
+      [{ id }] = await t('contents').insert({
+        client_id: client, title: 'Depois do encerramento', platform: 'instagram', format: 'reels', publish_on: await daysFromToday(10), folder_id: folder
+      }).returning('id');
+    })).toBe('archived');
 
     expect(await contentStatus(id)).toBe('cancelled');
   });
