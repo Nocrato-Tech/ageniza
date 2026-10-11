@@ -212,7 +212,8 @@ describe('content create and update bodies', () => {
   });
 });
 
-// One rule of free text in Conteudo: the story script's. These four were accepted by an older copy of the rule.
+// One rule of free text in Conteudo: the story script's. These were accepted by an older copy of the rule. The emoji family and the keycap
+// were refused here until #539 and are now accepted whole by the shared helper (invisible-characters.test.ts has the edges).
 describe.each([
   ['title', valid],
   ['caption', validCaption]
@@ -220,9 +221,8 @@ describe.each([
   it.each([
     ['zero-width joiner between letters', 'a\u200Db'],
     ['zero-width non-joiner between letters', 'a\u200Cb'],
-    ['zero-width joiner of an emoji family', '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}'],
     ['text selector after a pictograph', '\u2764\uFE0E'],
-    ['emoji selector after a digit (keycap)', '1\uFE0F\u20E3'],
+    ['emoji selector after a digit, without the keycap', '1\uFE0F'],
     ['text selector after a digit', '1\uFE0E'],
     ['emoji selector after a number sign', '#\uFE0F'],
     ['musical null notehead U+1D159', 'a\u{1D159}b'],
@@ -234,5 +234,12 @@ describe.each([
   it('keeps accepting the emoji selector right after a pictograph and plain pictographs', () => {
     expect(accepts('\u2764\uFE0F')).toBe(true);
     expect(accepts('\u{1F3AC}')).toBe(true);
+  });
+
+  it('accepts a complete emoji sequence, and refuses the same one broken', () => {
+    expect(accepts('\u{1F468}‍\u{1F469}‍\u{1F467}')).toBe(true);
+    expect(accepts('1️⃣')).toBe(true);
+    expect(accepts('\u{1F468}‍\u{1F469}‍')).toBe(false);
+    expect(accepts('1️⃣⃣')).toBe(false);
   });
 });

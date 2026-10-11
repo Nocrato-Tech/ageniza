@@ -2510,7 +2510,7 @@ path: '/agencies/:agencyId/roles',
     description: [
       'No primeiro nível, ou dentro de uma pasta de primeiro nível do mesmo cliente (`parentId`): há só dois níveis.',
       'Exige `conteudo.operar` e também `conteudo.visualizar`, porque a resposta é uma leitura. O nome não aceita',
-      'caracteres de controle, invisíveis nem os dois joiners, e tem até 80 caracteres.'
+      'caracteres de controle, invisíveis nem joiners fora de uma sequência de emoji completa (família, bandeira de subdivisão, tom de pele), e tem até 80 caracteres.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'conteudo.operar',
@@ -2794,7 +2794,7 @@ path: '/agencies/:agencyId/roles',
       'Um dia (`scriptOn`, `AAAA-MM-DD`) e as cenas na ordem em que foram enviadas, até 30. O roteiro nasce em',
       'rascunho e o portal não o vê. Pode haver mais de um roteiro por cliente e dia, e um roteiro sem cenas.',
       'O texto e a orientação da cena recusam caractere de controle (menos tabulação e quebra de linha) e',
-      'invisível, inclusive o espaço de largura zero e os joiners. Precisa de `conteudo.operar` **e** de',
+      'invisível, inclusive o espaço de largura zero e os joiners fora de uma sequência de emoji completa. Precisa de `conteudo.operar` **e** de',
       '`conteudo.visualizar`: uma escrita que não lê o que escreveu é cega. Cliente arquivado dá 409, nas duas',
       'janelas da corrida com o arquivamento.'
     ].join('\n'),

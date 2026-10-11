@@ -147,7 +147,7 @@ describe('what a comment may carry (#259)', () => {
   });
 
   // One rule of free text in the product: the story script's. A format character is refused in the middle of a
-  // word as much as at its edges, and the composed emoji (a joiner between pictographs) waits for #539.
+  // word as much as at its edges, and a joiner is accepted only inside a complete emoji sequence (#539).
   it('refuses every format character between letters, the bidi controls and the joiners included', () => {
     for (const hidden of [
       text(0x200b), text(0x200c), text(0x200d), text(0x200e), text(0x200f), text(0x202a), text(0x202e), text(0x2060),
@@ -157,7 +157,10 @@ describe('what a comment may carry (#259)', () => {
         expect(CommentBodySchema.safeParse(body).success, JSON.stringify(body)).toBe(false);
       }
     }
-    expect(CommentBodySchema.safeParse(`${text(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467)} juntos`).success).toBe(false);
+    expect(CommentBodySchema.safeParse(`${text(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467)} juntos`).success).toBe(true);
+    expect(CommentBodySchema.safeParse(`${text(0x1f468, 0x200d, 0x1f469, 0x200d)} juntos`).success).toBe(false);
+    expect(CommentBodySchema.safeParse(`um${text(0x200d)}comentário`).success).toBe(false);
+    expect(CommentBodySchema.safeParse(`Top ${text(0x31, 0xfe0f, 0x20e3)}`).success).toBe(true);
   });
 
   it('says what the story script says about every character of the Basic Multilingual Plane and the musical null', () => {

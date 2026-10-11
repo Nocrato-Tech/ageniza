@@ -361,6 +361,22 @@ describe('creating a story script (issue #258)', () => {
     expect([await scriptCount(cMain), await sceneCount(cMain)]).toEqual(before);
   });
 
+  it('keeps a complete emoji sequence in a scene and refuses the same one broken (issue #539)', async () => {
+    const family = text(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467);
+    const keycap = text(0x31, 0xfe0f, 0x20e3);
+    const created = await call('POST', agencyScripts(agencyA, cMain), 'opVis', { scriptOn: '2026-10-21', scenes: [{ text: `Familia ${family}`, guidance: `Passo ${keycap}` }] });
+
+    expect(created.statusCode).toBe(201);
+    expect(created.json().scenes.map((scene: { text: string; guidance: string }) => [scene.text, scene.guidance])).toEqual([[`Familia ${family}`, `Passo ${keycap}`]]);
+
+    const before = [await scriptCount(cMain), await sceneCount(cMain)];
+    for (const broken of [`Familia ${family}${text(0x200d)}`, `Familia ${text(0x61, 0x200d, 0x62)}`, `Passo ${text(0x20e3)}`]) {
+      const reply = await call('POST', agencyScripts(agencyA, cMain), 'opVis', { scriptOn: '2026-10-22', scenes: [{ text: 'Abrir', guidance: broken }] });
+      expect({ broken, status: reply.statusCode }).toEqual({ broken, status: 400 });
+    }
+    expect([await scriptCount(cMain), await sceneCount(cMain)]).toEqual(before);
+  });
+
   it('answers the same 404 for a client of another agency, an absent one and a malformed id', async () => {
     const before = await scriptCount(cB);
 
