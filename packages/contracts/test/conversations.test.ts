@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CommentBodySchema,
+  hasHiddenStoryCharacters,
   CreateCommentRequestSchema,
   CreateThreadRequestSchema,
   ThreadListQuerySchema,
@@ -139,10 +140,32 @@ describe('what a comment may carry (#259)', () => {
     }
   });
 
-  it('keeps what a person really writes: emoji with their selector and joiners, accents and line breaks', () => {
-    const family = text(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467);
-    for (const body of [text(HEART, VS16), `Adorei ${text(0x2600, VS16)}!`, `${family} juntos`, 'coração', 'linha 1\nlinha 2\t3', text(0x61, 0x200d, 0x62)]) {
+  it('keeps what a person really writes: an emoji with its selector, accents and line breaks', () => {
+    for (const body of [text(HEART, VS16), `Adorei ${text(0x2600, VS16)}!`, 'coração', 'linha 1\nlinha 2\t3', 'Ótimo 👍 e 🎉']) {
       expect(CommentBodySchema.safeParse(body).success, JSON.stringify(body)).toBe(true);
     }
+  });
+
+  // One rule of free text in the product: the story script's. A format character is refused in the middle of a
+  // word as much as at its edges, and the composed emoji (a joiner between pictographs) waits for #539.
+  it('refuses every format character between letters, the bidi controls and the joiners included', () => {
+    for (const hidden of [
+      text(0x200b), text(0x200c), text(0x200d), text(0x200e), text(0x200f), text(0x202a), text(0x202e), text(0x2060),
+      text(0x2066), text(0x2069), text(0xfeff), text(0x00ad), text(0x061c)
+    ]) {
+      for (const body of [`a${hidden}b`, `a${hidden}`, `${hidden}a`, `um comentário${hidden}`]) {
+        expect(CommentBodySchema.safeParse(body).success, JSON.stringify(body)).toBe(false);
+      }
+    }
+    expect(CommentBodySchema.safeParse(`${text(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467)} juntos`).success).toBe(false);
+  });
+
+  it('says what the story script says about every character of the Basic Multilingual Plane and the musical null', () => {
+    for (let codePoint = 0; codePoint <= 0xffff; codePoint += 1) {
+      if (codePoint >= 0xd800 && codePoint <= 0xdfff) continue;
+      const body = `a${String.fromCodePoint(codePoint)}b`;
+      expect(CommentBodySchema.safeParse(body).success, `U+${codePoint.toString(16)}`).toBe(!hasHiddenStoryCharacters(body));
+    }
+    expect(CommentBodySchema.safeParse(`a${text(0x1d159)}b`).success).toBe(false);
   });
 });

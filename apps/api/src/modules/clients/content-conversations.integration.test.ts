@@ -296,7 +296,7 @@ describe('CLIENTES conversation of a content (#259)', () => {
 
     for (const [key, name] of [
       ['admin', 'Adriana Admin'], ['manager', 'Marta Gestora'], ['production', 'Paulo Produção'], ['sales', 'Vera Vendas'],
-      ['finance', 'Fábio Financeiro'], ['contentRead', 'Só Lê Conteúdo'], ['contentWrite', 'Só Opera Conteúdo'], ['clientBoth', 'Só Clientes'],
+      ['finance', 'Fábio Financeiro'], ['contentRead', 'Só Lê Conteúdo'], ['contentWrite', 'Só Opera Conteúdo'], ['clientBoth', 'Só Clientes'], ['clientOpContentRead', 'Opera Cliente Lê Conteúdo'],
       ['ownerUser', 'Dona da Agência'], ['otherAdmin', 'Admin da Outra'], ['twoAgencies', 'Pessoa Duas Agências'],
       ['portalOne', 'Ana do Portal'], ['portalMulti', 'Bia dos Dois Clientes'], ['portalOther', 'Portal Outro Cliente'],
       ['portalB', 'Portal Outra Agência'], ['dual', 'Pessoa Dupla'], ['dualBare', 'Pessoa Dupla Sem Papel'], ['crossDual', 'Pessoa Dupla Cruzada']
@@ -327,6 +327,8 @@ describe('CLIENTES conversation of a content (#259)', () => {
     const contentReadRole = await customRole('conteudo.visualizar');
     const contentWriteRole = await customRole('conteudo.operar');
     const clientBothRole = await customRole('cliente.visualizar', 'cliente.operar');
+    // Passes the guard of the route through cliente.operar and reads a content, but cannot operate one: the service is the only barrier.
+    const clientOpContentReadRole = await customRole('cliente.operar', 'conteudo.visualizar');
     const unrelatedRole = await customRole('midia.enviar');
 
     await owner.knex('agency_memberships').insert([
@@ -338,6 +340,7 @@ describe('CLIENTES conversation of a content (#259)', () => {
       { agency_id: agencyA, user_id: users.contentRead!.id, role_id: contentReadRole },
       { agency_id: agencyA, user_id: users.contentWrite!.id, role_id: contentWriteRole },
       { agency_id: agencyA, user_id: users.clientBoth!.id, role_id: clientBothRole },
+      { agency_id: agencyA, user_id: users.clientOpContentRead!.id, role_id: clientOpContentReadRole },
       { agency_id: agencyA, user_id: users.twoAgencies!.id, role_id: roleId('admin') },
       { agency_id: agencyB, user_id: users.twoAgencies!.id, role_id: roleId('admin') },
       { agency_id: agencyB, user_id: users.otherAdmin!.id, role_id: roleId('admin') },
@@ -583,6 +586,29 @@ describe('CLIENTES conversation of a content (#259)', () => {
       expect((await commentsAs(cookies.contentWrite!, base(), threadId)).statusCode).toBe(403);
       expect(await snapshotOf(clientA1)).toEqual(before);
       expect(await threadsOfContent(free)).toHaveLength(0);
+    });
+
+    it('with cliente.operar and conteudo.visualizar, which passes the guard of the route, reads a content and writes nothing, before anything is sent to the database', async () => {
+      const inProduction = await seedContent(clientA1, 'in_production');
+      const open = await seedContent(clientA1, 'awaiting_approval');
+      const threadId = await seedContentThread(clientA1, open, [{ author: 'portalOne', side: 'client', at: '2026-10-01T10:00:00Z' }]);
+      const free = await seedContent(clientA1, 'approved');
+      const before = await snapshotOf(clientA1);
+      expect((await listAs(cookies.clientOpContentRead!, base(), open)).statusCode).toBe(200);
+      expect((await commentsAs(cookies.clientOpContentRead!, base(), threadId)).statusCode).toBe(200);
+
+      const sent = await writesSentBy(async (proxied) => {
+        // Open and in production, free and with a conversation: the answer is the permission's 403 each time, never the state's 409.
+        for (const contentId of [inProduction, free, open]) {
+          expect((await openAs(cookies.clientOpContentRead!, base(), contentId, 'x', proxied)).statusCode, `open ${contentId}`).toBe(403);
+        }
+        expect((await commentAs(cookies.clientOpContentRead!, base(), threadId, 'x', proxied)).statusCode).toBe(403);
+        expect((await resolveAs(cookies.clientOpContentRead!, base(), threadId, proxied)).statusCode).toBe(403);
+      });
+      expect(sent).toEqual([]);
+      expect(await snapshotOf(clientA1)).toEqual(before);
+      expect(await threadsOfContent(free)).toHaveLength(0);
+      expect(await threadsOfContent(inProduction)).toHaveLength(0);
     });
 
     it('with every cliente permission and no conteudo one neither reads nor writes the conversation of a content', async () => {
@@ -952,7 +978,11 @@ describe('CLIENTES conversation of a content (#259)', () => {
       const threadId = await seedContentThread(clientA1, contentId, [{ author: 'manager', side: 'agency', at: '2026-10-01T10:00:00Z' }]);
       const before = await snapshotOf(clientA1);
       expect((await call('POST', base(), cookies.portalOne!, { subject: { contentId }, body: 'x', side: 'agency' })).statusCode).toBe(400);
-      for (const body of [text(0x034f), `a${text(0x034f)}b`, text(0x2800), `a${text(0xfe0e)}b`, text(0x1d159), text(0x200b, 0x200d), `a${text(0x0085)}b`, `a${text(0)}b`]) {
+      // The one rule of free text of the product: the invisible, the bidi inversion (U+202E), the other format characters and the controls.
+      for (const body of [
+        text(0x034f), `a${text(0x034f)}b`, text(0x2800), `a${text(0xfe0e)}b`, text(0x1d159), text(0x200b, 0x200d), `a${text(0x0085)}b`, `a${text(0)}b`,
+        `a${text(0x202e)}b`, `a${text(0x200b)}b`, `a${text(0xfeff)}b`, `a${text(0x2066)}b`
+      ]) {
         const label = JSON.stringify(body);
         expect((await openAs(cookies.portalOne!, base(), contentId, body)).statusCode, `portal open ${label}`).toBe(400);
         expect((await commentAs(cookies.portalOne!, base(), threadId, body)).statusCode, `portal comment ${label}`).toBe(400);
@@ -961,7 +991,9 @@ describe('CLIENTES conversation of a content (#259)', () => {
       }
       expect(await snapshotOf(clientA1)).toEqual(before);
       for (const [cookie, url] of [[cookies.portalOne!, base()], [cookies.manager!, agencyThreads(agencyA, clientA1)]] as const) {
-        expect((await commentAs(cookie, url, threadId, `Gostei ${text(0x2764, 0xfe0f)} ${text(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467)}`)).statusCode).toBe(201);
+        expect((await commentAs(cookie, url, threadId, `Gostei ${text(0x2764, 0xfe0f)} 👍`)).statusCode).toBe(201);
+        // The composed emoji waits for #539: its joiner is a format character.
+        expect((await commentAs(cookie, url, threadId, text(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467))).statusCode).toBe(400);
       }
     });
   });

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { BrandSectionKeySchema, hasForbiddenControlCharacters, utf8ByteLength } from './clients.js';
 import { createPaginatedResponseSchema, PaginationInputSchema } from './pagination.js';
+import { hasHiddenStoryCharacters } from './story-scripts.js';
 
 /**
  * The conversation between an agency and its client (specs/clientes.md sections 3, 4 and 6). The
@@ -31,34 +32,19 @@ export const ConversationSubjectSchema = z.union([
   z.object({ contentId: z.string().uuid() }).strict()
 ]);
 
-/** Tab, LF and CR are the line breaks a person types; every other control character, and the line and paragraph separators, is refused. */
-const LINE_BREAKS = /[\t\n\r]/g;
-const CONTROL_OR_SEPARATOR = /[\p{Cc}\p{Zl}\p{Zp}]/u;
-/**
- * What renders as nothing and is not a format character (`Cf`, which the emoji joiners belong to): the combining grapheme
- * joiner, the variation selectors, the Hangul fillers and the like (`Default_Ignorable_Code_Point`), the Braille blank
- * and the musical null notehead (U+1D159), which most fonts draw as a space. The one exception is VS16 right after a
- * pictograph, which is how a phone writes a heart.
- */
-const IGNORABLE_NOT_FORMAT = /(?!\p{Cf})[\p{Default_Ignorable_Code_Point}\u2800\u{1D159}]/u;
-const EMOJI_PRESENTATION = /(?<=\p{Extended_Pictographic})\uFE0F/gu;
-/** Spaces and format characters (zero-width space, joiners, bidi marks, the byte order mark): a text made only of them says nothing. */
+/** Spaces and format characters: a text made only of them says nothing. */
 const SPACE_OR_FORMAT = /[\s\p{Cf}]/gu;
-
-const hasHiddenCommentCharacters = (value: string): boolean => {
-  const withoutLineBreaks = value.replace(LINE_BREAKS, '');
-  return CONTROL_OR_SEPARATOR.test(withoutLineBreaks) || IGNORABLE_NOT_FORMAT.test(withoutLineBreaks.replace(EMOJI_PRESENTATION, ''));
-};
 
 /**
  * A comment is trimmed, says something a person can read, and is at most 5000 UTF-8 bytes -- the cap the column enforces,
- * so a long accented text is a 400 here and never a 500 from the `octet_length` check. It carries no control character
- * (tab, LF and CR are the line breaks a person types) and no invisible one that is not a format character, and a text of
- * spaces and format characters alone is empty, as it is for the comment of a request for changes in the database.
+ * so a long accented text is a 400 here and never a 500 from the `octet_length` check. Its characters follow the one rule
+ * of free text of the product, the story script's (`hasHiddenStoryCharacters`): no control, bidi, invisible or format
+ * character, which also leaves out the joiners of a composed emoji until the rule learns them (#539). A text of spaces
+ * alone is empty, as it is for the comment of a request for changes in the database.
  */
 export const CommentBodySchema = z.string()
   .refine((value) => !hasForbiddenControlCharacters(value), 'must not contain control characters')
-  .refine((value) => !hasHiddenCommentCharacters(value), 'must not contain control or invisible characters')
+  .refine((value) => !hasHiddenStoryCharacters(value), 'must not contain control or invisible characters')
   .transform((value) => value.trim())
   .pipe(z.string()
     .min(1, 'must not be empty')
