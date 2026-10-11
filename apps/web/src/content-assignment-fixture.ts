@@ -2,6 +2,7 @@ import {
   CreateContentTaskRequestSchema,
   ReturnContentTaskRequestSchema,
   UpdateContentRequestSchema,
+  UpdateContentTaskRequestSchema,
   CONTENT_TASKS_MAX_PER_CONTENT
 } from '@ageniza/contracts';
 
@@ -102,7 +103,7 @@ export const assignmentWorld = (options: AssignmentOptions) => {
       if (options.teamStatus !== undefined) return failure(options.teamStatus, 'INTERNAL');
       return json({ data: team.map((person) => collaborator(person, options.self)), meta: { page: 1, pageSize: 100, totalItems: team.length, totalPages: 1 } });
     }
-    const content = /\/agencies\/[^/]+\/clients\/([^/]+)\/contents\/([^/]+)(\/tasks(?:\/([^/]+)\/(deliver|approve|return))?)?$/.exec(path);
+    const content = /\/agencies\/[^/]+\/clients\/([^/]+)\/contents\/([^/]+)(\/tasks(?:\/([^/]+)(?:\/(deliver|approve|return))?)?)?$/.exec(path);
     if (content === null) return undefined;
     const row = rows.find((candidate) => candidate.id === content[2] && candidate.clientId === content[1]);
     if (row === undefined) return undefined;
@@ -150,8 +151,22 @@ export const assignmentWorld = (options: AssignmentOptions) => {
 
     const found = world.tasks.find((item) => item.id === content[4]);
     if (found === undefined) return failure(404, 'NOT_FOUND');
+    if (content[5] === undefined) {
+      if (call.method !== 'PATCH') return undefined;
+      if (!holds(OPERATE)) return failure(403, 'FORBIDDEN');
+      if (clientArchived) return failure(409, 'CLIENT_ARCHIVED');
+      const parsed = UpdateContentTaskRequestSchema.safeParse(call.body);
+      if (!parsed.success) return failure(400, 'VALIDATION_ERROR');
+      if (closed || found.status === 'approved') return failure(409, 'CONTENT_TASK_STATE');
+      const chosen = parsed.data.assigneeMembershipId;
+      if (chosen !== undefined && invalidAssignee(chosen)) return failure(400, 'CONTENT_TASK_ASSIGNEE_INVALID');
+      if (parsed.data.title !== undefined) found.title = parsed.data.title;
+      if (parsed.data.dueOn !== undefined) found.dueOn = parsed.data.dueOn;
+      if (chosen !== undefined) found.assignee = team.find((person) => person.membershipId === chosen) ?? null;
+      return json({ ...found, approvedBy: null, approvedAt: null });
+    }
     if (clientArchived) return failure(409, 'CLIENT_ARCHIVED');
-    const move = content[5]!;
+    const move = content[5];
     // Who may: a value of the row, not of the role (the owner is read at the moment of the call).
     if (move === 'deliver' && found.assignee?.membershipId !== options.self) return failure(403, 'FORBIDDEN');
     if (move !== 'deliver' && !(world.owner?.membershipId === options.self && options.self !== null) && !holds(APPROVE)) return failure(403, 'FORBIDDEN');

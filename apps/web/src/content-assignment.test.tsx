@@ -229,8 +229,8 @@ describe('Aprovar and Devolver: the person in charge of the content, or conteudo
     const row = complete();
     const tasks = [task({ title: 'Sem entrega', assignee: BRUNO, status: 'pending' }), task({ title: 'Em revisão', assignee: BRUNO, status: 'delivered' }), task({ title: 'Concluída', assignee: BRUNO, status: 'approved' })];
     await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId, tasks });
-    expect(within(taskItem(row, 'Em revisão')).getAllByRole('button').map((button) => button.textContent)).toEqual(['Aprovar', 'Devolver']);
-    expect(within(taskItem(row, 'Sem entrega')).queryAllByRole('button')).toEqual([]);
+    expect(within(taskItem(row, 'Em revisão')).getAllByRole('button').map((button) => button.textContent)).toEqual(['Aprovar', 'Devolver', 'Editar']);
+    expect(within(taskItem(row, 'Sem entrega')).getAllByRole('button').map((button) => button.textContent)).toEqual(['Editar']);
     expect(within(taskItem(row, 'Concluída')).queryAllByRole('button')).toEqual([]);
   });
 
@@ -544,6 +544,207 @@ describe('a new subtask', () => {
       expect(within(panel(row)).queryByRole('button', { name: 'Nova subtarefa' })).toBeNull();
       expect(posts(calls)).toHaveLength(1);
     });
+  });
+});
+
+type Change = { title?: string; person?: string; due?: string };
+/** The rows of a table keep the shape the test reads: every column is optional, none is invented. */
+const changes = <T,>(rows: ReadonlyArray<readonly [string, Change, T]>): ReadonlyArray<readonly [string, Change, T]> => rows;
+
+describe('editing a subtask that exists', () => {
+  const two = (): WorldTask[] => [
+    task({ title: 'Primeira', assignee: ANA, dueOn: '2026-10-20', status: 'pending' }),
+    task({ title: 'Segunda', assignee: BRUNO, dueOn: '2026-10-22', status: 'delivered' })
+  ];
+  const openEdit = async (row: Stored, title: string, options: Partial<AssignmentOptions> = {}) => {
+    const opened = await openAssignment(row, { permissions: OPERATOR, self: ANA.membershipId, tasks: two(), ...options });
+    fireEvent.click(within(taskItem(row, title)).getByRole('button', { name: `Editar “${title}”` }));
+    await waitFor(() => expect((within(dialogOf(row)).getByLabelText(`Responsável por “${title}”`) as HTMLSelectElement).options.length).toBeGreaterThan(2));
+    return opened;
+  };
+  const titleBox = (row: Stored, title: string): HTMLInputElement => within(dialogOf(row)).getByLabelText(`Título de “${title}”`) as HTMLInputElement;
+  const personBox = (row: Stored, title: string): HTMLSelectElement => within(dialogOf(row)).getByLabelText(`Responsável por “${title}”`) as HTMLSelectElement;
+  const dueBox = (row: Stored, title: string): HTMLInputElement => within(dialogOf(row)).getByLabelText(`Prazo de “${title}”`) as HTMLInputElement;
+  const save = (row: Stored, title: string): HTMLButtonElement => within(dialogOf(row)).getByRole('button', { name: `Salvar “${title}”` }) as HTMLButtonElement;
+  const editButtons = (row: Stored): string[] => within(panel(row)).queryAllByRole('button').map((button) => button.getAttribute('aria-label') ?? '').filter((name) => name.startsWith('Editar'));
+
+  it.each([
+    ['conteudo.visualizar only', READER],
+    ['conteudo.aprovar_pela_agencia only', APPROVER_ONLY]
+  ])('offers no edition to who has %s, even as the person in charge', async (_name, permissions) => {
+    const row = complete();
+    await openAssignment(row, { permissions: [...permissions, TEAM], self: ANA.membershipId, tasks: two() });
+    expect(editButtons(row)).toEqual([]);
+  });
+
+  it('offers it to who has conteudo.operar, on a pending and on a delivered subtask, and on no approved one', async () => {
+    const row = complete();
+    const tasks = [...two(), task({ title: 'Terceira', status: 'approved' })];
+    await openAssignment(row, { permissions: OPERATOR, self: CARLA.membershipId, tasks });
+    expect(editButtons(row)).toEqual(['Editar “Primeira”', 'Editar “Segunda”']);
+  });
+
+  it('opens the form of the subtask as it is saved, with the person by name and no id, and the save waits for a change', async () => {
+    const row = complete();
+    await openEdit(row, 'Segunda');
+    expect(titleBox(row, 'Segunda').value).toBe('Segunda');
+    expect(personBox(row, 'Segunda').value).toBe(BRUNO.membershipId);
+    expect(Array.from(personBox(row, 'Segunda').options).map((option) => option.textContent)).toEqual(['Escolha uma pessoa', 'Ana Souza', 'Bruno Lima', 'Carla Dias']);
+    expect(dueBox(row, 'Segunda').value).toBe('2026-10-22');
+    expect(save(row, 'Segunda').disabled).toBe(true);
+    fireEvent.change(titleBox(row, 'Segunda'), { target: { value: 'Segunda parte' } });
+    expect(save(row, 'Segunda').disabled).toBe(false);
+    fireEvent.change(titleBox(row, 'Segunda'), { target: { value: 'Segunda' } });
+    expect(save(row, 'Segunda').disabled).toBe(true);
+    // Blanks around the title are not a change: the API stores it trimmed.
+    fireEvent.change(titleBox(row, 'Segunda'), { target: { value: '  Segunda  ' } });
+    expect(save(row, 'Segunda').disabled).toBe(true);
+    expect(panel(row).textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+  });
+
+  it('keeps the person of the subtask as an option even when the team no longer lists her', async () => {
+    const row = complete();
+    await openEdit(row, 'Segunda', { team: [ANA, CARLA] });
+    expect(Array.from(personBox(row, 'Segunda').options).map((option) => option.textContent)).toEqual(['Escolha uma pessoa', 'Bruno Lima', 'Ana Souza', 'Carla Dias']);
+    expect(personBox(row, 'Segunda').value).toBe(BRUNO.membershipId);
+  });
+
+  it('edits the subtask that was clicked, sends only what changed, and leaves the other one alone', async () => {
+    const row = complete();
+    const tasks = two();
+    const { calls, world } = await openEdit(row, 'Segunda', { tasks });
+    fireEvent.change(titleBox(row, 'Segunda'), { target: { value: '  Segunda parte  ' } });
+    fireEvent.change(personBox(row, 'Segunda'), { target: { value: CARLA.membershipId } });
+    fireEvent.change(dueBox(row, 'Segunda'), { target: { value: '2026-10-25' } });
+    fireEvent.click(save(row, 'Segunda'));
+
+    await waitFor(() => expect(taskItem(row, 'Segunda parte').textContent).toContain('Responsável: Carla Dias · Prazo: 25/10/2026 · Entregue'));
+    expect(writes(calls).map((call) => [call.method, call.path.split('/').at(-1), call.body])).toEqual([['PATCH', tasks[1]!.id, { title: 'Segunda parte', assigneeMembershipId: CARLA.membershipId, dueOn: '2026-10-25' }]]);
+    expect(world.tasks.map((item) => [item.title, item.assignee?.name, item.dueOn])).toEqual([['Primeira', 'Ana Souza', '2026-10-20'], ['Segunda parte', 'Carla Dias', '2026-10-25']]);
+    expect(taskItem(row, 'Primeira').textContent).toContain('Responsável: Ana Souza · Prazo: 20/10/2026 · Pendente');
+    // Closed: the title it was named by has changed, so the whole family of its labels is looked for.
+    expect(within(dialogOf(row)).queryByLabelText(/^Título de /)).toBeNull();
+    expect(within(dialogOf(row)).queryByRole('button', { name: /^Salvar / })).toBeNull();
+  });
+
+  it.each(changes([
+    ['only the title', { title: 'Nova' }, { title: 'Nova' }],
+    ['only the person', { person: CARLA.membershipId }, { assigneeMembershipId: CARLA.membershipId }],
+    ['only the day', { due: '2026-10-30' }, { dueOn: '2026-10-30' }]
+  ]))('sends %s when only that was changed', async (_name, change, body) => {
+    const row = complete();
+    const { calls } = await openEdit(row, 'Primeira');
+    if (change.title !== undefined) fireEvent.change(titleBox(row, 'Primeira'), { target: { value: change.title } });
+    if (change.person !== undefined) fireEvent.change(personBox(row, 'Primeira'), { target: { value: change.person } });
+    if (change.due !== undefined) fireEvent.change(dueBox(row, 'Primeira'), { target: { value: change.due } });
+    fireEvent.click(save(row, 'Primeira'));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0]!.body).toEqual(body);
+  });
+
+  it.each(changes([
+    ['an empty title', { title: '' }, 'Informe o título da subtarefa, em uma linha e com até 120 caracteres.'],
+    ['a title with an invisible character', { title: 'a​b' }, 'Informe o título da subtarefa, em uma linha e com até 120 caracteres.'],
+    ['a title of 121 characters', { title: 'a'.repeat(121) }, 'Informe o título da subtarefa, em uma linha e com até 120 caracteres.'],
+    ['nobody in charge', { person: '' }, 'Escolha o responsável.'],
+    ['no day', { due: '' }, 'Informe o prazo.']
+  ]))('sends nothing with %s, and says why', async (_name, change, text) => {
+    const row = complete();
+    const { calls } = await openEdit(row, 'Primeira');
+    if (change.title !== undefined) fireEvent.change(titleBox(row, 'Primeira'), { target: { value: change.title } });
+    if (change.person !== undefined) fireEvent.change(personBox(row, 'Primeira'), { target: { value: change.person } });
+    if (change.due !== undefined) fireEvent.change(dueBox(row, 'Primeira'), { target: { value: change.due } });
+    fireEvent.click(save(row, 'Primeira'));
+    expect(await within(dialogOf(row)).findByText(text)).toBeTruthy();
+    await settled();
+    expect(writes(calls)).toEqual([]);
+  });
+
+  it('keeps what was typed and the modal when the API refuses, in its own words, and saves on the next try', async () => {
+    const row = complete();
+    const { calls, world } = await openEdit(row, 'Primeira');
+    world.failNext = { match: /\/tasks\/[^/]+$/, response: () => failure(409, 'TRY_AGAIN') };
+    fireEvent.change(titleBox(row, 'Primeira'), { target: { value: 'Primeira revisada' } });
+    fireEvent.change(personBox(row, 'Primeira'), { target: { value: BRUNO.membershipId } });
+    fireEvent.change(dueBox(row, 'Primeira'), { target: { value: '2026-10-28' } });
+    fireEvent.click(save(row, 'Primeira'));
+    expect(await within(dialogOf(row)).findByText('Outra alteração aconteceu ao mesmo tempo. Tente de novo.')).toBeTruthy();
+    expect(titleBox(row, 'Primeira').value).toBe('Primeira revisada');
+    expect(personBox(row, 'Primeira').value).toBe(BRUNO.membershipId);
+    expect(dueBox(row, 'Primeira').value).toBe('2026-10-28');
+    await settled();
+    expect(screen.queryByRole('dialog')).not.toBeNull();
+
+    fireEvent.click(save(row, 'Primeira'));
+    await waitFor(() => expect(taskItem(row, 'Primeira revisada').textContent).toContain('Responsável: Bruno Lima · Prazo: 28/10/2026'));
+    expect(writes(calls)).toHaveLength(2);
+  });
+
+  it.each([
+    [409, 'CONTENT_TASK_STATE', 'Esta subtarefa não pode mais ser editada: ela já foi aprovada, ou o conteúdo foi publicado ou cancelado. Feche e abra de novo para ver o estado atual.'],
+    [409, 'CLIENT_ARCHIVED', 'Este cliente está arquivado: o conteúdo é só leitura.'],
+    [400, 'CONTENT_TASK_ASSIGNEE_INVALID', 'A pessoa escolhida não pode ser responsável: precisa estar ativa e poder ver Conteúdo.'],
+    [403, 'FORBIDDEN', 'Você não tem permissão para editar subtarefas.'],
+    [404, 'NOT_FOUND', 'Esta subtarefa não existe mais.'],
+    [500, 'INTERNAL', 'Não foi possível salvar a subtarefa. Tente de novo.']
+  ])('answers %s %s with its own words, under the subtask that was edited, keeping the form', async (status, code, text) => {
+    const row = complete();
+    const { world } = await openEdit(row, 'Segunda');
+    world.failNext = { match: /\/tasks\/[^/]+$/, response: () => failure(status, code) };
+    fireEvent.change(titleBox(row, 'Segunda'), { target: { value: 'Segunda parte' } });
+    fireEvent.click(save(row, 'Segunda'));
+    expect(await within(taskItem(row, 'Segunda')).findByText(text)).toBeTruthy();
+    expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
+    expect(titleBox(row, 'Segunda').value).toBe('Segunda parte');
+    expect(within(taskItem(row, 'Primeira')).queryByRole('alert')).toBeNull();
+  });
+
+  it('says in its own words that the person cannot be in charge, when the API refuses the one that was chosen', async () => {
+    const row = complete();
+    await openEdit(row, 'Primeira', { team: [ANA, DIOGO, BRUNO] });
+    fireEvent.change(personBox(row, 'Primeira'), { target: { value: DIOGO.membershipId } });
+    fireEvent.click(save(row, 'Primeira'));
+    expect(await within(taskItem(row, 'Primeira')).findByText('A pessoa escolhida não pode ser responsável: precisa estar ativa e poder ver Conteúdo.')).toBeTruthy();
+    expect(personBox(row, 'Primeira').value).toBe(DIOGO.membershipId);
+  });
+
+  it('closes the form without sending, and opens it again from what is saved, not from what was typed', async () => {
+    const row = complete();
+    const { calls } = await openEdit(row, 'Primeira');
+    fireEvent.change(titleBox(row, 'Primeira'), { target: { value: 'Rascunho' } });
+    fireEvent.click(within(dialogOf(row)).getByRole('button', { name: 'Cancelar edição' }));
+    expect(within(dialogOf(row)).queryByLabelText('Título de “Primeira”')).toBeNull();
+    fireEvent.click(within(taskItem(row, 'Primeira')).getByRole('button', { name: 'Editar “Primeira”' }));
+    expect(titleBox(row, 'Primeira').value).toBe('Primeira');
+    expect(writes(calls)).toEqual([]);
+  });
+
+  it('opens one form at a time: another subtask opens its own with nothing of the first, and Devolver closes it', async () => {
+    const row = complete();
+    await openEdit(row, 'Primeira');
+    fireEvent.change(titleBox(row, 'Primeira'), { target: { value: 'Rascunho' } });
+    fireEvent.click(within(taskItem(row, 'Segunda')).getByRole('button', { name: 'Editar “Segunda”' }));
+    expect(within(dialogOf(row)).queryByLabelText('Título de “Primeira”')).toBeNull();
+    expect(titleBox(row, 'Segunda').value).toBe('Segunda');
+  });
+
+  it('closes the edition form when Devolver is opened on the same subtask, and Devolver when Editar is', async () => {
+    const row = complete();
+    await openEdit(row, 'Segunda', { permissions: MANAGER });
+    fireEvent.click(within(taskItem(row, 'Segunda')).getByRole('button', { name: 'Devolver “Segunda”' }));
+    expect(within(dialogOf(row)).queryByLabelText('Título de “Segunda”')).toBeNull();
+    expect(within(dialogOf(row)).getByLabelText('Comentário da devolução de “Segunda”')).toBeTruthy();
+    fireEvent.click(within(taskItem(row, 'Segunda')).getByRole('button', { name: 'Editar “Segunda”' }));
+    expect(within(dialogOf(row)).queryByLabelText('Comentário da devolução de “Segunda”')).toBeNull();
+    expect(within(dialogOf(row)).getByLabelText('Título de “Segunda”')).toBeTruthy();
+  });
+
+  it('says it needs the team to choose the person, and offers no form, to who cannot see the team', async () => {
+    const row = complete();
+    await openAssignment(row, { permissions: [VISUALIZE, READ_CLIENTS, OPERATE], self: ANA.membershipId, tasks: two() });
+    fireEvent.click(within(taskItem(row, 'Primeira')).getByRole('button', { name: 'Editar “Primeira”' }));
+    expect(await within(dialogOf(row)).findByText('Para escolher uma pessoa é preciso poder ver a equipe da agência.')).toBeTruthy();
+    expect(within(dialogOf(row)).queryByLabelText('Título de “Primeira”')).toBeNull();
   });
 });
 

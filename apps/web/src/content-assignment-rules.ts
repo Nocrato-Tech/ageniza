@@ -2,6 +2,7 @@ import {
   CONTENT_TASKS_MAX_PER_CONTENT,
   CreateContentTaskRequestSchema,
   ReturnContentTaskRequestSchema,
+  UpdateContentTaskRequestSchema,
   type ContentDetail,
   type ContentTask
 } from '@ageniza/contracts';
@@ -78,14 +79,57 @@ export const newTaskBody = (values: NewTaskValues): { body: ReturnType<typeof Cr
   return { errors };
 };
 
-const TASK_FAILED: Readonly<Record<TaskMove | 'create', string>> = {
+export interface EditTaskValues {
+  readonly title: string;
+  readonly assigneeMembershipId: string;
+  readonly dueOn: string;
+}
+
+export type EditTaskErrors = Partial<Record<keyof EditTaskValues, string>>;
+
+/** What a form of edition starts from: the subtask as it is saved. */
+export const editValuesOf = (task: ContentTask): EditTaskValues => ({
+  title: task.title,
+  assigneeMembershipId: task.assignee?.membershipId ?? '',
+  dueOn: task.dueOn
+});
+
+/** The saved subtask can be edited by who operates, until it is approved (`specs/conteudo.md` section 4; the API refuses an approved one). */
+export const canEditTask = (task: ContentTask): boolean => task.status !== 'approved';
+
+/** Only what changed travels, like the Geral form; the title is compared as the API stores it (trimmed). */
+export const editedFields = (task: ContentTask, values: EditTaskValues): Partial<EditTaskValues> => ({
+  ...(values.title.trim() !== task.title ? { title: values.title } : {}),
+  ...(values.assigneeMembershipId !== (task.assignee?.membershipId ?? '') ? { assigneeMembershipId: values.assigneeMembershipId } : {}),
+  ...(values.dueOn !== task.dueOn ? { dueOn: values.dueOn } : {})
+});
+
+/** The body of an edition by the contract's own schema, with the same words per field as a new subtask; `none` when nothing changed. */
+export const editTaskBody = (task: ContentTask, values: EditTaskValues):
+  { body: ReturnType<typeof UpdateContentTaskRequestSchema.parse> } | { errors: EditTaskErrors } | 'none' => {
+  // A cleared field is a change like any other: the schema refuses it and the screen words it.
+  const changes = editedFields(task, values);
+  if (Object.keys(changes).length === 0) return 'none';
+  const parsed = UpdateContentTaskRequestSchema.safeParse(changes);
+  if (parsed.success) return { body: parsed.data };
+  const errors: EditTaskErrors = {};
+  for (const issue of parsed.error.issues) {
+    const field = issue.path[0];
+    if (field === 'title' || field === 'assigneeMembershipId' || field === 'dueOn') errors[field] ??= FIELD_TEXT[field];
+  }
+  return { errors };
+};
+
+const TASK_FAILED: Readonly<Record<TaskMove | 'create' | 'update', string>> = {
+  update: 'Não foi possível salvar a subtarefa. Tente de novo.',
   create: 'Não foi possível criar a subtarefa. Tente de novo.',
   deliver: 'Não foi possível entregar a subtarefa. Tente de novo.',
   approve: 'Não foi possível aprovar a subtarefa. Tente de novo.',
   return: 'Não foi possível devolver a subtarefa. Tente de novo.'
 };
 
-const TASK_FORBIDDEN: Readonly<Record<TaskMove | 'create', string>> = {
+const TASK_FORBIDDEN: Readonly<Record<TaskMove | 'create' | 'update', string>> = {
+  update: 'Você não tem permissão para editar subtarefas.',
   create: 'Você não tem permissão para criar subtarefas.',
   deliver: 'Só quem é responsável pela subtarefa a entrega.',
   approve: 'Só o responsável pelo conteúdo, ou quem pode aprovar pela agência, aprova uma subtarefa.',
@@ -95,10 +139,11 @@ const TASK_FORBIDDEN: Readonly<Record<TaskMove | 'create', string>> = {
 const ASSIGNEE_INVALID = 'A pessoa escolhida não pode ser responsável: precisa estar ativa e poder ver Conteúdo.';
 
 /** The screen's own words for each refusal of a subtask: what the server wrote is never shown. */
-export const taskRefusal = (error: unknown, move: TaskMove | 'create'): string => {
+export const taskRefusal = (error: unknown, move: TaskMove | 'create' | 'update'): string => {
   if (error instanceof HttpClientError) {
     const { status, code } = error;
     if (status === 409 && code === 'CONTENT_TASK_LIMIT') return TASK_LIMIT_TEXT;
+    if (status === 409 && code === 'CONTENT_TASK_STATE' && move === 'update') return 'Esta subtarefa não pode mais ser editada: ela já foi aprovada, ou o conteúdo foi publicado ou cancelado. Feche e abra de novo para ver o estado atual.';
     if (status === 409 && code === 'CONTENT_TASK_STATE') return 'A subtarefa mudou de estado, ou o conteúdo já foi publicado ou cancelado. Feche e abra de novo para ver o estado atual.';
     if (status === 409 && code === 'CLIENT_ARCHIVED') return 'Este cliente está arquivado: o conteúdo é só leitura.';
     if (status === 409 && code === 'TRY_AGAIN') return 'Outra alteração aconteceu ao mesmo tempo. Tente de novo.';

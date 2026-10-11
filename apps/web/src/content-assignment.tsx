@@ -8,7 +8,8 @@ import {
   type ContentDetail,
   type ContentTask,
   type ReturnContentTaskRequest,
-  type UpdateContentRequest
+  type UpdateContentRequest,
+  type UpdateContentTaskRequest
 } from '@ageniza/contracts';
 import { Button, FieldMessage, Select, Skeleton, Textarea, TextInput } from '@ageniza/ui';
 
@@ -16,8 +17,12 @@ import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
 import {
   canDeliver,
+  canEditTask,
   canJudge,
   commentIssue,
+  editedFields,
+  editTaskBody,
+  editValuesOf,
   isTaskOverdue,
   newTaskBody,
   ownerRefusal,
@@ -25,6 +30,8 @@ import {
   taskRefusal,
   TASK_LIMIT_TEXT,
   TASK_STATUS_LABELS,
+  type EditTaskErrors,
+  type EditTaskValues,
   type NewTaskErrors,
   type NewTaskValues,
   type TaskMove
@@ -65,6 +72,7 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
   const [ownerError, setOwnerError] = useState<string | undefined>();
   const [taskErrors, setTaskErrors] = useState<Readonly<Record<string, string>>>({});
   const [returning, setReturning] = useState<{ taskId: string; comment: string; problem?: string | undefined } | null>(null);
+  const [editing, setEditing] = useState<{ taskId: string; values: EditTaskValues; errors: EditTaskErrors; error?: string | undefined } | null>(null);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<NewTaskValues>(EMPTY_TASK);
   const [draftErrors, setDraftErrors] = useState<NewTaskErrors>({});
@@ -120,6 +128,29 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
     const problem = commentIssue(returning.comment);
     if (problem !== undefined) { setReturning({ ...returning, problem }); return; }
     if (await move(task, 'return', { comment: returning.comment.trim() })) setReturning(null);
+  };
+
+  const startEdit = (task: ContentTask): void => {
+    setReturning(null);
+    setEditing(editing?.taskId === task.id ? null : { taskId: task.id, values: editValuesOf(task), errors: {} });
+  };
+
+  const changeEdit = (patch: Partial<EditTaskValues>, field: keyof EditTaskValues): void => {
+    setEditing((current) => current === null ? null : { ...current, values: { ...current.values, ...patch }, errors: { ...current.errors, [field]: undefined }, error: undefined });
+  };
+
+  const saveEdit = async (task: ContentTask): Promise<void> => {
+    if (editing === null || editing.taskId !== task.id) return;
+    const built = editTaskBody(task, editing.values);
+    if (built === 'none') return;
+    if ('errors' in built) { setEditing({ ...editing, errors: built.errors, error: undefined }); return; }
+    const result = await run(`${task.id}:edit`, () => httpClient.request({
+      path: `${apiPath(TASKS_PATH, { agencyId: agency.agencyId, clientId, contentId: content.id })}/${task.id}`,
+      method: 'PATCH',
+      body: built.body satisfies UpdateContentTaskRequest,
+      response: ContentTaskSchema
+    }));
+    if (result === undefined) setEditing(null); else if (result.failed !== undefined) setEditing({ ...editing, errors: {}, error: taskRefusal(result.failed, 'update') });
   };
 
   const create = async (): Promise<void> => {
@@ -195,6 +226,8 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
           const judge = writable && canJudge(task, content, self, canApprove);
           const panel = returning !== null && returning.taskId === task.id ? returning : null;
           const open = panel !== null;
+          const editable = writable && canOperate && canEditTask(task);
+          const form = editing !== null && editing.taskId === task.id ? editing : null;
           return <li key={task.id} className="content-assignment__task">
             <p className="content-assignment__task-title">{task.title}</p>
             <p className="content-assignment__task-meta">
@@ -205,7 +238,7 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
             </p>
             {task.description !== null && <p className="content-assignment__task-description">{task.description}</p>}
             {task.status === 'pending' && task.returnComment !== null && <p className="content-assignment__task-return">Devolvida: {task.returnComment}</p>}
-            {(deliver || judge) && <div className="form-actions">
+            {(deliver || judge || editable) && <div className="form-actions">
               {deliver && <Button
                 size="sm"
                 aria-label={`Entregar “${task.title}”`}
@@ -226,9 +259,65 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
                 aria-label={`Devolver “${task.title}”`}
                 aria-expanded={open}
                 disabled={busy}
-                onClick={() => setReturning(open ? null : { taskId: task.id, comment: '' })}
+                onClick={() => { setEditing(null); setReturning(open ? null : { taskId: task.id, comment: '' }); }}
               >Devolver</Button>}
+              {editable && <Button
+                size="sm"
+                variant="ghost"
+                aria-label={`Editar “${task.title}”`}
+                aria-expanded={form !== null}
+                disabled={busy}
+                onClick={() => startEdit(task)}
+              >Editar</Button>}
             </div>}
+            {editable && form !== null && (teamReady
+              ? <div className="form-stack content-assignment__new">
+                <div className="form-field">
+                  <label htmlFor={`${ids}-edit-title-${task.id}`}>Título de “{task.title}”</label>
+                  <TextInput
+                    id={`${ids}-edit-title-${task.id}`}
+                    value={form.values.title}
+                    disabled={busy}
+                    onChange={(event) => changeEdit({ title: event.target.value }, 'title')}
+                    aria-invalid={form.errors.title !== undefined}
+                  />
+                  {form.errors.title !== undefined && <FieldMessage role="alert">{form.errors.title}</FieldMessage>}
+                </div>
+                <Select
+                  label={`Responsável por “${task.title}”`}
+                  value={form.values.assigneeMembershipId}
+                  options={task.assignee !== null && !teamOptions.some((option) => option.value === task.assignee?.membershipId)
+                    ? [{ value: task.assignee.membershipId, label: task.assignee.name }, ...teamOptions]
+                    : teamOptions}
+                  placeholder="Escolha uma pessoa"
+                  disabled={busy}
+                  onChange={(value) => changeEdit({ assigneeMembershipId: value }, 'assigneeMembershipId')}
+                />
+                {form.errors.assigneeMembershipId !== undefined && <FieldMessage role="alert">{form.errors.assigneeMembershipId}</FieldMessage>}
+                <div className="form-field">
+                  <label htmlFor={`${ids}-edit-due-${task.id}`}>Prazo de “{task.title}”</label>
+                  <TextInput
+                    id={`${ids}-edit-due-${task.id}`}
+                    type="date"
+                    value={form.values.dueOn}
+                    disabled={busy}
+                    onChange={(event) => changeEdit({ dueOn: event.target.value }, 'dueOn')}
+                    aria-invalid={form.errors.dueOn !== undefined}
+                  />
+                  {form.errors.dueOn !== undefined && <FieldMessage role="alert">{form.errors.dueOn}</FieldMessage>}
+                </div>
+                {form.error !== undefined && <FieldMessage role="alert">{form.error}</FieldMessage>}
+                <div className="form-actions">
+                  <Button
+                    aria-label={`Salvar “${task.title}”`}
+                    loading={sending === `${task.id}:edit`}
+                    disabled={busy || Object.keys(editedFields(task, form.values)).length === 0}
+                    onClick={() => { void saveEdit(task); }}
+                  >Salvar</Button>
+                  <Button variant="ghost" disabled={busy} onClick={() => setEditing(null)}>Cancelar edição</Button>
+                </div>
+              </div>
+              : teamBlocked)}
             {judge && panel !== null && <div className="form-field">
               <label htmlFor={`${ids}-return-${task.id}`}>Comentário da devolução de “{task.title}”</label>
               <Textarea
