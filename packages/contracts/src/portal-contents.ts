@@ -42,10 +42,11 @@ export const PortalContentOpenListItemSchema = z.object({
 
 export const PortalContentListItemSchema = z.union([PortalContentInProductionSchema, PortalContentOpenListItemSchema]);
 
-/** A media of the post: its id and its place; the signed address is the media route's, never this one's. */
+/** A media of the post: its id, its place and whether it is an image or a video; the signed address is the media route's, never this one's. */
 export const PortalContentMediaItemSchema = z.object({
   id: z.string().uuid(),
-  position: z.number().int().positive()
+  position: z.number().int().positive(),
+  kind: z.enum(['image', 'video'])
 }).strict();
 
 /**
