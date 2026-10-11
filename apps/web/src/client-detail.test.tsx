@@ -44,7 +44,7 @@ const agencyMe = (agencyId: string, permissions: readonly string[]) => ({
 });
 
 /** Every permission of the module: Admin and Owner see everything (specs/clientes.md §2). */
-const ADMIN_PERMISSIONS = ['cliente.visualizar', 'cliente.operar', 'cliente.cadastrar', 'cliente.arquivar', 'cliente.convidar_usuario', 'cliente.remover_usuario'];
+const ADMIN_PERMISSIONS = ['cliente.visualizar', 'cliente.operar', 'cliente.cadastrar', 'cliente.arquivar', 'cliente.convidar_usuario', 'cliente.remover_usuario', 'conteudo.visualizar'];
 const MANAGER_PERMISSIONS = ['cliente.visualizar', 'cliente.operar', 'cliente.cadastrar'];
 const READER_PERMISSIONS = ['cliente.visualizar'];
 
@@ -144,6 +144,12 @@ const makeFetch = (scenario: Scenario = {}) => {
     // to answer so the tab renders.
     const brandStudy = /\/agencies\/([^/]+)\/clients\/([^/]+)\/brand-study$/.exec(path);
     if (brandStudy !== null) return scenario.brandStudy?.() ?? json({ filled: 5, sections: [], personas: [] });
+    // The Conteúdos tab renders the view of the client (#272, tested with its own fake in contents.test.tsx); here it only answers empty.
+    if (/\/agencies\/[^/]+\/clients\/[^/]+\/contents$/.test(path)) {
+      const from = url.searchParams.get('from');
+      const to = url.searchParams.get('to');
+      return json({ data: { contents: [], storyScripts: [] }, meta: { from, to, count: 0 } });
+    }
     const members = /\/agencies\/([^/]+)\/clients\/([^/]+)\/members$/.exec(path);
     if (members !== null) return scenario.members?.() ?? json({ data: [], meta: { page: 1, pageSize: 20, totalItems: 0, totalPages: 0 } });
     const clientInvitations = /\/agencies\/([^/]+)\/clients\/([^/]+)\/invitations$/.exec(path);
@@ -288,11 +294,13 @@ describe('client detail (#136)', () => {
       ['Relatórios', 'relatorios', 'Relatórios'],
       ['Acessos', 'acessos', 'Pessoas com acesso ao portal']
     ] as const;
+    // The agency menu has its own "Conteúdos" for who reads contents: the tab is the one in the client's navigation.
+    const tab = (label: string): HTMLElement => within(screen.getByRole('navigation', { name: 'Seções do cliente' })).getByRole('link', { name: label });
     for (const [label, slug, heading] of tabHeadings) {
-      fireEvent.click(screen.getByRole('link', { name: label }));
+      fireEvent.click(tab(label));
       expect(await screen.findByRole('heading', { name: heading })).toBeTruthy();
       expect(probe.pathname).toBe(clientUrl(CLIENT_ID, slug));
-      expect(screen.getByRole('link', { name: label }).getAttribute('aria-current')).toBe('page');
+      expect(tab(label).getAttribute('aria-current')).toBe('page');
     }
 
     // A reload into the Tarefas address lands on Tarefas, not on Geral.
@@ -325,7 +333,7 @@ describe('client detail (#136)', () => {
     expect(back().getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
 
     // A tab click inside the detail must not drop the roster address (review of #379 r2).
-    fireEvent.click(await screen.findByRole('link', { name: 'Conteúdos' }));
+    fireEvent.click(within(await screen.findByRole('navigation', { name: 'Seções do cliente' })).getByRole('link', { name: 'Conteúdos' }));
     expect(await screen.findByRole('heading', { name: 'Conteúdos' })).toBeTruthy();
     expect(back().getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
 
@@ -525,7 +533,6 @@ describe('client detail (#136)', () => {
   });
 
   it.each([
-    ['conteudos', 'Conteúdos', 'Aqui vai ficar o calendário editorial deste cliente, com os posts, a prévia do feed e as aprovações.'],
     ['tarefas', 'Tarefas', 'Aqui vão ficar as tarefas deste cliente, com prazos e responsáveis.'],
     ['relatorios', 'Relatórios', 'Aqui vai ficar o relatório deste cliente, com os resultados do trabalho.']
   ])('draws %s as its name and its sentence, with no extra control', async (tab, title, sentence) => {

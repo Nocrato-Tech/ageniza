@@ -337,7 +337,7 @@ Nenhuma policy de outro módulo é alterada.
 |---|---|---|---|
 | Carteira | `/agencia/:agenciaId/clientes` | cards de clientes para triagem | `cliente.visualizar` |
 | Cadastrar | modal sobre a carteira | só o nome | `cliente.cadastrar` |
-| Detalhe | `/agencia/:agenciaId/clientes/:clienteId/<aba>` | cabeçalho e seis abas | `cliente.visualizar` |
+| Detalhe | `/agencia/:agenciaId/clientes/:clienteId/<aba>` | cabeçalho e seis abas; a aba Conteúdos só aparece, e o endereço dela só abre, com `conteudo.visualizar` | `cliente.visualizar` |
 | Editar cadastro | modal sobre o detalhe | todos os campos do cadastro | `cliente.operar` |
 | Portal — Início | `/portal/:clienteId` | saudação e próxima ação | vínculo de cliente |
 | Portal — Marca | `/portal/:clienteId/marca` | estudo em leitura e conversas | vínculo de cliente |
@@ -383,8 +383,8 @@ Conteúdos, Tarefas e Relatórios na agência, e Calendário e Relatórios no po
 | Selo *N sugestões aguardando* | threads abertas cujo último comentário é do cliente. É o sinal de triagem do MVP |
 | Selo *encerra em dd/mm* | cliente com encerramento agendado |
 | Selo *convite pendente* | só para quem tem `cliente.convidar_usuario` |
-| Faixa de indicadores | reservada para pendentes, em revisão e atrasos; no MVP não mostra números |
-| Ordem | quem tem sugestão aguardando vem primeiro — a tela é de triagem, não de consulta |
+| Faixa de indicadores | reservada para pendentes, em revisão e atrasos. Mostra os três números de Conteúdo (#261) para quem tem `conteudo.visualizar`; para os demais segue reservada, sem número |
+| Ordem | para quem lê Conteúdo (`conteudo.visualizar`), quem tem conteúdo atrasado vem primeiro, depois quem tem sugestão aguardando, depois o nome (#261); para os demais, quem tem sugestão aguardando vem primeiro, depois o nome — a tela é de triagem, não de consulta |
 | Busca | nome, razão social ou @ — quem liga pode lembrar de qualquer um dos três |
 | Filtro de status | Ativos (padrão) e Arquivados |
 | Cadastrar cliente | ação primária, só para `cliente.cadastrar` |
@@ -481,7 +481,11 @@ Só para `cliente.convidar_usuario`. O mesmo desenho da seção de convites de C
 - **Vazio**: "Ninguém deste cliente acessa o portal ainda", com **Convidar**.
 - Convites vazios: a seção some.
 
-### Abas Conteúdos, Tarefas e Relatórios
+### Aba Conteúdos
+
+A mesma visão de Conteúdos daquele cliente (calendário, feed e Pastas, com o modal do conteúdo em endereços da própria aba), com o cliente fixo (`specs/conteudo.md` seção 7). Só com `conteudo.visualizar`: sem a permissão a aba não aparece, e o endereço digitado cai no mesmo "não encontrado" da página inteira, sem o cabeçalho do cliente.
+
+### Abas Tarefas e Relatórios
 
 Esqueleto: o nome da área, uma frase do que ela vai mostrar, e nenhum controle.
 
