@@ -777,4 +777,53 @@ describe('what the database refuses is answered by name, never a 500 (issue #256
       w.clearHook();
     }
   });
+
+  // A refusal the database does not reach through a route today (a reason the contract already refuses, a deadlock, a refusal of the
+  // policy) is injected by throwing from the hook that runs right before the function, with the code the database gives: the route has
+  // to answer each one by name, and a client archived in the meantime is read again in a new transaction.
+  const databaseRefusal = (code: string): Error => Object.assign(new Error('database detail that never leaves'), { code });
+
+  it.each([
+    ['A0068', 400, 'CONTENT_REASON_INVALID'],
+    ['40P01', 409, 'TRY_AGAIN'],
+    ['40001', 409, 'TRY_AGAIN']
+  ])('answers %s with %i %s and moves nothing', async (code, status, name) => {
+    const fixture = await f.fixtureFor('approve-by-agency', clientA);
+    w.runBeforeStatement(/app_private\.approve_content_by_agency/, async () => {
+      throw databaseRefusal(code);
+    });
+    try {
+      error(await act('approver', 'approve-by-agency', fixture.contentId, fixture.body), status, name);
+      expect(await statusOf(fixture.contentId)).toBe('awaiting_approval');
+    } finally {
+      w.clearHook();
+    }
+  });
+
+  it('answers 403 to a refusal of the policy when the client is still active, and 409 CLIENT_ARCHIVED when it was archived in the meantime', async () => {
+    const active = await f.fixtureFor('cancel', clientA);
+    w.runBeforeStatement(/app_private\.cancel_content/, async () => {
+      throw databaseRefusal('42501');
+    });
+    try {
+      error(await act('manager', 'cancel', active.contentId), 403, 'FORBIDDEN');
+    } finally {
+      w.clearHook();
+    }
+
+    const clientId = await w.newClient('policy-refusal');
+    const archiving = await f.fixtureFor('cancel', clientId);
+    w.runBeforeStatement(/app_private\.cancel_content/, async () => {
+      await w.getOwner().knex('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
+      throw databaseRefusal('42501');
+    });
+    try {
+      const reply = await w.call('POST', people.manager.cookie, f.urlOf(clientId, archiving.contentId, 'cancel'));
+      expect(reply.statusCode).toBe(409);
+      expect(reply.json().error.code).toBe('CLIENT_ARCHIVED');
+      expect(await statusOf(archiving.contentId)).toBe('approved');
+    } finally {
+      w.clearHook();
+    }
+  });
 });
