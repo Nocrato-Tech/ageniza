@@ -684,6 +684,84 @@ describe('uploading a media into a folder of a client (issue #253)', () => {
       expect(await app.media!.storage.headObject({ key: objectKey })).toBeUndefined();
     });
 
+    // Issue #546. The CopyObject is the wait of the confirmation before the write, and each variant below lands the archive in it.
+    describe('when the archive moves during the wait on the bucket (issue #546)', () => {
+      const gate = (): { readonly promise: Promise<void>; readonly open: () => void } => {
+        let open!: () => void;
+        const promise = new Promise<void>((resolve) => {
+          open = resolve;
+        });
+        return { promise, open };
+      };
+
+      // The archive starts while the copy is held, so it is still running when the route reads the client again and when the
+      // confirmation writes: the UPDATE waits on the trigger of 20261011000700 and raises A0020 once the archive commits.
+      it('is a 409 when the archive is still running while the confirmation writes, and nothing is confirmed', async () => {
+        const clientId = await freshClient();
+        const { assetId, objectKey } = await startedUpload(clientId);
+        const storage = app.media!.storage;
+        const realCopy = storage.copyObject.bind(storage);
+        const copying = gate();
+        const releaseCopy = gate();
+        const copy = vi.spyOn(storage, 'copyObject').mockImplementationOnce(async (input) => {
+          copying.open();
+          await releaseCopy.promise;
+          return realCopy(input);
+        });
+        const archiving = await owner.knex.transaction();
+        let pending: Promise<Reply> | undefined;
+        try {
+          pending = call('POST', `${uploadUrl(agencyA)}/${assetId}/complete`, 'opVis', {});
+          await copying.promise;
+          await archiving('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
+          releaseCopy.open();
+          await waitUntilSomeoneWaitsOnALock();
+        } finally {
+          await archiving.commit();
+          copy.mockRestore();
+        }
+
+        const reply = await pending!;
+
+        expectClientArchived(reply);
+        expect(await owner.knex('media_assets').where({ id: assetId }).first('status', 'confirmed_at')).toEqual({ status: 'pending', confirmed_at: null });
+        expect(await owner.knex('audit.events').where({ target_id: assetId, action: 'media.upload_confirmed' })).toHaveLength(0);
+        expect(await app.media!.storage.headObject({ key: objectKey })).toBeUndefined();
+      }, 20_000);
+
+      // The archive commits while the copy is held: the route's own second read of the client refuses it (the 409 of the
+      // application, not of the trigger), so this variant pins the answer and the nothing-confirmed state, not the trigger.
+      it('is a 409 when the archive commits during the wait on the bucket, and nothing is confirmed', async () => {
+        const clientId = await freshClient();
+        const { assetId, objectKey } = await startedUpload(clientId);
+        const storage = app.media!.storage;
+        const realCopy = storage.copyObject.bind(storage);
+        const copying = gate();
+        const releaseCopy = gate();
+        const copy = vi.spyOn(storage, 'copyObject').mockImplementationOnce(async (input) => {
+          copying.open();
+          await releaseCopy.promise;
+          return realCopy(input);
+        });
+        let pending: Promise<Reply> | undefined;
+        try {
+          pending = call('POST', `${uploadUrl(agencyA)}/${assetId}/complete`, 'opVis', {});
+          await copying.promise;
+          await owner.knex('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
+        } finally {
+          releaseCopy.open();
+          copy.mockRestore();
+        }
+
+        const reply = await pending!;
+
+        expectClientArchived(reply);
+        expect(await owner.knex('media_assets').where({ id: assetId }).first('status', 'confirmed_at')).toEqual({ status: 'pending', confirmed_at: null });
+        expect(await owner.knex('audit.events').where({ target_id: assetId, action: 'media.upload_confirmed' })).toHaveLength(0);
+        expect(await app.media!.storage.headObject({ key: objectKey })).toBeUndefined();
+      });
+    });
+
     describe('asking for the part URLs of a multipart upload', () => {
       const bigVideo = { fileName: 'filme.mp4', contentType: 'video/mp4', declaredSizeBytes: 9 * 1024 * 1024 };
       const partsUrl = (assetId: string): string => `${uploadUrl(agencyA)}/${assetId}/parts`;
