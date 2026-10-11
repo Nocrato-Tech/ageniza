@@ -28,6 +28,7 @@ class FakeXhr {
   public headers: Record<string, string> = {};
   public body: Blob | null = null;
   private eTag: string | null = null;
+  public aborted = false;
   private done = false;
 
   public constructor() { FakeXhr.all.push(this); }
@@ -35,7 +36,7 @@ class FakeXhr {
   public setRequestHeader(name: string, value: string): void { this.headers[name.toLowerCase()] = value; }
   public getResponseHeader(name: string): string | null { return name.toLowerCase() === 'etag' ? this.eTag : null; }
   public progress(loaded: number): void { this.upload.onprogress?.({ lengthComputable: true, loaded }); }
-  public abort(): void { if (!this.done) { this.done = true; this.onabort?.(); } }
+  public abort(): void { if (!this.done) { this.done = true; this.aborted = true; this.onabort?.(); } }
   public send(body: Blob): void {
     this.body = body;
     void Promise.resolve(FakeXhr.handler(this)).then((answer) => {
@@ -159,6 +160,24 @@ describe('uploading media into a folder', () => {
     await screen.findByText('Mídia enviada.');
   });
 
+  it('asks for the parts of a file of more than 100 in batches, and confirms only after the last one, with every ETag in order', async () => {
+    const world = makeWorld({ partBytes: 1_000 });
+    FakeXhr.handler = (request) => ({ status: 200, eTag: `"tag-${request.url.split('/').pop()}"` });
+    open(world, `&pasta=${VIDEOS}`);
+    await choose(new File([new Uint8Array(250_500)], 'longo.mp4', { type: 'video/mp4' }));
+    send();
+
+    await screen.findByText('Mídia enviada.');
+    const asked = world.bodies.filter((entry) => entry.path.endsWith('/parts')).map((entry) => (entry.body as { partNumbers: number[] }).partNumbers);
+    expect(asked.map((numbers) => [numbers[0], numbers.length])).toEqual([[1, 100], [101, 100], [201, 51]]);
+    expect(FakeXhr.all).toHaveLength(251);
+    expect(FakeXhr.all.map((request) => request.url.split('/').pop())).toEqual(Array.from({ length: 251 }, (_value, index) => String(index + 1)));
+    const confirmed = sent(world, '/complete') as { parts: Array<{ partNumber: number; eTag: string }> };
+    expect(confirmed.parts).toEqual(Array.from({ length: 251 }, (_value, index) => ({ partNumber: index + 1, eTag: `"tag-${index + 1}"` })));
+    const steps = world.calls.map((call) => call.split(' ')[0] + ' ' + call.split('?')[0].split('/').slice(-1)[0]).filter((call) => /parts|complete/.test(call));
+    expect(steps).toEqual(['POST parts', 'POST parts', 'POST parts', 'POST complete']);
+  });
+
   it('uploads into the folder that is open: the work folder, not its parent', async () => {
     const world = makeWorld();
     open(world, `&pasta=${VIDEOS}&subpasta=${WORK}`);
@@ -219,8 +238,9 @@ describe('a failed upload keeps the file the person chose', () => {
     expect(world.assets).toHaveLength(0);
   });
 
-  it('cancels the sending: the request stops, nothing is confirmed and the file stays', async () => {
-    FakeXhr.handler = () => new Promise<StorageAnswer>(() => undefined);
+  it('cancels the sending with its own words: the request stops, nothing is confirmed, the file stays and it can be sent again', async () => {
+    let attempts = 0;
+    FakeXhr.handler = () => { attempts += 1; return attempts === 1 ? new Promise<StorageAnswer>(() => undefined) : { status: 200 }; };
     const world = makeWorld();
     open(world);
     await choose(picture());
@@ -229,8 +249,84 @@ describe('a failed upload keeps the file the person chose', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar envio' }));
 
-    await alertText('A conexão caiu durante o envio. Tente de novo.');
+    expect((await screen.findByRole('status')).textContent).toBe('Envio cancelado. O arquivo continua escolhido.');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(/conexão caiu/)).toBeNull();
+    expect(FakeXhr.all[0]?.aborted).toBe(true);
     expect(sent(world, '/complete')).toBeUndefined();
+    expect(screen.getByText('foto.jpg · 2 KB')).toBeTruthy();
+
+    send();
+    await screen.findByText('Mídia enviada.');
+    expect(FakeXhr.all[1]?.aborted).toBe(false);
+    expect(world.assets).toHaveLength(1);
+  });
+
+  it('cancels while the API still reserves the upload: no storage request is made', async () => {
+    const gate = deferred<Response>();
+    const world = makeWorld();
+    const real = makeFetch(world);
+    // A held request ends the way a real fetch does when its signal aborts.
+    const held: typeof fetch = (input, init) => {
+      if (init?.method !== 'POST' || !String(input).endsWith('/media/uploads')) return real(input, init);
+      return new Promise<Response>((resolve, reject) => {
+        void gate.promise.then(resolve);
+        init.signal?.addEventListener('abort', () => { reject(new DOMException('Aborted', 'AbortError')); });
+      });
+    };
+    renderFolders(held, foldersUrl(`&pasta=${IMAGES}`));
+    await choose(picture());
+    send();
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancelar envio' }));
+
+    expect((await screen.findByRole('status')).textContent).toBe('Envio cancelado. O arquivo continua escolhido.');
+    expect(FakeXhr.all).toHaveLength(0);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('a folder change in the middle of a sending stops it and leaves nothing of it in the new folder', async () => {
+    FakeXhr.handler = () => new Promise<StorageAnswer>(() => undefined);
+    const world = makeWorld();
+    const { probe } = open(world, `&pasta=${VIDEOS}`);
+    await choose(picture());
+    send();
+    await waitFor(() => { expect(FakeXhr.all).toHaveLength(1); });
+
+    act(() => { probe.navigate(foldersUrl(`&pasta=${IMAGES}`)); });
+
+    await waitFor(() => { expect(FakeXhr.all[0]?.aborted).toBe(true); });
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.queryByText('foto.jpg · 2 KB')).toBeNull();
+    expect((screen.getByLabelText('Enviar mídia') as HTMLInputElement).disabled).toBe(false);
+    expect(sent(world, '/complete')).toBeUndefined();
+  });
+
+  it.each([
+    ['reserving', '/media/uploads'],
+    ['confirming', '/complete']
+  ])('tells the client was archived when the API answers 409 while %s, and offers no retry', async (_step, suffix) => {
+    const world = makeWorld({ override: (method, path) => (method === 'POST' && path.endsWith(suffix)
+      ? apiError(409, 'CLIENT_ARCHIVED', 'Cliente arquivado não pode ser editado.') : undefined) });
+    renderFolders(makeFetch(world), foldersUrl(`&pasta=${IMAGES}`));
+    await choose(picture());
+    send();
+
+    await alertText('O cliente está arquivado e não recebe mídia.');
+    expect(screen.getByText('foto.jpg · 2 KB')).toBeTruthy();
+    expect(world.assets).toHaveLength(0);
+  });
+
+  it('tells the folder is gone when the API answers 404', async () => {
+    const world = makeWorld({ override: (method, path) => (method === 'POST' && path.endsWith('/media/uploads')
+      ? apiError(404, 'NOT_FOUND', 'Folder not found.') : undefined) });
+    renderFolders(makeFetch(world), foldersUrl(`&pasta=${IMAGES}`));
+    await choose(picture());
+    send();
+
+    await alertText('A pasta não existe mais.');
     expect(screen.getByText('foto.jpg · 2 KB')).toBeTruthy();
   });
 

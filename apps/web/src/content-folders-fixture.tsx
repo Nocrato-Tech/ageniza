@@ -84,6 +84,8 @@ export interface World {
   /** The uploads the API reserved, confirmed or not. */
   pending: PendingUpload[];
   quotaFull?: boolean;
+  /** The part size the API plans with; small, it makes a file of a few KiB a multipart upload of many parts. */
+  partBytes?: number;
   /** The API refuses the object at confirmation, as it does when the bytes are not what was declared. */
   rejectUpload?: boolean;
   /** What the screen sent in the body of each write. */
@@ -212,6 +214,7 @@ export const makeFetch = (world: World, extra?: (method: string, url: URL, init:
     return json({ url: `https://storage.test/${asset.id}/${query.data.variant}`, expiresAt: '2026-10-12T01:45:00.000Z' });
   }
 
+  const partBytes = world.partBytes ?? UPLOAD_PART_BYTES;
   const uploads = /\/agencies\/[^/]+\/media\/uploads$/.exec(path);
   if (uploads !== null && method === 'POST') {
     if (!holds('conteudo.operar') || !holds('conteudo.visualizar')) return forbidden();
@@ -224,13 +227,13 @@ export const makeFetch = (world: World, extra?: (method: string, url: URL, init:
     if (request.declaredSizeBytes > UPLOAD_MAX_BYTES) return apiError(413, 'PAYLOAD_TOO_LARGE', 'The declared file size exceeds the limit for its category.');
     if (world.quotaFull === true) return apiError(409, 'QUOTA_EXCEEDED', 'This agency has reached its storage quota.');
     const assetId = idOf('b', world.pending.length + 1);
-    const multipart = request.declaredSizeBytes >= UPLOAD_PART_BYTES;
+    const multipart = request.declaredSizeBytes >= partBytes;
     world.pending.push({ assetId, folderId: request.folderId!, fileName: request.fileName, contentType: request.contentType, sizeBytes: request.declaredSizeBytes, multipart });
     const category = request.contentType.startsWith('video/') ? 'video' : 'image';
     return json({
       assetId, objectKey: `${AGENCY_A}/${assetId}/original`, category,
       upload: multipart
-        ? { type: 'multipart', uploadId: `upload-${assetId}`, partSizeBytes: UPLOAD_PART_BYTES, partCount: Math.ceil(request.declaredSizeBytes / UPLOAD_PART_BYTES) }
+        ? { type: 'multipart', uploadId: `upload-${assetId}`, partSizeBytes: partBytes, partCount: Math.ceil(request.declaredSizeBytes / partBytes) }
         : { type: 'single', url: `https://storage.test/put/${assetId}`, expiresAt: '2026-10-12T01:45:00.000Z' }
     }, 201);
   }
@@ -239,7 +242,7 @@ export const makeFetch = (world: World, extra?: (method: string, url: URL, init:
     const pending = world.pending.find((candidate) => candidate.assetId === uploadParts[1] && candidate.confirmed !== true);
     if (pending === undefined) return apiError(404, 'NOT_FOUND', 'Media asset not found.');
     const parsed = RequestMediaUploadPartsRequestSchema.safeParse(JSON.parse(String(init?.body)) as unknown);
-    const count = Math.ceil(pending.sizeBytes / UPLOAD_PART_BYTES);
+    const count = Math.ceil(pending.sizeBytes / partBytes);
     if (!parsed.success || !pending.multipart || parsed.data.partNumbers.some((number) => number > count)) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
     return json({
       parts: parsed.data.partNumbers.map((partNumber) => ({ partNumber, url: `https://storage.test/put/${pending.assetId}/part/${partNumber}` })),
@@ -252,7 +255,7 @@ export const makeFetch = (world: World, extra?: (method: string, url: URL, init:
     if (pending === undefined) return apiError(404, 'NOT_FOUND', 'Media asset not found.');
     const parsed = CompleteMediaUploadRequestSchema.safeParse(JSON.parse(String(init?.body)) as unknown);
     if (!parsed.success) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
-    const count = Math.ceil(pending.sizeBytes / UPLOAD_PART_BYTES);
+    const count = Math.ceil(pending.sizeBytes / partBytes);
     if (pending.multipart !== (parsed.data.parts !== undefined)) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
     if (parsed.data.parts !== undefined && (parsed.data.parts.length !== count || parsed.data.parts.some((part) => part.partNumber > count))) {
       return apiError(400, 'VALIDATION_ERROR', 'A multipart part number is outside this upload plan.');

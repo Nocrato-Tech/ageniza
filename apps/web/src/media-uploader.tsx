@@ -7,7 +7,7 @@ import { useAgencyContext } from './agency.js';
 import { useApiClient } from './http.js';
 import { UPLOAD_FAILURE_TEXT, UploadError, uploadMedia, type UploadFailure } from './media-upload.js';
 
-type Phase = { readonly kind: 'idle' } | { readonly kind: 'sending' } | { readonly kind: 'failed'; readonly failure: UploadFailure } | { readonly kind: 'done' };
+type Phase = { readonly kind: 'idle' } | { readonly kind: 'sending' } | { readonly kind: 'failed'; readonly failure: UploadFailure } | { readonly kind: 'cancelled' } | { readonly kind: 'done' };
 
 /** A failure that no retry with the same file can fix: the person must pick another file. */
 const FILE_IS_THE_PROBLEM: ReadonlySet<UploadFailure> = new Set(['unsupported-type', 'too-large', 'empty', 'rejected']);
@@ -36,7 +36,7 @@ export function MediaUploader({ clientId, folderId, onUploaded, sizeLabel }: {
 
   useEffect(() => () => { controller.current?.abort(); }, []);
   // The folder is another place: what was chosen for the last one does not follow the person.
-  useEffect(() => { controller.current?.abort(); setFile(null); setPhase({ kind: 'idle' }); setSent(0); }, [folderId]);
+  useEffect(() => { controller.current?.abort(); controller.current = null; setFile(null); setPhase({ kind: 'idle' }); setSent(0); }, [folderId]);
 
   const send = (chosen: File): void => {
     const own = new AbortController();
@@ -54,7 +54,8 @@ export function MediaUploader({ clientId, folderId, onUploaded, sizeLabel }: {
       })
       .catch((error: unknown) => {
         if (controller.current !== own) return;
-        setPhase({ kind: 'failed', failure: error instanceof UploadError ? error.failure : 'unknown' });
+        const failure = error instanceof UploadError ? error.failure : 'unknown';
+        setPhase(failure === 'cancelled' ? { kind: 'cancelled' } : { kind: 'failed', failure });
       });
   };
 
@@ -89,6 +90,7 @@ export function MediaUploader({ clientId, folderId, onUploaded, sizeLabel }: {
       </div>
     </div>}
     {phase.kind === 'failed' && <FieldMessage role="alert">{UPLOAD_FAILURE_TEXT[phase.failure]}</FieldMessage>}
+    {phase.kind === 'cancelled' && <p className="media-uploader__done" role="status">{UPLOAD_FAILURE_TEXT.cancelled}</p>}
     {phase.kind === 'done' && <p className="media-uploader__done" role="status">Mídia enviada.</p>}
   </div>;
 }

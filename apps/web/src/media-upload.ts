@@ -10,7 +10,7 @@ import { HttpClientError, type HttpClient } from './http.js';
 /** What the person is told; the API's own sentences and the storage's are never repeated. */
 export type UploadFailure =
   | 'unsupported-type' | 'too-large' | 'empty' | 'quota' | 'archived' | 'forbidden' | 'not-found' | 'rejected'
-  | 'storage' | 'missing-etag' | 'network' | 'unknown';
+  | 'storage' | 'missing-etag' | 'network' | 'cancelled' | 'unknown';
 
 export class UploadError extends Error {
   public constructor(public readonly failure: UploadFailure) {
@@ -31,6 +31,7 @@ export const UPLOAD_FAILURE_TEXT: Readonly<Record<UploadFailure, string>> = {
   storage: 'O envio do arquivo falhou. Tente de novo.',
   'missing-etag': 'O envio de uma parte não foi confirmado. Tente de novo.',
   network: 'A conexão caiu durante o envio. Tente de novo.',
+  cancelled: 'Envio cancelado. O arquivo continua escolhido.',
   unknown: 'Não foi possível enviar a mídia. Tente de novo.'
 };
 
@@ -53,7 +54,7 @@ const failureOf = (error: unknown): UploadError => {
 /** An XHR is what reports how many bytes left the browser; `fetch` cannot. */
 const putBlob = (url: string, blob: Blob, contentType: string | null, onProgress: (loaded: number) => void, signal: AbortSignal): Promise<string | null> =>
   new Promise((resolve, reject) => {
-    if (signal.aborted) { reject(new UploadError('network')); return; }
+    if (signal.aborted) { reject(new UploadError('cancelled')); return; }
     const xhr = new XMLHttpRequest();
     const abort = (): void => { xhr.abort(); };
     signal.addEventListener('abort', abort, { once: true });
@@ -67,7 +68,7 @@ const putBlob = (url: string, blob: Blob, contentType: string | null, onProgress
       else reject(new UploadError('storage'));
     };
     xhr.onerror = () => { settle(); reject(new UploadError('network')); };
-    xhr.onabort = () => { settle(); reject(new UploadError('network')); };
+    xhr.onabort = () => { settle(); reject(new UploadError('cancelled')); };
     xhr.send(blob);
   });
 
@@ -142,6 +143,7 @@ export const uploadMedia = async ({ httpClient, agencyId, clientId, folderId, fi
     });
     return reserved.assetId;
   } catch (error) {
-    throw failureOf(error);
+    // What the person stopped is not a failure, whatever shape the aborted request took.
+    throw signal.aborted ? new UploadError('cancelled') : failureOf(error);
   }
 };
