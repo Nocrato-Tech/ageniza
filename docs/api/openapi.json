@@ -32,7 +32,7 @@
     },
     {
       "name": "contents",
-      "description": "Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar."
+      "description": "Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; e, no portal, os conteúdos de um período, o que espera aprovação, o post, aprovar e pedir ajuste."
     },
     {
       "name": "collaborators",
@@ -1826,6 +1826,446 @@
             "type": "string"
           }
         },
+        "additionalProperties": false
+      },
+      "listPortalContentsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "format": {
+                      "type": "string",
+                      "enum": [
+                        "image",
+                        "carousel",
+                        "reels",
+                        "long_video",
+                        "vsl"
+                      ]
+                    },
+                    "publishOn": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "in_production"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "format",
+                    "publishOn",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "platform": {
+                      "type": "string",
+                      "enum": [
+                        "instagram"
+                      ]
+                    },
+                    "format": {
+                      "type": "string",
+                      "enum": [
+                        "image",
+                        "carousel",
+                        "reels",
+                        "long_video",
+                        "vsl"
+                      ]
+                    },
+                    "publishOn": {
+                      "type": "string"
+                    },
+                    "publishAtTime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "awaiting_approval",
+                        "adjusting",
+                        "approved",
+                        "published"
+                      ]
+                    },
+                    "coverAssetId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "publishedOn": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "platform",
+                    "format",
+                    "publishOn",
+                    "publishAtTime",
+                    "status",
+                    "coverAssetId",
+                    "publishedOn"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "from",
+              "to",
+              "count"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "listPortalContentsAwaitingApprovalResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "platform": {
+                  "type": "string",
+                  "enum": [
+                    "instagram"
+                  ]
+                },
+                "format": {
+                  "type": "string",
+                  "enum": [
+                    "image",
+                    "carousel",
+                    "reels",
+                    "long_video",
+                    "vsl"
+                  ]
+                },
+                "publishOn": {
+                  "type": "string"
+                },
+                "publishAtTime": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "awaiting_approval",
+                    "adjusting",
+                    "approved",
+                    "published"
+                  ]
+                },
+                "coverAssetId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "publishedOn": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "platform",
+                "format",
+                "publishOn",
+                "publishAtTime",
+                "status",
+                "coverAssetId",
+                "publishedOn"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "pageSize": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "totalItems": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "totalPages": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "page",
+              "pageSize",
+              "totalItems",
+              "totalPages"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "getPortalContentResponse": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string"
+              },
+              "format": {
+                "type": "string",
+                "enum": [
+                  "image",
+                  "carousel",
+                  "reels",
+                  "long_video",
+                  "vsl"
+                ]
+              },
+              "publishOn": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "in_production"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "format",
+              "publishOn",
+              "status"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string"
+              },
+              "platform": {
+                "type": "string",
+                "enum": [
+                  "instagram"
+                ]
+              },
+              "format": {
+                "type": "string",
+                "enum": [
+                  "image",
+                  "carousel",
+                  "reels",
+                  "long_video",
+                  "vsl"
+                ]
+              },
+              "publishOn": {
+                "type": "string"
+              },
+              "publishAtTime": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "awaiting_approval",
+                  "adjusting",
+                  "approved",
+                  "published"
+                ]
+              },
+              "coverAssetId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "publishedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "caption": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "media": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "position": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "position"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "platform",
+              "format",
+              "publishOn",
+              "publishAtTime",
+              "status",
+              "coverAssetId",
+              "publishedOn",
+              "caption",
+              "revision",
+              "media"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "approvePortalContentRequest": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 2147483647
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "requestPortalContentChangesRequest": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 2147483647
+          },
+          "comment": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision",
+          "comment"
+        ],
         "additionalProperties": false
       },
       "listCollaboratorsResponse": {
@@ -10089,6 +10529,810 @@
                   "error": {
                     "code": "CLIENT_ARCHIVED",
                     "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clients/{clientId}/contents": {
+      "get": {
+        "operationId": "listPortalContents",
+        "summary": "Lista os conteúdos de um período, no portal",
+        "description": "Consulta por período, sem paginação: `from` e `to` inclusivos (`AAAA-MM-DD`), no máximo 93 dias (93 passa, 94 dá 400) e 500\nitens (acima disso, `400 CONTENT_PERIOD_TOO_LARGE`, sem truncar). Do dia mais antigo ao mais novo. Um conteúdo em produção traz\nsó o título, o dia e o formato; a partir de \"aguardando aprovação\" traz também a plataforma, a hora, a capa e o dia real da\npublicação, sem a legenda nem a mídia (essas vêm da leitura do conteúdo). Conteúdo cancelado nunca vem. Nenhuma resposta do\nportal traz subtarefa, responsável, prazo interno ou o id de uma pessoa, nem para o colaborador que também tem vínculo com o cliente.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "to",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conteúdos do período.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listPortalContentsResponse"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "id": "12121212-1212-4121-8121-121212121212",
+                      "title": "Bastidores da produção",
+                      "format": "image",
+                      "publishOn": "2026-10-18",
+                      "status": "in_production"
+                    },
+                    {
+                      "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                      "title": "Lançamento da coleção de outono",
+                      "platform": "instagram",
+                      "format": "reels",
+                      "publishOn": "2026-10-20",
+                      "publishAtTime": "18:30",
+                      "status": "awaiting_approval",
+                      "coverAssetId": null,
+                      "publishedOn": null
+                    }
+                  ],
+                  "meta": {
+                    "from": "2026-10-01",
+                    "to": "2026-10-31",
+                    "count": 2
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed | CONTENT_PERIOD_TOO_LARGE: O período tem mais de 500 itens. Consulte um período menor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clients/{clientId}/contents/awaiting-approval": {
+      "get": {
+        "operationId": "listPortalContentsAwaitingApproval",
+        "summary": "Lista o que espera a aprovação da pessoa, no portal",
+        "description": "Os conteúdos do cliente em \"aguardando aprovação\", do dia mais próximo ao mais distante, paginados pelo contrato global de\nlistagem (20 por página). A página além do fim responde o total real.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conteúdos aguardando aprovação.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listPortalContentsAwaitingApprovalResponse"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                      "title": "Lançamento da coleção de outono",
+                      "platform": "instagram",
+                      "format": "reels",
+                      "publishOn": "2026-10-20",
+                      "publishAtTime": "18:30",
+                      "status": "awaiting_approval",
+                      "coverAssetId": null,
+                      "publishedOn": null
+                    }
+                  ],
+                  "meta": {
+                    "page": 1,
+                    "pageSize": 20,
+                    "totalItems": 1,
+                    "totalPages": 1
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clients/{clientId}/contents/{contentId}": {
+      "get": {
+        "operationId": "getPortalContent",
+        "summary": "Lê um conteúdo, no portal",
+        "description": "A partir de \"aguardando aprovação\", o post com a legenda, a mídia (o id e o lugar de cada arquivo, em ordem) e a `revision` que\na pessoa lê e devolve ao aprovar ou pedir ajuste. Um conteúdo em produção traz só o título, o dia e o formato. Conteúdo\ncancelado, de outro cliente (mesmo de um cliente que a pessoa também lê), de outra agência, inexistente ou com id inválido\ndevolve o mesmo 404, e o colaborador que também tem vínculo recebe o mesmo recorte que qualquer pessoa do portal.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "O conteúdo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getPortalContentResponse"
+                },
+                "example": {
+                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                  "title": "Lançamento da coleção de outono",
+                  "platform": "instagram",
+                  "format": "reels",
+                  "publishOn": "2026-10-20",
+                  "publishAtTime": "18:30",
+                  "status": "awaiting_approval",
+                  "coverAssetId": null,
+                  "publishedOn": null,
+                  "caption": "Novidades de outono chegando!",
+                  "revision": 1,
+                  "media": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "position": 1
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Content not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Content not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clients/{clientId}/contents/{contentId}/approve": {
+      "post": {
+        "operationId": "approvePortalContent",
+        "summary": "Aprova um conteúdo, no portal",
+        "description": "Qualquer pessoa ativa do portal do cliente aprova um conteúdo que aguarda aprovação: o conteúdo passa a aprovado. Quem aprovou e\nquando são do banco, tirados da sessão, nunca do corpo (`.strict()`); a agência lê quem aprovou como `{ name, side: \"client\" }`, sem\nid. `revision` é a revisão que a pessoa leu: se a legenda, a capa, o formato ou a mídia mudou desde então, `409\nCONTENT_REVISION_CHANGED` e nada é aprovado. Aprovar um conteúdo já aprovado não muda nada, e a primeira pessoa continua sendo\nquem aprovou. Fora de \"aguardando aprovação\" (em produção, em ajuste, publicado): `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo\ncancelado, de outro cliente, inexistente ou de cliente arquivado durante a chamada: o mesmo 404, também para o colaborador que tem vínculo.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/approvePortalContentRequest"
+              },
+              "example": {
+                "revision": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conteúdo aprovado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getPortalContentResponse"
+                },
+                "example": {
+                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                  "title": "Lançamento da coleção de outono",
+                  "platform": "instagram",
+                  "format": "reels",
+                  "publishOn": "2026-10-20",
+                  "publishAtTime": "18:30",
+                  "status": "approved",
+                  "coverAssetId": null,
+                  "publishedOn": null,
+                  "caption": "Novidades de outono chegando!",
+                  "revision": 1,
+                  "media": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "position": 1
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Content not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Content not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CONTENT_NOT_AWAITING_APPROVAL: Só um conteúdo aguardando aprovação é aprovado. | CONTENT_REVISION_CHANGED: O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CONTENT_NOT_AWAITING_APPROVAL",
+                    "message": "Só um conteúdo aguardando aprovação é aprovado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clients/{clientId}/contents/{contentId}/request-changes": {
+      "post": {
+        "operationId": "requestPortalContentChanges",
+        "summary": "Pede ajuste de um conteúdo, no portal",
+        "description": "Qualquer pessoa ativa do portal do cliente pede ajuste de um conteúdo que aguarda aprovação: o conteúdo passa a \"em ajuste\" e o\n`comment`, obrigatório, entra na conversa do conteúdo como comentário do cliente (a conversa é aberta se ainda não existe, e é a\nmesma que a agência abre). O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de\nformato, nunca vazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. Quem\npediu é a pessoa da sessão. `revision` é a revisão que a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Fora de \"aguardando\naprovação\", inclusive um conteúdo que já está em ajuste: `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo cancelado, de outro\ncliente, inexistente ou de cliente arquivado durante a chamada: o mesmo 404.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/requestPortalContentChangesRequest"
+              },
+              "example": {
+                "revision": 1,
+                "comment": "Trocar a foto da capa por uma com mais luz."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conteúdo em ajuste.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getPortalContentResponse"
+                },
+                "example": {
+                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                  "title": "Lançamento da coleção de outono",
+                  "platform": "instagram",
+                  "format": "reels",
+                  "publishOn": "2026-10-20",
+                  "publishAtTime": "18:30",
+                  "status": "adjusting",
+                  "coverAssetId": null,
+                  "publishedOn": null,
+                  "caption": "Novidades de outono chegando!",
+                  "revision": 1,
+                  "media": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "position": 1
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed | CONTENT_COMMENT_INVALID:",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Content not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Content not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CONTENT_NOT_AWAITING_APPROVAL: Só um conteúdo aguardando aprovação recebe um pedido de ajuste. | CONTENT_REVISION_CHANGED: O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CONTENT_NOT_AWAITING_APPROVAL",
+                    "message": "Só um conteúdo aguardando aprovação recebe um pedido de ajuste."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
