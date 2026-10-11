@@ -117,7 +117,8 @@ const ownerOf = (row: { readonly owner_membership_id: string | null; readonly ow
  * The user behind an active link of a collaborator of this agency who can see Conteúdo, or `undefined` for a link that is absent,
  * removed, of another agency, of a client's portal (a portal link has its own table, so its id is no id here) or of a person who
  * cannot read Conteúdo. A person is named by a link, never by an id. The trigger `A0073` asks the same of the database
- * (`app_private.agency_user_can`, which `ageniza_app` cannot call), so this is the same rule read by the route before any write.
+ * (`app_private.agency_user_can`, which `ageniza_app` cannot call), so this is the same rule read by the route before any write;
+ * the agency being active is the guard of the route's.
  */
 export const resolveCollaboratorLink = async (
   transaction: ContentTransaction,
@@ -127,7 +128,7 @@ export const resolveCollaboratorLink = async (
     select membership.user_id
     from public.agency_memberships membership
     join public.agencies agency on agency.id = membership.agency_id
-    where membership.id = ?::uuid and membership.agency_id = ?::uuid and membership.status = 'active' and agency.status = 'active'
+    where membership.id = ?::uuid and membership.agency_id = ?::uuid and membership.status = 'active'
       and exists (select 1 from public.permissions permission where permission.key = ?)
       and (
         agency.owner_user_id = membership.user_id

@@ -418,6 +418,23 @@ describe('what the body takes (issue #552)', () => {
       expect(Object.values(answers).filter((answer) => !answer.database).length).toBeGreaterThan(3);
     });
 
+    it('refuses a link whose role belongs to another agency, even when that role can see Conteúdo, as the database does', async () => {
+      const foreignRole = await w.customRole(w.agencyB, ['conteudo.visualizar']);
+      const [link] = await w.getOwner().knex('agency_memberships').insert({ agency_id: w.agencyA, user_id: people.adminB.id, role_id: foreignRole }).returning('id');
+      try {
+        expect(await knownToTheDatabase('adminB')).toBe(false);
+        const contentId = await w.seedContent(clientA, { ownerUserId: people.production.id });
+        w.statements.length = 0;
+        // Asked by the person of both agencies, whose RLS reads the role of the other one: only the scope of the role refuses it.
+        const reply = await patch(people.dual.cookie, contentId, { ownerMembershipId: link.id as string });
+        expect(reply.statusCode).toBe(400);
+        expect(reply.json().error.code).toBe('CONTENT_OWNER_INVALID');
+        expect(w.statements.some((statement) => /update public\.contents\b/i.test(statement))).toBe(false);
+      } finally {
+        await w.getOwner().knex('agency_memberships').where({ id: link.id }).delete();
+      }
+    });
+
     it('accepts the Owner of the agency by a link whose role cannot see Conteúdo, as the database does', async () => {
       const roleId = await w.customRole(w.agencyA, ['cliente.visualizar']);
       const [link] = await w.getOwner().knex('agency_memberships').insert({ agency_id: w.agencyA, user_id: people.owner.id, role_id: roleId }).returning('id');
