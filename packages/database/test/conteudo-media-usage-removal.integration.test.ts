@@ -141,6 +141,30 @@ describe('removing a media from its folder (issue #384, rule 12)', () => {
     expect(await removedAt(asset)).toEqual(first);
   });
 
+  it('says whether THIS call removed it: true once, false for a repeat, and false for the call that waited behind the one that did', async () => {
+    const asset = await w.seedAsset(ids.clientA1, folderImages);
+    const verdict = (result: unknown): boolean => (result as { rows: Array<{ remove_media_asset: boolean }> }).rows[0]!.remove_media_asset;
+
+    const first = await w.openTransactionAs(operarAndVisualizar);
+    let second: Promise<unknown> | undefined;
+    let firstVerdict: boolean;
+    try {
+      firstVerdict = verdict(await first.raw('select app_private.remove_media_asset(?::uuid, ?::uuid)', [asset, folderImages]));
+      // The media is locked by the first call, which has not committed: the second waits for it, and when it gets the lock
+      // the media is already out of its folder.
+      second = removeAs(operarAndVisualizar, asset, folderImages);
+      await w.waitUntilSomeoneWaitsOnALock();
+    } finally {
+      await first.commit();
+    }
+    const removed = await removedAt(asset);
+
+    expect(firstVerdict).toBe(true);
+    expect(verdict(await second)).toBe(false);
+    expect(verdict(await removeAs(operarAndVisualizar, asset, folderImages))).toBe(false);
+    expect(await removedAt(asset)).toEqual(removed);
+  });
+
   it('is the only way: not even an Admin writes removed_at', async () => {
     const asset = await w.seedAsset(ids.clientA1, folderImages);
 
