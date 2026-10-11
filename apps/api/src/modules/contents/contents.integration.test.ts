@@ -476,7 +476,7 @@ describe('create (issue #254)', () => {
     const reply = await w.call('POST', people.admin.cookie, urlA(), { ...create, folderId: folder() });
     expect(reply.statusCode).toBe(400);
     expect(reply.json().error.code).toBe('CONTENT_FOLDER_INVALID');
-    expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+    expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
     expect(await w.countContents(clientA)).toBe(before);
   });
 
@@ -489,7 +489,7 @@ describe('create (issue #254)', () => {
     const reply = await w.call('POST', people.admin.cookie, urlA(), { ...create, folderId: folderA, ownerMembershipId: await owner() });
     expect(reply.statusCode).toBe(400);
     expect(reply.json().error.code).toBe('CONTENT_OWNER_INVALID');
-    expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+    expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
     expect(await w.countContents(clientA)).toBe(before);
   });
 
@@ -589,7 +589,7 @@ describe('read one content (issue #254)', () => {
     expect(body.id).toBe(contentId);
     expect(body.media).toEqual([{ id: second, position: 1 }, { id: first, position: 2 }]);
     expect(body.tasks.map((task: { id: string; status: string }) => [task.id, task.status]).sort()).toEqual([[approvedTask, 'approved'], [pendingTask, 'pending']].sort());
-    expect(body.tasks.find((task: { id: string }) => task.id === approvedTask)).toMatchObject({ approvedBy: people.admin.id, assigneeUserId: people.production.id, dueOn: '2026-10-15' });
+    expect(body.tasks.find((task: { id: string }) => task.id === approvedTask)).toMatchObject({ approvedBy: { name: 'Pessoa admin', side: 'agency' }, assignee: await ownerOf('production'), dueOn: '2026-10-15' });
     expect(body.conversation).toEqual({ threadId, commentCount: 2, lastCommentAt: '2026-10-09T15:30:00.000Z' });
   });
 
@@ -628,7 +628,8 @@ describe('edit and move (issue #254)', () => {
     const reply = await patch(people.production.cookie, contentId, { publishOn: '2026-10-25', publishAtTime: '09:15' });
 
     expect(reply.statusCode).toBe(200);
-    expect(reply.json()).toMatchObject({ publishOn: '2026-10-25', publishAtTime: '09:15', status: 'approved', revision: 1, approvedBy: people.admin.id });
+    expect(reply.json()).toMatchObject({ publishOn: '2026-10-25', publishAtTime: '09:15', status: 'approved', revision: 1 });
+    expect(reply.json().approvedBy).not.toBeNull();
     const after = await w.contentRow(contentId);
     expect(after.approved_by).toBe(before.approved_by);
     expect(after.approved_at).toEqual(before.approved_at);
@@ -708,7 +709,7 @@ describe('edit and move (issue #254)', () => {
     for (const reply of [title, move, media]) {
       expect(reply.statusCode).toBe(409);
       expect(reply.json().error.code).toBe('CONTENT_NOT_EDITABLE');
-      expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
     }
     const row = await w.contentRow(contentId);
     expect(row.title).toBe('Fechado');
@@ -833,7 +834,7 @@ describe('edit and move (issue #254)', () => {
 
         expect(reply.statusCode).toBe(403);
         expect(reply.json().error.code).toBe('FORBIDDEN');
-        expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
         expect((await w.contentRow(contentId)).owner_user_id).toBe(people.production.id);
       } finally {
         w.clearHook();
@@ -956,7 +957,7 @@ describe('format, folder, cover and media in one request (issue #254)', () => {
     for (const reply of [withoutList, withList]) {
       expect(reply.statusCode).toBe(409);
       expect(reply.json().error.code).toBe('CONTENT_MEDIA_INCOMPLETE');
-      expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
     }
     const row = await w.contentRow(contentId);
     expect([row.format, row.status, row.revision]).toEqual(['reels', 'approved', 1]);

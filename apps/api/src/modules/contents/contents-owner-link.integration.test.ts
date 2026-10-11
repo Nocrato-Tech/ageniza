@@ -2,12 +2,15 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { createTransitionFixtures } from './test-support/transition-fixtures.js';
 import { createContentsWorld, type PersonKey, type Reply } from './test-support/world.js';
+import type { TransitionAction } from './transition-errors.js';
 
 // Issue #552. The person in charge is named by the link they have with the agency, in what the API answers and in what it takes:
 // the collaborators contract hides everyone else's user id on purpose, so no route of Conteúdo gives one either, and a screen can
 // show a name and choose a person with the link it already lists. Each test names the mutation that turns it red.
 const w = createContentsWorld('owner-link');
+const f = createTransitionFixtures(w);
 const { people } = w;
 
 const NO_DATABASE_DETAIL = /A00\d\d|deadlock|40P01|42501|pg_|relation|process|constraint/i;
@@ -46,11 +49,13 @@ const withRemovedLink = async (person: PersonKey, run: () => Promise<void>): Pro
 
 beforeAll(async () => {
   await w.setup();
+  await f.setup();
   clientA = await w.newClient('a');
   folderA = await w.folderOf(clientA);
 }, 60_000);
 
 afterAll(async () => {
+  await f.cleanup();
   await w.teardown();
 }, 60_000);
 
@@ -117,12 +122,148 @@ describe('what the API answers (issue #552)', () => {
     expect((await w.contentRow(created.json().id)).owner_user_id).toBe(people.owner.id);
   });
 
-  it('answers the six transitions with the same owner and no user id of it', async () => {
+  it('answers the reschedule with the same owner and no user id of it', async () => {
     const contentId = await w.seedContent(clientA, { ownerUserId: people.production.id, status: 'cancelled' });
     const reply = await w.call('POST', people.manager.cookie, `${urlA()}/${contentId}/reschedule`, {});
     expect(reply.statusCode).toBe(200);
     expect(reply.json().owner).toEqual(await ownerOf('production'));
     expect(keysOf(reply.json())).not.toContain('ownerUserId');
+  });
+
+  describe('no response of Conteúdo carries the user id of anyone (issue #552)', () => {
+    const EVERY_USER_ID = (): string[] => Object.values(people).map((person) => person.id);
+
+    /** The whole body, keys and values: a key that names a user id, or any user id of the world, anywhere in it, is a leak. */
+    const leaks = (reply: Reply): string[] => {
+      const text = JSON.stringify(reply.json());
+      const keys = keysOf(reply.json()).filter((key) => /user_?id/i.test(key));
+      return [...keys, ...EVERY_USER_ID().filter((id) => text.includes(id))];
+    };
+
+    /** A content approved by the person and the reason given, written the way the database writes it (an INSERT, which the guard lets through). */
+    const seedApprovedBy = async (clientId: string, approvedBy: string, reason: string | null): Promise<string> => {
+      const id = randomUUID();
+      await w.getOwner().knex('contents').insert({
+        id,
+        client_id: clientId,
+        title: `Aprovado ${id.slice(0, 8)}`,
+        platform: 'instagram',
+        format: 'reels',
+        publish_on: '2026-10-20',
+        folder_id: await w.folderOf(clientId),
+        owner_user_id: people.production.id,
+        status: 'approved',
+        approved_by: approvedBy,
+        approved_at: new Date('2026-10-05T12:00:00.000Z'),
+        approved_by_agency_reason: reason
+      });
+      return id;
+    };
+
+    it('leaks nothing in the list, in the detail and in each of the six transitions, with owner, approver and subtasks that name people', async () => {
+      const clientId = await w.newClient('no-user-id');
+      const withTask = async (action: TransitionAction): Promise<{ contentId: string; body?: Record<string, unknown> }> => {
+        const fixture = await f.fixtureFor(action, clientId);
+        // The database takes no subtask into a published or a cancelled content, so those two answer an empty list.
+        if (action !== 'unpublish' && action !== 'reschedule') await w.seedTask(fixture.contentId, 'approved');
+        return fixture;
+      };
+      const read = await withTask('cancel');
+      const list = await w.call('GET', people.reader.cookie, `${urlA(clientId)}?from=2026-10-01&to=2026-10-31`);
+      const detail = await w.call('GET', people.reader.cookie, `${urlA(clientId)}/${read.contentId}`);
+      expect(list.statusCode).toBe(200);
+      expect(detail.statusCode).toBe(200);
+      expect(detail.json().tasks).toHaveLength(1);
+      expect(leaks(list)).toEqual([]);
+      expect(leaks(detail)).toEqual([]);
+
+      for (const action of ['submit', 'approve-by-agency', 'publish', 'unpublish', 'cancel', 'reschedule'] as const) {
+        const fixture = await withTask(action);
+        const reply = await w.call('POST', people.admin.cookie, f.urlOf(clientId, fixture.contentId, action), fixture.body);
+        expect(reply.statusCode, `${action} answered ${reply.statusCode}`).toBe(200);
+        expect(reply.json().tasks, `${action} brings its subtasks`).toHaveLength(action === 'unpublish' || action === 'reschedule' ? 0 : 1);
+        expect(leaks(reply), action).toEqual([]);
+      }
+    });
+
+    it('names who approved without an id: the name and the side, by the link of that side', async () => {
+      const clientId = await w.newClient('approver');
+      const portalPerson = await f.portalMember(clientId);
+      const portalName = (await w.getOwner().knex('auth.user').where({ id: portalPerson }).first('name')).name as string;
+      const approverOf = async (contentId: string): Promise<unknown> =>
+        (await w.call('GET', people.reader.cookie, `${urlA(clientId)}/${contentId}`)).json().approvedBy;
+
+      expect(await approverOf(await seedApprovedBy(clientId, portalPerson, null))).toEqual({ name: portalName, side: 'client' });
+      expect(await approverOf(await seedApprovedBy(clientId, people.admin.id, 'Aprovado por telefone'))).toEqual({ name: 'Pessoa admin', side: 'agency' });
+      expect(await approverOf(await seedApprovedBy(clientId, people.owner.id, 'Aprovado por telefone'))).toEqual({ name: 'Pessoa owner', side: 'agency' });
+    });
+
+    it('does not name a person who is tied to the side they approved from by nothing', async () => {
+      const clientId = await w.newClient('approver-untied');
+      const outsider = await seedApprovedBy(clientId, people.adminB.id, 'Aprovado por telefone');
+      const portalSide = await seedApprovedBy(clientId, people.admin.id, null);
+
+      const agency = await w.call('GET', people.reader.cookie, `${urlA(clientId)}/${outsider}`);
+      const portal = await w.call('GET', people.reader.cookie, `${urlA(clientId)}/${portalSide}`);
+
+      expect(agency.json().approvedBy).toEqual({ name: '', side: 'agency' });
+      expect(portal.json().approvedBy).toEqual({ name: '', side: 'client' });
+      expect(JSON.stringify([agency.json(), portal.json()])).not.toMatch(/Pessoa adminB|Pessoa admin"/);
+    });
+
+    it('names a person of the portal only by a link with the client of the content, not by the link they have with another client', async () => {
+      const clientId = await w.newClient('approver-other-client');
+      const otherClient = await w.newClient('approver-other-client-b');
+      const portalPerson = await f.portalMember(otherClient);
+      const contentId = await seedApprovedBy(clientId, portalPerson, null);
+      const detail = await w.call('GET', people.reader.cookie, `${urlA(clientId)}/${contentId}`);
+      expect(detail.json().approvedBy).toEqual({ name: '', side: 'client' });
+    });
+
+    it('names the approver of a subtask only when they are tied to the agency', async () => {
+      const clientId = await w.newClient('task-approver-untied');
+      const contentId = await w.seedContent(clientId, { ownerUserId: people.production.id });
+      const task = await w.seedTask(contentId, 'approved');
+      await w.getOwner().knex.raw('alter table public.content_tasks disable trigger content_tasks_guard');
+      try {
+        await w.getOwner().knex('content_tasks').where({ id: task }).update({ approved_by: people.adminB.id });
+      } finally {
+        await w.getOwner().knex.raw('alter table public.content_tasks enable trigger content_tasks_guard');
+      }
+      const detail = await w.call('GET', people.reader.cookie, `${urlA(clientId)}/${contentId}`);
+      expect(detail.json().tasks[0].approvedBy).toEqual({ name: '', side: 'agency' });
+    });
+
+    it('names the person of a subtask once, by the link of this agency, when they have a link with two', async () => {
+      const clientId = await w.newClient('task-two-agencies');
+      const contentId = await w.seedContent(clientId, { ownerUserId: people.production.id });
+      const task = await w.seedTask(contentId, 'pending');
+      await w.getOwner().knex('content_tasks').where({ id: task }).update({ assignee_user_id: people.dual.id });
+      // Read by the person of both agencies, who can see the two links: only the agency of the client picks the right one.
+      const detail = await w.call('GET', people.dual.cookie, `${urlA(clientId)}/${contentId}`);
+      expect(detail.json().tasks).toHaveLength(1);
+      expect(detail.json().tasks[0].assignee).toEqual(await ownerOf('dual'));
+    });
+
+    it('names the person a subtask is for by their link, and who approved it, without ids', async () => {
+      const clientId = await w.newClient('task-people');
+      const contentId = await w.seedContent(clientId, { ownerUserId: people.production.id });
+      const task = await w.seedTask(contentId, 'approved');
+      const detail = await w.call('GET', people.reader.cookie, `${urlA(clientId)}/${contentId}`);
+      expect(detail.json().tasks.find((item: { id: string }) => item.id === task)).toMatchObject({
+        assignee: await ownerOf('production'),
+        approvedBy: { name: 'Pessoa admin', side: 'agency' }
+      });
+    });
+
+    it('answers assignee null for a subtask of an Owner who holds the agency by ownership alone', async () => {
+      const clientId = await w.newClient('task-owner');
+      const contentId = await w.seedContent(clientId, { ownerUserId: people.production.id });
+      const task = await w.seedTask(contentId, 'pending');
+      await w.getOwner().knex('content_tasks').where({ id: task }).update({ assignee_user_id: people.owner.id });
+      const detail = await w.call('GET', people.reader.cookie, `${urlA(clientId)}/${contentId}`);
+      expect(detail.json().tasks[0].assignee).toBeNull();
+    });
   });
 });
 
@@ -178,7 +319,7 @@ describe('what the body takes (issue #552)', () => {
     const refused = async (reply: Reply, contentId: string, before: number, byTheDatabase = false): Promise<void> => {
       expect(reply.statusCode).toBe(400);
       expect(reply.json().error.code).toBe('CONTENT_OWNER_INVALID');
-      expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+      expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
       expect((await w.contentRow(contentId)).owner_user_id).toBe(people.production.id);
       expect(await w.countContents(clientA)).toBe(before);
       // The route refuses before it writes: the trigger of the database is the second barrier, not the first. A person who cannot

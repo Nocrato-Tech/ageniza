@@ -45,6 +45,8 @@ mantém a aprovação.
   a resposta traz `owner: { membershipId, name }` (`null` para quem não tem vínculo com a agência) e o corpo
   de `POST` e `PATCH` leva `ownerMembershipId`, nunca um id de usuário. Um vínculo que não é ativo, de colaborador, desta
   agência e de quem vê Conteúdo é `400 CONTENT_OWNER_INVALID`; sem a permissão, `403` qualquer que seja o vínculo.
+  Nenhuma resposta traz o id de usuário de ninguém: `approvedBy` é `{ name, side }` (`agency` ou `client`, pelo vínculo
+  do lado) e o responsável de uma subtarefa é `assignee: { membershipId, name }`.
 - **Formato e mídia** (`mediaAssetIds`, a lista inteira e ordenada) são gravados na mesma transação, o
   formato primeiro. Depois do envio para aprovação não se vai de carrossel para uma mídia só (nem o inverso)
   num `PATCH`: `409 CONTENT_MEDIA_INCOMPLETE`, e o caminho é cancelar e reagendar.

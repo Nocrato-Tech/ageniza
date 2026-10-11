@@ -64,12 +64,22 @@ export const ContentCaptionSchema = visibleText()
 const MediaAssetIdsSchema = z.array(z.string().uuid()).max(CONTENT_CAROUSEL_MAX_MEDIA);
 
 /**
- * The person in charge of a content as the agency sees them: the link (the only id of a collaborator the API exposes) and the name
- * the link carries. `null` where the person has no link to the agency (an Owner who holds the agency by ownership alone).
+ * A collaborator of the agency as a content names them (the person in charge, who a subtask is for): the link (the only id of a
+ * collaborator the API exposes) and the name the link carries. `null` where the person has no link to the agency (an Owner who holds
+ * the agency by ownership alone). No route of Conteúdo gives the user id of anyone.
  */
-export const ContentOwnerSchema = z.object({
+export const ContentPersonSchema = z.object({
   membershipId: z.string().uuid(),
   name: z.string()
+}).strict();
+
+/**
+ * Who approved, without an id: the name and the side they approved from. `agency` is an approval outside the platform (or of a subtask),
+ * `client` is the one of a person of the client's portal, who has no link with the agency to name them by.
+ */
+export const ContentApproverSchema = z.object({
+  name: z.string(),
+  side: z.enum(['agency', 'client'])
 }).strict();
 
 /**
@@ -152,7 +162,7 @@ export const ContentListItemSchema = z.object({
   publishOn: z.string(),
   publishAtTime: z.string().nullable(),
   status: ContentStatusSchema,
-  owner: ContentOwnerSchema.nullable(),
+  owner: ContentPersonSchema.nullable(),
   coverAssetId: z.string().uuid().nullable(),
   revision: z.number().int().positive(),
   publishedOn: z.string().nullable(),
@@ -190,10 +200,10 @@ export const ContentSchema = z.object({
   caption: z.string().nullable(),
   folderId: z.string().uuid(),
   coverAssetId: z.string().uuid().nullable(),
-  owner: ContentOwnerSchema.nullable(),
+  owner: ContentPersonSchema.nullable(),
   status: ContentStatusSchema,
   revision: z.number().int().positive(),
-  approvedBy: z.string().uuid().nullable(),
+  approvedBy: ContentApproverSchema.nullable(),
   approvedAt: z.string().nullable(),
   approvedByAgencyReason: z.string().nullable(),
   publishedOn: z.string().nullable(),
@@ -211,11 +221,11 @@ export const ContentTaskSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
   description: z.string().nullable(),
-  assigneeUserId: z.string().uuid(),
+  assignee: ContentPersonSchema.nullable(),
   dueOn: z.string(),
   status: ContentTaskStatusSchema,
   returnComment: z.string().nullable(),
-  approvedBy: z.string().uuid().nullable(),
+  approvedBy: ContentApproverSchema.nullable(),
   approvedAt: z.string().nullable()
 }).strict();
 

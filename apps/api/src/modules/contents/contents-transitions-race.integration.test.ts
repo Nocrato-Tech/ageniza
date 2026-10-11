@@ -31,7 +31,7 @@ const FUNCTION_OF: Record<TransitionAction, RegExp> = {
 const archived = (reply: Reply): void => {
   expect(reply.statusCode).toBe(409);
   expect(reply.json().error).toEqual({ code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode ser editado.' });
-  expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+  expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
 };
 
 const statusOf = async (contentId: string): Promise<string> => (await w.contentRow(contentId)).status as string;

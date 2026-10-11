@@ -345,7 +345,7 @@ const contentDetailExample = {
     id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0',
     title: 'Gravar o vídeo',
     description: null,
-    assigneeUserId: userId,
+    assignee: { membershipId, name: 'Ana Souza' },
     dueOn: '2026-10-15',
     status: 'pending',
     returnComment: null,
@@ -1058,7 +1058,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       'não é campo do corpo. `platform` é `instagram` e é o padrão. O responsável é quem cria, a não ser',
       'que `ownerMembershipId` nomeie o vínculo ativo de outro colaborador da agência que veja Conteúdo (`400 CONTENT_OWNER_INVALID`',
       'para vínculo removido, de outra agência, do portal ou que não existe). A resposta traz o responsável como `owner: { membershipId, name }`',
-      '(`null` para quem não tem vínculo com a agência); nenhuma rota de conteúdo devolve o id de usuário de outra pessoa.',
+      '(`null` para quem não tem vínculo com a agência). Nenhuma rota de conteúdo devolve o id de usuário de ninguém: quem aprovou vem como',
+      '`approvedBy: { name, side }` (`agency` ou `client`) e o responsável de uma subtarefa como `assignee: { membershipId, name }`.',
       'A pasta e a capa são do próprio cliente (`400 CONTENT_FOLDER_INVALID`, `400 CONTENT_MEDIA_INVALID`).',
       'Título de uma linha até 120 caracteres e legenda até 2.200 caracteres recusam caractere de',
       'controle e invisível. Cliente arquivado responde `409 CLIENT_ARCHIVED`.'
@@ -1203,7 +1204,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       example: {
         ...contentDetailExample,
         status: 'approved',
-        approvedBy: userId,
+        approvedBy: { name: 'Ana Souza', side: 'agency' },
         approvedAt: '2026-10-11T12:30:00.000Z',
         approvedByAgencyReason: 'O cliente aprovou por telefone em 11/10.'
       }

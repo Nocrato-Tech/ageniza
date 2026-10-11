@@ -1982,7 +1982,10 @@ Cria um conteúdo em produção.
       "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
       "title": "Gravar o vídeo",
       "description": null,
-      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+      "assignee": {
+        "membershipId": "22222222-2222-4222-8222-222222222222",
+        "name": "Ana Souza"
+      },
       "dueOn": "2026-10-15",
       "status": "pending",
       "returnComment": null,
@@ -2044,7 +2047,10 @@ Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa.
       "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
       "title": "Gravar o vídeo",
       "description": null,
-      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+      "assignee": {
+        "membershipId": "22222222-2222-4222-8222-222222222222",
+        "name": "Ana Souza"
+      },
       "dueOn": "2026-10-15",
       "status": "pending",
       "returnComment": null,
@@ -2115,7 +2121,10 @@ Edita um conteúdo; mover de data é editar `publishOn`.
       "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
       "title": "Gravar o vídeo",
       "description": null,
-      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+      "assignee": {
+        "membershipId": "22222222-2222-4222-8222-222222222222",
+        "name": "Ana Souza"
+      },
       "dueOn": "2026-10-15",
       "status": "pending",
       "returnComment": null,
@@ -2177,7 +2186,10 @@ Envia o conteúdo para aprovação.
       "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
       "title": "Gravar o vídeo",
       "description": null,
-      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+      "assignee": {
+        "membershipId": "22222222-2222-4222-8222-222222222222",
+        "name": "Ana Souza"
+      },
       "dueOn": "2026-10-15",
       "status": "pending",
       "returnComment": null,
@@ -2231,7 +2243,10 @@ Registra a aprovação feita fora da plataforma.
   },
   "status": "approved",
   "revision": 1,
-  "approvedBy": "55555555-5555-4555-8555-555555555555",
+  "approvedBy": {
+    "name": "Ana Souza",
+    "side": "agency"
+  },
   "approvedAt": "2026-10-11T12:30:00.000Z",
   "approvedByAgencyReason": "O cliente aprovou por telefone em 11/10.",
   "publishedOn": null,
@@ -2248,7 +2263,10 @@ Registra a aprovação feita fora da plataforma.
       "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
       "title": "Gravar o vídeo",
       "description": null,
-      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+      "assignee": {
+        "membershipId": "22222222-2222-4222-8222-222222222222",
+        "name": "Ana Souza"
+      },
       "dueOn": "2026-10-15",
       "status": "pending",
       "returnComment": null,
@@ -2318,7 +2336,10 @@ Marca o conteúdo aprovado como publicado.
       "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
       "title": "Gravar o vídeo",
       "description": null,
-      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+      "assignee": {
+        "membershipId": "22222222-2222-4222-8222-222222222222",
+        "name": "Ana Souza"
+      },
       "dueOn": "2026-10-15",
       "status": "pending",
       "returnComment": null,
@@ -2380,7 +2401,10 @@ Desfaz a publicação no mesmo dia.
       "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
       "title": "Gravar o vídeo",
       "description": null,
-      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+      "assignee": {
+        "membershipId": "22222222-2222-4222-8222-222222222222",
+        "name": "Ana Souza"
+      },
       "dueOn": "2026-10-15",
       "status": "pending",
       "returnComment": null,
@@ -2442,7 +2466,10 @@ Cancela o conteúdo (ele fica guardado).
       "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
       "title": "Gravar o vídeo",
       "description": null,
-      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+      "assignee": {
+        "membershipId": "22222222-2222-4222-8222-222222222222",
+        "name": "Ana Souza"
+      },
       "dueOn": "2026-10-15",
       "status": "pending",
       "returnComment": null,
@@ -2512,7 +2539,10 @@ Reagenda um conteúdo cancelado.
       "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
       "title": "Gravar o vídeo",
       "description": null,
-      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+      "assignee": {
+        "membershipId": "22222222-2222-4222-8222-222222222222",
+        "name": "Ana Souza"
+      },
       "dueOn": "2026-10-15",
       "status": "pending",
       "returnComment": null,

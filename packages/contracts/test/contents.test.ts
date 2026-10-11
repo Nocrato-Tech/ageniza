@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ApproveContentByAgencyRequestSchema,
+  ContentApproverSchema,
   ContentListItemSchema,
+  ContentTaskSchema,
   ContentSchema,
   CONTENT_CAPTION_MAX_LENGTH,
   CONTENT_PERIOD_MAX_DAYS,
@@ -332,5 +334,29 @@ describe('the person in charge is named by link (issue #552)', () => {
     expect(ContentSchema.shape.owner.safeParse({ membershipId: LINK, name: 'Ana' }).success).toBe(true);
     expect(ContentSchema.shape.owner.safeParse(null).success).toBe(true);
     expect(ContentSchema.shape.owner.safeParse({ membershipId: LINK, name: 'Ana', userId: LINK }).success).toBe(false);
+  });
+});
+
+describe('no contract of Conteúdo carries the user id of a person (issue #552)', () => {
+  const LINK = '5b241101-e2bb-4255-8caf-4136c566a962';
+
+  it('says who approved by name and side, and nothing else', () => {
+    expect(ContentApproverSchema.safeParse({ name: 'Ana', side: 'agency' }).success).toBe(true);
+    expect(ContentApproverSchema.safeParse({ name: 'Ana', side: 'client' }).success).toBe(true);
+    expect(ContentApproverSchema.safeParse({ name: 'Ana', side: 'portal' }).success).toBe(false);
+    expect(ContentApproverSchema.safeParse({ name: 'Ana', side: 'agency', userId: LINK }).success).toBe(false);
+    expect(ContentApproverSchema.safeParse(LINK).success).toBe(false);
+    expect(ContentSchema.shape.approvedBy.safeParse(null).success).toBe(true);
+    expect(ContentSchema.shape.approvedBy.safeParse(LINK).success).toBe(false);
+  });
+
+  it('describes a subtask by the person it is for, as { membershipId, name } or null, and who approved it like the content does', () => {
+    expect(ContentTaskSchema.shape).toHaveProperty('assignee');
+    expect(ContentTaskSchema.shape).not.toHaveProperty('assigneeUserId');
+    expect(ContentTaskSchema.shape.assignee.safeParse({ membershipId: LINK, name: 'Ana' }).success).toBe(true);
+    expect(ContentTaskSchema.shape.assignee.safeParse(null).success).toBe(true);
+    expect(ContentTaskSchema.shape.assignee.safeParse(LINK).success).toBe(false);
+    expect(ContentTaskSchema.shape.approvedBy.safeParse({ name: 'Ana', side: 'agency' }).success).toBe(true);
+    expect(ContentTaskSchema.shape.approvedBy.safeParse(LINK).success).toBe(false);
   });
 });
