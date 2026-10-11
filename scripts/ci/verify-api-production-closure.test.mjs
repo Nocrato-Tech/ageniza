@@ -1,20 +1,27 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   BOOT_MODULES,
   FORBIDDEN_IN_API_PRODUCTION,
+  INTERNAL_RUNTIME_EXTRAS,
   bootFromDeploy,
   checkDeployedApi,
+  devDependenciesOfWorkspace,
+  forbiddenForWorkspace,
   forbiddenPackagesIn,
   main,
   packageNameFromStoreEntry,
   unexpectedInDeploy,
+  unexpectedInInternalPackage,
   verifyApiProductionClosure
 } from './verify-api-production-closure.mjs';
+
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 const created = [];
 afterEach(() => {
@@ -35,14 +42,42 @@ const write = (root, relative, content = '') => {
 
 const CLEAN_FILES = ['package.json', 'dist/app.js', 'dist/server.js', 'dist/modules/auth/routes.js'];
 
-/** A deploy as `pnpm deploy --prod` lays it out: `store` is the entries of node_modules/.pnpm, `null` meaning no store at all. */
-const populate = (root, { store = ['better-auth@1.7.5', 'pg@8.16.3'], files = CLEAN_FILES } = {}) => {
+// What `pnpm deploy --prod` leaves of each @ageniza/* package once its `files` are honoured.
+const CLEAN_INTERNAL = {
+  config: ['package.json', 'README.md', 'dist/server.js', 'dist/server.d.ts.map'],
+  contracts: ['package.json', 'README.md', 'dist/index.js'],
+  core: ['package.json', 'README.md', 'dist/index.js'],
+  database: ['package.json', 'README.md', 'dist/index.js', 'bin/migrate.mjs', 'migrations/20260915000000_database_foundation.mjs'],
+  email: ['package.json', 'README.md', 'dist/index.js']
+};
+
+/**
+ * A deploy as `pnpm deploy --prod` lays it out: `store` is the entries of node_modules/.pnpm, `null` meaning no store at all,
+ * and `internal` the files of each @ageniza/* package the API declares, which sit in their own store entry.
+ */
+const populate = (root, { store = ['better-auth@1.7.5', 'pg@8.16.3'], files = CLEAN_FILES, internal = CLEAN_INTERNAL } = {}) => {
   if (store !== null) {
     mkdirSync(join(root, 'node_modules', '.pnpm'), { recursive: true });
     for (const entry of store) mkdirSync(join(root, 'node_modules', '.pnpm', entry));
+    for (const [name, packageFiles] of Object.entries(internal)) {
+      const folder = join('node_modules', '.pnpm', `@ageniza+${name}@file+packages+${name}`, 'node_modules', '@ageniza', name);
+      for (const file of packageFiles) write(root, join(folder, file));
+    }
   }
   for (const file of files) write(root, file);
+  const dependencies = Object.fromEntries(Object.keys(internal).map((name) => [`@ageniza/${name}`, `file:packages/${name}`]));
+  if (files.includes('package.json')) write(root, 'package.json', JSON.stringify({ name: '@ageniza/api', type: 'module', dependencies }));
   return root;
+};
+
+/** A workspace as pnpm-workspace.yaml describes it: the root and one project per entry of `projects`. */
+const workspace = ({ root = {}, projects = {}, globs = ['apps/*', 'packages/*'] } = {}) => {
+  const directory = temporaryDirectory();
+  write(directory, 'pnpm-workspace.yaml', `packages:\n${globs.map((glob) => `  - ${glob}\n`).join('')}`);
+  write(directory, 'package.json', JSON.stringify(root));
+  for (const glob of globs) mkdirSync(join(directory, glob.split('/*')[0]), { recursive: true });
+  for (const [path, manifest] of Object.entries(projects)) write(directory, `${path}/package.json`, JSON.stringify(manifest));
+  return directory;
 };
 
 const deployed = (options) => populate(temporaryDirectory(), options);
@@ -114,6 +149,97 @@ describe('what the production image carries', () => {
   });
 });
 
+describe('what an @ageniza/* package carries', () => {
+  it('keeps the compiled runtime, package.json and the README npm always packs', () => {
+    expect(unexpectedInInternalPackage('@ageniza/core', ['package.json', 'README.md', 'dist/index.js', 'dist/index.d.ts', 'dist/index.js.map', 'dist/logging/redaction.js'])).toEqual([]);
+  });
+
+  it('flags source, tests, tooling and the build cache outside dist', () => {
+    expect(unexpectedInInternalPackage('@ageniza/config', [
+      'package.json', 'dist/server.js', 'src/server.ts', 'src/server.test.ts', 'test/env.test.ts',
+      '.turbo/turbo-build.log', 'tsconfig.json', 'vitest.config.ts', 'vitest.integration.config.ts'
+    ])).toEqual(['.turbo/turbo-build.log', 'src/server.test.ts', 'src/server.ts', 'test/env.test.ts', 'tsconfig.json', 'vitest.config.ts', 'vitest.integration.config.ts']);
+  });
+
+  it('flags compiled tests and test support inside dist', () => {
+    expect(unexpectedInInternalPackage('@ageniza/database', [
+      'dist/index.js', 'dist/integration-database-url.test.js', 'dist/integration-database-url.test.d.ts.map', 'dist/test-support/harness.js'
+    ])).toEqual(['dist/integration-database-url.test.d.ts.map', 'dist/integration-database-url.test.js', 'dist/test-support/harness.js']);
+  });
+
+  it('lets only the database carry the migration runner and the migrations, which the migrations image runs', () => {
+    expect(INTERNAL_RUNTIME_EXTRAS).toEqual({ '@ageniza/database': ['bin', 'migrations'] });
+    const runner = ['bin/migrate.mjs', 'migrations/20260915000000_database_foundation.mjs'];
+    expect(unexpectedInInternalPackage('@ageniza/database', runner)).toEqual([]);
+    expect(unexpectedInInternalPackage('@ageniza/core', runner)).toEqual(runner);
+    expect(unexpectedInInternalPackage('@ageniza/email', runner)).toEqual(runner);
+  });
+
+  it('still flags a test that hides under the database migrations', () => {
+    expect(unexpectedInInternalPackage('@ageniza/database', ['migrations/helper.test.mjs'])).toEqual(['migrations/helper.test.mjs']);
+  });
+});
+
+describe('the files of the internal packages', () => {
+  const filesOf = (name) => JSON.parse(readFileSync(join(repositoryRoot, 'packages', name, 'package.json'), 'utf8')).files;
+
+  it('ship the compiled runtime without compiled tests, by value', () => {
+    for (const name of ['config', 'contracts', 'core', 'email']) {
+      expect(filesOf(name), name).toEqual(['dist', '!dist/**/*.test.*', '!dist/**/test-support/**']);
+    }
+  });
+
+  it('ship, for the database, the migration runner and the migrations the migrations image runs', () => {
+    expect(filesOf('database')).toEqual(['dist', 'bin', 'migrations', '!dist/**/*.test.*', '!dist/**/test-support/**']);
+  });
+});
+
+describe('the devDependencies of the workspace', () => {
+  it('collects the root and every project of the workspace globs, sorted and without repeats', () => {
+    const root = workspace({
+      root: { devDependencies: { typescript: '5', vitest: '3' } },
+      projects: {
+        'apps/api': { devDependencies: { tsx: '4', '@types/pg': '8' }, dependencies: { fastify: '5' } },
+        'apps/worker': { devDependencies: { tsx: '4' } },
+        'packages/database': { devDependencies: { '@types/pg': '8' } },
+        'packages/core': { dependencies: { pino: '10' } }
+      }
+    });
+    expect(devDependenciesOfWorkspace(root)).toEqual(['@types/pg', 'tsx', 'typescript', 'vitest']);
+  });
+
+  it('skips a folder of the globs that is not a project', () => {
+    const root = workspace({ projects: { 'apps/api': { devDependencies: { tsx: '4' } } } });
+    mkdirSync(join(root, 'apps', 'scratch'));
+    expect(devDependenciesOfWorkspace(root)).toEqual(['tsx']);
+  });
+
+  it('reads the devDependencies of this repository, project by project', () => {
+    const found = devDependenciesOfWorkspace(repositoryRoot);
+    for (const name of ['typescript', 'vitest', 'eslint', 'tsx', '@asteasolutions/zod-to-openapi', '@scalar/fastify-api-reference', '@types/pg', '@types/nodemailer', 'jsdom', '@testing-library/react']) {
+      expect(found, name).toContain(name);
+    }
+    for (const name of ['fastify', 'better-auth', 'pg', 'zod', 'knex', 'pino']) {
+      expect(found, name).not.toContain(name);
+    }
+  });
+
+  it('refuses a workspace folder that is not there instead of reading a workspace with no projects', () => {
+    const root = workspace();
+    rmSync(join(root, 'packages'), { recursive: true });
+    expect(() => devDependenciesOfWorkspace(root)).toThrow();
+  });
+
+  it('refuses a workspace pattern it cannot read instead of ignoring the projects it names', () => {
+    expect(() => devDependenciesOfWorkspace(workspace({ globs: ['apps/**'] }))).toThrow('cannot read');
+  });
+
+  it('adds them to the test tooling chain that no devDependency names', () => {
+    const root = workspace({ projects: { 'apps/api': { devDependencies: { tsx: '4' } } } });
+    expect(forbiddenForWorkspace(root)).toEqual([...FORBIDDEN_IN_API_PRODUCTION, 'tsx'].sort());
+  });
+});
+
 describe('checking a deployed API', () => {
   it('accepts a closure that is clean, carries only the runtime and boots', () => {
     expect(checkDeployedApi(deployed(), { boot: bootsFine })).toEqual([]);
@@ -148,6 +274,58 @@ describe('checking a deployed API', () => {
     expect(failures).toHaveLength(1);
     expect(failures[0]).toContain('3 file(s) the runtime does not read');
     expect(failures[0]).toContain('dist/app.test.js');
+  });
+
+  it('names a development tool the caller derived from the workspace, which the test chain alone does not know', () => {
+    const store = ['better-auth@1.7.5', 'tsx@4.19.3', 'esbuild@0.25.0'];
+    expect(checkDeployedApi(deployed({ store }), { boot: bootsFine })).toEqual([]);
+    const failures = checkDeployedApi(deployed({ store }), { boot: bootsFine, forbidden: [...FORBIDDEN_IN_API_PRODUCTION, 'tsx'] });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain('tsx reached the deployed API');
+  });
+
+  it('fails when an @ageniza/* package carries its source, its tests or its build cache', () => {
+    const internal = {
+      ...CLEAN_INTERNAL,
+      config: [...CLEAN_INTERNAL.config, 'src/server.ts', '.turbo/turbo-build.log'],
+      database: [...CLEAN_INTERNAL.database, 'test/postgres.integration.test.ts']
+    };
+    const failures = checkDeployedApi(deployed({ internal }), { boot: bootsFine });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain('3 file(s) of @ageniza/* the runtime does not read');
+    expect(failures[0]).toContain('@ageniza/config/.turbo/turbo-build.log, @ageniza/config/src/server.ts, @ageniza/database/test/postgres.integration.test.ts');
+  });
+
+  it('fails when the compiled tests of an @ageniza/* package reach dist', () => {
+    const internal = { ...CLEAN_INTERNAL, core: [...CLEAN_INTERNAL.core, 'dist/logging.test.js', 'dist/test-support/clock.js'] };
+    const failures = checkDeployedApi(deployed({ internal }), { boot: bootsFine });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain('@ageniza/core/dist/logging.test.js, @ageniza/core/dist/test-support/clock.js');
+  });
+
+  it('accepts the migration runner and the migrations in the database package and nowhere else', () => {
+    expect(checkDeployedApi(deployed(), { boot: bootsFine })).toEqual([]);
+    const internal = { ...CLEAN_INTERNAL, email: [...CLEAN_INTERNAL.email, 'bin/migrate.mjs'] };
+    const failures = checkDeployedApi(deployed({ internal }), { boot: bootsFine });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain('@ageniza/email/bin/migrate.mjs');
+  });
+
+  it('fails when an @ageniza/* package the API declares is not in the store, so a renamed entry is not a pass', () => {
+    const root = deployed();
+    const store = join(root, 'node_modules', '.pnpm');
+    rmSync(join(store, '@ageniza+contracts@file+packages+contracts'), { recursive: true });
+    mkdirSync(join(store, '@ageniza+contracts+file+packages+contracts', 'node_modules', '@ageniza', 'contracts', 'src'), { recursive: true });
+    const failures = checkDeployedApi(root, { boot: bootsFine });
+    expect(failures).toEqual(['the deploy has no @ageniza/contracts to inspect, and the API declares it.']);
+  });
+
+  it('inspects every store entry of a package the store holds twice, as pnpm does when peers differ', () => {
+    const root = deployed();
+    write(root, 'node_modules/.pnpm/@ageniza+core@file+packages+core_pino@10.0.0/node_modules/@ageniza/core/src/index.ts');
+    const failures = checkDeployedApi(root, { boot: bootsFine });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain('@ageniza/core/src/index.ts');
   });
 
   it('fails when the boot modules do not load, with the reason', () => {
@@ -238,6 +416,34 @@ describe('verifying the API production closure end to end', () => {
   it('fails closed when the sentinel is missing from the store', () => {
     const failures = verifyApiProductionClosure({ deploy: deployInto({ store: ['pg@8.16.3'] }), boot: bootsFine });
     expect(failures).toEqual(['the deploy has no better-auth to inspect.']);
+  });
+
+  it('fails when a workspace devDependency reached the deploy, which a package moved to dependencies looks like', () => {
+    const workspaceRoot = workspace({ projects: { 'apps/worker': { devDependencies: { tsx: '4' } } } });
+    const failures = verifyApiProductionClosure({
+      deploy: deployInto({ store: ['better-auth@1.7.5', 'tsx@4.19.3'] }),
+      boot: bootsFine,
+      workspaceRoot
+    });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain('tsx reached the deployed API');
+  });
+
+  it('takes the list from the workspace it is given, so a package that is no devDependency there is not forbidden', () => {
+    const workspaceRoot = workspace({ projects: { 'apps/worker': { devDependencies: { nodemon: '3' } } } });
+    const failures = verifyApiProductionClosure({
+      deploy: deployInto({ store: ['better-auth@1.7.5', 'tsx@4.19.3'] }),
+      boot: bootsFine,
+      workspaceRoot
+    });
+    expect(failures).toEqual([]);
+  });
+
+  it('fails when an @ageniza/* package carries its source into the deploy', () => {
+    const internal = { ...CLEAN_INTERNAL, email: [...CLEAN_INTERNAL.email, 'src/index.ts'] };
+    const failures = verifyApiProductionClosure({ deploy: deployInto({ internal }), boot: bootsFine });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain('@ageniza/email/src/index.ts');
   });
 
   it('removes the temporary directory when the deploy itself fails, and lets the error through', () => {
