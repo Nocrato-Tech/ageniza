@@ -1,10 +1,19 @@
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 
-import { ClientDetailResponseSchema, ClientListResponseSchema, ContentPeriodResponseSchema, ClientSchema } from '@ageniza/contracts';
+import {
+  ClientDetailResponseSchema,
+  ClientListResponseSchema,
+  ClientSchema,
+  ContentDetailSchema,
+  ContentPeriodResponseSchema,
+  type ContentListItem,
+  type UpdateContentRequest
+} from '@ageniza/contracts';
 import { Avatar, Button, Skeleton } from '@ageniza/ui';
 
-import { useAgencyContext } from './agency.js';
+import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
 import { clientDetailQueryKey } from './client-detail.js';
 import { ContentCalendar } from './content-calendar.js';
@@ -91,6 +100,17 @@ export function ContentsPage() {
   </section>;
 }
 
+/** The screen's own words for each refusal of a move: what the server wrote is never shown. */
+const moveErrorMessage = (error: unknown): string => {
+  if (error instanceof HttpClientError) {
+    if (error.status === 409 && error.code === 'CONTENT_NOT_EDITABLE') return 'Este conteúdo já foi publicado ou cancelado e não pode mudar de data.';
+    if (error.status === 409 && error.code === 'CLIENT_ARCHIVED') return 'Este cliente está arquivado: o calendário é só leitura.';
+    if (error.status === 403) return 'Você não tem permissão para mover conteúdos.';
+    if (error.status === 404) return 'Este conteúdo não existe mais.';
+  }
+  return 'Não foi possível mover o conteúdo. Tente de novo.';
+};
+
 const parseView = (raw: string | null): CalendarView => (raw === 'semana' ? 'week' : 'month');
 
 /**
@@ -136,10 +156,27 @@ export function ContentsClientPage() {
       previousQuery?.queryKey[1] === agency.agencyId && previousQuery.queryKey[3] === normalizedId ? previous : undefined
   });
 
+  const queryClient = useQueryClient();
+  const canOperate = useCan('conteudo.operar');
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const move = useMutation({
+    mutationFn: ({ content, day }: { content: ContentListItem; day: string }) => httpClient.request({
+      path: apiPath('/agencies/:agencyId/clients/:clientId/contents/:contentId', { agencyId: agency.agencyId, clientId: normalizedId, contentId: content.id }),
+      method: 'PATCH',
+      body: { publishOn: day } satisfies UpdateContentRequest,
+      response: ContentDetailSchema
+    }),
+    onMutate: () => setMoveError(null),
+    onError: (error) => setMoveError(moveErrorMessage(error)),
+    // Settled only after the period is read again: the card never waits on its old day with the move already done.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'contents', normalizedId] })
+  });
+
   const name = client.data?.name;
   useDocumentTitle(name === undefined ? 'Conteúdos — Ageniza' : `Conteúdos de ${name} — Ageniza`);
 
   const setPeriod = (nextView: CalendarView, nextAnchor: string | null): void => {
+    setMoveError(null);
     const next = new URLSearchParams(searchParams);
     if (nextView === 'week') next.set('visao', 'semana'); else next.delete('visao');
     if (nextAnchor === null) next.delete('data'); else next.set('data', nextAnchor);
@@ -154,6 +191,8 @@ export function ContentsClientPage() {
   const failed = (client.isError && clientData === undefined) || (contents.isError && contents.data === undefined);
   const loaded = contents.data;
   const unitLabel = view === 'week' ? 'semana' : 'mês';
+  const archived = clientData?.status === 'archived';
+  const canMove = canOperate && clientData !== undefined && !archived;
 
   return <section aria-labelledby="contents-title" className="contents">
     <h1 id="contents-title" className="visually-hidden">Conteúdos</h1>
@@ -194,12 +233,24 @@ export function ContentsClientPage() {
             {['Feed', 'Pastas'].map((label) => <Button key={label} role="tab" aria-selected="false" disabled variant="ghost">{label}</Button>)}
           </div>
         </div>
+        {archived && <p className="contents__note">Cliente arquivado: o calendário é só leitura.</p>}
+        {moveError !== null && <p className="contents__move-error" role="alert">{moveError}</p>}
+        {move.isPending && <p className="list-refreshing" role="status">Movendo conteúdo…</p>}
         {loaded === undefined
           ? <div className="contents__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>
           : <>
             {contents.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
             {loaded.data.contents.length === 0 && !contents.isPlaceholderData && <p className="contents__empty">Nenhum conteúdo planejado neste período.</p>}
-            <ContentCalendar view={view} anchor={anchor} today={today} days={daysOf(period)} contents={loaded.data.contents} />
+            <ContentCalendar
+              view={view}
+              anchor={anchor}
+              today={today}
+              days={daysOf(period)}
+              contents={loaded.data.contents}
+              canMove={canMove}
+              movingId={move.isPending ? move.variables.content.id : null}
+              onMove={(content, day) => move.mutate({ content, day })}
+            />
           </>}
       </div>
       <aside className="contents__feed" aria-label="Prévia do feed">

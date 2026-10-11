@@ -2721,3 +2721,20 @@ a.client-general__block:hover {
   border-color: var(--text-primary);
   color: var(--text-primary);
 }
+
+.content-card--movable {
+  cursor: grab;
+}
+
+.content-card--busy {
+  opacity: 0.55;
+}
+
+.contents__note,
+.contents__move-error {
+  margin: 0;
+}
+
+.contents__move-error {
+  color: var(--text-danger);
+}

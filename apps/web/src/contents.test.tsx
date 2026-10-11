@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { MemoryRouter, type Location, type NavigateFunction } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UpdateContentRequestSchema } from '@ageniza/contracts';
+
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
@@ -96,7 +98,35 @@ const contentFixture = (overrides: Record<string, unknown> = {}) => {
 const periodResponse = (contents: readonly unknown[], from: string, to: string): Response =>
   json({ data: { contents, storyScripts: [] }, meta: { from, to, count: contents.length } });
 
+/** The answer of `PATCH .../contents/:contentId`: the whole content, as the API describes it. */
+const detailOfContent = (clientId: string, row: ReturnType<typeof contentFixture>) => ({
+  id: row.id,
+  clientId,
+  title: row.title,
+  platform: row.platform,
+  format: row.format,
+  publishOn: row.publishOn,
+  publishAtTime: row.publishAtTime,
+  caption: null,
+  folderId: 'f0f0f0f0-0000-4000-8000-000000000001',
+  coverAssetId: row.coverAssetId,
+  ownerUserId: row.ownerUserId,
+  status: row.status,
+  revision: row.revision,
+  approvedBy: null,
+  approvedAt: null,
+  approvedByAgencyReason: null,
+  publishedOn: row.publishedOn,
+  cancelledAt: null,
+  createdAt: '2026-10-01T12:00:00.000Z',
+  media: [],
+  tasks: [],
+  conversation: { threadId: null, commentCount: 0, lastCommentAt: null }
+});
+
 interface Scenario {
+  /** Overrides the answer of a move, after the guard and the body were checked like the API does. */
+  readonly patch?: (clientId: string, contentId: string, body: unknown, call: number) => Response | Promise<Response> | undefined;
   readonly permissions?: readonly string[];
   readonly roster?: readonly ReturnType<typeof clientFixture>[];
   readonly clients?: (query: URLSearchParams) => Response | Promise<Response>;
@@ -113,6 +143,7 @@ const isDay = (value: string | null): value is string => value !== null && /^\d{
 /** Behaves like the real API: 401 without a session, 403 from the guard, 400 for a bad period, 404 for a client out of reach. */
 const makeFetch = (scenario: Scenario = {}) => {
   const calls: string[] = [];
+  const patches: Array<{ clientId: string; contentId: string; body: unknown }> = [];
   let periodCalls = 0;
   const permissions = scenario.permissions ?? [VISUALIZE, READ_CLIENTS];
   const roster = scenario.roster ?? ROSTER;
@@ -147,6 +178,23 @@ const makeFetch = (scenario: Scenario = {}) => {
       const rows = (scenario.contents?.[clientId] ?? []).filter((content) => content.publishOn >= from && content.publishOn <= to);
       return periodResponse(rows, from, to);
     }
+    const one = /\/agencies\/([^/]+)\/clients\/([^/]+)\/contents\/([^/]+)$/.exec(path);
+    if (one !== null && method === 'PATCH') {
+      // The routes of the API need conteudo.operar and conteudo.visualizar together (decision 2026-10-11).
+      if (!permissions.includes('conteudo.operar') || !permissions.includes(VISUALIZE)) return forbidden();
+      const clientId = one[2]!;
+      const contentId = one[3]!;
+      const row = scenario.contents?.[clientId]?.find((candidate) => candidate.id === contentId);
+      if (row === undefined) return notFound();
+      const body = UpdateContentRequestSchema.safeParse(JSON.parse(String(init?.body)));
+      if (!body.success) return invalid();
+      patches.push({ clientId, contentId, body: body.data });
+      const custom = scenario.patch?.(clientId, contentId, body.data, patches.length);
+      if (custom !== undefined) return custom;
+      if (row.status === 'published' || row.status === 'cancelled') return json({ error: { code: 'CONTENT_NOT_EDITABLE', message: 'This content can no longer be edited.' } }, 409);
+      if (body.data.publishOn !== undefined) row.publishOn = body.data.publishOn;
+      return json(detailOfContent(clientId, row));
+    }
     const detail = /\/agencies\/([^/]+)\/clients\/([^/]+)$/.exec(path);
     if (detail !== null && method === 'GET') {
       if (!permissions.includes(READ_CLIENTS)) return forbidden();
@@ -157,7 +205,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     }
     throw new Error(`unexpected ${method} ${url}`);
   };
-  return { impl, calls };
+  return { impl, calls, patches };
 };
 
 function Harness({ store }: { store: AuthSessionStore }) {
@@ -761,5 +809,208 @@ describe('the session', () => {
     await waitFor(() => expect(container.querySelector('.content-calendar')).toBeNull());
     await act(async () => { await Promise.resolve(); });
     expect(screen.queryByText('Padaria Central')).toBeNull();
+  });
+});
+
+describe('moving a content to another day (drag)', () => {
+  const OPERATE = [VISUALIZE, READ_CLIENTS, 'conteudo.operar'];
+  const cardOf = (title: string): HTMLElement => {
+    const card = screen.getByText(title).closest('article');
+    if (card === null) throw new Error(`The card of ${title} was not rendered.`);
+    return card;
+  };
+  const drag = (title: string, day: string): void => {
+    fireEvent.dragStart(cardOf(title));
+    fireEvent.dragOver(dayCell(day));
+    fireEvent.drop(dayCell(day));
+  };
+  // A refusal to send is only proven after the time a send would take.
+  const settle = (): Promise<void> => act(async () => { await new Promise((resolve) => setTimeout(resolve, 40)); });
+  const open = (rows: ReturnType<typeof contentFixture>[], scenario: Scenario = {}) => {
+    const fake = makeFetch({ permissions: OPERATE, ...scenario, contents: { [padaria.id]: rows } });
+    return { ...fake, ...render_(fake.impl, contentsUrl(padaria.id)) };
+  };
+
+  it('moves the card that was dragged and not the other one, sending only the new day to that content', async () => {
+    const first = contentFixture({ title: 'Primeiro', publishOn: '2026-10-14' });
+    const second = contentFixture({ title: 'Segundo', publishOn: '2026-10-14' });
+    const { patches } = open([first, second]);
+    await screen.findByText('Segundo');
+
+    drag('Segundo', '2026-10-20');
+    await waitFor(() => expect(within(dayCell('2026-10-20')).queryByText('Segundo')).not.toBeNull());
+    expect(patches).toEqual([{ clientId: padaria.id, contentId: second.id, body: { publishOn: '2026-10-20' } }]);
+    // The other one did not move, here or on the server.
+    expect(within(dayCell('2026-10-14')).getByText('Primeiro')).toBeTruthy();
+    expect(within(dayCell('2026-10-14')).queryByText('Segundo')).toBeNull();
+    expect(first.publishOn).toBe('2026-10-14');
+    expect(second.publishOn).toBe('2026-10-20');
+  });
+
+  it('moves the first of two when the first is the one dragged', async () => {
+    const first = contentFixture({ title: 'Primeiro', publishOn: '2026-10-14' });
+    const second = contentFixture({ title: 'Segundo', publishOn: '2026-10-14' });
+    const { patches } = open([first, second]);
+    await screen.findByText('Primeiro');
+
+    drag('Primeiro', '2026-10-21');
+    await waitFor(() => expect(within(dayCell('2026-10-21')).queryByText('Primeiro')).not.toBeNull());
+    expect(patches.map((patch) => patch.contentId)).toEqual([first.id]);
+    expect(second.publishOn).toBe('2026-10-14');
+  });
+
+  it.each([['published', 'Publicado'], ['cancelled', 'Cancelado']] as const)('does not let a %s content be dragged, and lets the open one next to it', async (status, label) => {
+    const closed = contentFixture({ title: 'Encerrado', publishOn: '2026-10-14', status, publishedOn: status === 'published' ? '2026-10-14' : null });
+    const openOne = contentFixture({ title: 'Aberto', publishOn: '2026-10-14', status: 'approved' });
+    const { patches } = open([closed, openOne]);
+    await screen.findByText('Aberto');
+
+    expect(within(cardOf('Encerrado')).getByText(label)).toBeTruthy();
+    expect(cardOf('Encerrado').getAttribute('draggable')).toBe('false');
+    expect(cardOf('Aberto').getAttribute('draggable')).toBe('true');
+    drag('Encerrado', '2026-10-20');
+    await settle();
+    expect(patches).toEqual([]);
+    expect(within(dayCell('2026-10-14')).getByText('Encerrado')).toBeTruthy();
+
+    drag('Aberto', '2026-10-20');
+    await waitFor(() => expect(patches.map((patch) => patch.contentId)).toEqual([openOne.id]));
+  });
+
+  it('lets each of the four open states be dragged', async () => {
+    const rows = (['in_production', 'awaiting_approval', 'adjusting', 'approved'] as const).map((status) => contentFixture({ title: `Post ${status}`, publishOn: '2026-10-14', status }));
+    open(rows);
+    await screen.findByText('Post approved');
+    for (const row of rows) expect(cardOf(row.title).getAttribute('draggable'), String(row.status)).toBe('true');
+  });
+
+  it('moves nothing for a person who can read but not operate contents', async () => {
+    const row = contentFixture({ title: 'Só leitura', publishOn: '2026-10-14' });
+    const { patches } = open([row], { permissions: [VISUALIZE, READ_CLIENTS] });
+    await screen.findByText('Só leitura');
+
+    expect(cardOf('Só leitura').getAttribute('draggable')).toBe('false');
+    drag('Só leitura', '2026-10-20');
+    await settle();
+    expect(patches).toEqual([]);
+    expect(within(dayCell('2026-10-14')).getByText('Só leitura')).toBeTruthy();
+  });
+
+  it('moves nothing on an archived client, and says the calendar is read only', async () => {
+    const archived = clientFixture('5e5e5e5e-5555-4555-8555-555555555555', 'Cliente Arquivado', null, 'archived');
+    const row = contentFixture({ title: 'Do arquivado', publishOn: '2026-10-14' });
+    const fake = makeFetch({ permissions: OPERATE, roster: [...ROSTER, archived], contents: { [archived.id]: [row] } });
+    render_(fake.impl, contentsUrl(archived.id));
+    await screen.findByText('Do arquivado');
+
+    expect(await screen.findByText('Cliente arquivado: o calendário é só leitura.')).toBeTruthy();
+    expect(cardOf('Do arquivado').getAttribute('draggable')).toBe('false');
+    drag('Do arquivado', '2026-10-20');
+    await settle();
+    expect(fake.patches).toEqual([]);
+  });
+
+  it('does not ask for anything when the card is dropped on its own day, or the drag is cancelled', async () => {
+    const { patches } = open([contentFixture({ title: 'Parado', publishOn: '2026-10-14' })]);
+    await screen.findByText('Parado');
+
+    drag('Parado', '2026-10-14');
+    fireEvent.dragStart(cardOf('Parado'));
+    fireEvent.dragEnd(cardOf('Parado'));
+    fireEvent.drop(dayCell('2026-10-20'));
+    await settle();
+    expect(patches).toEqual([]);
+  });
+
+  it('ignores a drop that no card of the calendar started', async () => {
+    const { patches } = open([contentFixture({ title: 'Parado', publishOn: '2026-10-14' })]);
+    await screen.findByText('Parado');
+
+    fireEvent.dragOver(dayCell('2026-10-20'));
+    fireEvent.drop(dayCell('2026-10-20'));
+    await settle();
+    expect(patches).toEqual([]);
+  });
+
+  it('moves once for one drag: a second drop that no new drag started moves nothing', async () => {
+    const { patches } = open([contentFixture({ title: 'Uma vez', publishOn: '2026-10-14' })]);
+    await screen.findByText('Uma vez');
+
+    drag('Uma vez', '2026-10-20');
+    await waitFor(() => expect(within(dayCell('2026-10-20')).queryByText('Uma vez')).not.toBeNull());
+    fireEvent.dragOver(dayCell('2026-10-22'));
+    fireEvent.drop(dayCell('2026-10-22'));
+    await settle();
+    expect(patches).toHaveLength(1);
+  });
+
+  it('accepts a day of the neighbouring month shown in the grid', async () => {
+    const row = contentFixture({ title: 'Para novembro', publishOn: '2026-10-14' });
+    const { patches } = open([row]);
+    await screen.findByText('Para novembro');
+
+    drag('Para novembro', '2026-11-01');
+    await waitFor(() => expect(patches).toEqual([{ clientId: padaria.id, contentId: row.id, body: { publishOn: '2026-11-01' } }]));
+  });
+
+  it('holds every card still, and says it is moving, until the new period was read', async () => {
+    const held = deferred<Response>();
+    const rows = [contentFixture({ title: 'Em movimento', publishOn: '2026-10-14' }), contentFixture({ title: 'Ao lado', publishOn: '2026-10-15' })];
+    const { patches } = open(rows, { patch: () => held.promise });
+    await screen.findByText('Em movimento');
+
+    drag('Em movimento', '2026-10-20');
+    expect(await screen.findByText('Movendo conteúdo…')).toBeTruthy();
+    expect(cardOf('Em movimento').getAttribute('aria-busy')).toBe('true');
+    // One move at a time: nothing else can be picked up meanwhile.
+    expect(cardOf('Ao lado').getAttribute('draggable')).toBe('false');
+    expect(cardOf('Ao lado').getAttribute('aria-busy')).toBeNull();
+    drag('Ao lado', '2026-10-21');
+    await settle();
+    expect(patches).toHaveLength(1);
+
+    held.resolve(json(detailOfContent(padaria.id, rows[0]!)));
+    await waitFor(() => expect(screen.queryByText('Movendo conteúdo…')).toBeNull());
+    expect(cardOf('Ao lado').getAttribute('draggable')).toBe('true');
+  });
+
+  it('reads the period again after a move, so the card is where the server put it', async () => {
+    const row = contentFixture({ title: 'Relido', publishOn: '2026-10-14' });
+    const { calls } = open([row]);
+    await screen.findByText('Relido');
+    const before = periodCalls(calls).length;
+
+    drag('Relido', '2026-10-20');
+    await waitFor(() => expect(periodCalls(calls).length).toBe(before + 1));
+    await waitFor(() => expect(within(dayCell('2026-10-20')).queryByText('Relido')).not.toBeNull());
+  });
+
+  it.each([
+    ['409 CONTENT_NOT_EDITABLE', 409, 'CONTENT_NOT_EDITABLE', 'Este conteúdo já foi publicado ou cancelado e não pode mudar de data.'],
+    ['409 CLIENT_ARCHIVED', 409, 'CLIENT_ARCHIVED', 'Este cliente está arquivado: o calendário é só leitura.'],
+    ['403', 403, 'FORBIDDEN', 'Você não tem permissão para mover conteúdos.'],
+    ['404', 404, 'NOT_FOUND', 'Este conteúdo não existe mais.'],
+    ['500', 500, 'INTERNAL_ERROR', 'Não foi possível mover o conteúdo. Tente de novo.']
+  ])('answers %s with its own words, keeps the card on its day and never shows the server text', async (_name, status, code, message) => {
+    const row = contentFixture({ title: 'Recusado', publishOn: '2026-10-14' });
+    open([row], { patch: () => json({ error: { code, message: '<b>texto do servidor</b>' } }, status) });
+    await screen.findByText('Recusado');
+
+    drag('Recusado', '2026-10-20');
+    expect(await screen.findByText(message, undefined, { timeout: 5000 })).toBeTruthy();
+    expect(screen.queryByText(/texto do servidor/)).toBeNull();
+    expect(within(dayCell('2026-10-14')).getByText('Recusado')).toBeTruthy();
+    expect(within(dayCell('2026-10-20')).queryByText('Recusado')).toBeNull();
+  });
+
+  it('clears the refusal when the period changes', async () => {
+    const row = contentFixture({ title: 'Recusado', publishOn: '2026-10-14' });
+    open([row], { patch: () => json({ error: { code: 'FORBIDDEN', message: 'no' } }, 403) });
+    await screen.findByText('Recusado');
+    drag('Recusado', '2026-10-20');
+    await screen.findByText('Você não tem permissão para mover conteúdos.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }));
+    await waitFor(() => expect(screen.queryByText('Você não tem permissão para mover conteúdos.')).toBeNull());
   });
 });
