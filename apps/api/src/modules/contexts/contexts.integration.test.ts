@@ -459,14 +459,24 @@ describe('contexts module (AUTH-20C)', () => {
     const roleId = randomUUID();
     createdRoleIds.push(roleId);
     await owner.knex('roles').insert({ id: roleId, agency_id: sourceAgency, key: 'bigrole', name: 'Big Role', is_system: false });
+    // The person also belongs to the agency that owns the role. That is what makes this scenario prove the scope
+    // clause of `fetchAgencyContexts`: `roles_select` then shows them the role, and only the
+    // `role.agency_id is null or role.agency_id = agency.id` filter keeps its label out of the home agency. With no
+    // membership in the source agency, RLS alone hides the role and the filter survives a mutation unnoticed (#189).
+    await addAgencyMembership(sourceAgency, user.id, roleId);
     await addAgencyMembership(homeAgency, user.id, roleId);
     const cookie = await loginCookie(user);
 
     const { status, contexts } = await getContexts(cookie);
     expect(status).toBe(200);
-    expect(contexts).toEqual([
+    expect(contexts).toHaveLength(2);
+    expect(contexts).toContainEqual(
       expect.objectContaining({ type: 'agency', agencyId: homeAgency, roleKey: 'sem-papel', roleName: 'Sem papel', isOwner: false })
-    ]);
+    );
+    // Where the role is in scope, its label is shown.
+    expect(contexts).toContainEqual(
+      expect.objectContaining({ type: 'agency', agencyId: sourceAgency, roleKey: 'bigrole', roleName: 'Big Role', isOwner: false })
+    );
   });
 
   it('#17 no log line contains a full email address or a cookie value across the context routes', async () => {

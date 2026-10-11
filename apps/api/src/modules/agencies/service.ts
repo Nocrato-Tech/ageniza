@@ -18,10 +18,11 @@ interface AgencyMeRow {
 
 /**
  * Resolves the effective permissions of one agency context for the authenticated user. The
- * permission list is derived from the same source `app_private.has_agency_permission` reads --
- * the owner by ownership, every other by the active membership's role scoped to
- * `role.agency_id is null or role.agency_id = agency.id` -- so the screen and the database never
- * diverge; `agencies.integration.test.ts` proves the equivalence key by key.
+ * permission list is read from `app_private.agency_permission_keys` (#189), the one function that
+ * resolves it -- the owner gets the whole catalog, every other the keys of the active membership's
+ * role scoped to `role.agency_id is null or role.agency_id = agency.id` -- and the database test
+ * `agency-permission-keys.integration.test.ts` holds it to `app_private.has_agency_permission`
+ * key by key, the one RLS reads; `agencies.integration.test.ts` proves the equivalence again here.
  *
  * Runs inside `withAuthenticatedUserTransaction`: the row is invisible without the caller's
  * transaction-local identity, and the access condition repeats the guard so a suspension between
@@ -47,17 +48,10 @@ export const loadAgencyMe = async (transaction: AgencyTransaction, agencyId: str
         when agency.owner_user_id = app_private.current_user_id() then 'Admin'
         else 'Sem papel'
       end as role_name,
-      case
-        when agency.owner_user_id = app_private.current_user_id() then (
-          select coalesce(array_agg(permission.key order by permission.key), array[]::text[])
-          from public.permissions as permission
-        )
-        else (
-          select coalesce(array_agg(distinct role_permission.permission_key order by role_permission.permission_key), array[]::text[])
-          from public.role_permissions as role_permission
-          where role_permission.role_id = role.id
-        )
-      end as permissions
+      (
+        select coalesce(array_agg(held.key order by held.key), array[]::text[])
+        from app_private.agency_permission_keys(agency.id) as held(key)
+      ) as permissions
     from public.agencies as agency
     left join public.agency_memberships as membership
       on membership.agency_id = agency.id

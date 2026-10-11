@@ -14,14 +14,19 @@ não concede nada, e a tela trata a URL sem permissão como "não encontrado", n
 
 ## De onde vem a lista
 
-A consulta de `service.ts` usa a mesma fonte que `app_private.has_agency_permission`: o Owner por
-posse recebe todas as chaves do catálogo (`permissions`), e qualquer outro recebe as chaves de
-`role_permissions` do papel do vínculo ativo, com o papel restrito a
-`role.agency_id is null or role.agency_id = agencyId`. Papel de outra agência não concede nada.
+A consulta de `service.ts` lê as chaves de `app_private.agency_permission_keys(agency_id)`, a função
+única que resolve o que a pessoa tem na agência (#189): o Owner por posse recebe todas as chaves do
+catálogo (`permissions`), e qualquer outro recebe as chaves de `role_permissions` do papel do vínculo
+ativo, com o papel restrito a `role.agency_id is null or role.agency_id = agencyId`. Papel de outra
+agência não concede nada. A guarda (`tenancy/guards.ts`) lê da mesma função; só o rótulo do papel fica
+escrito na consulta.
 
-O teste de integração `agencies.integration.test.ts` compara a lista, **chave por chave**, com
-`app_private.has_agency_permission` para os cinco presets, para o Owner e para papel personalizado
-— trocar a permissão na consulta deixa a suíte vermelha.
+A RLS **não** usa essa função (cada linha chamaria uma função dentro de outra, de 4,5 a 12,6 vezes mais
+lento): `app_private.has_agency_permission` tem corpo próprio, e `agency-permission-keys.integration.test.ts`
+(banco) prende as duas, chave por chave. O teste de integração `agencies.integration.test.ts` compara a
+lista com `app_private.has_agency_permission` para os cinco presets, para o Owner e para papel
+personalizado, e `tenancy/guards.integration.test.ts` faz o mesmo com o `request.tenant` da guarda —
+trocar a permissão na consulta deixa a suíte vermelha.
 
 O rótulo do papel de um Owner sem vínculo cai no preset `admin`, como já acontece em
 `GET /me/contexts`; as permissões continuam sendo o campo autoritativo.
