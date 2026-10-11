@@ -7,6 +7,7 @@ import { CORRELATION_ID_HEADER, createLogger, createReadiness, REQUEST_ID_HEADER
 import { registerAgencyModule, type AgencyModuleDependencies } from './modules/agencies/routes.js';
 import { registerAuthModule, type AuthModuleDependencies } from './modules/auth/routes.js';
 import { registerClientModule, type ClientModuleDependencies } from './modules/clients/routes.js';
+import { registerContentPortalModule, type ContentPortalModuleDependencies } from './modules/contents/portal-routes.js';
 import { registerContentModule, type ContentModuleDependencies } from './modules/contents/routes.js';
 import { registerCollaboratorModule, type CollaboratorModuleDependencies } from './modules/collaborators/routes.js';
 import { registerContextModule, type ContextModuleDependencies } from './modules/contexts/routes.js';
@@ -45,6 +46,8 @@ export interface ApiAppOptions {
   clients?: ClientModuleDependencies;
   /** Content dependencies are optional; undefined for tests that never touch the contents module. */
   contents?: ContentModuleDependencies;
+  /** The portal's routes of the contents (#257); optional, undefined for tests that never touch them. */
+  contentPortal?: ContentPortalModuleDependencies;
   /** Collaborator dependencies need identity storage; optional for lightweight health/app tests. */
   collaborators?: CollaboratorModuleDependencies;
   /** Media dependencies are optional; undefined for tests that never touch object storage. */
@@ -188,6 +191,9 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   }
   if (options.contents !== undefined) {
     registerContentModule(app, options.contents);
+  }
+  if (options.contentPortal !== undefined) {
+    registerContentPortalModule(app, options.contentPortal);
   }
   if (options.collaborators !== undefined) {
     registerCollaboratorModule(app, options.collaborators);

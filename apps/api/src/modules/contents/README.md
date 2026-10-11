@@ -29,6 +29,8 @@ Os contratos estão em `packages/contracts/src/contents.ts`; as decisões, em
 `2026-10-11-subtarefas-do-conteudo-na-api-resposta-guarda-e-limites-de-texto.md`. As pastas e os roteiros
 são de outras issues e **não** estão aqui.
 
+O portal do cliente (consulta por período, o que espera aprovação, o post, aprovar e pedir ajuste, issue #257) está em [`portal.md`](portal.md).
+
 ## A consulta por período
 
 É o formato que Tarefas e Dashboard copiam. `from` e `to` são dias `AAAA-MM-DD` incluídos; até 93 dias
