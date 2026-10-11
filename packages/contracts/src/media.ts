@@ -9,8 +9,16 @@ export const MediaCategorySchema = z.enum(['image', 'video']);
 export const CreateMediaUploadRequestSchema = z.object({
   fileName: z.string().trim().min(1).max(256),
   contentType: z.string().trim().min(1).max(256),
-  declaredSizeBytes: z.number().int().positive().max(10 * 1024 * 1024 * 1024)
-}).strict();
+  declaredSizeBytes: z.number().int().positive().max(10 * 1024 * 1024 * 1024),
+  // A media of a client is born in one of that client's folders: both or neither, and the server
+  // checks that the folder is the client's (specs/conteudo.md §3).
+  clientId: z.string().uuid().optional(),
+  folderId: z.string().uuid().optional()
+}).strict().superRefine((value, context) => {
+  if ((value.clientId === undefined) !== (value.folderId === undefined)) {
+    context.addIssue({ code: 'custom', path: [value.clientId === undefined ? 'clientId' : 'folderId'], message: 'clientId and folderId are sent together' });
+  }
+});
 
 const SingleUploadSchema = z.object({
   type: z.literal('single'),
