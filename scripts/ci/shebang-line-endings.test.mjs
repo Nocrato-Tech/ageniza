@@ -1,26 +1,33 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-// The vitest transform rejects a shebang followed by CRLF ("#!/usr/bin/env node\r"), and a Windows checkout with
-// core.autocrlf=true writes CRLF. The Linux CI checkout is LF, so this only shows up on Windows (issue #535).
-const scriptsDir = join(dirname(fileURLToPath(import.meta.url)), '..');
+// A shebang followed by CRLF ("#!/usr/bin/env node\r") is rejected by the vitest transform. A Windows checkout with
+// core.autocrlf=true writes CRLF, and the .gitattributes rule `scripts/**/*.mjs text eol=lf` is what keeps them LF
+// (issue #535). The test checks the attribute, not the disk, so it also guards the rule on Linux CI.
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const git = (args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
 
-const scriptFiles = (directory) =>
-  readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) return scriptFiles(path);
-    return /\.(mjs|cjs|js)$/.test(entry.name) ? [path] : [];
+const trackedScripts = git(['ls-files']).split('\n').filter((path) => /\.(mjs|cjs|js)$/.test(path));
+const withShebang = trackedScripts.filter((path) => readFileSync(join(root, path)).subarray(0, 2).toString() === '#!');
+
+const eolOf = (path) => git(['check-attr', 'eol', '--', path]).trim().split(': ').at(-1);
+
+describe('tracked scripts that start with a shebang', () => {
+  it('finds the generator, so the check below is not empty', () => {
+    expect(withShebang).toContain('scripts/generate-decisions-index.mjs');
   });
 
-describe('scripts that start with a shebang', () => {
-  it('keep LF line endings in the working tree, so the test runner can load them on Windows (issue #535)', () => {
-    const withShebangAndCr = scriptFiles(scriptsDir)
-      .filter((path) => readFileSync(path, 'utf8').startsWith('#!'))
-      .filter((path) => readFileSync(path, 'utf8').includes('\r'));
+  it('have eol=lf in .gitattributes, so a Windows checkout does not write CRLF into them (issue #535)', () => {
+    const without = withShebang.filter((path) => eolOf(path) !== 'lf');
 
-    expect(withShebangAndCr).toEqual([]);
+    expect(
+      without,
+      `sem eol=lf: ${without.join(', ')}. Em checkout Windows que já existia o git não reescreve o arquivo: rode ` +
+        `"rm <arquivo> && git checkout -- <arquivo>" e confira com "git ls-files --eol scripts" (docs/local-environment.md).`,
+    ).toEqual([]);
   });
 });
