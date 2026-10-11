@@ -105,6 +105,9 @@ import {
   PortalContentAwaitingQuerySchema,
   PortalContentAwaitingResponseSchema,
   PortalContentDetailSchema,
+  PortalContentMediaPathParamsSchema,
+  PortalContentMediaUrlQuerySchema,
+  PortalContentMediaUrlResponseSchema,
   PortalContentPathParamsSchema,
   PortalContentPeriodQuerySchema,
   PortalContentPeriodResponseSchema,
@@ -1621,6 +1624,40 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       COMMON_ERRORS.internal,
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 404, code: 'NOT_FOUND', message: 'Content not found.' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/clients/:clientId/contents/:contentId/media/:assetId/url',
+    operationId: 'getPortalContentMediaUrl',
+    module: 'contents',
+    summary: 'Emite a URL assinada de uma mídia do conteúdo, no portal',
+    description: [
+      'Assina só a capa ou um item da mídia de um conteúdo que o portal lê (de "aguardando aprovação" em diante). Conteúdo em produção,',
+      'cancelado, de outro cliente (mesmo de um que a pessoa também lê), de outra agência ou inexistente, e arquivo removido, não',
+      'confirmado ou que não é deste conteúdo, devolvem 404, sem assinar nada. `variant=original` (o padrão) assina o arquivo e grava',
+      'a auditoria `media.download_url_issued`; `variant=thumbnail` devolve o próprio original para a imagem e a miniatura para o vídeo',
+      'processado, senão 409 `VARIANT_NOT_READY` (ou `VARIANT_PROCESSING_FAILED`), e não grava auditoria. A URL é só GET e de poucos',
+      'minutos. O colaborador que também tem vínculo com o cliente recebe o mesmo recorte que qualquer pessoa do portal.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: PortalContentMediaPathParamsSchema,
+    query: PortalContentMediaUrlQuerySchema,
+    requestExample: { variant: 'thumbnail' },
+    responses: [{
+      status: 200,
+      description: 'URL assinada.',
+      schema: PortalContentMediaUrlResponseSchema,
+      example: { url: signedStorageUrl, expiresAt: '2026-09-29T12:05:00.000Z' }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
+      { status: 409, code: 'VARIANT_NOT_READY' },
+      { status: 409, code: 'VARIANT_PROCESSING_FAILED' }
     ]
   },
   {

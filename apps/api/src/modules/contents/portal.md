@@ -9,6 +9,7 @@ provou. As decisões estão em `docs/business/decisions/2026-10-11-conteudo-port
 | `GET` | `/clients/:clientId/contents?from=&to=` | os conteúdos de um período, `{ data, meta: { from, to, count } }` |
 | `GET` | `/clients/:clientId/contents/awaiting-approval` | o que espera a aprovação, paginado |
 | `GET` | `/clients/:clientId/contents/:contentId` | o post: legenda, `revision` e mídia a partir de "aguardando aprovação" |
+| `GET` | `/clients/:clientId/contents/:contentId/media/:assetId/url?variant=` | a URL assinada da capa ou de um item da mídia (#584) |
 | `POST` | `/clients/:clientId/contents/:contentId/approve` | `{ revision }`: aguardando aprovação → aprovado |
 | `POST` | `/clients/:clientId/contents/:contentId/request-changes` | `{ revision, comment }`: aguardando aprovação → em ajuste, e o comentário entra na conversa |
 
@@ -31,6 +32,21 @@ provou. As decisões estão em `docs/business/decisions/2026-10-11-conteudo-port
 - **O pedido de ajuste é uma função só.** Abre (ou acha) a conversa do conteúdo, grava o comentário como o cliente e leva o conteúdo a
   "em ajuste", na mesma transação: um comentário recusado não deixa conversa nem estado. O comentário segue a regra única de texto livre
   das conversas (`CommentBodySchema`): só espaço, só caractere invisível e só caractere de controle são vazios.
+
+## A URL assinada da mídia (issue #584)
+
+Decisões em `docs/business/decisions/2026-10-11-portal-assina-a-midia-do-conteudo-que-ve.md`. A rota só existe onde o storage de mídia
+está configurado (como o módulo `media`), e não tem migration.
+
+- **Assina só o que o portal lê.** A rota lê o conteúdo pelo recorte do portal (`loadPortalContent`: outro cliente, cancelado e
+  inexistente são `404 Content not found.`; em produção também) e o arquivo por `app_private.portal_content_media` (a capa ou um item
+  da mídia desse conteúdo, confirmado e não removido; qualquer outro é `404 Media asset not found.`). Nada é lido de `public.media_assets`
+  nem de `public.contents`, então o colaborador que também tem vínculo recebe o mesmo recorte; o teste exercita `dualAdmin`, `dualRead`,
+  `dualBare` e `crossDual` e confere as instruções enviadas.
+- **A chave do original é montada, não lida:** a agência que o guarda provou para o cliente, o id e a extensão (a forma que a tabela impõe).
+- **Variantes.** `original` (o padrão) assina e grava `media.download_url_issued` com a pessoa da sessão. `thumbnail` é o original para a imagem
+  e a miniatura gerada para o vídeo (`409 VARIANT_NOT_READY` antes de processada, `409 VARIANT_PROCESSING_FAILED` após falha, sem o motivo do
+  worker), e não grava auditoria. `preview` é `400`. A URL é só GET e dura `downloadUrlExpirySeconds`. Sem limite de taxa próprio (#558).
 
 ## A corrida
 

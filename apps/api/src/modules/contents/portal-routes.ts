@@ -6,6 +6,9 @@ import {
   PortalContentAwaitingQuerySchema,
   PortalContentAwaitingResponseSchema,
   PortalContentDetailSchema,
+  PortalContentMediaPathParamsSchema,
+  PortalContentMediaUrlQuerySchema,
+  PortalContentMediaUrlResponseSchema,
   PortalContentPathParamsSchema,
   PortalContentPeriodQuerySchema,
   PortalContentPeriodResponseSchema,
@@ -22,9 +25,11 @@ import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
+import { auditMediaEvent } from '../media/service.js';
+import type { MediaStorageClient } from '../media/storage-client.js';
 import { isInsufficientPrivilegeError } from '../tenancy/guards.js';
 import { clientNotFound, contentNotFound, forbidden, periodTooLarge, unauthenticated } from './errors.js';
-import { notAwaitingApproval, translatePortalError, type PortalContentAction } from './portal-errors.js';
+import { mediaNotFound, notAwaitingApproval, translatePortalError, variantNotReady, variantProcessingFailed, type PortalContentAction } from './portal-errors.js';
 import {
   approveContent,
   detailFrom,
@@ -32,6 +37,7 @@ import {
   listItemFrom,
   listPortalContents,
   loadPortalContent,
+  loadPortalMediaAsset,
   openListItemFrom,
   portalAccessHolds,
   requestContentChanges
@@ -45,6 +51,11 @@ export interface ContentPortalModuleDependencies {
   readonly auth: AuthInstance;
   /** Injected by the tenancy module: the active client link is the only authorization of the portal. */
   readonly requireClientAccess: PreHandler;
+  /** Undefined only where object storage is not configured: the route that signs a media is then not registered. */
+  readonly media?: {
+    readonly storage: Pick<MediaStorageClient, 'presignGetObject'>;
+    readonly downloadUrlExpirySeconds: number;
+  };
 }
 
 const AWAITING_DEFAULT_PAGE_SIZE = 20;
@@ -61,6 +72,12 @@ const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth'
 const contentIdFromRoute = (request: FastifyRequest): string => {
   const value = (request.params as Record<string, unknown>).contentId;
   if (typeof value !== 'string' || !uuidPattern.test(value)) throw contentNotFound();
+  return value;
+};
+
+const assetIdFromRoute = (request: FastifyRequest): string => {
+  const value = (request.params as Record<string, unknown>).assetId;
+  if (typeof value !== 'string' || !uuidPattern.test(value)) throw mediaNotFound();
   return value;
 };
 
@@ -223,6 +240,48 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
 
     return reply.send(routeResponse(readDocs, request, detail));
   });
+
+  const media = dependencies.media;
+  if (media !== undefined) {
+    const mediaUrlDocs = {
+      permission: null,
+      responseStatus: 200,
+      schemas: { params: PortalContentMediaPathParamsSchema, query: PortalContentMediaUrlQuerySchema, response: PortalContentMediaUrlResponseSchema }
+    } satisfies DocumentedRouteConfig;
+
+    // Signs only a file of a content the portal reads (#584). The original's key is built from the agency the guard proved, because
+    // `portal_content_media` does not return it. Only the original is audited, as in the agency's route (#550).
+    app.get('/clients/:clientId/contents/:contentId/media/:assetId/url', portalGuards(mediaUrlDocs), async (request, reply) => {
+      const { claims, userId } = requireAuth(request);
+      const clientContext = request.clientContext;
+      if (clientContext === undefined) throw clientNotFound();
+      const contentId = contentIdFromRoute(request);
+      const assetId = assetIdFromRoute(request);
+      routeParams(mediaUrlDocs, request);
+      const query = routeQuery(mediaUrlDocs, request);
+
+      const objectKey = await inTransaction(claims, async (transaction) => {
+        const content = await loadPortalContent(transaction, clientContext.clientId, contentId);
+        if (content === undefined || content.status === 'in_production') throw contentNotFound();
+        const asset = await loadPortalMediaAsset(transaction, contentId, assetId);
+        if (asset === undefined) throw mediaNotFound();
+
+        const originalKey = `${clientContext.agencyId}/${asset.assetId}/original.${asset.extension}`;
+        if (query.variant === 'original') {
+          await auditMediaEvent(transaction, { action: 'media.download_url_issued', actorUserId: userId, agencyId: clientContext.agencyId, targetId: asset.assetId });
+          return originalKey;
+        }
+        // An image has no generated thumbnail: its original is the thumbnail, as in the agency's route.
+        if (asset.category === 'image') return originalKey;
+        if (asset.thumbnailObjectKey !== null) return asset.thumbnailObjectKey;
+        throw asset.videoProcessingStatus === 'failed' ? variantProcessingFailed() : variantNotReady();
+      });
+
+      const url = await media.storage.presignGetObject({ key: objectKey, expiresInSeconds: media.downloadUrlExpirySeconds });
+      const expiresAt = new Date(Date.now() + media.downloadUrlExpirySeconds * 1_000).toISOString();
+      return reply.send(routeResponse(mediaUrlDocs, request, { url, expiresAt }));
+    });
+  }
 
   app.post('/clients/:clientId/contents/:contentId/approve', portalGuards(approveDocs), async (request, reply) => {
     const clientId = portalClientIdOf(request);

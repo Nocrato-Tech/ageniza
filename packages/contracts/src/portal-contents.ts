@@ -80,6 +80,21 @@ export const PortalContentPathParamsSchema = z.object({
 
 export const PortalContentPeriodQuerySchema = ContentPeriodQuerySchema;
 
+export const PortalContentMediaPathParamsSchema = PortalContentPathParamsSchema.extend({
+  assetId: z.string().uuid()
+}).strict();
+
+/** The portal signs the original or the thumbnail only; the preview of a video is not offered to it. */
+export const PortalContentMediaUrlQuerySchema = z.object({
+  variant: z.enum(['original', 'thumbnail']).optional().default('original')
+}).strict();
+
+// The same shape as the agency's, declared on its own so that the OpenAPI component of the published route is not renamed.
+export const PortalContentMediaUrlResponseSchema = z.object({
+  url: z.string().url(),
+  expiresAt: z.string().datetime()
+}).strict();
+
 /**
  * Body of `POST .../approve`: only the revision the person read. Who approved and when are the database's, taken from the
  * session, so no field of the body can name them (the schema is strict).
@@ -104,5 +119,7 @@ export type PortalContentOpenListItem = z.infer<typeof PortalContentOpenListItem
 export type PortalContentDetail = z.infer<typeof PortalContentDetailSchema>;
 export type PortalContentPeriodResponse = z.infer<typeof PortalContentPeriodResponseSchema>;
 export type PortalContentAwaitingResponse = z.infer<typeof PortalContentAwaitingResponseSchema>;
+export type PortalContentMediaUrlQuery = z.infer<typeof PortalContentMediaUrlQuerySchema>;
+export type PortalContentMediaUrlResponse = z.infer<typeof PortalContentMediaUrlResponseSchema>;
 export type PortalApproveContentRequest = z.infer<typeof PortalApproveContentRequestSchema>;
 export type PortalRequestContentChangesRequest = z.infer<typeof PortalRequestContentChangesRequestSchema>;

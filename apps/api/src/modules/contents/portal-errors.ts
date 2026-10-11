@@ -38,6 +38,14 @@ export const commentInvalid = (): HttpError => new HttpError({
   message: 'Escreva o que precisa mudar, com até 5000 bytes.'
 });
 
+// Absent, another content's, not open to the portal, removed and not yet confirmed are one answer.
+export const mediaNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Media asset not found.' });
+
+export const variantNotReady = (): HttpError => new HttpError({ statusCode: 409, code: 'VARIANT_NOT_READY', message: 'This variant has not been generated yet.' });
+
+// The reason the worker recorded is internal: the portal is told only that it failed.
+export const variantProcessingFailed = (): HttpError => new HttpError({ statusCode: 409, code: 'VARIANT_PROCESSING_FAILED', message: 'Video processing failed.' });
+
 /** A refusal that needs the route to read again before it can be named is `undefined` here: only `A0062` and `42501`. */
 export const translatePortalError = (error: unknown, action: PortalContentAction): HttpError | undefined => {
   if (isRetryableConflict(error)) return tryAgain();
