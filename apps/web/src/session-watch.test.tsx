@@ -132,7 +132,7 @@ const AREAS = [
   { label: 'agency area', entry: `/agencia/${AGENCY_ID}`, ready: () => screen.findByRole('link', { name: 'Agência Um' }) },
   { label: 'portal', entry: `/portal/${CLIENT_ID}/inicio`, ready: () => screen.findByRole('heading', { name: 'Olá, Maria' }) },
   // The generic protected layout (the context chooser and the protected not-found).
-  { label: 'protected layout', entry: '/rota-que-nao-existe', ready: () => screen.findByRole('heading', { name: /não encontrada|not found/i }) }
+  { label: 'protected layout', entry: '/rota-que-nao-existe', ready: () => screen.findByRole('heading', { name: 'Página não encontrada' }) }
 ] as const;
 
 const SESSION_DEAD_AREAS = [
@@ -338,7 +338,7 @@ describe.each(SESSION_DEAD_AREAS)('the $label without a session', ({ entry }) =>
     const { world, impl } = makeWorld();
     world.sessionAlive = false;
     renderAt(entry, impl);
-    await screen.findByRole('heading', { name: 'Workspace unavailable' });
+    await screen.findByRole('heading', { name: 'Área indisponível' });
     expect(world.initialLoads).toBe(1);
 
     await tick(3 * 60_000);
