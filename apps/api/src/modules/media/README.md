@@ -96,8 +96,10 @@ after its locks, and `client-media-errors.ts` is the one place that maps what th
 `40P01`/`40001` to 409 `TRY_AGAIN`). `remove_media_asset` answers whether this call removed the
 media, and only then is `media.removed` audited. The route fails instead of reading a `null` as "not removed".
 
-`complete` is a write into a child of the client too: for a media of a client it reads the client after the lock of the
-media and before anything reaches the bucket, and an archived client is 409 `CLIENT_ARCHIVED`, the media staying `pending`.
+`complete` and `parts` are writes into a child of the client too: for a media of a client they read the client after the lock of
+the media, and `complete` reads it again after the quota lock, the last wait before the write, because the calls to the bucket and
+that lock can outlast an archive. An archived client is 409 `CLIENT_ARCHIVED`, the media staying `pending`, with no part URL issued
+and no reservation renewed.
 What the route cannot do is wait for an archive that is still running: the confirmation `UPDATE` has no lock on the client,
 so that window belongs to a trigger of the database (issue #532, second half). A folder name refuses what renders as nothing
 (`Default_Ignorable_Code_Point` and U+2800), except U+FE0F right after a pictograph. A page past the end of either list answers the

@@ -1,26 +1,17 @@
 import { z } from 'zod';
 
 import { createDisplayNameSchema } from './display-name.js';
+import { hasInvisibleCharacters } from './invisible-characters.js';
 import { MediaCategorySchema } from './media.js';
 import { createPaginatedResponseSchema, PaginationInputSchema } from './pagination.js';
 
 /** The longest name a folder shows. The database CHECK holds 256 bytes, and 80 UTF-16 units are at most 240. */
 export const MEDIA_FOLDER_NAME_MAX_LENGTH = 80;
 
-/**
- * What renders as nothing (or as a space) and is not `\p{Cf}`, so the display-name rule lets it through: the combining
- * grapheme joiner (U+034F), the variation selectors and the Khmer vowels are `Default_Ignorable_Code_Point`, and the
- * Braille blank (U+2800) and the musical null notehead (U+1D159, drawn as a space by most fonts) are symbols. "Imagens"
- * plus one of them looks like the default folder and is not the same name.
- * U+FE0F right after a pictograph is how an emoji such as the heart is written, so that pair stays.
- */
-const INVISIBLE_IN_FOLDER_NAME = /[\p{Default_Ignorable_Code_Point}\u2800\u{1D159}]/u;
-const EMOJI_PRESENTATION_SELECTOR = /(\p{Extended_Pictographic})\uFE0F/gu;
-
 // A folder name keeps the display-name rules (control, bidi and invisible characters, at least one
 // letter or number) and refuses the two joiners as well (both are Default_Ignorable): the database CHECK accepts them.
 export const MediaFolderNameSchema = createDisplayNameSchema(MEDIA_FOLDER_NAME_MAX_LENGTH)
-  .refine((value) => !INVISIBLE_IN_FOLDER_NAME.test(value.replace(EMOJI_PRESENTATION_SELECTOR, '$1')), 'must not contain invisible characters');
+  .refine((value) => !hasInvisibleCharacters(value), 'must not contain invisible characters');
 
 /** `POST /agencies/:agencyId/clients/:clientId/media-folders` request body. A folder is created at the first
  * level (no `parentId`) or inside a first-level folder of the same client. */

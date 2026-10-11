@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { DatabaseClient } from '@ageniza/database';
 
@@ -608,14 +608,87 @@ describe('uploading a media into a folder of a client (issue #253)', () => {
       const clientId = await freshClient();
       const { assetId, objectKey } = await startedUpload(clientId);
       await owner.knex('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
+      const copy = vi.spyOn(app.media!.storage, 'copyObject');
 
-      const reply = await call('POST', `${uploadUrl(agencyA)}/${assetId}/complete`, 'opVis', {});
+      let reply: Reply;
+      try {
+        reply = await call('POST', `${uploadUrl(agencyA)}/${assetId}/complete`, 'opVis', {});
+        // Refused before anything reaches the bucket, not only undone after it.
+        expect(copy).not.toHaveBeenCalled();
+      } finally {
+        copy.mockRestore();
+      }
 
       expectClientArchived(reply);
       expect(await owner.knex('media_assets').where({ id: assetId }).first('status', 'confirmed_at', 'confirmed_size_bytes'))
         .toEqual({ status: 'pending', confirmed_at: null, confirmed_size_bytes: null });
       expect(await owner.knex('audit.events').where({ target_id: assetId }).whereIn('action', ['media.upload_confirmed', 'media.upload_rejected'])).toHaveLength(0);
       expect(await app.media!.storage.headObject({ key: objectKey })).toBeUndefined();
+    });
+
+    // The confirmation waits for the quota lock of the agency after it read the client, and the archive commits meanwhile. The same
+    // reading is the one that matters for the calls to the bucket, which also sit between the first reading and the UPDATE.
+    it('is a 409 when the archive commits while the confirmation waits for the quota lock, and nothing is confirmed', async () => {
+      const clientId = await freshClient();
+      const { assetId, objectKey } = await startedUpload(clientId);
+      const quota = await owner.knex.transaction();
+      let pending: Promise<Reply> | undefined;
+      try {
+        await quota.raw("select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('media-quota:' || (?::uuid)::text, 0))", [agencyA]);
+        pending = call('POST', `${uploadUrl(agencyA)}/${assetId}/complete`, 'opVis', {});
+        await waitUntilSomeoneWaitsOnALock();
+        await owner.knex('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
+      } finally {
+        await quota.commit();
+      }
+
+      const reply = await pending!;
+
+      expectClientArchived(reply);
+      expect(await owner.knex('media_assets').where({ id: assetId }).first('status', 'confirmed_at')).toEqual({ status: 'pending', confirmed_at: null });
+      expect(await owner.knex('audit.events').where({ target_id: assetId, action: 'media.upload_confirmed' })).toHaveLength(0);
+      expect(await app.media!.storage.headObject({ key: objectKey })).toBeUndefined();
+    });
+
+    describe('asking for the part URLs of a multipart upload', () => {
+      const bigVideo = { fileName: 'filme.mp4', contentType: 'video/mp4', declaredSizeBytes: 9 * 1024 * 1024 };
+      const partsUrl = (assetId: string): string => `${uploadUrl(agencyA)}/${assetId}/parts`;
+      const startedMultipart = async (clientId: string): Promise<string> => {
+        const created = await call('POST', uploadUrl(agencyA), 'opVis', { ...bigVideo, clientId, folderId: await defaultFolder(clientId) });
+        expect(created.statusCode).toBe(201);
+        expect(created.json().upload.type).toBe('multipart');
+        assetIds.push(created.json().assetId as string);
+        return created.json().assetId as string;
+      };
+      const reservation = async (assetId: string): Promise<Date> =>
+        (await owner.knex('media_assets').where({ id: assetId }).first('updated_at')).updated_at as Date;
+
+      it('is a 409 CLIENT_ARCHIVED for a client archived since the upload began: no URL, and the reservation is not renewed', async () => {
+        const clientId = await freshClient();
+        const assetId = await startedMultipart(clientId);
+        const open = await call('POST', partsUrl(assetId), 'opVis', { partNumbers: [1, 2] });
+        expect(open.statusCode).toBe(200);
+        expect(open.json().parts).toHaveLength(2);
+        await owner.knex('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
+        const reserved = await reservation(assetId);
+
+        const reply = await call('POST', partsUrl(assetId), 'opVis', { partNumbers: [1, 2] });
+
+        expectClientArchived(reply);
+        expect(JSON.stringify(reply.json())).not.toMatch(/https?:/);
+        expect((await reservation(assetId)).getTime()).toBe(reserved.getTime());
+      });
+
+      it('still answers 409 UPLOAD_NOT_PENDING for a media that is not pending, before it reads the client', async () => {
+        const clientId = await freshClient();
+        const assetId = await startedMultipart(clientId);
+        await owner.knex('media_assets').where({ id: assetId }).update({ status: 'rejected', rejected_reason: 'too_large' });
+        await owner.knex('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
+
+        const reply = await call('POST', partsUrl(assetId), 'opVis', { partNumbers: [1] });
+
+        expect({ status: reply.statusCode, code: reply.json().error.code }).toEqual({ status: 409, code: 'UPLOAD_NOT_PENDING' });
+      });
     });
 
     it('still confirms the same upload while the client is open', async () => {
