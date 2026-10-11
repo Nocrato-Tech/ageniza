@@ -137,11 +137,11 @@ rotas da agência e `client` nas do portal, e a RLS confere o par lado e credenc
 
 | método | rota | quem |
 |---|---|---|
-| `GET` | `/agencies/:agencyId/clients/:clientId/threads` | `cliente.visualizar` |
-| `POST` | `/agencies/:agencyId/clients/:clientId/threads` | `cliente.operar` |
-| `GET` | `…/threads/:threadId/comments` | `cliente.visualizar` |
-| `POST` | `…/threads/:threadId/comments` | `cliente.operar` |
-| `POST` | `…/threads/:threadId/resolve` | `cliente.operar` |
+| `GET` | `/agencies/:agencyId/clients/:clientId/threads` | `cliente.visualizar` (conteúdo: `conteudo.visualizar`) |
+| `POST` | `/agencies/:agencyId/clients/:clientId/threads` | `cliente.operar` (conteúdo: `conteudo.operar` e `conteudo.visualizar`) |
+| `GET` | `…/threads/:threadId/comments` | `cliente.visualizar` (conteúdo: `conteudo.visualizar`) |
+| `POST` | `…/threads/:threadId/comments` | `cliente.operar` (conteúdo: `conteudo.operar` e `conteudo.visualizar`) |
+| `POST` | `…/threads/:threadId/resolve` | `cliente.operar` (conteúdo: `conteudo.operar` e `conteudo.visualizar`) |
 | `GET` | `/clients/:clientId/threads` | vínculo ativo de cliente |
 | `POST` | `/clients/:clientId/threads` | vínculo ativo de cliente |
 | `GET` | `/clients/:clientId/threads/:threadId/comments` | vínculo ativo de cliente |
@@ -153,8 +153,8 @@ As do portal usam `requireSession` e `requireClientAccess`, sem permissão do ca
 - **Estado derivado**, de `thread-state.ts`: resolvida só enquanto `resolved_at` é posterior ao último
   comentário. Comentar numa thread resolvida a reabre; `resolvedBy` e `resolvedAt` só vêm preenchidos
   enquanto ela está resolvida, e resolver de novo não escreve nada.
-- **Listagem**: o assunto é obrigatório e é exatamente um, `sectionKey` ou `personaId` (os dois, ou
-  nenhum, é 400). 20 threads por página, a de atividade mais recente primeiro com `id` de desempate;
+- **Listagem**: o assunto é obrigatório e é exatamente um, `sectionKey`, `personaId` ou `contentId`
+  (dois, ou nenhum, é 400). 20 threads por página, a de atividade mais recente primeiro com `id` de desempate;
   50 comentários por página, o mais antigo primeiro. O total sai de `count(*) over ()`, no
   mesmo snapshot da página.
 - **404 indistinto**: cliente de outra agência, thread de outro cliente, persona de outro cliente e
@@ -175,7 +175,38 @@ As do portal usam `requireSession` e `requireClientAccess`, sem permissão do ca
   quem resolveu a thread, pelo vínculo de agência, então `resolvedBy.name` existe mesmo quando quem
   resolveu nunca comentou (e só é `null` nesse mesmo caso do dono). A conversa nunca lê
   `auth."user"` por id.
-- **Texto do comentário**: aparado, não vazio, até 5.000 bytes UTF-8 (o teto da coluna).
+- **Texto do comentário**: aparado, não vazio, até 5.000 bytes UTF-8 (o teto da coluna). Recusa
+  controle (C0 e C1, menos tabulação e quebra de linha), separador de linha e de parágrafo, todo
+  `Default_Ignorable_Code_Point` que não é `Cf` (CGJ, seletores de variação, preenchimentos de Hangul),
+  o espaço em branco do Braille e a cabeça de nota nula (U+1D159); a exceção é um U+FE0F logo depois de
+  um pictograma. Um texto só de espaços e caracteres de formato é vazio. Caractere de formato dentro de
+  um texto com letras (a junção de um emoji de família) passa.
+
+### A conversa de um conteúdo (#259)
+
+As mesmas rotas aceitam `contentId` como assunto (`{ subject: { contentId }, body }` e
+`?contentId=`), com **uma conversa por conteúdo**. A decisão
+`2026-10-11-conversa-do-conteudo-nas-rotas-de-conversa-do-cliente` tem o porquê de cada ponto.
+
+- **Abrir é achar ou criar**: a segunda abertura, de qualquer lado, comenta na conversa que já existe
+  (`201`, a mesma `thread.id`). O índice único decide a corrida: `INSERT ... ON CONFLICT DO NOTHING`, e
+  quem espera lê a conversa do outro. Nunca duas conversas, nunca `23505`.
+- **A permissão é a do assunto**: ler pede `conteudo.visualizar`; abrir, comentar e resolver pedem
+  `conteudo.operar` **e** `conteudo.visualizar`, e não `cliente.operar`. A guarda da rota deixa passar
+  quem tem uma das duas famílias e `conversation-service.ts` (`agencyPermissions`) exige a do assunto:
+  o estudo de marca continua com `cliente.*`. Sem a leitura do conteúdo, agir pelo id de uma conversa
+  é `404` (a policy a esconde) e listar ou abrir pelo `contentId` é `403`.
+- **Estados**: a agência com o conteúdo em produção ou cancelado recebe `409 CONTENT_NOT_OPEN` ao abrir
+  ou comentar, e continua lendo e resolvendo. O portal recebe `404` em toda rota fora de "aguardando
+  aprovação", "em ajuste", "aprovado" e "publicado", por `app_private.content_open_to_client` no SQL do
+  lado cliente (a pessoa que também é colaboradora leria, pelo ramo da agência, o conteúdo em produção).
+- **404 indistinto**: conteúdo de outro cliente (mesmo de um cliente que a mesma pessoa tem vínculo),
+  de outra agência ou inexistente. O conteúdo é lido dentro do cliente da rota; sem isso, a chave
+  estrangeira composta viraria `500`.
+- **Erros do banco**: `A0020` dá `409 CLIENT_ARCHIVED` (agência) ou `404` (portal); `42501` é relido
+  numa transação nova; `40P01` e `40001` dão `409 TRY_AGAIN`.
+- **Contadores**: o selo "sugestões aguardando", o resumo da aba Geral e o Início do portal contam só a
+  conversa do estudo de marca (`content_id is null`).
 
 ## Leituras do portal (#129)
 
