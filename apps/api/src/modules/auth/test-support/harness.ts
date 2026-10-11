@@ -28,7 +28,7 @@ import { countValidContexts } from '../../contexts/service.js';
 import { createRequireSession } from '../session-guard.js';
 import { createMediaJobDispatcher, type MediaJobDispatcher } from '../../media/job-dispatcher.js';
 import type { MediaModuleDependencies } from '../../media/routes.js';
-import { createMediaStorageClient } from '../../media/storage-client.js';
+import { createMediaStorageClient, type MediaStorageClient } from '../../media/storage-client.js';
 import type { LegalModuleDependencies } from '../../legal/routes.js';
 import type { EmailChangeModuleDependencies } from '../../email-change/routes.js';
 import type { StoryScriptModuleDependencies } from '../../story-scripts/routes.js';
@@ -191,6 +191,11 @@ export interface TestAppOptions {
    * test can make the bucket refuse a signature the way the real one does (issue #470).
    */
   readonly wrapIdentityStorage?: (storage: IdentityStorageClient) => IdentityStorageClient;
+  /**
+   * Test-only wrapper around the media storage that signs the download URLs (issue #593), so a test can count the signatures
+   * a route makes or make the bucket refuse one. Never used by production code.
+   */
+  readonly wrapMediaStorage?: (storage: MediaStorageClient) => MediaStorageClient;
 }
 
 /** Real prehandler builders, wired to this test app's own `auth`/`database`, for `registerExtraRoutes`. */
@@ -282,7 +287,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   const media: MediaModuleDependencies | undefined = config.storage === undefined ? undefined : {
     database,
     auth,
-    storage: createMediaStorageClient(config.storage),
+    storage: (options.wrapMediaStorage ?? ((storage) => storage))(createMediaStorageClient(config.storage)),
     config: config.storage,
     requireAgencyAccess: createRequireAgencyAccess({ database }),
     requirePermission,
