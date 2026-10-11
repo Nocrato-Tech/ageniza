@@ -912,6 +912,54 @@ describe('every other child of the client is edited under the lock of its client
       expect(await rowOf(child, id)).toBe(before);
     });
 
+    // The route reads the client as active, then spends time elsewhere (the CopyObject and the HeadObject of a confirmation, the wait for
+    // a quota lock) before the UPDATE, and the archive commits in that time. The UPDATE is a new statement and reads the client again.
+    it('an edit after the client was read as active and the archive committed in between is refused, and the row is as it was', async () => {
+      const client = await newClient();
+      const id = await child.seed(client);
+      const before = await rowOf(child, id);
+      const writer = await w.openTransactionAs(ids.adminA);
+
+      try {
+        const read = await writer.raw<{ rows: Array<{ active: boolean }> }>('select app_private.client_is_active(?::uuid) as active', [client]);
+        expect(read.rows).toEqual([{ active: true }]);
+        await w.asUser(ids.adminA, archive(client));
+
+        if (child.afterCommit === 'no row') await expect(child.edit(id)(writer)).resolves.toBe(0);
+        else await expect(child.edit(id)(writer)).rejects.toMatchObject(child.afterCommit);
+      } finally {
+        await writer.rollback();
+      }
+
+      expect(await rowOf(child, id)).toBe(before);
+    });
+
+    // The edit waits for the lock of its own row, held by another transaction, and the archive commits during the wait. The statement
+    // keeps the snapshot that saw the client as active, so it is the trigger, after the wait, that reads the client again: A0020 for
+    // every one of the six, the policy having no say in this window.
+    it('an edit that waits for the lock of its row while the archive commits is refused as A0020, and the row is as it was', async () => {
+      const client = await newClient();
+      const id = await child.seed(client);
+      const before = await rowOf(child, id);
+      const holder = await w.openTransactionAs(ids.adminA);
+      let outcome: Promise<unknown> | undefined;
+
+      try {
+        const key = child.key(id);
+        const held = await holder.raw(`select 1 from public.${child.table} where ${Object.keys(key).map((column) => `${column} = ?`).join(' and ')} for update`, Object.values(key));
+        expect(held.rows).toHaveLength(1);
+        outcome = w.asUser(ids.adminA, child.edit(id)).then(() => 'written' as const, (error: unknown) => error);
+        await w.waitUntilSomeoneWaitsOnALock();
+        await w.asUser(ids.adminA, archive(client));
+      } finally {
+        await holder.commit();
+      }
+
+      expect(await outcome).toMatchObject({ code: 'A0020' });
+      expect(await clientStatus(client)).toBe('archived');
+      expect(await rowOf(child, id)).toBe(before);
+    });
+
     it('holds the client row shared while the edit is uncommitted: the locker has the row, and a lock that waits fails with 55P03', async () => {
       const client = await newClient();
       const id = await child.seed(client);
