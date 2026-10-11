@@ -70,6 +70,7 @@ Entidade de negócio usa `archived`; vínculo entre pessoa e tenant usa `removed
 | `tenancy` | as guardas de acesso à agência e ao cliente. Exporta; não tem rota |
 | `contexts` | listagem, resolução e troca de contexto |
 | `media` | upload direto, confirmação e URLs assinadas |
+| `contents` | conteúdo do cliente na agência: a consulta por período, criar, ler e editar |
 | `system` | saúde e prontidão |
 
 O worker é outro processo, em `apps/worker`, e consome uma fila durável no próprio PostgreSQL. Módulo de API que precisa de trabalho assíncrono **enfileira**, e não executa: o padrão está em `apps/api/src/modules/media/job-dispatcher.ts`.
