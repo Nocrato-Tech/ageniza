@@ -128,6 +128,11 @@ export const registerStoryScriptModule = (app: FastifyInstance, dependencies: St
   const requireSession = createRequireSession({ auth: dependencies.auth });
 
   // Declared once per route: the same object is the documentation metadata and the source of the schemas the handler validates with.
+  const readDocs = {
+    permission: 'conteudo.visualizar',
+    responseStatus: 200,
+    schemas: { params: AgencyClientStoryScriptPathParamsSchema, response: StoryScriptSchema }
+  } satisfies DocumentedRouteConfig;
   const createDocs = {
     permission: 'conteudo.operar',
     responseStatus: 201,
@@ -162,6 +167,11 @@ export const registerStoryScriptModule = (app: FastifyInstance, dependencies: St
       dependencies.requirePermission(docs.permission),
       dependencies.requirePermission('conteudo.visualizar')
     ],
+    config: { permission: docs.permission, responseStatus: docs.responseStatus, schemas: docs.schemas }
+  });
+  /** A read needs the one key that reads; `conteudo.operar` alone does not see what it would write. */
+  const agencyReadGuards = (docs: DocumentedRouteConfig & { permission: string }) => ({
+    preHandler: [requireSession, dependencies.requireAgencyAccess, dependencies.requirePermission(docs.permission)],
     config: { permission: docs.permission, responseStatus: docs.responseStatus, schemas: docs.schemas }
   });
   const portalGuards = (docs: DocumentedRouteConfig) => ({
@@ -262,6 +272,25 @@ export const registerStoryScriptModule = (app: FastifyInstance, dependencies: St
   };
 
   // --- The agency ------------------------------------------------------------------------------
+
+  // A client of another agency is the same answer as an absent one, even for a person who reads Conteúdo in both
+  // agencies and whom the policy would let see the row. An archived client is read as any other: it is only read-only.
+  app.get('/agencies/:agencyId/clients/:clientId/story-scripts/:scriptId', agencyReadGuards(readDocs), async (request, reply) => {
+    const { claims } = requireAuth(request);
+    const agencyId = agencyIdOf(request);
+    const clientId = uuidFromRoute(request, 'clientId', clientNotFound);
+    const scriptId = uuidFromRoute(request, 'scriptId', scriptNotFound);
+    routeParams(readDocs, request);
+
+    const row = await inTransaction(claims, async (transaction) => {
+      if (await clientScopeOf(transaction, agencyId, clientId) === 'not-found') throw clientNotFound();
+      const script = await loadAgencyScript(transaction, clientId, scriptId);
+      if (script === undefined) throw scriptNotFound();
+      return script;
+    });
+
+    return reply.send(routeResponse(readDocs, request, agencyScriptFrom(row)));
+  });
 
   app.post('/agencies/:agencyId/clients/:clientId/story-scripts', agencyGuards(createDocs), async (request, reply) => {
     const agencyId = agencyIdOf(request);
