@@ -33,7 +33,7 @@ The local equivalents are `pnpm db:start`, `pnpm db:migrate`, and `pnpm db:test:
 
 `better-auth` declares `vitest` as an optional peer, and pnpm resolves it because vitest exists in this workspace, which would ship vitest and its chain in the production API image (issue #281). The `.pnpmfile.cjs` hook removes that peer before resolution; all four Dockerfiles copy the file because `pnpm install --frozen-lockfile` verifies the `pnpmfileChecksum` recorded in `pnpm-lock.yaml` against it and fails when it is missing. Any edit to the file changes the checksum, so the lockfile must be regenerated in the same change. The hook is a silent no-op once `better-auth` stops declaring the peer, and can be deleted then.
 
-`CI / Quality gates` runs `node scripts/ci/verify-api-production-closure.mjs`, which deploys the API with `--prod` into a temporary directory and fails when any of these is true:
+`CI / Quality gates` runs `node scripts/ci/verify-api-production-closure.mjs` right after the build, because the deploy ships `dist`; it deploys the API with `--prod` into a temporary directory and fails when any of these is true:
 
 - the closure contains vitest or its chain (the list is `FORBIDDEN_IN_API_PRODUCTION`, pinned by value in the test);
 - the deploy carries anything the runtime does not read: only `dist`, `node_modules` and `package.json` are expected, and no compiled test or `test-support` under `dist`. `apps/api/package.json` declares this in `files` (issue #305), because without it `pnpm deploy` also ships `src/`, the Dockerfile, the tsconfig and the vitest configs, and the compiled `*.test.js`;
