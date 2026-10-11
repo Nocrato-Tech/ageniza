@@ -165,7 +165,7 @@ O worker registra sozinho o `clients.archive-due` quando sobe (`pnpm dev` ou `pn
    docker exec ageniza-local-postgres-1 psql -U postgres -d ageniza -c "select name, cron, timezone from pgboss.schedule"
    ```
 
-Sem worker, `select app_private.archive_due_clients();` faz a mesma coisa e devolve a quantidade: o job é só o relógio. Rodar duas vezes seguidas arquiva zero na segunda. Uma virada em que o worker estava parado é reposta quando ele sobe de novo, porque o job roda na inicialização.
+Sem worker, `select app_private.archive_due_clients();` faz a mesma coisa e devolve a quantidade (o job chama `due_client_ids()` e `archive_due_client(cliente)` um cliente por vez, e a função de lote é feita das duas): o job é só o relógio. Rodar duas vezes seguidas arquiva zero na segunda. Uma virada em que o worker estava parado é reposta quando ele sobe de novo, porque o job roda na inicialização.
 
 ## Rodando os testes
 

@@ -123,7 +123,8 @@ describe('the functions that ask for today', () => {
   });
 
   it.each([
-    'app_private.archive_due_clients()',
+    'app_private.archive_due_client(uuid)',
+    'app_private.due_client_ids()',
     'app_private.set_client_closing_date(uuid, date)',
     'app_private.accept_legal_document(text, text)',
     'app_private.accept_invitation(text, uuid, text, text, boolean)'
@@ -137,6 +138,8 @@ describe('the functions that ask for today', () => {
 
   it.each([
     'app_private.archive_due_clients()',
+    'app_private.archive_due_client(uuid)',
+    'app_private.due_client_ids()',
     'app_private.set_client_closing_date(uuid, date)',
     'app_private.accept_legal_document(text, text)',
     'app_private.accept_invitation(text, uuid, text, text, boolean)'
