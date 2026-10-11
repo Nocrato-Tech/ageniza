@@ -25,7 +25,11 @@ export const createMediaProcessingStorageClient = (config: WorkerStorageConfig):
     region: config.region,
     forcePathStyle: config.forcePathStyle,
     endpoint: config.endpoint,
-    credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }
+    credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+    // Same as the API's media client: the SDK (>= 3.729) would otherwise send the streamed `PutObject` as
+    // `aws-chunked` with a CRC32 trailer, and validate a checksum on every `GetObject` (#292, #306).
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED'
   });
 
   return {
