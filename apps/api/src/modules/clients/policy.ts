@@ -25,3 +25,10 @@ export const CLIENT_INVITATION_DEFAULT_PAGE_SIZE = 20;
 
 /** A thread item previews its last comment; the full text is on the comments route. */
 export const THREAD_EXCERPT_LENGTH = 140;
+
+/**
+ * The routes of the conversation serve the brand study (`cliente.*`) and a content (`conteudo.*`), so the guard lets in
+ * whoever holds one of each pair and the service holds the call to the permissions of its subject.
+ */
+export const CONVERSATION_READ_PERMISSIONS = ['cliente.visualizar', 'conteudo.visualizar'] as const;
+export const CONVERSATION_WRITE_PERMISSIONS = ['cliente.operar', 'conteudo.operar'] as const;
