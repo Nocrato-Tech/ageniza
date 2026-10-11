@@ -194,7 +194,7 @@ beforeAll(async () => {
     userIds.push(user.id);
     users[key] = user;
   };
-  for (const key of ['owner', 'ownerB', 'ownerC', 'opVis', 'onlyOperar', 'onlyVisualizar', 'onlyMidia', 'midiaC', 'sales']) await makeUser(key);
+  for (const key of ['owner', 'ownerB', 'ownerC', 'opVis', 'onlyOperar', 'onlyVisualizar', 'onlyMidia', 'midiaC', 'sales', 'both']) await makeUser(key);
 
   await owner.knex('agencies').insert([
     { id: agencyA, name: `Folders A ${agencyA}`, owner_user_id: users.owner!.id },
@@ -224,7 +224,10 @@ beforeAll(async () => {
     { agency_id: agencyA, user_id: users.onlyVisualizar!.id, role_id: await customRole(agencyA, 'conteudo.visualizar') },
     { agency_id: agencyA, user_id: users.onlyMidia!.id, role_id: await customRole(agencyA, 'midia.enviar') },
     { agency_id: agencyC, user_id: users.midiaC!.id, role_id: await customRole(agencyC, 'midia.enviar') },
-    { agency_id: agencyA, user_id: users.sales!.id, role_id: sales }
+    { agency_id: agencyA, user_id: users.sales!.id, role_id: sales },
+    // Holds the two permissions in two agencies: RLS shows it the client of the other agency, so only the route can refuse it.
+    { agency_id: agencyA, user_id: users.both!.id, role_id: await customRole(agencyA, 'conteudo.operar', 'conteudo.visualizar') },
+    { agency_id: agencyB, user_id: users.both!.id, role_id: await customRole(agencyB, 'conteudo.operar', 'conteudo.visualizar') }
   ]);
 
   for (const key of Object.keys(users)) {
@@ -329,6 +332,20 @@ describe('creating a folder (issue #253)', () => {
     expect(await folderCount(clientA1)).toBe(before);
     expect((await call('POST', foldersUrl(agencyA, clientA1), 'opVis', { name: 'a'.repeat(80) })).statusCode).toBe(201);
     expect((await call('POST', foldersUrl(agencyA, clientA1), 'opVis', { name: 'Pasta ✨ com emoji' })).statusCode).toBe(201);
+  });
+
+  it('refuses a name made lookalike with what renders as nothing and is not a format character (issue #531)', async () => {
+    const before = await folderCount(clientA1);
+    // U+034F, a variation selector, a Mongolian one, a supplementary one, a Khmer vowel and the Braille blank.
+    const codePoints = [0x034f, 0xfe00, 0xfe0e, 0xfe0f, 0x180b, 0xe0100, 0x17b4, 0x2800];
+
+    for (const codePoint of codePoints) {
+      const name = `Imagens${String.fromCodePoint(codePoint)}`;
+      const response = await call('POST', foldersUrl(agencyA, clientA1), 'opVis', { name });
+      expect({ codePoint: codePoint.toString(16), status: response.statusCode }).toEqual({ codePoint: codePoint.toString(16), status: 400 });
+    }
+    expect(await folderCount(clientA1)).toBe(before);
+    expect((await call('POST', foldersUrl(agencyA, clientA1), 'opVis', { name: `Coração ${String.fromCodePoint(0x2764, 0xfe0f)}` })).statusCode).toBe(201);
   });
 
   it('refuses an extra field, a folder inside a working folder, a parent of another client and an archived client', async () => {
@@ -534,6 +551,26 @@ describe('uploading a media into a folder of a client (issue #253)', () => {
     expect(await mediaCount(agencyA) + await mediaCount(agencyB)).toBe(before);
   });
 
+  it('refuses with 404 a member of two agencies who names the client of the other one, and writes nothing (issue #531)', async () => {
+    const folderA1 = await defaultFolder(clientA1);
+    const folderB = await defaultFolder(clientB);
+    const before = await mediaCount(agencyA) + await mediaCount(agencyB);
+
+    // RLS lets this person read both clients, and the lock of the folder passes: only the client's agency says no.
+    // Without it the composite foreign key (client_id, agency_id) is what answers, and it answers 500.
+    for (const [agency, clientId, folderId] of [[agencyA, clientB, folderB], [agencyB, clientA1, folderA1]] as const) {
+      const refused = await call('POST', uploadUrl(agency), 'both', body(clientId, folderId));
+      expect({ agency, status: refused.statusCode }).toEqual({ agency, status: 404 });
+      expect(refused.json().error).toEqual({ code: 'NOT_FOUND', message: 'Folder not found.' });
+      expect(JSON.stringify(refused.json())).not.toMatch(NO_DATABASE_DETAIL);
+    }
+    expect(await mediaCount(agencyA) + await mediaCount(agencyB)).toBe(before);
+
+    const own = await call('POST', uploadUrl(agencyA), 'both', body(clientA1, folderA1));
+    expect(own.statusCode).toBe(201);
+    assetIds.push(own.json().assetId as string);
+  });
+
   it('loses the race with the archive of the client: 409 CLIENT_ARCHIVED, and no media or reservation is left behind', async () => {
     const { clientId, reply } = await duringArchiveOfAFreshClient('in-progress', defaultFolder, (id, folderId) =>
       call('POST', uploadUrl(agencyA), 'opVis', body(id, folderId)));
@@ -541,6 +578,66 @@ describe('uploading a media into a folder of a client (issue #253)', () => {
     expect(reply.statusCode).toBe(409);
     expect(reply.json().error.code).toBe('CLIENT_ARCHIVED');
     expect(await owner.knex('media_assets').where({ client_id: clientId })).toHaveLength(0);
+  });
+
+  // Issue #532. Confirming is a write into a child of the client like the upload that began it, and the client may have
+  // been archived in between. The window where the archive is still running (A0020 of a trigger on the UPDATE) is the
+  // database's and is mapped below with an injected failure; here the archive has committed and the route reads it.
+  describe('confirming an upload of a client that was archived since it began (issue #532)', () => {
+    const smallPng = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+    const startedUpload = async (clientId: string): Promise<{ assetId: string; objectKey: string }> => {
+      const folder = await defaultFolder(clientId);
+      const created = await call('POST', uploadUrl(agencyA), 'opVis', body(clientId, folder));
+      expect(created.statusCode).toBe(201);
+      const assetId = created.json().assetId as string;
+      assetIds.push(assetId);
+      const put = await fetch(created.json().upload.url as string, { method: 'PUT', body: smallPng, headers: { 'content-type': 'image/png' } });
+      expect(put.ok).toBe(true);
+      return { assetId, objectKey: created.json().objectKey as string };
+    };
+
+    const freshClient = async (): Promise<string> => {
+      const clientId = randomUUID();
+      extraClientIds.push(clientId);
+      await owner.knex('clients').insert({ id: clientId, agency_id: agencyA, name: `Cliente do envio ${clientId}` });
+      return clientId;
+    };
+
+    it('is a 409 CLIENT_ARCHIVED, the media stays pending, nothing is audited and nothing reaches the canonical key', async () => {
+      const clientId = await freshClient();
+      const { assetId, objectKey } = await startedUpload(clientId);
+      await owner.knex('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
+
+      const reply = await call('POST', `${uploadUrl(agencyA)}/${assetId}/complete`, 'opVis', {});
+
+      expectClientArchived(reply);
+      expect(await owner.knex('media_assets').where({ id: assetId }).first('status', 'confirmed_at', 'confirmed_size_bytes'))
+        .toEqual({ status: 'pending', confirmed_at: null, confirmed_size_bytes: null });
+      expect(await owner.knex('audit.events').where({ target_id: assetId }).whereIn('action', ['media.upload_confirmed', 'media.upload_rejected'])).toHaveLength(0);
+      expect(await app.media!.storage.headObject({ key: objectKey })).toBeUndefined();
+    });
+
+    it('still confirms the same upload while the client is open', async () => {
+      const clientId = await freshClient();
+      const { assetId } = await startedUpload(clientId);
+
+      const reply = await call('POST', `${uploadUrl(agencyA)}/${assetId}/complete`, 'opVis', {});
+
+      expect(reply.statusCode).toBe(200);
+      expect(await owner.knex('media_assets').where({ id: assetId }).first('status')).toEqual({ status: 'confirmed' });
+    });
+
+    it('reads no client for a media of the agency that has none, and confirms it', async () => {
+      const created = await call('POST', uploadUrl(agencyA), 'onlyMidia', body());
+      expect(created.statusCode).toBe(201);
+      const assetId = created.json().assetId as string;
+      assetIds.push(assetId);
+      const put = await fetch(created.json().upload.url as string, { method: 'PUT', body: smallPng, headers: { 'content-type': 'image/png' } });
+      expect(put.ok).toBe(true);
+
+      expect((await call('POST', `${uploadUrl(agencyA)}/${assetId}/complete`, 'onlyMidia', {})).statusCode).toBe(200);
+    });
   });
 
   it('counts the media of a client that the caller cannot read against the quota of the agency', async () => {
@@ -685,6 +782,40 @@ describe('the order of the folders (issue #253)', () => {
     expect(listed.json().data.map((folder: { name: string }) => folder.name))
       .toEqual(['Carrosséis', 'Ensaio fotográfico', 'Imagens', 'Vídeos', 'Ábaco', 'abril', 'Água', 'Zebra']);
   });
+
+  // Issue #529. The names of the two tests below are written by the owner with a chosen id, because the route cannot
+  // choose one, and the larger id goes first so the order of the table is not the order the answer must have.
+  const freshClientWith = async (folders: ReadonlyArray<{ id: string; name: string }>): Promise<string> => {
+    const clientId = randomUUID();
+    extraClientIds.push(clientId);
+    await owner.knex('clients').insert({ id: clientId, agency_id: agencyA, name: `Cliente da ordem ${clientId}` });
+    for (const folder of folders) await owner.knex('media_folders').insert({ id: folder.id, client_id: clientId, name: folder.name });
+    return clientId;
+  };
+  const customNames = async (clientId: string): Promise<string[]> =>
+    (await call('GET', foldersUrl(agencyA, clientId), 'opVis')).json().data
+      .filter((folder: { isDefault: boolean }) => !folder.isDefault)
+      .map((folder: { name: string }) => folder.name);
+
+  it('compares the folded names byte by byte, not by the collation of the database: "a-c" comes before "ab"', async () => {
+    // Under en_US the hyphen is ignored at the first level and "ab" < "a-c"; under "C" the hyphen (0x2D) is below "b" (0x62).
+    const clientId = await freshClientWith([
+      { id: '00000000-0000-4000-8000-0000000000a1', name: 'ab' },
+      { id: '00000000-0000-4000-8000-0000000000a2', name: 'a-c' }
+    ]);
+
+    expect(await customNames(clientId)).toEqual(['a-c', 'ab']);
+  });
+
+  it('breaks the tie between two names that fold alike by the id, whatever order they were written in', async () => {
+    const clientId = await freshClientWith([
+      { id: 'ffffffff-ffff-4fff-8fff-ffffffffffff', name: 'Abril' },
+      { id: '00000000-0000-4000-8000-000000000001', name: 'abril' },
+      { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'ABRIL' }
+    ]);
+
+    expect(await customNames(clientId)).toEqual(['abril', 'ABRIL', 'Abril']);
+  });
 });
 
 describe('a role with one permission alone, where the lock answers before the policy would (issue #253)', () => {
@@ -788,6 +919,31 @@ describe('what the database raises inside the writes is never a 500 the route kn
       });
 
       expect(await mediaCount(agencyA)).toBe(before);
+    }
+  );
+
+  // Issue #532: the lock on the client of a confirmation raises A0020 while the archive is still running, and the
+  // confirmation answers it as the 409 of an archived client, with the media still pending and no object left at the canonical key.
+  it.each([['A0020', 409, 'CLIENT_ARCHIVED'], ['40P01', 409, 'TRY_AGAIN'], ['40001', 409, 'TRY_AGAIN'], ['XX000', 500, 'INTERNAL_ERROR']] as const)(
+    'confirming an upload that fails with %s answers %i %s, leaves the media pending and no canonical object, and repeating works',
+    async (errcode, status, code) => {
+      const folder = await defaultFolder(clientA1);
+      const created = await call('POST', `/agencies/${agencyA}/media/uploads`, 'opVis', { ...uploadBody, clientId: clientA1, folderId: folder });
+      expect(created.statusCode).toBe(201);
+      const assetId = created.json().assetId as string;
+      assetIds.push(assetId);
+      const put = await fetch(created.json().upload.url as string, { method: 'PUT', body: new Uint8Array(10), headers: { 'content-type': 'image/png' } });
+      expect(put.ok).toBe(true);
+
+      await withFailing('media_assets', 'update', `new.id = '${assetId}'::uuid and new.status = 'confirmed'`, errcode, async () => {
+        const failed = await call('POST', `/agencies/${agencyA}/media/uploads/${assetId}/complete`, 'opVis', {});
+        expect({ status: failed.statusCode, code: failed.json().error.code }).toEqual({ status, code });
+        expect(JSON.stringify(failed.json())).not.toMatch(NO_DATABASE_DETAIL);
+      });
+
+      expect((await owner.knex('media_assets').where({ id: assetId }).first('status')).status).toBe('pending');
+      expect(await app.media!.storage.headObject({ key: created.json().objectKey as string })).toBeUndefined();
+      expect((await call('POST', `/agencies/${agencyA}/media/uploads/${assetId}/complete`, 'opVis', {})).statusCode).toBe(200);
     }
   );
 

@@ -293,6 +293,10 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       const asset = await lockAssetForCompletion(transaction, params.assetId, params.agencyId);
       if (asset === undefined) throw assetNotFound();
       if (asset.status !== 'pending') throw notPending();
+      // The client is read AFTER the lock of the media and before anything reaches the bucket: a client that was
+      // archived since the upload began keeps its media as it was, the same 409 as every other write of its children.
+      // The foreign key keeps the client in this agency, so anything but "active" is the archive.
+      if (asset.client_id !== null && await clientScopeOf(transaction, params.agencyId, asset.client_id) !== 'active') throw clientArchived();
 
       const isMultipart = asset.multipart_upload_id !== null;
       if (isMultipart && body.parts === undefined) {
@@ -384,7 +388,8 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
           request.log.error({ error: { name: cleanupError instanceof Error ? cleanupError.name : 'UnknownError', code: 'MEDIA_CANONICAL_CLEANUP_FAILED' } }, 'Failed to remove canonical object after confirmation rollback');
         }
       }
-      throw error;
+      // A0020 of the lock on the client is the archive still running: the same 409 as the archive already committed.
+      throw translateClientMediaError(error) ?? error;
     }
     copiedCanonicalKey = undefined;
 

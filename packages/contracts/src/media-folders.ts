@@ -7,10 +7,19 @@ import { createPaginatedResponseSchema, PaginationInputSchema } from './paginati
 /** The longest name a folder shows. The database CHECK holds 256 bytes, and 80 UTF-16 units are at most 240. */
 export const MEDIA_FOLDER_NAME_MAX_LENGTH = 80;
 
+/**
+ * What renders as nothing (or as a space) and is not `\p{Cf}`, so the display-name rule lets it through: the combining
+ * grapheme joiner (U+034F), the variation selectors and the Khmer vowels are `Default_Ignorable_Code_Point`, and the
+ * Braille blank (U+2800) is a symbol. "Imagens" plus one of them looks like the default folder and is not the same name.
+ * U+FE0F right after a pictograph is how an emoji such as the heart is written, so that pair stays.
+ */
+const INVISIBLE_IN_FOLDER_NAME = /[\p{Default_Ignorable_Code_Point}\u2800]/u;
+const EMOJI_PRESENTATION_SELECTOR = /(\p{Extended_Pictographic})\uFE0F/gu;
+
 // A folder name keeps the display-name rules (control, bidi and invisible characters, at least one
-// letter or number) and refuses the two joiners as well: the database CHECK accepts them.
+// letter or number) and refuses the two joiners as well (both are Default_Ignorable): the database CHECK accepts them.
 export const MediaFolderNameSchema = createDisplayNameSchema(MEDIA_FOLDER_NAME_MAX_LENGTH)
-  .refine((value) => !/[\u200C\u200D]/u.test(value), 'must not contain a zero-width joiner');
+  .refine((value) => !INVISIBLE_IN_FOLDER_NAME.test(value.replace(EMOJI_PRESENTATION_SELECTOR, '$1')), 'must not contain invisible characters');
 
 /** `POST /agencies/:agencyId/clients/:clientId/media-folders` request body. A folder is created at the first
  * level (no `parentId`) or inside a first-level folder of the same client. */
