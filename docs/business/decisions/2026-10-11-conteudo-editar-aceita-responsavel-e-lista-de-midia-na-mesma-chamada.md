@@ -1,0 +1,23 @@
+# Conteúdo: editar aceita o responsável e a lista de mídia na mesma chamada
+
+**Data.** 2026-10-11
+
+**Contexto.** A issue #254 pede `PATCH .../contents/:contentId`, em que mover de data é editar `publishOn`, e traz requisitos da revisão de segurança do PR #383 (#249): o `42501` da troca de responsável vira 403 e nunca 500; os erros `A0065`, `A0069` e `A0074` são mapeados; e "um reels aprovado não vira carrossel no lugar": a rota oferece um caminho, por exemplo trocar formato e mídia numa só operação, ou documenta que é preciso cancelar e reagendar, e a escolha é registrada. A SPEC (§6) só diz que o `PATCH` devolve o conteúdo e anula a aprovação nos campos da regra 6.
+
+**Decisão.**
+1. **Os campos.** O corpo aceita qualquer subconjunto de `title`, `format`, `publishOn`, `publishAtTime` (`null` limpa), `caption` (`null` ou em branco limpa), `folderId`, `coverAssetId` (`null` limpa), `ownerUserId` e `mediaAssetIds`. O estado, a aprovação, a revisão, a plataforma e o cliente não são campos; um corpo vazio é 400. O estado "aguardando aprovação" que a legenda, a capa, o formato ou a mídia causam num conteúdo aprovado vem do banco (regra 6) e a resposta o traz.
+2. **Escrita exige a leitura.** `POST` e `PATCH` pedem `conteudo.operar` **e** `conteudo.visualizar` já na guarda da rota, como a policy do banco: quem só opera é recusado com 403 antes de qualquer consulta.
+3. **O responsável.** Trocar `ownerUserId` exige `conteudo.aprovar_pela_agencia`; sem ela, `403` antes de gravar, e o corpo inteiro é recusado (nenhum outro campo da mesma chamada é aplicado). Mandar o responsável que o conteúdo já tem não conta como troca. O banco recusa a troca sem a permissão com `42501` (gatilho `OLD`/`NEW`), e a rota também traduz essa recusa, para o caso de a permissão ter sumido entre a guarda e a gravação: 403, nunca 500. Ao **criar**, quem opera escolhe o responsável livremente, como a decisão de `2026-10-07-conteudo-conteudo-no-banco.md` (ponto 11). Um responsável que não é colaborador ativo que vê Conteúdo é `400 CONTENT_OWNER_INVALID`.
+4. **Formato e mídia numa só operação.** `mediaAssetIds` é a lista **inteira e ordenada** das mídias, nunca um delta, e é gravada na mesma transação que as colunas, **depois** delas: o formato novo vale para conferir a lista (um carrossel aceita até 20, os outros uma). Assim um conteúdo em produção ou em ajuste troca de reels para carrossel, e a mídia junto, numa chamada só; se a mídia é recusada, o formato também não muda. Sem `mediaAssetIds`, a mídia que o conteúdo tem fica.
+5. **Reels aprovado não vira carrossel no lugar.** Num conteúdo que aguarda aprovação ou está aprovado, o banco não deixa o formato ir para um que a mídia não cobre (`A0065`), e a lista só pode ter o tamanho que o formato de hoje aceita (`A0069`): ir entre carrossel e um formato de uma mídia só é impossível por uma chamada, em qualquer ordem. A rota responde `409 CONTENT_MEDIA_INCOMPLETE`, com a mensagem dizendo o caminho: **cancelar e reagendar o conteúdo** (que volta a "em produção" sem aprovação) e então trocar formato e mídia. Entre `reels`, `long_video` e `vsl`, que a mesma mídia cobre, a troca vale em qualquer estado e devolve o conteúdo aprovado a "aguardando aprovação". A alternativa de uma função nova de banco que troque formato e mídia juntos também nesses estados ficou de fora: é migration, e este PR não tem.
+6. **A pasta.** A pasta do conteúdo só muda enquanto ele não tem mídia nem capa (`409 CONTENT_FOLDER_IN_USE`); uma pasta de outro cliente ou que não existe é `400 CONTENT_FOLDER_INVALID`. Uma capa que não é imagem confirmada e não removida da pasta do conteúdo, ou uma lista de mídia com mídia repetida, de outra pasta, removida ou além do limite, é `400 CONTENT_MEDIA_INVALID`.
+7. **Publicado e cancelado não se editam**: `409 CONTENT_NOT_EDITABLE` para qualquer campo, inclusive a data e a lista de mídia (a decisão de `2026-10-07-conteudo-conteudo-no-banco.md`, ponto 7). Cliente arquivado: `409 CLIENT_ARCHIVED`, sem gravar.
+
+**Consequência.**
+- Nenhuma migration, tabela, grant ou policy muda: a rota chama o `UPDATE` por coluna e `app_private.set_content_media` que a #249 já criou.
+- A tela do conteúdo (#262, #263, #264) manda `mediaAssetIds` junto do formato e mostra o 409 de `CONTENT_MEDIA_INCOMPLETE` como "cancele e reagende".
+- Uma função de banco que troque formato e mídia de um conteúdo já enviado, se o dono quiser, é uma migration própria e muda o ponto 5.
+
+**Origem.** Issue #254 e os requisitos do PR #383 (#249, Coruja); a lista de mídia na mesma chamada e o responsável foram decididos pelo maestro, a pedido do implementador.
+
+**Validação.** Pendente de validação do dono.

@@ -29,6 +29,7 @@ import {
   describeMediaContentType,
   maxBytesForCategory,
   MEDIA_RATE_LIMITS,
+  MEDIA_READ_PERMISSIONS,
   MEDIA_UPLOAD_PERMISSIONS,
   multipartPlan,
   usesMultipartUpload,
@@ -44,7 +45,8 @@ import {
   markAssetRejected,
   readQuotaSnapshot,
   setMultipartUploadId,
-  touchPendingAsset
+  touchPendingAsset,
+  type MediaAssetRow
 } from './service.js';
 import type { MediaStorageClient } from './storage-client.js';
 
@@ -119,6 +121,14 @@ const objectKeyFor = (agencyId: string, assetId: string, extension: string): str
 const uploadObjectKeyFor = (agencyId: string, assetId: string, extension: string): string =>
   `staging/${agencyId}/${assetId}/upload.${extension}`;
 
+/**
+ * A media of a client is a child of it: once the client is archived, no write of the upload goes on (a new URL, a renewed
+ * reservation, a confirmation). The foreign key keeps the client in this agency, so anything but "active" is the archive.
+ */
+const requireOpenClient = async (transaction: Parameters<typeof clientScopeOf>[0], agencyId: string, asset: MediaAssetRow): Promise<void> => {
+  if (asset.client_id !== null && await clientScopeOf(transaction, agencyId, asset.client_id) !== 'active') throw clientArchived();
+};
+
 /** Registers the direct-to-R2 upload routes (issue #21). Every route requires `requireAgencyAccess`
  * then `requirePermission('midia.enviar')`, so a signed URL is emitted only after tenant and
  * capability are both confirmed -- an agency never obtains a URL for another agency's object,
@@ -163,7 +173,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     schemas: { params: AgencyMediaAssetPathParamsSchema, body: CompleteMediaUploadRequestSchema, response: CompleteMediaUploadResponseSchema }
   } satisfies DocumentedRouteConfig;
   const downloadDocs = {
-    permission: 'midia.enviar',
+    permission: MEDIA_READ_PERMISSIONS,
     responseStatus: 200,
     schemas: { params: AgencyMediaAssetPathParamsSchema, query: MediaDownloadUrlQuerySchema, response: MediaDownloadUrlResponseSchema }
   } satisfies DocumentedRouteConfig;
@@ -261,7 +271,9 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     const parts = await withAuthenticatedUserTransaction(database, auth.claims, async (transaction) => {
       const asset = await lockAssetForCompletion(transaction, params.assetId, params.agencyId);
       if (asset === undefined) throw assetNotFound();
-      if (asset.status !== 'pending' || asset.multipart_upload_id === null) throw notPending();
+      if (asset.status !== 'pending') throw notPending();
+      await requireOpenClient(transaction, params.agencyId, asset);
+      if (asset.multipart_upload_id === null) throw notPending();
       const plan = multipartPlan(Number(asset.declared_size_bytes), config.multipartPartBytes);
       if (body.partNumbers.some((partNumber) => partNumber > plan.partCount)) throw invalidMultipartPart();
 
@@ -293,6 +305,9 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       const asset = await lockAssetForCompletion(transaction, params.assetId, params.agencyId);
       if (asset === undefined) throw assetNotFound();
       if (asset.status !== 'pending') throw notPending();
+      // The client is read AFTER the lock of the media and before anything reaches the bucket: a client that was
+      // archived since the upload began keeps its media as it was, the same 409 as every other write of its children.
+      await requireOpenClient(transaction, params.agencyId, asset);
 
       const isMultipart = asset.multipart_upload_id !== null;
       if (isMultipart && body.parts === undefined) {
@@ -333,6 +348,8 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
         rejectionReason = 'too_large';
       } else {
         await lockAgencyStorageQuota(transaction, params.agencyId);
+        // Again, after the last wait before the write: the storage calls and the lock above can outlast an archive.
+        await requireOpenClient(transaction, params.agencyId, asset);
         const quota = await readQuotaSnapshot(transaction, params.agencyId, {
           quotaBytes: config.quotaDefaultBytes,
           quotaObjectCount: config.quotaDefaultObjectCount
@@ -384,7 +401,8 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
           request.log.error({ error: { name: cleanupError instanceof Error ? cleanupError.name : 'UnknownError', code: 'MEDIA_CANONICAL_CLEANUP_FAILED' } }, 'Failed to remove canonical object after confirmation rollback');
         }
       }
-      throw error;
+      // A0020 of the lock on the client is the archive still running: the same 409 as the archive already committed.
+      throw translateClientMediaError(error) ?? error;
     }
     copiedCanonicalKey = undefined;
 
@@ -417,14 +435,16 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       if (asset === undefined) throw assetNotFound();
       // The thumbnail/preview variants exist only for a video whose worker job has finished
       // (issue #24); until then this is a 409, not a 404, since the asset itself is real.
+      // An image has no generated thumbnail: its original is the thumbnail (issue #550).
       const key = query.variant === 'original' ? asset.objectKey
-        : query.variant === 'thumbnail' ? asset.thumbnailObjectKey
+        : query.variant === 'thumbnail' ? (asset.category === 'image' ? asset.objectKey : asset.thumbnailObjectKey)
         : asset.previewObjectKey;
       if (key === null) {
         if (asset.videoProcessingStatus === 'failed') throw variantProcessingFailed(asset.videoProcessingError);
         throw variantNotReady();
       }
-      await auditMediaEvent(transaction, { action: 'media.download_url_issued', actorUserId: auth.userId, agencyId: params.agencyId, targetId: params.assetId });
+      // Only the explicit download of the original is audited: the thumbnail and the preview are what the screens render, one per card (issue #550).
+      if (query.variant === 'original') await auditMediaEvent(transaction, { action: 'media.download_url_issued', actorUserId: auth.userId, agencyId: params.agencyId, targetId: params.assetId });
       return key;
     });
 

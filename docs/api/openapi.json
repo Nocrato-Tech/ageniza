@@ -31,6 +31,10 @@
       "description": "Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; agendar, desmarcar, arquivar e reativar o contrato; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência."
     },
     {
+      "name": "contents",
+      "description": "Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data."
+    },
+    {
       "name": "collaborators",
       "description": "A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação."
     },
@@ -1168,6 +1172,544 @@
           "role",
           "permissions"
         ],
+        "additionalProperties": false
+      },
+      "listContentsByPeriodResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "contents": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "platform": {
+                      "type": "string",
+                      "enum": [
+                        "instagram"
+                      ]
+                    },
+                    "format": {
+                      "type": "string",
+                      "enum": [
+                        "image",
+                        "carousel",
+                        "reels",
+                        "long_video",
+                        "vsl"
+                      ]
+                    },
+                    "publishOn": {
+                      "type": "string"
+                    },
+                    "publishAtTime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "in_production",
+                        "awaiting_approval",
+                        "adjusting",
+                        "approved",
+                        "published",
+                        "cancelled"
+                      ]
+                    },
+                    "ownerUserId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "coverAssetId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "publishedOn": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "tasksTotal": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "tasksApproved": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "platform",
+                    "format",
+                    "publishOn",
+                    "publishAtTime",
+                    "status",
+                    "ownerUserId",
+                    "coverAssetId",
+                    "revision",
+                    "publishedOn",
+                    "tasksTotal",
+                    "tasksApproved"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "storyScripts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "scriptOn": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "draft",
+                        "sent",
+                        "recorded"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "scriptOn",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "contents",
+              "storyScripts"
+            ],
+            "additionalProperties": false
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "from",
+              "to",
+              "count"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "createContentResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "clientId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "instagram"
+            ]
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "image",
+              "carousel",
+              "reels",
+              "long_video",
+              "vsl"
+            ]
+          },
+          "publishOn": {
+            "type": "string"
+          },
+          "publishAtTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "caption": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "folderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "coverAssetId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "ownerUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "in_production",
+              "awaiting_approval",
+              "adjusting",
+              "approved",
+              "published",
+              "cancelled"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "approvedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "approvedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "approvedByAgencyReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "publishedOn": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cancelledAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "position": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "id",
+                "position"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "assigneeUserId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "dueOn": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "delivered",
+                    "approved"
+                  ]
+                },
+                "returnComment": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "approvedBy": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "approvedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "description",
+                "assigneeUserId",
+                "dueOn",
+                "status",
+                "returnComment",
+                "approvedBy",
+                "approvedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "conversation": {
+            "type": "object",
+            "properties": {
+              "threadId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "commentCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "lastCommentAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "threadId",
+              "commentCount",
+              "lastCommentAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "clientId",
+          "title",
+          "platform",
+          "format",
+          "publishOn",
+          "publishAtTime",
+          "caption",
+          "folderId",
+          "coverAssetId",
+          "ownerUserId",
+          "status",
+          "revision",
+          "approvedBy",
+          "approvedAt",
+          "approvedByAgencyReason",
+          "publishedOn",
+          "cancelledAt",
+          "createdAt",
+          "media",
+          "tasks",
+          "conversation"
+        ],
+        "additionalProperties": false
+      },
+      "createContentRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "instagram"
+            ]
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "image",
+              "carousel",
+              "reels",
+              "long_video",
+              "vsl"
+            ]
+          },
+          "publishOn": {
+            "type": "string"
+          },
+          "publishAtTime": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+          },
+          "caption": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "folderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "coverAssetId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "ownerUserId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "title",
+          "format",
+          "publishOn",
+          "folderId"
+        ],
+        "additionalProperties": false
+      },
+      "updateContentRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "image",
+              "carousel",
+              "reels",
+              "long_video",
+              "vsl"
+            ]
+          },
+          "publishOn": {
+            "type": "string"
+          },
+          "publishAtTime": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+          },
+          "caption": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "folderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "coverAssetId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "ownerUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mediaAssetIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 20
+          }
+        },
         "additionalProperties": false
       },
       "listCollaboratorsResponse": {
@@ -2479,6 +3021,19 @@
                         "personaId"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "contentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      },
+                      "required": [
+                        "contentId"
+                      ],
+                      "additionalProperties": false
                     }
                   ]
                 },
@@ -2656,6 +3211,19 @@
                     },
                     "required": [
                       "personaId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "contentId": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "required": [
+                      "contentId"
                     ],
                     "additionalProperties": false
                   }
@@ -2851,6 +3419,19 @@
                 },
                 "required": [
                   "personaId"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "contentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "contentId"
                 ],
                 "additionalProperties": false
               }
@@ -3063,6 +3644,19 @@
                 },
                 "required": [
                   "personaId"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "contentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "contentId"
                 ],
                 "additionalProperties": false
               }
@@ -7262,6 +7856,806 @@
         }
       }
     },
+    "/agencies/{agencyId}/clients/{clientId}/contents": {
+      "get": {
+        "operationId": "listContentsByPeriod",
+        "summary": "Consulta os conteúdos e os roteiros de stories de um período",
+        "description": "A consulta por período, o formato que Tarefas e Dashboard copiam: `from` e `to` são dias\n`AAAA-MM-DD`, ambos incluídos, e o período tem no máximo 93 dias contando os dois extremos\n(93 passa, 94 não). Sem paginação: a resposta traz um vetor por tipo de item em `data`, e\n`meta.count` soma os dois. Acima de 500 itens a resposta é `400 CONTENT_PERIOD_TOO_LARGE`, sem\ntruncar. Ordem: data, hora (sem hora por último) e id. O conteúdo vem sem legenda e sem mídia;\n`tasksTotal` e `tasksApproved` dão o percentual das subtarefas. Cancelados vêm com o estado\n`cancelled`. Cliente arquivado também responde: o conteúdo dele é só leitura.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "to",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conteúdos e roteiros do período.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listContentsByPeriodResponse"
+                },
+                "example": {
+                  "data": {
+                    "contents": [
+                      {
+                        "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                        "title": "Lançamento da coleção de outono",
+                        "platform": "instagram",
+                        "format": "reels",
+                        "publishOn": "2026-10-20",
+                        "publishAtTime": "18:30",
+                        "status": "in_production",
+                        "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                        "coverAssetId": null,
+                        "revision": 1,
+                        "publishedOn": null,
+                        "tasksTotal": 3,
+                        "tasksApproved": 1
+                      }
+                    ],
+                    "storyScripts": [
+                      {
+                        "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+                        "scriptOn": "2026-10-21",
+                        "status": "draft"
+                      }
+                    ]
+                  },
+                  "meta": {
+                    "from": "2026-10-01",
+                    "to": "2026-10-31",
+                    "count": 2
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed | CONTENT_PERIOD_TOO_LARGE: O período tem mais de 500 itens. Consulte um período menor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createContent",
+        "summary": "Cria um conteúdo em produção",
+        "description": "Exige `conteudo.operar` e também `conteudo.visualizar`. O conteúdo nasce em produção; o estado\nnão é campo do corpo. `platform` é `instagram` e é o padrão. O responsável é quem cria, a não ser\nque `ownerUserId` nomeie outro colaborador ativo que veja Conteúdo (`400 CONTENT_OWNER_INVALID`).\nA pasta e a capa são do próprio cliente (`400 CONTENT_FOLDER_INVALID`, `400 CONTENT_MEDIA_INVALID`).\nTítulo de uma linha até 120 caracteres e legenda até 2.200 caracteres recusam caractere de\ncontrole e invisível. Cliente arquivado responde `409 CLIENT_ARCHIVED`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/createContentRequest"
+              },
+              "example": {
+                "title": "Lançamento da coleção de outono",
+                "format": "reels",
+                "publishOn": "2026-10-20",
+                "publishAtTime": "18:30",
+                "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Conteúdo criado, em produção.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createContentResponse"
+                },
+                "example": {
+                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                  "clientId": "77777777-7777-4777-8777-777777777777",
+                  "title": "Lançamento da coleção de outono",
+                  "platform": "instagram",
+                  "format": "reels",
+                  "publishOn": "2026-10-20",
+                  "publishAtTime": "18:30",
+                  "caption": "A coleção chegou. Vem ver.",
+                  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                  "coverAssetId": null,
+                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "status": "in_production",
+                  "revision": 1,
+                  "approvedBy": null,
+                  "approvedAt": null,
+                  "approvedByAgencyReason": null,
+                  "publishedOn": null,
+                  "cancelledAt": null,
+                  "createdAt": "2026-10-11T12:00:00.000Z",
+                  "media": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "position": 1
+                    }
+                  ],
+                  "tasks": [
+                    {
+                      "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+                      "title": "Gravar o vídeo",
+                      "description": null,
+                      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+                      "dueOn": "2026-10-15",
+                      "status": "pending",
+                      "returnComment": null,
+                      "approvedBy": null,
+                      "approvedAt": null
+                    }
+                  ],
+                  "conversation": {
+                    "threadId": null,
+                    "commentCount": 0,
+                    "lastCommentAt": null
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed | CONTENT_FOLDER_INVALID: A pasta escolhida não é uma pasta deste cliente. | CONTENT_MEDIA_INVALID: A mídia ou a capa escolhida não pode ser usada neste conteúdo. | CONTENT_OWNER_INVALID: O responsável precisa ser um colaborador ativo que vê Conteúdo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/contents/{contentId}": {
+      "get": {
+        "operationId": "getContent",
+        "summary": "Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa",
+        "description": "O conteúdo inteiro, mais `media` (id e posição, em ordem), `tasks` (só leitura aqui) e\n`conversation` (`threadId` nulo enquanto ninguém comentou, `commentCount` e `lastCommentAt`).\nUm conteúdo de outro cliente, de outra agência ou que não existe responde o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conteúdo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createContentResponse"
+                },
+                "example": {
+                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                  "clientId": "77777777-7777-4777-8777-777777777777",
+                  "title": "Lançamento da coleção de outono",
+                  "platform": "instagram",
+                  "format": "reels",
+                  "publishOn": "2026-10-20",
+                  "publishAtTime": "18:30",
+                  "caption": "A coleção chegou. Vem ver.",
+                  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                  "coverAssetId": null,
+                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "status": "in_production",
+                  "revision": 1,
+                  "approvedBy": null,
+                  "approvedAt": null,
+                  "approvedByAgencyReason": null,
+                  "publishedOn": null,
+                  "cancelledAt": null,
+                  "createdAt": "2026-10-11T12:00:00.000Z",
+                  "media": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "position": 1
+                    }
+                  ],
+                  "tasks": [
+                    {
+                      "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+                      "title": "Gravar o vídeo",
+                      "description": null,
+                      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+                      "dueOn": "2026-10-15",
+                      "status": "pending",
+                      "returnComment": null,
+                      "approvedBy": null,
+                      "approvedAt": null
+                    }
+                  ],
+                  "conversation": {
+                    "threadId": null,
+                    "commentCount": 0,
+                    "lastCommentAt": null
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Content not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Content not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateContent",
+        "summary": "Edita um conteúdo; mover de data é editar `publishOn`",
+        "description": "Qualquer subconjunto de `title`, `format`, `publishOn`, `publishAtTime` (`null` limpa),\n`caption`, `folderId`, `coverAssetId` e `ownerUserId`; exige `conteudo.operar` e também\n`conteudo.visualizar`. Mudar a legenda, a capa ou o formato de um conteúdo aprovado o devolve\na `awaiting_approval` e sobe `revision`; mudar data, hora, título ou responsável mantém a aprovação.\nTrocar o responsável exige `conteudo.aprovar_pela_agencia` (`403` sem ela). `mediaAssetIds` é a lista\ninteira e ordenada das mídias, gravada na mesma transação, depois do formato: assim um conteúdo em\nprodução ou em ajuste troca de formato e de mídia numa só chamada. Depois do envio para aprovação, ir de\ncarrossel para formato de uma mídia só (ou o inverso) é `409 CONTENT_MEDIA_INCOMPLETE`: cancele e\nreagende. Conteúdo publicado ou cancelado responde `409 CONTENT_NOT_EDITABLE`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/updateContentRequest"
+              },
+              "example": {
+                "publishOn": "2026-10-22",
+                "caption": "A coleção chegou. Vem ver."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conteúdo atualizado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createContentResponse"
+                },
+                "example": {
+                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                  "clientId": "77777777-7777-4777-8777-777777777777",
+                  "title": "Lançamento da coleção de outono",
+                  "platform": "instagram",
+                  "format": "reels",
+                  "publishOn": "2026-10-20",
+                  "publishAtTime": "18:30",
+                  "caption": "A coleção chegou. Vem ver.",
+                  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                  "coverAssetId": null,
+                  "ownerUserId": "55555555-5555-4555-8555-555555555555",
+                  "status": "in_production",
+                  "revision": 1,
+                  "approvedBy": null,
+                  "approvedAt": null,
+                  "approvedByAgencyReason": null,
+                  "publishedOn": null,
+                  "cancelledAt": null,
+                  "createdAt": "2026-10-11T12:00:00.000Z",
+                  "media": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "position": 1
+                    }
+                  ],
+                  "tasks": [
+                    {
+                      "id": "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0",
+                      "title": "Gravar o vídeo",
+                      "description": null,
+                      "assigneeUserId": "55555555-5555-4555-8555-555555555555",
+                      "dueOn": "2026-10-15",
+                      "status": "pending",
+                      "returnComment": null,
+                      "approvedBy": null,
+                      "approvedAt": null
+                    }
+                  ],
+                  "conversation": {
+                    "threadId": null,
+                    "commentCount": 0,
+                    "lastCommentAt": null
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed | CONTENT_FOLDER_INVALID: A pasta escolhida não é uma pasta deste cliente. | CONTENT_MEDIA_INVALID: A mídia ou a capa escolhida não pode ser usada neste conteúdo. | CONTENT_OWNER_INVALID: O responsável precisa ser um colaborador ativo que vê Conteúdo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Content not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Content not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_NOT_EDITABLE: Conteúdo publicado ou cancelado não pode ser editado. | CONTENT_MEDIA_INCOMPLETE: A mídia do conteúdo não cobre este formato. Para trocar entre carrossel e formato de uma mídia só depois do envio para aprovação, cancele e reagende o conteúdo. | CONTENT_FOLDER_IN_USE: A pasta não muda enquanto o conteúdo tem mídia ou capa. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/{agencyId}/collaborators": {
       "get": {
         "operationId": "listCollaborators",
@@ -11311,11 +12705,14 @@
       "get": {
         "operationId": "listAgencyThreads",
         "summary": "Lista as conversas de um assunto do cliente",
-        "description": "O assunto é obrigatório e é exatamente um: `sectionKey` (uma das sete seções) ou `personaId`; os dois\njuntos, ou nenhum, são 400. `state` filtra por `open` ou `resolved`; sem ele vêm todas. Vinte por\npágina, a de atividade mais recente primeiro. O estado é derivado: a conversa está resolvida só\nenquanto a resolução é posterior ao último comentário. Persona de outro cliente é 404; a conversa\nde persona arquivada continua legível para a agência.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
+        "description": "O assunto é obrigatório e é exatamente um: `sectionKey` (uma das sete seções) ou `personaId`; os dois\njuntos, ou nenhum, são 400. `state` filtra por `open` ou `resolved`; sem ele vêm todas. Vinte por\npágina, a de atividade mais recente primeiro. O estado é derivado: a conversa está resolvida só\nenquanto a resolução é posterior ao último comentário. Persona de outro cliente é 404; a conversa\nde persona arquivada continua legível para a agência.\nCom `contentId` o assunto é um conteúdo, que tem uma conversa só, e a permissão é `conteudo.visualizar`. Conteúdo de outro cliente, de outra agência ou inexistente é 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar` ou `conteudo.visualizar`.",
         "tags": [
           "clients"
         ],
-        "x-permission": "cliente.visualizar",
+        "x-permission": [
+          "cliente.visualizar",
+          "conteudo.visualizar"
+        ],
         "parameters": [
           {
             "schema": {
@@ -11381,6 +12778,15 @@
             },
             "required": false,
             "name": "personaId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "contentId",
             "in": "query"
           },
           {
@@ -11536,11 +12942,14 @@
       "post": {
         "operationId": "openAgencyThread",
         "summary": "Abre uma conversa pela agência, com o primeiro comentário",
-        "description": "Cria a conversa e o primeiro comentário na mesma transação, com o lado `agency`. O lado nunca vem\ndo corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000\nbytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`\ne persona de outro cliente 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "description": "Cria a conversa e o primeiro comentário na mesma transação, com o lado `agency`. O lado nunca vem\ndo corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000\nbytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`\ne persona de outro cliente 404.\nCom `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, e só escreve com o conteúdo em \"aguardando aprovação\" ou depois (senão 409 `CONTENT_NOT_OPEN`).\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar` ou `conteudo.operar`.",
         "tags": [
           "clients"
         ],
-        "x-permission": "cliente.operar",
+        "x-permission": [
+          "cliente.operar",
+          "conteudo.operar"
+        ],
         "parameters": [
           {
             "schema": {
@@ -11696,7 +13105,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | PERSONA_ARCHIVED: Persona arquivada: a conversa é somente leitura.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | PERSONA_ARCHIVED: Persona arquivada: a conversa é somente leitura. | CONTENT_NOT_OPEN: | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11740,11 +13149,14 @@
       "get": {
         "operationId": "listAgencyThreadComments",
         "summary": "Lista os comentários de uma conversa",
-        "description": "Cinquenta por página, do mais antigo ao mais novo. O nome e a foto do autor vêm do vínculo do\nlado do comentário, e a pessoa removida mantém o nome, porque o comentário é histórico.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
+        "description": "Cinquenta por página, do mais antigo ao mais novo. O nome e a foto do autor vêm do vínculo do\nlado do comentário, e a pessoa removida mantém o nome, porque o comentário é histórico.\nNuma conversa de conteúdo a permissão é `conteudo.visualizar`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar` ou `conteudo.visualizar`.",
         "tags": [
           "clients"
         ],
-        "x-permission": "cliente.visualizar",
+        "x-permission": [
+          "cliente.visualizar",
+          "conteudo.visualizar"
+        ],
         "parameters": [
           {
             "schema": {
@@ -11927,11 +13339,14 @@
       "post": {
         "operationId": "addAgencyThreadComment",
         "summary": "Comenta uma conversa pela agência",
-        "description": "Grava o comentário com o lado `agency`; comentar numa conversa resolvida a reabre, sem escrever na\nconversa, porque o estado é derivado. Não existe rota de editar nem de apagar comentário.\nCliente arquivado e persona arquivada respondem 409.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "description": "Grava o comentário com o lado `agency`; comentar numa conversa resolvida a reabre, sem escrever na\nconversa, porque o estado é derivado. Não existe rota de editar nem de apagar comentário.\nCliente arquivado e persona arquivada respondem 409.\nNuma conversa de conteúdo, `conteudo.operar` e `conteudo.visualizar`; com o conteúdo em produção ou cancelado, 409 `CONTENT_NOT_OPEN`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar` ou `conteudo.operar`.",
         "tags": [
           "clients"
         ],
-        "x-permission": "cliente.operar",
+        "x-permission": [
+          "cliente.operar",
+          "conteudo.operar"
+        ],
         "parameters": [
           {
             "schema": {
@@ -12072,7 +13487,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | PERSONA_ARCHIVED: Persona arquivada: a conversa é somente leitura.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | PERSONA_ARCHIVED: Persona arquivada: a conversa é somente leitura. | CONTENT_NOT_OPEN: | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12116,11 +13531,14 @@
       "post": {
         "operationId": "resolveThread",
         "summary": "Resolve uma conversa",
-        "description": "Grava `resolved_at` e `resolved_by`. Resolver uma conversa que já está resolvida não escreve nada.\nNão existe rota de reabrir: um comentário novo reabre. Só quem tem `cliente.operar` resolve; a\npessoa do portal nunca.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "description": "Grava `resolved_at` e `resolved_by`. Resolver uma conversa que já está resolvida não escreve nada.\nNão existe rota de reabrir: um comentário novo reabre. Só quem tem `cliente.operar` resolve; a\npessoa do portal nunca.\nNa conversa de um conteúdo, `conteudo.operar` e `conteudo.visualizar`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar` ou `conteudo.operar`.",
         "tags": [
           "clients"
         ],
-        "x-permission": "cliente.operar",
+        "x-permission": [
+          "cliente.operar",
+          "conteudo.operar"
+        ],
         "parameters": [
           {
             "schema": {
@@ -12240,7 +13658,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | PERSONA_ARCHIVED: Persona arquivada: a conversa é somente leitura.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | PERSONA_ARCHIVED: Persona arquivada: a conversa é somente leitura. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12783,7 +14201,7 @@
       "get": {
         "operationId": "listPortalThreads",
         "summary": "Lista as conversas de um assunto, no portal",
-        "description": "Mesmos parâmetros, paginação e forma da lista da agência, pelo mesmo serviço. Persona arquivada\nnão é assunto válido no portal: responde 404 como se não existisse.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Mesmos parâmetros, paginação e forma da lista da agência, pelo mesmo serviço. Persona arquivada\nnão é assunto válido no portal: responde 404 como se não existisse.\nCom `contentId`, só enquanto o conteúdo está aberto ao cliente; fora disso, e para conteúdo de outro cliente, 404.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -12844,6 +14262,15 @@
             },
             "required": false,
             "name": "personaId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "contentId",
             "in": "query"
           },
           {
@@ -12980,7 +14407,7 @@
       "post": {
         "operationId": "openPortalThread",
         "summary": "Abre uma conversa pelo portal, com o primeiro comentário",
-        "description": "Grava a conversa e o primeiro comentário com o lado `client`, que a rota fixa. Seção que a agência\nainda não preencheu responde 409 `SECTION_NOT_FILLED`; persona arquivada ou de outro cliente, 404.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Grava a conversa e o primeiro comentário com o lado `client`, que a rota fixa. Seção que a agência\nainda não preencheu responde 409 `SECTION_NOT_FILLED`; persona arquivada ou de outro cliente, 404.\nCom `{ contentId }`, só enquanto o conteúdo está em \"aguardando aprovação\", \"em ajuste\", \"aprovado\" ou \"publicado\"; fora disso, e para conteúdo de outro cliente, 404. A conversa do conteúdo é uma só: abrir de novo escreve nela.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -13131,7 +14558,7 @@
             }
           },
           "409": {
-            "description": "SECTION_NOT_FILLED: Esta seção ainda não foi preenchida pela agência.",
+            "description": "SECTION_NOT_FILLED: Esta seção ainda não foi preenchida pela agência. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13175,7 +14602,7 @@
       "get": {
         "operationId": "listPortalThreadComments",
         "summary": "Lista os comentários de uma conversa, no portal",
-        "description": "Mesma paginação e forma da lista da agência. Conversa de outro cliente é 404.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Mesma paginação e forma da lista da agência. Conversa de outro cliente é 404. A conversa de um conteúdo que não está aberto ao cliente também é 404.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -13334,7 +14761,7 @@
       "post": {
         "operationId": "addPortalThreadComment",
         "summary": "Comenta uma conversa pelo portal",
-        "description": "Grava o comentário com o lado `client`; comentar numa conversa resolvida a reabre. Não existe\nrota de resolver no portal: só a agência resolve.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Grava o comentário com o lado `client`; comentar numa conversa resolvida a reabre. Não existe\nrota de resolver no portal: só a agência resolve.\nA conversa de um conteúdo que não está aberto ao cliente é 404.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -13461,6 +14888,25 @@
                   "error": {
                     "code": "NOT_FOUND",
                     "message": "Thread not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "TRY_AGAIN",
+                    "message": "Houve um conflito momentâneo. Tente de novo."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
@@ -14448,11 +15894,14 @@
       "get": {
         "operationId": "getMediaDownloadUrl",
         "summary": "Emite uma URL assinada de leitura",
-        "description": "Válida por poucos minutos, só GET, e apenas para um objeto confirmado da agência.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar`.",
+        "description": "Válida por poucos minutos, só GET, e apenas para um objeto confirmado e não removido da agência. A mídia sem cliente exige `midia.enviar`; a de um cliente exige `conteudo.visualizar` (a que o papel não lê é o mesmo 404). Em `variant=thumbnail`, a imagem devolve o próprio original e o vídeo devolve a miniatura quando processada, senão 409 `VARIANT_NOT_READY`. Só o pedido do original grava a auditoria `media.download_url_issued`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar` ou `conteudo.visualizar`.",
         "tags": [
           "media"
         ],
-        "x-permission": "midia.enviar",
+        "x-permission": [
+          "midia.enviar",
+          "conteudo.visualizar"
+        ],
         "parameters": [
           {
             "schema": {
