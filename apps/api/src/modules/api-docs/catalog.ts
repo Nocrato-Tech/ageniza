@@ -2818,6 +2818,29 @@ path: '/agencies/:agencyId/roles',
     ]
   },
   {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/story-scripts/:scriptId',
+    operationId: 'getStoryScript',
+    module: 'story-scripts',
+    summary: 'Lê um roteiro de stories, com as cenas',
+    description: [
+      'O roteiro em qualquer estado (rascunho, enviado ou gravado), com as cenas na ordem e os ids delas, que é o',
+      'que o `PATCH` pede de volta. Precisa só de `conteudo.visualizar`; `conteudo.operar` sem ela dá 403. O cliente',
+      'tem de ser o da agência da URL: roteiro de outro cliente, de outra agência, inexistente ou `:scriptId`',
+      'inválido devolvem o mesmo 404. Cliente arquivado se lê: a agência vê, só não edita.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientStoryScriptPathParamsSchema,
+    responses: [{ status: 200, description: 'O roteiro, com as cenas.', schema: StoryScriptSchema, example: storyScriptExample }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Story script not found.' }
+    ]
+  },
+  {
     method: 'patch',
     path: '/agencies/:agencyId/clients/:clientId/story-scripts/:scriptId',
     operationId: 'updateStoryScript',
