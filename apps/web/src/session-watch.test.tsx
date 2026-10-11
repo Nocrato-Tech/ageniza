@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render, screen } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
@@ -9,6 +9,7 @@ import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect, sessionDestination } from './session-end.js';
+import { useCommittedLocation } from './location-probe-fixture.js';
 
 // #411. Removing a person ends their sessions on the server; a tab that sends no request would keep
 // showing the old screen. The tabs below send none: the only thing that can find out is the check.
@@ -86,9 +87,10 @@ const makeWorld = (): { world: World; impl: typeof fetch } => {
 let currentLocation = '';
 let currentState: unknown = null;
 function Probe() {
-  const location = useLocation();
-  currentLocation = `${location.pathname}${location.search}`;
-  currentState = location.state;
+  useCommittedLocation((location) => {
+    currentLocation = `${location.pathname}${location.search}`;
+    currentState = location.state;
+  });
   return null;
 }
 

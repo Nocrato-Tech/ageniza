@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, type NavigateFunction } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
@@ -12,6 +12,7 @@ import { ApiClientProvider, HttpClient, useApiClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ProtectedLayout } from './routes.js';
 import { createSessionEndSignal, DESTINATION_TTL_MS, loginNavigation, MAX_DESTINATION_LENGTH, SessionEndRedirect, sessionDestination } from './session-end.js';
+import { useCommittedLocation } from './location-probe-fixture.js';
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const activeSession = () => json(200, {
@@ -33,10 +34,11 @@ let currentLocation = '';
 let currentState: unknown = null;
 let navigateTo: NavigateFunction = () => undefined;
 function RouterProbe() {
-  const location = useLocation();
-  currentLocation = `${location.pathname}${location.search}${location.hash}`;
-  currentState = location.state;
-  navigateTo = useNavigate();
+  useCommittedLocation((location, navigate) => {
+    currentLocation = `${location.pathname}${location.search}${location.hash}`;
+    currentState = location.state;
+    navigateTo = navigate;
+  });
   return null;
 }
 

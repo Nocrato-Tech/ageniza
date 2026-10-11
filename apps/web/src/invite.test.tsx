@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
@@ -10,6 +10,7 @@ import { portalClientBody } from './portal-fixture.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
+import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(cleanup);
 
@@ -97,11 +98,11 @@ interface Probe {
   navigate: (to: string) => void;
 }
 function LocationProbe({ probe }: { probe: Probe }) {
-  const location = useLocation();
-  const navigate = useNavigate();
-  probe.pathname = location.pathname;
-  probe.back = () => navigate(-1);
-  probe.navigate = (to: string) => navigate(to);
+  useCommittedLocation((location, navigate) => {
+    probe.pathname = location.pathname;
+    probe.back = () => navigate(-1);
+    probe.navigate = (to: string) => navigate(to);
+  });
   return null;
 }
 function SessionProbe({ store, probe }: { store: AuthSessionStore; probe: { sessionStatus: string } }) {
