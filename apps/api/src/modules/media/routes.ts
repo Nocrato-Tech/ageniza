@@ -443,7 +443,8 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
         if (asset.videoProcessingStatus === 'failed') throw variantProcessingFailed(asset.videoProcessingError);
         throw variantNotReady();
       }
-      await auditMediaEvent(transaction, { action: 'media.download_url_issued', actorUserId: auth.userId, agencyId: params.agencyId, targetId: params.assetId });
+      // Only the explicit download of the original is audited: the thumbnail and the preview are what the screens render, one per card (issue #550).
+      if (query.variant === 'original') await auditMediaEvent(transaction, { action: 'media.download_url_issued', actorUserId: auth.userId, agencyId: params.agencyId, targetId: params.assetId });
       return key;
     });
 

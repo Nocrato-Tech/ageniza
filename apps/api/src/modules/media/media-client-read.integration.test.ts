@@ -275,7 +275,25 @@ describe('the read URL of a client\'s media (issue #550)', () => {
     const preview = await read(agencyA, assetId, 'manager', '?variant=preview');
     expect(preview.statusCode).toBe(409);
     expect(preview.json().error.code).toBe('VARIANT_NOT_READY');
-    expect(await issuedCount(assetId)).toBe(1);
+    expect(await issuedCount(assetId)).toBe(0);
+  });
+
+  it('audits the explicit download of the original and not the thumbnail or the preview the screens render', async () => {
+    const image = await seedAsset(agencyA);
+    const video = await seedAsset(agencyA, { category: 'video', video: 'ready' });
+
+    expect((await read(agencyA, image, 'manager', '?variant=thumbnail')).statusCode).toBe(200);
+    expect((await read(agencyA, video, 'manager', '?variant=thumbnail')).statusCode).toBe(200);
+    expect((await read(agencyA, video, 'manager', '?variant=preview')).statusCode).toBe(200);
+    expect(await issuedCount(image)).toBe(0);
+    expect(await issuedCount(video)).toBe(0);
+
+    expect((await read(agencyA, image, 'manager', '?variant=original')).statusCode).toBe(200);
+    expect((await read(agencyA, video, 'production')).statusCode).toBe(200);
+    expect(await issuedCount(image)).toBe(1);
+    expect(await issuedCount(video)).toBe(1);
+    const row = await owner.knex('audit.events').where({ action: 'media.download_url_issued', target_id: video }).first('actor_user_id');
+    expect(row?.actor_user_id).toBe(users.production!.id);
   });
 
   it('serves a video\'s thumbnail once processed and answers a code the screen can handle before that', async () => {
