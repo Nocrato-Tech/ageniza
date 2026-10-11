@@ -40,6 +40,7 @@ import {
   updateContent,
   type ContentTransaction
 } from './service.js';
+import { registerContentTransitionRoutes } from './transition-routes.js';
 
 type PreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
@@ -50,6 +51,8 @@ export interface ContentModuleDependencies {
   readonly requireAgencyAccess: PreHandler;
   /** Injected by the tenancy module; same named-permission rule the RLS policy enforces. */
   readonly requirePermission: (key: string) => PreHandler;
+  /** The instant "today" is read from when a publication carries no day; only a test sets it. */
+  readonly now?: () => Date;
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -245,5 +248,7 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
     });
     return reply.send(routeResponse(updateDocs, request, detail));
   });
+
+  registerContentTransitionRoutes(app, dependencies);
 };
 

@@ -39,7 +39,7 @@ const SPACE_OR_FORMAT = /[\s\p{Cf}]/gu;
  * A comment is trimmed, says something a person can read, and is at most 5000 UTF-8 bytes -- the cap the column enforces,
  * so a long accented text is a 400 here and never a 500 from the `octet_length` check. Its characters follow the one rule
  * of free text of the product, the story script's (`hasHiddenStoryCharacters`): no control, bidi, invisible or format
- * character, which also leaves out the joiners of a composed emoji until the rule learns them (#539). A text of spaces
+ * character, except what a complete emoji sequence is written with (#539). A text of spaces
  * alone is empty, as it is for the comment of a request for changes in the database.
  */
 export const CommentBodySchema = z.string()

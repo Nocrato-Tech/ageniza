@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { withoutEmojiSequences } from './invisible-characters.js';
+
 /** Longest accepted display name for the profile. `specs/colaboradores.md` requires a limit but
  * fixes no number; 120 is the choice recorded in `docs/business/decisions.md` (2026-09-30, pending
  * validation). Flows with their own limit build their own schema through `createDisplayNameSchema`. */
@@ -39,14 +41,21 @@ const NAME_HAS_LETTER_OR_NUMBER = /[\p{L}\p{N}]/u;
  * whitespace-only, NBSP-only and tab-only are empty), caps the length, rejects the control, bidi
  * and invisible characters above, and requires at least one letter or number -- otherwise
  * "invisible name" would satisfy the "name is not empty" rule while showing nothing.
+ *
+ * `emojiSequences` takes the complete emoji sequences (a family, a keycap, a flag of England) out before the format-character and
+ * joiner rules read the name, since a sequence is written with a joiner or with tags; the letter-or-number rule still reads the
+ * whole name, so a name of only emoji is refused. A flow that does not pass it keeps the rules as they were.
  */
-export const createDisplayNameSchema = (maxLength: number = DISPLAY_NAME_MAX_LENGTH) => z.string()
-  .trim()
-  .min(1)
-  .max(maxLength)
-  .refine((value) => !FORBIDDEN_NAME_CHARACTERS.test(value), 'must not contain control, bidi or invisible characters')
-  .refine((value) => !JOINER_OUTSIDE_NAME_CHARACTERS.test(value), 'a zero-width joiner is only allowed between letters, combining marks or pictographs')
-  .refine((value) => NAME_HAS_LETTER_OR_NUMBER.test(value), 'must contain at least one letter or number');
+export const createDisplayNameSchema = (maxLength: number = DISPLAY_NAME_MAX_LENGTH, options: { readonly emojiSequences?: boolean } = {}) => {
+  const readable = options.emojiSequences === true ? withoutEmojiSequences : (value: string): string => value;
+  return z.string()
+    .trim()
+    .min(1)
+    .max(maxLength)
+    .refine((value) => !FORBIDDEN_NAME_CHARACTERS.test(readable(value)), 'must not contain control, bidi or invisible characters')
+    .refine((value) => !JOINER_OUTSIDE_NAME_CHARACTERS.test(readable(value)), 'a zero-width joiner is only allowed between letters, combining marks or pictographs')
+    .refine((value) => NAME_HAS_LETTER_OR_NUMBER.test(value), 'must contain at least one letter or number');
+};
 
 /** A person's display name, shared by every contract that accepts one. */
 export const DisplayNameSchema = createDisplayNameSchema();

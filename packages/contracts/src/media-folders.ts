@@ -9,8 +9,9 @@ import { createPaginatedResponseSchema, PaginationInputSchema } from './paginati
 export const MEDIA_FOLDER_NAME_MAX_LENGTH = 80;
 
 // A folder name keeps the display-name rules (control, bidi and invisible characters, at least one
-// letter or number) and refuses the two joiners as well (both are Default_Ignorable): the database CHECK accepts them.
-export const MediaFolderNameSchema = createDisplayNameSchema(MEDIA_FOLDER_NAME_MAX_LENGTH)
+// letter or number) and refuses the two joiners as well (both are Default_Ignorable): the database CHECK accepts them. A complete
+// emoji sequence is the one place a joiner or a tag is read as part of the name.
+export const MediaFolderNameSchema = createDisplayNameSchema(MEDIA_FOLDER_NAME_MAX_LENGTH, { emojiSequences: true })
   .refine((value) => !hasInvisibleCharacters(value), 'must not contain invisible characters');
 
 /** `POST /agencies/:agencyId/clients/:clientId/media-folders` request body. A folder is created at the first

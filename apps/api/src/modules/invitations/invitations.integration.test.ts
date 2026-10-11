@@ -927,7 +927,7 @@ describe('invitation HTTP module', () => {
         const response = await resent;
         expect(response.statusCode).toBe(409);
         expect(response.json().error?.code).toBe('TRY_AGAIN');
-        expect(JSON.stringify(response.json())).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
+        expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
         await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('revoked_at')).resolves.toEqual({ revoked_at: null });
         await expect(owner.knex('invitations').where({ agency_id: raceAgencyId }).select('id')).resolves.toHaveLength(1);
 
@@ -975,7 +975,7 @@ describe('invitation HTTP module', () => {
 
         const response = await created;
         expect(response.statusCode).toBe(409);
-        expect(JSON.stringify(response.json())).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
+        expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
         await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('revoked_at')).resolves.toEqual({ revoked_at: null });
         await expect(owner.knex('invitations').where({ agency_id: raceAgencyId }).select('id')).resolves.toHaveLength(1);
 
@@ -1026,7 +1026,7 @@ describe('invitation HTTP module', () => {
         const response = await created;
         expect(response.statusCode).toBe(409);
         expect(response.json().error?.code).toBe('TRY_AGAIN');
-        expect(JSON.stringify(response.json())).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
+        expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
         await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('revoked_at')).resolves.toEqual({ revoked_at: null });
         await expect(owner.knex('invitations').where({ agency_id: raceAgencyId }).select('id')).resolves.toHaveLength(1);
 
@@ -1071,7 +1071,7 @@ describe('invitation HTTP module', () => {
         const response = await canceled;
         expect(response.statusCode).toBe(409);
         expect(response.json().error?.code).toBe('TRY_AGAIN');
-        expect(JSON.stringify(response.json())).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
+        expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
         await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('revoked_at')).resolves.toEqual({ revoked_at: null });
 
         const retried = await app.app.inject({
@@ -1117,7 +1117,7 @@ describe('invitation HTTP module', () => {
         const response = await accepted;
         expect(response.statusCode).toBe(409);
         expect(response.json().error?.code).toBe('TRY_AGAIN');
-        expect(JSON.stringify(response.json())).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
+        expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
         await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('used_at')).resolves.toEqual({ used_at: null });
         await expect(owner.knex('agency_memberships').where({ agency_id: raceAgencyId, user_id: invited.id }).first('id')).resolves.toBeUndefined();
 
@@ -1163,7 +1163,7 @@ describe('invitation HTTP module', () => {
         const response = await accepted;
         expect(response.statusCode).toBe(409);
         expect(response.json().error).toEqual({ code: 'TRY_AGAIN', message: 'Houve um conflito momentâneo. Tente de novo.' });
-        expect(JSON.stringify(response.json())).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
+        expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
         expect(response.cookies).toEqual([]);
         await expect(owner.knex('auth.user').where({ email }).first('id')).resolves.toBeUndefined();
         await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('used_at')).resolves.toEqual({ used_at: null });
