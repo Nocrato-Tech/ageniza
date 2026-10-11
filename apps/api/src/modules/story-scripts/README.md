@@ -30,7 +30,7 @@ cliente (`requireClientAccess`); o cliente é sempre o que o guarda provou.
   o portal pode ler. Rascunho, roteiro de outro cliente, de outra agência, id inexistente ou malformado: o mesmo 404
   `Story script not found.`, também para esse colaborador.
 - **Quem gravou aparece pelo vínculo.** `recordedBy: { name }` sai de `app_private.story_script_recorder`
-  (migration `20261011000500`), uma função `security definer` de propósito único que lê o nome pela ligação da pessoa com
+  (migration `20261011000500`, do PR de banco da #258), uma função `security definer` de propósito único que lê o nome pela ligação da pessoa com
   o cliente, nos dois lados, porque o portal não lê o vínculo dos outros. Vínculo removido depois continua respondendo.
 - **A edição é a lista inteira.** `PATCH` recebe `scenes` na nova ordem: cena com `id` já existe (muda texto,
   orientação e lugar numa só instrução, então duas cenas trocam de lugar), cena sem `id` é nova. Como cena não se remove
