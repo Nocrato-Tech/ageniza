@@ -8,6 +8,7 @@ Encontre o documento certo pela tarefa. Cada linha diz **que pergunta o document
 - [Visão do produto](business/product-overview.md) — o que é o Ageniza, quem são os papéis e os fluxos. **Leia quando:** precisar entender o domínio antes de qualquer código.
 - [Ambiente local](local-environment.md) — como sair de um clone novo para um ambiente que roda o produto. **Leia quando:** for preparar a máquina ou subir o banco e a API.
 - [Negócio](business/README.md) — o índice da pasta de regras de negócio. **Leia quando:** quiser saber onde fica cada tipo de regra.
+- [Auditorias de fechamento](business/audits/) — uma por módulo, com a matriz regra da SPEC, teste e mutação, os resultados das suítes e as lacunas abertas como issue. **Leia quando:** for fechar um módulo ou quiser saber o que ele prova e o que ficou de fora.
 
 ## Antes de implementar algo novo
 
