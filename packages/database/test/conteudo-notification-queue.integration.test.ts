@@ -1483,12 +1483,12 @@ describe('races with the archive of the client (issue #252)', () => {
     expect((await itemsOf(id)).every((item) => item.discarded_at !== null)).toBe(true);
   });
 
-  // The caption of an approved content moves it back to "awaiting approval" by a plain UPDATE, which takes no lock of the client:
-  // the lock is the AFTER INSERT lock of the queue, which waits for the archive and then refuses the row. How the edit itself ends is
-  // the business of rule 14, not of this issue; the queue is what is asserted.
-  it('an approved content whose caption changes while the archive is uncommitted queues nothing once the archive commits', async () => {
+  // The caption of an approved content moves it back to "awaiting approval" by a plain UPDATE. Rule 14 (issue #408): the edit takes
+  // the client FOR SHARE, so it waits for the archive and is refused, and the content and the queue stay as they were.
+  it('an approved content whose caption changes while the archive is uncommitted is refused, and queues nothing once the archive commits', async () => {
     const client = await freshClient();
     const id = await readyContent(client, 'approved', await today());
+    const before = await w.contentRow(id);
 
     const archiving = await w.openTransactionAs(ids.adminA);
     let outcome: Promise<unknown>;
@@ -1500,9 +1500,30 @@ describe('races with the archive of the client (issue #252)', () => {
       await archiving.commit();
     }
 
-    // How the edit itself ends (rule 14, a plain UPDATE takes no lock of the client) is not this issue: only the queue is asserted.
-    await outcome;
+    expect(await outcome).toMatchObject({ code: 'A0020' });
     expect(await itemsOf(id)).toEqual([]);
+    expect(await w.contentRow(id)).toEqual(before);
+    expect(before).toMatchObject({ status: 'approved', revision: 1, caption: 'Legenda original' });
+  });
+
+  it('an approved content whose title changes while the archive is uncommitted is refused by the lock of the edit itself, with nothing to queue', async () => {
+    const client = await freshClient();
+    const id = await readyContent(client, 'approved', await today());
+    const before = await w.contentRow(id);
+
+    const archiving = await w.openTransactionAs(ids.adminA);
+    let outcome: Promise<unknown>;
+    try {
+      await archive(client)(archiving);
+      outcome = w.asUser(ids.productionA, (t) => t('contents').where({ id }).update({ title: 'Título novo' })).then(() => 'edited', (error: unknown) => error);
+      await w.waitUntilSomeoneWaitsOnALock();
+    } finally {
+      await archiving.commit();
+    }
+
+    expect(await outcome).toMatchObject({ code: 'A0020' });
+    expect(await itemsOf(id)).toEqual([]);
+    expect(await w.contentRow(id)).toEqual(before);
   });
 
   it('the same edit under REPEATABLE READ does not queue either: it fails with 40001, and leaves the content as it was', async () => {
