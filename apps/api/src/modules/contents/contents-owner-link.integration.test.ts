@@ -131,7 +131,7 @@ describe('what the API answers (issue #552)', () => {
   });
 
   describe('no response of Conteúdo carries the user id of anyone (issue #552)', () => {
-    const EVERY_USER_ID = (): string[] => Object.values(people).map((person) => person.id);
+    const EVERY_USER_ID = (): string[] => f.allUserIds();
 
     /** The whole body, keys and values: a key that names a user id, or any user id of the world, anywhere in it, is a leak. */
     const leaks = (reply: Reply): string[] => {
@@ -141,7 +141,7 @@ describe('what the API answers (issue #552)', () => {
     };
 
     /** A content approved by the person and the reason given, written the way the database writes it (an INSERT, which the guard lets through). */
-    const seedApprovedBy = async (clientId: string, approvedBy: string, reason: string | null): Promise<string> => {
+    const seedApprovedBy = async (clientId: string, approvedBy: string, reason: string | null, ownerUserId = people.production.id): Promise<string> => {
       const id = randomUUID();
       await w.getOwner().knex('contents').insert({
         id,
@@ -151,7 +151,7 @@ describe('what the API answers (issue #552)', () => {
         format: 'reels',
         publish_on: '2026-10-20',
         folder_id: await w.folderOf(clientId),
-        owner_user_id: people.production.id,
+        owner_user_id: ownerUserId,
         status: 'approved',
         approved_by: approvedBy,
         approved_at: new Date('2026-10-05T12:00:00.000Z'),
@@ -184,6 +184,24 @@ describe('what the API answers (issue #552)', () => {
         expect(reply.json().tasks, `${action} brings its subtasks`).toHaveLength(action === 'unpublish' || action === 'reschedule' ? 0 : 1);
         expect(leaks(reply), action).toEqual([]);
       }
+    });
+
+    it('leaks no id of the portal people nor of the fixture people, when they are the approver, the owner or the person of a subtask (issue #566)', async () => {
+      const clientId = await w.newClient('no-user-id-everyone');
+      const portalPerson = await f.portalMember(clientId);
+      const fixturePerson = f.people.operateRead;
+      const contentId = await seedApprovedBy(clientId, portalPerson, null, fixturePerson.id);
+      const taskId = await w.seedTask(contentId, 'pending');
+      await w.getOwner().knex('content_tasks').where({ id: taskId }).update({ assignee_user_id: fixturePerson.id });
+
+      const list = await w.call('GET', people.reader.cookie, `${urlA(clientId)}?from=2026-10-20&to=2026-10-20`);
+      const detail = await w.call('GET', people.reader.cookie, `${urlA(clientId)}/${contentId}`);
+
+      expect(detail.json().tasks).toHaveLength(1);
+      expect(list.json().data.contents).toHaveLength(1);
+      expect(EVERY_USER_ID()).toEqual(expect.arrayContaining([portalPerson, fixturePerson.id]));
+      expect(leaks(list)).toEqual([]);
+      expect(leaks(detail)).toEqual([]);
     });
 
     it('names who approved without an id: the name and the side, by the link of that side', async () => {
@@ -316,15 +334,14 @@ describe('what the body takes (issue #552)', () => {
         : patch(cookie, contentId, { ownerMembershipId });
     };
 
-    const refused = async (reply: Reply, contentId: string, before: number, byTheDatabase = false): Promise<void> => {
+    const refused = async (reply: Reply, contentId: string, before: number): Promise<void> => {
       expect(reply.statusCode).toBe(400);
       expect(reply.json().error.code).toBe('CONTENT_OWNER_INVALID');
       expect(JSON.stringify(reply.json().error)).not.toMatch(NO_DATABASE_DETAIL);
       expect((await w.contentRow(contentId)).owner_user_id).toBe(people.production.id);
       expect(await w.countContents(clientA)).toBe(before);
-      // The route refuses before it writes: the trigger of the database is the second barrier, not the first. A person who cannot
-      // see Conteúdo has an active link, so only the trigger can tell: that case is the database's.
-      if (!byTheDatabase) expect(w.statements.some((statement) => /(insert into|update) public\.contents\b/i.test(statement))).toBe(false);
+      // The route refuses before it writes: the trigger of the database is the second barrier, not the first.
+      expect(w.statements.some((statement) => /(insert into|update) public\.contents\b/i.test(statement))).toBe(false);
     };
 
     it('is refused with 400 CONTENT_OWNER_INVALID when it belongs to another agency', async () => {
@@ -360,11 +377,76 @@ describe('what the body takes (issue #552)', () => {
       }
     });
 
-    it('is refused when it does not exist, and when it is the link of someone who cannot see Conteúdo', async () => {
+    it('is refused when it does not exist', async () => {
       const contentId = await w.seedContent(clientA, { ownerUserId: people.production.id });
       const before = await w.countContents(clientA);
       await refused(await send(randomUUID(), contentId), contentId, before);
-      await refused(await send(await linkOf('sales'), contentId), contentId, before, true);
+    });
+
+    it.each(['sales', 'finance', 'operateOnly', 'noContent'] as const)('is refused before any write when it is the link of %s, who cannot see Conteúdo (issue #566)', async (person) => {
+      const contentId = await w.seedContent(clientA, { ownerUserId: people.production.id });
+      const before = await w.countContents(clientA);
+      await refused(await send(await linkOf(person), contentId), contentId, before);
+    });
+  });
+
+  describe('the route and the database agree on who can see Conteúdo (issue #566)', () => {
+    // `agency_user_can` is what the trigger A0073 asks and `ageniza_app` cannot call it: the route reads the same rule from the tables,
+    // and this matrix ties the two. A route that refused a person the database accepts would block a valid owner; one that accepted
+    // a person the database refuses would only be caught by the trigger, after a write.
+    const knownToTheDatabase = async (person: PersonKey): Promise<boolean> => {
+      const link = await w.getOwner().knex('agency_memberships').where({ agency_id: w.agencyA, user_id: people[person].id, status: 'active' }).first('id');
+      if (link === undefined) return false;
+      const result = await w.getOwner().knex.raw<{ rows: Array<{ can: boolean }> }>(
+        "select app_private.agency_user_can(?::uuid, ?::uuid, 'conteudo.visualizar') as can", [w.agencyA, people[person].id]
+      );
+      return result.rows[0]?.can === true;
+    };
+
+    const asked = async (person: PersonKey): Promise<number> => {
+      const contentId = await w.seedContent(clientA, { ownerUserId: people.production.id });
+      return (await patch(people.admin.cookie, contentId, { ownerMembershipId: await linkOf(person) })).statusCode;
+    };
+
+    it('answers 200 to exactly the people the database accepts, and 400 to the others', async () => {
+      const answers: Record<string, { database: boolean; route: number }> = {};
+      for (const person of ['admin', 'manager', 'production', 'sales', 'finance', 'reader', 'operateOnly', 'noContent', 'approver', 'dual'] as const) {
+        answers[person] = { database: await knownToTheDatabase(person), route: await asked(person) };
+      }
+      for (const [person, answer] of Object.entries(answers)) expect({ person, route: answer.route }, person).toEqual({ person, route: answer.database ? 200 : 400 });
+      expect(Object.values(answers).filter((answer) => answer.database).length).toBeGreaterThan(3);
+      expect(Object.values(answers).filter((answer) => !answer.database).length).toBeGreaterThan(3);
+    });
+
+    it('refuses a link whose role belongs to another agency, even when that role can see Conteúdo, as the database does', async () => {
+      const foreignRole = await w.customRole(w.agencyB, ['conteudo.visualizar']);
+      const [link] = await w.getOwner().knex('agency_memberships').insert({ agency_id: w.agencyA, user_id: people.adminB.id, role_id: foreignRole }).returning('id');
+      try {
+        expect(await knownToTheDatabase('adminB')).toBe(false);
+        const contentId = await w.seedContent(clientA, { ownerUserId: people.production.id });
+        w.statements.length = 0;
+        // Asked by the person of both agencies, whose RLS reads the role of the other one: only the scope of the role refuses it.
+        const reply = await patch(people.dual.cookie, contentId, { ownerMembershipId: link.id as string });
+        expect(reply.statusCode).toBe(400);
+        expect(reply.json().error.code).toBe('CONTENT_OWNER_INVALID');
+        expect(w.statements.some((statement) => /update public\.contents\b/i.test(statement))).toBe(false);
+      } finally {
+        await w.getOwner().knex('agency_memberships').where({ id: link.id }).delete();
+      }
+    });
+
+    it('accepts the Owner of the agency by a link whose role cannot see Conteúdo, as the database does', async () => {
+      const roleId = await w.customRole(w.agencyA, ['cliente.visualizar']);
+      const [link] = await w.getOwner().knex('agency_memberships').insert({ agency_id: w.agencyA, user_id: people.owner.id, role_id: roleId }).returning('id');
+      try {
+        expect(await knownToTheDatabase('owner')).toBe(true);
+        const contentId = await w.seedContent(clientA, { ownerUserId: people.production.id });
+        const reply = await patch(people.admin.cookie, contentId, { ownerMembershipId: link.id as string });
+        expect(reply.statusCode).toBe(200);
+        expect((await w.contentRow(contentId)).owner_user_id).toBe(people.owner.id);
+      } finally {
+        await w.getOwner().knex('agency_memberships').where({ id: link.id }).delete();
+      }
     });
   });
 
