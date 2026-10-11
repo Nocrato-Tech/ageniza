@@ -279,7 +279,7 @@ export async function up(knex) {
       -- so a second worker cannot claim part of a group whose first claim it cannot see yet. Whether the group is ready is asked in the
       -- statement that claims, after the lock, so it sees what the previous holder of the lock committed.
       for v_group in
-        select item.recipient_user_id, item.client_id, item.type, min(item.send_after) as first_due
+        select item.recipient_user_id, item.client_id, item.type
         from public.notification_queue item
         where item.sent_at is null
           and item.discarded_at is null
@@ -325,7 +325,6 @@ export async function up(knex) {
       join public.agencies agency on agency.id = client.agency_id
       join auth."user" person on person.id = item.recipient_user_id
       where item.claim_token = v_token
-        and item.sent_at is null
       order by item.recipient_user_id, item.client_id, item.type, item.send_after, item.id;
     end;
     $function$;

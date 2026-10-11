@@ -659,6 +659,39 @@ describe('claiming a batch (issue #252)', () => {
     expect(await claim(1)).toEqual([]);
   });
 
+  it.each(['smaller', 'larger'] as const)('takes the group that has waited longest first, whatever the id of its person: the oldest belongs to the %s id', async (which) => {
+    const [smaller, larger] = [ids.portalA1, ids.portalA1Second].sort() as [string, string];
+    const [older, newer] = which === 'smaller' ? [smaller, larger] : [larger, smaller];
+    const waitedContent = await readyContent(await freshClient([older]));
+    const fresherContent = await readyContent(await freshClient([newer]));
+    await sendDue(ids.productionA, waitedContent);
+    await sendDue(ids.productionA, fresherContent);
+    await setItemsAgo(waitedContent, 'send_after', 30);
+    await setItemsAgo(fresherContent, 'send_after', 5);
+
+    expect((await claim(1)).map((row) => row.content_id)).toEqual([waitedContent]);
+    expect((await claim(1)).map((row) => row.content_id)).toEqual([fresherContent]);
+  });
+
+  it('does not spend the limit on a group that is not ready: a group held by the window of its own debounce lets the next one through', async () => {
+    const held = await freshClient([ids.portalA1]);
+    const ready = await freshClient([ids.portalA1]);
+    const due = await readyContent(held);
+    const inWindow = await readyContent(held);
+    const other = await readyContent(ready);
+    await submitAs(ids.productionA, due);
+    await submitAs(ids.productionA, inWindow);
+    await submitAs(ids.productionA, other);
+    await sentAgo(due, 30);
+    await sentAgo(inWindow, 1);
+    await sentAgo(other, 16);
+
+    const batch = await claim(1);
+
+    expect(batch.map((row) => row.content_id)).toEqual([other]);
+    for (const item of await itemsOf(due)) expect(item).toMatchObject({ claimed_at: null, attempts: 0 });
+  });
+
   it('holds the lock of a group per person and per client: another client of the same person is claimed meanwhile', async () => {
     const north = await freshClient([ids.portalA1]);
     const south = await freshClient([ids.portalA1]);
@@ -879,6 +912,20 @@ describe('claiming a batch (issue #252)', () => {
       expect(await claim()).toEqual([]);
     });
 
+    it('does not let an item that is dropped in the same claim hold the window of its group', async () => {
+      const due = await send();
+      const dropped = await send();
+      await sentAgo(due, 20);
+      await cancelAs(ids.adminA, dropped);
+      expect((await itemsOf(dropped)).every((item) => item.send_after > new Date())).toBe(true);
+
+      const batch = await claim();
+
+      expect(forContent(batch, due)).toHaveLength(PEOPLE_OF_A1.length);
+      expect(forContent(batch, dropped)).toEqual([]);
+      expect((await itemsOf(dropped)).every((item) => item.discarded_at !== null)).toBe(true);
+    });
+
     it('does not count an exhausted item as the start of the burst', async () => {
       const exhausted = await send();
       const due = await send();
@@ -1081,6 +1128,19 @@ describe('claiming a batch (issue #252)', () => {
       expect(forContent(batch, undone)).toEqual([]);
       expect(forContent(batch, kept)).toHaveLength(PEOPLE_OF_A1.length);
       expect(await discardedOf(undone)).toEqual(PEOPLE_OF_A1);
+    });
+
+    it('an item whose lease ran out is judged again: what stopped being true is dropped, not handed over a second time', async () => {
+      const id = await readyContent();
+      await sendDue(ids.productionA, id);
+      expect(forContent(await claim(), id)).toHaveLength(PEOPLE_OF_A1.length);
+      await setItemsAgo(id, 'claimed_at', 11);
+      await approveAs(ids.portalA1, id);
+
+      expect(forContent(await claim(), id)).toEqual([]);
+
+      expect(await discardedOf(id)).toEqual(PEOPLE_OF_A1);
+      for (const item of await itemsOf(id)) expect(item).toMatchObject({ attempts: 1, sent_at: null });
     });
 
     it('an item under a running lease is not touched, so the e-mail that is leaving can still be marked sent', async () => {
