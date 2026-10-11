@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import {
   ARCHETYPE_LABELS,
   type Archetype,
@@ -651,11 +649,11 @@ export const createPersona = async (
   input: { readonly clientId: string; readonly actorUserId: string; readonly body: CreatePersonaRequest }
 ): Promise<string | undefined> => {
   const result = await raw<RawRows<{ id: string }>>(transaction, `
-    insert into public.client_personas (id, client_id, name, description, pains, desires, objections, updated_by)
-    values (?::uuid, ?::uuid, ?, ?, ?, ?, ?, ?::uuid)
+    insert into public.client_personas (client_id, name, description, pains, desires, objections, updated_by)
+    values (?::uuid, ?, ?, ?, ?, ?, ?::uuid)
     returning id
   `, [
-    randomUUID(), input.clientId, input.body.name,
+    input.clientId, input.body.name,
     input.body.description ?? null, input.body.pains ?? null, input.body.desires ?? null, input.body.objections ?? null,
     input.actorUserId
   ]);

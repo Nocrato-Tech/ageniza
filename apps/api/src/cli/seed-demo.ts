@@ -25,8 +25,10 @@ import {
  * created the way `cli:agency` creates them (the migration owner, since `public.agencies` has no
  * INSERT policy by design).
  *
- * Everything is idempotent: identifiers derive from stable demo keys and every write is an upsert
- * or a guarded insert, so running twice neither duplicates nor fails. Passwords are regenerated
+ * Everything is idempotent: agencies and users take identifiers derived from stable demo keys, and the
+ * rows the application role writes (clients, personas, threads and comments) are found by their natural key
+ * and never given an id, since no table of the business accepts an id chosen in the INSERT (#601). Running
+ * twice neither duplicates nor fails. Passwords are regenerated
  * and rewritten on each run; the latest output is the one to use.
  */
 
@@ -215,7 +217,7 @@ interface DemoThreadSpec {
   readonly comments: readonly DemoThreadCommentSpec[];
 }
 
-interface DemoClientSpec {
+export interface DemoClientSpec {
   readonly key: string;
   readonly name: string;
   readonly registration?: {
@@ -698,28 +700,44 @@ const ensurePendingCollaboratorInvitations = async (input: {
   });
 };
 
-const ensureClient = async (database: DatabaseClient, userId: string, agencyId: string, client: DemoClientSpec, idFor: SeedId): Promise<void> => {
-  await withAuthenticatedUserTransaction(database, createVerifiedUserClaims({ userId }), async (transaction) => {
+/** The name as `clients_active_name_unique` compares it, so the seed finds a demo client by the same key the index guards. */
+const normalizedName = (expression: string): string =>
+  `lower(btrim(regexp_replace(replace(${expression}, chr(160), ' '), '[[:space:]]+', ' ', 'g')))`;
+
+const ensureClient = async (database: DatabaseClient, userId: string, agencyId: string, client: DemoClientSpec): Promise<string> => {
+  return withAuthenticatedUserTransaction(database, createVerifiedUserClaims({ userId }), async (transaction) => {
+    // A client archived by hand is still the demo client: it is found (never a second one beside it), and the writes below refuse it, loudly.
+    const find = async (): Promise<string | undefined> => (await raw<RawRows<{ id: string }>>(transaction, `
+      select id from public.clients
+      where agency_id = ?::uuid and ${normalizedName('name')} = ${normalizedName('?::text')}
+      order by (status = 'active') desc, created_at, id
+      limit 1
+    `, [agencyId, client.name])).rows[0]?.id;
+    let clientId = await find();
+    if (clientId === undefined) {
+      const inserted = await raw<RawRows<{ id: string }>>(transaction, `
+        insert into public.clients
+          (agency_id, name, legal_name, tax_id, segment, website, instagram_handle, contact_name, contact_phone, contact_email)
+        values (?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict (agency_id, ${normalizedName('name')}) where status = 'active' do nothing
+        returning id
+      `, [
+        agencyId,
+        client.name,
+        client.registration?.legalName ?? null,
+        client.registration?.taxId ?? null,
+        client.registration?.segment ?? null,
+        client.registration?.website ?? null,
+        client.registration?.instagramHandle ?? null,
+        client.registration?.contactName ?? null,
+        client.registration?.contactPhone ?? null,
+        client.registration?.contactEmail ?? null
+      ]);
+      clientId = inserted.rows[0]?.id ?? await find();
+    }
+    if (clientId === undefined) throw new SeedDemoError(`Could not create the demo client ${client.name}.`);
     // Insert and update are separate on purpose: `updated_by` is outside the INSERT grant and is
     // required to equal the caller on every UPDATE, so the upsert cannot be a single statement.
-    await raw(transaction, `
-      insert into public.clients
-        (id, agency_id, name, legal_name, tax_id, segment, website, instagram_handle, contact_name, contact_phone, contact_email)
-      values (?::uuid, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      on conflict (id) do nothing
-    `, [
-      idFor(client.key),
-      agencyId,
-      client.name,
-      client.registration?.legalName ?? null,
-      client.registration?.taxId ?? null,
-      client.registration?.segment ?? null,
-      client.registration?.website ?? null,
-      client.registration?.instagramHandle ?? null,
-      client.registration?.contactName ?? null,
-      client.registration?.contactPhone ?? null,
-      client.registration?.contactEmail ?? null
-    ]);
     await raw(transaction, `
       update public.clients set
         name = ?,
@@ -745,13 +763,15 @@ const ensureClient = async (database: DatabaseClient, userId: string, agencyId: 
       client.registration?.contactPhone ?? null,
       client.registration?.contactEmail ?? null,
       userId,
-      idFor(client.key)
+      clientId
     ]);
+    return clientId;
   });
 };
 
-const ensureBrandStudy = async (database: DatabaseClient, userId: string, client: DemoClientSpec, idFor: SeedId): Promise<void> => {
-  await withAuthenticatedUserTransaction(database, createVerifiedUserClaims({ userId }), async (transaction) => {
+/** The persona is found by its name inside the client (no table key exists for it), and its text follows the spec on every run. */
+const ensureBrandStudy = async (database: DatabaseClient, userId: string, client: DemoClientSpec, clientId: string): Promise<ReadonlyMap<string, string>> => {
+  return withAuthenticatedUserTransaction(database, createVerifiedUserClaims({ userId }), async (transaction) => {
     for (const section of client.sections ?? []) {
       await raw(transaction, `
         insert into public.client_brand_sections (client_id, section_key, body, colors, archetype, updated_by)
@@ -763,7 +783,7 @@ const ensureBrandStudy = async (database: DatabaseClient, userId: string, client
           updated_by = excluded.updated_by,
           updated_at = now()
       `, [
-        idFor(client.key),
+        clientId,
         section.sectionKey,
         section.body ?? null,
         section.colors === undefined ? null : JSON.stringify(section.colors),
@@ -771,55 +791,74 @@ const ensureBrandStudy = async (database: DatabaseClient, userId: string, client
         userId
       ]);
     }
+    const personaIds = new Map<string, string>();
     for (const persona of client.personas ?? []) {
-      await raw(transaction, `
-        insert into public.client_personas (id, client_id, name, description, pains, desires, objections, updated_by)
-        values (?::uuid, ?::uuid, ?, ?, ?, ?, ?, ?::uuid)
-        on conflict (id) do update set
-          name = excluded.name,
-          description = excluded.description,
-          pains = excluded.pains,
-          desires = excluded.desires,
-          objections = excluded.objections,
-          updated_by = excluded.updated_by,
-          updated_at = now()
-      `, [
-        idFor(persona.key),
-        idFor(client.key),
-        persona.name,
-        persona.description,
-        persona.pains,
-        persona.desires,
-        persona.objections,
-        userId
-      ]);
+      const found = await raw<RawRows<{ id: string }>>(transaction, `
+        select id from public.client_personas where client_id = ?::uuid and name = ? order by created_at, id limit 1
+      `, [clientId, persona.name]);
+      let personaId = found.rows[0]?.id;
+      if (personaId === undefined) {
+        const inserted = await raw<RawRows<{ id: string }>>(transaction, `
+          insert into public.client_personas (client_id, name, description, pains, desires, objections, updated_by)
+          values (?::uuid, ?, ?, ?, ?, ?, ?::uuid)
+          returning id
+        `, [clientId, persona.name, persona.description, persona.pains, persona.desires, persona.objections, userId]);
+        personaId = oneRow(inserted.rows, `Could not create the demo persona ${persona.name}.`).id;
+      } else {
+        await raw(transaction, `
+          update public.client_personas set
+            description = ?,
+            pains = ?,
+            desires = ?,
+            objections = ?,
+            updated_by = ?::uuid,
+            updated_at = now()
+          where id = ?::uuid
+        `, [persona.description, persona.pains, persona.desires, persona.objections, userId, personaId]);
+      }
+      personaIds.set(persona.key, personaId);
     }
+    return personaIds;
   });
 };
 
+/**
+ * A thread has no key of its own: it is found by the section or the persona it is about, who opened it and on which side,
+ * and a comment by its thread, its author and its text. `assertDemoNaturalKeys` keeps the spec from naming two alike.
+ */
 const ensureThreads = async (input: {
   readonly database: DatabaseClient;
   readonly userIdByKey: ReadonlyMap<string, string>;
   readonly client: DemoClientSpec;
-  readonly idFor: SeedId;
+  readonly clientId: string;
+  readonly personaIdByKey: ReadonlyMap<string, string>;
 }): Promise<void> => {
-  const { database, client, userIdByKey, idFor } = input;
+  const { database, client, clientId, userIdByKey, personaIdByKey } = input;
   for (const thread of client.threads ?? []) {
     const openedById = userIdByKey.get(thread.openedBy);
     if (openedById === undefined) throw new SeedDemoError(`Unknown thread author ${thread.openedBy}.`);
-    await withAuthenticatedUserTransaction(database, createVerifiedUserClaims({ userId: openedById }), async (transaction) => {
-      await raw(transaction, `
-        insert into public.client_threads (id, client_id, section_key, persona_id, opened_by, opened_side)
-        values (?::uuid, ?::uuid, ?, ?::uuid, ?::uuid, ?)
-        on conflict (id) do nothing
-      `, [
-        idFor(thread.key),
-        idFor(client.key),
-        thread.sectionKey ?? null,
-        thread.personaKey === undefined ? null : idFor(thread.personaKey),
-        openedById,
-        thread.openedSide
-      ]);
+    const personaId = thread.personaKey === undefined ? null : personaIdByKey.get(thread.personaKey);
+    if (personaId === undefined) throw new SeedDemoError(`Unknown persona ${thread.personaKey} of the thread ${thread.key}.`);
+    const threadId = await withAuthenticatedUserTransaction(database, createVerifiedUserClaims({ userId: openedById }), async (transaction) => {
+      const found = await raw<RawRows<{ id: string }>>(transaction, `
+        select thread.id from public.client_threads thread
+        where thread.client_id = ?::uuid
+          and thread.content_id is null
+          and thread.section_key is not distinct from ?::text
+          and thread.persona_id is not distinct from ?::uuid
+          and thread.opened_by = ?::uuid
+          and thread.opened_side = ?
+        order by thread.created_at, thread.id
+        limit 1
+      `, [clientId, thread.sectionKey ?? null, personaId, openedById, thread.openedSide]);
+      const existing = found.rows[0]?.id;
+      if (existing !== undefined) return existing;
+      const inserted = await raw<RawRows<{ id: string }>>(transaction, `
+        insert into public.client_threads (client_id, section_key, persona_id, opened_by, opened_side)
+        values (?::uuid, ?, ?::uuid, ?::uuid, ?)
+        returning id
+      `, [clientId, thread.sectionKey ?? null, personaId, openedById, thread.openedSide]);
+      return oneRow(inserted.rows, `Could not create the demo thread ${thread.key}.`).id;
     });
     for (const comment of thread.comments) {
       // Each comment is written under its own author: `author_user_id = current_user_id()` is part
@@ -828,18 +867,40 @@ const ensureThreads = async (input: {
       if (authorId === undefined) throw new SeedDemoError(`Unknown comment author ${comment.author}.`);
       await withAuthenticatedUserTransaction(database, createVerifiedUserClaims({ userId: authorId }), async (transaction) => {
         await raw(transaction, `
-          insert into public.client_thread_comments (id, thread_id, client_id, author_user_id, author_side, body)
-          values (?::uuid, ?::uuid, ?::uuid, ?::uuid, ?, ?)
-          on conflict (id) do nothing
-        `, [idFor(comment.key), idFor(thread.key), idFor(client.key), authorId, comment.side, comment.body]);
+          insert into public.client_thread_comments (thread_id, client_id, author_user_id, author_side, body)
+          select ?::uuid, ?::uuid, ?::uuid, ?, ?
+          where not exists (
+            select 1 from public.client_thread_comments existing
+            where existing.thread_id = ?::uuid and existing.author_user_id = ?::uuid and existing.author_side = ? and existing.body = ?
+          )
+        `, [threadId, clientId, authorId, comment.side, comment.body, threadId, authorId, comment.side, comment.body]);
       });
     }
     if (thread.resolvedBy !== undefined) {
       const resolverId = userIdByKey.get(thread.resolvedBy);
       if (resolverId === undefined) throw new SeedDemoError(`Unknown resolver ${thread.resolvedBy}.`);
       await withAuthenticatedUserTransaction(database, createVerifiedUserClaims({ userId: resolverId }), async (transaction) => {
-        await raw(transaction, 'update public.client_threads set resolved_by = ?::uuid where id = ?::uuid', [resolverId, idFor(thread.key)]);
+        await raw(transaction, 'update public.client_threads set resolved_by = ?::uuid where id = ?::uuid', [resolverId, threadId]);
       });
+    }
+  }
+};
+
+export const DEMO_CLIENTS: readonly DemoClientSpec[] = [...MAIN_CLIENTS, SECOND_CLIENT];
+
+/** What finds a row again must tell two rows of the spec apart: a name for a persona, the subject and opener for a thread, the author and text for a comment. */
+export const assertDemoNaturalKeys = (clients: readonly DemoClientSpec[]): void => {
+  const seen = new Set<string>();
+  const claim = (key: string, what: string): void => {
+    if (seen.has(key)) throw new SeedDemoError(`The demo spec names ${what} twice; the seed finds it again by that, so the two would be one.`);
+    seen.add(key);
+  };
+  for (const client of clients) {
+    claim(`client:${client.name.trim().toLowerCase()}`, `the client ${client.name}`);
+    for (const persona of client.personas ?? []) claim(`persona:${client.key}:${persona.name}`, `the persona ${persona.name} of ${client.name}`);
+    for (const thread of client.threads ?? []) {
+      claim(`thread:${client.key}:${thread.sectionKey ?? ''}:${thread.personaKey ?? ''}:${thread.openedBy}:${thread.openedSide}`, `the thread ${thread.key}`);
+      for (const comment of thread.comments) claim(`comment:${client.key}:${thread.key}:${comment.author}:${comment.side}:${comment.body}`, `the comment ${comment.key}`);
     }
   }
 };
@@ -877,6 +938,7 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
     databaseUrl: environment.databaseUrl,
     migrationDatabaseUrl: environment.migrationDatabaseUrl
   });
+  assertDemoNaturalKeys(DEMO_CLIENTS);
 
   const namespace = options.namespace ?? DEFAULT_NAMESPACE;
   const emailDomain = options.emailDomain ?? DEFAULT_EMAIL_DOMAIN;
@@ -988,15 +1050,18 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
     const adminUserId = mainUserIds.get('user:rafael')!;
     const userIdByKey = new Map<string, string>([...mainUserIds, [PORTAL_USER.key, portalUserId]]);
 
+    const clientIdByKey = new Map<string, string>();
+    const personaIdsByClientKey = new Map<string, ReadonlyMap<string, string>>();
     for (const client of MAIN_CLIENTS) {
-      clientIds.push(idFor(client.key));
-      await ensureClient(database, adminUserId, mainAgencyId, client, idFor);
-      await ensureBrandStudy(database, adminUserId, client, idFor);
+      const clientId = await ensureClient(database, adminUserId, mainAgencyId, client);
+      clientIdByKey.set(client.key, clientId);
+      clientIds.push(clientId);
+      personaIdsByClientKey.set(client.key, await ensureBrandStudy(database, adminUserId, client, clientId));
     }
 
     const portalClient = MAIN_CLIENTS.find((client) => client.threads?.some((thread) => thread.openedSide === 'client'));
     if (portalClient === undefined) throw new SeedDemoError('The demo needs one client with a portal conversation.');
-    const portalClientId = idFor(portalClient.key);
+    const portalClientId = clientIdByKey.get(portalClient.key)!;
     // The portal membership comes before the threads: a client-side thread is only allowed for an
     // active vínculo, and the seed creates conversations through the same policy.
     await ensurePortalMembership({
@@ -1011,7 +1076,13 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
     });
 
     for (const client of MAIN_CLIENTS) {
-      await ensureThreads({ database, userIdByKey, client, idFor });
+      await ensureThreads({
+        database,
+        userIdByKey,
+        client,
+        clientId: clientIdByKey.get(client.key)!,
+        personaIdByKey: personaIdsByClientKey.get(client.key) ?? new Map()
+      });
     }
     profiles.push({
       label: 'Portal',
@@ -1038,9 +1109,9 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
     // The owner creates the client: `cliente.cadastrar` belongs to admin/account_manager, and the
     // second agency is deliberately small (owner + production only), where only posse reaches it.
     const secondOwnerId = secondUserIds.get('user:helena')!;
-    clientIds.push(idFor(SECOND_CLIENT.key));
-    await ensureClient(database, secondOwnerId, secondAgencyId, SECOND_CLIENT, idFor);
-    await ensureBrandStudy(database, secondOwnerId, SECOND_CLIENT, idFor);
+    const secondClientId = await ensureClient(database, secondOwnerId, secondAgencyId, SECOND_CLIENT);
+    clientIds.push(secondClientId);
+    await ensureBrandStudy(database, secondOwnerId, SECOND_CLIENT, secondClientId);
 
     const pendingInvitationEmails = PENDING_COLLABORATOR_INVITES.map((invite) => emailFor(invite.emailLocal));
     const result: SeedDemoResult = {

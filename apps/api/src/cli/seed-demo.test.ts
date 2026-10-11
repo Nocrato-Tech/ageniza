@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { assertSeedAllowed, demoId, resolveSeedEnvironment, runSeedDemo, SEED_FLAG, SeedDemoError } from './seed-demo.js';
+import { assertDemoNaturalKeys, assertSeedAllowed, DEMO_CLIENTS, demoId, resolveSeedEnvironment, runSeedDemo, SEED_FLAG, SeedDemoError } from './seed-demo.js';
 
 const localEnvironment = {
   DATABASE_URL: 'postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza',
@@ -153,5 +153,54 @@ describe('seed:demo identifiers', () => {
     expect(resolveSeedEnvironment({ APP_PUBLIC_URL: 'http://127.0.0.1:5173/' }).appPublicUrl).toBe('http://127.0.0.1:5173');
     expect(resolveSeedEnvironment({ AUTH_TERMS_VERSION: '2027-03-01', AUTH_PRIVACY_VERSION: '2027-04-01' }))
       .toMatchObject({ termsVersion: '2027-03-01', privacyVersion: '2027-04-01' });
+  });
+});
+
+describe('the natural keys the seed finds its rows by (issue #601)', () => {
+  type Specs = Parameters<typeof assertDemoNaturalKeys>[0];
+  const client = (overrides: Record<string, unknown> = {}): Specs[number] => ({ key: 'client:a', name: 'Cliente A', ...overrides }) as Specs[number];
+  const thread = (overrides: Record<string, unknown> = {}) => ({
+    key: 'thread:a',
+    sectionKey: 'branding',
+    openedBy: 'user:rafael',
+    openedSide: 'agency',
+    comments: [{ key: 'comment:a', author: 'user:rafael', side: 'agency', body: 'Um' }],
+    ...overrides
+  });
+
+  it('holds for every client, persona, thread and comment of the demo', () => {
+    expect(DEMO_CLIENTS.length).toBeGreaterThan(1);
+    expect(() => assertDemoNaturalKeys(DEMO_CLIENTS)).not.toThrow();
+  });
+
+  it('accepts what the keys tell apart: another section, another opener, another side, another text, another client', () => {
+    expect(() => assertDemoNaturalKeys([
+      client({ personas: [{ key: 'persona:a', name: 'Ana' }], threads: [
+        thread(),
+        thread({ key: 'thread:b', sectionKey: 'colors' }),
+        thread({ key: 'thread:c', openedBy: 'user:camila' }),
+        thread({ key: 'thread:d', openedSide: 'client' }),
+        thread({ key: 'thread:e', sectionKey: undefined, personaKey: 'persona:a' }),
+        thread({ key: 'thread:f', sectionKey: 'observations', comments: [
+          { key: 'comment:f1', author: 'user:rafael', side: 'agency', body: 'Um' },
+          { key: 'comment:f2', author: 'user:rafael', side: 'agency', body: 'Dois' },
+          { key: 'comment:f3', author: 'user:camila', side: 'agency', body: 'Um' }
+        ] })
+      ] }),
+      client({ key: 'client:b', name: 'Cliente B', personas: [{ key: 'persona:b', name: 'Ana' }], threads: [thread()] })
+    ])).not.toThrow();
+  });
+
+  it.each([
+    ['the same client name, by the way the index compares it', [client(), client({ key: 'client:b', name: '  cliente a ' })], /the client\s+cliente a/],
+    ['the same persona name in a client', [client({ personas: [{ key: 'persona:a', name: 'Ana' }, { key: 'persona:b', name: 'Ana' }] })], /persona Ana/],
+    ['the same subject, opener and side in two threads', [client({ threads: [thread(), thread({ key: 'thread:b' })] })], /thread thread:b/],
+    ['the same author, side and text in one thread', [client({ threads: [thread({ comments: [
+      { key: 'comment:a', author: 'user:rafael', side: 'agency', body: 'Um' },
+      { key: 'comment:b', author: 'user:rafael', side: 'agency', body: 'Um' }
+    ] })] })], /comment comment:b/]
+  ])('refuses %s', (_label, specs, message) => {
+    expect(() => assertDemoNaturalKeys(specs as Specs)).toThrow(SeedDemoError);
+    expect(() => assertDemoNaturalKeys(specs as Specs)).toThrow(message);
   });
 });
