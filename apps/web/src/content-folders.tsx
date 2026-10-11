@@ -21,6 +21,7 @@ import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { isHttpUrl, MediaThumbnail } from './media-thumbnail.js';
+import { MediaUploader } from './media-uploader.js';
 
 /** The listing's own ceiling: a client's folders are read page by page until the last, so no folder is hidden behind a page. */
 const FOLDERS_PAGE_SIZE = 100;
@@ -317,6 +318,7 @@ function FolderMedia({ clientId, folder, canOperate }: { clientId: string; folde
 
   return <section className="content-folders__section" aria-labelledby={`media-${folder.id}`}>
     <h3 id={`media-${folder.id}`}>Mídias</h3>
+    {canOperate && <MediaUploader clientId={clientId} folderId={folder.id} onUploaded={() => { goToPage(1); }} sizeLabel={sizeLabel} />}
     {body}
   </section>;
 }

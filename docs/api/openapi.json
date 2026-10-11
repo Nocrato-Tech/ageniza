@@ -1136,6 +1136,13 @@
           "isOwner": {
             "type": "boolean"
           },
+          "membershipId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
           "role": {
             "type": "object",
             "properties": {
@@ -1169,6 +1176,7 @@
           "agencyId",
           "agencyName",
           "isOwner",
+          "membershipId",
           "role",
           "permissions"
         ],
@@ -8487,7 +8495,7 @@
       "get": {
         "operationId": "getAgencyMe",
         "summary": "Devolve as permissões efetivas do contexto de agência",
-        "description": "O Owner recebe todas as chaves do catálogo por posse; os demais recebem as chaves do papel\ndo vínculo ativo, restritas à agência. É só UX: toda operação continua validada pela guarda\ne pela RLS, então forjar esta lista não concede nada.\n\nAcesso: Sessão + vínculo com a agência.",
+        "description": "O Owner recebe todas as chaves do catálogo por posse; os demais recebem as chaves do papel\ndo vínculo ativo, restritas à agência. É só UX: toda operação continua validada pela guarda\ne pela RLS, então forjar esta lista não concede nada. `membershipId` é o vínculo da própria pessoa na agência pedida (o mesmo\nid que o responsável de um conteúdo carrega), nunca um id de usuário; `null` para o Owner que é dono só por posse.\n\nAcesso: Sessão + vínculo com a agência.",
         "tags": [
           "agencies"
         ],
@@ -8515,6 +8523,7 @@
                   "agencyId": "11111111-1111-4111-8111-111111111111",
                   "agencyName": "Agência Exemplo",
                   "isOwner": false,
+                  "membershipId": "22222222-2222-4222-8222-222222222222",
                   "role": {
                     "key": "admin",
                     "name": "Admin"

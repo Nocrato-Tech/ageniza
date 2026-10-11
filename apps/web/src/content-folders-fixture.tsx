@@ -3,10 +3,13 @@ import { render, type RenderResult } from '@testing-library/react';
 import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
 
 import {
+  CompleteMediaUploadRequestSchema,
   CreateMediaFolderRequestSchema,
+  CreateMediaUploadRequestSchema,
   MediaDownloadUrlQuerySchema,
   MediaFolderAssetListQuerySchema,
   MediaFolderListQuerySchema,
+  RequestMediaUploadPartsRequestSchema,
   type MediaFolder,
   type MediaFolderAsset
 } from '@ageniza/contracts';
@@ -58,6 +61,19 @@ export const DEFAULT_FOLDERS: readonly MediaFolder[] = [
   folderFixture(6, 'Gravação de outubro', { parentId: idOf('f', 1) })
 ];
 
+export const UPLOAD_PART_BYTES = 5 * 1024 * 1024;
+export const UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
+
+export interface PendingUpload {
+  readonly assetId: string;
+  readonly folderId: string;
+  readonly fileName: string;
+  readonly contentType: string;
+  readonly sizeBytes: number;
+  readonly multipart: boolean;
+  confirmed?: boolean;
+}
+
 export interface World {
   folders: MediaFolder[];
   assets: AssetRow[];
@@ -65,6 +81,13 @@ export interface World {
   clientStatus: 'active' | 'archived';
   /** Every request the screen made, as "METHOD path?query". */
   calls: string[];
+  /** The uploads the API reserved, confirmed or not. */
+  pending: PendingUpload[];
+  quotaFull?: boolean;
+  /** The part size the API plans with; small, it makes a file of a few KiB a multipart upload of many parts. */
+  partBytes?: number;
+  /** The API refuses the object at confirmation, as it does when the bytes are not what was declared. */
+  rejectUpload?: boolean;
   /** What the screen sent in the body of each write. */
   bodies: Array<{ method: string; path: string; body: unknown }>;
   /** Holds the answer of the folder list. */
@@ -83,6 +106,7 @@ export const makeWorld = (overrides: Partial<World> = {}): World => ({
   permissions: ['conteudo.visualizar', 'conteudo.operar', 'cliente.visualizar'],
   clientStatus: 'active',
   calls: [],
+  pending: [],
   bodies: [],
   ...overrides
 });
@@ -105,7 +129,7 @@ export const makeFetch = (world: World, extra?: (method: string, url: URL, init:
   if (typeof init?.body === 'string') world.bodies.push({ method, path, body: JSON.parse(init.body) as unknown });
   if (path.endsWith('/auth/session')) return json(sessionBody);
   if (/\/agencies\/[^/]+\/me$/.test(path)) {
-    return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: false, role: { key: 'custom', name: 'Papel' }, permissions: world.permissions });
+    return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'custom', name: 'Papel' }, permissions: world.permissions });
   }
   if (/\/agencies\/[^/]+\/clients$/.test(path)) return json({ data: [padaria], meta: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 } });
   const detail = /\/agencies\/[^/]+\/clients\/([^/]+)$/.exec(path);
@@ -188,6 +212,61 @@ export const makeFetch = (world: World, extra?: (method: string, url: URL, init:
       return apiError(409, 'VARIANT_NOT_READY', 'This variant has not been generated yet.');
     }
     return json({ url: `https://storage.test/${asset.id}/${query.data.variant}`, expiresAt: '2026-10-12T01:45:00.000Z' });
+  }
+
+  const partBytes = world.partBytes ?? UPLOAD_PART_BYTES;
+  const uploads = /\/agencies\/[^/]+\/media\/uploads$/.exec(path);
+  if (uploads !== null && method === 'POST') {
+    if (!holds('conteudo.operar') || !holds('conteudo.visualizar')) return forbidden();
+    const parsed = CreateMediaUploadRequestSchema.safeParse(JSON.parse(String(init?.body)) as unknown);
+    if (!parsed.success) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
+    const request = parsed.data;
+    if (request.clientId !== padaria.id || !world.folders.some((folder) => folder.id === request.folderId)) return apiError(404, 'NOT_FOUND', 'Folder not found.');
+    if (world.clientStatus === 'archived') return apiError(409, 'CLIENT_ARCHIVED', 'Cliente arquivado não pode ser editado.');
+    if (!/^(image|video)\//.test(request.contentType)) return apiError(415, 'UNSUPPORTED_MEDIA_TYPE', 'This content type is not accepted.');
+    if (request.declaredSizeBytes > UPLOAD_MAX_BYTES) return apiError(413, 'PAYLOAD_TOO_LARGE', 'The declared file size exceeds the limit for its category.');
+    if (world.quotaFull === true) return apiError(409, 'QUOTA_EXCEEDED', 'This agency has reached its storage quota.');
+    const assetId = idOf('b', world.pending.length + 1);
+    const multipart = request.declaredSizeBytes >= partBytes;
+    world.pending.push({ assetId, folderId: request.folderId!, fileName: request.fileName, contentType: request.contentType, sizeBytes: request.declaredSizeBytes, multipart });
+    const category = request.contentType.startsWith('video/') ? 'video' : 'image';
+    return json({
+      assetId, objectKey: `${AGENCY_A}/${assetId}/original`, category,
+      upload: multipart
+        ? { type: 'multipart', uploadId: `upload-${assetId}`, partSizeBytes: partBytes, partCount: Math.ceil(request.declaredSizeBytes / partBytes) }
+        : { type: 'single', url: `https://storage.test/put/${assetId}`, expiresAt: '2026-10-12T01:45:00.000Z' }
+    }, 201);
+  }
+  const uploadParts = /\/agencies\/[^/]+\/media\/uploads\/([^/]+)\/parts$/.exec(path);
+  if (uploadParts !== null && method === 'POST') {
+    const pending = world.pending.find((candidate) => candidate.assetId === uploadParts[1] && candidate.confirmed !== true);
+    if (pending === undefined) return apiError(404, 'NOT_FOUND', 'Media asset not found.');
+    const parsed = RequestMediaUploadPartsRequestSchema.safeParse(JSON.parse(String(init?.body)) as unknown);
+    const count = Math.ceil(pending.sizeBytes / partBytes);
+    if (!parsed.success || !pending.multipart || parsed.data.partNumbers.some((number) => number > count)) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
+    return json({
+      parts: parsed.data.partNumbers.map((partNumber) => ({ partNumber, url: `https://storage.test/put/${pending.assetId}/part/${partNumber}` })),
+      expiresAt: '2026-10-12T01:45:00.000Z'
+    });
+  }
+  const uploadComplete = /\/agencies\/[^/]+\/media\/uploads\/([^/]+)\/complete$/.exec(path);
+  if (uploadComplete !== null && method === 'POST') {
+    const pending = world.pending.find((candidate) => candidate.assetId === uploadComplete[1] && candidate.confirmed !== true);
+    if (pending === undefined) return apiError(404, 'NOT_FOUND', 'Media asset not found.');
+    const parsed = CompleteMediaUploadRequestSchema.safeParse(JSON.parse(String(init?.body)) as unknown);
+    if (!parsed.success) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
+    const count = Math.ceil(pending.sizeBytes / partBytes);
+    if (pending.multipart !== (parsed.data.parts !== undefined)) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
+    if (parsed.data.parts !== undefined && (parsed.data.parts.length !== count || parsed.data.parts.some((part) => part.partNumber > count))) {
+      return apiError(400, 'VALIDATION_ERROR', 'A multipart part number is outside this upload plan.');
+    }
+    if (world.rejectUpload === true) return apiError(422, 'UPLOAD_REJECTED', 'The uploaded object was rejected: content_type_mismatch.', { reason: 'content_type_mismatch' });
+    pending.confirmed = true;
+    world.assets.push(assetFixture(900 + world.assets.length, pending.folderId, {
+      id: pending.assetId, category: pending.contentType.startsWith('video/') ? 'video' : 'image', contentType: pending.contentType,
+      sizeBytes: pending.sizeBytes, createdAt: '2026-10-12T01:30:00.000Z'
+    }));
+    return json({ assetId: pending.assetId, status: 'confirmed', sizeBytes: pending.sizeBytes, contentType: pending.contentType });
   }
 
   const fromExtra = extra?.(method, url, init);

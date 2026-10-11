@@ -60,7 +60,7 @@ const ADMIN_ROLE_ID = SYSTEM_ROLES[1].id;
 const rolesFor = (isOwner: boolean) => json({ data: isOwner ? SYSTEM_ROLES : SYSTEM_ROLES.filter((role) => role.key !== 'admin') });
 
 const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[], role: TestRole, isOwner: boolean) => ({
-  agencyId, agencyName, isOwner, role, permissions
+  agencyId, agencyName, isOwner, membershipId: null, role, permissions
 });
 const agencyDisplayName = (agencyId: string): string => agencyId === AGENCY_B ? 'Agência Dois' : 'Agência Um';
 
