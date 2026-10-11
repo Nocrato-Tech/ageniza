@@ -1,0 +1,294 @@
+import type {
+  Content,
+  ContentDetail,
+  ContentListItem,
+  CreateContentRequest,
+  StoryScriptListItem,
+  UpdateContentRequest
+} from '@ageniza/contracts';
+import { raw, type DatabaseClient } from '@ageniza/database';
+
+export type ContentTransaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
+
+interface RawRows<TResult> {
+  readonly rows: readonly TResult[];
+}
+
+interface ContentRow {
+  readonly id: string;
+  readonly client_id: string;
+  readonly title: string;
+  readonly platform: Content['platform'];
+  readonly format: Content['format'];
+  readonly publish_on: string;
+  readonly publish_at_time: string | null;
+  readonly caption: string | null;
+  readonly folder_id: string;
+  readonly cover_asset_id: string | null;
+  readonly owner_user_id: string;
+  readonly status: Content['status'];
+  readonly revision: number;
+  readonly approved_by: string | null;
+  readonly approved_at: Date | null;
+  readonly approved_by_agency_reason: string | null;
+  readonly published_on: string | null;
+  readonly cancelled_at: Date | null;
+  readonly created_at: Date;
+}
+
+interface ListRow {
+  readonly id: string;
+  readonly title: string;
+  readonly platform: ContentListItem['platform'];
+  readonly format: ContentListItem['format'];
+  readonly publish_on: string;
+  readonly publish_at_time: string | null;
+  readonly status: ContentListItem['status'];
+  readonly owner_user_id: string;
+  readonly cover_asset_id: string | null;
+  readonly revision: number;
+  readonly published_on: string | null;
+  readonly tasks_total: string | number;
+  readonly tasks_approved: string | number;
+}
+
+interface ScriptRow {
+  readonly id: string;
+  readonly script_on: string;
+  readonly status: StoryScriptListItem['status'];
+}
+
+// Dates are read as text and the time as HH:MM: the driver would turn a `date` into an instant in the server's zone.
+const CONTENT_COLUMNS = `
+  content.id, content.client_id, content.title, content.platform, content.format,
+  content.publish_on::text as publish_on, to_char(content.publish_at_time, 'HH24:MI') as publish_at_time,
+  content.caption, content.folder_id, content.cover_asset_id, content.owner_user_id, content.status, content.revision,
+  content.approved_by, content.approved_at, content.approved_by_agency_reason,
+  content.published_on::text as published_on, content.cancelled_at, content.created_at
+`;
+
+/** The state of a client of the agency, `undefined` for one that is not in it (or that this person cannot read). */
+export const loadClientStatus = async (
+  transaction: ContentTransaction,
+  input: { readonly agencyId: string; readonly clientId: string }
+): Promise<'active' | 'archived' | undefined> => {
+  const result = await raw<RawRows<{ status: 'active' | 'archived' }>>(transaction, `
+    select status from public.clients where id = ?::uuid and agency_id = ?::uuid
+  `, [input.clientId, input.agencyId]);
+  return result.rows[0]?.status;
+};
+
+/**
+ * Both kinds of item of a period, each read one past the ceiling so the caller can tell "at the ceiling" from
+ * "over it" without counting what it will refuse. One kind alone over the ceiling is over it for the two.
+ */
+export const listPeriod = async (
+  transaction: ContentTransaction,
+  input: { readonly clientId: string; readonly from: string; readonly to: string; readonly limit: number }
+): Promise<{ readonly contents: ContentListItem[]; readonly storyScripts: StoryScriptListItem[] }> => {
+  const contents = await raw<RawRows<ListRow>>(transaction, `
+    select
+      content.id, content.title, content.platform, content.format, content.publish_on::text as publish_on,
+      to_char(content.publish_at_time, 'HH24:MI') as publish_at_time, content.status, content.owner_user_id,
+      content.cover_asset_id, content.revision, content.published_on::text as published_on,
+      tasks.total as tasks_total, tasks.approved as tasks_approved
+    from public.contents content
+    left join lateral (
+      select count(*) as total, count(*) filter (where task.status = 'approved') as approved
+      from public.content_tasks task
+      where task.content_id = content.id
+    ) tasks on true
+    where content.client_id = ?::uuid and content.publish_on between ?::date and ?::date
+    order by content.publish_on, content.publish_at_time, content.id
+    limit ?
+  `, [input.clientId, input.from, input.to, input.limit]);
+
+  const scripts = await raw<RawRows<ScriptRow>>(transaction, `
+    select script.id, script.script_on::text as script_on, script.status
+    from public.story_scripts script
+    where script.client_id = ?::uuid and script.script_on between ?::date and ?::date
+    order by script.script_on, script.id
+    limit ?
+  `, [input.clientId, input.from, input.to, input.limit]);
+
+  return {
+    contents: contents.rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      platform: row.platform,
+      format: row.format,
+      publishOn: row.publish_on,
+      publishAtTime: row.publish_at_time,
+      status: row.status,
+      ownerUserId: row.owner_user_id,
+      coverAssetId: row.cover_asset_id,
+      revision: Number(row.revision),
+      publishedOn: row.published_on,
+      tasksTotal: Number(row.tasks_total),
+      tasksApproved: Number(row.tasks_approved)
+    })),
+    storyScripts: scripts.rows.map((row) => ({ id: row.id, scriptOn: row.script_on, status: row.status }))
+  };
+};
+
+export const loadContent = async (
+  transaction: ContentTransaction,
+  input: { readonly clientId: string; readonly contentId: string }
+): Promise<ContentRow | undefined> => {
+  const result = await raw<RawRows<ContentRow>>(transaction, `
+    select ${CONTENT_COLUMNS}
+    from public.contents content
+    where content.id = ?::uuid and content.client_id = ?::uuid
+  `, [input.contentId, input.clientId]);
+  return result.rows[0];
+};
+
+export const contentFromRow = (row: ContentRow): Content => ({
+  id: row.id,
+  clientId: row.client_id,
+  title: row.title,
+  platform: row.platform,
+  format: row.format,
+  publishOn: row.publish_on,
+  publishAtTime: row.publish_at_time,
+  caption: row.caption,
+  folderId: row.folder_id,
+  coverAssetId: row.cover_asset_id,
+  ownerUserId: row.owner_user_id,
+  status: row.status,
+  revision: Number(row.revision),
+  approvedBy: row.approved_by,
+  approvedAt: row.approved_at === null ? null : new Date(row.approved_at).toISOString(),
+  approvedByAgencyReason: row.approved_by_agency_reason,
+  publishedOn: row.published_on,
+  cancelledAt: row.cancelled_at === null ? null : new Date(row.cancelled_at).toISOString(),
+  createdAt: new Date(row.created_at).toISOString()
+});
+
+/** The owner is omitted, never sent as null, so the column default (who creates) applies. */
+export const insertContent = async (
+  transaction: ContentTransaction,
+  input: { readonly clientId: string; readonly body: CreateContentRequest }
+): Promise<string> => {
+  const { body } = input;
+  const result = await raw<RawRows<{ id: string }>>(transaction, `
+    insert into public.contents (client_id, title, platform, format, publish_on, publish_at_time, caption, folder_id, cover_asset_id, owner_user_id)
+    values (?::uuid, ?, ?, ?, ?::date, ?::time, ?, ?::uuid, ?::uuid, coalesce(?::uuid, app_private.current_user_id()))
+    returning id
+  `, [
+    input.clientId, body.title, body.platform ?? 'instagram', body.format, body.publishOn,
+    body.publishAtTime ?? null, body.caption ?? null, body.folderId, body.coverAssetId ?? null, body.ownerUserId ?? null
+  ]);
+  const row = result.rows[0];
+  if (row === undefined) throw new Error('Content insert did not return a row.');
+  return row.id;
+};
+
+/** Body field -> column and cast: the only columns a PATCH writes, in the order of the grant. */
+const UPDATABLE_COLUMNS: ReadonlyArray<readonly [keyof UpdateContentRequest, string, string]> = [
+  ['title', 'title', ''],
+  ['format', 'format', ''],
+  ['publishOn', 'publish_on', '::date'],
+  ['publishAtTime', 'publish_at_time', '::time'],
+  ['caption', 'caption', ''],
+  ['folderId', 'folder_id', '::uuid'],
+  ['coverAssetId', 'cover_asset_id', '::uuid'],
+  ['ownerUserId', 'owner_user_id', '::uuid']
+];
+
+/** Whether the body carries a column of the row, as opposed to only the media list. */
+export const changesColumns = (changes: UpdateContentRequest): boolean =>
+  UPDATABLE_COLUMNS.some(([key]) => changes[key] !== undefined);
+
+/** `false` when no row of the client matched: the row went away, or the policy no longer lets this person write it. */
+export const updateContent = async (
+  transaction: ContentTransaction,
+  input: { readonly clientId: string; readonly contentId: string; readonly changes: UpdateContentRequest }
+): Promise<boolean> => {
+  const assignments: string[] = [];
+  const bindings: Array<string | null> = [];
+  for (const [key, column, cast] of UPDATABLE_COLUMNS) {
+    const value = input.changes[key];
+    if (value === undefined) continue;
+    assignments.push(`${column} = ?${cast}`);
+    bindings.push(value as string | null);
+  }
+  if (assignments.length === 0) throw new Error('A content update carries at least one column.');
+  const result = await raw<RawRows<{ id: string }>>(transaction, `
+    update public.contents set ${assignments.join(', ')}
+    where id = ?::uuid and client_id = ?::uuid
+    returning id
+  `, [...bindings, input.contentId, input.clientId]);
+  return result.rows[0] !== undefined;
+};
+
+/** The whole ordered list, by the function that checks the folder, the format and the state (never a delta). */
+export const replaceContentMedia = async (
+  transaction: ContentTransaction,
+  input: { readonly contentId: string; readonly assetIds: readonly string[] }
+): Promise<void> => {
+  // The ids are UUIDs the contract already checked; the array literal is the one way to hand the function a list.
+  await raw(transaction, 'select app_private.set_content_media(?::uuid, ?::uuid[])', [input.contentId, `{${input.assetIds.join(',')}}`]);
+};
+
+export const loadContentDetail = async (
+  transaction: ContentTransaction,
+  row: ContentRow
+): Promise<ContentDetail> => {
+  const media = await raw<RawRows<{ id: string; position: number }>>(transaction, `
+    select item.asset_id as id, item.position
+    from public.content_media item
+    where item.content_id = ?::uuid
+    order by item.position
+  `, [row.id]);
+
+  const tasks = await raw<RawRows<{
+    id: string;
+    title: string;
+    description: string | null;
+    assignee_user_id: string;
+    due_on: string;
+    status: ContentDetail['tasks'][number]['status'];
+    return_comment: string | null;
+    approved_by: string | null;
+    approved_at: Date | null;
+  }>>(transaction, `
+    select task.id, task.title, task.description, task.assignee_user_id, task.due_on::text as due_on, task.status,
+      task.return_comment, task.approved_by, task.approved_at
+    from public.content_tasks task
+    where task.content_id = ?::uuid
+    order by task.due_on, task.created_at, task.id
+  `, [row.id]);
+
+  const conversation = await raw<RawRows<{ thread_id: string; comment_count: string | number; last_comment_at: Date | null }>>(transaction, `
+    select thread.id as thread_id, count(comment.id) as comment_count, max(comment.created_at) as last_comment_at
+    from public.client_threads thread
+    left join public.client_thread_comments comment on comment.thread_id = thread.id
+    where thread.content_id = ?::uuid
+    group by thread.id
+  `, [row.id]);
+  const thread = conversation.rows[0];
+
+  return {
+    ...contentFromRow(row),
+    media: media.rows.map((item) => ({ id: item.id, position: Number(item.position) })),
+    tasks: tasks.rows.map((task) => ({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      assigneeUserId: task.assignee_user_id,
+      dueOn: task.due_on,
+      status: task.status,
+      returnComment: task.return_comment,
+      approvedBy: task.approved_by,
+      approvedAt: task.approved_at === null ? null : new Date(task.approved_at).toISOString()
+    })),
+    conversation: thread === undefined
+      ? { threadId: null, commentCount: 0, lastCommentAt: null }
+      : {
+          threadId: thread.thread_id,
+          commentCount: Number(thread.comment_count),
+          lastCommentAt: thread.last_comment_at === null ? null : new Date(thread.last_comment_at).toISOString()
+        }
+  };
+};

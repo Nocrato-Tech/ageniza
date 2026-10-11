@@ -228,7 +228,7 @@ Todas sob `requireSession` e `requireClientAccess`.
 
 ### Consulta por período
 
-Calendário e feed consultam por intervalo (`from`, `to`), com **teto de 93 dias** e teto de itens; acima disso, 400. Não pagina. É o formato que Tarefas (kanban) e Dashboard vão copiar; listas continuam no contrato paginado.
+Calendário e feed consultam por intervalo (`from`, `to`), com **teto de 93 dias** e teto de itens; acima disso, 400. Não pagina. Os dois extremos entram: 93 dias passam e 94 não. O teto de itens é 500, somando conteúdos e roteiros, e a resposta é `{ data: { contents, storyScripts }, meta: { from, to, count } }` ([decisão](../docs/business/decisions/2026-10-11-consulta-por-periodo-teto-de-500-itens-e-formato-da-resposta.md)). É o formato que Tarefas (kanban) e Dashboard vão copiar; listas continuam no contrato paginado.
 
 ### Persistência
 

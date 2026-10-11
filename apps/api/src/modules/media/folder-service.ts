@@ -139,6 +139,8 @@ export const removeAsset = async (transaction: Transaction, assetId: string, fol
   );
   const row = result.rows[0];
   if (row === undefined) throw new Error('remove_media_asset returned no row.');
+  // A null would read as "not removed" and skip the audit event of a removal that did happen.
+  if (typeof row.removed !== 'boolean') throw new Error('remove_media_asset did not return a boolean.');
   return row.removed;
 };
 

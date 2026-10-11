@@ -29,7 +29,7 @@ const FORBIDDEN_NAME_CHARACTERS = /[\p{Cc}\p{Zl}\p{Zp}\u115F\u1160\u3164\uFFA0]|
  * (an emoji family). A joiner at the start, at the end or next to anything else is still an
  * invisible character that can make a name look empty or drift from what is stored.
  */
-const JOINER_OUTSIDE_NAME_CHARACTERS = /(?<![\p{L}\p{M}\p{Extended_Pictographic}])[\u200C\u200D]|[\u200C\u200D](?![\p{L}\p{M}\p{Extended_Pictographic}])/u;
+export const JOINER_OUTSIDE_NAME_CHARACTERS = /(?<![\p{L}\p{M}\p{Extended_Pictographic}])[\u200C\u200D]|[\u200C\u200D](?![\p{L}\p{M}\p{Extended_Pictographic}])/u;
 
 /** A name made only of punctuation, symbols or emoji is visually a blank badge. */
 const NAME_HAS_LETTER_OR_NUMBER = /[\p{L}\p{N}]/u;
