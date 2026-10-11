@@ -1,7 +1,9 @@
 import { useId, useState, type DragEvent, type ReactNode } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 
 import type { ContentListItem } from '@ageniza/contracts';
 
+import { useAgencyContext } from './agency.js';
 import { ContentHoverDetail } from './content-card-extras.js';
 import { ContentCover } from './content-cover.js';
 import { fullDayLabel, WEEKDAY_LABELS, type CalendarView } from './content-dates.js';
@@ -24,6 +26,8 @@ export function ContentCard({ content, clientId, today, draggable = false, busy 
   const alert = deadlineAlert(content, today);
   const percent = subtaskPercent(content);
   const detailId = useId();
+  const agency = useAgencyContext();
+  const location = useLocation();
   const [pointed, setPointed] = useState(false);
   return <article
     className={`content-card${draggable ? ' content-card--movable' : ''}${busy ? ' content-card--busy' : ''}`}
@@ -41,7 +45,15 @@ export function ContentCard({ content, clientId, today, draggable = false, busy 
     onDragEnd={draggable ? onDragEnd : undefined}
   >
     <ContentCover assetId={content.coverAssetId} format={content.format} />
-    <p className="content-card__title">{content.title}</p>
+    <p className="content-card__title">
+      {/* A link is draggable by itself: without this the drag of the card would carry the address instead of the card. */}
+      <Link
+        className="content-card__link"
+        draggable={false}
+        to={{ pathname: `/agencia/${agency.agencyId}/conteudos/${clientId}/${content.id}`, search: location.search }}
+        state={location.state}
+      >{content.title}</Link>
+    </p>
     <p className="content-card__meta">
       {FORMAT_LABELS[content.format]}{content.publishAtTime !== null && <> · {content.publishAtTime}</>}
     </p>
