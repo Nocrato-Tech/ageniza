@@ -432,7 +432,8 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     }));
   });
 
-  app.get('/agencies/:agencyId/media/:assetId/download-url', guarded(downloadDocs, {}, [downloadUrlLimiter]), async (request, reply) => {
+  // `exposeHeadRoute: false`: Fastify would answer HEAD with this handler, which signs and would audit without handing the URL over (#593).
+  app.get('/agencies/:agencyId/media/:assetId/download-url', { ...guarded(downloadDocs, {}, [downloadUrlLimiter]), exposeHeadRoute: false }, async (request, reply) => {
     const auth = requireAuth(request);
     const params = routeParams(downloadDocs, request);
     const query = routeQuery(downloadDocs, request);
@@ -450,12 +451,15 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
         if (asset.videoProcessingStatus === 'failed') throw variantProcessingFailed(asset.videoProcessingError);
         throw variantNotReady();
       }
-      // Only the explicit download of the original is audited: the thumbnail and the preview are what the screens render, one per card (issue #550).
-      if (query.variant === 'original') await auditMediaEvent(transaction, { action: 'media.download_url_issued', actorUserId: auth.userId, agencyId: params.agencyId, targetId: params.assetId });
       return key;
     });
 
     const url = await storage.presignGetObject({ key: objectKey, expiresInSeconds: config.downloadUrlExpirySeconds });
+    // Only the explicit download of the original is audited: the thumbnail and the preview are what the screens render, one per card (issue #550).
+    // It is written after the URL is signed (#593): a refused signature leaves no event for a URL that was never issued.
+    if (query.variant === 'original') {
+      await withAuthenticatedUserTransaction(database, auth.claims, (transaction) => auditMediaEvent(transaction, { action: 'media.download_url_issued', actorUserId: auth.userId, agencyId: params.agencyId, targetId: params.assetId }));
+    }
     const expiresAt = new Date(Date.now() + config.downloadUrlExpirySeconds * 1_000).toISOString();
     return reply.send(routeResponse(downloadDocs, request, { url, expiresAt }));
   });

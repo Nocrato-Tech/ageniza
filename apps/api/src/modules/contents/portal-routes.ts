@@ -256,7 +256,8 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     // The same bucket as the agency's read URL (per user, one store): a person of both sides does not get 600 on each.
     const guards = portalGuards(mediaUrlDocs);
     const limiter = sharedUserRateLimit(app, MEDIA_READ_URL_BUCKET, MEDIA_RATE_LIMITS.downloadUrlPerUser);
-    app.get('/clients/:clientId/contents/:contentId/media/:assetId/url', { ...guards, preHandler: [...guards.preHandler, limiter] }, async (request, reply) => {
+    // `exposeHeadRoute: false`: a HEAD would sign and audit without handing the URL over (#593).
+    app.get('/clients/:clientId/contents/:contentId/media/:assetId/url', { ...guards, preHandler: [...guards.preHandler, limiter], exposeHeadRoute: false }, async (request, reply) => {
       const { claims, userId } = requireAuth(request);
       const clientContext = request.clientContext;
       if (clientContext === undefined) throw clientNotFound();
@@ -272,10 +273,7 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
         if (asset === undefined) throw mediaNotFound();
 
         const originalKey = `${clientContext.agencyId}/${asset.assetId}/original.${asset.extension}`;
-        if (query.variant === 'original') {
-          await auditMediaEvent(transaction, { action: 'media.download_url_issued', actorUserId: userId, agencyId: clientContext.agencyId, targetId: asset.assetId });
-          return originalKey;
-        }
+        if (query.variant === 'original') return originalKey;
         // An image has no generated thumbnail: its original is the thumbnail, as in the agency's route.
         if (asset.category === 'image') return originalKey;
         if (asset.thumbnailObjectKey !== null) return asset.thumbnailObjectKey;
@@ -283,6 +281,10 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
       });
 
       const url = await media.storage.presignGetObject({ key: objectKey, expiresInSeconds: media.downloadUrlExpirySeconds });
+      // Only the original is audited, and only once its URL is signed (#593): a refused signature leaves no event behind.
+      if (query.variant === 'original') {
+        await inTransaction(claims, (transaction) => auditMediaEvent(transaction, { action: 'media.download_url_issued', actorUserId: userId, agencyId: clientContext.agencyId, targetId: assetId }));
+      }
       const expiresAt = new Date(Date.now() + media.downloadUrlExpirySeconds * 1_000).toISOString();
       return reply.send(routeResponse(mediaUrlDocs, request, { url, expiresAt }));
     });
