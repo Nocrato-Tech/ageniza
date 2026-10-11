@@ -65,6 +65,8 @@ export interface AssignmentOptions {
   readonly tasks?: readonly WorldTask[];
   readonly team?: readonly Person[];
   readonly teamStatus?: number;
+  /** Holds the answer of the team until it resolves. */
+  readonly teamGate?: Promise<void>;
 }
 
 const VISUALIZE = 'conteudo.visualizar';
@@ -96,6 +98,7 @@ export const assignmentWorld = (options: AssignmentOptions) => {
     }
     if (/\/agencies\/[^/]+\/collaborators$/.test(path)) {
       if (!holds('colaborador.visualizar')) return failure(403, 'FORBIDDEN');
+      await options.teamGate;
       if (options.teamStatus !== undefined) return failure(options.teamStatus, 'INTERNAL');
       return json({ data: team.map((person) => collaborator(person, options.self)), meta: { page: 1, pageSize: 100, totalItems: team.length, totalPages: 1 } });
     }

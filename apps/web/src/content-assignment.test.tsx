@@ -390,6 +390,17 @@ describe('who is in charge of the content', () => {
     expect(calls.some((call) => /\/collaborators/.test(call.path))).toBe(false);
   });
 
+  it('shows a skeleton while the team is read, and the choice once it answered', async () => {
+    const row = complete();
+    let release!: () => void;
+    const teamGate = new Promise<void>((resolve) => { release = resolve; });
+    await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId, teamGate });
+    expect(within(panel(row)).queryByLabelText('Novo responsável')).toBeNull();
+    expect(panel(row).querySelector('[aria-hidden="true"]')).not.toBeNull();
+    release();
+    expect(await within(panel(row)).findByLabelText('Novo responsável')).toBeTruthy();
+  });
+
   it('says so and offers to try again when the team cannot be read', async () => {
     const row = complete();
     await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId, teamStatus: 403 });
