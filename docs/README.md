@@ -17,16 +17,23 @@ Encontre o documento certo pela tarefa. Cada linha diz **que pergunta o document
 ## Implementar migration ou tabela
 
 - [ADR 0011: PostgreSQL self-hosted e Better Auth](adr/0011-self-hosted-postgres-and-better-auth.md) — por que o banco e a autenticação são próprios, e não Supabase. **Leia quando:** for mexer no banco, em papéis do PostgreSQL ou na autenticação.
+- [Pacote `@ageniza/database`](../packages/database/README.md) — o cliente do banco, os papéis e a regra de RLS em toda tabela de `public`, e as migrations. **Leia quando:** for criar migration, tabela, grant ou policy, ou rodar os testes de integração do banco.
 
 ## Implementar rota da API
 
 - [Anatomia de um módulo da API](module-anatomy.md) — onde cada arquivo de um módulo mora e como ele é registrado. **Leia quando:** for criar módulo, rota ou permissão nova.
 - [Referência da API](api/README.md) — como a API autentica e quais erros devolve. **Leia quando:** for definir resposta, erro ou autenticação de uma rota.
 - [Contrato OpenAPI](api/openapi.json) — o documento gerado a partir dos schemas. **Leia quando:** for conferir o formato exato de uma rota já publicada. Não edite à mão.
+- [READMEs dos módulos da API](../apps/api/src/modules/) — o que cada módulo faz e as regras dele: [agências](../apps/api/src/modules/agencies/README.md), [documentação da API](../apps/api/src/modules/api-docs/README.md), [auth](../apps/api/src/modules/auth/README.md), [clientes](../apps/api/src/modules/clients/README.md), [colaboradores](../apps/api/src/modules/collaborators/README.md), [contextos](../apps/api/src/modules/contexts/README.md), [troca de e-mail](../apps/api/src/modules/email-change/README.md), [armazenamento de identidade](../apps/api/src/modules/identity-storage/README.md), [convites](../apps/api/src/modules/invitations/README.md), [legal](../apps/api/src/modules/legal/README.md), [mídia](../apps/api/src/modules/media/README.md) e [perfil](../apps/api/src/modules/profile/README.md). **Leia quando:** for mexer em um módulo que já existe, antes de abrir o código dele.
+
+## Implementar job do worker
+
+- [Worker](../apps/worker/README.md) — os jobs duráveis no PostgreSQL, o contrato que todo handler segue, retries, agendamentos e a evolução do schema da fila. **Leia quando:** for criar ou alterar um job, um agendamento ou um handler do worker.
 
 ## Implementar tela
 
 - [Design system](design-system.md) — tokens, cores, espaçamento e componentes permitidos na interface. **Leia quando:** for escrever qualquer estilo ou componente de tela.
+- [Aplicação web](../apps/web/README.md) — a SPA React/Vite, as fronteiras de rota pública e protegida e a configuração do navegador (só variáveis `VITE_` públicas). **Leia quando:** for criar uma rota ou tela nova, ou mexer na configuração do app web.
 - [SPEC de autenticação, convite e contexto](../specs/auth.md) — telas de login, convite e troca de contexto. **Leia quando:** for implementar ou alterar essas telas.
 - [SPEC de autorização e transversais](../specs/autorizacao.md) — catálogo de permissões, papéis e convenções de tela que todos os módulos herdam. **Leia quando:** for implementar qualquer tela com permissão.
 - [SPEC de clientes](../specs/clientes.md) — carteira, detalhe, estudo de marca, acessos ao portal e encerramento. **Leia quando:** for implementar ou alterar o módulo de clientes.
@@ -45,6 +52,7 @@ Encontre o documento certo pela tarefa. Cada linha diz **que pergunta o document
 
 ## Decisões de negócio
 
+- [Índice das decisões por módulo](business/decisions/README.md) — todas as decisões agrupadas por módulo, com a data e o título de cada uma. **Leia quando:** quiser achar uma decisão pelo módulo ou registrar uma decisão nova.
 - [Decisões de negócio](business/decisions/) — a pasta com o registro cronológico, uma decisão por arquivo, nomeada `AAAA-MM-DD-<slug>.md`. Busque por data e título. **Leia quando:** quiser saber o que já foi decidido e por quê.
 - [Decisões de negócio (arquivo antigo)](business/decisions.md) — arquivo de compatibilidade que não recebe mais entradas; as citações antigas se acham pelo título. **Leia quando:** encontrar uma citação de `decisions.md` e precisar achar a decisão.
 
