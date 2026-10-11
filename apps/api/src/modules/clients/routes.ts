@@ -459,7 +459,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       try {
         updated = await updatePersona(transaction, { clientId, personaId, actorUserId: auth.userId, changes: body });
       } catch (error) {
-        if (isRowLevelSecurityViolation(error)) return { kind: 'archived' } as const;
+        if (isRowLevelSecurityViolation(error) || isClientNoLongerActive(error)) return { kind: 'archived' } as const;
         throw error;
       }
       if (!updated) return { kind: 'persona-not-found' } as const;
@@ -487,7 +487,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       try {
         updated = await setPersonaStatus(transaction, { clientId, personaId, actorUserId: auth.userId, status });
       } catch (error) {
-        if (isRowLevelSecurityViolation(error)) return { kind: 'archived' } as const;
+        if (isRowLevelSecurityViolation(error) || isClientNoLongerActive(error)) return { kind: 'archived' } as const;
         throw error;
       }
       if (!updated) return { kind: 'persona-not-found' } as const;
