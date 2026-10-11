@@ -55,6 +55,16 @@ describe('the e-mails of the contents of a client (issue #260)', () => {
     expect(message.subject).toContain('Padaria Bcc: alguem@exemplo.test');
   });
 
+  it.each([contentsAwaitingApprovalEmail, contentsPublishedEmail])('takes the invisible format marks out of the names, a bidi override (U+202E) included, so the name cannot read as another one', (compose) => {
+    const message = compose(input({ clientName: 'Padaria\u202Eodnas', agencyName: 'Agência\u202E\u200BAurora' }));
+
+    expect(message.subject).toContain('Padaria odnas');
+    expect(message.subject).not.toMatch(/\p{Cf}/u);
+    expect(message.text).toContain('Agência Aurora');
+    expect(message.text).not.toMatch(/\p{Cf}/u);
+    expect(message.html).not.toMatch(/\p{Cf}/u);
+  });
+
   it('refuses a link that is not https (loopback aside), a contentless e-mail and a missing name', () => {
     expect(() => contentsAwaitingApprovalEmail(input({ portalUrl: 'http://app.ageniza.example/portal/1' }))).toThrow('HTTPS');
     expect(() => contentsAwaitingApprovalEmail(input({ portalUrl: 'javascript:alert(1)' }))).toThrow();
@@ -70,5 +80,19 @@ describe('the e-mails of the contents of a client (issue #260)', () => {
     ] }));
 
     expect(message.text).toContain('- A (02/01/2026)\n- B (31/12/2026)\n- C\n- D');
+  });
+  it.each([contentsAwaitingApprovalEmail, contentsPublishedEmail])('keeps the family emoji (joined by ZWJ) and the flag of a subdivision (tag characters) in the names and the titles, and still takes the bidi override out', (compose) => {
+    const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}';
+    const scotland = '\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}';
+    const message = compose(input({
+      clientName: `Família ${family}`,
+      items: [{ title: `Bandeira ${scotland}`, publishOn: null }, { title: `Família ${family}\u202E`, publishOn: null }]
+    }));
+
+    expect(message.subject).toContain(`Família ${family}`);
+    expect(message.text).toContain(`- Bandeira ${scotland}\n- Família ${family}`);
+    expect(message.html).toContain(`<li>Bandeira ${scotland}</li><li>Família ${family}</li>`);
+    expect(message.text).not.toContain('\u202E');
+    expect(message.html).not.toContain('\u202E');
   });
 });

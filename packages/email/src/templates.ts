@@ -84,33 +84,47 @@ const compose = (subject: string, lines: readonly string[], input: ActionEmailIn
   };
 };
 
+// A name that goes into a line of text is free text of the agency (the CLI takes it as typed). It is one line, and no invisible
+// format mark reorders what the reader sees: a bidi override such as U+202E can make a name read as another one. The zero-width
+// joiner (U+200D) and the tags (U+E0020-U+E007F) stay: they hold the family emoji and the flags of subdivisions, which come from
+// the title of a content as well.
+const oneLine = (value: string): string => value.replace(/(?:[\p{Cc}\u2028\u2029]|(?![\u200D\u{E0020}-\u{E007F}])\p{Cf})+/gu, ' ').trim();
+
+// The name as it goes into the text: checked as typed, then cleaned, and what is left must still be a name.
+const displayName = (field: string, value: string): string => {
+  assertDisplayName(field, value);
+  const clean = oneLine(value);
+  assertDisplayName(field, clean);
+  return clean;
+};
+
 const invitedBy = (agencyName?: string): string =>
-  agencyName === undefined ? 'Você foi convidado para o Ageniza.' : `Você foi convidado para ${agencyName} no Ageniza.`;
+  agencyName === undefined ? 'Você foi convidado para o Ageniza.' : `Você foi convidado para ${displayName('O nome da agência', agencyName)} no Ageniza.`;
 
 export const invitationEmail = (input: ActionEmailInput): EmailMessage =>
   compose('Convite para o Ageniza', [invitedBy(input.agencyName), 'Abra o link abaixo para ativar sua conta.'], input);
 
 export const agencyActivationEmail = (input: NamedActionEmailInput): EmailMessage => {
-  assertDisplayName('O nome da agência', input.agencyName);
+  const agencyName = displayName('O nome da agência', input.agencyName);
   return compose('Ative sua agência no Ageniza', [
-    `Sua agência ${input.agencyName} está quase pronta.`,
+    `Sua agência ${agencyName} está quase pronta.`,
     'Abra o link abaixo para ativá-la.'
   ], input);
 };
 
 export const collaboratorInvitationEmail = (input: NamedActionEmailInput): EmailMessage => {
-  assertDisplayName('O nome da agência', input.agencyName);
+  const agencyName = displayName('O nome da agência', input.agencyName);
   return compose('Convite para participar da agência', [
-    `Você foi convidado para participar da ${input.agencyName}.`,
+    `Você foi convidado para participar da ${agencyName}.`,
     'Abra o link abaixo para aceitar o convite.'
   ], input);
 };
 
 export const clientInvitationEmail = (input: ClientInvitationEmailInput): EmailMessage => {
-  assertDisplayName('O nome da agência', input.agencyName);
-  assertDisplayName('O nome do cliente', input.clientName);
+  const agencyName = displayName('O nome da agência', input.agencyName);
+  const clientName = displayName('O nome do cliente', input.clientName);
   return compose('Convite para acessar seu cliente', [
-    `Você foi convidado para acessar ${input.clientName}, gerenciado pela ${input.agencyName}.`,
+    `Você foi convidado para acessar ${clientName}, gerenciado pela ${agencyName}.`,
     'Abra o link abaixo para aceitar o convite.'
   ], input);
 };
@@ -162,9 +176,6 @@ export interface ClientContentEmailInput {
   readonly portalUrl: string;
   readonly items: readonly ContentNotificationItem[];
 }
-
-// A header must be one line, and the names that go into it are free text of the agency.
-const oneLine = (value: string): string => value.replace(/[\p{Cc}\u2028\u2029]+/gu, ' ').trim();
 
 const formatPlannedDate = (publishOn: string | null): string | undefined => {
   const match = publishOn === null ? null : /^(\d{4})-(\d{2})-(\d{2})$/.exec(publishOn);
