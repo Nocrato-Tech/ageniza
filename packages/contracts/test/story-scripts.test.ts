@@ -43,7 +43,11 @@ const HIDDEN: ReadonlyArray<readonly [string, number]> = [
   ['supplementary variation selector U+E0100 (not Cf)', 0xe0100],
   ['Khmer inherent vowel U+17B4 (not Cf)', 0x17b4],
   ['Hangul filler U+3164 (not Cf)', 0x3164],
-  ['Braille blank U+2800', 0x2800]
+  ['Hangul choseong filler U+115F (not Cf)', 0x115f],
+  ['Hangul jungseong filler U+1160 (not Cf)', 0x1160],
+  ['halfwidth Hangul filler U+FFA0 (not Cf)', 0xffa0],
+  ['Braille blank U+2800', 0x2800],
+  ['musical null notehead U+1D159 (not Cf, not ignorable)', 0x1d159]
 ];
 
 describe('the text of a scene and its guidance (#258)', () => {
@@ -67,6 +71,25 @@ describe('the text of a scene and its guidance (#258)', () => {
 
     expect(hasHiddenStoryCharacters(heart)).toBe(false);
     expect(create(scene(heart)).success).toBe(true);
+  });
+
+  it('allows the emoji selector once, and only it, right after a pictograph', () => {
+    const heart = 0x2764;
+    expect(hasHiddenStoryCharacters(text(heart, 0xfe0f))).toBe(false);
+    expect(hasHiddenStoryCharacters(text(0x1f600, 0xfe0f))).toBe(false);
+    expect(hasHiddenStoryCharacters(text(0x00a9, 0xfe0f))).toBe(false);
+    expect(hasHiddenStoryCharacters(text(heart, 0xfe0f, heart, 0xfe0f))).toBe(false);
+    for (const [label, hidden] of [
+      ['a second emoji selector', text(heart, 0xfe0f, 0xfe0f)],
+      ['the text selector VS15', text(heart, 0xfe0e)],
+      ['variation selector-1', text(heart, 0xfe00)],
+      ['variation selector-17', text(heart, 0xe0100)],
+      ['the emoji selector and then another selector', text(heart, 0xfe0f, 0xfe00)],
+      ['the emoji selector and then the grapheme joiner', text(heart, 0xfe0f, 0x034f)],
+      ['the emoji selector on a pictograph and then on a letter', text(heart, 0xfe0f, 0x0061, 0xfe0f)]
+    ] as const) {
+      expect({ label, hidden: hasHiddenStoryCharacters(hidden) }).toEqual({ label, hidden: true });
+    }
   });
 
   it('refuses the emoji selector when no pictograph comes before it', () => {

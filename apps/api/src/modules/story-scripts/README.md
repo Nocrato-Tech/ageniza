@@ -51,7 +51,7 @@ unificam numa issue.
 O texto e a orientação da cena recusam caractere de controle (menos tabulação e quebra de linha), separador de linha e
 de parágrafo, todo caractere de formato (`Cf`: espaço de largura zero, joiners, controles bidi, BOM, hífen suave) e todo
 `Default_Ignorable_Code_Point` que não é `Cf` (seletores de variação, CGJ, preenchimentos de Hangul), mais o espaço em
-branco do Braille. A única exceção é o seletor de emoji (U+FE0F) logo depois de um pictograma, que é como o celular
+branco do Braille e a cabeça de nota nula (U+1D159). A única exceção é o seletor de emoji (U+FE0F) logo depois de um pictograma, que é como o celular
 escreve um coração. O banco recusa só o texto em branco; o resto é do schema.
 
 ## A corrida com o arquivamento

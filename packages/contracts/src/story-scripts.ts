@@ -39,9 +39,10 @@ const FORMAT_CHARACTER = /\p{Cf}/u;
 /**
  * What the format rule above does not reach and still renders as nothing: the combining grapheme joiner, the
  * variation selectors, the Hangul fillers and the like (`Default_Ignorable_Code_Point` that is not `Cf`), and the
- * Braille blank. The one exception is VS16 right after a pictograph, which is how a phone writes a heart.
+ * Braille blank and the musical null notehead (U+1D159), which most fonts draw as a space and Unicode does not list as
+ * ignorable. The one exception is VS16 right after a pictograph, which is how a phone writes a heart.
  */
-const IGNORABLE_NOT_FORMAT = /(?!\p{Cf})[\p{Default_Ignorable_Code_Point}\u2800]/u;
+const IGNORABLE_NOT_FORMAT = /(?!\p{Cf})[\p{Default_Ignorable_Code_Point}\u2800\u{1D159}]/u;
 const EMOJI_PRESENTATION = /(?<=\p{Extended_Pictographic})\uFE0F/gu;
 
 /** Whether a free text carries a character that is invisible, forged-looking or breaks the line it is on. */
