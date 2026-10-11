@@ -19,6 +19,16 @@ export const FORBIDDEN_IN_API_PRODUCTION = [
   'jsdom'
 ];
 
+// The direct dependencies of the API, by value (issue #517). The list derived from the workspace above
+// cannot see a package that is a devDependency of one project only: moved to the API's `dependencies` it
+// stops being a devDependency anywhere and leaves the derived list, so it would ship with exit 0. A new
+// runtime dependency of the API is added to the JSON on purpose, in the change that adds it. The list is a
+// file of its own so that the S3Client census (scripts/ci/s3-client-options.test.mjs) does not read it as
+// a use of the SDK.
+export const API_RUNTIME_DEPENDENCIES = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'api-runtime-dependencies.json'), 'utf8')
+);
+
 // What the production image carries besides node_modules: the `files` of apps/api/package.json
 // (issue #305). Anything else in the deploy is source, test or tooling the runtime never reads.
 const RUNTIME_ROOT_ENTRIES = new Set(['dist', 'node_modules', 'package.json']);
@@ -64,6 +74,12 @@ export const forbiddenPackagesIn = (entries, forbidden = FORBIDDEN_IN_API_PRODUC
 };
 
 const isTestArtifact = (path) => /(^|\/)[^/]*\.test\.[^/]*$/.test(path) || path.split('/').includes('test-support');
+
+/** Direct dependencies a package.json declares that are not on the allowed list, sorted. */
+export const unexpectedApiDependencies = (manifest, allowed = API_RUNTIME_DEPENDENCIES) =>
+  [...new Set([...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.optionalDependencies ?? {})])]
+    .filter((name) => !allowed.includes(name))
+    .sort();
 
 /** Files (posix paths relative to the deploy, node_modules left out) the production image should not carry. */
 export const unexpectedInDeploy = (paths) =>
@@ -139,7 +155,7 @@ const inspectInternalPackages = (target, store, entries) => {
 };
 
 /** Everything wrong with an already deployed API, as messages; an empty list is a closure worth trusting. */
-export const checkDeployedApi = (target, { boot = bootFromDeploy, forbidden = FORBIDDEN_IN_API_PRODUCTION } = {}) => {
+export const checkDeployedApi = (target, { boot = bootFromDeploy, forbidden = FORBIDDEN_IN_API_PRODUCTION, allowedDependencies = API_RUNTIME_DEPENDENCIES } = {}) => {
   const failures = [];
 
   const store = join(target, 'node_modules', '.pnpm');
@@ -157,6 +173,15 @@ export const checkDeployedApi = (target, { boot = bootFromDeploy, forbidden = FO
     failures.push(
       `${reached.join(', ')} reached the deployed API.\n` +
       'Keep test-only and development tooling out of the API production dependencies; see docs/ci/README.md.'
+    );
+  }
+
+  const undeclared = unexpectedApiDependencies(JSON.parse(readFileSync(join(target, 'package.json'), 'utf8')), allowedDependencies);
+  if (undeclared.length > 0) {
+    failures.push(
+      `${undeclared.join(', ')} ${undeclared.length === 1 ? 'is a' : 'are'} direct dependenc${undeclared.length === 1 ? 'y' : 'ies'} of the API that ${undeclared.length === 1 ? 'is' : 'are'} not on the allowed list.
+` +
+      'A development tool stays in devDependencies; a real runtime dependency is added to api-runtime-dependencies.json in the same change; see docs/ci/README.md.'
     );
   }
 

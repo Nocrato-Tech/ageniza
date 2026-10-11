@@ -43,10 +43,15 @@ export const censusProblems = (text, constructions) => {
   if (constructed.length !== constructions) problems.push(`constructs S3Client ${constructed.length} times, expected ${constructions}`);
   const allowed = [...code.matchAll(ALLOWED_CONSTRUCTION)];
   if (allowed.length !== constructed.length) problems.push('has a construction that is not `{ ...options, endpoint }`');
-  for (const [, source] of allowed) {
-    if (!source.startsWith('s3ClientOptions(') && !new RegExp(`const\\s+${source}\\s*=\\s*s3ClientOptions\\(`).test(code)) {
-      problems.push(`spreads ${source}, which is not s3ClientOptions(...)`);
-    }
+  // A name that can be declared twice can be shadowed: an inner `const clientOptions = { ...,
+  // requestChecksumCalculation: 'WHEN_SUPPORTED' }` next to an outer one built from the helper passes a search for
+  // the outer one. So the name may appear only in its single declaration and in its spreads.
+  for (const source of new Set(allowed.map(([, spread]) => spread))) {
+    if (source.startsWith('s3ClientOptions(')) continue;
+    const declarations = [...code.matchAll(new RegExp(`\\bconst\\s+${source}\\s*=\\s*s3ClientOptions\\(`, 'g'))].length;
+    const mentions = [...code.matchAll(new RegExp(`\\b${source}\\b`, 'g'))].length;
+    const spreads = allowed.filter(([, spread]) => spread === source).length;
+    if (declarations !== 1 || mentions !== 1 + spreads) problems.push(`spreads ${source}, which is not declared exactly once as s3ClientOptions(...)`);
   }
   if ([...code.matchAll(/\bS3Client\b/g)].length !== 1 + constructed.length) problems.push('uses S3Client outside its import and its constructions');
   return problems;
@@ -96,7 +101,13 @@ describe('every S3Client is built from s3ClientOptions (issue #509)', () => {
     ['a spread of something that is not the helper', "import { S3Client } from '@aws-sdk/client-s3';\nconst clientOptions = { region: 'x' };\nconst c = new S3Client({ ...clientOptions, endpoint: config.endpoint });"],
     ['a client that is built and one more', `${good(1)}\nconst extra = new S3Client(other);`],
     ['the class held in a variable', "import { S3Client } from '@aws-sdk/client-s3';\nconst clientOptions = s3ClientOptions(config);\nconst Ctor = S3Client;\nconst c = new Ctor({ ...clientOptions, endpoint: config.endpoint });"],
-    ['a client in parentheses', "import { S3Client } from '@aws-sdk/client-s3';\nconst c = new (S3Client)({ region: 'x' });"]
+    ['a client in parentheses', "import { S3Client } from '@aws-sdk/client-s3';\nconst c = new (S3Client)({ region: 'x' });"],
+    ['the options name redeclared in an inner scope with the checksum override', `${good(0)}\nconst make = () => {\n  const clientOptions = { ...s3ClientOptions(config), requestChecksumCalculation: 'WHEN_SUPPORTED' };\n  return new S3Client({ ...clientOptions, endpoint: config.endpoint });\n};`],
+    ['the options name redeclared in an inner scope without the helper', `${good(0)}\nconst make = () => {\n  const clientOptions = { region: 'x' };\n  return new S3Client({ ...clientOptions, endpoint: config.endpoint });\n};`],
+    ['the options name taken as a parameter', `${good(0)}\nconst make = (clientOptions) => new S3Client({ ...clientOptions, endpoint: config.endpoint });`],
+    ['the options name destructured from something else', `${good(0)}\nconst make = (config) => {\n  const { clientOptions } = config;\n  return new S3Client({ ...clientOptions, endpoint: config.endpoint });\n};`],
+    ['the options name declared twice at the top', "import { S3Client } from '@aws-sdk/client-s3';\nconst clientOptions = s3ClientOptions(config);\nconst clientOptions = s3ClientOptions(other);\nconst c = new S3Client({ ...clientOptions, endpoint: config.endpoint });"],
+    ['the options name reassigned after the helper', `${good(1)}\nclientOptions = { region: 'x', requestChecksumCalculation: 'WHEN_SUPPORTED' };`]
   ])('rejects %s', (_label, text) => {
     expect(censusProblems(text, 1), text).not.toEqual([]);
   });
