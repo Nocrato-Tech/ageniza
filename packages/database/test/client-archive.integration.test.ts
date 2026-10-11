@@ -775,6 +775,206 @@ describe('the story scripts are serialized with the archive of their client (iss
   });
 });
 
+// Issues #540 and #532. The other children of the client had the lock of the INSERT only, so an edit from a snapshot older than the
+// archive (or while it was uncommitted, for the confirmation of a media) was written into a client that no longer takes writes.
+describe('every other child of the client is edited under the lock of its client (issues #540 and #532)', () => {
+  const levels = ['repeatable read', 'serializable'] as const;
+  const rlsViolation = { code: '42501', message: expect.stringContaining('row-level security') };
+
+  interface Child {
+    readonly table: string;
+    readonly key: (id: string) => Record<string, string>;
+    readonly seed: (clientId: string) => Promise<string>;
+    readonly edit: (id: string) => (t: Knex.Transaction) => Promise<number>;
+    /** After the archive committed: the policy refuses the new row (an error), hides the old one (no row) or, with no say on the client, the trigger raises. */
+    readonly afterCommit: Record<string, unknown> | 'no row';
+  }
+
+  const rowOf = async (child: Child, id: string): Promise<string> => sqlText(
+    `select to_jsonb(row)::text as value from public.${child.table} row where ${Object.keys(child.key(id)).map((column) => `row.${column} = ?::${column === 'section_key' ? 'text' : 'uuid'}`).join(' and ')}`,
+    Object.values(child.key(id))
+  );
+
+  const children: readonly Child[] = [
+    {
+      table: 'content_tasks',
+      key: (id) => ({ id }),
+      // Planned today: the archive leaves the content alone, so the edit reaches the lock instead of the guard of a cancelled content.
+      seed: async (clientId) => w.seedTask(await w.seedContent(clientId, { publishOn: await daysFromToday(0) })),
+      edit: (id) => (t) => t('content_tasks').where({ id }).update({ title: 'Subtarefa renomeada' }),
+      afterCommit: rlsViolation
+    },
+    {
+      table: 'media_folders',
+      key: (id) => ({ id }),
+      seed: async (clientId) => {
+        const id = randomUUID();
+        await w.getOwner().knex('media_folders').insert({ id, client_id: clientId, name: 'Pasta de trabalho' });
+        return id;
+      },
+      edit: (id) => (t) => t('media_folders').where({ id }).update({ name: 'Pasta renomeada' }),
+      afterCommit: 'no row'
+    },
+    {
+      table: 'client_personas',
+      key: (id) => ({ id }),
+      seed: async (clientId) => {
+        const id = randomUUID();
+        await w.getOwner().knex('client_personas').insert({ id, client_id: clientId, name: 'Persona', updated_by: ids.adminA });
+        return id;
+      },
+      edit: (id) => (t) => t('client_personas').where({ id }).update({ name: 'Persona renomeada', updated_by: ids.adminA }),
+      afterCommit: 'no row'
+    },
+    {
+      table: 'client_brand_sections',
+      key: (clientId) => ({ client_id: clientId, section_key: 'branding' }),
+      seed: async (clientId) => {
+        await w.getOwner().knex('client_brand_sections').insert({ client_id: clientId, section_key: 'branding', body: 'Marca', updated_by: ids.adminA });
+        return clientId;
+      },
+      edit: (clientId) => (t) => t('client_brand_sections').where({ client_id: clientId, section_key: 'branding' }).update({ body: 'Marca nova', updated_by: ids.adminA }),
+      afterCommit: 'no row'
+    },
+    {
+      table: 'client_threads',
+      key: (id) => ({ id }),
+      seed: async (clientId) => {
+        const id = randomUUID();
+        await w.getOwner().knex('client_threads').insert({ id, client_id: clientId, section_key: 'branding', opened_by: ids.adminA, opened_side: 'agency' });
+        return id;
+      },
+      edit: (id) => (t) => t('client_threads').where({ id }).update({ resolved_at: new Date(), resolved_by: ids.adminA }),
+      afterCommit: 'no row'
+    },
+    {
+      table: 'media_assets',
+      key: (id) => ({ id }),
+      seed: async (clientId) => w.seedAsset(clientId, await w.folderOf(clientId), { status: 'pending' }),
+      edit: (id) => (t) => t('media_assets').where({ id }).update({ status: 'confirmed', confirmed_size_bytes: 1_000, confirmed_content_type: 'image/png' }),
+      // The policy of the UPDATE has no say on the client, so the committed archive is refused by the trigger.
+      afterCommit: { code: 'A0020' }
+    }
+  ];
+
+  describe.each(children.map((child) => [child.table, child] as const))('%s', (_table, child) => {
+    it('an edit written while the archive is uncommitted is refused as A0020 and the row is as it was', async () => {
+      const client = await newClient();
+      const id = await child.seed(client);
+      const before = await rowOf(child, id);
+
+      const outcome = await writeWhileArchiving(client, ids.adminA, child.edit(id));
+
+      expect(outcome).toMatchObject({ code: 'A0020' });
+      expect(await clientStatus(client)).toBe('archived');
+      expect(await rowOf(child, id)).toBe(before);
+    });
+
+    it('an edit written first makes the archive wait, and both commit', async () => {
+      const client = await newClient();
+      const id = await child.seed(client);
+      const before = await rowOf(child, id);
+
+      const outcome = await archiveWhileWriting(client, ids.adminA, async (t) => {
+        expect(await child.edit(id)(t)).toBe(1);
+      });
+
+      expect(outcome).toBe('archived');
+      expect(await clientStatus(client)).toBe('archived');
+      expect(await rowOf(child, id)).not.toBe(before);
+    });
+
+    it('an edit written after the archive committed changes nothing: the policy or the trigger refuses it, and the row is as it was', async () => {
+      const client = await newClient();
+      const id = await child.seed(client);
+      const before = await rowOf(child, id);
+      await w.asUser(ids.adminA, archive(client));
+
+      if (child.afterCommit === 'no row') await expect(w.asUser(ids.adminA, child.edit(id))).resolves.toBe(0);
+      else await expect(w.asUser(ids.adminA, child.edit(id))).rejects.toMatchObject(child.afterCommit);
+
+      expect(await rowOf(child, id)).toBe(before);
+    });
+
+    it.each(levels)('%s: an edit from a snapshot older than the archive fails with 40001 and the row is as it was', async (level) => {
+      const client = await newClient();
+      const id = await child.seed(client);
+      const before = await rowOf(child, id);
+      const stale = await w.openTransactionAs(ids.adminA, level);
+
+      try {
+        await w.asUser(ids.adminA, archive(client));
+        await expect(child.edit(id)(stale)).rejects.toMatchObject({ code: '40001' });
+      } finally {
+        await stale.rollback();
+      }
+
+      expect(await rowOf(child, id)).toBe(before);
+    });
+
+    it('holds the client row shared while the edit is uncommitted: the locker has the row, and a lock that waits fails with 55P03', async () => {
+      const client = await newClient();
+      const id = await child.seed(client);
+      const writing = await w.openTransactionAs(ids.adminA);
+
+      try {
+        expect(await child.edit(id)(writing)).toBe(1);
+        const probe = await w.openTransactionAs(ids.adminA);
+        try {
+          await probe.raw("set local lock_timeout = '250ms'");
+          await expect(probe.raw('select id from public.clients where id = ?::uuid for update nowait', [client])).rejects.toMatchObject({ code: '55P03' });
+        } finally {
+          await probe.rollback();
+        }
+      } finally {
+        await writing.rollback();
+      }
+    });
+  });
+
+  it('media_assets: a media of the library of the agency, which has no client, is confirmed with no lock on any client', async () => {
+    const id = randomUUID();
+    try {
+      await w.getOwner().knex('media_assets').insert({
+        id, agency_id: ids.agencyA, category: 'image', declared_content_type: 'image/png', extension: 'png',
+        object_key: `${ids.agencyA}/${id}/original.png`, upload_object_key: `staging/${ids.agencyA}/${id}/upload.png`, declared_size_bytes: 1_000,
+        created_by_user_id: ids.adminA
+      });
+
+      const confirmed = await w.asUser(ids.adminA, (t) => t('media_assets').where({ id }).update({ status: 'confirmed', confirmed_size_bytes: 1_000, confirmed_content_type: 'image/png' }));
+
+      expect(confirmed).toBe(1);
+    } finally {
+      await w.getOwner().knex('media_assets').where({ id }).delete();
+    }
+  });
+
+  // The worker and the rejection of an upload are writes of the same login that the lock must leave alone: refusing them for an archived
+  // client would leave a video processing forever, or an upload neither confirmed nor rejected.
+  it('media_assets: the processing of a video that was confirmed before the archive still ends after it', async () => {
+    const client = await newClient();
+    const id = await w.seedAsset(client, await w.folderOf(client), { category: 'video' });
+    await w.getOwner().knex('media_assets').where({ id }).update({ video_processing_status: 'processing' });
+    await w.asUser(ids.adminA, archive(client));
+
+    const updated = await w.asUser(ids.adminA, (t) => t('media_assets').where({ id }).update({ video_processing_status: 'failed', video_processing_error: 'processing_failed', video_processed_at: new Date() }));
+
+    expect(updated).toBe(1);
+    expect(await w.getOwner().knex('media_assets').where({ id }).first('video_processing_status')).toEqual({ video_processing_status: 'failed' });
+  });
+
+  it('media_assets: a pending upload of a client archived meanwhile can still be rejected', async () => {
+    const client = await newClient();
+    const id = await w.seedAsset(client, await w.folderOf(client), { status: 'pending' });
+    await w.asUser(ids.adminA, archive(client));
+
+    const updated = await w.asUser(ids.adminA, (t) => t('media_assets').where({ id }).update({ status: 'rejected', rejected_reason: 'too_large' }));
+
+    expect(updated).toBe(1);
+    expect(await w.getOwner().knex('media_assets').where({ id }).first('status')).toEqual({ status: 'rejected' });
+  });
+});
+
 describe('archiving a client cancels the content planned after its closing (issue #251)', () => {
   const seedFour = async (clientId: string, publishOn: string): Promise<Record<'in_production' | 'awaiting_approval' | 'adjusting' | 'approved', string>> => ({
     in_production: await w.seedContent(clientId, { status: 'in_production', publishOn }),
@@ -951,11 +1151,16 @@ describe('archiving a client cancels the content planned after its closing (issu
 
 // Issues #408 and #534. The list of columns of each edit trigger repeats by hand what the application role may write, so a
 // writable column added later would escape the lock with no test turning red; the catalog says it instead.
-describe('the edit lock covers every column the application role may write (issues #408 and #534)', () => {
+describe('the edit lock covers every column the application role may write (issues #408, #534 and #540)', () => {
   it.each([
     ['contents', '0_contents_edit_lock_active_client'],
     ['story_scripts', '0_story_scripts_edit_lock_active_client'],
-    ['story_script_scenes', '0_story_script_scenes_edit_lock_active_client']
+    ['story_script_scenes', '0_story_script_scenes_edit_lock_active_client'],
+    ['content_tasks', '0_content_tasks_edit_lock_active_client'],
+    ['media_folders', '0_media_folders_edit_lock_active_client'],
+    ['client_personas', '0_client_personas_edit_lock_active_client'],
+    ['client_brand_sections', '0_client_brand_sections_edit_lock_active_client'],
+    ['client_threads', '0_client_threads_edit_lock_active_client']
   ])('%s: the columns of %s are exactly the ones ageniza_app has UPDATE on, and the WHEN compares each of them', async (table, trigger) => {
     const writable = await w.getOwner().knex.raw<{ rows: Array<{ name: string }> }>(
       `select a.attname as name from pg_attribute a
@@ -979,6 +1184,24 @@ describe('the edit lock covers every column the application role may write (issu
       // The catalog quotes a reserved word (`position`).
       const mentions = (side: string): boolean => condition.includes(`${side}.${row.name}`) || condition.includes(`${side}."${row.name}"`);
       expect({ column: row.name, compared: mentions('old') && mentions('new') }).toEqual({ column: row.name, compared: true });
+    }
+  });
+
+  // Issue #532. Not every granted column: the worker and the rejection write the same table after the confirmation, and the archive
+  // must not refuse them. Only the confirmation is serialized, and the test says so by naming what is out.
+  it('media_assets: the confirmation alone is locked, on the status, and the columns the worker writes are not', async () => {
+    const locked = await w.getOwner().knex.raw<{ rows: Array<{ name: string; definition: string; enabled: string }> }>(
+      `select a.attname as name, pg_get_triggerdef(t.oid) as definition, t.tgenabled as enabled
+       from pg_trigger t join pg_attribute a on a.attrelid = t.tgrelid and a.attnum = any (t.tgattr::int2[])
+       where t.tgrelid = 'public.media_assets'::regclass and t.tgname = '0_media_assets_confirm_lock_active_client' and not t.tgisinternal`
+    );
+
+    expect(locked.rows.map((row) => row.name)).toEqual(['status']);
+    expect(locked.rows[0]!.enabled).toBe('O');
+    expect(locked.rows[0]!.definition).toContain("new.status = 'confirmed'");
+    const writable = await w.columnsWithPrivilege('media_assets', 'update');
+    for (const column of ['video_processing_status', 'video_processing_error', 'thumbnail_object_key', 'preview_object_key', 'rejected_reason']) {
+      expect(writable).toContain(column);
     }
   });
 });
