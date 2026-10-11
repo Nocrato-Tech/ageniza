@@ -1883,6 +1883,7 @@ Lê o estudo de marca, no portal.
 | `GET` | `/clients/:clientId/contents` | Sessão + vínculo com o cliente | — | Lista os conteúdos de um período, no portal |
 | `GET` | `/clients/:clientId/contents/awaiting-approval` | Sessão + vínculo com o cliente | — | Lista o que espera a aprovação da pessoa, no portal |
 | `GET` | `/clients/:clientId/contents/:contentId` | Sessão + vínculo com o cliente | — | Lê um conteúdo, no portal |
+| `GET` | `/clients/:clientId/contents/:contentId/media/:assetId/url` | Sessão + vínculo com o cliente | — | Emite a URL assinada de uma mídia do conteúdo, no portal |
 | `POST` | `/clients/:clientId/contents/:contentId/approve` | Sessão + vínculo com o cliente | — | Aprova um conteúdo, no portal |
 | `POST` | `/clients/:clientId/contents/:contentId/request-changes` | Sessão + vínculo com o cliente | — | Pede ajuste de um conteúdo, no portal |
 
@@ -2876,6 +2877,32 @@ Lê um conteúdo, no portal.
 ```
 
 **Erros:** `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId/contents/:contentId/media/:assetId/url`
+
+Emite a URL assinada de uma mídia do conteúdo, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "variant": "thumbnail"
+}
+```
+
+**Resposta `200`** — URL assinada.
+
+```json
+{
+  "url": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+  "expiresAt": "2026-09-29T12:05:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `409 VARIANT_NOT_READY` · `409 VARIANT_PROCESSING_FAILED` · `500 INTERNAL_ERROR`
 
 #### `POST /clients/:clientId/contents/:contentId/approve`
 

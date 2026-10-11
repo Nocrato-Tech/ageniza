@@ -138,7 +138,7 @@ export const createContentsWorld = (label: string) => {
   const seedAsset = async (
     clientId: string,
     folderId: string,
-    extra: { category?: 'image' | 'video'; status?: 'pending' | 'confirmed'; removed?: boolean } = {}
+    extra: { category?: 'image' | 'video'; status?: 'pending' | 'confirmed'; removed?: boolean; video?: 'pending' | 'ready' | 'failed' } = {}
   ): Promise<string> => {
     const id = randomUUID();
     const category = extra.category ?? 'image';
@@ -161,7 +161,12 @@ export const createContentsWorld = (label: string) => {
       ...((extra.status ?? 'confirmed') === 'confirmed'
         ? { status: 'confirmed', confirmed_size_bytes: 1_000, confirmed_content_type: category === 'image' ? 'image/png' : 'video/mp4', confirmed_at: new Date() }
         : {}),
-      ...(extra.removed === true ? { removed_at: new Date() } : {})
+      ...(extra.removed === true ? { removed_at: new Date() } : {}),
+      ...(extra.video === undefined ? {} : { video_processing_status: extra.video }),
+      ...(extra.video === 'ready'
+        ? { thumbnail_object_key: `${agencyId}/${id}/thumbnail.jpg`, preview_object_key: `${agencyId}/${id}/preview.mp4`, video_duration_seconds: 12 }
+        : {}),
+      ...(extra.video === 'failed' ? { video_processing_error: 'processing_failed' } : {})
     });
     return id;
   };

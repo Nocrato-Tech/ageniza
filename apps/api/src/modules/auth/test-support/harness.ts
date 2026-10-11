@@ -263,7 +263,6 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     requirePermission,
     ...(options.contentsClock === undefined ? {} : { now: options.contentsClock })
   };
-  const contentPortal: ContentPortalModuleDependencies = { database, auth, requireClientAccess };
   const collaborators: CollaboratorModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
     database,
     auth,
@@ -289,6 +288,12 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     requirePermission,
     requireAnyPermission,
     jobs: mediaJobs
+  };
+  const contentPortal: ContentPortalModuleDependencies = {
+    database,
+    auth,
+    requireClientAccess,
+    ...(media === undefined ? {} : { media: { storage: media.storage, downloadUrlExpirySeconds: media.config.downloadUrlExpirySeconds } })
   };
   const profile: ProfileModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
     database,

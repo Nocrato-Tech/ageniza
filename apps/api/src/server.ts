@@ -90,11 +90,6 @@ export const startApi = async (): Promise<void> => {
     requireAgencyAccess: createRequireAgencyAccess({ database }),
     requirePermission
   };
-  const contentPortalDependencies: ContentPortalModuleDependencies = {
-    database,
-    auth,
-    requireClientAccess: createRequireClientAccess({ database })
-  };
   // The collaborator listing signs the user's avatar, so it needs identity storage; like media,
   // the module is only registered when that storage is configured (production always configures it).
   const collaboratorDependencies: CollaboratorModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
@@ -119,6 +114,12 @@ export const startApi = async (): Promise<void> => {
     requirePermission,
     requireAnyPermission,
     jobs: mediaJobDispatcher
+  };
+  const contentPortalDependencies: ContentPortalModuleDependencies = {
+    database,
+    auth,
+    requireClientAccess: createRequireClientAccess({ database }),
+    ...(mediaDependencies === undefined ? {} : { media: { storage: mediaDependencies.storage, downloadUrlExpirySeconds: mediaDependencies.config.downloadUrlExpirySeconds } })
   };
   // Identity storage (issue #100) is separate from media: the profile photo (issue #101) is a
   // global user's, never counted against any agency's quota.

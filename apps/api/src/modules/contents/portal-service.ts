@@ -110,6 +110,46 @@ const loadPortalMedia = async (transaction: ContentTransaction, contentId: strin
   return result.rows.map((row) => ({ id: row.asset_id, position: row.item_position }));
 };
 
+export interface PortalMediaAsset {
+  readonly assetId: string;
+  readonly category: 'image' | 'video';
+  readonly extension: string;
+  readonly videoProcessingStatus: string;
+  readonly thumbnailObjectKey: string | null;
+}
+
+/**
+ * One file of THIS content as the portal reads it, the cover or an item of the media. The function answers only for a content open
+ * to the person, and leaves out a file that is removed or not confirmed, so everything else is `undefined`.
+ */
+export const loadPortalMediaAsset = async (
+  transaction: ContentTransaction,
+  contentId: string,
+  assetId: string
+): Promise<PortalMediaAsset | undefined> => {
+  const result = await raw<RawRows<{
+    asset_id: string;
+    category: PortalMediaAsset['category'];
+    extension: string;
+    video_processing_status: string;
+    thumbnail_object_key: string | null;
+  }>>(transaction, `
+    select media.asset_id, media.category, media.extension, media.video_processing_status, media.thumbnail_object_key
+    from app_private.portal_content_media(?::uuid) media
+    where media.asset_id = ?::uuid
+    limit 1
+  `, [contentId, assetId]);
+  const row = result.rows[0];
+  if (row === undefined) return undefined;
+  return {
+    assetId: row.asset_id,
+    category: row.category,
+    extension: row.extension,
+    videoProcessingStatus: row.video_processing_status,
+    thumbnailObjectKey: row.thumbnail_object_key
+  };
+};
+
 /** A content in production is the title, the day and the format: the projection is the second barrier after the function's own cut. */
 const inProductionFrom = (row: PortalContentRow & { readonly status: 'in_production' }): PortalContentInProduction => ({
   id: row.id,
