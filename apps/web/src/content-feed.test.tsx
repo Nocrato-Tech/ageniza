@@ -55,7 +55,7 @@ const contentFixture = (overrides: Partial<ContentListItem> = {}): ContentListIt
     publishOn: '2026-10-20',
     publishAtTime: null,
     status: 'in_production',
-    ownerUserId: '99999999-9999-4999-8999-999999999999',
+    owner: { membershipId: '99999999-9999-4999-8999-999999999999', name: 'Ana Souza' },
     coverAssetId: null,
     revision: 1,
     publishedOn: null,

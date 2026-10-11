@@ -23,6 +23,7 @@ import {
   clientNotFound,
   contentNotFound,
   forbidden,
+  ownerInvalid,
   periodTooLarge,
   translateDatabaseError,
   unauthenticated,
@@ -37,7 +38,9 @@ import {
   loadContent,
   loadContentDetail,
   replaceContentMedia,
+  resolveOwnerMembership,
   updateContent,
+  type ContentChanges,
   type ContentTransaction
 } from './service.js';
 import { registerContentTransitionRoutes } from './transition-routes.js';
@@ -193,7 +196,12 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
 
     const detail = await write(request, scope, async (transaction) => {
       await requireActiveClient(transaction, scope);
-      const contentId = await insertContent(transaction, { clientId, body });
+      const { ownerMembershipId, ...fields } = body;
+      const ownerUserId = ownerMembershipId === undefined
+        ? undefined
+        : await resolveOwnerMembership(transaction, { agencyId: tenant.agencyId, membershipId: ownerMembershipId });
+      if (ownerMembershipId !== undefined && ownerUserId === undefined) throw ownerInvalid();
+      const contentId = await insertContent(transaction, { clientId, body: fields, ownerUserId });
       const row = await loadContent(transaction, { clientId, contentId });
       if (row === undefined) throw new Error('The content just inserted could not be read back.');
       return loadContentDetail(transaction, row);
@@ -229,17 +237,26 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
       const current = await loadContent(transaction, { clientId, contentId });
       if (current === undefined) throw contentNotFound();
 
-      // Who is in charge decides who approves a subtask, so changing it is the permission to approve for the agency.
-      if (body.ownerUserId !== undefined && body.ownerUserId !== current.owner_user_id && !tenantHolds(tenant, CONTENT_OWNER_CHANGE_PERMISSION)) {
+      // The person is named by a link of the agency, never by an id: the link is read here, and the column gets the user it names.
+      const { ownerMembershipId, ...fields } = body;
+      const ownerUserId = ownerMembershipId === undefined
+        ? undefined
+        : await resolveOwnerMembership(transaction, { agencyId: tenant.agencyId, membershipId: ownerMembershipId });
+
+      // Who is in charge decides who approves a subtask, so changing it is the permission to approve for the agency. Without it the
+      // answer is 403 whatever the link is, so the answer never says whether a link is an active one.
+      if (ownerMembershipId !== undefined && ownerUserId !== current.owner_user_id && !tenantHolds(tenant, CONTENT_OWNER_CHANGE_PERMISSION)) {
         throw forbidden();
       }
       if (status === 'archived') throw clientArchived();
+      if (ownerMembershipId !== undefined && ownerUserId === undefined) throw ownerInvalid();
+      const changes: ContentChanges = ownerUserId === undefined ? fields : { ...fields, ownerUserId };
 
       context.folderMoveKeepsCover = body.folderId !== undefined && body.folderId !== current.folder_id
         && current.cover_asset_id !== null && body.coverAssetId === undefined;
 
       // The format first: the list that follows is checked against the format the content is moving to.
-      if (changesColumns(body) && !await updateContent(transaction, { clientId, contentId, changes: body })) throw contentNotFound();
+      if (changesColumns(changes) && !await updateContent(transaction, { clientId, contentId, changes })) throw contentNotFound();
       if (body.mediaAssetIds !== undefined) await replaceContentMedia(transaction, { contentId, assetIds: body.mediaAssetIds });
 
       const row = await loadContent(transaction, { clientId, contentId });
