@@ -1,7 +1,8 @@
 import type { z } from 'zod';
 
 import { COLLABORATOR_ROLES_READ_PERMISSIONS, COLLABORATOR_UPDATE_PERMISSIONS } from '../collaborators/permissions.js';
-import { MEDIA_UPLOAD_PERMISSIONS } from '../media/policy.js';
+import { CONVERSATION_READ_PERMISSIONS, CONVERSATION_WRITE_PERMISSIONS } from '../clients/policy.js';
+import { MEDIA_READ_PERMISSIONS, MEDIA_UPLOAD_PERMISSIONS } from '../media/policy.js';
 import type { RoutePermission } from '../../plugins/infra/route-metadata.js';
 import {
   AcceptLegalDocumentRequestSchema,
@@ -2086,10 +2087,11 @@ path: '/agencies/:agencyId/roles',
       'juntos, ou nenhum, são 400. `state` filtra por `open` ou `resolved`; sem ele vêm todas. Vinte por',
       'página, a de atividade mais recente primeiro. O estado é derivado: a conversa está resolvida só',
       'enquanto a resolução é posterior ao último comentário. Persona de outro cliente é 404; a conversa',
-      'de persona arquivada continua legível para a agência.'
+      'de persona arquivada continua legível para a agência.',
+      'Com `contentId` o assunto é um conteúdo, que tem uma conversa só, e a permissão é `conteudo.visualizar`. Conteúdo de outro cliente, de outra agência ou inexistente é 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
-    permission: 'cliente.visualizar',
+    permission: CONVERSATION_READ_PERMISSIONS,
     params: AgencyClientPathParamsSchema,
     query: ThreadListQuerySchema,
     requestExample: { sectionKey: 'tone_of_voice', state: 'open' },
@@ -2117,10 +2119,11 @@ path: '/agencies/:agencyId/roles',
       'Cria a conversa e o primeiro comentário na mesma transação, com o lado `agency`. O lado nunca vem',
       'do corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000',
       'bytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`',
-      'e persona de outro cliente 404.'
+      'e persona de outro cliente 404.',
+      'Com `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, e só escreve com o conteúdo em "aguardando aprovação" ou depois (senão 409 `CONTENT_NOT_OPEN`).'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
-    permission: 'cliente.operar',
+    permission: CONVERSATION_WRITE_PERMISSIONS,
     params: AgencyClientPathParamsSchema,
     body: CreateThreadRequestSchema,
     requestExample: { subject: { sectionKey: 'tone_of_voice' }, body: 'Vamos revisar o tom de voz com o time?' },
@@ -2141,7 +2144,9 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
-      { status: 409, code: 'PERSONA_ARCHIVED' }
+      { status: 409, code: 'PERSONA_ARCHIVED' },
+      { status: 409, code: 'CONTENT_NOT_OPEN' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
   {
@@ -2152,10 +2157,11 @@ path: '/agencies/:agencyId/roles',
     summary: 'Lista os comentários de uma conversa',
     description: [
       'Cinquenta por página, do mais antigo ao mais novo. O nome e a foto do autor vêm do vínculo do',
-      'lado do comentário, e a pessoa removida mantém o nome, porque o comentário é histórico.'
+      'lado do comentário, e a pessoa removida mantém o nome, porque o comentário é histórico.',
+      'Numa conversa de conteúdo a permissão é `conteudo.visualizar`.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
-    permission: 'cliente.visualizar',
+    permission: CONVERSATION_READ_PERMISSIONS,
     params: AgencyClientThreadPathParamsSchema,
     query: CommentListQuerySchema,
     requestExample: { page: 1 },
@@ -2182,10 +2188,11 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Grava o comentário com o lado `agency`; comentar numa conversa resolvida a reabre, sem escrever na',
       'conversa, porque o estado é derivado. Não existe rota de editar nem de apagar comentário.',
-      'Cliente arquivado e persona arquivada respondem 409.'
+      'Cliente arquivado e persona arquivada respondem 409.',
+      'Numa conversa de conteúdo, `conteudo.operar` e `conteudo.visualizar`; com o conteúdo em produção ou cancelado, 409 `CONTENT_NOT_OPEN`.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
-    permission: 'cliente.operar',
+    permission: CONVERSATION_WRITE_PERMISSIONS,
     params: AgencyClientThreadPathParamsSchema,
     body: CreateCommentRequestSchema,
     requestExample: { body: 'Combinado, ajustamos esta semana.' },
@@ -2198,7 +2205,9 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
-      { status: 409, code: 'PERSONA_ARCHIVED' }
+      { status: 409, code: 'PERSONA_ARCHIVED' },
+      { status: 409, code: 'CONTENT_NOT_OPEN' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
   {
@@ -2210,10 +2219,11 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Grava `resolved_at` e `resolved_by`. Resolver uma conversa que já está resolvida não escreve nada.',
       'Não existe rota de reabrir: um comentário novo reabre. Só quem tem `cliente.operar` resolve; a',
-      'pessoa do portal nunca.'
+      'pessoa do portal nunca.',
+      'Na conversa de um conteúdo, `conteudo.operar` e `conteudo.visualizar`.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
-    permission: 'cliente.operar',
+    permission: CONVERSATION_WRITE_PERMISSIONS,
     params: AgencyClientThreadPathParamsSchema,
     responses: [{
       status: 200,
@@ -2228,7 +2238,8 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
-      { status: 409, code: 'PERSONA_ARCHIVED' }
+      { status: 409, code: 'PERSONA_ARCHIVED' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
   {
@@ -2361,7 +2372,8 @@ path: '/agencies/:agencyId/roles',
     summary: 'Lista as conversas de um assunto, no portal',
     description: [
       'Mesmos parâmetros, paginação e forma da lista da agência, pelo mesmo serviço. Persona arquivada',
-      'não é assunto válido no portal: responde 404 como se não existisse.'
+      'não é assunto válido no portal: responde 404 como se não existisse.',
+      'Com `contentId`, só enquanto o conteúdo está aberto ao cliente; fora disso, e para conteúdo de outro cliente, 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -2389,7 +2401,8 @@ path: '/agencies/:agencyId/roles',
     summary: 'Abre uma conversa pelo portal, com o primeiro comentário',
     description: [
       'Grava a conversa e o primeiro comentário com o lado `client`, que a rota fixa. Seção que a agência',
-      'ainda não preencheu responde 409 `SECTION_NOT_FILLED`; persona arquivada ou de outro cliente, 404.'
+      'ainda não preencheu responde 409 `SECTION_NOT_FILLED`; persona arquivada ou de outro cliente, 404.',
+      'Com `{ contentId }`, só enquanto o conteúdo está em "aguardando aprovação", "em ajuste", "aprovado" ou "publicado"; fora disso, e para conteúdo de outro cliente, 404. A conversa do conteúdo é uma só: abrir de novo escreve nela.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -2408,7 +2421,8 @@ path: '/agencies/:agencyId/roles',
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
-      { status: 409, code: 'SECTION_NOT_FILLED' }
+      { status: 409, code: 'SECTION_NOT_FILLED' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
   {
@@ -2417,7 +2431,7 @@ path: '/agencies/:agencyId/roles',
     operationId: 'listPortalThreadComments',
     module: 'clients',
     summary: 'Lista os comentários de uma conversa, no portal',
-    description: 'Mesma paginação e forma da lista da agência. Conversa de outro cliente é 404.',
+    description: 'Mesma paginação e forma da lista da agência. Conversa de outro cliente é 404. A conversa de um conteúdo que não está aberto ao cliente também é 404.',
     access: 'Sessão + vínculo com o cliente',
     permission: null,
     params: ClientThreadPathParamsSchema,
@@ -2444,7 +2458,8 @@ path: '/agencies/:agencyId/roles',
     summary: 'Comenta uma conversa pelo portal',
     description: [
       'Grava o comentário com o lado `client`; comentar numa conversa resolvida a reabre. Não existe',
-      'rota de resolver no portal: só a agência resolve.'
+      'rota de resolver no portal: só a agência resolve.',
+      'A conversa de um conteúdo que não está aberto ao cliente é 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -2457,7 +2472,8 @@ path: '/agencies/:agencyId/roles',
       COMMON_ERRORS.internal,
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'UNAUTHENTICATED' },
-      { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' }
+      { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
   {
@@ -2629,9 +2645,9 @@ path: '/agencies/:agencyId/roles',
     operationId: 'getMediaDownloadUrl',
     module: 'media',
     summary: 'Emite uma URL assinada de leitura',
-    description: 'Válida por poucos minutos, só GET, e apenas para um objeto confirmado da agência.',
+    description: 'Válida por poucos minutos, só GET, e apenas para um objeto confirmado e não removido da agência. A mídia sem cliente exige `midia.enviar`; a de um cliente exige `conteudo.visualizar` (a que o papel não lê é o mesmo 404). Em `variant=thumbnail`, a imagem devolve o próprio original e o vídeo devolve a miniatura quando processada, senão 409 `VARIANT_NOT_READY`. Só o pedido do original grava a auditoria `media.download_url_issued`.',
     access: 'Sessão + vínculo com a agência',
-    permission: 'midia.enviar',
+    permission: MEDIA_READ_PERMISSIONS,
     params: AgencyMediaAssetPathParamsSchema,
     query: MediaDownloadUrlQuerySchema,
     requestExample: { variant: 'original' },

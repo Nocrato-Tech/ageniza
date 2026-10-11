@@ -2445,3 +2445,279 @@ a.client-general__block:hover {
 .portal-persona__field {
   display: contents;
 }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Conteúdos (agency): specs/conteudo.md section 7. The stories on top, the calendar on the left and
+   the room of the feed (#263) on the right. */
+.contents {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.contents h1 {
+  margin: 0;
+}
+
+.content-stories {
+  display: flex;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0 0 var(--space-2);
+  overflow-x: auto;
+  list-style: none;
+}
+
+.content-story {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-1);
+  width: 5.5rem;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.content-story:hover,
+.content-story[aria-current='page'] {
+  background: var(--bg-hover);
+}
+
+.content-story__name {
+  max-width: 100%;
+  font: var(--label-sm);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.content-stories__skeleton {
+  width: 4.5rem;
+  height: 5.5rem;
+}
+
+.content-stories__note,
+.content-stories__empty {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.content-stories__error,
+.contents__error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  color: var(--text-danger);
+}
+
+.contents__workspace {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.contents__main {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.contents__client {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.contents__client-name {
+  margin: 0;
+  font: var(--heading-md);
+  overflow-wrap: anywhere;
+}
+
+.contents__client-handle {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.contents__client-skeleton {
+  width: 16rem;
+  height: 3rem;
+}
+
+.contents__toolbar,
+.contents__period,
+.contents__toggle,
+.contents__views {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.contents__toolbar {
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.contents__period-title {
+  min-width: 11rem;
+  margin: 0;
+  font: var(--heading-md);
+  text-align: center;
+}
+
+.contents__skeleton {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.contents__empty {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.contents__feed {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.contents__feed p {
+  margin: 0;
+}
+
+@media (min-width: 64rem) {
+  .contents__workspace {
+    grid-template-columns: minmax(0, 1fr) 16rem;
+    align-items: start;
+  }
+}
+
+.content-calendar {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 42rem;
+  overflow-x: auto;
+}
+
+.content-calendar__weekdays,
+.content-calendar__days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-calendar__weekdays {
+  color: var(--text-secondary);
+  font: var(--label-sm);
+  text-transform: uppercase;
+}
+
+.content-day {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-height: 7rem;
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+
+.content-calendar[data-view='week'] .content-day {
+  min-height: 16rem;
+}
+
+.content-day--outside {
+  background: var(--bg-canvas);
+  color: var(--text-muted);
+}
+
+.content-day--today {
+  border-color: var(--focus-ring);
+}
+
+.content-day__number {
+  margin: 0;
+  font: var(--label-md);
+}
+
+.content-day--today .content-day__number {
+  font-weight: 700;
+}
+
+.content-day__items {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-card {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+}
+
+.content-card[data-status='published'],
+.content-card[data-status='cancelled'] {
+  color: var(--text-secondary);
+}
+
+.content-card__title {
+  margin: 0;
+  font: var(--label-md);
+  overflow-wrap: anywhere;
+}
+
+.content-card__meta {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.content-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-card__badge {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.content-card__badge--overdue {
+  border-color: var(--text-danger);
+  color: var(--text-danger);
+}
+
+.content-card__badge--due-soon {
+  border-color: var(--text-primary);
+  color: var(--text-primary);
+}

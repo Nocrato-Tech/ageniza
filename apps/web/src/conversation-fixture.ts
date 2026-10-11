@@ -6,7 +6,7 @@ import {
   type ConversationSide,
   type Thread,
   type ThreadComment,
-  type ThreadSubject
+  type ConversationSubject
 } from '@ageniza/contracts';
 
 /**
@@ -23,7 +23,7 @@ export const apiError = (status: number, code: string, message = code): Response
 
 interface StoredThread {
   readonly id: string;
-  readonly subject: ThreadSubject;
+  readonly subject: ConversationSubject;
   readonly openedBy: { name: string | null; side: ConversationSide };
   readonly comments: ThreadComment[];
   resolvedAt: string | null;
@@ -54,9 +54,10 @@ const DEFAULT_PEOPLE: FakePeople = {
   client: { name: 'Maria', photoUrl: null }
 };
 
-const sameSubject = (left: ThreadSubject, right: ThreadSubject): boolean =>
+const sameSubject = (left: ConversationSubject, right: ConversationSubject): boolean =>
   ('sectionKey' in left && 'sectionKey' in right && left.sectionKey === right.sectionKey)
-  || ('personaId' in left && 'personaId' in right && left.personaId === right.personaId);
+  || ('personaId' in left && 'personaId' in right && left.personaId === right.personaId)
+  || ('contentId' in left && 'contentId' in right && left.contentId === right.contentId);
 
 export const createConversationApi = (options: ConversationApiOptions) => {
   const people = options.people ?? DEFAULT_PEOPLE;
@@ -87,7 +88,7 @@ export const createConversationApi = (options: ConversationApiOptions) => {
     id: nextId(), body, side, author: people[side], createdAt
   });
 
-  const seed = (subject: ThreadSubject, comments: readonly SeedComment[], resolved?: { at: string; by: string | null }): string => {
+  const seed = (subject: ConversationSubject, comments: readonly SeedComment[], resolved?: { at: string; by: string | null }): string => {
     const first = comments[0]!;
     const thread: StoredThread = {
       id: nextId(),

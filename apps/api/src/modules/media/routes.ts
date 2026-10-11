@@ -29,6 +29,7 @@ import {
   describeMediaContentType,
   maxBytesForCategory,
   MEDIA_RATE_LIMITS,
+  MEDIA_READ_PERMISSIONS,
   MEDIA_UPLOAD_PERMISSIONS,
   multipartPlan,
   usesMultipartUpload,
@@ -172,7 +173,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     schemas: { params: AgencyMediaAssetPathParamsSchema, body: CompleteMediaUploadRequestSchema, response: CompleteMediaUploadResponseSchema }
   } satisfies DocumentedRouteConfig;
   const downloadDocs = {
-    permission: 'midia.enviar',
+    permission: MEDIA_READ_PERMISSIONS,
     responseStatus: 200,
     schemas: { params: AgencyMediaAssetPathParamsSchema, query: MediaDownloadUrlQuerySchema, response: MediaDownloadUrlResponseSchema }
   } satisfies DocumentedRouteConfig;
@@ -434,14 +435,16 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       if (asset === undefined) throw assetNotFound();
       // The thumbnail/preview variants exist only for a video whose worker job has finished
       // (issue #24); until then this is a 409, not a 404, since the asset itself is real.
+      // An image has no generated thumbnail: its original is the thumbnail (issue #550).
       const key = query.variant === 'original' ? asset.objectKey
-        : query.variant === 'thumbnail' ? asset.thumbnailObjectKey
+        : query.variant === 'thumbnail' ? (asset.category === 'image' ? asset.objectKey : asset.thumbnailObjectKey)
         : asset.previewObjectKey;
       if (key === null) {
         if (asset.videoProcessingStatus === 'failed') throw variantProcessingFailed(asset.videoProcessingError);
         throw variantNotReady();
       }
-      await auditMediaEvent(transaction, { action: 'media.download_url_issued', actorUserId: auth.userId, agencyId: params.agencyId, targetId: params.assetId });
+      // Only the explicit download of the original is audited: the thumbnail and the preview are what the screens render, one per card (issue #550).
+      if (query.variant === 'original') await auditMediaEvent(transaction, { action: 'media.download_url_issued', actorUserId: auth.userId, agencyId: params.agencyId, targetId: params.assetId });
       return key;
     });
 
