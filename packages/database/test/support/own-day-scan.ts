@@ -1,15 +1,15 @@
 /**
  * Finds SQL that works out a calendar day, or a time zone, on its own (issues #499 and #509). The day
  * of a contract comes from `app_private.sao_paulo_date`; anything else that turns the clock into a day
- * is the same defect again. The scan reads the SQL by form and does not prove absence: a form nobody
- * wrote a probe for can still pass, which is why every form it knows has a probe in
- * `own-day-scan.test.ts` and in the catalog test.
+ * is the same defect again. The scan reads the SQL by form and does not prove absence: a form it does
+ * not know, or one that needs the value to be followed through a variable, a dynamic statement or an
+ * implicit cast, passes. `own-day-scan.test.ts` probes the main forms, not every one it knows.
  *
  * A definition keeps its own day when, outside comments, string contents and calls of `sao_paulo_date`:
  *  - it names `current_date`, `current_time`, `localtime`, `localtimestamp` or `at time zone`;
  *  - it casts the clock, through any chain of casts and arithmetic, to date, timestamp, time or text;
- *  - it hands the clock to `date`, `date_trunc`, `date_bin`, `to_char`, or `extract`/`date_part` of
- *    any field but epoch and the seconds;
+ *  - it hands the clock to `date`, `date_trunc`, `date_bin` or `to_char`, in any unit;
+ *  - it hands the clock to `extract`/`date_part`, in any field but epoch and the seconds;
  *  - it calls `timezone(...)` on anything that is not made of literals alone.
  * A literal such as 'today' or 'now' is the clock.
  */
