@@ -52,6 +52,7 @@ Uma linha por decisão, agrupada por módulo. Cada decisão é um arquivo `AAAA-
 - 2026-10-07 — [Remuneração fica fora do MVP](2026-10-07-remuneracao-fica-fora-do-mvp.md)
 - 2026-10-08 — [A API recusa editar o próprio cargo e o cargo do Owner](2026-10-08-cargo-proprio-e-do-owner-nao-se-edita.md)
 - 2026-10-08 — [Remover colaborador ou acesso ao portal encerra todas as sessões da pessoa](2026-10-08-remover-colaborador-ou-acesso-ao-portal-encerra-todas-as-sessoes.md)
+- 2026-10-11 — [O /me da agência traz o vínculo da própria pessoa](2026-10-11-me-da-agencia-traz-o-vinculo-da-propria-pessoa.md)
 
 ## Clientes
 
@@ -104,6 +105,9 @@ Uma linha por decisão, agrupada por módulo. Cada decisão é um arquivo `AAAA-
 - 2026-10-10 — [O nome de uma cor com surrogate isolado é recusado no contrato](2026-10-10-nome-de-cor-com-surrogate-isolado-e-recusado-no-contrato.md)
 - 2026-10-10 — [O ciclo de travas do arquivamento ocorre também com duas instruções](2026-10-10-o-ciclo-de-travas-do-arquivamento-ocorre-tambem-com-duas-instrucoes.md)
 - 2026-10-10 — [Os gatilhos pulam pelo atributo do papel, e o job de arquivamento vai cliente a cliente](2026-10-10-os-gatilhos-pulam-pelo-atributo-do-papel-e-o-job-de-arquivamento-vai-cliente-a-cliente.md)
+- 2026-10-11 — [Conteúdo em Clientes: a aba do cliente é a mesma visão, com o modal na própria aba, e o card da carteira mostra os três números](2026-10-11-conteudo-a-aba-do-cliente-e-a-mesma-visao-e-os-numeros-do-card-da-carteira.md)
+- 2026-10-11 — [Indicadores de conteúdo da carteira: o que é pendente, em revisão e atrasado, e a ordem por atraso](2026-10-11-indicadores-de-conteudo-da-carteira-e-ordem-por-atraso.md)
+- 2026-10-11 — [Toda edição das demais filhas do cliente trava o cliente ativo, e só a confirmação da mídia](2026-10-11-toda-edicao-das-filhas-do-cliente-trava-o-cliente-ativo.md)
 
 ## Conteúdo
 
@@ -123,13 +127,27 @@ Uma linha por decisão, agrupada por módulo. Cada decisão é um arquivo `AAAA-
 - 2026-10-08 — [O e-mail de "conteúdos para aprovar" sai 15 minutos depois do último envio para aprovação](2026-10-08-email-de-conteudos-para-aprovar-sai-15-minutos-depois-do-ultimo-envio.md)
 - 2026-10-08 — [A fila de notificação só se lê e só se escreve por função](2026-10-08-fila-de-notificacao-so-se-le-e-se-escreve-por-funcao.md)
 - 2026-10-08 — [O resumo diário de "publicado" sai na virada do dia em Brasília](2026-10-08-resumo-diario-de-publicados-fecha-na-virada-do-dia-em-brasilia.md)
+- 2026-10-11 — [A fila reconfere o item logo antes do envio, por uma função do worker](2026-10-11-a-fila-reconfere-o-item-logo-antes-do-envio.md)
+- 2026-10-11 — [As seis ações do conteúdo no modal agem sobre o que está salvo, e o envio incompleto fica parado com a lista do que falta](2026-10-11-acoes-do-conteudo-no-modal-esperam-o-salvar-e-seguram-o-envio-incompleto.md)
+- 2026-10-11 — [Conteúdo: o calendário da agência começa a semana na segunda e o prazo em dois dias conta o dia de hoje](2026-10-11-conteudo-calendario-da-agencia-semana-na-segunda-e-prazo-em-dois-dias.md)
 - 2026-10-11 — [Conteúdo: editar aceita o responsável e a lista de mídia na mesma chamada](2026-10-11-conteudo-editar-aceita-responsavel-e-lista-de-midia-na-mesma-chamada.md)
+- 2026-10-11 — [Conteúdo: o feed da agência é a grade do período na tela, e tem uma vista própria](2026-10-11-conteudo-feed-da-agencia-grade-do-periodo-e-vista-propria.md)
 - 2026-10-11 — [Conteúdo: a leitura por id traz as mídias, as subtarefas e o resumo da conversa](2026-10-11-conteudo-leitura-por-id-traz-midias-subtarefas-e-resumo-da-conversa.md)
+- 2026-10-11 — [Conteúdo: o item Conteúdos da agência exige ler conteúdo e ler a carteira](2026-10-11-conteudo-o-item-exige-conteudo-e-carteira.md)
+- 2026-10-11 — [Conteúdo no portal: o recorte que a API devolve, aprovar e pedir ajuste](2026-10-11-conteudo-portal-na-api-recorte-aprovar-e-pedir-ajuste.md)
+- 2026-10-11 — [Conteúdo: roteiro de stories na tela, enviar grava antes e não pede confirmação](2026-10-11-conteudo-roteiro-de-stories-na-tela-enviar-grava-antes-e-nao-pede-confirmacao.md)
 - 2026-10-11 — [Conteúdo: o texto livre da rota e os códigos de erro da agência](2026-10-11-conteudo-texto-livre-da-rota-e-codigos-de-erro-da-agencia.md)
+- 2026-10-11 — [A conversa do conteúdo no modal: a lista e o modal do estudo de marca, uma conversa só e a regra do texto vinda do contrato](2026-10-11-conversa-do-conteudo-na-tela-do-modal-e-uma-so-e-nao-copia-a-regra-do-texto.md)
+- 2026-10-11 — [ESTRUTURAL: a conversa do conteúdo nas rotas de conversa do cliente](2026-10-11-conversa-do-conteudo-nas-rotas-de-conversa-do-cliente.md)
+- 2026-10-11 — [O e-mail ao cliente: um por grupo, link do portal sem token, texto mínimo e relógio de um minuto](2026-10-11-email-ao-cliente-link-texto-e-cadencia-do-worker.md)
+- 2026-10-11 — [O modal do conteúdo tem endereço também na criação, escolhe mídia só da pasta e trava a pasta enquanto há mídia ou capa](2026-10-11-modal-do-conteudo-endereco-de-criacao-e-midia-so-da-pasta.md)
 - 2026-10-11 — [O nome de quem gravou o roteiro sai de uma função de leitura de propósito único](2026-10-11-nome-de-quem-gravou-o-roteiro-por-funcao-de-leitura.md)
+- 2026-10-11 — [Nenhuma rota de conteúdo devolve o id de usuário de ninguém: o responsável e a subtarefa são ditos pelo vínculo, e quem aprovou, por nome e lado](2026-10-11-responsavel-do-conteudo-pelo-vinculo-na-api.md)
 - 2026-10-11 — [Roteiro de stories na API: limites, texto livre e edição pela lista inteira](2026-10-11-roteiro-de-stories-na-api-limites-texto-e-edicao-pela-lista-inteira.md)
 - 2026-10-11 — [SPEC de Conteúdo aprovada, com o recorte de implementação](2026-10-11-spec-de-conteudo-aprovada-com-o-recorte.md)
+- 2026-10-11 — [Subtarefas do conteúdo na API: a rota devolve a subtarefa, quem entrega, aprova e devolve é do banco, e os limites do texto](2026-10-11-subtarefas-do-conteudo-na-api-resposta-guarda-e-limites-de-texto.md)
 - 2026-10-11 — [Toda edição de conteúdo trava o cliente ativo, e o ciclo com o arquivamento continua sendo o aceito](2026-10-11-toda-edicao-de-conteudo-trava-o-cliente-ativo.md)
+- 2026-10-11 — [As transições do conteúdo na API: o corpo de cada rota, o dia real da publicação e os códigos de recusa](2026-10-11-transicoes-do-conteudo-na-api-corpo-dia-real-e-codigos.md)
 
 ## Mídia
 
@@ -148,6 +166,7 @@ Uma linha por decisão, agrupada por módulo. Cada decisão é um arquivo `AAAA-
 - 2026-10-07 — [Remover mídia é por função e se recusa em conteúdo já enviado para aprovação](2026-10-07-remover-midia-e-por-funcao-e-se-recusa-em-conteudo-ja-enviado.md)
 - 2026-10-11 — [A remoção de mídia diz se foi ela que removeu, e a auditoria sai dessa resposta](2026-10-11-a-remocao-de-midia-diz-se-foi-ela-que-removeu-e-a-auditoria-sai-dessa-resposta.md)
 - 2026-10-11 — [O nome de pasta de mídia recusa os caracteres invisíveis e aceita o seletor de emoji depois de um pictograma](2026-10-11-nome-de-pasta-recusa-invisiveis-e-aceita-vs16-de-emoji.md)
+- 2026-10-11 — [A URL de leitura da mídia de cliente segue `conteudo.visualizar`](2026-10-11-url-de-leitura-da-midia-de-cliente-por-conteudo-visualizar.md)
 
 ## Autorização e transversais
 
@@ -177,6 +196,8 @@ Uma linha por decisão, agrupada por módulo. Cada decisão é um arquivo `AAAA-
 - 2026-10-10 — [O "Voltar ao início" da página não encontrada leva ao início de cada lado](2026-10-10-voltar-ao-inicio-da-pagina-nao-encontrada-leva-ao-inicio-de-cada-lado.md)
 - 2026-10-11 — [Consulta por período: teto de 500 itens e formato da resposta](2026-10-11-consulta-por-periodo-teto-de-500-itens-e-formato-da-resposta.md)
 - 2026-10-11 — [Escrita na filha do cliente recusada pela política é relida: arquivado é 409, só cliente aberto é 403](2026-10-11-escrita-na-filha-do-cliente-recusada-pela-politica-e-relida-como-arquivamento.md)
+- 2026-10-11 — [O nome da agência recusa, na CLI, os caracteres invisíveis que a regra única recusa](2026-10-11-nome-da-agencia-na-cli-recusa-invisiveis.md)
+- 2026-10-11 — [O texto livre aceita o emoji composto, só como sequência completa e válida](2026-10-11-texto-livre-aceita-emoji-composto-como-sequencia-completa.md)
 
 ## Processo e operação
 
