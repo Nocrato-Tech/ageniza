@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import {
   ClientDetailResponseSchema,
@@ -18,6 +18,7 @@ import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
 import { clientDetailQueryKey } from './client-detail.js';
 import { ContentCalendar } from './content-calendar.js';
+import type { ContentsOutletContext } from './content-modal.js';
 import { ContentFeed, ContentFeedSkeleton } from './content-feed.js';
 import { daysOf, parseAnchor, periodOf, periodTitle, shiftAnchor, todayInSaoPaulo, type CalendarView } from './content-dates.js';
 import { useDocumentTitle } from './document-title.js';
@@ -201,7 +202,20 @@ export function ContentsClientPage() {
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'contents', normalizedId] })
   });
   const canWriteScripts = canOperate && client.data?.id.toLowerCase() === normalizedId && client.data.status !== 'archived';
-  const scriptLayer = useStoryScriptLayer({ clientId: normalizedId, canOperate: canWriteScripts, scripts: contents.data?.data.storyScripts ?? [] });
+  const navigate = useNavigate();
+  const location = useLocation();
+  // The day of the "+" travels in the address, so a reload of the creation modal keeps it.
+  const startContent = (day: string): void => {
+    const next = new URLSearchParams(searchParams);
+    next.set('dia', day);
+    navigate({ pathname: `/agencia/${agency.agencyId}/conteudos/${normalizedId}/novo`, search: `?${next.toString()}` }, { state: location.state });
+  };
+  const scriptLayer = useStoryScriptLayer({
+    clientId: normalizedId,
+    canOperate: canWriteScripts,
+    scripts: contents.data?.data.storyScripts ?? [],
+    onCreateContent: startContent
+  });
 
   const name = client.data?.name;
   useDocumentTitle(name === undefined ? 'Conteúdos — Ageniza' : `Conteúdos de ${name} — Ageniza`);
@@ -269,6 +283,7 @@ export function ContentsClientPage() {
             <Button role="tab" aria-selected={vista === 'feed'} variant={vista === 'feed' ? 'secondary' : 'ghost'} onClick={() => setVista('feed')}>Feed</Button>
             <Button role="tab" aria-selected="false" disabled variant="ghost">Pastas</Button>
           </div>
+          {canWriteScripts && <Button onClick={() => startContent(today)}>Criar conteúdo</Button>}
         </div>
         {archived && <p className="contents__note">Cliente arquivado: o calendário é só leitura.</p>}
         {moveError !== null && <p className="contents__move-error" role="alert">{moveError}</p>}
@@ -303,5 +318,12 @@ export function ContentsClientPage() {
       </aside>}
     </div>}
     {scriptLayer.modal}
+    <Outlet context={{
+      clientId: normalizedId,
+      canEdit: canMove,
+      ready: clientData !== undefined || client.isError,
+      archived,
+      handle: clientData?.instagramHandle ?? null
+    } satisfies ContentsOutletContext} />
   </section>;
 }

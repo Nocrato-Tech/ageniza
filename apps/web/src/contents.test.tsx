@@ -628,7 +628,7 @@ describe('the month calendar', () => {
     await screen.findByText('Lançamento do pão');
 
     const day = dayCell('2026-10-14');
-    expect(within(day).getAllByRole('article').map((card) => within(card).getByText(/./, { selector: '.content-card__title' }).textContent)).toEqual(['Lançamento do pão', 'Bastidores']);
+    expect(within(day).getAllByRole('article').map((card) => within(card).getByText(/./, { selector: '.content-card__link' }).textContent)).toEqual(['Lançamento do pão', 'Bastidores']);
     const launch = within(day).getByText('Lançamento do pão').closest('article')!;
     expect(within(launch).getByText('Carrossel · 18:00')).toBeTruthy();
     expect(within(launch).getByText('Aguardando aprovação')).toBeTruthy();

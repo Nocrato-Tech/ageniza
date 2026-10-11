@@ -252,7 +252,7 @@ const openScript = async (day: string): Promise<void> => {
 };
 
 describe('the + of the day and the mark of a script', () => {
-  it('offers the + to whoever has conteudo.operar, with "Roteiro de stories" as its only option', async () => {
+  it('offers the + to whoever has conteudo.operar, with "Conteúdo" and "Roteiro de stories" as its options', async () => {
     const { impl } = makeFetch({ permissions: [VISUALIZE, OPERATE, READ_CLIENTS] });
     render_(impl);
     await calendarReady();
@@ -261,7 +261,7 @@ describe('the + of the day and the mark of a script', () => {
     expect(screen.getAllByRole('button', { name: /^Adicionar no dia/ })).toHaveLength(document.querySelectorAll('.content-day').length);
     fireEvent.click(plusOf('2026-10-20'));
     const items = within(await screen.findByRole('menu', { name: 'Adicionar ao dia' })).getAllByRole('menuitem');
-    expect(items.map((item) => item.textContent)).toEqual(['Roteiro de stories']);
+    expect(items.map((item) => item.textContent)).toEqual(['Conteúdo', 'Roteiro de stories']);
   });
 
   it('draws no + without conteudo.operar, and the stories mark stays', async () => {
