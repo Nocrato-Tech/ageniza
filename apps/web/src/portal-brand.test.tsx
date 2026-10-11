@@ -116,7 +116,7 @@ const makeWorld = (scenario: Scenario = {}) => {
       });
     }
     if (path === `/agencies/${AGENCY_ID}/me`) {
-      return json({ agencyId: AGENCY_ID, agencyName: 'Agência Um', isOwner: false, role: { key: 'admin', name: 'Admin' }, permissions: ['cliente.visualizar', 'cliente.operar', 'cliente.arquivar'] });
+      return json({ agencyId: AGENCY_ID, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: ['cliente.visualizar', 'cliente.operar', 'cliente.arquivar'] });
     }
     for (const clientId of Object.keys(names)) {
       if (path === `/clients/${clientId}`) return json(portalClientBody(clientId, names[clientId]!));

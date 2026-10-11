@@ -113,7 +113,7 @@ const makeFetch = (scenario: Scenario = {}) => {
 
     if (url.pathname.endsWith('/auth/session')) return json(sessionBody);
     if (/\/agencies\/[^/]+\/me$/.test(url.pathname)) {
-      return json({ agencyId: AGENCY, agencyName: 'Agência Um', isOwner: false, role: { key: 'custom', name: 'Papel' }, permissions });
+      return json({ agencyId: AGENCY, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'custom', name: 'Papel' }, permissions });
     }
     const list = /\/agencies\/[^/]+\/clients$/.exec(url.pathname);
     if (list !== null) {
