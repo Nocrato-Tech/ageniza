@@ -369,8 +369,7 @@ describe('server configuration', () => {
   });
 
   it('gives the worker the origin of the web app for the portal links of the client e-mail, and requires the three e-mail settings in production (issue #260)', () => {
-    const { APP_PUBLIC_URL: _omitted, ...withoutOrigin } = localEnvironment;
-    expect(loadWorkerConfig(withoutOrigin).appPublicUrl).toBeUndefined();
+    expect(loadWorkerConfig({ ...localEnvironment, APP_PUBLIC_URL: undefined }).appPublicUrl).toBeUndefined();
     expect(loadWorkerConfig({ ...localEnvironment, APP_PUBLIC_URL: '' }).appPublicUrl).toBeUndefined();
     expect(() => loadWorkerConfig({ ...localEnvironment, APP_PUBLIC_URL: 'http://127.0.0.1:5173/login' })).toThrow('origin without paths');
     expect(() => loadWorkerConfig({ ...localEnvironment, APP_PUBLIC_URL: 'http://127.0.0.1:5173/?token=x' })).toThrow('origin without paths');

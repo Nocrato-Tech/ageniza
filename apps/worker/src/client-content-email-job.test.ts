@@ -231,7 +231,7 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
     expect([...released.entries()].sort()).toEqual(group.map((claimed) => [claimed.itemId, 'smtp_temporary']).sort());
     expect(calls.filter((call) => call.call === 'markSent')).toEqual([]);
     const text = await captured.text();
-    for (const secret of ['ana@padaria.test', 'Mailbox', 'is full']) expect(text).not.toContain(secret);
+    for (const secret of ['ana@padaria.test', 'Mailbox', 'is full', TOKEN, group[0]!.itemId, group[0]!.contentTitle, 'Padaria Sol', CLIENT_A, PERSON_1]) expect(text).not.toContain(secret);
     expect(await captured.records()).toContainEqual(expect.objectContaining({ errorCode: 'smtp_temporary', items: 2 }));
   });
 

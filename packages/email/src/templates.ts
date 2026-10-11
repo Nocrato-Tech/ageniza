@@ -164,7 +164,7 @@ export interface ClientContentEmailInput {
 }
 
 // A header must be one line, and the names that go into it are free text of the agency.
-const oneLine = (value: string): string => value.replace(/[\u0000-\u001f\u007f\u0085\u2028\u2029]+/g, ' ').trim();
+const oneLine = (value: string): string => value.replace(/[\p{Cc}\u2028\u2029]+/gu, ' ').trim();
 
 const formatPlannedDate = (publishOn: string | null): string | undefined => {
   const match = publishOn === null ? null : /^(\d{4})-(\d{2})-(\d{2})$/.exec(publishOn);
