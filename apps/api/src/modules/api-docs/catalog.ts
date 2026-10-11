@@ -101,6 +101,14 @@ import {
   MediaFolderSchema,
   MediaDownloadUrlResponseSchema,
   PaginationInputSchema,
+  PortalApproveContentRequestSchema,
+  PortalContentAwaitingQuerySchema,
+  PortalContentAwaitingResponseSchema,
+  PortalContentDetailSchema,
+  PortalContentPathParamsSchema,
+  PortalContentPeriodQuerySchema,
+  PortalContentPeriodResponseSchema,
+  PortalRequestContentChangesRequestSchema,
   PortalStoryScriptPeriodResponseSchema,
   PortalStoryScriptSchema,
   PendingInvitationListResponseSchema,
@@ -210,7 +218,7 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
   clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; agendar, desmarcar, arquivar e reativar o contrato; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.',
-  contents: 'Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; e as subtarefas: criar, editar, entregar, aprovar e devolver.',
+  contents: 'Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; as subtarefas: criar, editar, entregar, aprovar e devolver; e, no portal, os conteúdos de um período, o que espera aprovação, o post, aprovar e pedir ajuste.',
   collaborators: 'A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.',
   media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia; as pastas de mídia de um cliente, a listagem do que há nelas e a remoção.',
   profile: 'Edição do próprio nome e da própria foto de perfil.',
@@ -382,6 +390,25 @@ const contentPeriodExample = {
     storyScripts: [{ id: storyScriptId, scriptOn: '2026-10-21', status: 'draft' }]
   },
   meta: { from: '2026-10-01', to: '2026-10-31', count: 2 }
+} as const;
+
+const portalContentOpenExample = {
+  id: contentId,
+  title: 'Lançamento da coleção de outono',
+  platform: 'instagram',
+  format: 'reels',
+  publishOn: '2026-10-20',
+  publishAtTime: '18:30',
+  status: 'awaiting_approval',
+  coverAssetId: null,
+  publishedOn: null
+} as const;
+
+const portalContentDetailExample = {
+  ...portalContentOpenExample,
+  caption: 'Novidades de outono chegando!',
+  revision: 1,
+  media: [{ id: assetId, position: 1 }]
 } as const;
 
 const agencyContextExample = {
@@ -1505,6 +1532,160 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 404, code: 'NOT_FOUND', message: 'Task not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
       { status: 409, code: 'CONTENT_TASK_STATE', message: 'Só uma subtarefa entregue, de um conteúdo que não foi publicado nem cancelado, é devolvida.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/clients/:clientId/contents',
+    operationId: 'listPortalContents',
+    module: 'contents',
+    summary: 'Lista os conteúdos de um período, no portal',
+    description: [
+      'Consulta por período, sem paginação: `from` e `to` inclusivos (`AAAA-MM-DD`), no máximo 93 dias (93 passa, 94 dá 400) e 500',
+      'itens (acima disso, `400 CONTENT_PERIOD_TOO_LARGE`, sem truncar). Do dia mais antigo ao mais novo. Um conteúdo em produção traz',
+      'só o título, o dia e o formato; a partir de "aguardando aprovação" traz também a plataforma, a hora, a capa e o dia real da',
+      'publicação, sem a legenda nem a mídia (essas vêm da leitura do conteúdo). Conteúdo cancelado nunca vem. Nenhuma resposta do',
+      'portal traz subtarefa, responsável, prazo interno ou o id de uma pessoa, nem para o colaborador que também tem vínculo com o cliente.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientPathParamsSchema,
+    query: PortalContentPeriodQuerySchema,
+    requestExample: { from: '2026-10-01', to: '2026-10-31' },
+    responses: [{
+      status: 200,
+      description: 'Conteúdos do período.',
+      schema: PortalContentPeriodResponseSchema,
+      example: {
+        data: [
+          { id: '12121212-1212-4121-8121-121212121212', title: 'Bastidores da produção', format: 'image', publishOn: '2026-10-18', status: 'in_production' },
+          portalContentOpenExample
+        ],
+        meta: { from: '2026-10-01', to: '2026-10-31', count: 2 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'CONTENT_PERIOD_TOO_LARGE' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/clients/:clientId/contents/awaiting-approval',
+    operationId: 'listPortalContentsAwaitingApproval',
+    module: 'contents',
+    summary: 'Lista o que espera a aprovação da pessoa, no portal',
+    description: [
+      'Os conteúdos do cliente em "aguardando aprovação", do dia mais próximo ao mais distante, paginados pelo contrato global de',
+      'listagem (20 por página). A página além do fim responde o total real.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientPathParamsSchema,
+    query: PortalContentAwaitingQuerySchema,
+    requestExample: { page: 1, pageSize: 20 },
+    responses: [{
+      status: 200,
+      description: 'Conteúdos aguardando aprovação.',
+      schema: PortalContentAwaitingResponseSchema,
+      example: { data: [portalContentOpenExample], meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/clients/:clientId/contents/:contentId',
+    operationId: 'getPortalContent',
+    module: 'contents',
+    summary: 'Lê um conteúdo, no portal',
+    description: [
+      'A partir de "aguardando aprovação", o post com a legenda, a mídia (o id e o lugar de cada arquivo, em ordem) e a `revision` que',
+      'a pessoa lê e devolve ao aprovar ou pedir ajuste. Um conteúdo em produção traz só o título, o dia e o formato. Conteúdo',
+      'cancelado, de outro cliente (mesmo de um cliente que a pessoa também lê), de outra agência, inexistente ou com id inválido',
+      'devolve o mesmo 404, e o colaborador que também tem vínculo recebe o mesmo recorte que qualquer pessoa do portal.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: PortalContentPathParamsSchema,
+    responses: [{ status: 200, description: 'O conteúdo.', schema: PortalContentDetailSchema, example: portalContentDetailExample }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Content not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/clients/:clientId/contents/:contentId/approve',
+    operationId: 'approvePortalContent',
+    module: 'contents',
+    summary: 'Aprova um conteúdo, no portal',
+    description: [
+      'Qualquer pessoa ativa do portal do cliente aprova um conteúdo que aguarda aprovação: o conteúdo passa a aprovado. Quem aprovou e',
+      'quando são do banco, tirados da sessão, nunca do corpo (`.strict()`); a agência lê quem aprovou como `{ name, side: "client" }`, sem',
+      'id. `revision` é a revisão que a pessoa leu: se a legenda, a capa, o formato ou a mídia mudou desde então, `409',
+      'CONTENT_REVISION_CHANGED` e nada é aprovado. Aprovar um conteúdo já aprovado não muda nada, e a primeira pessoa continua sendo',
+      'quem aprovou. Fora de "aguardando aprovação" (em produção, em ajuste, publicado): `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo',
+      'cancelado, de outro cliente, inexistente ou de cliente arquivado durante a chamada: o mesmo 404, também para o colaborador que tem vínculo.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: PortalContentPathParamsSchema,
+    body: PortalApproveContentRequestSchema,
+    requestExample: { revision: 1 },
+    responses: [{ status: 200, description: 'Conteúdo aprovado.', schema: PortalContentDetailSchema, example: { ...portalContentDetailExample, status: 'approved' } }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
+      { status: 409, code: 'CONTENT_NOT_AWAITING_APPROVAL', message: 'Só um conteúdo aguardando aprovação é aprovado.' },
+      { status: 409, code: 'CONTENT_REVISION_CHANGED' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/clients/:clientId/contents/:contentId/request-changes',
+    operationId: 'requestPortalContentChanges',
+    module: 'contents',
+    summary: 'Pede ajuste de um conteúdo, no portal',
+    description: [
+      'Qualquer pessoa ativa do portal do cliente pede ajuste de um conteúdo que aguarda aprovação: o conteúdo passa a "em ajuste" e o',
+      '`comment`, obrigatório, entra na conversa do conteúdo como comentário do cliente (a conversa é aberta se ainda não existe, e é a',
+      'mesma que a agência abre). O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de',
+      'formato, nunca vazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. Quem',
+      'pediu é a pessoa da sessão. `revision` é a revisão que a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Fora de "aguardando',
+      'aprovação", inclusive um conteúdo que já está em ajuste: `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo cancelado, de outro',
+      'cliente, inexistente ou de cliente arquivado durante a chamada: o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: PortalContentPathParamsSchema,
+    body: PortalRequestContentChangesRequestSchema,
+    requestExample: { revision: 1, comment: 'Trocar a foto da capa por uma com mais luz.' },
+    responses: [{ status: 200, description: 'Conteúdo em ajuste.', schema: PortalContentDetailSchema, example: { ...portalContentDetailExample, status: 'adjusting' } }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'CONTENT_COMMENT_INVALID' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
+      { status: 409, code: 'CONTENT_NOT_AWAITING_APPROVAL', message: 'Só um conteúdo aguardando aprovação recebe um pedido de ajuste.' },
+      { status: 409, code: 'CONTENT_REVISION_CHANGED' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
   },
