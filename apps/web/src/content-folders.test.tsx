@@ -527,6 +527,29 @@ describe('the media of a folder', () => {
     ]);
   });
 
+  it('keeps a thumbnail URL until shortly before it expires, and asks for a new one after that', async () => {
+    const thumbnailCalls = (world: World): string[] => world.calls.filter((call) => call.includes(`/media/${idOf('a', 1)}/download-url?variant=thumbnail`));
+    const world = makeWorld({ assets: [assetFixture(1, VIDEOS, { createdAt: '2026-10-12T01:30:00.000Z' })] });
+    const { container, probe } = open(world, foldersUrl(`&pasta=${VIDEOS}`));
+    await waitFor(() => expect(container.querySelector('.media-thumbnail img')).not.toBeNull());
+    expect(thumbnailCalls(world)).toHaveLength(1);
+
+    // The URL expires at 01:45 and is kept until 30 s before that: one second before the margin the tile is drawn from the cache.
+    vi.setSystemTime(new Date('2026-10-12T01:44:29Z'));
+    act(() => probe.navigate(foldersUrl(`&pasta=${IMAGES}`)));
+    await waitFor(() => expect(container.querySelector('.media-thumbnail')).toBeNull());
+    act(() => probe.navigate(foldersUrl(`&pasta=${VIDEOS}`)));
+    await waitFor(() => expect(container.querySelector('.media-thumbnail img')).not.toBeNull());
+    expect(thumbnailCalls(world)).toHaveLength(1);
+
+    // One second past the margin the URL is stale, so the same tile asks for a new one.
+    vi.setSystemTime(new Date('2026-10-12T01:44:31Z'));
+    act(() => probe.navigate(foldersUrl(`&pasta=${IMAGES}`)));
+    await waitFor(() => expect(container.querySelector('.media-thumbnail')).toBeNull());
+    act(() => probe.navigate(foldersUrl(`&pasta=${VIDEOS}`)));
+    await waitFor(() => expect(thumbnailCalls(world)).toHaveLength(2));
+  });
+
   it('asks for a thumbnail only once its tile was on screen', async () => {
     const watched: Array<(visible: boolean) => void> = [];
     class FakeObserver {

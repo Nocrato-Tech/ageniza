@@ -14,11 +14,17 @@ export const MEDIA_UPLOAD_PERMISSIONS = ['midia.enviar', 'conteudo.operar'] as c
  * either family in; the RLS of `media_assets` decides which rows the role sees, so the other family's media is a 404. */
 export const MEDIA_READ_PERMISSIONS = ['midia.enviar', 'conteudo.visualizar'] as const;
 
+const FIVE_MINUTES_MS = 5 * 60 * 1_000;
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1_000;
 
+/** The one bucket of the read URL: the agency's route and the portal's count the same person in the same store. */
+export const MEDIA_READ_URL_BUCKET = 'media-read-url';
+
 export const MEDIA_RATE_LIMITS = {
-  // Applies to every route that emits a signed URL: create-upload and request-parts (download-url has none of its own; decision of 2026-10-11).
-  signedUrlIssuance: { max: 60, windowMs: FIFTEEN_MINUTES_MS }
+  // Applies to the routes that emit an upload URL: create-upload and request-parts, counted by IP.
+  signedUrlIssuance: { max: 60, windowMs: FIFTEEN_MINUTES_MS },
+  // Counted per user, across agencies. The window is the life of a signed URL; 600 is ~1.5x the worst realistic window of the screens (2026-10-11 decision, #558).
+  downloadUrlPerUser: { max: 600, windowMs: FIVE_MINUTES_MS }
 } as const satisfies Readonly<Record<string, MediaRateLimitWindow>>;
 
 /**

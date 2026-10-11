@@ -46,7 +46,9 @@ está configurado (como o módulo `media`), e não tem migration.
 - **A chave do original é montada, não lida:** a agência que o guarda provou para o cliente, o id e a extensão (a forma que a tabela impõe).
 - **Variantes.** `original` (o padrão) assina e grava `media.download_url_issued` com a pessoa da sessão. `thumbnail` é o original para a imagem
   e a miniatura gerada para o vídeo (`409 VARIANT_NOT_READY` antes de processada, `409 VARIANT_PROCESSING_FAILED` após falha, sem o motivo do
-  worker), e não grava auditoria. `preview` é `400`. A URL é só GET e dura `downloadUrlExpirySeconds`. Sem limite de taxa próprio (#558).
+  worker), e não grava auditoria. `preview` é `400`. A URL é só GET e dura `downloadUrlExpirySeconds`. O limite é por pessoa, 600 pedidos a cada 5 minutos, e é **o mesmo balde** da rota da agência (um só
+  store, a mesma chave por usuário): quem lê pelos dois lados não ganha 600 em cada. O pedido seguinte é `429 RATE_LIMITED` com `Retry-After`; o limite
+  roda depois do guard de vínculo, então quem é recusado não gasta o balde (#558).
 
 ## A corrida
 

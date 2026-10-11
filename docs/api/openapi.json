@@ -12211,7 +12211,7 @@
       "get": {
         "operationId": "getPortalContentMediaUrl",
         "summary": "Emite a URL assinada de uma mídia do conteúdo, no portal",
-        "description": "Assina só a capa ou um item da mídia de um conteúdo que o portal lê (de \"aguardando aprovação\" em diante). Conteúdo em produção,\ncancelado, de outro cliente (mesmo de um que a pessoa também lê), de outra agência ou inexistente, e arquivo removido, não\nconfirmado ou que não é deste conteúdo, devolvem 404, sem assinar nada. `variant=original` (o padrão) assina o arquivo e grava\na auditoria `media.download_url_issued`; `variant=thumbnail` devolve o próprio original para a imagem e a miniatura para o vídeo\nprocessado, senão 409 `VARIANT_NOT_READY` (ou `VARIANT_PROCESSING_FAILED`), e não grava auditoria. A URL é só GET e de poucos\nminutos. O colaborador que também tem vínculo com o cliente recebe o mesmo recorte que qualquer pessoa do portal.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Assina só a capa ou um item da mídia de um conteúdo que o portal lê (de \"aguardando aprovação\" em diante). Conteúdo em produção,\ncancelado, de outro cliente (mesmo de um que a pessoa também lê), de outra agência ou inexistente, e arquivo removido, não\nconfirmado ou que não é deste conteúdo, devolvem 404, sem assinar nada. `variant=original` (o padrão) assina o arquivo e grava\na auditoria `media.download_url_issued`; `variant=thumbnail` devolve o próprio original para a imagem e a miniatura para o vídeo\nprocessado, senão 409 `VARIANT_NOT_READY` (ou `VARIANT_PROCESSING_FAILED`), e não grava auditoria. A URL é só GET e de poucos\nminutos. O colaborador que também tem vínculo com o cliente recebe o mesmo recorte que qualquer pessoa do portal. Cada pessoa pede até\n600 URLs a cada 5 minutos, no mesmo balde da rota da agência (quem lê pelos dois lados não ganha 600 em cada); o pedido seguinte é 429\n`RATE_LIMITED` com `Retry-After`.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "contents"
         ],
@@ -12341,6 +12341,25 @@
                   "error": {
                     "code": "VARIANT_NOT_READY",
                     "message": "This variant has not been generated yet."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
@@ -19996,7 +20015,7 @@
       "get": {
         "operationId": "getMediaDownloadUrl",
         "summary": "Emite uma URL assinada de leitura",
-        "description": "Válida por poucos minutos, só GET, e apenas para um objeto confirmado e não removido da agência. A mídia sem cliente exige `midia.enviar`; a de um cliente exige `conteudo.visualizar` (a que o papel não lê é o mesmo 404). Em `variant=thumbnail`, a imagem devolve o próprio original e o vídeo devolve a miniatura quando processada, senão 409 `VARIANT_NOT_READY`. Só o pedido do original grava a auditoria `media.download_url_issued`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar` ou `conteudo.visualizar`.",
+        "description": "Válida por poucos minutos, só GET, e apenas para um objeto confirmado e não removido da agência. A mídia sem cliente exige `midia.enviar`; a de um cliente exige `conteudo.visualizar` (a que o papel não lê é o mesmo 404). Em `variant=thumbnail`, a imagem devolve o próprio original e o vídeo devolve a miniatura quando processada, senão 409 `VARIANT_NOT_READY`. Só o pedido do original grava a auditoria `media.download_url_issued`. Cada pessoa pede até 600 URLs a cada 5 minutos (qualquer agência, qualquer variante); o pedido seguinte é 429 `RATE_LIMITED` com `Retry-After`, e o limite de uma pessoa não conta para outra.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar` ou `conteudo.visualizar`.",
         "tags": [
           "media"
         ],
@@ -20140,6 +20159,25 @@
                   "error": {
                     "code": "VARIANT_NOT_READY",
                     "message": "This variant has not been generated yet."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
