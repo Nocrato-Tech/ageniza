@@ -267,6 +267,29 @@ describe('app_private.has_agency_permission agrees with the keys, key by key (is
     expect(await holds(admin, agencyA, 'cliente.nao_existe')).toBe(false);
   });
 
+  it.each(people)('%s: the three functions agree that nobody holds a key outside the catalog (#508)', async (_label, person, agencyId) => {
+    const outside = 'cliente.nao_existe';
+    expect(await keysOf(person, agencyId)).not.toContain(outside);
+    expect(await holds(person, agencyId, outside)).toBe(false);
+    const result = await getOwner().knex.raw('select app_private.agency_user_can(?::uuid, ?::uuid, ?) as held', [agencyId, person, outside]);
+    expect((result.rows as { held: boolean }[])[0]?.held).toBe(false);
+  });
+
+  it('agency_user_can keeps its signature, security definer, stability and search_path, and stays out of reach of the application role and PUBLIC (#508)', async () => {
+    const [row] = (await getOwner().knex.raw(`
+      select prosecdef, provolatile, proconfig, prorettype::regtype::text as returns, pg_get_function_arguments(oid) as arguments,
+             has_function_privilege('ageniza_app', oid, 'execute') as app_can,
+             has_function_privilege('public', oid, 'execute') as public_can
+      from pg_proc
+      where pronamespace = 'app_private'::regnamespace and proname = 'agency_user_can'
+    `)).rows as { prosecdef: boolean; provolatile: string; proconfig: string[]; returns: string; arguments: string; app_can: boolean; public_can: boolean }[];
+    expect(row).toMatchObject({
+      prosecdef: true, provolatile: 's', returns: 'boolean', app_can: false, public_can: false,
+      arguments: 'p_agency_id uuid, p_user_id uuid, p_permission text'
+    });
+    expect(row?.proconfig).toContain('search_path=""');
+  });
+
   it('answers false with nobody bound, and for an agency that does not exist', async () => {
     const unbound = await getApplication().knex.raw('select app_private.has_agency_permission(?::uuid, ?) as held', [agencyA, 'midia.enviar']);
     expect(unbound.rows[0].held).toBe(false);
