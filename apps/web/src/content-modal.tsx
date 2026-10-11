@@ -280,7 +280,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
         <Button variant="ghost" disabled={busy} onClick={onDone}>Fechar</Button>
       </div>
     </form>
-    {saved !== null && context.ready && !context.archived && <ContentActions
+    {saved !== null && !context.archived && <ContentActions
       clientId={clientId}
       content={saved}
       dirty={dirty}

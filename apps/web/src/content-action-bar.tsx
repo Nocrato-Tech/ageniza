@@ -66,7 +66,7 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone 
   const canSubmit = available.includes('submit');
 
   const assets = useFolderAssets(clientId, canSubmit ? content.folderId : '');
-  const missing = canSubmit ? missingForSubmit(content, assets.data) : [];
+  const missing = missingForSubmit(content, assets.data);
 
   const [panel, setPanel] = useState<Panel | null>(null);
   const [reason, setReason] = useState('');

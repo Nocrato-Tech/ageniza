@@ -41,7 +41,7 @@ export const missingForSubmit = (
   assets: readonly FolderAsset[] | undefined
 ): string[] => {
   const missing: string[] = [];
-  const ids = [...content.media].sort((a, b) => a.position - b.position).map((item) => item.id);
+  const ids = content.media.map((item) => item.id);
   const format: ContentFormat = content.format;
   if (format === 'carousel') {
     if (ids.length === 0) missing.push('Faltam as mídias do carrossel: ele leva de 2 a 20.');

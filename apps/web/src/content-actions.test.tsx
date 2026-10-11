@@ -114,6 +114,25 @@ describe('which button shows: the state AND the permission', () => {
     expect(shown()).toEqual([]);
   });
 
+  it('shows no move until the client was read, and shows them when it was', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const { impl, calls } = makeFetch({
+      permissions: [VISUALIZE, READ_CLIENTS, CANCEL],
+      contents: [stored({ status: 'approved' })],
+      override: (call) => (call.method === 'GET' && call.path === `/agencies/${AGENCY}/clients/${padaria.id}` ? held.then(() => undefined) as never : undefined)
+    });
+    const row = (await (await impl(`http://127.0.0.1:3001/agencies/${AGENCY}/clients/${padaria.id}/contents?from=2026-10-01&to=2026-10-31`)).json() as { data: { contents: Array<{ id: string }> } }).data.contents[0]!;
+    render_(impl, `${base()}/${row.id}`);
+    await screen.findByRole('dialog');
+    await waitFor(() => expect(calls.some((call) => call.path === `/agencies/${AGENCY}/clients/${padaria.id}`)).toBe(true));
+    await new Promise((resolve) => { setTimeout(resolve, 60); });
+    expect(screen.queryByLabelText('Título')).toBeNull();
+    expect(shown()).toEqual([]);
+    release();
+    await waitFor(() => expect(shown()).toEqual(['Cancelar conteúdo']));
+  });
+
   it('keeps the moves out of a content that is being created', async () => {
     const { impl } = makeFetch({ permissions: [VISUALIZE, READ_CLIENTS, OPERATE, APPROVE, PUBLISH, CANCEL] });
     render_(impl, `${base()}/novo`);
@@ -311,6 +330,19 @@ describe('Aprovar pela agência', () => {
     expect((within(dialog()).getByLabelText('Motivo da aprovação') as HTMLTextAreaElement).value).toBe('Motivo digitado');
     expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
     expect(screen.queryByRole('dialog')).not.toBeNull();
+  });
+
+  it('says in its own words that the API did not accept the reason', async () => {
+    const { calls } = await openContent(waiting(), {
+      permissions: APPROVER,
+      override: (call) => (call.path.endsWith('/approve-by-agency') ? failure(400, 'CONTENT_REASON_INVALID') : undefined)
+    });
+    await settled(calls);
+    clickMove('Aprovar pela agência');
+    fireEvent.change(within(dialog()).getByLabelText('Motivo da aprovação'), { target: { value: 'Por telefone' } });
+    clickMove('Confirmar aprovação');
+    expect(await within(dialog()).findByText('O motivo da aprovação não foi aceito. Revise o texto.')).toBeTruthy();
+    expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
   });
 
   it('closes the panel when the button is pressed again', async () => {
