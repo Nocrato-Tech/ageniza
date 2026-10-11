@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  API_RUNTIME_DEPENDENCIES,
   BOOT_MODULES,
   FORBIDDEN_IN_API_PRODUCTION,
   INTERNAL_RUNTIME_EXTRAS,
@@ -16,6 +17,7 @@ import {
   forbiddenPackagesIn,
   main,
   packageNameFromStoreEntry,
+  unexpectedApiDependencies,
   unexpectedInDeploy,
   unexpectedInInternalPackage,
   verifyApiProductionClosure
@@ -55,7 +57,7 @@ const CLEAN_INTERNAL = {
  * A deploy as `pnpm deploy --prod` lays it out: `store` is the entries of node_modules/.pnpm, `null` meaning no store at all,
  * and `internal` the files of each @ageniza/* package the API declares, which sit in their own store entry.
  */
-const populate = (root, { store = ['better-auth@1.7.5', 'pg@8.16.3'], files = CLEAN_FILES, internal = CLEAN_INTERNAL } = {}) => {
+const populate = (root, { store = ['better-auth@1.7.5', 'pg@8.16.3'], files = CLEAN_FILES, internal = CLEAN_INTERNAL, manifest = {} } = {}) => {
   if (store !== null) {
     mkdirSync(join(root, 'node_modules', '.pnpm'), { recursive: true });
     for (const entry of store) mkdirSync(join(root, 'node_modules', '.pnpm', entry));
@@ -66,7 +68,9 @@ const populate = (root, { store = ['better-auth@1.7.5', 'pg@8.16.3'], files = CL
   }
   for (const file of files) write(root, file);
   const dependencies = Object.fromEntries(Object.keys(internal).map((name) => [`@ageniza/${name}`, `file:packages/${name}`]));
-  if (files.includes('package.json')) write(root, 'package.json', JSON.stringify({ name: '@ageniza/api', type: 'module', dependencies }));
+  if (files.includes('package.json')) {
+    write(root, 'package.json', JSON.stringify({ name: '@ageniza/api', type: 'module', ...manifest, dependencies: { ...dependencies, ...manifest.dependencies } }));
+  }
   return root;
 };
 
@@ -240,6 +244,34 @@ describe('the devDependencies of the workspace', () => {
   });
 });
 
+const SCALAR = '@scalar/fastify-api-reference';
+
+describe('the direct dependencies of the API (issue #517)', () => {
+  it('are allowed by value, from a literal list rather than the one the script exports', () => {
+    expect([...API_RUNTIME_DEPENDENCIES].sort()).toEqual([
+      '@ageniza/config', '@ageniza/contracts', '@ageniza/core', '@ageniza/database', '@ageniza/email',
+      '@aws-sdk/client-s3', '@aws-sdk/s3-request-presigner',
+      '@fastify/cors', '@fastify/helmet', '@fastify/rate-limit',
+      'better-auth', 'fastify', 'helmet', 'kysely', 'pg', 'pg-boss', 'zod'
+    ]);
+  });
+
+  it('are the ones apps/api/package.json declares today, so a new runtime dependency has to be added on purpose', () => {
+    const manifest = JSON.parse(readFileSync(join(repositoryRoot, 'apps', 'api', 'package.json'), 'utf8'));
+    expect(Object.keys(manifest.dependencies).sort()).toEqual([...API_RUNTIME_DEPENDENCIES].sort());
+    expect(unexpectedApiDependencies(manifest)).toEqual([]);
+  });
+
+  it('flags a dependency that is not on the list, sorted, and reads optionalDependencies too', () => {
+    expect(unexpectedApiDependencies({ dependencies: { zod: '3', tsx: '4', [SCALAR]: '1' }, optionalDependencies: { fsevents: '2' } }))
+      .toEqual([SCALAR, 'fsevents', 'tsx']);
+  });
+
+  it('accepts a manifest without dependencies', () => {
+    expect(unexpectedApiDependencies({})).toEqual([]);
+  });
+});
+
 describe('checking a deployed API', () => {
   it('accepts a closure that is clean, carries only the runtime and boots', () => {
     expect(checkDeployedApi(deployed(), { boot: bootsFine })).toEqual([]);
@@ -267,6 +299,29 @@ describe('checking a deployed API', () => {
     const failures = checkDeployedApi(deployed({ store: ['better-auth@1.7.5', 'vitest@3.2.7(jsdom@26.1.0)', '@vitest+expect@3.2.7', 'jsdom@26.1.0'] }), { boot: bootsFine });
     expect(failures).toHaveLength(1);
     expect(failures[0]).toContain('@vitest/expect, jsdom, vitest reached the deployed API');
+  });
+
+  it('names a direct dependency of the API that is not on the allowed list', () => {
+    const failures = checkDeployedApi(deployed({ manifest: { dependencies: { zod: '3', [SCALAR]: '^1.72.2', tsx: '4' } } }), { boot: bootsFine });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain(`${SCALAR}, tsx are direct dependencies of the API that are not on the allowed list`);
+  });
+
+  it('names a single dependency in the singular', () => {
+    const failures = checkDeployedApi(deployed({ manifest: { dependencies: { [SCALAR]: '^1.72.2' } } }), { boot: bootsFine });
+    expect(failures[0]).toContain(`${SCALAR} is a direct dependency of the API that is not on the allowed list`);
+  });
+
+  it('names an optional dependency too', () => {
+    const failures = checkDeployedApi(deployed({ manifest: { optionalDependencies: { fsevents: '2' } } }), { boot: bootsFine });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain('fsevents is a direct dependency');
+  });
+
+  it('checks the deployed manifest against the allowed list it is given', () => {
+    const root = deployed({ manifest: { dependencies: { zod: '3' } } });
+    expect(checkDeployedApi(root, { boot: bootsFine, allowedDependencies: [] })).toHaveLength(1);
+    expect(checkDeployedApi(root, { boot: bootsFine })).toEqual([]);
   });
 
   it('fails when the deploy carries source or compiled tests', () => {
@@ -427,6 +482,18 @@ describe('verifying the API production closure end to end', () => {
     });
     expect(failures).toHaveLength(1);
     expect(failures[0]).toContain('tsx reached the deployed API');
+  });
+
+  it('fails when a devDependency of the API alone was moved to its dependencies, which the list derived from the workspace cannot see', () => {
+    const workspaceRoot = workspace({ projects: { 'apps/api': { dependencies: { zod: '3', [SCALAR]: '^1.72.2' } } } });
+    expect(forbiddenForWorkspace(workspaceRoot)).not.toContain(SCALAR);
+    const failures = verifyApiProductionClosure({
+      deploy: deployInto({ store: ['better-auth@1.7.5', `@scalar+fastify-api-reference@1.72.2`], manifest: { dependencies: { zod: '3', [SCALAR]: '^1.72.2' } } }),
+      boot: bootsFine,
+      workspaceRoot
+    });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain(`${SCALAR} is a direct dependency of the API that is not on the allowed list`);
   });
 
   it('takes the list from the workspace it is given, so a package that is no devDependency there is not forbidden', () => {
