@@ -76,7 +76,8 @@ interface PortalHomeRow {
 /**
  * The Início summary. "Com resposta da agência" is the single thread-state definition, restricted to
  * the threads the portal can read: one about an archived persona is read-only history the portal
- * does not show, so it is not a reply waiting for the person either.
+ * does not show, so it is not a reply waiting for the person either. The conversation of a content is not a brand
+ * study suggestion, and the card leads to the study (#259).
  */
 export const loadPortalHome = async (transaction: ClientTransaction, clientId: string): Promise<PortalHome> => {
   const result = await raw<RawRows<PortalHomeRow>>(transaction, `
@@ -85,6 +86,7 @@ export const loadPortalHome = async (transaction: ClientTransaction, clientId: s
       (
         select count(*) from public.client_threads thread
         where thread.client_id = ?::uuid
+          and thread.content_id is null
           and ${openThreadSql('thread')}
           and ${latestCommentSideSql('thread')} = 'agency'
           and (

@@ -79,11 +79,14 @@ function AgencyShellSkeleton() {
 function AgencyNav({ agenciaId }: { agenciaId: string }) {
   const canSeeCollaborators = useCan('colaborador.visualizar');
   const canSeeClients = useCan('cliente.visualizar');
+  // The picker is the roster: contents without the roster is not a screen (decisions/2026-10-11-conteudo-o-item-exige-conteudo-e-carteira).
+  const canSeeContents = useCan('conteudo.visualizar') && canSeeClients;
   return <nav className="agency-nav" aria-label="Navegação da agência">
     <ul>
       <li><NavLink to={`/agencia/${agenciaId}`} end>Início</NavLink></li>
       {canSeeCollaborators && <li><NavLink to={`/agencia/${agenciaId}/colaboradores`}>Colaboradores</NavLink></li>}
       {canSeeClients && <li><NavLink to={`/agencia/${agenciaId}/clientes`}>Clientes</NavLink></li>}
+      {canSeeContents && <li><NavLink to={`/agencia/${agenciaId}/conteudos`}>Conteúdos</NavLink></li>}
     </ul>
   </nav>;
 }
@@ -143,8 +146,9 @@ export function AgencyAreaLayout() {
  * A module the person cannot see is not a screen: the item is absent from the menu and the typed
  * URL lands on the same "não encontrado" as any unknown address.
  */
-export function AgencyPermissionRoute({ permission, children }: { permission: string; children: ReactNode }) {
-  const allowed = useCan(permission);
+export function AgencyPermissionRoute({ permission, children }: { permission: string | readonly string[]; children: ReactNode }) {
+  const { permissions } = useAgencyContext();
+  const allowed = (typeof permission === 'string' ? [permission] : permission).every((required) => permissions.includes(required));
   if (!allowed) return <NotFoundPage as="section" />;
   return <>{children}</>;
 }
