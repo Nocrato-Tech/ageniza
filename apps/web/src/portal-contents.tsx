@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import {
   PortalContentAwaitingResponseSchema,
@@ -19,6 +19,9 @@ import { usePortalClient } from './portal.js';
 
 const LIST_PATH = '/clients/:clientId/contents';
 const AWAITING_PATH = '/clients/:clientId/contents/awaiting-approval';
+
+/** The post in full screen (issue #600): the title of a card is the link, and the card is the area of the tap. */
+const postAddress = (clientId: string, contentId: string): string => `/portal/${encodeURIComponent(clientId)}/conteudos/${encodeURIComponent(contentId)}`;
 
 /** Two rows of the grid of three: what waits for the person is a few posts to look at, not a list to scroll. */
 const AWAITING_PAGE_SIZE = 6;
@@ -85,7 +88,7 @@ function Awaiting({ clientId }: { clientId: string }) {
     <ul className="portal-awaiting__list">
       {data.map((content) => <li key={content.id} className="portal-awaiting__item">
         <PortalContentCover clientId={clientId} contentId={content.id} assetId={content.coverAssetId} format={content.format} className="portal-awaiting__cover" />
-        <p className="portal-awaiting__title">{content.title}</p>
+        <p className="portal-awaiting__title"><Link className="portal-card-link" to={postAddress(clientId, content.id)}>{content.title}</Link></p>
         <p className="portal-awaiting__day">{dayMonthLabel(content.publishOn)}</p>
       </li>)}
     </ul>
@@ -97,7 +100,7 @@ function ContentCard({ clientId, content }: { clientId: string; content: PortalC
   return <article className="portal-card" data-status={content.status}>
     <PortalContentCover clientId={clientId} contentId={content.id} assetId={coverOf(content)} format={content.format} className="portal-card__cover" />
     <div className="portal-card__text">
-      <p className="portal-card__title">{content.title}</p>
+      <p className="portal-card__title"><Link className="portal-card-link" to={postAddress(clientId, content.id)}>{content.title}</Link></p>
       <p className="portal-card__meta">{FORMAT_LABELS[content.format]} · {PORTAL_STATUS_LABELS[content.status]}</p>
     </div>
   </article>;

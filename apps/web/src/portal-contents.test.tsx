@@ -372,6 +372,68 @@ describe('the portal Conteúdos (#269)', () => {
     });
   });
 
+  describe('the link to the post', () => {
+    const postUrl = (contentId: string): string => `/portal/${CLIENT_ID}/conteudos/${contentId}`;
+
+    it('makes each card of the month a link to its own post, named by its title, and the one link of the card', async () => {
+      const world = makeWorld();
+      const first = world.api.seed({ title: 'Primeiro post', publishOn: '2026-10-12', status: 'approved' });
+      const second = world.api.seed({ title: 'Segundo post', publishOn: '2026-10-15', status: 'adjusting' });
+      const { probe } = renderPortal(world);
+      await ready();
+      await screen.findByText('Segundo post');
+
+      const firstLink = within(cardOf('Primeiro post')).getByRole('link', { name: 'Primeiro post' });
+      const secondLink = within(cardOf('Segundo post')).getByRole('link', { name: 'Segundo post' });
+      expect(firstLink.getAttribute('href')).toBe(postUrl(first.id));
+      expect(secondLink.getAttribute('href')).toBe(postUrl(second.id));
+      expect(within(cardOf('Primeiro post')).getAllByRole('link')).toHaveLength(1);
+      expect(within(cardOf('Segundo post')).getAllByRole('link')).toHaveLength(1);
+
+      fireEvent.click(secondLink);
+      await waitFor(() => expect(probe.pathname).toBe(postUrl(second.id)));
+    });
+
+    it('links a content in production as well: its post is its title, its day and its format', async () => {
+      const world = makeWorld();
+      const content = world.api.seed({ title: 'Ainda em produção', format: 'image', publishOn: '2026-10-22', status: 'in_production' });
+      const { probe } = renderPortal(world);
+      await ready();
+      await screen.findByText('Ainda em produção');
+      const link = within(cardOf('Ainda em produção')).getByRole('link', { name: 'Ainda em produção' });
+      expect(link.getAttribute('href')).toBe(postUrl(content.id));
+      fireEvent.click(link);
+      await waitFor(() => expect(probe.pathname).toBe(postUrl(content.id)));
+    });
+
+    it('makes each cover of what waits for the person a link to its own post', async () => {
+      const world = makeWorld();
+      const first = world.api.seed({ title: 'Esperando um', publishOn: '2026-10-14', status: 'awaiting_approval' });
+      const second = world.api.seed({ title: 'Esperando dois', publishOn: '2026-10-16', status: 'awaiting_approval' });
+      const { probe } = renderPortal(world);
+      await ready();
+      const block = await waitFor(() => awaitingBlock());
+      const links = within(block).getAllByRole('link');
+      expect(links.map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
+        ['Esperando um', postUrl(first.id)],
+        ['Esperando dois', postUrl(second.id)]
+      ]);
+      expect(within(block).getByRole('link', { name: 'Esperando dois' })).toBe(links[1]);
+
+      fireEvent.click(links[1] as HTMLElement);
+      await waitFor(() => expect(probe.pathname).toBe(postUrl(second.id)));
+    });
+
+    it('takes the id of the content into the address as one segment, whatever the server wrote in the title', async () => {
+      const world = makeWorld();
+      const content = world.api.seed({ title: '../../conta/../sair', publishOn: '2026-10-12' });
+      renderPortal(world);
+      await ready();
+      const link = await screen.findAllByRole('link', { name: '../../conta/../sair' });
+      expect(link[0]!.getAttribute('href')).toBe(postUrl(content.id));
+    });
+  });
+
   describe('the covers', () => {
     it('asks the portal route for the thumbnail of the cover of each content that has one, and draws it', async () => {
       const world = makeWorld();
@@ -785,6 +847,15 @@ describe('the portal Conteúdos (#269)', () => {
         expect(rule(selector)).not.toMatch(/(^|[^-])(width|min-width):\s*[\d.]+(px|rem)/);
       }
       expect(rule('.portal-awaiting__skeleton')).toMatch(/width:\s*100%;/);
+    });
+
+    it('stretches the link of the title over the whole card, so the tap does not have to find the words', () => {
+      expect(rule('.portal-card-link::after')).toMatch(/content:\s*'';/);
+      expect(rule('.portal-card-link::after')).toMatch(/position:\s*absolute;/);
+      expect(rule('.portal-card-link::after')).toMatch(/inset:\s*0;/);
+      expect(rule('.portal-card')).toMatch(/position:\s*relative;/);
+      expect(rule('.portal-awaiting__item')).toMatch(/position:\s*relative;/);
+      expect(rule('.portal-awaiting__item:has(.portal-card-link:focus-visible),\n.portal-card:has(.portal-card-link:focus-visible)')).toMatch(/outline:\s*2px solid var\(--focus-ring\);/);
     });
 
     it('gives the controls a touch target of 44 px, and the cover a shape that does not depend on the picture', () => {

@@ -2503,6 +2503,7 @@ a.client-general__block:hover {
 }
 
 .portal-awaiting__item {
+  position: relative;
   display: grid;
   align-content: start;
   gap: var(--space-1);
@@ -2522,6 +2523,28 @@ a.client-general__block:hover {
 
 .portal-awaiting__title {
   font: var(--caption);
+}
+
+/* The title is the link and its box stretches over the whole card, so the tap does not need to find the words. */
+.portal-card-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.portal-card-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.portal-awaiting__item:has(.portal-card-link:focus-visible),
+.portal-card:has(.portal-card-link:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.portal-card-link:focus-visible {
+  outline: none;
 }
 
 .portal-awaiting__day,
@@ -2644,6 +2667,7 @@ a.client-general__block:hover {
 }
 
 .portal-card {
+  position: relative;
   display: grid;
   grid-template-columns: 4rem minmax(0, 1fr);
   gap: var(--space-3);

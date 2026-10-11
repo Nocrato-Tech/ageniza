@@ -10,12 +10,12 @@
 3. **O feed do portal** é a grade de três colunas do mês, com o mesmo critério do feed da agência (imagem, carrossel e reels, do mais recente ao mais antigo, "Planejado" só depois de hoje) e com o recorte do portal: o conteúdo em produção não tem capa, e a casa mostra a forma do formato. Vazio, diz "Nenhum post do feed planejado para este mês", sem as nove casas pontilhadas da agência. A vista fica no endereço (`vista=feed`).
 4. **"O que precisa de você"** mostra os seis conteúdos aguardando aprovação de data mais próxima, cada um com a capa, o título e o dia, e a contagem **da API** entre parênteses ("(8)"); com mais de seis, diz "Mostrando 6 de 8". Não depende do mês que a pessoa está vendo, e não existe quando nada espera.
 5. **O endereço antigo continua valendo.** `/portal/:clienteId/calendario` redireciona para `/portal/:clienteId/conteudos`, trocando a entrada do histórico (voltar não cai no endereço velho) e levando a query. O e-mail do #571 não muda.
-6. **O card não é link nesta tela.** O post em tela cheia (legenda, mídias, Aprovar, Pedir ajuste, conversa) é a #270; o link do card e do bloco do topo nasce com ela.
+6. **O card é um link para o post em tela cheia** (`/portal/:clienteId/conteudos/:conteudoId`: legenda, mídias, Aprovar, Pedir ajuste, conversa, que são das #270 e #600). O título é o link e a caixa dele cobre o card inteiro; vale para o card da lista, inclusive o de um conteúdo em produção (cujo post é só título, data e formato), e para a casa do bloco "O que precisa de você". As casas do feed, que são a prévia do perfil, não são links.
 
 **Consequência.**
 - O rótulo do filtro é "Filtro", como no esboço: a tela do cliente não usa a palavra "status" (o teste do portal que proíbe termos internos continua valendo).
 - Quem decidir mostrar "Publicado" como "Aprovado" para o cliente, ou tirar a opção, muda uma linha do mapa de rótulos e uma do filtro.
-- A #270 só acrescenta o link e a rota do post; a lista e o bloco do topo já leem a API que ela vai usar.
+- A rota do post é de outro PR (#600): sem ela, o link cai no "não encontrado" do portal, e os dois PRs entram na mesma janela.
 
 **Origem.** Issue #269, decidido pelo implementador a partir do esboço da SPEC.
 
