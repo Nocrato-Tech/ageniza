@@ -147,3 +147,73 @@ export const emailChangedEmail = (): EmailMessage =>
     'O e-mail desta conta no Ageniza foi alterado e todas as sessões foram encerradas.',
     'Se não foi você, fale com a operação do Ageniza.'
   ]);
+
+export interface ContentNotificationItem {
+  /** Free text of the agency: escaped in the HTML, and never trusted anywhere. */
+  readonly title: string;
+  /** The planned date, `YYYY-MM-DD`, or null. */
+  readonly publishOn: string | null;
+}
+
+export interface ClientContentEmailInput {
+  readonly agencyName: string;
+  readonly clientName: string;
+  /** The portal of the client: a link without any token, since the person signs in to open it. */
+  readonly portalUrl: string;
+  readonly items: readonly ContentNotificationItem[];
+}
+
+// A header must be one line, and the names that go into it are free text of the agency.
+const oneLine = (value: string): string => value.replace(/[\u0000-\u001f\u007f\u0085\u2028\u2029]+/g, ' ').trim();
+
+const formatPlannedDate = (publishOn: string | null): string | undefined => {
+  const match = publishOn === null ? null : /^(\d{4})-(\d{2})-(\d{2})$/.exec(publishOn);
+  return match === null ? undefined : `${match[3]}/${match[2]}/${match[1]}`;
+};
+
+const countOf = (count: number): string => count === 1 ? 'um conteúdo' : `${count} conteúdos`;
+
+const clientContentEmail = (subject: string, introduction: string, invitation: string, input: ClientContentEmailInput): EmailMessage => {
+  assertDisplayName('O nome da agência', input.agencyName);
+  assertDisplayName('O nome do cliente', input.clientName);
+  assertHttpsUrl(input.portalUrl);
+  if (input.items.length === 0) throw new Error('O e-mail precisa de ao menos um conteúdo.');
+  const lines = input.items.map((item) => {
+    const date = formatPlannedDate(item.publishOn);
+    return date === undefined ? oneLine(item.title) : `${oneLine(item.title)} (${date})`;
+  });
+  return {
+    subject,
+    text: [introduction, lines.map((line) => `- ${line}`).join('\n'), `${invitation}\n${input.portalUrl}`].join('\n\n'),
+    html: [
+      `<p>${escapeHtml(introduction)}</p>`,
+      `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`,
+      `<p>${escapeHtml(invitation)}</p>`,
+      `<p><a href="${escapeHtml(input.portalUrl)}">${escapeHtml(input.portalUrl)}</a></p>`
+    ].join('\n')
+  };
+};
+
+/** "Contents to approve": one e-mail per person and client, with everything the agency sent in the burst. */
+export const contentsAwaitingApprovalEmail = (input: ClientContentEmailInput): EmailMessage => {
+  const agencyName = oneLine(input.agencyName);
+  const clientName = oneLine(input.clientName);
+  return clientContentEmail(
+    `${countOf(input.items.length)} para você aprovar: ${clientName}`,
+    `${agencyName} enviou ${countOf(input.items.length)} de ${clientName} para a sua aprovação.`,
+    'Abra o portal para aprovar ou pedir ajuste:',
+    input
+  );
+};
+
+/** The daily summary of what the agency published. */
+export const contentsPublishedEmail = (input: ClientContentEmailInput): EmailMessage => {
+  const agencyName = oneLine(input.agencyName);
+  const clientName = oneLine(input.clientName);
+  return clientContentEmail(
+    `${countOf(input.items.length)} publicado${input.items.length === 1 ? '' : 's'}: ${clientName}`,
+    `${agencyName} publicou ${countOf(input.items.length)} de ${clientName}.`,
+    'Veja no portal:',
+    input
+  );
+};

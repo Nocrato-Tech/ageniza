@@ -105,6 +105,8 @@ services:
       DATABASE_URL: postgresql://ageniza_app:ageniza_app@postgres:5432/ageniza
       SMTP_URL: smtp://mailpit:1025
       EMAIL_FROM: Ageniza <no-reply@ageniza.local>
+      # The links of the e-mail to the client (issue #260) point to the web app, the same origin the API uses.
+      APP_PUBLIC_URL: http://127.0.0.1:5173
       WORKER_HEALTH_HOST: 0.0.0.0
       WORKER_HEALTH_PORT: 3002
       # Video processing (issue #24): same bucket/credentials as the API (issue #21). The worker

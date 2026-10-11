@@ -321,6 +321,41 @@ describe('worker runtime', () => {
     expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due']);
   });
 
+  it('registers the e-mail to the clients when the transport and the origin of the web app are configured, once a minute', () => {
+    const queue = createTestQueue();
+    const emailSender = { send: vi.fn(async () => undefined), close: vi.fn(async () => undefined) };
+    createTestRuntime({ queue, emailSender, config: { ...config, appPublicUrl: 'http://127.0.0.1:5173' } });
+
+    const registered = vi.mocked(queue.register).mock.calls.map(([definition]) => definition);
+    const email = registered.find((definition) => definition.name === 'notifications.send-client-content-emails');
+    expect(email?.schedule).toEqual({ cron: '* * * * *', timeZone: 'America/Sao_Paulo' });
+    expect(email?.runOnStart).toBe(true);
+    expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due', 'notifications.send-client-content-emails']);
+  });
+
+  it.each([
+    ['the transport', { appPublicUrl: 'http://127.0.0.1:5173' }, undefined],
+    ['the origin of the web app', {}, { send: vi.fn(async () => undefined), close: vi.fn(async () => undefined) }]
+  ])('does not register the e-mail to the clients without %s, and says so', (_missing, extraConfig, emailSender) => {
+    const queue = createTestQueue();
+    const output: string[] = [];
+    const destination = new PassThrough();
+    destination.on('data', (chunk: Buffer) => output.push(chunk.toString()));
+    createTestRuntime({ queue, logger: createLogger({}, destination), ...(emailSender === undefined ? {} : { emailSender }), config: { ...config, ...extraConfig } });
+
+    expect(vi.mocked(queue.register).mock.calls.map(([definition]) => definition.name)).toEqual(['clients.archive-due']);
+    expect(output.join('')).toContain('the e-mails to the clients will not be sent');
+  });
+
+  it('closes the e-mail transport on shutdown', async () => {
+    const emailSender = { send: vi.fn(async () => undefined), close: vi.fn(async () => undefined) };
+    const { runtime } = createTestRuntime({ emailSender, config: { ...config, appPublicUrl: 'http://127.0.0.1:5173' } });
+
+    await runtime.shutdown();
+
+    expect(emailSender.close).toHaveBeenCalledOnce();
+  });
+
   it('runs smoke mode without a durable queue, since it has no database', () => {
     const runtime = createWorkerRuntime({
       config: { ...config, smokeJob: true },
