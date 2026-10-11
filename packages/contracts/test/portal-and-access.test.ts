@@ -29,7 +29,7 @@ const portalClient = {
   archivedAt: null,
   agencyName: 'Agência Exemplo',
   onboardingSeenAt: null,
-  home: { threadsAnsweredByAgency: 0, brandStudyFilled: 0 }
+  home: { threadsAnsweredByAgency: 0, brandStudyFilled: 0, contentsAwaitingApproval: 0 }
 };
 
 const section = { key: 'branding', body: null, colors: null, archetype: null, updatedAt: null };
@@ -42,8 +42,10 @@ describe('PortalClientResponseSchema (issue #129)', () => {
       { ...portalClient, status: 'archived' },
       { ...portalClient, archivedAt: '2026-10-07T12:00:00.000Z' },
       { ...portalClient, updatedBy: id },
-      { ...portalClient, home: { threadsAnsweredByAgency: -1, brandStudyFilled: 0 } },
-      { ...portalClient, home: { threadsAnsweredByAgency: 0, brandStudyFilled: 8 } }
+      { ...portalClient, home: { threadsAnsweredByAgency: -1, brandStudyFilled: 0, contentsAwaitingApproval: 0 } },
+      { ...portalClient, home: { threadsAnsweredByAgency: 0, brandStudyFilled: 0, contentsAwaitingApproval: -1 } },
+      { ...portalClient, home: { threadsAnsweredByAgency: 0, brandStudyFilled: 0 } },
+      { ...portalClient, home: { threadsAnsweredByAgency: 0, brandStudyFilled: 8, contentsAwaitingApproval: 0 } }
     ]) {
       expect(PortalClientResponseSchema.safeParse(response).success, JSON.stringify(response).slice(0, 80)).toBe(false);
     }
