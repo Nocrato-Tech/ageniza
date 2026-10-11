@@ -7,6 +7,9 @@ export interface MediaRateLimitWindow {
   readonly windowMs: number;
 }
 
+/** Uploading is `midia.enviar` for the agency's own media and `conteudo.operar` for a client's; the route says which. */
+export const MEDIA_UPLOAD_PERMISSIONS = ['midia.enviar', 'conteudo.operar'] as const;
+
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1_000;
 
 export const MEDIA_RATE_LIMITS = {
@@ -60,3 +63,7 @@ export const multipartPlan = (sizeBytes: number, configuredPartBytes: number): {
   const partCount = Math.ceil(sizeBytes / partSizeBytes);
   return { partSizeBytes, partCount };
 };
+
+/** The folders of a client are few and the screen needs them all at once: the page is the ceiling. */
+export const MEDIA_FOLDER_DEFAULT_PAGE_SIZE = 100;
+export const MEDIA_FOLDER_ASSET_DEFAULT_PAGE_SIZE = 48;

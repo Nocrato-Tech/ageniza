@@ -103,6 +103,7 @@ export const startApi = async (): Promise<void> => {
     config: config.storage,
     requireAgencyAccess: createRequireAgencyAccess({ database }),
     requirePermission,
+    requireAnyPermission,
     jobs: mediaJobDispatcher
   };
   // Identity storage (issue #100) is separate from media: the profile photo (issue #101) is a
