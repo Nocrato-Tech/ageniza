@@ -108,6 +108,7 @@ export const touchPendingAsset = async (transaction: Transaction, assetId: strin
 export interface MediaAssetRow {
   readonly id: string;
   readonly agency_id: string;
+  readonly client_id: string | null;
   readonly category: MediaCategory;
   readonly object_key: string;
   readonly upload_object_key: string;
@@ -119,7 +120,7 @@ export interface MediaAssetRow {
 /** Locks the row so two concurrent confirm/complete calls for the same asset cannot race. */
 export const lockAssetForCompletion = async (transaction: Transaction, assetId: string, agencyId: string): Promise<MediaAssetRow | undefined> => {
   const result = await raw<RawRows<MediaAssetRow>>(transaction, `
-    select id, agency_id, category, object_key, upload_object_key, status, declared_size_bytes, multipart_upload_id
+    select id, agency_id, client_id, category, object_key, upload_object_key, status, declared_size_bytes, multipart_upload_id
     from public.media_assets
     where id = ?::uuid and agency_id = ?::uuid
     for update
