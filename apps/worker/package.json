@@ -9,6 +9,7 @@
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests --exclude '**/*.integration.test.ts'",
+    "pretest:integration": "pnpm exec turbo run build --filter=@ageniza/worker^...",
     "test:integration": "vitest run integration.test.ts",
     "clean": "rimraf dist"
   },
