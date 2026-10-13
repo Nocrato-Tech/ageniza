@@ -30,6 +30,19 @@ describe('brand wiring', () => {
     expect(pngSize(publicFile('/brand/icone-32.png'))).toEqual({ width: 32, height: 32 });
   });
 
+  it('serves a favicon SVG ahead of the PNGs that follows the browser theme', () => {
+    const icons = links.filter((link) => link.rel === 'icon');
+    expect(icons[0]).toEqual({ rel: 'icon', sizes: 'any', href: '/favicon.svg' });
+    expect(html).toContain('type="image/svg+xml" sizes="any" href="/favicon.svg"');
+
+    const svg = readFileSync(publicFile('/favicon.svg'), 'utf8');
+    const style = /<style>([\s\S]*?)<\/style>/.exec(svg)?.[1] ?? '';
+    expect(style).toContain('path{fill:#111827}');
+    expect(style).toContain('@media (prefers-color-scheme:dark){path{fill:#fff}}');
+    expect(style.indexOf('path{fill:#111827}')).toBeLessThan(style.indexOf('@media'));
+    expect(svg.match(/<path/g)).toHaveLength(10);
+  });
+
   it('serves the 180 px icon as the Apple touch icon', () => {
     expect(links).toContainEqual({ rel: 'apple-touch-icon', sizes: '180x180', href: '/brand/icone-180.png' });
     expect(pngSize(publicFile('/brand/icone-180.png'))).toEqual({ width: 180, height: 180 });

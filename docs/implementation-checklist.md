@@ -90,5 +90,6 @@ _Ver também os itens 15 a 17, que estão na faixa Geral._
 65. **Exceção tem teste das bordas.** Exceção aceita numa regra de caracteres precisa de teste das bordas dela (repetição, vizinhos, variantes), não só do caso feliz (#533).
 66. **Corrida sem o gatilho fica vermelha.** Quando a proteção de uma rota vem de um gatilho de outro PR, o teste de corrida da rota tem de ficar vermelho sem esse gatilho; senão não prova nada sobre a rota (#542).
 68. **Worktree recompila o contrato.** Rodar a API de um worktree pede recompilar `packages/contracts` quando o PR mexe nele; senão constante nova chega `undefined` e comparação numérica passa calada (#575). O risco é local (worktree): o CI compila os contratos antes dos testes.
+69. **Nome de global do JS.** Componente exportado com nome de global do JS (`Symbol`, `Map`, `Image`, `Option`) passa no lint e só quebra quando outro arquivo o importa e sombreia a global. Use um nome composto (`BrandSymbol`) (#642).
 
 As lições completas de segurança estão em `docs/security-review.md` e nas notas do projeto; este checklist só lista o que mais se repete.

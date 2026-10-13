@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { Logo, Symbol } from './index.js';
+import { Logo, BrandSymbol } from './index.js';
 
 afterEach(cleanup);
 
@@ -40,9 +40,9 @@ describe('Logo', () => {
   });
 });
 
-describe('Symbol', () => {
+describe('BrandSymbol', () => {
   it('is decorative, with an empty alt, when no label is given', () => {
-    const { container } = render(<Symbol />);
+    const { container } = render(<BrandSymbol />);
     const image = container.querySelector('img')!;
 
     expect(image.getAttribute('alt')).toBe('');
@@ -50,7 +50,7 @@ describe('Symbol', () => {
   });
 
   it('takes an accessible name from label', () => {
-    render(<Symbol label="Ageniza" />);
+    render(<BrandSymbol label="Ageniza" />);
 
     expect(screen.getByRole('img', { name: 'Ageniza' })).toBeTruthy();
   });
@@ -60,13 +60,13 @@ describe('Symbol', () => {
     ['ink', '/brand/simbolo-ink.svg'],
     ['white', '/brand/simbolo-branco.svg']
   ] as const)('serves the %s production file', (variant, src) => {
-    const { container } = render(<Symbol variant={variant} />);
+    const { container } = render(<BrandSymbol variant={variant} />);
 
     expect(container.querySelector('img')!.getAttribute('src')).toBe(src);
   });
 
   it('is a square of the given size, ink by default', () => {
-    const { container } = render(<Symbol size={24} />);
+    const { container } = render(<BrandSymbol size={24} />);
     const image = container.querySelector('img')!;
 
     expect(image.getAttribute('src')).toBe('/brand/simbolo-ink.svg');

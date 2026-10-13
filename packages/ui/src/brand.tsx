@@ -1,7 +1,7 @@
 import { type ImgHTMLAttributes } from 'react';
 
 export type LogoVariant = 'on-light' | 'on-dark' | 'mono-ink' | 'mono-white';
-export type SymbolVariant = 'color' | 'ink' | 'white';
+export type BrandSymbolVariant = 'color' | 'ink' | 'white';
 
 const LOGO_FILES: Record<LogoVariant, string> = {
   'on-light': 'logo-para-fundo-claro.svg',
@@ -10,7 +10,7 @@ const LOGO_FILES: Record<LogoVariant, string> = {
   'mono-white': 'logo-mono-branco.svg'
 };
 
-const SYMBOL_FILES: Record<SymbolVariant, string> = {
+const SYMBOL_FILES: Record<BrandSymbolVariant, string> = {
   color: 'simbolo-colorido.svg',
   ink: 'simbolo-ink.svg',
   white: 'simbolo-branco.svg'
@@ -42,9 +42,9 @@ export function Logo({ variant = 'on-light', height = 40, className, ...props }:
   );
 }
 
-export interface SymbolProps extends BrandImageProps {
+export interface BrandSymbolProps extends BrandImageProps {
   /** `ink` for light backgrounds and `white` for dark ones; `color` is for 48 px or more (docs/brand.md). */
-  variant?: SymbolVariant;
+  variant?: BrandSymbolVariant;
   /** Side in px. */
   size?: number;
   /** Accessible name. Leave it out when the name "Ageniza" is next to the symbol: the image is then decorative. */
@@ -52,7 +52,7 @@ export interface SymbolProps extends BrandImageProps {
 }
 
 /** The owl mark. Decorative (`alt=""`) unless a `label` names it. */
-export function Symbol({ variant = 'ink', size = 32, label, className, ...props }: SymbolProps) {
+export function BrandSymbol({ variant = 'ink', size = 32, label, className, ...props }: BrandSymbolProps) {
   return (
     <img
       className={['ui-symbol', className].filter(Boolean).join(' ')}
