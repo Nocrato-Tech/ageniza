@@ -95,6 +95,7 @@ O que ele cria, sempre no banco local:
 - a agência **Agência Horizonte**, com o Owner e uma pessoa para cada preset (Admin, Gestor de conta, Produção, Vendas, Financeiro), com nome e cargo plausíveis;
 - 6 clientes com cadastro e estudo de marca em graus variados, personas e conversas — algumas aguardando a agência;
 - uma pessoa de portal na Padaria Central;
+- **dados de Conteúdo** (issue #608), nos clientes Padaria Central, Clínica Viver Bem e Café do Alto: 11 conteúdos, um em cada estado (em produção, aguardando aprovação, em ajuste, aprovado, publicado e cancelado), com três atrasados e quatro com prazo em dois dias, calculados a partir do dia de hoje em São Paulo; subtarefas pendente, entregue e aprovada; três roteiros de stories (um enviado para hoje, que aparece no Início do portal, um gravado de ontem e um rascunho de amanhã); duas conversas de conteúdo; uma pasta própria com a de trabalho dentro dela; e 11 mídias. Tudo passa pelas funções que as rotas chamam, com a pessoa que a regra manda (o Admin planeja e publica, a pessoa do portal aprova e pede ajuste, Produção entrega). **As mídias são linhas sem arquivo no armazenamento**: a semente não sobe objeto, então um cartão ou o post do portal não desenha imagem e a URL assinada de uma mídia dá 404 ao abrir;
 - 2 convites de colaborador pendentes;
 - a agência **Estúdio Ponte**, pequena, para demonstrar o isolamento entre agências.
 

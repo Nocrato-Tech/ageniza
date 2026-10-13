@@ -158,6 +158,7 @@ describe('seed:demo identifiers', () => {
 
 describe('the natural keys the seed finds its rows by (issue #601)', () => {
   type Specs = Parameters<typeof assertDemoNaturalKeys>[0];
+  type Contents = NonNullable<Parameters<typeof assertDemoNaturalKeys>[1]>;
   const client = (overrides: Record<string, unknown> = {}): Specs[number] => ({ key: 'client:a', name: 'Cliente A', ...overrides }) as Specs[number];
   const thread = (overrides: Record<string, unknown> = {}) => ({
     key: 'thread:a',
@@ -189,6 +190,27 @@ describe('the natural keys the seed finds its rows by (issue #601)', () => {
       ] }),
       client({ key: 'client:b', name: 'Cliente B', personas: [{ key: 'persona:b', name: 'Ana' }], threads: [thread()] })
     ])).not.toThrow();
+  });
+
+  const content = (overrides: Record<string, unknown> = {}): Contents[number] => ({
+    key: 'content:a', client: 'client:a', title: 'Título A', conversation: [{ side: 'client', body: 'Um' }], ...overrides
+  }) as unknown as Contents[number];
+
+  it('accepts what tells two contents and their comments apart: another title, another client, another side, another text', () => {
+    expect(() => assertDemoNaturalKeys([client()], [
+      content(),
+      content({ key: 'content:b', title: 'Título B' }),
+      content({ key: 'content:c', client: 'client:b' }),
+      content({ key: 'content:d', title: 'Título D', conversation: [{ side: 'client', body: 'Um' }, { side: 'agency', body: 'Um' }, { side: 'client', body: 'Dois' }] })
+    ])).not.toThrow();
+  });
+
+  it.each([
+    ['the same title in a client', [content({ conversation: undefined }), content({ key: 'content:b', conversation: undefined })], /the content Título A twice/],
+    ['the same side and text in the conversation of a content', [content({ conversation: [{ side: 'client', body: 'Um' }, { side: 'client', body: 'Um' }] })], /the client comment "Um" of the content Título A twice/]
+  ])('refuses %s', (_label, specs, message) => {
+    expect(() => assertDemoNaturalKeys([client()], specs as Contents)).toThrow(SeedDemoError);
+    expect(() => assertDemoNaturalKeys([client()], specs as Contents)).toThrow(message);
   });
 
   it.each([

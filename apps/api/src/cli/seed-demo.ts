@@ -14,6 +14,8 @@ import {
   type DatabaseClient
 } from '@ageniza/database';
 
+import { DEMO_CONTENTS, ensureContentDemo, type ContentSpec } from './seed-demo-content.js';
+
 /**
  * Demo data for the local environment (issue #183). The command refuses to run anywhere but a
  * loopback database and requires an explicit `--i-know-this-is-local` flag; passwords are random
@@ -888,8 +890,11 @@ const ensureThreads = async (input: {
 
 export const DEMO_CLIENTS: readonly DemoClientSpec[] = [...MAIN_CLIENTS, SECOND_CLIENT];
 
-/** What finds a row again must tell two rows of the spec apart: a name for a persona, the subject and opener for a thread, the author and text for a comment. */
-export const assertDemoNaturalKeys = (clients: readonly DemoClientSpec[]): void => {
+/**
+ * What finds a row again must tell two rows of the spec apart: a name for a persona, the subject and opener for a thread, the author and text for a comment.
+ * A content is found by its client and title, its conversation by the content, and a comment of it by its side (one person per side) and text.
+ */
+export const assertDemoNaturalKeys = (clients: readonly DemoClientSpec[], contents: readonly ContentSpec[] = DEMO_CONTENTS): void => {
   const seen = new Set<string>();
   const claim = (key: string, what: string): void => {
     if (seen.has(key)) throw new SeedDemoError(`The demo spec names ${what} twice; the seed finds it again by that, so the two would be one.`);
@@ -902,6 +907,10 @@ export const assertDemoNaturalKeys = (clients: readonly DemoClientSpec[]): void 
       claim(`thread:${client.key}:${thread.sectionKey ?? ''}:${thread.personaKey ?? ''}:${thread.openedBy}:${thread.openedSide}`, `the thread ${thread.key}`);
       for (const comment of thread.comments) claim(`comment:${client.key}:${thread.key}:${comment.author}:${comment.side}:${comment.body}`, `the comment ${comment.key}`);
     }
+  }
+  for (const content of contents) {
+    claim(`content:${content.client}:${content.title}`, `the content ${content.title}`);
+    for (const comment of content.conversation ?? []) claim(`content-comment:${content.client}:${content.title}:${comment.side}:${comment.body}`, `the ${comment.side} comment "${comment.body}" of the content ${content.title}`);
   }
 };
 
@@ -1084,6 +1093,18 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
         personaIdByKey: personaIdsByClientKey.get(client.key) ?? new Map()
       });
     }
+    await ensureContentDemo({
+      database,
+      idFor,
+      clientIds: clientIdByKey,
+      agencyId: mainAgencyId,
+      people: {
+        admin: adminUserId,
+        manager: mainUserIds.get('user:camila')!,
+        production: mainUserIds.get('user:bruno')!,
+        portal: portalUserId
+      }
+    });
     profiles.push({
       label: 'Portal',
       email: portalEmail,
