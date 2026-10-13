@@ -57,12 +57,13 @@ const contentFixture = (overrides: Partial<ContentListItem> = {}): ContentListIt
     status: 'in_production',
     owner: { membershipId: '99999999-9999-4999-8999-999999999999', name: 'Ana Souza' },
     coverAssetId: null,
-    thumbnailAssetId: null,
     revision: 1,
     publishedOn: null,
     tasksTotal: 0,
     tasksApproved: 0,
-    ...overrides
+    ...overrides,
+    // As the API answers: the chosen cover is the file that serves as the cover, unless the test says another.
+    thumbnailAssetId: 'thumbnailAssetId' in overrides ? (overrides.thumbnailAssetId ?? null) : (overrides.coverAssetId ?? null)
   };
 };
 
@@ -404,6 +405,27 @@ describe('the cover of a tile', () => {
     expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET}/download-url?variant=thumbnail`]);
   });
 
+  it('draws the first media of a post that has no chosen cover, as the thumbnail of that asset (issue #606)', async () => {
+    const { impl, calls } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Post de imagem', publishOn: '2026-10-14', format: 'image', thumbnailAssetId: ASSET })] } });
+    renderScreen(impl, url(padaria.id));
+
+    await waitFor(() => expect(feedRegion().querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${ASSET}.jpg`));
+    expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET}/download-url?variant=thumbnail`]);
+  });
+
+  it('asks for the frame of a reels that has no chosen cover as the thumbnail, and keeps the shape when it has none yet (issue #606)', async () => {
+    const { impl, calls } = makeFetch({
+      contents: { [padaria.id]: [contentFixture({ title: 'Filme sem capa', publishOn: '2026-10-14', format: 'reels', coverAssetId: null, thumbnailAssetId: ASSET })] },
+      cover: () => json({ error: { code: 'VARIANT_NOT_READY', message: 'This variant has not been generated yet.' } }, 409)
+    });
+    renderScreen(impl, url(padaria.id));
+    await ready();
+
+    await waitFor(() => expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET}/download-url?variant=thumbnail`]));
+    await waitFor(() => expect(feedRegion().querySelector('.content-feed__cover--placeholder')?.textContent).toBe('▶'));
+    expect(feedRegion().querySelector('img')).toBeNull();
+  });
+
   it('keeps its URL until 30 s before it expires, and asks for a new one after that', async () => {
     const queryClient = createQueryClient();
     const { impl, calls } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Com capa', publishOn: '2026-10-14', coverAssetId: ASSET })] } });
@@ -434,7 +456,7 @@ describe('the cover of a tile', () => {
           contentFixture({ title: 'Recusada', publishOn: '2026-10-16', format: 'image', coverAssetId: ASSET })
         ]
       },
-      cover: () => json({ error: { code: 'MEDIA_VARIANT_NOT_READY', message: 'Not ready' } }, 409)
+      cover: () => json({ error: { code: 'VARIANT_NOT_READY', message: 'This variant has not been generated yet.' } }, 409)
     });
     renderScreen(impl, url(padaria.id));
     await ready();

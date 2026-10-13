@@ -44,7 +44,7 @@ export function ContentCard({ content, clientId, today, draggable = false, busy 
     onDragStart={draggable ? (event) => { setPointed(false); onDragStart?.(event); } : undefined}
     onDragEnd={draggable ? onDragEnd : undefined}
   >
-    <ContentCover assetId={content.coverAssetId} format={content.format} />
+    <ContentCover assetId={content.thumbnailAssetId} format={content.format} />
     <p className="content-card__title">
       {/* A link is draggable by itself: without this the drag of the card would carry the address instead of the card. */}
       <Link

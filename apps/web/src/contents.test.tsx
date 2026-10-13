@@ -100,12 +100,13 @@ const contentFixture = (overrides: Record<string, unknown> = {}) => {
     status: 'in_production',
     owner: { membershipId: '99999999-9999-4999-8999-999999999999', name: 'Ana Souza' },
     coverAssetId: null,
-    thumbnailAssetId: null,
     revision: 1,
     publishedOn: null,
     tasksTotal: 0,
     tasksApproved: 0,
-    ...overrides
+    ...overrides,
+    // As the API answers: the chosen cover is the file that serves as the cover, unless the test says another.
+    thumbnailAssetId: 'thumbnailAssetId' in overrides ? overrides.thumbnailAssetId : (overrides.coverAssetId ?? null)
   };
 };
 
@@ -1174,6 +1175,52 @@ describe('the cover of a card', () => {
     expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET_A}/download-url?variant=thumbnail`]);
   });
 
+  it('draws the first media of a post that has no chosen cover, as the thumbnail of that asset (issue #606)', async () => {
+    const { impl, calls } = makeFetch({
+      contents: { [padaria.id]: [contentFixture({ title: 'Post de imagem', publishOn: '2026-10-14', format: 'image', thumbnailAssetId: ASSET_A })] }
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Post de imagem');
+
+    await waitFor(() => expect(cardOf('Post de imagem').querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${ASSET_A}.jpg`));
+    expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET_A}/download-url?variant=thumbnail`]);
+  });
+
+  it('asks for the frame of a reels that has no chosen cover as the thumbnail, never the video itself (issue #606)', async () => {
+    const { impl, calls } = makeFetch({
+      contents: { [padaria.id]: [contentFixture({ title: 'Filme sem capa', publishOn: '2026-10-14', format: 'reels', coverAssetId: null, thumbnailAssetId: ASSET_B })] }
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Filme sem capa');
+
+    await waitFor(() => expect(cardOf('Filme sem capa').querySelector('img')).not.toBeNull());
+    expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET_B}/download-url?variant=thumbnail`]);
+  });
+
+  it('keeps the shape of the format for a video that has no frame yet, and asks once (issue #606)', async () => {
+    const { impl, calls } = makeFetch({
+      contents: { [padaria.id]: [contentFixture({ title: 'Sem quadro', publishOn: '2026-10-14', format: 'reels', thumbnailAssetId: ASSET_A })] },
+      cover: () => json({ error: { code: 'VARIANT_NOT_READY', message: 'This variant has not been generated yet.' } }, 409)
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Sem quadro');
+
+    await waitFor(() => expect(coverCalls(calls)).toHaveLength(1));
+    await waitFor(() => expect(cardOf('Sem quadro').querySelector('.content-card__cover--placeholder')?.textContent).toBe('▶'));
+    expect(cardOf('Sem quadro').querySelector('img')).toBeNull();
+  });
+
+  it('asks for nothing when the chosen cover was removed and no other media is left (thumbnail null with a cover id)', async () => {
+    const { impl, calls } = makeFetch({
+      contents: { [padaria.id]: [contentFixture({ title: 'Capa removida', publishOn: '2026-10-14', format: 'reels', coverAssetId: ASSET_A, thumbnailAssetId: null })] }
+    });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Capa removida');
+
+    expect(cardOf('Capa removida').querySelector('.content-card__cover--placeholder')?.textContent).toBe('▶');
+    expect(coverCalls(calls)).toEqual([]);
+  });
+
   it('asks for nothing and shows the shape of the format when the content has no cover', async () => {
     const { impl, calls } = makeFetch({
       contents: { [padaria.id]: [contentFixture({ title: 'Sem capa', publishOn: '2026-10-14', format: 'carousel' }), contentFixture({ title: 'Filme', publishOn: '2026-10-15', format: 'reels' })] }
@@ -1190,7 +1237,7 @@ describe('the cover of a card', () => {
   it('keeps the placeholder, and the rest of the card, when the route says there is no thumbnail', async () => {
     const { impl } = makeFetch({
       contents: { [padaria.id]: [contentFixture({ title: 'Sem miniatura', publishOn: '2026-10-14', coverAssetId: ASSET_A, status: 'approved' })] },
-      cover: () => json({ error: { code: 'MEDIA_VARIANT_NOT_READY', message: 'Not ready' } }, 409)
+      cover: () => json({ error: { code: 'VARIANT_NOT_READY', message: 'This variant has not been generated yet.' } }, 409)
     });
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Sem miniatura');
@@ -1208,6 +1255,7 @@ describe('the cover of a card', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Recusada');
     await waitFor(() => expect(cardOf('Recusada').querySelector('.content-card__cover--placeholder')).not.toBeNull());
+    expect(cardOf('Recusada').querySelector('.content-card__cover--placeholder')?.textContent).toBe('▶');
     expect(cardOf('Recusada').querySelector('img')).toBeNull();
   });
 

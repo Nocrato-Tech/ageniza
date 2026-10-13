@@ -70,6 +70,8 @@ export const createPortalContentsApi = (clientId: string) => {
       cancelled: false,
       ...row
     };
+    // As the API answers: the cover that was chosen is the file that serves as the cover, unless the test says another.
+    made.thumbnailAssetId = 'thumbnailAssetId' in row ? (row.thumbnailAssetId ?? null) : (row.coverAssetId ?? null);
     rows.push(made);
     return made;
   };
@@ -137,7 +139,7 @@ export const createPortalContentsApi = (clientId: string) => {
     if (variant !== 'original' && variant !== 'thumbnail') return contentsError(400, 'VALIDATION_ERROR');
     const row = visible().find((candidate) => candidate.id === contentId);
     if (row === undefined || row.status === 'in_production') return contentsError(404, 'NOT_FOUND', 'Content not found.');
-    if (row.coverAssetId !== assetId) return contentsError(404, 'NOT_FOUND', 'Media asset not found.');
+    if (row.thumbnailAssetId !== assetId) return contentsError(404, 'NOT_FOUND', 'Media asset not found.');
     const failure = state.failMedia.get(assetId!);
     if (failure !== undefined) return failure();
     return json({ url: state.mediaUrl?.(assetId!, variant) ?? `https://storage.test/${assetId}.png?variant=${variant}`, expiresAt: new Date(Date.now() + 300_000).toISOString() });

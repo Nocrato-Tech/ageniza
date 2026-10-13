@@ -51,7 +51,7 @@ export function ContentFeed({ contents, today, handle }: { contents: readonly Co
       </>
       : <ol className="content-feed__grid">
         {items.map((content) => <li key={content.id} className="content-feed__tile" data-status={content.status}>
-          <ContentCover assetId={content.coverAssetId} format={content.format} className="content-feed__cover" />
+          <ContentCover assetId={content.thumbnailAssetId} format={content.format} className="content-feed__cover" />
           {content.publishOn > today && <span className="content-feed__planned">Planejado</span>}
           <span className="visually-hidden">{content.title} · {FORMAT_LABELS[content.format]} · {dayMonthLabel(content.publishOn)}</span>
         </li>)}

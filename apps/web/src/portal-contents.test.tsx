@@ -22,6 +22,7 @@ const CLIENT_ID = 'aaaaaaaa-1111-4111-8111-111111111111';
 const OTHER_CLIENT_ID = 'bbbbbbbb-2222-4222-8222-222222222222';
 const COVER_ID = 'a1a1a1a1-0000-4000-8000-000000000001';
 const COVER_TWO_ID = 'a1a1a1a1-0000-4000-8000-000000000002';
+const COVER_THREE_ID = 'a1a1a1a1-0000-4000-8000-000000000003';
 
 // 01:30Z of the 12th is 22:30 of the 11th (a Sunday) in São Paulo: a day computed in UTC is the wrong one.
 const NIGHT = '2026-10-12T01:30:00.000Z';
@@ -450,6 +451,24 @@ describe('the portal Conteúdos (#269)', () => {
       expect(container.querySelectorAll('img')).toHaveLength(1);
     });
 
+    it('draws the first media of a post that has no chosen cover, in the month and in what waits, as the thumbnail (issue #606)', async () => {
+      const world = makeWorld();
+      const post = world.api.seed({ title: 'Post de imagem', format: 'image', publishOn: '2026-10-12', thumbnailAssetId: COVER_ID });
+      const waiting = world.api.seed({ title: 'Carrossel esperando', format: 'carousel', publishOn: '2026-10-13', status: 'awaiting_approval', thumbnailAssetId: COVER_TWO_ID });
+      world.api.seed({ title: 'Sem mídia', format: 'image', publishOn: '2026-10-14' });
+      renderPortal(world);
+      await ready();
+      await screen.findByText('Post de imagem');
+
+      await waitFor(() => expect(cardOf('Post de imagem').querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${COVER_ID}.png?variant=thumbnail`));
+      await waitFor(() => expect(awaitingBlock().querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${COVER_TWO_ID}.png?variant=thumbnail`));
+      expect(within(cardOf('Sem mídia')).getByText('▣')).toBeTruthy();
+      expect([...mediaCalls(world)].sort()).toEqual([
+        `GET /clients/${CLIENT_ID}/contents/${post.id}/media/${COVER_ID}/url?variant=thumbnail`,
+        `GET /clients/${CLIENT_ID}/contents/${waiting.id}/media/${COVER_TWO_ID}/url?variant=thumbnail`
+      ].sort());
+    });
+
     it('goes back to the shape of the format when the picture does not load, and does not ask for it again', async () => {
       const world = makeWorld();
       world.api.seed({ title: 'Imagem quebrada', format: 'image', publishOn: '2026-10-12', coverAssetId: COVER_ID });
@@ -468,16 +487,54 @@ describe('the portal Conteúdos (#269)', () => {
       const world = makeWorld();
       world.api.seed({ title: 'Ainda processando', format: 'reels', publishOn: '2026-10-12', coverAssetId: COVER_ID });
       world.api.seed({ title: 'Endereço estranho', format: 'image', publishOn: '2026-10-13', coverAssetId: COVER_TWO_ID });
+      world.api.seed({ title: 'Recusada', format: 'carousel', publishOn: '2026-10-14', coverAssetId: COVER_THREE_ID });
       world.api.state.failMedia.set(COVER_ID, () => contentsError(409, 'VARIANT_NOT_READY'));
+      world.api.state.failMedia.set(COVER_THREE_ID, () => contentsError(404, 'NOT_FOUND', 'Media asset not found.'));
       world.api.state.mediaUrl = (assetId) => (assetId === COVER_TWO_ID ? 'javascript:alert(1)' : 'https://storage.test/x.png');
       const { container } = renderPortal(world);
       await ready();
       await screen.findByText('Ainda processando');
-      await waitFor(() => expect(mediaCalls(world)).toHaveLength(2));
+      await waitFor(() => expect(mediaCalls(world)).toHaveLength(3));
 
       expect(container.querySelectorAll('img')).toHaveLength(0);
+      expect(within(cardOf('Recusada')).getByText('▤')).toBeTruthy();
       expect(within(cardOf('Ainda processando')).getByText('▶')).toBeTruthy();
       expect(within(cardOf('Endereço estranho')).getByText('▣')).toBeTruthy();
+    });
+  });
+
+  describe('the covers with an observer of what is on screen', () => {
+    class FakeObserver {
+      static instances: FakeObserver[] = [];
+      readonly observed: Element[] = [];
+      constructor(private readonly callback: IntersectionObserverCallback) { FakeObserver.instances.push(this); }
+      observe(element: Element): void { this.observed.push(element); }
+      unobserve(): void { /* unused */ }
+      disconnect(): void { /* unused */ }
+      takeRecords(): IntersectionObserverEntry[] { return []; }
+      show(element: Element): void { this.callback([{ isIntersecting: true, target: element } as IntersectionObserverEntry], this as unknown as IntersectionObserver); }
+    }
+    const original = globalThis.IntersectionObserver;
+    beforeEach(() => {
+      FakeObserver.instances = [];
+      globalThis.IntersectionObserver = FakeObserver as unknown as typeof IntersectionObserver;
+    });
+    afterEach(() => { globalThis.IntersectionObserver = original; });
+
+    it('asks for the thumbnail only once the card is on screen, and only for that card', async () => {
+      const world = makeWorld();
+      const seen = world.api.seed({ title: 'À vista', format: 'image', publishOn: '2026-10-12', thumbnailAssetId: COVER_ID });
+      world.api.seed({ title: 'Fora da tela', format: 'image', publishOn: '2026-10-13', thumbnailAssetId: COVER_TWO_ID });
+      renderPortal(world);
+      await ready();
+      await screen.findByText('Fora da tela');
+      await waitFor(() => expect(FakeObserver.instances.length).toBeGreaterThanOrEqual(2));
+      expect(mediaCalls(world)).toEqual([]);
+
+      const observer = FakeObserver.instances.find((candidate) => cardOf('À vista').contains(candidate.observed[0] ?? null))!;
+      act(() => observer.show(observer.observed[0]!));
+      await waitFor(() => expect(mediaCalls(world)).toEqual([`GET /clients/${CLIENT_ID}/contents/${seen.id}/media/${COVER_ID}/url?variant=thumbnail`]));
+      expect(cardOf('Fora da tela').querySelector('img')).toBeNull();
     });
   });
 
