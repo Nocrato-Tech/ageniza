@@ -30,7 +30,7 @@ provou. As decisões estão em `docs/business/decisions/2026-10-11-conteudo-port
   os dois clientes), recusa o que está em produção com `409 CONTENT_NOT_AWAITING_APPROVAL` e chama a função, que o recusa de novo por dentro.
 - **Aprovar é idempotente, pedir ajuste não.** Aprovar o que já está aprovado é `200` e a primeira pessoa continua sendo quem aprovou;
   pedir ajuste de um conteúdo já em ajuste é `409`, porque cada pedido é um comentário.
-- **Cada item da mídia diz o que é.** `media[]` leva `kind` (`image` ou `video`), lido da categoria do arquivo pela mesma função do portal; a tela escolhe `<img>` ou `<video>` por ele. A capa não é item: é só `coverAssetId`, e a tela a pede como `variant=thumbnail`, que é sempre imagem.
+- **Cada item da mídia diz o que é.** `media[]` leva `kind` (`image` ou `video`), lido da categoria do arquivo pela mesma função do portal; a tela escolhe `<img>` ou `<video>` por ele. A capa não é item: o card pede `thumbnailAssetId` como `variant=thumbnail`, que é sempre imagem.
 - **A agência lê quem aprovou, o portal não.** A agência vê `approvedBy: { name, side: 'client' }` (sem id); a resposta do portal não
   tem esse campo.
 - **O pedido de ajuste é uma função só.** Abre (ou acha) a conversa do conteúdo, grava o comentário como o cliente e leva o conteúdo a
