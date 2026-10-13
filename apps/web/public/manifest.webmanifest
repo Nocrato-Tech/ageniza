@@ -1,0 +1,10 @@
+{
+  "name": "Ageniza",
+  "short_name": "Ageniza",
+  "start_url": "/",
+  "display": "browser",
+  "icons": [
+    { "src": "/brand/icone-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/brand/icone-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
