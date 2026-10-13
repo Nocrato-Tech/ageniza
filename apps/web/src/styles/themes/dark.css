@@ -2,7 +2,7 @@
  * Dark overrides. Not an automatic inversion of Light — see
  * docs/design-system.md section 7. Applies under `[data-theme="dark"]`;
  * nothing in the app sets that attribute yet, so this file has no visible
- * effect until a theme switch exists.
+ * effect until the agency area adopts it.
  */
 [data-theme='dark'] {
   color-scheme: dark;
@@ -31,4 +31,26 @@
   --action-danger-fg: var(--color-white); /* approved 2026-09-28 (docs/design-system.md 5.1) */
 
   --focus-ring: var(--color-indigo-400);
+
+  --status-ready-fg: var(--color-teal-500);
+  --status-waiting-fg: var(--color-violet-400);
+  --status-adjust-fg: var(--color-indigo-400);
+  --status-late-fg: var(--color-red-400);
+  --status-published-fg: var(--color-slate-400);
+  --status-production-fg: var(--color-slate-400);
+
+  --calendar-today-bg: color-mix(in srgb, var(--action-primary-bg) 14%, var(--bg-surface));
+
+  --format-carousel-bg: color-mix(in srgb, var(--color-teal-500) 12%, var(--color-ink-800));
+  --format-carousel-fg: color-mix(in srgb, var(--color-teal-500) 70%, var(--color-cloud-50));
+  --format-carousel-tag: var(--color-teal-500);
+  --format-carousel-tag-fg: var(--color-ink-900);
+  --format-reels-bg: color-mix(in srgb, var(--color-violet-400) 12%, var(--color-ink-800));
+  --format-reels-fg: color-mix(in srgb, var(--color-violet-400) 70%, var(--color-cloud-50));
+  --format-reels-tag: var(--color-violet-400);
+  --format-reels-tag-fg: var(--color-ink-900);
+  --format-static-bg: color-mix(in srgb, var(--color-slate-400) 8%, var(--color-ink-800));
+  --format-static-fg: var(--color-slate-300);
+  --format-static-tag: var(--color-slate-300);
+  --format-static-tag-fg: var(--color-ink-900);
 }

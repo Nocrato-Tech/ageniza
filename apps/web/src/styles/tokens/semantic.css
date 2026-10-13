@@ -38,4 +38,35 @@
   --action-danger-fg: var(--color-white); /* approved 2026-09-28 (docs/design-system.md 5.1) */
 
   --focus-ring: var(--color-indigo-600);
+
+  /* Content state: the colour goes on the icon (non-text, 3:1), the label stays text/secondary. */
+  --status-ready-fg: var(--color-teal-700);
+  --status-waiting-fg: var(--color-violet-600);
+  --status-adjust-fg: var(--color-indigo-600);
+  --status-late-fg: var(--color-red-700);
+  --status-published-fg: var(--color-slate-600);
+  --status-production-fg: var(--color-slate-500);
+
+  --calendar-today-bg: color-mix(in srgb, var(--action-primary-bg) 14%, var(--bg-surface));
+
+  /* Format tint of a calendar card: bg and fg for the card, tag (fill) and tag-fg for the label. */
+  --format-carousel-bg: color-mix(in srgb, var(--color-teal-500) 10%, var(--color-white));
+  --format-carousel-fg: var(--color-teal-700);
+  --format-carousel-tag: var(--color-teal-700);
+  --format-carousel-tag-fg: var(--color-white);
+  --format-reels-bg: color-mix(in srgb, var(--color-violet-600) 7%, var(--color-white));
+  --format-reels-fg: var(--color-violet-600);
+  --format-reels-tag: var(--color-violet-600);
+  --format-reels-tag-fg: var(--color-white);
+  --format-static-bg: var(--color-mist-100);
+  --format-static-fg: var(--color-ink-900);
+  --format-static-tag: var(--color-slate-600);
+  --format-static-tag-fg: var(--color-white);
+
+  /* Base of the client badge photo: indigo and violet darkened over ink (white text on it >= 9.5:1). */
+  --client-badge-fade-start: color-mix(in srgb, var(--color-indigo-600) 60%, var(--color-ink-900));
+  --client-badge-fade-end: color-mix(in srgb, var(--color-violet-600) 60%, var(--color-ink-900));
+
+  /* The only elevation: what floats (menu, hover card, modal). Everything else separates by surface and border. */
+  --shadow-floating: 0 24px 48px -12px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.35);
 }
