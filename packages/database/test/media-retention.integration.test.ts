@@ -40,13 +40,26 @@ interface Due {
   upload_object_key: string;
   thumbnail_object_key: string | null;
   preview_object_key: string | null;
+  removed_at: string;
 }
 
-/** What the worker is offered, narrowed to the media this file made: the database is shared with every other suite. */
-const due = async (limit = 500): Promise<Due[]> => {
-  const { rows } = await asWorker((transaction) => transaction.raw<{ rows: Due[] }>('select * from app_private.media_due_for_purge(?::integer)', [limit]));
-  return rows.filter((row) => row.agency_id === ids.agencyA);
+interface Cursor {
+  removedAt: string;
+  id: string;
+}
+
+/** The list as the worker asks it. `removed_at` travels as text, which keeps its microseconds, and comes back as the cursor of the next page. */
+const list = async (limit: number, after: Cursor | null = null): Promise<Due[]> => {
+  const { rows } = await asWorker((transaction) => transaction.raw<{ rows: Due[] }>(
+    `select asset_id, agency_id, object_key, upload_object_key, thumbnail_object_key, preview_object_key, removed_at::text as removed_at
+     from app_private.media_due_for_purge(?::integer, ?::timestamptz, ?::uuid)`,
+    [limit, after?.removedAt ?? null, after?.id ?? null] as never[]
+  ));
+  return rows;
 };
+
+/** What the worker is offered, narrowed to the media this file made: the database is shared with every other suite. */
+const due = async (limit = 500): Promise<Due[]> => (await list(limit)).filter((row) => row.agency_id === ids.agencyA);
 const dueIds = async (): Promise<string[]> => (await due()).map((row) => row.asset_id);
 const stamp = (assetId: string): Promise<boolean> =>
   asWorker(async (transaction) => (await transaction.raw<{ rows: Array<{ purged: boolean }> }>('select app_private.mark_media_purged(?::uuid) as purged', [assetId])).rows[0]!.purged);
@@ -60,6 +73,11 @@ const removedAgo = async (interval: string, extra: { category?: 'image' | 'video
 
 const row = async (assetId: string): Promise<Record<string, unknown>> =>
   (await w.getOwner().knex('media_assets').where({ id: assetId }).first()) as Record<string, unknown>;
+
+const removedAtOf = async (assetId: string): Promise<string> =>
+  (await w.getOwner().knex.raw<{ rows: Array<{ removed_at: string }> }>('select removed_at::text as removed_at from public.media_assets where id = ?', [assetId])).rows[0]!.removed_at;
+
+const cursorAt = async (assetId: string): Promise<Cursor> => ({ removedAt: await removedAtOf(assetId), id: assetId });
 
 const usage = async (): Promise<{ bytes: number; count: number }> => {
   const result = await w.asUser(ids.adminA, (transaction) => transaction.raw<{ rows: Array<{ used_bytes: string; used_object_count: string }> }>(
@@ -116,24 +134,79 @@ describe('which removed media is due', () => {
       object_key: `${ids.agencyA}/${video}/original.mp4`,
       upload_object_key: `staging/${ids.agencyA}/${video}/upload.mp4`,
       thumbnail_object_key: `${ids.agencyA}/${video}/thumbnail.jpg`,
-      preview_object_key: `${ids.agencyA}/${video}/preview.mp4`
+      preview_object_key: `${ids.agencyA}/${video}/preview.mp4`,
+      removed_at: await removedAtOf(video)
     });
     expect(mine[1]).toMatchObject({ thumbnail_object_key: null, preview_object_key: null });
   });
 
-  it('answers a batch of the size asked, from the oldest', async () => {
+  it('answers a batch of the size asked', async () => {
     await removedAgo('400 days');
     await removedAgo('401 days');
     const everything = await due();
     expect(everything.length).toBeGreaterThanOrEqual(2);
-    const one = await asWorker((transaction) => transaction.raw<{ rows: Due[] }>('select * from app_private.media_due_for_purge(?::integer)', [1]));
-    expect(one.rows).toHaveLength(1);
+    expect(await list(1)).toHaveLength(1);
   });
 
   it('does not offer what was purged', async () => {
     const assetId = await removedAgo('40 days');
     await expect(stamp(assetId)).resolves.toBe(true);
     expect(await dueIds()).not.toContain(assetId);
+  });
+});
+
+describe('the cursor of the list', () => {
+  const mine = (offered: Due[], seeds: string[]): string[] => offered.filter((item) => seeds.includes(item.asset_id)).map((item) => item.asset_id);
+
+  it('skips what came before the cursor and the media of the cursor itself, and offers what comes after, oldest first', async () => {
+    const oldest = await removedAgo('600 days');
+    const middle = await removedAgo('599 days');
+    const newest = await removedAgo('598 days');
+    const seeds = [oldest, middle, newest];
+
+    expect(mine(await list(500), seeds)).toEqual(seeds);
+    expect(mine(await list(500, await cursorAt(oldest)), seeds)).toEqual([middle, newest]);
+    expect(mine(await list(500, await cursorAt(middle)), seeds)).toEqual([newest]);
+    expect(mine(await list(500, await cursorAt(newest)), seeds)).toEqual([]);
+  });
+
+  it('breaks a tie of removed_at by id: the media of the same instant after the one of the cursor is offered, and the one before is not', async () => {
+    const first = await removedAgo('0 seconds');
+    const second = await removedAgo('0 seconds');
+    const instant = '2026-02-03 04:05:06.789123+00';
+    await w.getOwner().knex('media_assets').whereIn('id', [first, second]).update({ removed_at: instant });
+    const [lower, higher] = [first, second].sort() as [string, string];
+    const seeds = [lower, higher];
+
+    expect(mine(await list(500), seeds)).toEqual([lower, higher]);
+    expect(mine(await list(500, { removedAt: instant, id: lower }), seeds)).toEqual([higher]);
+    expect(mine(await list(500, { removedAt: instant, id: higher }), seeds)).toEqual([]);
+  });
+
+  it('walks the whole queue page by page: each media once, in the order of the list that is not paged', async () => {
+    for (const age of ['700 days', '699 days', '698 days', '697 days', '696 days']) await removedAgo(age);
+    const unpaged = (await list(500)).map((item) => item.asset_id);
+    expect(unpaged.length).toBeGreaterThanOrEqual(5);
+
+    const walked: string[] = [];
+    let after: Cursor | null = null;
+    for (let page = 0; page < 1000; page += 1) {
+      const items: Due[] = await list(2, after);
+      walked.push(...items.map((item) => item.asset_id));
+      if (items.length < 2) break;
+      const last = items[items.length - 1]!;
+      after = { removedAt: last.removed_at, id: last.asset_id };
+    }
+
+    expect(walked).toEqual(unpaged);
+  });
+
+  it('answers 22023 to a cursor that is only half given', async () => {
+    const assetId = await removedAgo('31 days');
+    const { removedAt } = await cursorAt(assetId);
+    for (const [at, id] of [[removedAt, null], [null, assetId]] as const) {
+      await expect(asWorker((transaction) => transaction.raw('select * from app_private.media_due_for_purge(10, ?::timestamptz, ?::uuid)', [at, id] as never[]))).rejects.toMatchObject({ code: '22023' });
+    }
   });
 });
 

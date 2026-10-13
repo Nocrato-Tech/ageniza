@@ -10,15 +10,19 @@
 //  - `purged_at` says the objects of the media are gone from storage. It has no grant to `ageniza_app` (a new column is not writable until a
 //    migration grants it), so only the function below writes it, and a check keeps it from existing on a media that was never removed.
 //  - `media_retention_period()` is the one place the 30 days live. The list and the stamp read it, so they cannot keep two periods.
-//  - `media_due_for_purge(limit)` is what the worker asks: the removed, not yet purged media whose period is over, with the keys of what
-//    to delete (the original, the staging key, and the thumbnail and the preview of a video), the oldest first. It leaves out a media that
-//    a content waiting for approval, approved or published uses (rule 12), which `remove_media_asset` already refuses and which this
-//    asks again, since the file of a content the client is looking at is never what a clock deletes.
+//  - `media_due_for_purge(limit, after_removed_at, after_id)` is what the worker asks: the removed, not yet purged media whose period is
+//    over, with the keys of what to delete (the original, the staging key, and the thumbnail and the preview of a video), the oldest first,
+//    and after the cursor `(removed_at, id)` when there is one (both null: from the start). The cursor is what lets a round walk past a media
+//    whose files cannot be deleted instead of asking the same head of the queue again. It leaves out a media that a content waiting for
+//    approval, approved or published uses (rule 12), which `remove_media_asset` already refuses and which this asks again, since the file
+//    of a content the client is looking at is never what a clock deletes.
 //  - `mark_media_purged(asset)` is what the worker calls AFTER it deleted the objects: under the lock of the media, and of the contents that
 //    use it (as `remove_media_asset` takes them), it asks the same two questions again and stamps `purged_at`, writing `media.purged` to the
 //    audit. It answers whether it stamped. Deleting before stamping, never the reverse, is what makes a crash between the two a repeated
 //    delete (which storage answers as done) instead of a file that stays for ever with a row that says it left. A removed media cannot gain
-//    a use after the list was read: a content refuses a removed file (A0069 on the cover, `content_media_is_complete` on the files).
+//    a use after the list was read: a content refuses a removed file (A0069 on the cover, `content_media_is_complete` on the files). So what
+//    protects the file is the filter of the list plus that invariant; the second reading only keeps the stamp from landing on a media that
+//    is used again.
 //  - Both are `security definer`, closed to PUBLIC and open to `ageniza_app`, which is the role the worker connects as, and both refuse a
 //    caller with an actor bound to the transaction (42501): every request of the API binds one and the worker never does, so a request
 //    cannot ask for the keys of the files, as it cannot read the queue of e-mail (20261011000100). They need READ COMMITTED (40001
@@ -26,7 +30,7 @@
 //  - `agency_media_usage` stops counting what was purged and keeps counting what was only removed: the object of the second is still in
 //    storage, and "quem remove muita mídia não ganha cota de volta até a retenção apagar o arquivo" (decision of 2026-10-07).
 //
-// Error codes: none new. A refused caller is 42501, a wrong isolation is 40001 and a wrong limit is 22023.
+// Error codes: none new. A refused caller is 42501, a wrong isolation is 40001, and a wrong limit or a half cursor is 22023.
 
 export async function up(knex) {
   await knex.raw(`
@@ -44,14 +48,19 @@ export async function up(knex) {
     $function$;
     revoke all on function app_private.media_retention_period() from public;
 
-    create function app_private.media_due_for_purge(p_limit integer)
+    create function app_private.media_due_for_purge(
+      p_limit integer,
+      p_after_removed_at timestamptz default null,
+      p_after_id uuid default null
+    )
     returns table (
       asset_id uuid,
       agency_id uuid,
       object_key text,
       upload_object_key text,
       thumbnail_object_key text,
-      preview_object_key text
+      preview_object_key text,
+      removed_at timestamptz
     )
     language plpgsql
     stable
@@ -65,13 +74,18 @@ export async function up(knex) {
       if p_limit is null or p_limit < 1 or p_limit > 500 then
         raise exception using errcode = '22023', message = 'The batch is between 1 and 500 media.';
       end if;
+      if (p_after_removed_at is null) <> (p_after_id is null) then
+        raise exception using errcode = '22023', message = 'The cursor is both the removal time and the id of the last media, or neither.';
+      end if;
 
       return query
-      select asset.id, asset.agency_id, asset.object_key, asset.upload_object_key, asset.thumbnail_object_key, asset.preview_object_key
+      select asset.id, asset.agency_id, asset.object_key, asset.upload_object_key, asset.thumbnail_object_key, asset.preview_object_key,
+        asset.removed_at
       from public.media_assets asset
       where asset.removed_at is not null
         and asset.purged_at is null
         and asset.removed_at <= pg_catalog.now() - app_private.media_retention_period()
+        and (p_after_id is null or (asset.removed_at, asset.id) > (p_after_removed_at, p_after_id))
         and not exists (
           select 1
           from public.contents content
@@ -85,8 +99,8 @@ export async function up(knex) {
       limit p_limit;
     end;
     $function$;
-    revoke all on function app_private.media_due_for_purge(integer) from public;
-    grant execute on function app_private.media_due_for_purge(integer) to ageniza_app;
+    revoke all on function app_private.media_due_for_purge(integer, timestamptz, uuid) from public;
+    grant execute on function app_private.media_due_for_purge(integer, timestamptz, uuid) to ageniza_app;
 
     create function app_private.mark_media_purged(p_asset_id uuid)
     returns boolean

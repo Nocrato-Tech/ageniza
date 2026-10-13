@@ -80,8 +80,8 @@ whatever the caller's RLS lets it read (issue #253; see the decisions of 2026-10
 
 A removed media keeps counting in the quota and keeps its files until the retention flow runs: **30 days after `removed_at`** the worker
 deletes the original, the staging key and the thumbnail and preview of a video, and stamps `purged_at`; the row stays for the audit, and the quota
-stops counting what was purged (decision of 2026-10-11, pending the owner). The database side is `app_private.media_due_for_purge(limit)`
-(what is due and not used by a content waiting for approval, approved or published, with the keys to delete) and `app_private.mark_media_purged(asset)`
+stops counting what was purged (decision of 2026-10-11, pending the owner). The database side is `app_private.media_due_for_purge(limit, after_removed_at, after_id)`
+(what is due and not used by a content waiting for approval, approved or published, with the keys to delete, oldest first and after the cursor) and `app_private.mark_media_purged(asset)`
 (the stamp, which asks the same again under the lock of the contents and writes `media.purged` to the audit); both refuse a request (an actor is
 bound to its transaction) and answer only the worker. `purged_at` has no write grant: no route can set it. This module does not delete the
 files itself: the flow lives in the worker (`apps/worker/src/media-purge-job.ts`).
