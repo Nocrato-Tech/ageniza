@@ -4,7 +4,7 @@ Onde estão o logo, o símbolo e o mascote do Ageniza, e quando usar cada um. As
 
 ## O que existe hoje
 
-As seis imagens abaixo são os **originais de referência**, gerados em 2026-10-13 e aprovados pelo dono do produto como a identidade da marca. São JPG com fundo e, em duas delas, efeito de maquete 3D: servem para conhecer a forma e as cores, **não para entrar no app como estão**. As versões de produção estão em "Para usar no produto", abaixo, e saem do arquivo do Figma.
+As seis imagens abaixo são os **originais de referência** (reduzidas a 1200 px de largura; os arquivos em resolução cheia ficam no Figma, página Originais), gerados em 2026-10-13 e aprovados pelo dono do produto como a identidade da marca. São JPG com fundo e, em duas delas, efeito de maquete 3D: servem para conhecer a forma e as cores, **não para entrar no app como estão**. As versões de produção estão em "Para usar no produto", abaixo, e saem do arquivo do Figma.
 
 | arquivo | o que é |
 |---|---|
@@ -42,16 +42,16 @@ Os arquivos de produção ficam em [`apps/web/public/brand/`](../apps/web/public
 
 | arquivo | o que é | onde usar |
 |---|---|---|
-| `logo-claro.svg` | logo completo, símbolo em degradê e texto em ink | sobre fundo claro: login, e-mail, documentos |
-| `logo-escuro.svg` | logo completo, símbolo em degradê e texto em branco | sobre fundo escuro |
-| `logo-mono-escuro.svg` / `logo-mono-claro.svg` | logo completo em uma cor (ink / branco) | impressão e situações de uma cor só |
+| `logo-para-fundo-claro.svg` | logo completo, símbolo em degradê e texto em ink | sobre fundo claro: login, e-mail, documentos |
+| `logo-para-fundo-escuro.svg` | logo completo, símbolo em degradê e texto em branco | sobre fundo escuro |
+| `logo-mono-ink.svg` / `logo-mono-branco.svg` | logo completo em uma cor (ink / branco) | impressão e situações de uma cor só |
 | `simbolo-colorido.svg` | símbolo em degradê violeta → índigo → teal | tamanho grande (48 px ou mais) |
-| `simbolo-escuro.svg` / `simbolo-claro.svg` | símbolo chapado em ink / branco | interface pequena: navegação, avatar da conta Ageniza |
+| `simbolo-ink.svg` / `simbolo-branco.svg` | símbolo chapado em ink (para fundo claro) / branco (para fundo escuro) | interface pequena: navegação, avatar da conta Ageniza |
 | `icone-16.png`, `icone-32.png` | símbolo em ink, fundo transparente | favicon |
 | `icone-180.png`, `icone-512.png` | símbolo colorido sobre quadrado ink de cantos arredondados | ícone do app (Apple touch, PWA) |
-| `mascote-amigavel.webp` (+ `@2x`, + `.png`) | mascote de corpo inteiro, sem fundo, 480 px de altura (960 no @2x) | estados vazios, boas-vindas, convite |
-| `mascote-serio.webp` (+ `@2x`, + `.png`) | mascote em busto, sem fundo, 480 px de altura (960 no @2x) | 404, erro, agência suspensa, sessão encerrada |
+| `mascote-amigavel.webp` (+ `@2x.webp`, + `.png`) | mascote de corpo inteiro, sem fundo, 480 px de altura (960 no @2x) | estados vazios, boas-vindas, convite |
+| `mascote-serio.webp` (+ `@2x.webp`, + `.png`) | mascote em busto, sem fundo, 480 px de altura (960 no @2x) | 404, erro, agência suspensa, sessão encerrada |
 
-Prefira o WebP com `srcset` para o @2x; o PNG fica como alternativa para e-mail, onde WebP não é garantido.
+Use o WebP, com `srcset` para o @2x. O PNG (só 1x) fica para e-mail, onde WebP não é garantido. Nos nomes, `para-fundo-claro`/`para-fundo-escuro` diz onde a peça vai; `ink`/`branco` diz a cor da peça.
 
 Ainda não ligado no app: o favicon do `index.html` e o uso de cada peça nas telas entram nas tasks do redesign.
