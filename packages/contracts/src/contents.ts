@@ -162,7 +162,7 @@ export const ContentPeriodQuerySchema = StoryScriptPeriodQuerySchema;
 export const contentPeriodIssue = (query: z.infer<typeof ContentPeriodQuerySchema>): { readonly path: string; readonly message: string } | undefined =>
   storyScriptPeriodIssues(query)[0];
 
-/** One content as the calendar and the feed need it: no caption and no media. */
+/** One content as the calendar and the feed need it: no caption and no media. `thumbnailAssetId` is the file that serves as its cover: the chosen cover, else the first media, else null. */
 export const ContentListItemSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
@@ -173,6 +173,7 @@ export const ContentListItemSchema = z.object({
   status: ContentStatusSchema,
   owner: ContentPersonSchema.nullable(),
   coverAssetId: z.string().uuid().nullable(),
+  thumbnailAssetId: z.string().uuid().nullable(),
   revision: z.number().int().positive(),
   publishedOn: z.string().nullable(),
   tasksTotal: z.number().int().nonnegative(),

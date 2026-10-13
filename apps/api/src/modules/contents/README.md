@@ -38,6 +38,9 @@ contando os dois extremos (93 passa, 94 é `400`); até 500 itens somando conte�
 `400 CONTENT_PERIOD_TOO_LARGE`, sem cortar); não pagina. A resposta é
 `{ data: { contents, storyScripts }, meta: { from, to, count } }`, ordenada por dia, hora (sem hora por
 último) e `id`. O item de conteúdo não traz legenda nem mídia.
+`thumbnailAssetId` é o id do arquivo que serve de capa no card e no feed: a capa escolhida (`coverAssetId`),
+senão a primeira mídia confirmada e não removida, por posição, ou `null` (issue #606; a imagem é lida como
+`variant=thumbnail`, e o vídeo, pelo quadro gerado). Nenhum outro dado da mídia entra na lista.
 
 ## O que o banco decide e a rota só traduz
 

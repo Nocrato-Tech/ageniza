@@ -1263,6 +1263,13 @@
                       ],
                       "format": "uuid"
                     },
+                    "thumbnailAssetId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
                     "revision": {
                       "type": "integer",
                       "exclusiveMinimum": 0
@@ -1292,6 +1299,7 @@
                     "status",
                     "owner",
                     "coverAssetId",
+                    "thumbnailAssetId",
                     "revision",
                     "publishedOn",
                     "tasksTotal",
@@ -2095,6 +2103,13 @@
                       ],
                       "format": "uuid"
                     },
+                    "thumbnailAssetId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
                     "publishedOn": {
                       "type": [
                         "string",
@@ -2111,6 +2126,7 @@
                     "publishAtTime",
                     "status",
                     "coverAssetId",
+                    "thumbnailAssetId",
                     "publishedOn"
                   ],
                   "additionalProperties": false
@@ -2202,6 +2218,13 @@
                   ],
                   "format": "uuid"
                 },
+                "thumbnailAssetId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
                 "publishedOn": {
                   "type": [
                     "string",
@@ -2218,6 +2241,7 @@
                 "publishAtTime",
                 "status",
                 "coverAssetId",
+                "thumbnailAssetId",
                 "publishedOn"
               ],
               "additionalProperties": false
@@ -8716,6 +8740,7 @@
                           "name": "Ana Souza"
                         },
                         "coverAssetId": null,
+                        "thumbnailAssetId": "44444444-4444-4444-8444-444444444444",
                         "revision": 1,
                         "publishedOn": null,
                         "tasksTotal": 3,
@@ -11852,7 +11877,8 @@
                       "publishAtTime": "18:30",
                       "status": "awaiting_approval",
                       "coverAssetId": null,
-                      "publishedOn": null
+                      "publishedOn": null,
+                      "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
                     }
                   ],
                   "meta": {
@@ -12004,7 +12030,8 @@
                       "publishAtTime": "18:30",
                       "status": "awaiting_approval",
                       "coverAssetId": null,
-                      "publishedOn": null
+                      "publishedOn": null,
+                      "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
                     }
                   ],
                   "meta": {

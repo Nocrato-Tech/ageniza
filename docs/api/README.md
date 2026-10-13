@@ -1922,6 +1922,7 @@ Consulta os conteúdos e os roteiros de stories de um período.
           "name": "Ana Souza"
         },
         "coverAssetId": null,
+        "thumbnailAssetId": "44444444-4444-4444-8444-444444444444",
         "revision": 1,
         "publishedOn": null,
         "tasksTotal": 3,
@@ -2806,7 +2807,8 @@ Lista os conteúdos de um período, no portal.
       "publishAtTime": "18:30",
       "status": "awaiting_approval",
       "coverAssetId": null,
-      "publishedOn": null
+      "publishedOn": null,
+      "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
     }
   ],
   "meta": {
@@ -2849,7 +2851,8 @@ Lista o que espera a aprovação da pessoa, no portal.
       "publishAtTime": "18:30",
       "status": "awaiting_approval",
       "coverAssetId": null,
-      "publishedOn": null
+      "publishedOn": null,
+      "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
     }
   ],
   "meta": {
