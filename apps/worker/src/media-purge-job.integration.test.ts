@@ -5,7 +5,10 @@ import { resolve } from 'node:path';
 import { HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { WorkerStorageConfig } from '@ageniza/config/server';
 import { createLogger } from '@ageniza/core';
-import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, raw, resolveIntegrationDatabaseUrls, type DatabaseClient } from '@ageniza/database';
+import {
+  assertLocalDatabaseUrl, createLocalTestDatabaseClient, createVerifiedUserClaims, raw, resolveIntegrationDatabaseUrls, withAuthenticatedUserTransaction,
+  type DatabaseClient
+} from '@ageniza/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createMediaProcessingStorageClient } from './media-storage.js';
@@ -82,8 +85,11 @@ interface Seeded {
   readonly preview: string | null;
 }
 
-/** A confirmed media with its files in the bucket, removed `removedAgo` ago (never removed when `null`). A video has its thumbnail and its preview too. */
-const seedMedia = async (removedAgo: string | null, category: 'image' | 'video' = 'image'): Promise<Seeded> => {
+/**
+ * A confirmed media with its files in the bucket, removed `removedAgo` ago (never removed when `null`). A video has its thumbnail and its
+ * preview too. `files: false` leaves the bucket alone, for a media whose delete the test makes fail anyway.
+ */
+const seedMedia = async (removedAgo: string | null, category: 'image' | 'video' = 'image', { files = true }: { files?: boolean } = {}): Promise<Seeded> => {
   const assetId = randomUUID();
   assetIds.push(assetId);
   const extension = category === 'image' ? 'png' : 'mp4';
@@ -92,7 +98,7 @@ const seedMedia = async (removedAgo: string | null, category: 'image' | 'video' 
   const thumbnail = category === 'video' ? `${agencyId}/${assetId}/thumbnail.jpg` : null;
   const preview = category === 'video' ? `${agencyId}/${assetId}/preview.mp4` : null;
   const keys = [original, staging, ...(thumbnail === null ? [] : [thumbnail]), ...(preview === null ? [] : [preview])];
-  for (const key of keys) {
+  for (const key of files ? keys : []) {
     await s3.send(new PutObjectCommand({ Bucket: storageConfig.bucket, Key: key, Body: Buffer.from(`file ${key}`), ContentType: 'application/octet-stream' }));
   }
   await raw(owner.knex, `
@@ -108,6 +114,15 @@ const seedMedia = async (removedAgo: string | null, category: 'image' | 'video' 
     await raw(owner.knex, 'update public.media_assets set removed_at = now() - ?::interval where id = ?::uuid', [removedAgo, assetId]);
   }
   return { assetId, keys, original, preview };
+};
+
+/** What the quota function sums for the agency, read as its owner does when an upload asks for room. */
+const usage = async (): Promise<{ bytes: number; objects: number }> => {
+  const result = await withAuthenticatedUserTransaction(application, createVerifiedUserClaims({ userId }), (transaction) =>
+    raw<{ rows: Array<{ used_bytes: string; used_object_count: string }> }>(transaction,
+      'select used_bytes, used_object_count from app_private.agency_media_usage(?::uuid, ?::integer, ?::uuid)', [agencyId, 900, null])
+  );
+  return { bytes: Number(result.rows[0]!.used_bytes), objects: Number(result.rows[0]!.used_object_count) };
 };
 
 const row = async (assetId: string): Promise<{ purged_at: Date | null; removed_at: Date | null; object_key: string }> =>
@@ -183,13 +198,21 @@ afterAll(async () => {
 });
 
 describe('media purge job (real PostgreSQL + real local object storage)', () => {
-  it('deletes the files of a media removed more than 30 days ago, and keeps the row stamped with the same keys', async () => {
+  it('deletes the files of a media removed more than 30 days ago, keeps the row stamped with the same keys, and gives the quota back', async () => {
     const image = await seedMedia('31 days');
     const video = await seedMedia('45 days', 'video');
+    const onlyRemoved = await seedMedia('10 days');
     expect(await filesLeft(image)).toHaveLength(2);
     expect(await filesLeft(video)).toHaveLength(4);
+    const before = await usage();
 
     await runJob();
+
+    // Two media of 1000 bytes left the sum; the one removed 10 days ago is still counted, with its files.
+    const after = await usage();
+    expect(before.bytes - after.bytes).toBe(2000);
+    expect(before.objects - after.objects).toBe(2);
+    expect(await filesLeft(onlyRemoved)).toEqual(onlyRemoved.keys);
 
     expect(await filesLeft(image)).toEqual([]);
     expect(await filesLeft(video)).toEqual([]);
@@ -278,5 +301,24 @@ describe('media purge job (real PostgreSQL + real local object storage)', () => 
 
     expect(await filesLeft(stuck)).toEqual([]);
     expect((await row(stuck.assetId)).purged_at).toBeInstanceOf(Date);
+  });
+
+  it('goes past a batch of media whose files cannot be deleted: the one behind them is purged in the same run', async () => {
+    const stuck: Seeded[] = [];
+    for (let index = 0; index < 50; index += 1) stuck.push(await seedMedia('40 days', 'image', { files: false }));
+    const behind = await seedMedia('31 days');
+    const real = createMediaProcessingStorageClient(storageConfig);
+    const refusesEverythingButOne = {
+      deleteObject: async (input: { key: string; signal: AbortSignal }): Promise<void> => {
+        if (!behind.keys.includes(input.key)) throw Object.assign(new Error('The storage refused.'), { name: 'AccessDenied' });
+        await real.deleteObject(input);
+      }
+    };
+
+    await runJob(refusesEverythingButOne as ReturnType<typeof createMediaProcessingStorageClient>);
+
+    expect(await filesLeft(behind)).toEqual([]);
+    expect((await row(behind.assetId)).purged_at).toBeInstanceOf(Date);
+    for (const media of stuck) expect((await row(media.assetId)).purged_at).toBeNull();
   });
 });

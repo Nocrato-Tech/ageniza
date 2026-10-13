@@ -13,7 +13,11 @@ interface Row {
   upload_object_key: string;
   thumbnail_object_key: string | null;
   preview_object_key: string | null;
+  removed_at: string;
 }
+
+/** The size of a batch is a number the test knows, not the constant of the job. */
+const BATCH = 50;
 
 const AGENCY = '00000000-0000-4000-8000-0000000000aa';
 const id = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -23,7 +27,8 @@ const image = (n: number): Row => ({
   object_key: `${AGENCY}/${id(n)}/original.png`,
   upload_object_key: `staging/${AGENCY}/${id(n)}/upload.png`,
   thumbnail_object_key: null,
-  preview_object_key: null
+  preview_object_key: null,
+  removed_at: `2026-08-01 10:00:00.${String(n).padStart(6, '0')}+00`
 });
 const video = (n: number): Row => ({
   ...image(n),
@@ -36,9 +41,9 @@ const video = (n: number): Row => ({
 const lostRace = (code: string): Error => Object.assign(new Error('lost the race'), { code });
 
 /**
- * The database as the two functions answer: the list is what is due and not yet stamped, oldest first, at most the batch asked, and
- * the stamp takes the media out of the list and says it stamped. It is told what is due and what the stamp does, never how many
- * the job will purge.
+ * The database as the two functions answer: the list is what is due and not yet stamped, oldest first and after the cursor (the removal
+ * time and the id of the last media of the previous batch, both or neither, 22023 otherwise), at most the batch asked, and the stamp
+ * takes the media out of the list and says it stamped. It is told what is due and what the stamp does, never how many the job will purge.
  */
 const databaseWith = (
   due: Row[],
@@ -49,7 +54,12 @@ const databaseWith = (
     if (sql.includes('media_due_for_purge')) {
       calls.push('list');
       await options.list?.();
-      return { rows: due.slice(0, Number(bindings[0])) };
+      const [limit, afterRemovedAt, afterId] = bindings;
+      if ((afterRemovedAt === null) !== (afterId === null)) throw lostRace('22023');
+      const page = [...due]
+        .sort((a, b) => a.removed_at.localeCompare(b.removed_at) || a.asset_id.localeCompare(b.asset_id))
+        .filter((row) => afterId === null || row.removed_at > String(afterRemovedAt) || (row.removed_at === afterRemovedAt && row.asset_id > String(afterId)));
+      return { rows: page.slice(0, Number(limit)) };
     }
     if (sql.includes('mark_media_purged')) {
       const assetId = String(bindings[0]);
@@ -163,24 +173,55 @@ describe('media.purge-removed', () => {
       expect(calls.some((call) => call.startsWith('stamp'))).toBe(false);
     });
 
-    it('asks once when a whole batch fails, so a media that cannot be purged never loops the run', async () => {
-      const rows = Array.from({ length: MEDIA_PURGE_BATCH_SIZE }, (_value, index) => image(index + 1));
-      const failing = new Map(rows.map((row) => [row.object_key, new Error('down')] as const));
+    it('goes past a whole batch that fails: the media behind it, listed from the cursor, is purged in the same run', async () => {
+      const failingRows = Array.from({ length: BATCH }, (_value, index) => image(index + 1));
+      const good = image(BATCH + 1);
+      const failing = new Map(failingRows.map((row) => [row.object_key, new Error('down')] as const));
+      const { database, calls, raw } = databaseWith([...failingRows, good]);
+      const { logger, records } = captureLogger();
+
+      await run(mediaPurgeJob({ database, storage: storageWith(calls, failing) }), logger);
+
+      expect(calls.filter((call) => call.startsWith('stamp'))).toEqual([`stamp ${good.asset_id}`]);
+      expect(raw.mock.calls.filter(([sql]) => String(sql).includes('media_due_for_purge')).map(([, bindings]) => bindings)).toEqual([
+        [BATCH, null, null],
+        [BATCH, failingRows[BATCH - 1]!.removed_at, failingRows[BATCH - 1]!.asset_id]
+      ]);
+      const all = await records();
+      expect(all.filter((record) => record.msg === PURGED_MESSAGE)).toMatchObject([{ purged: 1 }]);
+      expect(all.find((record) => record.level === 40)).toMatchObject({ left: BATCH });
+    });
+
+    it('tries the files of a media that failed once in the run, though two full batches go by', async () => {
+      const rows = Array.from({ length: 2 * BATCH }, (_value, index) => image(index + 1));
+      const stuck = rows[2]!;
       const { database, calls } = databaseWith(rows);
-      await run(mediaPurgeJob({ database, storage: storageWith(calls, failing) }), captureLogger().logger);
-      expect(calls.filter((call) => call === 'list')).toHaveLength(1);
-      expect(calls.some((call) => call.startsWith('stamp'))).toBe(false);
+      const storage = storageWith(calls, new Map([[stuck.object_key, new Error('down')]]));
+
+      await run(mediaPurgeJob({ database, storage }), captureLogger().logger);
+
+      expect(storage.deleteObject.mock.calls.filter(([input]) => input.key === stuck.object_key)).toHaveLength(1);
+      expect(calls.filter((call) => call.startsWith('stamp'))).toHaveLength(2 * BATCH - 1);
+      expect(calls.filter((call) => call === 'list')).toHaveLength(3);
     });
   });
 
   describe('the stamp', () => {
-    it('does not count a media the database says it did not stamp (no longer due, or in use), and stops when nothing was stamped', async () => {
-      const rows = Array.from({ length: MEDIA_PURGE_BATCH_SIZE }, (_value, index) => image(index + 1));
-      const { database, calls } = databaseWith(rows, { stamp: () => false });
+    it('does not count a media the database says it did not stamp (no longer due, or in use)', async () => {
+      const { database, calls } = databaseWith([image(1)], { stamp: () => false });
       const { logger, records } = captureLogger();
       await run(mediaPurgeJob({ database, storage: storageWith(calls) }), logger);
-      expect(calls.filter((call) => call === 'list')).toHaveLength(1);
+      expect(calls.filter((call) => call.startsWith('stamp'))).toEqual([`stamp ${id(1)}`]);
       expect((await records()).filter((record) => record.msg === PURGED_MESSAGE)).toMatchObject([{ purged: 0 }]);
+    });
+
+    it('goes on past a whole batch the database did not stamp, and counts only the one it did', async () => {
+      const rows = Array.from({ length: BATCH + 1 }, (_value, index) => image(index + 1));
+      const { database, calls } = databaseWith(rows, { stamp: (assetId) => assetId === id(BATCH + 1) });
+      const { logger, records } = captureLogger();
+      await run(mediaPurgeJob({ database, storage: storageWith(calls) }), logger);
+      expect(calls.filter((call) => call === 'list')).toHaveLength(2);
+      expect((await records()).filter((record) => record.msg === PURGED_MESSAGE)).toMatchObject([{ purged: 1 }]);
     });
 
     it.each(['40P01', '40001'])('leaves a media whose stamp lost a race (%s) for the next run and goes on', async (code) => {
@@ -209,14 +250,25 @@ describe('media.purge-removed', () => {
   });
 
   describe('the batches', () => {
-    it('asks again after a full batch, and stops at the first batch that is not full', async () => {
-      const rows = Array.from({ length: MEDIA_PURGE_BATCH_SIZE + 3 }, (_value, index) => image(index + 1));
+    it('asks 50 at a time, and again after a full batch from the last media of the one before, and stops at the first batch that is not full', async () => {
+      expect(MEDIA_PURGE_BATCH_SIZE).toBe(50);
+      const rows = Array.from({ length: 53 }, (_value, index) => image(index + 1));
       const { database, calls, raw } = databaseWith(rows);
       const { logger, records } = captureLogger();
       await run(mediaPurgeJob({ database, storage: storageWith(calls) }), logger);
       expect(calls.filter((call) => call === 'list')).toHaveLength(2);
-      expect(raw.mock.calls.filter(([sql]) => String(sql).includes('media_due_for_purge')).map(([, bindings]) => bindings)).toEqual([[MEDIA_PURGE_BATCH_SIZE], [MEDIA_PURGE_BATCH_SIZE]]);
-      expect((await records()).filter((record) => record.msg === PURGED_MESSAGE)).toMatchObject([{ purged: MEDIA_PURGE_BATCH_SIZE + 3 }]);
+      expect(raw.mock.calls.filter(([sql]) => String(sql).includes('media_due_for_purge')).map(([, bindings]) => bindings)).toEqual([
+        [50, null, null],
+        [50, image(50).removed_at, image(50).asset_id]
+      ]);
+      expect((await records()).filter((record) => record.msg === PURGED_MESSAGE)).toMatchObject([{ purged: 53 }]);
+    });
+
+    it('refuses a row of the list that has no removal time to continue from', async () => {
+      const withoutRemovedAt: Partial<Row> = image(1);
+      delete withoutRemovedAt.removed_at;
+      const { database, calls } = databaseWith([withoutRemovedAt as Row]);
+      await expect(run(mediaPurgeJob({ database, storage: storageWith(calls) }), captureLogger().logger)).rejects.toThrow(/did not return removed_at/);
     });
 
     it('lets an error of the list out', async () => {

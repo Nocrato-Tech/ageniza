@@ -12,9 +12,10 @@ export const MEDIA_PURGE_SCHEDULE = { cron: '40 3 * * *', timeZone: 'America/Sao
 export const MEDIA_PURGE_BATCH_SIZE = 50;
 const MAX_BATCHES = 400;
 
+// `removed_at` travels as text: a JavaScript Date drops the microseconds, and a cursor that is a hair before its own row offers that row again.
 const LIST_SQL = `
-  select asset_id, agency_id, object_key, upload_object_key, thumbnail_object_key, preview_object_key
-  from app_private.media_due_for_purge(?::integer)
+  select asset_id, object_key, upload_object_key, thumbnail_object_key, preview_object_key, removed_at::text as removed_at
+  from app_private.media_due_for_purge(?::integer, ?::timestamptz, ?::uuid)
 `;
 const STAMP_SQL = 'select app_private.mark_media_purged(?::uuid) as purged';
 
@@ -25,6 +26,7 @@ export interface MediaPurgeJobDependencies {
 
 interface DueMedia {
   readonly assetId: string;
+  readonly removedAt: string;
   readonly keys: readonly string[];
 }
 
@@ -45,7 +47,7 @@ const dueMediaOf = (row: Record<string, unknown>): DueMedia => {
     optionalText(row.thumbnail_object_key, 'thumbnail_object_key'),
     optionalText(row.preview_object_key, 'preview_object_key')
   ].filter((key): key is string => key !== undefined);
-  return { assetId: text(row.asset_id, 'asset_id'), keys: [...new Set(keys)] };
+  return { assetId: text(row.asset_id, 'asset_id'), removedAt: text(row.removed_at, 'removed_at'), keys: [...new Set(keys)] };
 };
 
 /**
@@ -61,8 +63,9 @@ const dueMediaOf = (row: Record<string, unknown>): DueMedia => {
  * id and the name of the error are logged (a key carries the agency, and no one needs it to follow up). A stamp lost to a deadlock or a
  * serialization failure is left the same way; any other database error, and an aborted run (the worker stops), throw so the queue retries.
  *
- * Idempotent, as every durable job must be: a run that finds nothing due does nothing, so it can run daily and at every start. A run asks
- * again after a full batch, and stops at the first batch in which nothing was stamped, so a media that cannot be purged never loops it.
+ * Idempotent, as every durable job must be: a run that finds nothing due does nothing, so it can run daily and at every start. The list is
+ * read by cursor: each question starts after the last media of the previous batch, stamped or not, and the run stops at the first batch that
+ * is not full. So a media that cannot be purged is asked once per run, and never holds the head of the queue against the ones behind it.
  */
 export const mediaPurgeJob = (dependencies: MediaPurgeJobDependencies): DurableJobDefinition<Record<string, never>> => ({
   name: MEDIA_PURGE_JOB_NAME,
@@ -72,15 +75,16 @@ export const mediaPurgeJob = (dependencies: MediaPurgeJobDependencies): DurableJ
     let purged = 0;
     // The media left for the next run and why, by the name of the error: never a key, and never the text of the storage.
     const failed = new Map<string, string>();
+    let after: DueMedia | undefined;
 
     for (let batch = 0; batch < MAX_BATCHES; batch += 1) {
       context.signal.throwIfAborted();
-      const listed = await raw<{ rows: ReadonlyArray<Record<string, unknown>> }>(dependencies.database.knex, LIST_SQL, [MEDIA_PURGE_BATCH_SIZE]);
+      const listed = await raw<{ rows: ReadonlyArray<Record<string, unknown>> }>(
+        dependencies.database.knex, LIST_SQL, [MEDIA_PURGE_BATCH_SIZE, after?.removedAt ?? null, after?.assetId ?? null]
+      );
       const due = listed.rows.map(dueMediaOf);
 
-      let stampedInBatch = 0;
       for (const media of due) {
-        if (failed.has(media.assetId)) continue;
         try {
           for (const key of media.keys) {
             context.signal.throwIfAborted();
@@ -95,17 +99,15 @@ export const mediaPurgeJob = (dependencies: MediaPurgeJobDependencies): DurableJ
           const stamped = await raw<{ rows: ReadonlyArray<{ purged: unknown }> }>(dependencies.database.knex, STAMP_SQL, [media.assetId]);
           const answer = stamped.rows[0]?.purged;
           if (typeof answer !== 'boolean') throw new Error('mark_media_purged() did not return whether it stamped.');
-          if (answer) {
-            purged += 1;
-            stampedInBatch += 1;
-          }
+          if (answer) purged += 1;
         } catch (error) {
           if (!isRetryableConflict(error)) throw error;
           failed.set(media.assetId, 'RetryableConflict');
         }
       }
 
-      if (due.length < MEDIA_PURGE_BATCH_SIZE || stampedInBatch === 0) break;
+      if (due.length < MEDIA_PURGE_BATCH_SIZE) break;
+      after = due[due.length - 1];
     }
 
     context.logger.info({ purged }, 'Purged the removed media past its retention');
