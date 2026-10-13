@@ -67,3 +67,47 @@ describe('test:integration lists the integration files of each package', () => {
     ).toEqual([]);
   });
 });
+
+// The API and the worker import @ageniza/contracts through its dist, and `pnpm --filter <pkg> test:integration` does not
+// rebuild it. A dist from another commit then fails the suite with undefined values (issue #609). A package that depends
+// on the workspace must run the turbo build of its dependencies in a `pre` hook, with that exact command; a package
+// without workspace dependencies (packages/database) builds itself inside its script with `pnpm build &&`. The packages
+// are found by git, so a new package with test:integration is checked too.
+const readPackage = (dir) => JSON.parse(readFileSync(join(root, dir, 'package.json'), 'utf8'));
+
+const testIntegrationPackages = () =>
+  git(['ls-files', '*/package.json'])
+    .split('\n')
+    .filter((path) => path !== '')
+    .map((path) => path.slice(0, -'/package.json'.length))
+    .filter((dir) => readPackage(dir).scripts?.['test:integration'] !== undefined);
+
+const workspaceDependencies = (pkg) =>
+  Object.entries({ ...pkg.dependencies, ...pkg.devDependencies })
+    .filter(([, version]) => String(version).startsWith('workspace:'))
+    .map(([name]) => name);
+
+describe('test:integration rebuilds the workspace dependencies before it runs (issue #609)', () => {
+  const discovered = testIntegrationPackages();
+
+  it('finds the packages with test:integration, so the checks below are not empty', () => {
+    expect(discovered).toEqual(expect.arrayContaining(['apps/api', 'apps/worker', 'packages/database']));
+  });
+
+  for (const dir of discovered) {
+    const pkg = readPackage(dir);
+    const script = pkg.scripts['test:integration'];
+
+    if (workspaceDependencies(pkg).length > 0) {
+      it(`${dir}: pretest:integration is the turbo build of ${pkg.name}'s dependencies, and nothing else`, () => {
+        expect(pkg.scripts['pretest:integration'], `${dir}/package.json`).toBe(
+          `pnpm exec turbo run build --filter=${pkg.name}^...`,
+        );
+      });
+    } else {
+      it(`${dir}: test:integration builds the package before it runs (it has no workspace dependencies)`, () => {
+        expect(script.startsWith('pnpm build &&'), `${dir}/package.json: "${script.slice(0, 40)}..."`).toBe(true);
+      });
+    }
+  }
+});
