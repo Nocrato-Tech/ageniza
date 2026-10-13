@@ -167,7 +167,7 @@ export const detailOf = (row: Stored) => ({
 
 export const listItemOf = (row: Stored) => ({
   id: row.id, title: row.title, platform: 'instagram', format: row.format, publishOn: row.publishOn, publishAtTime: row.publishAtTime,
-  status: row.status, owner: { membershipId: 'e0e0e0e0-0000-4000-8000-000000000001', name: 'Ana Souza' }, coverAssetId: row.coverAssetId, revision: row.revision, publishedOn: null, tasksTotal: 0, tasksApproved: 0
+  status: row.status, owner: { membershipId: 'e0e0e0e0-0000-4000-8000-000000000001', name: 'Ana Souza' }, coverAssetId: row.coverAssetId, thumbnailAssetId: row.coverAssetId ?? row.media[0] ?? null, revision: row.revision, publishedOn: null, tasksTotal: 0, tasksApproved: 0
 });
 
 export type ConversationFake = ReturnType<typeof createConversationApi>;

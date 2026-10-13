@@ -386,6 +386,7 @@ const contentPeriodExample = {
       status: 'in_production',
       owner: { membershipId, name: 'Ana Souza' },
       coverAssetId: null,
+      thumbnailAssetId: assetId,
       revision: 1,
       publishedOn: null,
       tasksTotal: 3,
@@ -407,6 +408,8 @@ const portalContentOpenExample = {
   coverAssetId: null,
   publishedOn: null
 } as const;
+
+const portalContentOpenListExample = { ...portalContentOpenExample, thumbnailAssetId: assetId } as const;
 
 const portalContentDetailExample = {
   ...portalContentOpenExample,
@@ -1575,7 +1578,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       example: {
         data: [
           { id: '12121212-1212-4121-8121-121212121212', title: 'Bastidores da produção', format: 'image', publishOn: '2026-10-18', status: 'in_production' },
-          portalContentOpenExample
+          portalContentOpenListExample
         ],
         meta: { from: '2026-10-01', to: '2026-10-31', count: 2 }
       }
@@ -1607,7 +1610,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       status: 200,
       description: 'Conteúdos aguardando aprovação.',
       schema: PortalContentAwaitingResponseSchema,
-      example: { data: [portalContentOpenExample], meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 } }
+      example: { data: [portalContentOpenListExample], meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 } }
     }],
     errors: [
       COMMON_ERRORS.internal,

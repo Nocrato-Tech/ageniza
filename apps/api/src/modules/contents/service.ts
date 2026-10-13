@@ -53,6 +53,7 @@ interface ListRow {
   readonly owner_membership_id: string | null;
   readonly owner_name: string | null;
   readonly cover_asset_id: string | null;
+  readonly thumbnail_asset_id: string | null;
   readonly revision: number;
   readonly published_on: string | null;
   readonly tasks_total: string | number;
@@ -169,10 +170,22 @@ export const listPeriod = async (
       content.id, content.title, content.platform, content.format, content.publish_on::text as publish_on,
       to_char(content.publish_at_time, 'HH24:MI') as publish_at_time, content.status,
       owner_link.id as owner_membership_id, owner_account.name as owner_name,
-      content.cover_asset_id, content.revision, content.published_on::text as published_on,
+      content.cover_asset_id, thumbnail.asset_id as thumbnail_asset_id, content.revision, content.published_on::text as published_on,
       tasks.total as tasks_total, tasks.approved as tasks_approved
     from public.contents content
     ${OWNER_JOINS}
+    left join lateral (
+      select entry.asset_id
+      from (
+        select content.cover_asset_id as asset_id, 0 as item_position where content.cover_asset_id is not null
+        union all
+        select item.asset_id, item.position from public.content_media item where item.content_id = content.id
+      ) entry
+      join public.media_assets asset on asset.id = entry.asset_id
+      where asset.status = 'confirmed' and asset.removed_at is null
+      order by entry.item_position, entry.asset_id
+      limit 1
+    ) thumbnail on true
     left join lateral (
       select count(*) as total, count(*) filter (where task.status = 'approved') as approved
       from public.content_tasks task
@@ -202,6 +215,7 @@ export const listPeriod = async (
       status: row.status,
       owner: ownerOf(row),
       coverAssetId: row.cover_asset_id,
+      thumbnailAssetId: row.thumbnail_asset_id,
       revision: Number(row.revision),
       publishedOn: row.published_on,
       tasksTotal: Number(row.tasks_total),

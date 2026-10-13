@@ -291,6 +291,7 @@ describe('the period query (issue #254)', () => {
       status: 'approved',
       owner: await ownerOf('production'),
       coverAssetId: null,
+      thumbnailAssetId: null,
       revision: 1,
       publishedOn: null,
       tasksTotal: 4,
@@ -301,6 +302,81 @@ describe('the period query (issue #254)', () => {
     expect(withoutTasks.tasksApproved).toBe(0);
     expect(Object.keys(withTasks)).not.toContain('caption');
     expect(Object.keys(withTasks)).not.toContain('media');
+  });
+
+  describe('the file that serves as the cover of the card (issue #606)', () => {
+    let coverClient: string;
+    let coverFolder: string;
+    const day = '2026-10-14';
+
+    beforeAll(async () => {
+      coverClient = await w.newClient('thumbnail');
+      coverFolder = await w.folderOf(coverClient);
+    });
+
+    const itemOf = async (contentId: string, cookie = people.admin.cookie): Promise<Record<string, unknown>> => {
+      const reply = await w.call('GET', cookie, `${urlA(coverClient)}?from=${day}&to=${day}`);
+      expect(reply.statusCode).toBe(200);
+      return reply.json().data.contents.find((item: { id: string }) => item.id === contentId);
+    };
+
+    const image = (extra: Parameters<typeof w.seedAsset>[2] = {}): Promise<string> => w.seedAsset(coverClient, coverFolder, { category: 'image', ...extra });
+
+    it('is the image of a post that has no chosen cover, read by a person who only sees the contents', async () => {
+      const asset = await image();
+      const contentId = await w.seedContent(coverClient, { publishOn: day, format: 'image', folderId: coverFolder });
+      await w.attach(contentId, [asset]);
+      expect(await itemOf(contentId, people.reader.cookie)).toMatchObject({ coverAssetId: null, thumbnailAssetId: asset });
+    });
+
+    it('is the first media by position, and not the first by id', async () => {
+      const [low, high] = [await image(), await image()].sort();
+      const contentId = await w.seedContent(coverClient, { publishOn: day, format: 'carousel', folderId: coverFolder });
+      await w.attach(contentId, [high as string, low as string]);
+      expect(await itemOf(contentId)).toMatchObject({ thumbnailAssetId: high });
+    });
+
+    it('is the chosen cover before the media, and the cover stays in coverAssetId', async () => {
+      const cover = await image();
+      const asset = await w.seedAsset(coverClient, coverFolder, { category: 'video', video: 'ready' });
+      const contentId = await w.seedContent(coverClient, { publishOn: day, format: 'reels', folderId: coverFolder, coverAssetId: cover });
+      await w.attach(contentId, [asset]);
+      expect(await itemOf(contentId)).toMatchObject({ coverAssetId: cover, thumbnailAssetId: cover });
+    });
+
+    it('is the first video of a reels without a chosen cover, whose frame the media route serves', async () => {
+      const video = await w.seedAsset(coverClient, coverFolder, { category: 'video', video: 'ready' });
+      const contentId = await w.seedContent(coverClient, { publishOn: day, format: 'reels', folderId: coverFolder });
+      await w.attach(contentId, [video]);
+      expect(await itemOf(contentId)).toMatchObject({ coverAssetId: null, thumbnailAssetId: video });
+    });
+
+    it('is null for a content with no media and no cover', async () => {
+      const contentId = await w.seedContent(coverClient, { publishOn: day, format: 'image', folderId: coverFolder });
+      expect(await itemOf(contentId)).toMatchObject({ coverAssetId: null, thumbnailAssetId: null });
+    });
+
+    it('skips a media that was removed or never confirmed, and is null when none is left', async () => {
+      const removed = await image({ removed: true });
+      const pending = await image({ status: 'pending' });
+      const good = await image();
+      const contentId = await w.seedContent(coverClient, { publishOn: day, format: 'carousel', folderId: coverFolder });
+      await w.attach(contentId, [removed, pending, good]);
+      expect(await itemOf(contentId)).toMatchObject({ thumbnailAssetId: good });
+
+      const onlyBad = await w.seedContent(coverClient, { publishOn: day, format: 'carousel', folderId: coverFolder });
+      await w.attach(onlyBad, [await image({ removed: true }), await image({ status: 'pending' })]);
+      expect(await itemOf(onlyBad)).toMatchObject({ thumbnailAssetId: null });
+    });
+
+    it('falls to the first media when the chosen cover was removed', async () => {
+      const cover = await image();
+      const asset = await image();
+      const contentId = await w.seedContent(coverClient, { publishOn: day, format: 'reels', folderId: coverFolder, coverAssetId: cover });
+      await w.attach(contentId, [asset]);
+      await w.getOwner().knex('media_assets').where({ id: cover }).update({ removed_at: new Date() });
+      expect(await itemOf(contentId)).toMatchObject({ coverAssetId: cover, thumbnailAssetId: asset });
+    });
   });
 
   it('lists the cancelled and the published too, with their state', async () => {

@@ -37,6 +37,7 @@ export const PortalContentOpenListItemSchema = z.object({
   publishAtTime: z.string().nullable(),
   status: z.enum(['awaiting_approval', 'adjusting', 'approved', 'published']),
   coverAssetId: z.string().uuid().nullable(),
+  thumbnailAssetId: z.string().uuid().nullable(),
   publishedOn: z.string().nullable()
 }).strict();
 
@@ -53,7 +54,7 @@ export const PortalContentMediaItemSchema = z.object({
  * The post, with its caption and media. `revision` is what the person read: the approval and the request for changes
  * carry it back, so a caption edited between the reading and the click is refused instead of approved unseen.
  */
-export const PortalContentOpenDetailSchema = PortalContentOpenListItemSchema.extend({
+export const PortalContentOpenDetailSchema = PortalContentOpenListItemSchema.omit({ thumbnailAssetId: true }).extend({
   caption: z.string().nullable(),
   revision: z.number().int().positive(),
   media: z.array(PortalContentMediaItemSchema)
