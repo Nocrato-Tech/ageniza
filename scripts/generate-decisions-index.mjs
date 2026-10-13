@@ -17,6 +17,7 @@ export const MODULES = [
   'Clientes',
   'Conteúdo',
   'Mídia',
+  'Entrada',
   'Autorização e transversais',
   'Processo e operação',
   'Infra',
