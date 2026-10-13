@@ -49,18 +49,18 @@
 
   --calendar-today-bg: color-mix(in srgb, var(--action-primary-bg) 14%, var(--bg-surface));
 
-  /* Format tint of a calendar card: bg and fg for the card, tag (fill) and tag-fg for the label. */
+  /* Format tint of a calendar card: bg and fg for the card, tag-bg (fill) and tag-fg for the label. */
   --format-carousel-bg: color-mix(in srgb, var(--color-teal-500) 10%, var(--color-white));
   --format-carousel-fg: var(--color-teal-700);
-  --format-carousel-tag: var(--color-teal-700);
+  --format-carousel-tag-bg: var(--color-teal-700);
   --format-carousel-tag-fg: var(--color-white);
   --format-reels-bg: color-mix(in srgb, var(--color-violet-600) 7%, var(--color-white));
   --format-reels-fg: var(--color-violet-600);
-  --format-reels-tag: var(--color-violet-600);
+  --format-reels-tag-bg: var(--color-violet-600);
   --format-reels-tag-fg: var(--color-white);
   --format-static-bg: var(--color-mist-100);
   --format-static-fg: var(--color-ink-900);
-  --format-static-tag: var(--color-slate-600);
+  --format-static-tag-bg: var(--color-slate-600);
   --format-static-tag-fg: var(--color-white);
 
   /* Base of the client badge photo: indigo and violet darkened over ink (white text on it >= 9.5:1). */

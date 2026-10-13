@@ -189,7 +189,7 @@ Implementados em [`apps/web/src/styles/tokens/semantic.css`](../apps/web/src/sty
 | `action/danger/fg` | `color/white` |
 | `focus/ring` | `color/indigo/600` |
 
-**Estado, formato e crachá (Pauta).** Implementados em `semantic.css` (claro) e `themes/dark.css`. `status/{ready,waiting,adjust,late,published,production}/fg` é a cor do **ícone** do estado (não-texto, 3:1); o rótulo fica em `text/secondary`, então o par de texto nunca depende da cor do estado. `calendar/today/bg` é `color-mix(action/primary/bg 14%, bg/surface)`. `format/{carousel,reels,static}/{bg,fg,tag,tag-fg}` tinge o card do calendário por formato (fundo e título) e preenche a etiqueta (`tag` com texto `tag-fg`); o índigo fica fora dos formatos porque é da ação e do hoje. `client-badge/fade/{start,end}` é a base do crachá do cliente (índigo/600 e violeta/600 a 60% sobre `ink/900`). `shadow/floating` é a única sombra do sistema.
+**Estado, formato e crachá (Pauta).** Implementados em `semantic.css` (claro) e `themes/dark.css`. `status/{ready,waiting,adjust,late,published,production}/fg` é a cor do **ícone** do estado (não-texto, 3:1); o rótulo fica em `text/secondary`, então o par de texto nunca depende da cor do estado. `calendar/today/bg` é `color-mix(action/primary/bg 14%, bg/surface)`. `format/{carousel,reels,static}/{bg,fg,tag/bg,tag/fg}` tinge o card do calendário por formato (fundo e título) e preenche a etiqueta (`tag/bg` com texto `tag/fg`); o índigo fica fora dos formatos porque é da ação e do hoje. `client-badge/fade/{start,end}` é a base do crachá do cliente (índigo/600 e violeta/600 a 60% sobre `ink/900`). `shadow/floating` é a única sombra do sistema.
 
 `text/muted` está apto para captions, metadata e helper text, inclusive sobre `bg/hover` e `bg/elevated` (seção 20.1, valor de `color/slate/500` ajustado em 2026-09-28 para isso). Conteúdo disabled usa `action/disabled/fg` (sem valor ainda), não `text/muted`.
 
@@ -268,7 +268,7 @@ Escala, cada degrau como uma custom property com o shorthand `font` (peso tamanh
 
 | Token | Definição | Peso |
 |---|---|---|
-| `display` | Archivo Expanded 48/52 | 800 |
+| `display/lg` | Archivo Expanded 48/52 | 800 |
 | `heading/xl` | Archivo Expanded 32/38 | 800 |
 | `heading/lg` | Archivo Semi Expanded 22/28 | 700 |
 | `title/md` | Geist 16/24 | 600 |
@@ -281,7 +281,7 @@ Regras: no máximo três tamanhos por tela; título com mais espaço acima que a
 
 ## 11. Shadows / elevation
 
-Implementado em `semantic.css` como `shadow/floating = 0 24px 48px -12px rgb(0 0 0 / .55), 0 2px 6px rgb(0 0 0 / .35)`. **Sombra só no que flutua** (modal, menu, cartão do hover); o resto se separa por luminosidade e borda: canvas `ink/900`, superfície `ink/800` com borda `ink/700`, elevado `ink/700`. `shadow/none`, `sm`, `md` e `lg` continuam conceituais, sem valor.
+Implementado em `semantic.css` como `shadow/floating = 0 24px 48px -12px rgb(0 0 0 / .55), 0 2px 6px rgb(0 0 0 / .35)`. **Sombra só no que flutua** (modal, menu, cartão do hover); o resto se separa por luminosidade e borda: canvas `ink/900`, superfície `ink/800` com a borda `border/default` (`ink/600` hoje; a folha do canvas leva a borda para `ink/700`, o que fica para o tema escuro da #623), elevado `ink/700`. `shadow/none`, `sm`, `md` e `lg` continuam conceituais, sem valor.
 
 ## 12. Motion
 
@@ -479,9 +479,9 @@ Pares de texto sobre fundo em Light e Dark, contra WCAG AA (4.5:1 para texto nor
 | `format/carousel/fg` sobre `format/carousel/bg` | 5.00:1 | 6.20:1 |
 | `format/reels/fg` sobre `format/reels/bg` | 5.14:1 | 6.04:1 |
 | `format/static/fg` sobre `format/static/bg` | 16.40:1 | 8.50:1 |
-| `format/carousel/tag-fg` sobre `format/carousel/tag` | 5.47:1 | 7.13:1 |
-| `format/reels/tag-fg` sobre `format/reels/tag` | 5.70:1 | 6.52:1 |
-| `format/static/tag-fg` sobre `format/static/tag` | 7.58:1 | 11.95:1 |
+| `format/carousel/tag/fg` sobre `format/carousel/tag/bg` | 5.47:1 | 7.13:1 |
+| `format/reels/tag/fg` sobre `format/reels/tag/bg` | 5.70:1 | 6.52:1 |
+| `format/static/tag/fg` sobre `format/static/tag/bg` | 7.58:1 | 11.95:1 |
 | `text/secondary` sobre `format/{carousel,reels,static}/bg` | 6.92:1 · 6.83:1 · 7.00:1 | 8.11:1 · 8.13:1 · 8.50:1 |
 | `text/primary` sobre `calendar/today/bg` | 14.33:1 | 12.23:1 |
 | branco sobre `client-badge/fade/start` / `end` | n/a (crachá é escuro) | 9.96:1 / 9.53:1 |

@@ -1,9 +1,10 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const STYLES = __dirname;
-const read = (file: string) => readFileSync(join(STYLES, file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+const FONTS = join(STYLES, '..', '..', 'node_modules', '@fontsource-variable');
+const read = (file: string) => readFileSync(join(STYLES, file), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
 
 const declarations = (css: string, selector: string) => {
   const start = css.indexOf(`${selector} {`);
@@ -57,6 +58,19 @@ const contrast = (theme: keyof typeof themes, fg: string, bg: string) =>
 
 const themed = (names: Iterable<string>) => [...names].filter((name) => /^--(status|format)-/.test(name)).sort();
 
+const themedValues = (tokens: Map<string, string>) => Object.fromEntries(themed(tokens.keys()).map((name) => [name, tokens.get(name)]));
+
+const fontFaces = (css: string) =>
+  [...css.matchAll(/@font-face\s*\{([^}]*)\}/g)].map((face) => {
+    const property = (name: string) => new RegExp(`${name}:\\s*([^;]+);`).exec(face[1]!)?.[1]?.trim();
+    return {
+      family: property('font-family')?.replace(/'/g, ''),
+      stretch: property('font-stretch'),
+      weight: property('font-weight'),
+      src: property('src')
+    };
+  });
+
 describe('Pauta tokens', () => {
   it('keeps hex colours in primitives.css only, with violet/400 and teal/700 as the only new primitives', () => {
     const offenders = ['globals.css', 'tokens/semantic.css', 'tokens/typography.css', 'tokens/motion.css', 'tokens/fonts.css', 'themes/dark.css', 'themes/light.css'].filter(
@@ -83,19 +97,37 @@ describe('Pauta tokens', () => {
 
   it('sets the type scale on Archivo for titles and Geist for the interface', () => {
     const type = declarations(read('tokens/typography.css'), ':root');
-    expect(type.get('--display')).toBe('800 3rem/3.25rem var(--font-brand)');
+    expect(type.get('--display-lg')).toBe('800 3rem/3.25rem var(--font-brand)');
     expect(type.get('--heading-xl')).toBe('800 2rem/2.375rem var(--font-brand)');
     expect(type.get('--heading-lg')).toBe('700 1.375rem/1.75rem var(--font-brand-md)');
     expect(type.get('--title-md')).toBe('600 1rem/1.5rem var(--font-ui)');
     expect(type.get('--body-md')).toBe('400 0.875rem/1.3125rem var(--font-ui)');
     expect(type.get('--caption')).toBe('500 0.75rem/1rem var(--font-ui)');
-    expect(type.get('--font-ui')).toMatch(/^'Geist Variable'/);
-    expect(type.get('--font-brand')).toMatch(/^'Archivo Expanded'/);
-    expect(read('tokens/fonts.css')).toContain('font-stretch: 118%');
-    expect(read('tokens/fonts.css')).toContain('font-stretch: 112%');
     const globals = read('globals.css');
     expect(globals).toContain("@import '@fontsource-variable/geist/wght.css'");
     expect(globals).not.toMatch(/fontsource\/(sora|inter)/);
+  });
+
+  it('names the Geist family the way the package declares it', () => {
+    expect(declarations(read('tokens/typography.css'), ':root').get('--font-ui')).toBe("'Geist Variable', system-ui, sans-serif");
+    expect(fontFaces(readFileSync(join(FONTS, 'geist', 'wght.css'), 'utf8')).map((face) => face.family)).toContain('Geist Variable');
+  });
+
+  it.each([
+    { token: '--font-brand', family: 'Archivo Expanded', stretch: '118%' },
+    { token: '--font-brand-md', family: 'Archivo Semi Expanded', stretch: '112%' }
+  ])('serves $family from the width-axis files of Archivo', ({ token, family, stretch }) => {
+    expect(declarations(read('tokens/typography.css'), ':root').get(token)).toBe(`'${family}', 'Archivo Variable', sans-serif`);
+    const faces = fontFaces(read('tokens/fonts.css')).filter((face) => face.family === family);
+    const files = ['archivo-latin-ext-wdth-normal.woff2', 'archivo-latin-wdth-normal.woff2'];
+    expect(faces.map((face) => face.src).sort()).toEqual(
+      files.map((file) => `url('@fontsource-variable/archivo/files/${file}') format('woff2-variations')`)
+    );
+    expect(faces.map((face) => [face.stretch, face.weight])).toEqual([
+      [stretch, '100 900'],
+      [stretch, '100 900']
+    ]);
+    for (const file of files) expect(existsSync(join(FONTS, 'archivo', 'files', file))).toBe(true);
   });
 
   it('declares every status and format token in both themes with a dark value of its own', () => {
@@ -103,6 +135,52 @@ describe('Pauta tokens', () => {
     expect(themed(darkOverrides.keys())).toEqual(lightNames);
     expect(lightNames.filter((name) => dark.get(name) === light.get(name))).toEqual([]);
     expect(darkOverrides.has('--calendar-today-bg')).toBe(true);
+  });
+
+  it('pins the status and format tokens of the canvas in the light theme', () => {
+    expect(themedValues(light)).toEqual({
+      '--status-ready-fg': 'var(--color-teal-700)',
+      '--status-waiting-fg': 'var(--color-violet-600)',
+      '--status-adjust-fg': 'var(--color-indigo-600)',
+      '--status-late-fg': 'var(--color-red-700)',
+      '--status-published-fg': 'var(--color-slate-600)',
+      '--status-production-fg': 'var(--color-slate-500)',
+      '--format-carousel-bg': 'color-mix(in srgb, var(--color-teal-500) 10%, var(--color-white))',
+      '--format-carousel-fg': 'var(--color-teal-700)',
+      '--format-carousel-tag-bg': 'var(--color-teal-700)',
+      '--format-carousel-tag-fg': 'var(--color-white)',
+      '--format-reels-bg': 'color-mix(in srgb, var(--color-violet-600) 7%, var(--color-white))',
+      '--format-reels-fg': 'var(--color-violet-600)',
+      '--format-reels-tag-bg': 'var(--color-violet-600)',
+      '--format-reels-tag-fg': 'var(--color-white)',
+      '--format-static-bg': 'var(--color-mist-100)',
+      '--format-static-fg': 'var(--color-ink-900)',
+      '--format-static-tag-bg': 'var(--color-slate-600)',
+      '--format-static-tag-fg': 'var(--color-white)'
+    });
+  });
+
+  it('pins the status and format tokens of the canvas in the dark theme', () => {
+    expect(themedValues(dark)).toEqual({
+      '--status-ready-fg': 'var(--color-teal-500)',
+      '--status-waiting-fg': 'var(--color-violet-400)',
+      '--status-adjust-fg': 'var(--color-indigo-400)',
+      '--status-late-fg': 'var(--color-red-400)',
+      '--status-published-fg': 'var(--color-slate-400)',
+      '--status-production-fg': 'var(--color-slate-400)',
+      '--format-carousel-bg': 'color-mix(in srgb, var(--color-teal-500) 12%, var(--color-ink-800))',
+      '--format-carousel-fg': 'color-mix(in srgb, var(--color-teal-500) 70%, var(--color-cloud-50))',
+      '--format-carousel-tag-bg': 'var(--color-teal-500)',
+      '--format-carousel-tag-fg': 'var(--color-ink-900)',
+      '--format-reels-bg': 'color-mix(in srgb, var(--color-violet-400) 12%, var(--color-ink-800))',
+      '--format-reels-fg': 'color-mix(in srgb, var(--color-violet-400) 70%, var(--color-cloud-50))',
+      '--format-reels-tag-bg': 'var(--color-violet-400)',
+      '--format-reels-tag-fg': 'var(--color-ink-900)',
+      '--format-static-bg': 'color-mix(in srgb, var(--color-slate-400) 8%, var(--color-ink-800))',
+      '--format-static-fg': 'var(--color-slate-300)',
+      '--format-static-tag-bg': 'var(--color-slate-300)',
+      '--format-static-tag-fg': 'var(--color-ink-900)'
+    });
   });
 
   const STATUS = ['ready', 'waiting', 'adjust', 'late', 'published', 'production'];
@@ -123,7 +201,7 @@ describe('Pauta tokens', () => {
           expect(contrast(theme, `format-${format}-fg`, `format-${format}-bg`)).toBeGreaterThanOrEqual(4.5);
         });
         it(`format ${format} tag text is AA on its fill`, () => {
-          expect(contrast(theme, `format-${format}-tag-fg`, `format-${format}-tag`)).toBeGreaterThanOrEqual(4.5);
+          expect(contrast(theme, `format-${format}-tag-fg`, `format-${format}-tag-bg`)).toBeGreaterThanOrEqual(4.5);
         });
         it(`secondary text is AA on the ${format} card`, () => {
           expect(contrast(theme, 'text-secondary', `format-${format}-bg`)).toBeGreaterThanOrEqual(4.5);
