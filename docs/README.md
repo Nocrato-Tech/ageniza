@@ -34,6 +34,7 @@ Encontre o documento certo pela tarefa. Cada linha diz **que pergunta o document
 ## Implementar tela
 
 - [Design system](design-system.md) — tokens, cores, espaçamento e componentes permitidos na interface. **Leia quando:** for escrever qualquer estilo ou componente de tela.
+- [Marca: logo, símbolo e mascote](brand.md) — as peças da marca, quando usar cada uma e o que falta para entrarem no app. **Leia quando:** uma tela precisar de logo, símbolo, favicon ou mascote (login, estado vazio, erro, e-mail).
 - [Aplicação web](../apps/web/README.md) — a SPA React/Vite, as fronteiras de rota pública e protegida e a configuração do navegador (só variáveis `VITE_` públicas). **Leia quando:** for criar uma rota ou tela nova, ou mexer na configuração do app web.
 - [SPEC de autenticação, convite e contexto](../specs/auth.md) — telas de login, convite e troca de contexto. **Leia quando:** for implementar ou alterar essas telas.
 - [SPEC de autorização e transversais](../specs/autorizacao.md) — catálogo de permissões, papéis e convenções de tela que todos os módulos herdam. **Leia quando:** for implementar qualquer tela com permissão.
