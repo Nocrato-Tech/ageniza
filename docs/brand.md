@@ -4,7 +4,7 @@ Onde estão o logo, o símbolo e o mascote do Ageniza, e quando usar cada um. As
 
 ## O que existe hoje
 
-As seis imagens abaixo são os **originais de referência**, gerados em 2026-10-13 e aprovados pelo dono do produto como a identidade da marca. São JPG com fundo e, em duas delas, efeito de maquete 3D: servem para conhecer a forma e as cores, **não para entrar no app como estão**. As versões de produção estão em "Para usar no produto", abaixo.
+As seis imagens abaixo são os **originais de referência**, gerados em 2026-10-13 e aprovados pelo dono do produto como a identidade da marca. São JPG com fundo e, em duas delas, efeito de maquete 3D: servem para conhecer a forma e as cores, **não para entrar no app como estão**. As versões de produção estão em "Para usar no produto", abaixo, e saem do arquivo do Figma.
 
 | arquivo | o que é |
 |---|---|
@@ -34,13 +34,24 @@ Regras propostas, a confirmar na fundação do redesign:
 - O degradê do logo usa as cores da paleta do projeto (índigo, violeta, teal); nenhuma cor nova entra por causa da marca.
 - O portal do cliente mostra a marca da agência e do cliente em primeiro lugar; o Ageniza aparece discreto (símbolo no rodapé ou no login).
 
-## Para usar no produto (pendente)
+## Para usar no produto
 
-Antes de qualquer tela usar a marca, ela precisa existir em formato de produção. É a primeira task do goal de redesign:
+A fonte das peças é o arquivo do Figma **[Ageniza — Marca](https://www.figma.com/design/1sXePa6OxcpGufouSRpSP7)**: o símbolo foi vetorizado a partir de `simbolo-mono-fundo-claro.jpg`, o logo foi montado com a palavra em texto real (Montserrat Bold, a assinatura em Montserrat Medium com espaçamento de 14%) e as cores são variáveis do Figma com os mesmos nomes e valores dos tokens (`--color-indigo-600`, `--color-violet-600`, `--color-teal-500`, `--color-ink-900`, `--color-white`). Toda mudança na marca acontece lá e é exportada para cá; não edite os arquivos abaixo à mão.
 
-- logo completo e símbolo **vetorizados em SVG**, com fundo transparente, nas cores exatas dos tokens, nas versões: colorido, uma cor clara e uma cor escura;
-- favicon e ícones do app gerados a partir do símbolo (16, 32, 180 e 512 px);
-- os dois mascotes em **PNG ou WebP com fundo transparente**, recortados, em 1x e 2x;
-- tudo em `apps/web/public/brand/`, com a lista de arquivos atualizada nesta página.
+Os arquivos de produção ficam em [`apps/web/public/brand/`](../apps/web/public/brand/) e são servidos em `/brand/<arquivo>`:
 
-Até lá, os originais desta pasta são a referência, e nenhuma tela usa os JPG diretamente.
+| arquivo | o que é | onde usar |
+|---|---|---|
+| `logo-claro.svg` | logo completo, símbolo em degradê e texto em ink | sobre fundo claro: login, e-mail, documentos |
+| `logo-escuro.svg` | logo completo, símbolo em degradê e texto em branco | sobre fundo escuro |
+| `logo-mono-escuro.svg` / `logo-mono-claro.svg` | logo completo em uma cor (ink / branco) | impressão e situações de uma cor só |
+| `simbolo-colorido.svg` | símbolo em degradê violeta → índigo → teal | tamanho grande (48 px ou mais) |
+| `simbolo-escuro.svg` / `simbolo-claro.svg` | símbolo chapado em ink / branco | interface pequena: navegação, avatar da conta Ageniza |
+| `icone-16.png`, `icone-32.png` | símbolo em ink, fundo transparente | favicon |
+| `icone-180.png`, `icone-512.png` | símbolo colorido sobre quadrado ink de cantos arredondados | ícone do app (Apple touch, PWA) |
+| `mascote-amigavel.webp` (+ `@2x`, + `.png`) | mascote de corpo inteiro, sem fundo, 480 px de altura (960 no @2x) | estados vazios, boas-vindas, convite |
+| `mascote-serio.webp` (+ `@2x`, + `.png`) | mascote em busto, sem fundo, 480 px de altura (960 no @2x) | 404, erro, agência suspensa, sessão encerrada |
+
+Prefira o WebP com `srcset` para o @2x; o PNG fica como alternativa para e-mail, onde WebP não é garantido.
+
+Ainda não ligado no app: o favicon do `index.html` e o uso de cada peça nas telas entram nas tasks do redesign.
