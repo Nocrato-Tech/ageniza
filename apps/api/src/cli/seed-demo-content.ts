@@ -23,9 +23,10 @@ import { insertScenes, insertScript, recordScript, sendScript } from '../modules
  * moves, the person of the portal approves and asks for changes, the production person delivers), so every state is reached by a legal
  * transition and every INSERT is the one the application role can make.
  *
- * No `id` is chosen in a table that does not take one (#580, #604): contents, subtasks, scripts, scenes and folders get their own, and
- * are found again by a natural key (the client and the title, the client and the day, the content and the title). Only `media_assets`
- * and the conversation tables, which still accept the id (#601), take a derived one.
+ * No `id` is chosen in a table that does not take one (#580, #601, #604): contents, subtasks, scripts, scenes, folders and the
+ * conversations of a content get their own, and are found again by a natural key (the client and the title, the client and the day, the
+ * content and the title; a conversation by its content, a comment by its conversation, author, side and text). Only `media_assets`,
+ * which still accepts the id (#601, item 1), takes a derived one.
  *
  * The media are rows with no object in the bucket: the demo needs the rules and the screens, not the files. A card or a post draws
  * no picture for them, and a signed address for one answers 404 when it is opened.
@@ -47,6 +48,8 @@ export interface ContentDemoPeople {
 export interface ContentDemoInput {
   readonly database: DatabaseClient;
   readonly idFor: SeedId;
+  /** The id the database gave each demo client, by the key of its spec: the seed does not choose it. */
+  readonly clientIds: ReadonlyMap<string, string>;
   readonly agencyId: string;
   readonly people: ContentDemoPeople;
 }
@@ -69,7 +72,7 @@ interface TaskSpec {
   readonly state: 'pending' | 'delivered' | 'approved';
 }
 
-interface ContentSpec {
+export interface ContentSpec {
   readonly key: string;
   readonly client: string;
   readonly title: string;
@@ -104,7 +107,7 @@ const PADARIA = 'client:padaria-central';
 const VIVER_BEM = 'client:clinica-viver-bem';
 const CAFE = 'client:cafe-do-alto';
 
-const CONTENTS: readonly ContentSpec[] = [
+export const DEMO_CONTENTS: readonly ContentSpec[] = [
   {
     key: 'padaria-fermentacao', client: PADARIA, title: 'O segredo da fermentação natural', format: 'image', offset: 9,
     caption: 'Doze horas de espera para um pão que dura a manhã inteira. #fermentacaonatural',
@@ -225,10 +228,14 @@ interface Rows<TRow> {
 }
 
 export const ensureContentDemo = async (input: ContentDemoInput): Promise<void> => {
-  const { database, idFor, agencyId, people } = input;
+  const { database, idFor, clientIds, agencyId, people } = input;
   const as = <TResult>(actor: Actor, work: (transaction: ContentTransaction) => Promise<TResult>): Promise<TResult> =>
     withAuthenticatedUserTransaction(database, createVerifiedUserClaims({ userId: people[actor] }), work);
-  const clientId = (key: string): string => idFor(key);
+  const clientId = (key: string): string => {
+    const id = clientIds.get(key);
+    if (id === undefined) throw new Error(`The demo content names the client ${key}, which the seed did not create.`);
+    return id;
+  };
 
   const today = await as('admin', (transaction) => saoPauloDay(transaction));
 
@@ -325,23 +332,31 @@ export const ensureContentDemo = async (input: ContentDemoInput): Promise<void> 
 
   const ensureConversation = async (spec: ContentSpec, contentId: string): Promise<void> => {
     if (spec.conversation === undefined) return;
-    const threadId = idFor(`thread:content:${spec.key}`);
     const opener = spec.conversation[0]!;
-    await as(opener.side === 'client' ? 'portal' : spec.actor, (transaction) => raw(transaction, `
-      insert into public.client_threads (id, client_id, content_id, opened_by, opened_side)
-      values (?::uuid, ?::uuid, ?::uuid, app_private.current_user_id(), ?)
-      on conflict (id) do nothing
-    `, [threadId, clientId(spec.client), contentId, opener.side]));
-    for (const [index, comment] of spec.conversation.entries()) {
+    const found = await as('admin', (transaction) => raw<Rows<{ id: string }>>(transaction, 'select id from public.client_threads where content_id = ?::uuid', [contentId]));
+    const threadId = found.rows[0]?.id ?? (await as(opener.side === 'client' ? 'portal' : spec.actor, async (transaction) => {
+      const inserted = await raw<Rows<{ id: string }>>(transaction, `
+        insert into public.client_threads (client_id, content_id, opened_by, opened_side)
+        values (?::uuid, ?::uuid, app_private.current_user_id(), ?)
+        returning id
+      `, [clientId(spec.client), contentId, opener.side]);
+      const row = inserted.rows[0];
+      if (row === undefined) throw new Error(`The conversation of the demo content ${spec.key} could not be created.`);
+      return row.id;
+    }));
+    for (const comment of spec.conversation) {
       await as(comment.side === 'client' ? 'portal' : spec.actor, (transaction) => raw(transaction, `
-        insert into public.client_thread_comments (id, thread_id, client_id, author_user_id, author_side, body)
-        values (?::uuid, ?::uuid, ?::uuid, app_private.current_user_id(), ?, ?)
-        on conflict (id) do nothing
-      `, [idFor(`comment:content:${spec.key}:${index}`), threadId, clientId(spec.client), comment.side, comment.body]));
+        insert into public.client_thread_comments (thread_id, client_id, author_user_id, author_side, body)
+        select ?::uuid, ?::uuid, app_private.current_user_id(), ?, ?
+        where not exists (
+          select 1 from public.client_thread_comments existing
+          where existing.thread_id = ?::uuid and existing.author_user_id = app_private.current_user_id() and existing.author_side = ? and existing.body = ?
+        )
+      `, [threadId, clientId(spec.client), comment.side, comment.body, threadId, comment.side, comment.body]));
     }
   };
 
-  for (const spec of CONTENTS) {
+  for (const spec of DEMO_CONTENTS) {
     const folderId = await folderIdOf(spec.client, spec.folder);
     const assetIds: string[] = [];
     for (const media of spec.media) assetIds.push(await ensureMedia(spec.client, folderId, media));
