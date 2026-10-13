@@ -71,7 +71,7 @@ export const createPortalContentsApi = (clientId: string) => {
       ...row
     };
     // As the API answers: the cover that was chosen is the file that serves as the cover, unless the test says another.
-    made.thumbnailAssetId = row.thumbnailAssetId ?? row.coverAssetId ?? null;
+    made.thumbnailAssetId = 'thumbnailAssetId' in row ? (row.thumbnailAssetId ?? null) : (row.coverAssetId ?? null);
     rows.push(made);
     return made;
   };

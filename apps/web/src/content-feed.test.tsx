@@ -63,7 +63,7 @@ const contentFixture = (overrides: Partial<ContentListItem> = {}): ContentListIt
     tasksApproved: 0,
     ...overrides,
     // As the API answers: the chosen cover is the file that serves as the cover, unless the test says another.
-    thumbnailAssetId: overrides.thumbnailAssetId ?? overrides.coverAssetId ?? null
+    thumbnailAssetId: 'thumbnailAssetId' in overrides ? (overrides.thumbnailAssetId ?? null) : (overrides.coverAssetId ?? null)
   };
 };
 
@@ -416,7 +416,7 @@ describe('the cover of a tile', () => {
   it('asks for the frame of a reels that has no chosen cover as the thumbnail, and keeps the shape when it has none yet (issue #606)', async () => {
     const { impl, calls } = makeFetch({
       contents: { [padaria.id]: [contentFixture({ title: 'Filme sem capa', publishOn: '2026-10-14', format: 'reels', coverAssetId: null, thumbnailAssetId: ASSET })] },
-      cover: () => json({ error: { code: 'MEDIA_VARIANT_NOT_READY', message: 'Not ready' } }, 409)
+      cover: () => json({ error: { code: 'VARIANT_NOT_READY', message: 'This variant has not been generated yet.' } }, 409)
     });
     renderScreen(impl, url(padaria.id));
     await ready();
@@ -456,7 +456,7 @@ describe('the cover of a tile', () => {
           contentFixture({ title: 'Recusada', publishOn: '2026-10-16', format: 'image', coverAssetId: ASSET })
         ]
       },
-      cover: () => json({ error: { code: 'MEDIA_VARIANT_NOT_READY', message: 'Not ready' } }, 409)
+      cover: () => json({ error: { code: 'VARIANT_NOT_READY', message: 'This variant has not been generated yet.' } }, 409)
     });
     renderScreen(impl, url(padaria.id));
     await ready();
