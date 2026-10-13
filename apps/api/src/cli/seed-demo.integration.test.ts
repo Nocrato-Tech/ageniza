@@ -10,6 +10,7 @@ import {
   type DatabaseClient
 } from '@ageniza/database';
 
+import { revokeInsertId } from '../modules/auth/test-support/insert-id-revoked.js';
 import {
   buildTestApp,
   ownerClient,
@@ -46,6 +47,10 @@ let first: SeedDemoResult;
 let second: SeedDemoResult;
 /** The most recent run, since every run rotates every demo password. */
 let latest: SeedDemoResult;
+let restoreGrant: () => Promise<void>;
+
+/** No table the seed writes as the application role takes an id chosen in the INSERT (issue #601). */
+const TABLES_WITHOUT_INSERT_ID = ['clients', 'client_personas', 'client_threads', 'client_thread_comments'] as const;
 
 // Counts run through the migration owner: most of these tables are behind RLS, and an
 // unauthenticated application connection would count zero rows instead of the seed's.
@@ -124,21 +129,32 @@ const expectSamePermissions = (verdicts: ReadonlyMap<string, boolean>, expected:
   expect(allowed).toEqual([...expected].sort());
 };
 
-describe('seed:demo (issue #183)', () => {
+describe('seed:demo (issue #183)', { timeout: 30_000 }, () => {
   beforeAll(async () => {
     owner = ownerClient();
     app = await buildTestApp();
+    // The whole suite runs with the INSERT of the id taken away: a seed that still chooses one fails here, before any assertion.
+    restoreGrant = await revokeInsertId(owner, TABLES_WITHOUT_INSERT_ID);
     first = await runSeedDemo(runOptions);
     second = await runSeedDemo(runOptions);
     latest = second;
   });
 
   afterAll(async () => {
+    await restoreGrant();
     const agencyIds = first.agencyIds;
     const userIds = first.userIds;
     const clientIds = first.clientIds;
     await owner.knex('client_thread_comments').whereIn('client_id', clientIds).delete();
     await owner.knex('client_threads').whereIn('client_id', clientIds).delete();
+    await owner.knex('notification_queue').whereIn('client_id', clientIds).delete();
+    await owner.knex('content_media').whereIn('client_id', clientIds).delete();
+    await owner.knex('content_tasks').whereIn('client_id', clientIds).delete();
+    await owner.knex('contents').whereIn('client_id', clientIds).delete();
+    await owner.knex('story_script_scenes').whereIn('client_id', clientIds).delete();
+    await owner.knex('story_scripts').whereIn('client_id', clientIds).delete();
+    await owner.knex('media_assets').whereIn('agency_id', agencyIds).delete();
+    await owner.knex('media_folders').whereIn('client_id', clientIds).delete();
     await owner.knex('client_personas').whereIn('client_id', clientIds).delete();
     await owner.knex('client_brand_sections').whereIn('client_id', clientIds).delete();
     await owner.knex('client_memberships').whereIn('client_id', clientIds).delete();
@@ -172,8 +188,10 @@ describe('seed:demo (issue #183)', () => {
     expect(await count('select count(*)::text as total from public.clients where id = any(?::uuid[])', [clientIds])).toBe(7);
     expect(await count("select count(*)::text as total from public.agency_memberships where agency_id = any(?::uuid[]) and status = 'active'", [agencyIds])).toBe(8);
     expect(await count("select count(*)::text as total from public.client_memberships where client_id = any(?::uuid[]) and status = 'active'", [clientIds])).toBe(1);
-    expect(await count('select count(*)::text as total from public.client_threads where client_id = any(?::uuid[])', [clientIds])).toBe(3);
-    expect(await count('select count(*)::text as total from public.client_thread_comments where client_id = any(?::uuid[])', [clientIds])).toBe(4);
+    expect(await count('select count(*)::text as total from public.client_threads where client_id = any(?::uuid[]) and content_id is null', [clientIds])).toBe(3);
+    expect(await count(`select count(*)::text as total from public.client_thread_comments comment
+      join public.client_threads thread on thread.id = comment.thread_id
+      where comment.client_id = any(?::uuid[]) and thread.content_id is null`, [clientIds])).toBe(4);
     expect(await count('select count(*)::text as total from public.client_personas where client_id = any(?::uuid[])', [clientIds])).toBe(3);
     expect(await count('select count(*)::text as total from public.client_brand_sections where client_id = any(?::uuid[])', [clientIds])).toBe(11);
     expect(await count("select count(*)::text as total from public.invitations where agency_id = any(?::uuid[]) and used_at is null and revoked_at is null", [agencyIds])).toBe(2);
@@ -184,6 +202,82 @@ describe('seed:demo (issue #183)', () => {
     expect(await count("select count(*)::text as total from public.legal_acceptances where user_id = any(?::uuid[]) and document = 'privacy' and version = '2026-02-01'", [userIds])).toBe(9);
     // Job titles come through the application path too (the Owner holds colaborador.alterar_funcao).
     expect(await count('select count(*)::text as total from public.agency_memberships where agency_id = any(?::uuid[]) and job_title is not null', [agencyIds])).toBe(8);
+  });
+
+  it('seeds Conteúdo: contents in every state, subtasks, scripts, media, folders and conversations, and running again changes none of it (issue #608)', async () => {
+    const clientIds = first.clientIds;
+    const byStatus = await owner.knex('contents').whereIn('client_id', clientIds).groupBy('status').select('status').count<Array<{ status: string; count: string }>>('id as count');
+    expect(Object.fromEntries(byStatus.map((row) => [row.status, Number(row.count)]))).toEqual({
+      in_production: 3, awaiting_approval: 3, adjusting: 1, approved: 2, published: 1, cancelled: 1
+    });
+    const tasks = await owner.knex('content_tasks').whereIn('client_id', clientIds).groupBy('status').select('status').count<Array<{ status: string; count: string }>>('id as count');
+    expect(Object.fromEntries(tasks.map((row) => [row.status, Number(row.count)]))).toEqual({ pending: 1, delivered: 1, approved: 1 });
+    const scripts = await owner.knex('story_scripts').whereIn('client_id', clientIds).groupBy('status').select('status').count<Array<{ status: string; count: string }>>('id as count');
+    expect(Object.fromEntries(scripts.map((row) => [row.status, Number(row.count)]))).toEqual({ draft: 1, sent: 1, recorded: 1 });
+    expect(await count('select count(*)::text as total from public.story_script_scenes where client_id = any(?::uuid[])', [clientIds])).toBe(7);
+    expect(await count("select count(*)::text as total from public.media_assets where agency_id = any(?::uuid[]) and status = 'confirmed' and client_id is not null", [first.agencyIds])).toBe(11);
+    expect(await count('select count(*)::text as total from public.content_media where client_id = any(?::uuid[])', [clientIds])).toBe(11);
+    expect(await count('select count(*)::text as total from public.media_folders where client_id = any(?::uuid[]) and is_default = false', [clientIds])).toBe(2);
+    expect(await count('select count(*)::text as total from public.client_threads where client_id = any(?::uuid[]) and content_id is not null', [clientIds])).toBe(2);
+    expect(await count(`select count(*)::text as total from public.client_thread_comments comment
+      join public.client_threads thread on thread.id = comment.thread_id
+      where comment.client_id = any(?::uuid[]) and thread.content_id is not null`, [clientIds])).toBe(3);
+    // Two runs, and the counts are the same: a content is found again by its client and title, a script by its client and day.
+    expect(await count('select count(*)::text as total from public.contents where client_id = any(?::uuid[])', [clientIds])).toBe(11);
+    expect(await count('select count(distinct (client_id, title))::text as total from public.contents where client_id = any(?::uuid[])', [clientIds])).toBe(11);
+  });
+
+  it('serves the seeded Conteúdo through the agency and the portal routes, as each person may read it (issue #608)', async () => {
+    const profile = (label: string): SeedDemoResult['profiles'][number] => latest.profiles.find((candidate) => candidate.label === label)!;
+    const [padaria] = await owner.knex('clients').whereIn('id', first.clientIds).where('name', 'Padaria Central').select('id', 'agency_id');
+    const clientId = padaria!.id as string;
+    const agencyId = padaria!.agency_id as string;
+    const today = (await owner.knex.raw<{ rows: Array<{ day: string }> }>('select app_private.sao_paulo_date(now())::text as day')).rows[0]!.day;
+    const around = (days: number): string => new Date(Date.parse(`${today}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+    const period = `from=${around(-30)}&to=${around(30)}`;
+    const get = async (cookie: string, url: string): Promise<{ status: number; body: any }> => { // eslint-disable-line @typescript-eslint/no-explicit-any -- test helper over untyped JSON
+      const response = await app.app.inject({ method: 'GET', url, headers: { ...origin, cookie } });
+      return { status: response.statusCode, body: response.json() };
+    };
+    const admin = await loginCookie(profile('Admin').email, profile('Admin').password);
+    const manager = await loginCookie(profile('Gestor de conta').email, profile('Gestor de conta').password);
+    const sales = await loginCookie(profile('Vendas').email, profile('Vendas').password);
+    const portal = await loginCookie(profile('Portal').email, profile('Portal').password);
+
+    const month = await get(admin, `/agencies/${agencyId}/clients/${clientId}/contents?${period}`);
+    expect(month.status).toBe(200);
+    expect(month.body.data.contents.map((content: { status: string }) => content.status).sort()).toEqual([
+      'adjusting', 'approved', 'awaiting_approval', 'awaiting_approval', 'cancelled', 'in_production', 'in_production', 'published'
+    ]);
+    expect(month.body.data.storyScripts).toHaveLength(3);
+    const withTasks = month.body.data.contents.find((content: { title: string }) => content.title === 'O segredo da fermentação natural');
+    expect(withTasks).toMatchObject({ tasksTotal: 3, tasksApproved: 1 });
+    const detail = await get(admin, `/agencies/${agencyId}/clients/${clientId}/contents/${withTasks.id as string}`);
+    expect(detail.body.tasks.map((task: { status: string }) => task.status).sort()).toEqual(['approved', 'delivered', 'pending']);
+
+    const folders = await get(admin, `/agencies/${agencyId}/clients/${clientId}/media-folders`);
+    expect(folders.status).toBe(200);
+    expect(folders.body.data.map((folder: { name: string }) => folder.name)).toEqual(expect.arrayContaining(['Imagens', 'Vídeos', 'Carrosséis', 'Ensaio fotográfico', 'Campanha de Natal', 'Bastidores']));
+
+    // The carteira shows the signals of what was seeded, to who reads Conteúdo, and none to Vendas.
+    const carteira = await get(manager, `/agencies/${agencyId}/clients`);
+    const indicatorsOf = (name: string): unknown => carteira.body.data.find((client: { name: string }) => client.name === name).contentIndicators;
+    expect(indicatorsOf('Padaria Central')).toEqual({ pending: 3, inReview: 2, overdue: 2, adjusting: 1, dueSoon: 2 });
+    expect(indicatorsOf('Clínica Viver Bem')).toEqual({ pending: 1, inReview: 0, overdue: 1, adjusting: 0, dueSoon: 1 });
+    expect(indicatorsOf('Café do Alto')).toEqual({ pending: 0, inReview: 1, overdue: 0, adjusting: 0, dueSoon: 1 });
+    expect((await get(sales, `/agencies/${agencyId}/clients/${clientId}/contents?${period}`)).status).toBe(403);
+
+    // The portal: what waits for the person, the month without the cancelled one, and the script that was sent (never the draft).
+    const awaiting = await get(portal, `/clients/${clientId}/contents/awaiting-approval`);
+    expect(awaiting.status).toBe(200);
+    expect(awaiting.body.data.map((content: { title: string }) => content.title).sort()).toEqual(['O pão de ontem vira torrada', 'Receita de sábado: pão de queijo']);
+    const portalMonth = await get(portal, `/clients/${clientId}/contents?${period}`);
+    expect(portalMonth.status).toBe(200);
+    expect(portalMonth.body.data).toHaveLength(7);
+    expect(JSON.stringify(portalMonth.body)).not.toContain('Campanha de aniversário');
+    const scripts = await get(portal, `/clients/${clientId}/story-scripts?${period}`);
+    expect(scripts.status).toBe(200);
+    expect(scripts.body.data.map((script: { status: string }) => script.status).sort()).toEqual(['recorded', 'sent']);
   });
 
   it('every printed profile signs in and sees only what its role allows', async () => {
@@ -280,6 +374,38 @@ describe('seed:demo (issue #183)', () => {
       { name: 'Creme de trigo', hex: '#F3E3C3' }
     ]);
     expect(await count('select count(*)::text as total from public.client_brand_sections where client_id = any(?::uuid[])', [first.clientIds])).toBe(rowsBefore);
+  });
+
+  it('running again after a content was moved through the route leaves it where it is, and adds nothing (issue #608)', async () => {
+    const [content] = await owner.knex('contents').whereIn('client_id', first.clientIds).where('title', 'Promoção da semana: combo café e pão').select('id', 'client_id');
+    const [client] = await owner.knex('clients').where('id', content!.client_id as string).select('agency_id');
+    const admin = latest.profiles.find((candidate) => candidate.label === 'Admin')!;
+    const cookie = await loginCookie(admin.email, admin.password);
+    const cancelled = await app.app.inject({
+      method: 'POST',
+      url: `/agencies/${client!.agency_id as string}/clients/${content!.client_id as string}/contents/${content!.id as string}/cancel`,
+      headers: { ...origin, cookie }
+    });
+    expect(cancelled.statusCode).toBe(200);
+    const before = await count('select count(*)::text as total from public.contents where client_id = any(?::uuid[])', [first.clientIds]);
+
+    latest = await runSeedDemo(runOptions);
+
+    expect(await count('select count(*)::text as total from public.contents where client_id = any(?::uuid[])', [first.clientIds])).toBe(before);
+    expect((await owner.knex('contents').where({ id: content!.id }).first('status'))?.status).toBe('cancelled');
+  });
+
+  it('running the seed again finds a persona by its name and brings its text back, without a second one (issue #601)', async () => {
+    const before = await count('select count(*)::text as total from public.client_personas where client_id = any(?::uuid[])', [first.clientIds]);
+    const [persona] = await owner.knex('client_personas').whereIn('client_id', first.clientIds).where({ name: 'Moradora do bairro' }).select('id', 'description');
+    expect(persona?.description).toBe('Trabalha perto, passa a pé todos os dias e compra para levar.');
+    await owner.knex('client_personas').where({ id: persona!.id }).update({ description: 'Texto que a demonstração não escreve' });
+
+    latest = await runSeedDemo(runOptions);
+
+    const repaired = await owner.knex('client_personas').where({ id: persona!.id }).first('description');
+    expect(repaired?.description).toBe('Trabalha perto, passa a pé todos os dias e compra para levar.');
+    expect(await count('select count(*)::text as total from public.client_personas where client_id = any(?::uuid[])', [first.clientIds])).toBe(before);
   });
 
   it('rotating a demo password ends the previous session', async () => {

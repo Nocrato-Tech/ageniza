@@ -13,6 +13,7 @@ import {
   type TestApp,
   type TestUserFixture
 } from '../auth/test-support/harness.js';
+import { revokeInsertId } from '../auth/test-support/insert-id-revoked.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../tenancy/guards.js';
 import { registerClientModule } from './routes.js';
 
@@ -1205,6 +1206,40 @@ describe('CLIENTES conversation of a content (#259)', () => {
         expect(threads, `round ${round}`).toHaveLength(1);
         expect(new Set(replies.map((reply) => reply.json().thread.id)), `round ${round}`).toEqual(new Set([threads[0]!.id]));
         expect(await commentRows(threads[0]!.id as string), `round ${round}`).toHaveLength(3);
+      }
+    }, 60_000);
+  });
+
+  // Issue #601: the id of a conversation is the database's. The INSERT of the id is taken away from the application role, so a
+  // statement that still chooses one is refused by the database and the route answers 500 instead of 201.
+  describe('the id of the conversation is the database\'s, never the application\'s (#601)', () => {
+    let restoreGrant: () => Promise<void>;
+    beforeAll(async () => { restoreGrant = await revokeInsertId(owner, ['client_threads']); });
+    afterAll(async () => { await restoreGrant(); });
+
+    it('opens the conversation of a content for each side, and the id the route answers is the id of the row', async () => {
+      for (const [key, url] of [['manager', agencyThreads(agencyA, clientA1)], ['portalOne', portalThreads(clientA1)]] as const) {
+        const contentId = await seedContent(clientA1, 'awaiting_approval');
+        const opened = await openAs(cookies[key]!, url, contentId, `Aberta por ${key}`);
+        expect(opened.statusCode, key).toBe(201);
+        const rows = await threadsOfContent(contentId);
+        expect(rows, key).toHaveLength(1);
+        expect(opened.json().thread.id, key).toBe(rows[0]!.id);
+        expect((await commentRows(rows[0]!.id as string)).map((row) => row.body), key).toEqual([`Aberta por ${key}`]);
+      }
+    });
+
+    it('keeps one conversation, with the same id for everyone, when the openings run at the same time', async () => {
+      for (let round = 0; round < 3; round += 1) {
+        const contentId = await seedContent(clientA1, 'awaiting_approval');
+        const replies = await Promise.all([
+          openAs(cookies.manager!, agencyThreads(agencyA, clientA1), contentId, `Agência ${round}`),
+          openAs(cookies.portalOne!, portalThreads(clientA1), contentId, `Cliente ${round}`)
+        ]);
+        expect(replies.map((reply) => reply.statusCode), `round ${round}`).toEqual([201, 201]);
+        const threads = await threadsOfContent(contentId);
+        expect(threads, `round ${round}`).toHaveLength(1);
+        expect(new Set(replies.map((reply) => reply.json().thread.id)), `round ${round}`).toEqual(new Set([threads[0]!.id]));
       }
     }, 60_000);
   });

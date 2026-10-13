@@ -4,6 +4,7 @@ Regras de negócio, decisões de produto e a visão do domínio. É daqui que sa
 
 - [Visão do produto](product-overview.md) — o domínio, os papéis e os fluxos. Comece por aqui se você chegou agora.
 - [Decisões de negócio](decisions/) — o registro cronológico do que foi decidido e por quê, uma decisão por arquivo.
+- [Auditorias de fechamento](audits/) — uma por módulo: a matriz regra da SPEC, teste e mutação, os resultados das suítes e as lacunas abertas como issue.
 - [Mudanças estruturais](structural-changes.md) — leitura obrigatória antes de implementar algo novo.
 - [Como um módulo é fechado](module-process.md) — o fluxo da entrevista até a issue, e o que cada artefato responde.
 - [Anatomia de um módulo](../module-anatomy.md) — o molde que todo módulo da API segue.

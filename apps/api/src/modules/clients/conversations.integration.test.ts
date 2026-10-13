@@ -13,6 +13,7 @@ import {
   type TestUserFixture
 } from '../auth/test-support/harness.js';
 import type { DatabaseClient } from '@ageniza/database';
+import { revokeInsertId } from '../auth/test-support/insert-id-revoked.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../tenancy/guards.js';
 import { registerClientModule } from './routes.js';
 
@@ -1071,6 +1072,26 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
     it('rejects an unauthenticated caller', async () => {
       expect((await app.app.inject({ method: 'GET', url: `${portalThreads(clientA1)}?${section('branding')}`, headers: origin })).statusCode).toBe(401);
       expect((await app.app.inject({ method: 'POST', url: portalThreads(clientA1), headers: origin, payload: { subject: { sectionKey: 'branding' }, body: 'x' } })).statusCode).toBe(401);
+    });
+  });
+
+  // Issue #601: the id of a conversation is the database's. The INSERT of the id is taken away from the application role, so a
+  // statement that still chooses one is refused by the database and the route answers 500 instead of 201.
+  describe('the id of the conversation is the database\'s, never the application\'s (#601)', () => {
+    let restoreGrant: () => Promise<void>;
+    beforeAll(async () => { restoreGrant = await revokeInsertId(owner, ['client_threads']); });
+    afterAll(async () => { await restoreGrant(); });
+
+    it('opens the conversation of a section for each side, and the id the route answers is the id of the row', async () => {
+      for (const [key, url] of [['manager', agencyThreads(agencyA, clientA1)], ['portalOne', portalThreads(clientA1)]] as const) {
+        const before = await countThreads(clientA1);
+        const opened = await openAs(cookies[key]!, url, { sectionKey: 'branding' }, `Aberta por ${key}`);
+        expect(opened.statusCode, key).toBe(201);
+        const row = await threadRow(opened.json().thread.id);
+        expect(row, key).toMatchObject({ client_id: clientA1, section_key: 'branding', content_id: null });
+        expect(await countThreads(clientA1), key).toBe(before + 1);
+        expect((await commentRows(opened.json().thread.id)).map((comment) => comment.body), key).toEqual([`Aberta por ${key}`]);
+      }
     });
   });
 });

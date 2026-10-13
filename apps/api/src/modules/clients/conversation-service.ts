@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import type { BrandSectionKey, ConversationSide, ConversationSubject, Thread, ThreadState } from '@ageniza/contracts';
 import { raw, type SqlBinding } from '@ageniza/database';
 
@@ -338,11 +336,11 @@ const openContentThread = async (
   input: { readonly contentId: string; readonly body: string }
 ): Promise<OpenThreadResult> => {
   const created = await raw<RawRows<{ id: string }>>(transaction, `
-    insert into public.client_threads (id, client_id, content_id, opened_by, opened_side)
-    values (?::uuid, ?::uuid, ?::uuid, ?::uuid, ?)
+    insert into public.client_threads (client_id, content_id, opened_by, opened_side)
+    values (?::uuid, ?::uuid, ?::uuid, ?)
     on conflict (content_id) where content_id is not null do nothing
     returning id
-  `, [randomUUID(), scope.clientId, input.contentId, scope.userId, scope.side]);
+  `, [scope.clientId, input.contentId, scope.userId, scope.side]);
   let threadId = created.rows[0]?.id;
   if (threadId === undefined) {
     const existing = await raw<RawRows<{ id: string }>>(transaction, `
@@ -372,18 +370,19 @@ export const openThread = async (
 
   if ('contentId' in input.subject) return openContentThread(transaction, scope, { contentId: input.subject.contentId, body: input.body });
 
-  const threadId = randomUUID();
-  await raw(transaction, `
-    insert into public.client_threads (id, client_id, section_key, persona_id, opened_by, opened_side)
-    values (?::uuid, ?::uuid, ?, ?::uuid, ?::uuid, ?)
+  const opened = await raw<RawRows<{ id: string }>>(transaction, `
+    insert into public.client_threads (client_id, section_key, persona_id, opened_by, opened_side)
+    values (?::uuid, ?, ?::uuid, ?::uuid, ?)
+    returning id
   `, [
-    threadId,
     scope.clientId,
     'sectionKey' in input.subject ? input.subject.sectionKey : null,
     'personaId' in input.subject ? input.subject.personaId : null,
     scope.userId,
     scope.side
   ]);
+  const threadId = opened.rows[0]?.id;
+  if (threadId === undefined) throw new Error('Thread insert did not return a row.');
   const commentId = await insertComment(transaction, { threadId, clientId: scope.clientId, userId: scope.userId, side: scope.side, body: input.body });
   return { kind: 'ok', threadId, commentId };
 };
