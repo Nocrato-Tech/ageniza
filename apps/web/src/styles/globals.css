@@ -79,6 +79,41 @@ textarea:focus-visible {
   align-content: center;
 }
 
+/* Not found, session ended, unexpected error: the serious mascot, what happened, one way out. */
+.status-panel {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+  text-align: center;
+}
+
+.status-panel__mascot {
+  height: 15rem;
+  width: auto;
+  max-width: 100%;
+}
+
+.status-panel h1 {
+  margin: var(--space-2) 0 0;
+  font: var(--heading-xl);
+}
+
+.status-panel p {
+  margin: 0;
+  max-width: 32rem;
+  color: var(--text-secondary);
+  font: var(--body-lg);
+}
+
+.status-panel__action {
+  margin-top: var(--space-4);
+}
+
+/* An anchor wearing the Button classes (the way out is a navigation): no underline, and it keeps the button's own color. */
+a.ui-button {
+  text-decoration: none;
+}
+
 .skip-link {
   position: fixed;
   left: var(--space-4);
