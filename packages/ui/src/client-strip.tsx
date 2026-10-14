@@ -9,8 +9,8 @@ export interface ClientStripItem {
   readonly photoUrl?: string | null;
   /** Why something of this client asks for action ("em ajuste", "em atraso"); any entry draws the ring and is read aloud. */
   readonly attention?: readonly string[];
-  /** Where the client opens; needed unless the strip is given `renderLink`. */
-  readonly href?: string;
+  /** Where the client opens. Required: a link without an address is not a link, and a `renderLink` that routes by `id` can ignore it. */
+  readonly href: string;
 }
 
 /** What `renderLink` must spread on the link it draws, so the strip keeps its look, its name and its current marker. */

@@ -581,7 +581,18 @@ describe('FilterBar', () => {
   });
 
   it('lights the choice on hover, never while disabled', () => {
-    expect(rule('.ui-filter-bar__control:hover:not(:disabled)').get('background')).toBe('var(--bg-hover)');
+    expect(rule('.ui-filter-bar__control:not(.ui-text-input):hover:not(:disabled)').get('background')).toBe('var(--bg-hover)');
+  });
+
+  it('gives a text field in the bar the edge of a field, border/control, and keeps its hover to the edge', () => {
+    const field = rule('.ui-filter-bar__control.ui-text-input');
+
+    expect(field.get('border')).toBe('1px solid var(--border-control)');
+    expect(field.get('border-radius')).toBe('var(--radius-md)');
+    expect(field.get('margin-left')).toBe('0');
+    for (const theme of ['light', 'dark'] as const) {
+      for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) expect(contrastOf(theme, 'var(--border-control)', surface), `${theme} on ${surface}`).toBeGreaterThanOrEqual(3);
+    }
   });
 
   it('dims a disabled filter, label included, and shows it cannot be used', () => {
@@ -611,6 +622,6 @@ describe('FilterBar', () => {
       expect(contrastOf(theme, rule('.ui-filter-bar__label').get('color')!, surface), `label on ${surface}`).toBeGreaterThanOrEqual(4.5);
       expect(contrastOf(theme, rule('.ui-filter-bar__control').get('color')!, surface), `choice on ${surface}`).toBeGreaterThanOrEqual(4.5);
     }
-    expect(contrastOf(theme, rule('.ui-filter-bar__control').get('color')!, rule('.ui-filter-bar__control:hover:not(:disabled)').get('background')!)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastOf(theme, rule('.ui-filter-bar__control').get('color')!, rule('.ui-filter-bar__control:not(.ui-text-input):hover:not(:disabled)').get('background')!)).toBeGreaterThanOrEqual(4.5);
   });
 });

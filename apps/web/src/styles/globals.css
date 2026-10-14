@@ -4917,8 +4917,18 @@ a.client-general__block:hover {
   transition: background-color var(--motion-fast);
 }
 
-.ui-filter-bar__control:hover:not(:disabled) {
+.ui-filter-bar__control:not(.ui-text-input):hover:not(:disabled) {
   background: var(--bg-hover);
+}
+
+/* A text field in the bar is not a flat value: it keeps the edge of a field, border/control (3:1), so it never reads as loose text. */
+.ui-filter-bar__control.ui-text-input {
+  min-height: 2.75rem;
+  margin-left: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
 }
 
 .ui-filter-bar__control:disabled {
