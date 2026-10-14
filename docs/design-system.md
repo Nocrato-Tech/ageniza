@@ -164,6 +164,10 @@ Um décimo token entrou nesta correção, fora da lista original: `color/red/400
 
 `text/link` no Dark também passou a apontar para `color/indigo/400` (já existente, usado por `focus/ring` no Dark) em vez de `color/indigo/550`, pelo mesmo motivo: `color/indigo/550` já passava AA como fundo sob texto branco (`action/primary/fg`/`action/primary/bg`), e clareá-lo mais teria enfraquecido esse par.
 
+### 5.2 Pauta: dois primitives novos (2026-10-13)
+
+O redesign Pauta (#621) não troca as cores do projeto. Entram só dois primitives, derivados das matizes existentes, e todo o resto vem de `color-mix` sobre a paleta: `color/violet/400 = #A78BFA` (aguardando no escuro, 5,4:1 sobre `ink/800`) e `color/teal/700 = #0F766E` (pronto no claro, 5,5:1 sobre branco). Nenhum HEX fora de `primitives.css`. As escolhas que a folha Identidade do canvas não cobria estão em `docs/business/decisions/2026-10-13-tokens-da-pauta-valores-do-claro-e-degraus-mantidos.md`.
+
 ## 6. Semantic tokens — Light
 
 Implementados em [`apps/web/src/styles/tokens/semantic.css`](../apps/web/src/styles/tokens/semantic.css) (`:root`, o tema padrão).
@@ -186,6 +190,8 @@ Implementados em [`apps/web/src/styles/tokens/semantic.css`](../apps/web/src/sty
 | `action/danger/bg` | `color/red/700` (fora da página original — seção 5.1) |
 | `action/danger/fg` | `color/white` |
 | `focus/ring` | `color/indigo/600` |
+
+**Estado, formato e crachá (Pauta).** Implementados em `semantic.css` (claro) e `themes/dark.css`. `status/{ready,waiting,adjust,late,published,production}/fg` é a cor do **ícone** do estado (não-texto, 3:1); o rótulo fica em `text/secondary`, então o par de texto nunca depende da cor do estado. `calendar/today/bg` é `color-mix(action/primary/bg 14%, bg/surface)`. `format/{carousel,reels,static}/{bg,fg,tag/bg,tag/fg}` tinge o card do calendário por formato (fundo e título) e preenche a etiqueta (`tag/bg` com texto `tag/fg`); o índigo fica fora dos formatos porque é da ação e do hoje. `client-badge/fade/{start,end}` é a base do crachá do cliente (índigo/600 e violeta/600 a 60% sobre `ink/900`). `shadow/floating` é a única sombra do sistema.
 
 `text/muted` está apto para captions, metadata e helper text, inclusive sobre `bg/hover` e `bg/elevated` (seção 20.1, valor de `color/slate/500` ajustado em 2026-09-28 para isso). Conteúdo disabled usa `action/disabled/fg` (sem valor ainda), não `text/muted`.
 
@@ -240,44 +246,44 @@ Evitar valores arbitrários como 13px, 19px ou 27px sem justificativa.
 Implementado em [`apps/web/src/styles/tokens/primitives.css`](../apps/web/src/styles/tokens/primitives.css).
 
 ```
-radius/sm   = 8px
-radius/md   = 12px
-radius/lg   = 16px
+radius/sm   = 6px
+radius/md   = 10px
+radius/lg   = 14px
 radius/xl   = 20px
 radius/full = 9999px
 ```
 
-Uso sugerido: input/button em `sm` ou `md`; cards em `md` ou `lg`; dialogs em `lg` ou `xl`; badges/pills em `full`.
+Uso (Pauta): `sm` chip e item do calendário; `md` botão e campo; `lg` painel e card; `xl` modal e celular; `full` só avatar, pílula de ação e contador.
 
 ## 10. Tipografia
 
-Implementada em [`apps/web/src/styles/tokens/typography.css`](../apps/web/src/styles/tokens/typography.css). Sora e Inter são **servidas pelo próprio app**, pelos pacotes `@fontsource/sora` e `@fontsource/inter` importados em [`globals.css`](../apps/web/src/styles/globals.css), só nos pesos que a escala usa (Inter 400/500/600, Sora 600/700). Nenhuma requisição vai a uma CDN de fontes, então o IP de quem visita não chega a terceiro.
+Implementada em [`apps/web/src/styles/tokens/typography.css`](../apps/web/src/styles/tokens/typography.css) e [`fonts.css`](../apps/web/src/styles/tokens/fonts.css). **Archivo** (largura expandida) nos títulos e **Geist** em toda a interface, ambas servidas pelo próprio app, pelos pacotes `@fontsource-variable/archivo` (eixo `wdth`) e `@fontsource-variable/geist` (`globals.css` e `fonts.css`). Nenhuma requisição vai a uma CDN de fontes, então o IP de quem visita não chega a terceiro. Sora e Inter saíram.
 
 ```
-font/brand → Sora
-font/ui    → Inter
+font/brand → Archivo Expanded (wdth 118) · Archivo Semi Expanded (wdth 112)
+font/ui    → Geist
 ```
+
+O shorthand `font` não carrega largura e reseta `font-stretch`; por isso cada largura é uma família (`fonts.css`) sobre os mesmos arquivos variáveis.
 
 Escala, cada degrau como uma custom property com o shorthand `font` (peso tamanho/entrelinha família):
 
 | Token | Definição | Peso |
 |---|---|---|
-| `display/lg` | Sora 40/48 | 700 |
-| `heading/xl` | Sora 32/40 | 700 |
-| `heading/lg` | Sora 24/32 | 600 |
-| `heading/md` | Sora 20/28 | 600 |
-| `body/lg` | Inter 16/24 | 400 |
-| `body/md` | Inter 14/20 | 400 |
-| `label/md` | Inter 14/20 | 500 |
-| `label/sm` | Inter 12/16 | 500 |
-| `button/md` | Inter 14/20 | 600 |
-| `caption` | Inter 12/16 | 400 |
+| `display/lg` | Archivo Expanded 48/52 | 800 |
+| `heading/xl` | Archivo Expanded 32/38 | 800 |
+| `heading/lg` | Archivo Semi Expanded 22/28 | 700 |
+| `title/md` | Geist 16/24 | 600 |
+| `body/md` | Geist 14/21 | 400 |
+| `caption` | Geist 12/16 | 500 |
 
-Evitar dezenas de estilos tipográficos. Expandir só quando a UI real exigir. No Figma, quando existir, manter Text Styles equivalentes.
+Degraus mantidos até cada tela ser refeita (apontam para a escala nova e saem quando ninguém mais os usa): `heading/md` = `heading/lg`, `label/sm` = `caption`, `body/lg` Geist 16/24 400, `label/md` Geist 14/21 500, `button/md` Geist 14/21 600.
+
+Regras: no máximo três tamanhos por tela; título com mais espaço acima que abaixo; corpo até 70 caracteres por linha; tracking nunca abaixo de -0,02em. Números são tabulares (`font-variant-numeric: tabular-nums` na raiz), mas o shorthand `font` reseta essa propriedade: a regra que aplica um degrau e mostra número a repete.
 
 ## 11. Shadows / elevation
 
-Ainda não implementado — nenhuma tela precisou até agora. Tokens conceituais, da página original: `shadow/none`, `shadow/sm`, `shadow/md`, `shadow/lg`. A preferência é separar superfícies por contraste + border antes de depender de sombra forte.
+Implementado em `semantic.css` como `shadow/floating = 0 24px 48px -12px rgb(0 0 0 / .55), 0 2px 6px rgb(0 0 0 / .35)`. **Sombra só no que flutua** (modal, menu, cartão do hover); o resto se separa por luminosidade e borda: canvas `ink/900`, superfície `ink/800` com a borda `border/default` (`ink/600` hoje; a folha do canvas leva a borda para `ink/700`, o que fica para o tema escuro da #623), elevado `ink/700`. `shadow/none`, `sm`, `md` e `lg` continuam conceituais, sem valor.
 
 ## 12. Motion
 
@@ -289,7 +295,11 @@ motion/base  = 180ms
 motion/slow  = 240ms
 ```
 
-As curvas de easing (`motion/easing/standard`, `motion/easing/exit`) não têm valor concreto — nem a página original dava um, só o conceito. Ficam pendentes até existirem no Figma e no código com o mesmo significado, antes de qualquer componente usá-las. Motion explica mudança de estado, expansão, drag-and-drop ou contexto; nunca atrasa uma ação operacional.
+```
+motion/easing/standard = cubic-bezier(0.16, 1, 0.3, 1)
+```
+
+`motion/easing/exit` segue sem valor: fica pendente até um componente precisar dele. Motion explica mudança de estado, expansão, drag-and-drop ou contexto; nunca atrasa uma ação operacional.
 
 ## 13. Estratégia de componentes — shadcn + Ageniza
 
@@ -457,6 +467,28 @@ Pares de texto sobre fundo em Light e Dark, contra WCAG AA (4.5:1 para texto nor
 | `action/primary/fg` sobre `action/primary/bg` | 6.29:1 | 4.94:1 |
 | `action/danger/fg` sobre `action/danger/bg` | 6.57:1 | 6.57:1 |
 | `focus/ring` sobre `bg/canvas` | 6.01:1 | 5.95:1 |
+
+**Pares da Pauta (#622), claro / escuro**, recalculados pelo teste `apps/web/src/styles/tokens.test.ts` com a mistura em sRGB do `color-mix`. Ícone de estado é não-texto (3:1); título e etiqueta de formato são texto (4,5:1).
+
+| Par | Light | Dark |
+|---|---|---|
+| `status/ready/fg` sobre `bg/canvas` / `bg/surface` | 5.23:1 / 5.47:1 | 7.13:1 / 5.90:1 |
+| `status/waiting/fg` sobre `bg/canvas` / `bg/surface` | 5.45:1 / 5.70:1 | 6.52:1 / 5.39:1 |
+| `status/adjust/fg` sobre `bg/canvas` / `bg/surface` | 6.01:1 / 6.29:1 | 5.95:1 / 4.92:1 |
+| `status/late/fg` sobre `bg/canvas` / `bg/surface` | 6.28:1 / 6.57:1 | 5.54:1 / 4.59:1 |
+| `status/published/fg` sobre `bg/canvas` / `bg/surface` | 7.24:1 / 7.58:1 | 7.96:1 / 6.58:1 |
+| `status/production/fg` sobre `bg/canvas` / `bg/surface` | 4.81:1 / 5.03:1 | 7.96:1 / 6.58:1 |
+| `format/carousel/fg` sobre `format/carousel/bg` | 5.00:1 | 6.20:1 |
+| `format/reels/fg` sobre `format/reels/bg` | 5.14:1 | 6.04:1 |
+| `format/static/fg` sobre `format/static/bg` | 16.40:1 | 8.50:1 |
+| `format/carousel/tag/fg` sobre `format/carousel/tag/bg` | 5.47:1 | 7.13:1 |
+| `format/reels/tag/fg` sobre `format/reels/tag/bg` | 5.70:1 | 6.52:1 |
+| `format/static/tag/fg` sobre `format/static/tag/bg` | 7.58:1 | 11.95:1 |
+| `text/secondary` sobre `format/{carousel,reels,static}/bg` | 6.92:1 · 6.83:1 · 7.00:1 | 8.11:1 · 8.13:1 · 8.50:1 |
+| `text/primary` sobre `calendar/today/bg` | 14.33:1 | 12.23:1 |
+| branco sobre `client-badge/fade/start` / `end` | n/a (crachá é escuro) | 9.96:1 / 9.53:1 |
+| `color/violet/400` sobre `bg/surface` | n/a | 5.39:1 |
+| `color/teal/700` sobre `bg/surface` | 5.47:1 | n/a |
 
 **Restrição de uso, não falha:** `text/link` e `text/danger` só foram conferidos sobre `bg/canvas` e `bg/surface`, os fundos onde link e mensagem de erro aparecem hoje. Sobre `bg/elevated`/`bg/hover` no Dark eles cairiam a 3.46:1 e 3.22:1 — por isso o comentário em `themes/dark.css` e a nota na seção 6 dizem para não os usar ali. Se uma tela real precisar de link ou erro sobre esses fundos, isso volta a ser um ponto em aberto, não uma aprovação silenciosa.
 

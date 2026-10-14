@@ -3,11 +3,8 @@
  * classes. See docs/design-system.md for the full system this implements.
  */
 /* Self-hosted fonts (section 10): no request reaches a font CDN, so visitors' IPs stay with us. */
-@import '@fontsource/inter/400.css';
-@import '@fontsource/inter/500.css';
-@import '@fontsource/inter/600.css';
-@import '@fontsource/sora/600.css';
-@import '@fontsource/sora/700.css';
+@import '@fontsource-variable/geist/wght.css';
+@import './tokens/fonts.css';
 @import './tokens/primitives.css';
 @import './tokens/typography.css';
 @import './tokens/motion.css';
@@ -31,6 +28,7 @@
   color: var(--text-primary);
   background: var(--bg-canvas);
   font: var(--body-lg);
+  font-variant-numeric: tabular-nums;
 }
 
 body {
