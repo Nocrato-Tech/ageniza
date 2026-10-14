@@ -146,6 +146,20 @@ describe('/design-system in development', { timeout: 30_000 }, () => {
     expect(tabs).toEqual([[false, false, true], [false, false, true], [false, false, true], [true, true, true], [false, false, true]]);
   });
 
+  it('puts the states of the wide components in rows', async () => {
+    await renderAt('/design-system');
+    const panel = within(await screen.findByTestId('components-panel'));
+    for (const name of ['Pagination', 'Segmented', 'Tabs']) {
+      const table = panel.getByRole('heading', { name, level: 3 }).parentElement!;
+      expect(within(table).getAllByRole('rowheader').map((header) => header.firstChild!.textContent), name).toEqual(['Padrão', 'Hover', 'Foco', 'Desativado', 'Carregando']);
+    }
+  });
+
+  it('lets a table of five columns scroll instead of squeezing the components', () => {
+    const css = readFileSync(join(__dirname, 'design-system', 'design-system.css'), 'utf8');
+    expect(css).toMatch(/\.ds-component table \{[^}]*min-width: 44rem/);
+  });
+
   it('says "não se aplica" for a state a component does not have', async () => {
     await renderAt('/design-system');
     const panel = within(await screen.findByTestId('components-panel'));

@@ -178,6 +178,7 @@ export const componentEntries: readonly ComponentEntry[] = [
     id: 'pagination',
     name: 'Pagination',
     covers: ['Pagination'],
+    wide: true,
     examples: [{ label: 'padrão', render: (state) => stateOnly(state, ['default'], <PaginationDemo />) }]
   },
   {
