@@ -570,4 +570,14 @@ describe('the profile preview (state of each post and counters)', () => {
     expect(valueOf('prontos')).toBe('2');
     expect(valueOf('aguardando')).toBe('1');
   });
+
+  it('says "pronto" for one ready post and "prontos" for any other number', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: [contentFixture({ publishOn: '2026-10-03', status: 'approved' })] } });
+    renderScreen(impl, url(padaria.id));
+    await ready();
+
+    const counters = feedRegion().querySelector<HTMLElement>('.content-feed__counters')!;
+    expect(within(counters).getByText('pronto').nextElementSibling?.textContent).toBe('1');
+    expect(within(counters).queryByText('prontos')).toBeNull();
+  });
 });

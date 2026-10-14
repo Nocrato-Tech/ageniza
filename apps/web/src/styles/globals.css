@@ -3822,8 +3822,10 @@ a.client-general__block:hover {
   border-radius: var(--radius-md);
 }
 
+/* The grid scrolls inside the panel: the track must be able to shrink below the grid's own width. */
 .contents__panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--border-subtle);
@@ -3868,7 +3870,6 @@ a.client-general__block:hover {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
   background: var(--bg-canvas);
-  box-shadow: var(--shadow-floating);
   color: var(--text-secondary);
 }
 
@@ -3892,7 +3893,8 @@ a.client-general__block:hover {
 
 .content-calendar {
   display: grid;
-  min-width: 42rem;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   overflow-x: auto;
 }
 
@@ -3900,6 +3902,7 @@ a.client-general__block:hover {
 .content-calendar__days {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+  min-width: 42rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -4343,7 +4346,7 @@ a.client-general__block:hover {
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--bg-canvas) 82%, transparent);
   color: var(--text-primary);
-  font: 600 0.625rem/0.75rem var(--font-ui);
+  font: var(--caption);
 }
 
 .content-feed__dot {

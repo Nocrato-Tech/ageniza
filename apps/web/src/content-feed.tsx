@@ -66,13 +66,14 @@ export function ContentFeed({ contents, today, handle, profile }: {
   profile?: ContentFeedProfile;
 }) {
   const items = feedItems(contents);
+  const ready = countOf(items, 'approved');
   return <div className="content-feed">
     {handle !== null && <p className="content-feed__handle">@{handle}</p>}
     {profile !== undefined && <div className="content-feed__profile">
       <Avatar name={profile.name} photoUrl={profile.photoUrl} size="lg" />
       <dl className="content-feed__counters">
         <div><dt>no período</dt><dd>{items.length}</dd></div>
-        <div><dt>prontos</dt><dd>{countOf(items, 'approved')}</dd></div>
+        <div><dt>{ready === 1 ? 'pronto' : 'prontos'}</dt><dd>{ready}</dd></div>
         <div><dt>aguardando</dt><dd>{countOf(items, 'awaiting_approval')}</dd></div>
       </dl>
     </div>}

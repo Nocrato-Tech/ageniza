@@ -1849,5 +1849,19 @@ describe('the header and the grid of the calendar', () => {
       expect(shown?.body).toMatch(/opacity:\s*1;/);
       expect(css).toMatch(/@media \(hover: none\)\s*\{\s*\.content-day__tools \.ui-menu__trigger\s*\{\s*opacity:\s*1;/);
     });
+
+    it('lets the grid scroll inside the panel at phone width: the panel track shrinks and only the grid keeps its width', () => {
+      expect(body('.contents__panel')).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\);/);
+      expect(body('.contents__panel')).toMatch(/overflow:\s*hidden;/);
+      expect(body('.content-calendar')).toMatch(/overflow-x:\s*auto;/);
+      expect(body('.content-calendar')).toMatch(/min-width:\s*0;/);
+      expect(body('.content-calendar')).not.toMatch(/min-width:\s*42rem/);
+      expect(body('.content-calendar__days')).toMatch(/min-width:\s*42rem;/);
+    });
+
+    it('puts no shadow on the profile preview (only what floats has one) and sets the tile state in the scale', () => {
+      expect(body('.contents__feed')).not.toMatch(/box-shadow/);
+      expect(body('.content-feed__status')).toMatch(/font:\s*var\(--caption\);/);
+    });
   });
 });
