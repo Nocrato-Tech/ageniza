@@ -622,19 +622,19 @@ describe('the folder and the media', () => {
 });
 
 describe('creating a content', () => {
-  const createButton = (): HTMLElement | null => screen.queryByRole('button', { name: 'Criar conteúdo' });
+  const createButton = (): HTMLElement | null => screen.queryByRole('button', { name: 'Nova publicação' });
 
   it.each([
     ['conteudo.visualizar only', [VISUALIZE, READ_CLIENTS], false],
     ['conteudo.operar with visualizar', EDITOR, true]
-  ])('%s: the "Criar conteúdo" button exists only for who operates', async (_name, permissions, shown) => {
+  ])('%s: the "Nova publicação" button exists only for who operates', async (_name, permissions, shown) => {
     const { impl } = makeFetch({ permissions });
     render_(impl);
     await calendarReady();
     await waitFor(() => expect(createButton() !== null).toBe(shown));
   });
 
-  it('has no "Criar conteúdo" on an archived client', async () => {
+  it('has no "Nova publicação" on an archived client', async () => {
     const { impl } = makeFetch();
     render_(impl, base(barbearia.id));
     await calendarReady();
@@ -646,7 +646,7 @@ describe('creating a content', () => {
     const { impl } = makeFetch();
     const { probe } = render_(impl);
     await calendarReady();
-    fireEvent.click(await screen.findByRole('button', { name: 'Criar conteúdo' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Nova publicação' }));
 
     expect(await screen.findByRole('dialog', { name: 'Novo conteúdo' })).toBeTruthy();
     await screen.findByLabelText('Data');

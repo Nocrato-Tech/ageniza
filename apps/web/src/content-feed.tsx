@@ -1,9 +1,21 @@
-import { Skeleton } from '@ageniza/ui';
-import type { ContentFormat, ContentListItem } from '@ageniza/contracts';
+import { Clapperboard, GalleryVertical } from 'lucide-react';
+
+import { Avatar, Skeleton } from '@ageniza/ui';
+import type { ContentFormat, ContentListItem, ContentStatus } from '@ageniza/contracts';
 
 import { ContentCover } from './content-cover.js';
 import { dayMonthLabel } from './content-dates.js';
 import { FORMAT_LABELS } from './content-labels.js';
+
+/** What the tile says about the state: shorter than the card's own words, and always with the colour of the dot beside it. */
+const TILE_STATUS_LABELS: Readonly<Record<ContentStatus, string>> = {
+  in_production: 'Produção',
+  awaiting_approval: 'Aguardando',
+  adjusting: 'Em ajuste',
+  approved: 'Pronto',
+  published: 'Publicado',
+  cancelled: 'Cancelado'
+};
 
 /** The grid is 3 columns wide; the empty one draws three rows of them so the person sees where the first post goes. */
 const EMPTY_TILES = 9;
@@ -33,15 +45,37 @@ export function ContentFeedSkeleton() {
   </ol>;
 }
 
+export interface ContentFeedProfile {
+  readonly name: string;
+  readonly photoUrl: string | null;
+}
+
+/** The counters of the profile are the period on screen: what the grid shows, what is ready and what waits for the client. */
+const countOf = (items: readonly ContentListItem[], status: ContentStatus): number => items.filter((content) => content.status === status).length;
+
 /**
  * The grid of the Instagram profile of the client (`specs/conteudo.md` section 7), for the period on screen. A tile is the
- * cover, or the shape of the format when there is none, with a mark on what is still planned; what it says in words is
- * for who does not see the picture. Every text from the server is a React text child.
+ * cover, or the shape of the format when there is none, with the state of the post and a mark on what is still planned; what
+ * it says in words is for who does not see the picture. `profile` adds the avatar and the counters above the grid. Every text
+ * from the server is a React text child.
  */
-export function ContentFeed({ contents, today, handle }: { contents: readonly ContentListItem[]; today: string; handle: string | null }) {
+export function ContentFeed({ contents, today, handle, profile }: {
+  contents: readonly ContentListItem[];
+  today: string;
+  handle: string | null;
+  profile?: ContentFeedProfile;
+}) {
   const items = feedItems(contents);
   return <div className="content-feed">
     {handle !== null && <p className="content-feed__handle">@{handle}</p>}
+    {profile !== undefined && <div className="content-feed__profile">
+      <Avatar name={profile.name} photoUrl={profile.photoUrl} size="lg" />
+      <dl className="content-feed__counters">
+        <div><dt>no período</dt><dd>{items.length}</dd></div>
+        <div><dt>prontos</dt><dd>{countOf(items, 'approved')}</dd></div>
+        <div><dt>aguardando</dt><dd>{countOf(items, 'awaiting_approval')}</dd></div>
+      </dl>
+    </div>}
     {items.length === 0
       ? <>
         <ol className="content-feed__grid content-feed__grid--empty" aria-hidden="true">
@@ -52,6 +86,9 @@ export function ContentFeed({ contents, today, handle }: { contents: readonly Co
       : <ol className="content-feed__grid">
         {items.map((content) => <li key={content.id} className="content-feed__tile" data-status={content.status}>
           <ContentCover assetId={content.thumbnailAssetId} format={content.format} className="content-feed__cover" />
+          <span className="content-feed__status"><span className="content-feed__dot" aria-hidden="true" />{TILE_STATUS_LABELS[content.status]}</span>
+          {content.format === 'reels' && <Clapperboard className="content-feed__format" aria-hidden="true" />}
+          {content.format === 'carousel' && <GalleryVertical className="content-feed__format" aria-hidden="true" />}
           {content.publishOn > today && <span className="content-feed__planned">Planejado</span>}
           <span className="visually-hidden">{content.title} · {FORMAT_LABELS[content.format]} · {dayMonthLabel(content.publishOn)}</span>
         </li>)}

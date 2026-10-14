@@ -528,3 +528,46 @@ describe('the Feed tab', () => {
     expect(pastas.getAttribute('aria-selected')).toBe('false');
   });
 });
+
+describe('the profile preview (state of each post and counters)', () => {
+  const statuses = [
+    ['in_production', 'Produção'], ['awaiting_approval', 'Aguardando'], ['adjusting', 'Em ajuste'], ['approved', 'Pronto'], ['published', 'Publicado']
+  ] as const;
+
+  it('says the state of each post on its tile, in words and not only by the colour of the dot', async () => {
+    const rows = statuses.map(([status], index) => contentFixture({ title: `Post ${status}`, publishOn: `2026-10-${String(index + 2).padStart(2, '0')}`, status }));
+    const { impl } = makeFetch({ contents: { [padaria.id]: rows } });
+    renderScreen(impl, url(padaria.id));
+    await ready();
+
+    for (const [status, label] of statuses) {
+      const tile = tiles().find((candidate) => candidate.textContent?.includes(`Post ${status}`));
+      expect(within(tile!).getByText(label)).toBeTruthy();
+      expect(tile!.getAttribute('data-status')).toBe(status);
+    }
+  });
+
+  it('counts the period beside the avatar: the posts of the grid, the ready ones and the ones waiting for the client', async () => {
+    const { impl } = makeFetch({
+      contents: {
+        [padaria.id]: [
+          contentFixture({ publishOn: '2026-10-02', status: 'published' }),
+          contentFixture({ publishOn: '2026-10-03', status: 'approved' }),
+          contentFixture({ publishOn: '2026-10-04', status: 'approved' }),
+          contentFixture({ publishOn: '2026-10-05', status: 'awaiting_approval' }),
+          contentFixture({ publishOn: '2026-10-06', status: 'awaiting_approval', format: 'long_video' }),
+          contentFixture({ publishOn: '2026-10-07', status: 'cancelled' })
+        ]
+      }
+    });
+    renderScreen(impl, url(padaria.id));
+    await ready();
+
+    const counters = feedRegion().querySelector('.content-feed__counters')!;
+    const valueOf = (term: string): string | null => within(counters as HTMLElement).getByText(term).nextElementSibling?.textContent ?? null;
+    // The long video and the cancelled one are not posts of the feed, so they are not counted either.
+    expect(valueOf('no período')).toBe('4');
+    expect(valueOf('prontos')).toBe('2');
+    expect(valueOf('aguardando')).toBe('1');
+  });
+});
