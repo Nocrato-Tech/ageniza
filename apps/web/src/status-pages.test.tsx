@@ -1,14 +1,16 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, type Location } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore } from './auth.js';
 import { AppErrorBoundary } from './error-boundary.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
+import { useCommittedLocation } from './location-probe-fixture.js';
 import { ApplicationRoutes } from './routes.js';
+import { sessionDestination } from './session-end.js';
 
 const AGENCY = '11111111-1111-4111-8111-111111111111';
 
@@ -18,12 +20,20 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+let committed: Location | null = null;
+function LocationProbe() {
+  useCommittedLocation((location) => { committed = location; });
+  return null;
+}
+
 const renderAt = (path: string) => {
+  committed = null;
   const client = new HttpClient('http://127.0.0.1:3001', async () => new Response(null, { status: 401 }));
   render(
     <AuthSessionProvider store={createAuthSessionStore(client)}>
       <QueryClientProvider client={createQueryClient()}>
         <ApiClientProvider client={client}><MemoryRouter initialEntries={[path]}>
+          <LocationProbe />
           <ApplicationRoutes session={{ status: 'ready', isAuthenticated: false, user: null }} />
         </MemoryRouter></ApiClientProvider>
       </QueryClientProvider>
@@ -83,8 +93,49 @@ describe('status pages (serious mascot)', () => {
   });
 });
 
+describe('the way back in from the ended session', () => {
+  it('carries the address to the login, which returns to it after authenticating', () => {
+    renderAt(`/agencia/${AGENCY}/clientes?pagina=2#topo`);
+
+    fireEvent.click(screen.getByRole('link', { name: 'Entrar de novo' }));
+
+    expect(committed?.pathname).toBe('/entrar');
+    expect(sessionDestination(committed?.state)).toBe(`/agencia/${AGENCY}/clientes?pagina=2#topo`);
+  });
+
+  it('does not copy the address into the login URL', () => {
+    renderAt(`/agencia/${AGENCY}/clientes?pagina=2`);
+
+    expect(screen.getByRole('link', { name: 'Entrar de novo' }).getAttribute('href')).toBe('/entrar');
+  });
+});
+
 describe('unexpected error boundary', () => {
   function Broken(): never { throw new Error('boom'); }
+
+  const crashAt = (path: string) => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    window.history.pushState({}, '', path);
+    render(<AppErrorBoundary><Broken /></AppErrorBoundary>);
+  };
+
+  afterEach(() => { window.history.pushState({}, '', '/'); });
+
+  it('is dark inside the agency area, because the crash took the area theme with it', () => {
+    crashAt(`/agencia/${AGENCY}/clientes`);
+
+    expect(screen.getByRole('heading', { name: 'Algo deu errado' })).toBeTruthy();
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    cleanup();
+    expect(document.documentElement.getAttribute('data-theme')).toBeNull();
+  });
+
+  it.each(['/', '/entrar', '/contextos', `/portal/${AGENCY}/inicio`, '/agenciax/y'])('stays light outside the agency area (%s)', (path) => {
+    crashAt(path);
+
+    expect(screen.getByRole('heading', { name: 'Algo deu errado' })).toBeTruthy();
+    expect(document.documentElement.getAttribute('data-theme')).toBeNull();
+  });
 
   it('says what happened, offers to reload and shows the mascot once, without leaking the error', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
