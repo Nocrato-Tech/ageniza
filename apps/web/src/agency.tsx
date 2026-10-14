@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, type ReactNode } from 'react';
-import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
+import { Link, Outlet, useLocation, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 
 import { AgencyMeResponseSchema, type AgencyMeResponse } from '@ageniza/contracts';
 import { AccountMenu } from './account-menu.js';
+import { AgencySidebar, AgencySidebarSkeleton } from './agency-nav.js';
 import { Button, Skeleton } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
@@ -67,28 +68,12 @@ function AgencyContextlessShell({ children }: { children: ReactNode }) {
 }
 
 function AgencyShellSkeleton() {
-  return <div className="app-shell">
-    <header className="agency-header"><Skeleton className="agency-header__skeleton" /><AccountMenu /></header>
-    <div className="agency-layout">
-      <nav className="agency-nav" aria-label="Navegação da agência"><Skeleton /></nav>
+  return <div className="app-shell agency-shell">
+    <AgencySidebarSkeleton />
+    <div className="agency-body">
       <main className="agency-content" id="main-content"><Skeleton /><Skeleton /></main>
     </div>
   </div>;
-}
-
-function AgencyNav({ agenciaId }: { agenciaId: string }) {
-  const canSeeCollaborators = useCan('colaborador.visualizar');
-  const canSeeClients = useCan('cliente.visualizar');
-  // The picker is the roster: contents without the roster is not a screen (decisions/2026-10-11-conteudo-o-item-exige-conteudo-e-carteira).
-  const canSeeContents = useCan('conteudo.visualizar') && canSeeClients;
-  return <nav className="agency-nav" aria-label="Navegação da agência">
-    <ul>
-      <li><NavLink to={`/agencia/${agenciaId}`} end>Início</NavLink></li>
-      {canSeeCollaborators && <li><NavLink to={`/agencia/${agenciaId}/colaboradores`}>Colaboradores</NavLink></li>}
-      {canSeeClients && <li><NavLink to={`/agencia/${agenciaId}/clientes`}>Clientes</NavLink></li>}
-      {canSeeContents && <li><NavLink to={`/agencia/${agenciaId}/conteudos`}>Conteúdos</NavLink></li>}
-    </ul>
-  </nav>;
 }
 
 export function AgencyAreaLayout() {
@@ -123,19 +108,11 @@ export function AgencyAreaLayout() {
   if (data.agencyId !== agenciaId) return <AgencyContextlessShell><NotFoundPage as="section" home="/contextos" /></AgencyContextlessShell>;
 
   return <AgencyAreaContext.Provider value={data}>
-    <div className="app-shell">
+    <div className="app-shell agency-shell">
       <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
-      <header className="agency-header">
-        <div className="agency-header__context">
-          <span className="agency-header__context-label">Contexto ativo</span>
-          <Link className="agency-header__name" to={`/agencia/${agenciaId}`}>{data.agencyName}</Link>
-        </div>
-        {/* The account menu (#70) lives here. */}
-        <AccountMenu activeContext={data.agencyName} />
-      </header>
-      <LegalNotice />
-      <div className="agency-layout">
-        <AgencyNav agenciaId={agenciaId} />
+      <AgencySidebar agenciaId={agenciaId} agencyName={data.agencyName} permissions={data.permissions} />
+      <div className="agency-body">
+        <LegalNotice />
         <main className="agency-content" id="main-content"><InvitationNotice /><NotFoundHomeContext.Provider value={`/agencia/${data.agencyId}`}><Outlet /></NotFoundHomeContext.Provider></main>
       </div>
     </div>
