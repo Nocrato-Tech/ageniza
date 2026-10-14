@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { ArrowRight, LayoutGrid, List, Plus } from 'lucide-react';
 import {
   Avatar, BadgeCard, BrandSymbol, Button, ChoiceCard, IconButton, Pill, PillAction, ConfirmDialog, Dialog, Field, FieldMessage, Logo, LiveStatus, Menu, MenuItem, MenuSeparator,
-  Modal, Pagination, Segmented, Select, Skeleton, Tabs, Textarea, TextInput
+  Modal, Pagination, Popover, Segmented, Select, Skeleton, Tabs, Textarea, TextInput
 } from '@ageniza/ui';
 
 /** `hover` and `focus` are real interactions on the default render, so they are not states a component implements. */
@@ -249,6 +249,29 @@ export const componentEntries: readonly ComponentEntry[] = [
         </Dialog>}
       </Opener>)
     }))
+  },
+  {
+    id: 'popover',
+    name: 'Popover',
+    covers: ['Popover'],
+    examples: [
+      {
+        label: 'ao clique',
+        render: (state) => <div className="ds-floating-room"><Popover label="Detalhes do post" disabled={state === 'disabled'} loading={state === 'loading'}
+          trigger={(trigger) => <Button variant="secondary" {...trigger}>Ver detalhes</Button>}>
+          <strong>Carrossel: Pão de fermentação natural</strong>
+          <span>03 de ago. · Instagram</span>
+        </Popover></div>
+      },
+      {
+        label: 'ao passar o mouse (300 ms) ou focar',
+        render: (state) => <div className="ds-floating-room"><Popover label="Prévia do post" openOn="hover" placement="bottom-end" disabled={state === 'disabled'} loading={state === 'loading'}
+          trigger={(trigger) => <Button variant="ghost" {...trigger}>Prévia</Button>}>
+          <strong>Reels: Receita do bolo de fubá</strong>
+          <span>arraste para outro dia</span>
+        </Popover></div>
+      }
+    ]
   },
   {
     id: 'modal',

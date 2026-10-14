@@ -8,7 +8,7 @@ const reducedMotionBlocks = () => [...css.matchAll(/@media \(prefers-reduced-mot
 
 const BUTTONS = ['primary', 'secondary', 'ghost', 'destructive'];
 const CONTROLS = ['.ui-pill--action', '.ui-segmented__option', '.ui-tabs__tab', '.ui-tabs__panel'];
-const COMPONENT_RULES = /^\s*\.(ui-icon|ui-icon-button|ui-pill|ui-segmented|ui-tabs|ui-field|ui-text-input|ui-select|ui-textarea)[^{}]*\{([^{}]*)\}/gm;
+const COMPONENT_RULES = /^\s*\.(ui-icon|ui-icon-button|ui-pill|ui-segmented|ui-tabs|ui-field|ui-text-input|ui-select|ui-textarea|ui-popover|ui-popover-anchor)[^{}]*\{([^{}]*)\}/gm;
 
 describe('component states', () => {
   it.each(BUTTONS)('gives the %s button a hover that changes how it looks', (variant) => {
@@ -280,7 +280,7 @@ describe('field states', () => {
   });
 });
 
-describe('dialog', () => {
+describe('dialog and popover', () => {
   it('lifts the dialog on the floating shadow with the modal radius, on the surface', () => {
     const modal = rule('.ui-modal');
 
@@ -304,16 +304,46 @@ describe('dialog', () => {
     expect(foot.get('flex-wrap')).toBe('wrap');
   });
 
+  it('floats the popover on the elevated surface with the floating shadow, above the page', () => {
+    const popover = rule('.ui-popover');
+
+    expect(popover.get('background')).toBe('var(--bg-elevated)');
+    expect(popover.get('box-shadow')).toBe('var(--shadow-floating)');
+    expect(popover.get('border-radius')).toBe('var(--radius-lg)');
+    expect(popover.get('position')).toBe('absolute');
+    expect(popover.get('z-index')).toBe('20');
+    expect(rule('.ui-popover-anchor').get('position')).toBe('relative');
+  });
+
+  it('anchors each placement to its own corner', () => {
+    expect(rule('.ui-popover--bottom-start').get('top')).toBe('calc(100% + var(--space-2))');
+    expect(rule('.ui-popover--bottom-end').get('top')).toBe('calc(100% + var(--space-2))');
+    expect(rule('.ui-popover--top-start').get('bottom')).toBe('calc(100% + var(--space-2))');
+    expect(rule('.ui-popover--top-end').get('bottom')).toBe('calc(100% + var(--space-2))');
+    expect(rule('.ui-popover--bottom-start').get('left')).toBe('0');
+    expect(rule('.ui-popover--top-start').get('left')).toBe('0');
+    expect(rule('.ui-popover--bottom-end').get('right')).toBe('0');
+    expect(rule('.ui-popover--top-end').get('right')).toBe('0');
+  });
+
+  it('rings the card for keyboard users only', () => {
+    expect(rule('.ui-popover:focus').get('outline')).toBe('none');
+    expect(rule('.ui-popover:focus-visible').get('outline')).toBe('3px solid var(--focus-ring)');
+  });
+
   it('moves with an 8px rise and a fade, and not at all for people who ask for less motion', () => {
     const base = css.replace(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/g, '');
     expect(declarationsFor(base, '.ui-modal[open]').get('animation')).toBe('ui-float-in var(--motion-base) var(--motion-easing-standard)');
+    expect(declarationsFor(base, '.ui-popover').get('animation')).toBe('ui-float-in var(--motion-fast) var(--motion-easing-standard)');
     expect(rule('from').get('opacity')).toBe('0');
     expect(rule('from').get('transform')).toBe('translateY(var(--space-2))');
     const blocks = reducedMotionBlocks();
     expect(declarationsFor(blocks, '.ui-modal[open]').get('animation')).toBe('none');
+    expect(declarationsFor(blocks, '.ui-popover').get('animation')).toBe('none');
   });
 
   it.each(['light', 'dark'] as const)('keeps the text AA on the surface it sits on in %s', (theme) => {
+    expect(contrastOf(theme, 'var(--text-primary)', rule('.ui-popover').get('background')!)).toBeGreaterThanOrEqual(4.5);
     expect(contrastOf(theme, rule('.ui-modal__description').get('color')!, rule('.ui-modal').get('background')!)).toBeGreaterThanOrEqual(4.5);
   });
 });
