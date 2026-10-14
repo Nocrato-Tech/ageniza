@@ -461,6 +461,9 @@ describe('ButtonLink that cannot be followed', () => {
   });
 });
 
+/** The block of the empty state that applies on a phone, so the other tests read the rules of the wide screen alone. */
+const PHONE_BLOCK = /@media \(max-width: 40rem\) \{([\s\S]*?)\n\}/g;
+
 describe('Mascot and EmptyState', () => {
   it('keeps the owl in proportion inside a narrow screen', () => {
     const mascot = rule('.ui-mascot');
@@ -471,7 +474,7 @@ describe('Mascot and EmptyState', () => {
   });
 
   it('puts the owl beside the text and wraps it under the text on a narrow screen', () => {
-    const empty = rule('.ui-empty-state');
+    const empty = declarationsFor(css.replace(PHONE_BLOCK, ''), '.ui-empty-state');
 
     expect(empty.get('display')).toBe('flex');
     expect(empty.get('flex-wrap')).toBe('wrap');
@@ -480,13 +483,24 @@ describe('Mascot and EmptyState', () => {
 
   it('sets the title in the heading scale, larger beside the owl', () => {
     expect(rule('.ui-empty-state__title').get('font')).toBe('var(--heading-lg)');
-    expect(rule('.ui-empty-state--mascot .ui-empty-state__title').get('font')).toBe('var(--heading-xl)');
+    expect(declarationsFor(css.replace(PHONE_BLOCK, ''), '.ui-empty-state--mascot .ui-empty-state__title').get('font')).toBe('var(--heading-xl)');
+  });
+
+  it('gives the text the room on a phone: less padding and gap, and the same title size with or without the owl', () => {
+    const phone = new RegExp(PHONE_BLOCK.source).exec(css.slice(css.indexOf('.ui-empty-state {')))![1]!;
+
+    expect(declarationsFor(phone, '.ui-empty-state').get('padding')).toBe('var(--space-4)');
+    expect(declarationsFor(phone, '.ui-empty-state').get('gap')).toBe('var(--space-6)');
+    expect(declarationsFor(phone, '.ui-empty-state--mascot .ui-empty-state__title').get('font')).toBe('var(--heading-lg)');
+    expect(rule('.ui-empty-state__title').get('overflow-wrap')).toBe('anywhere');
   });
 
   it.each(['light', 'dark'] as const)('keeps the title and the description AA on the canvas and the surface in %s', (theme) => {
     const description = rule('.ui-empty-state__description').get('color')!;
 
     expect(description).toBe('var(--text-secondary)');
+    // Named, not inherited: a themed region does not recolour the text it inherits, and the title would vanish on the dark surface.
+    expect(rule('.ui-empty-state__title').get('color')).toBe('var(--text-primary)');
     for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) {
       expect(contrastOf(theme, description, surface), `description on ${surface}`).toBeGreaterThanOrEqual(4.5);
       expect(contrastOf(theme, 'var(--text-primary)', surface), `title on ${surface}`).toBeGreaterThanOrEqual(4.5);

@@ -4503,7 +4503,9 @@ a.client-general__block:hover {
 
 .ui-empty-state__title {
   margin: 0;
+  color: var(--text-primary);
   font: var(--heading-lg);
+  overflow-wrap: anywhere;
 }
 
 .ui-empty-state--mascot .ui-empty-state__title {
@@ -4522,4 +4524,16 @@ a.client-general__block:hover {
   align-items: center;
   gap: var(--space-3);
   padding-top: var(--space-2);
+}
+
+/* On a phone the owl sits above the text, which gets the room and a smaller title. */
+@media (max-width: 40rem) {
+  .ui-empty-state {
+    gap: var(--space-6);
+    padding: var(--space-4);
+  }
+
+  .ui-empty-state--mascot .ui-empty-state__title {
+    font: var(--heading-lg);
+  }
 }
