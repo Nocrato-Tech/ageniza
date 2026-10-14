@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { ChevronsUpDown, LogOut } from 'lucide-react';
 
 import {
   AuthLogoutAllResponseSchema,
@@ -10,7 +11,7 @@ import {
   type AuthUser,
   type Context
 } from '@ageniza/contracts';
-import { Button, ConfirmDialog, Menu, MenuItem, MenuSeparator, Skeleton } from '@ageniza/ui';
+import { Avatar, Button, ConfirmDialog, IconButton, Menu, MenuItem, MenuSeparator, Skeleton } from '@ageniza/ui';
 
 import { useAuthSession, useOptionalAuthSessionStore, type AuthSessionStore } from './auth.js';
 import { contextDestination, targetFromDestination, type ContextTarget } from './context-destination.js';
@@ -50,9 +51,11 @@ export interface AccountMenuProps {
   /** Offered only where a tour exists to review (the client portal); it reopens the tour and calls nothing. */
   onReviewTour?: () => void;
   user?: AuthUser | null;
+  /** `sidebar` is the foot of the agency navigation: the person as the trigger and Sair beside it. */
+  variant?: 'header' | 'sidebar';
 }
 
-export function AccountMenu({ activeContext, onReviewTour, user: userOverride }: AccountMenuProps) {
+export function AccountMenu({ activeContext, onReviewTour, user: userOverride, variant = 'header' }: AccountMenuProps) {
   const httpClient = useApiClient();
   const authStore = useOptionalAuthSessionStore();
   const session = useAuthSession(userOverride === undefined ? (authStore ?? fallbackAuthStore) : fallbackAuthStore);
@@ -130,13 +133,21 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride }:
   const failedMessage = failedAction === 'logout-all' ? logoutAllErrorMessage : logoutErrorMessage;
   const canSwitch = contexts.data !== undefined && contexts.data.contexts.length > 1;
 
+  const sidebar = variant === 'sidebar';
+
   return (
-    <div className='account-menu'>
+    <div className={sidebar ? 'account-menu account-menu--sidebar' : 'account-menu'}>
       <Menu
         label='Menu da conta'
         activePanel={panel}
         onOpenChange={(open) => { setMenuOpen(open); if (!open) setPanel('root'); }}
-        trigger={<><span>{user.name}</span><span aria-hidden='true'>{'\u2304'}</span></>}
+        trigger={sidebar
+          ? <>
+              <Avatar name={user.name} size='sm' />
+              <span className='account-menu__name'>{user.name}</span>
+              <ChevronsUpDown className='account-menu__chevron' aria-hidden='true' />
+            </>
+          : <><span>{user.name}</span><span aria-hidden='true'>{'\u2304'}</span></>}
       >
         {panel === 'root' ? <>
           <div className='account-menu__identity' role='group' aria-label='Conta'>
@@ -203,6 +214,15 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride }:
           )}
         </>}
       </Menu>
+      {sidebar && (
+        <IconButton
+          className='account-menu__leave'
+          label='Sair'
+          icon={<LogOut />}
+          loading={pendingAction === 'logout'}
+          onClick={() => { void startLogout('logout'); }}
+        />
+      )}
       {failedAction !== null && (
         <div className='account-menu__error' role='alert'>
           <span>{failedMessage}</span>

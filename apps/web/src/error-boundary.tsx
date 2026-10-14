@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 
 import { Button } from '@ageniza/ui';
 
+import { DarkArea, isAgencyPath } from './area-theme.js';
 import { captureBrowserException } from './sentry.js';
 import { StatusPanel } from './status-panel.js';
 
@@ -16,9 +17,13 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, ErrorBo
   }
   public render(): ReactNode {
     // Outside the router on purpose: the way out is a reload, which also drops whatever state broke the tree.
-    if (this.state.error !== null) return <StatusPanel titleId="unexpected-error-title" title="Algo deu errado" action={<Button size="lg" onClick={() => { window.location.reload(); }}>Tentar de novo</Button>}>
-      Não foi possível mostrar esta página. Carregue de novo para continuar.
-    </StatusPanel>;
+    if (this.state.error !== null) {
+      const panel = <StatusPanel titleId="unexpected-error-title" title="Algo deu errado" action={<Button size="lg" onClick={() => { window.location.reload(); }}>Tentar de novo</Button>}>
+        Não foi possível mostrar esta página. Carregue de novo para continuar.
+      </StatusPanel>;
+      // The crash unmounted the area's own DarkArea, and this sits above the router: the address decides.
+      return isAgencyPath(window.location.pathname) ? <DarkArea>{panel}</DarkArea> : panel;
+    }
     return this.props.children;
   }
 }

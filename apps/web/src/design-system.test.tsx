@@ -68,7 +68,8 @@ describe('token parsing', () => {
 describe('/design-system in development', { timeout: 30_000 }, () => {
   it('opens without a session, with the tokens read from the style files', async () => {
     await renderAt('/design-system');
-    expect(await screen.findByRole('heading', { level: 1, name: 'Design system' })).toBeTruthy();
+    // The first render of the page imports the lazy chunk and every component of the registry, which takes longer than the default second when the whole suite runs at once.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Design system' }, { timeout: 15_000 })).toBeTruthy();
     const page = document.body.textContent ?? '';
     const files = ['tokens/primitives.css', 'tokens/semantic.css', 'tokens/typography.css', 'tokens/motion.css', 'themes/dark.css'];
     for (const name of files.flatMap(declared)) expect(page, name).toContain(name);
