@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Mascot } from '@ageniza/ui';
 
 /**
  * The shape of every full-page status of the product (not found, session ended, unexpected error):
@@ -15,20 +16,10 @@ export function StatusPanel({ as: Landmark = 'main', titleId, title, action, chi
 }) {
   return <Landmark className="page-status" aria-labelledby={titleId}>
     <div className="status-panel">
-      <img
-        className="status-panel__mascot"
-        src="/brand/mascote-serio.webp"
-        srcSet="/brand/mascote-serio.webp 1x, /brand/mascote-serio@2x.webp 2x"
-        width={191}
-        height={240}
-        alt=""
-      />
+      <Mascot variant="serious" />
       <h1 id={titleId}>{title}</h1>
       <p>{children}</p>
       <div className="status-panel__action">{action}</div>
     </div>
   </Landmark>;
 }
-
-/** An anchor dressed as the primary `Button`: the way out of a status page is a navigation, not a click handler. */
-export const LINK_BUTTON_CLASS = 'ui-button ui-button--primary ui-button--lg';

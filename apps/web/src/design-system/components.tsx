@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { ArrowRight, LayoutGrid, List, Plus } from 'lucide-react';
 import {
-  Avatar, BadgeCard, BrandSymbol, Button, ChoiceCard, IconButton, Pill, PillAction, ConfirmDialog, Dialog, Field, FieldMessage, Logo, LiveStatus, Menu, MenuItem, MenuSeparator,
-  Modal, Pagination, Popover, Segmented, Select, Skeleton, Tabs, Textarea, TextInput
+  Avatar, BadgeCard, BrandSymbol, Button, ButtonLink, ChoiceCard, ClientStrip, IconButton, Pill, PillAction, ConfirmDialog, Dialog, EmptyState, Field, FieldMessage, FilterBar, FilterBarItem, FilterBarSelect, FormatTag, LateBadge, Logo, LiveStatus, Mascot, Menu, MenuItem, MenuSeparator,
+  Modal, Pagination, Popover, Realce, Segmented, Select, Skeleton, StatusTag, Tabs, Textarea, TextInput
 } from '@ageniza/ui';
 
 /** `hover` and `focus` are real interactions on the default render, so they are not states a component implements. */
@@ -48,6 +48,24 @@ function CounterFieldDemo({ disabled, loading }: { disabled: boolean; loading: b
   return <Field label="Legenda" hint="Aparece no feed" loading={loading} counter={{ count: caption.length, max: 80 }}>
     {(control) => <Textarea {...control} value={caption} onChange={(event) => setCaption(event.target.value)} disabled={disabled} />}
   </Field>;
+}
+
+const STRIP_CLIENTS = [
+  { id: 'c1', name: 'Padaria Central', href: '#client-strip' },
+  { id: 'c2', name: 'Clínica Viver Bem', href: '#client-strip', attention: ['em ajuste', 'em atraso'] },
+  { id: 'c3', name: 'Café do Alto', href: '#client-strip' }
+] as const;
+
+function FilterBarDemo({ disabled, loading }: { disabled: boolean; loading: boolean }) {
+  const [month, setMonth] = useState('10');
+  const [client, setClient] = useState('');
+  return <FilterBar label="Filtros do calendário">
+    <FilterBarSelect label="Mês" value={month} onChange={setMonth} disabled={disabled} loading={loading}
+      options={[{ value: '10', label: 'Outubro de 2026' }, { value: '11', label: 'Novembro de 2026' }]} />
+    <FilterBarSelect label="Cliente" value={client} onChange={setClient} placeholder="Todos" disabled={disabled}
+      options={[{ value: 'c1', label: 'Padaria Central' }, { value: 'c2', label: 'Clínica Viver Bem' }]} />
+    <FilterBarItem label="Buscar">{(control) => <TextInput {...control} defaultValue="pão" disabled={disabled} />}</FilterBarItem>
+  </FilterBar>;
 }
 
 function SegmentedDemo({ disabled, loading }: { disabled: boolean; loading: boolean }) {
@@ -100,6 +118,18 @@ export const componentEntries: readonly ComponentEntry[] = [
       { label: 'ícone depois', render: (state) => <Button variant="secondary" trailingIcon={<ArrowRight />} disabled={state === 'disabled'} loading={state === 'loading'}>Abrir</Button> },
       { label: 'só ícone', render: (state) => <IconButton label="Adicionar" icon={<Plus />} disabled={state === 'disabled'} loading={state === 'loading'} /> },
       { label: 'só ícone, secundário', render: (state) => <IconButton variant="secondary" label="Adicionar" icon={<Plus />} disabled={state === 'disabled'} loading={state === 'loading'} /> }
+    ]
+  },
+  {
+    id: 'button-link',
+    name: 'ButtonLink',
+    covers: ['ButtonLink'],
+    examples: [
+      ...(['primary', 'secondary', 'ghost', 'destructive'] as const).map((variant) => ({
+        label: variant,
+        render: (state: RenderedState) => stateOnly(state, ['default', 'disabled'], <ButtonLink href="#button-link" variant={variant} disabled={state === 'disabled'}>Ver clientes</ButtonLink>)
+      })),
+      { label: 'com ícone', render: (state: RenderedState) => stateOnly(state, ['default', 'disabled'], <ButtonLink href="#button-link" leadingIcon={<Plus />} trailingIcon={<ArrowRight />} disabled={state === 'disabled'}>Novo cliente</ButtonLink>) }
     ]
   },
   {
@@ -190,7 +220,57 @@ export const componentEntries: readonly ComponentEntry[] = [
     id: 'avatar',
     name: 'Avatar',
     covers: ['Avatar'],
-    examples: (['sm', 'md', 'lg'] as const).map((size) => ({ label: size, render: (state: RenderedState) => stateOnly(state, ['default'], <Avatar name="Maria Souza" size={size} />) }))
+    examples: [
+      ...(['sm', 'md', 'lg'] as const).map((size) => ({ label: size, render: (state: RenderedState) => stateOnly(state, ['default'], <Avatar name="Maria Souza" size={size} />) })),
+      { label: 'com anel de atenção', render: (state: RenderedState) => stateOnly(state, ['default'], <Avatar name="Padaria Central" size="lg" attention="em ajuste, em atraso" />) }
+    ]
+  },
+  {
+    id: 'client-strip',
+    name: 'ClientStrip',
+    covers: ['ClientStrip'],
+    wide: true,
+    examples: [{ label: 'um cliente aberto e um com anel de atenção', render: (state) => stateOnly(state, ['default'], <ClientStrip label="Clientes de exemplo" items={STRIP_CLIENTS} selectedId="c1" />) }]
+  },
+  {
+    id: 'filter-bar',
+    name: 'FilterBar',
+    covers: ['FilterBar', 'FilterBarItem', 'FilterBarSelect'],
+    wide: true,
+    examples: [{ label: 'rótulo acima, escolha abaixo, divisórias', render: (state) => <FilterBarDemo disabled={state === 'disabled'} loading={state === 'loading'} /> }]
+  },
+  {
+    id: 'format-tag',
+    name: 'FormatTag',
+    covers: ['FormatTag'],
+    examples: [
+      { label: 'carrossel', render: (state) => stateOnly(state, ['default'], <FormatTag format="carousel">Carrossel</FormatTag>) },
+      { label: 'reels', render: (state) => stateOnly(state, ['default'], <FormatTag format="reels">Reels</FormatTag>) },
+      { label: 'estático', render: (state) => stateOnly(state, ['default'], <FormatTag format="static">Estático</FormatTag>) }
+    ]
+  },
+  {
+    id: 'status-tag',
+    name: 'StatusTag',
+    covers: ['StatusTag'],
+    examples: ([
+      ['ready', 'Pronto para publicar'], ['waiting', 'Aguardando'], ['adjust', 'Em ajuste'], ['published', 'Publicado'], ['production', 'Em produção']
+    ] as const).map(([status, label]) => ({ label: status, render: (state: RenderedState) => stateOnly(state, ['default'], <StatusTag status={status}>{label}</StatusTag>) }))
+  },
+  {
+    id: 'late-badge',
+    name: 'LateBadge',
+    covers: ['LateBadge'],
+    examples: [{ label: 'padrão', render: (state) => stateOnly(state, ['default'], <LateBadge />) }]
+  },
+  {
+    id: 'realce',
+    name: 'Realce',
+    covers: ['Realce'],
+    examples: [
+      { label: 'parado', render: (state) => stateOnly(state, ['default'], <span>Você tem <Realce>2 posts</Realce> esperando</span>) },
+      { label: 'varrido', render: (state) => stateOnly(state, ['default'], <span>Hoje, dia <Realce sweep>13</Realce></span>) }
+    ]
   },
   {
     id: 'badge-card',
@@ -213,6 +293,25 @@ export const componentEntries: readonly ComponentEntry[] = [
     name: 'Skeleton',
     covers: ['Skeleton'],
     examples: [{ label: 'bloco', render: (state) => stateOnly(state, ['loading'], <Skeleton style={{ width: '12rem', height: '1.5rem' }} />) }]
+  },
+  {
+    id: 'mascot',
+    name: 'Mascot',
+    covers: ['Mascot'],
+    examples: [
+      { label: 'amigável (estado vazio)', render: (state) => stateOnly(state, ['default'], <Mascot variant="friendly" height={120} />) },
+      { label: 'sério (erro)', render: (state) => stateOnly(state, ['default'], <Mascot variant="serious" height={120} />) }
+    ]
+  },
+  {
+    id: 'empty-state',
+    name: 'EmptyState',
+    covers: ['EmptyState'],
+    wide: true,
+    examples: [
+      { label: 'com mascote e ação', render: (state) => stateOnly(state, ['default'], <EmptyState mascot headingLevel={4} title="Cadastre o primeiro cliente" description="Com o cliente cadastrado você monta o calendário do mês." action={<Button leadingIcon={<Plus />}>Cadastrar cliente</Button>} />) },
+      { label: 'sem mascote (busca sem resultado)', render: (state) => stateOnly(state, ['default'], <EmptyState headingLevel={4} title="Nenhum cliente encontrado" description="Tente outro nome ou tire um filtro." action={<Button variant="secondary">Limpar filtros</Button>} />) }
+    ]
   },
   {
     id: 'brand',

@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as ui from '@ageniza/ui';
 
 import { componentEntries } from './design-system/components.js';
@@ -22,11 +22,15 @@ const NOT_COMPONENTS: ReadonlyMap<string, string> = new Map();
 const user = { id: '11111111-1111-4111-8111-111111111111', name: 'Pessoa', email: 'pessoa@example.test' };
 const fetchImpl: typeof fetch = async () => new Response(null, { status: 401 });
 
-// Every module is imported again per render: `import.meta.env.DEV` is read when routes.tsx loads, and the contexts must come from the same module graph as the routes.
-const renderAt = async (path: string, isAuthenticated = false) => {
-  vi.resetModules();
-  const [{ AuthSessionProvider, createAuthSessionStore }, { ApiClientProvider, HttpClient }, { createQueryClient }, { ApplicationRoutes }] =
-    await Promise.all([import('./auth.js'), import('./http.js'), import('./query.js'), import('./routes.js')]);
+// The contexts must come from the same module graph as the routes, so the four modules are always loaded together.
+const loadGraph = () => Promise.all([import('./auth.js'), import('./http.js'), import('./query.js'), import('./routes.js'), import('./design-system/page.js')]);
+type Graph = Awaited<ReturnType<typeof loadGraph>>;
+
+// The development graph is imported once for the whole file: resetting the modules and loading routes.tsx again for every test cost about 2.5 s each.
+let graph: Graph;
+beforeAll(async () => { graph = await loadGraph(); }, 60_000);
+
+const renderWith = ([{ AuthSessionProvider, createAuthSessionStore }, { ApiClientProvider, HttpClient }, { createQueryClient }, { ApplicationRoutes }]: Graph, path: string, isAuthenticated: boolean) => {
   const client = new HttpClient('http://127.0.0.1:3001', fetchImpl);
   return render(
     <AuthSessionProvider store={createAuthSessionStore(client)}>
@@ -37,6 +41,15 @@ const renderAt = async (path: string, isAuthenticated = false) => {
       </QueryClientProvider>
     </AuthSessionProvider>
   );
+};
+
+const renderAt = async (path: string, isAuthenticated = false) => renderWith(graph, path, isAuthenticated);
+
+// `import.meta.env.DEV` is read when routes.tsx loads, so the build without the page needs a graph of its own.
+const renderOutsideDevelopment = async (path: string) => {
+  vi.resetModules();
+  vi.stubEnv('DEV', false);
+  return renderWith(await loadGraph(), path, false);
 };
 
 afterEach(() => {
@@ -188,8 +201,7 @@ describe('/design-system in development', { timeout: 30_000 }, () => {
 
 describe('/design-system outside development', () => {
   it('is the ordinary not-found page', async () => {
-    vi.stubEnv('DEV', false);
-    await renderAt('/design-system');
+    await renderOutsideDevelopment('/design-system');
     expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Design system' })).toBeNull();
   });

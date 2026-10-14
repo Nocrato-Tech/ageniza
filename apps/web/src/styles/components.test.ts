@@ -8,7 +8,7 @@ const reducedMotionBlocks = () => [...css.matchAll(/@media \(prefers-reduced-mot
 
 const BUTTONS = ['primary', 'secondary', 'ghost', 'destructive'];
 const CONTROLS = ['.ui-pill--action', '.ui-segmented__option', '.ui-tabs__tab', '.ui-tabs__panel'];
-const COMPONENT_RULES = /^\s*\.(ui-icon|ui-icon-button|ui-pill|ui-segmented|ui-tabs|ui-field|ui-text-input|ui-select|ui-textarea|ui-popover|ui-popover-anchor)[^{}]*\{([^{}]*)\}/gm;
+const COMPONENT_RULES = /^\s*\.(ui-icon|ui-icon-button|ui-pill|ui-segmented|ui-tabs|ui-field|ui-text-input|ui-select|ui-textarea|ui-popover|ui-popover-anchor|ui-format-tag|ui-status-tag|ui-late-badge|ui-empty-state|ui-client-strip|ui-filter-bar)[^{}]*\{([^{}]*)\}/gm;
 
 describe('component states', () => {
   it.each(BUTTONS)('gives the %s button a hover that changes how it looks', (variant) => {
@@ -345,5 +345,283 @@ describe('dialog and popover', () => {
   it.each(['light', 'dark'] as const)('keeps the text AA on the surface it sits on in %s', (theme) => {
     expect(contrastOf(theme, 'var(--text-primary)', rule('.ui-popover').get('background')!)).toBeGreaterThanOrEqual(4.5);
     expect(contrastOf(theme, rule('.ui-modal__description').get('color')!, rule('.ui-modal').get('background')!)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('format and state tags', () => {
+  const FORMATS = ['carousel', 'reels', 'static'] as const;
+  const STATUSES = ['ready', 'waiting', 'adjust', 'published', 'production'] as const;
+
+  it.each(FORMATS)('fills the %s tag with its own tag pair, not the tint of the card', (format) => {
+    const tag = rule(`.ui-format-tag--${format}`);
+
+    expect(tag.get('background')).toBe(`var(--format-${format}-tag-bg)`);
+    expect(tag.get('color')).toBe(`var(--format-${format}-tag-fg)`);
+  });
+
+  it('puts the colour of a state on its icon and keeps the label on text/secondary, with an outline', () => {
+    expect(rule('.ui-status-tag').get('color')).toBe('var(--text-secondary)');
+    expect(rule('.ui-status-tag').get('border-color')).toBe('var(--border-default)');
+    for (const status of STATUSES) expect(rule(`.ui-status-tag--${status} .ui-icon`).get('color'), status).toBe(`var(--status-${status}-fg)`);
+  });
+
+  it('draws the late badge as a solid block on the danger action pair', () => {
+    expect(rule('.ui-late-badge').get('background')).toBe('var(--action-danger-bg)');
+    expect(rule('.ui-late-badge').get('color')).toBe('var(--action-danger-fg)');
+  });
+
+  it('rounds the tags as a chip and sizes the state icon at 12px', () => {
+    for (const selector of ['.ui-format-tag', '.ui-status-tag', '.ui-late-badge']) expect(rule(selector).get('border-radius'), selector).toBe('var(--radius-sm)');
+    expect(rule('.ui-status-tag .ui-icon > svg').get('width')).toBe('0.75rem');
+    expect(rule('.ui-status-tag .ui-icon > svg').get('height')).toBe('0.75rem');
+  });
+
+  describe.each(['light', 'dark'] as const)('in %s', (theme) => {
+    it.each(FORMATS)('keeps the %s label AA on its fill', (format) => {
+      const tag = rule(`.ui-format-tag--${format}`);
+
+      expect(contrastOf(theme, tag.get('color')!, tag.get('background')!), format).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it.each(STATUSES)('keeps the %s icon 3:1 on the canvas and the surface', (status) => {
+      const icon = rule(`.ui-status-tag--${status} .ui-icon`).get('color')!;
+
+      for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) expect(contrastOf(theme, icon, surface), `${status} on ${surface}`).toBeGreaterThanOrEqual(3);
+    });
+
+    it('keeps the label of a state AA on the canvas and the surface', () => {
+      for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) expect(contrastOf(theme, rule('.ui-status-tag').get('color')!, surface)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it('keeps the late badge AA on its fill', () => {
+      expect(contrastOf(theme, rule('.ui-late-badge').get('color')!, rule('.ui-late-badge').get('background')!)).toBeGreaterThanOrEqual(4.5);
+    });
+  });
+});
+
+describe('avatar attention ring', () => {
+  const ringOf = (selector: string): string => /0 0 0 4px (var\(--[\w-]+\))$/.exec(rule(selector).get('box-shadow')!)![1]!;
+
+  it('is a 2px gap and a 4px ring, with the gap taken from the background the avatar sits on', () => {
+    expect(rule('.ui-avatar--attention').get('box-shadow')).toBe('0 0 0 2px var(--ui-avatar-gap, var(--bg-canvas)), 0 0 0 4px var(--status-late-fg)');
+  });
+
+  it('is the ring of the story avatar of the screen as well, so both agree', () => {
+    expect(ringOf('.content-story__avatar--attention')).toBe(ringOf('.ui-avatar--attention'));
+  });
+
+  it.each(['light', 'dark'] as const)('is 3:1 on the canvas and the surface in %s, for the Avatar and for the story avatar', (theme) => {
+    for (const selector of ['.ui-avatar--attention', '.content-story__avatar--attention']) {
+      for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) expect(contrastOf(theme, ringOf(selector), surface), `${selector} on ${surface}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('hides the reason from the eyes and leaves it to assistive technology', () => {
+    const reason = rule('.ui-avatar__attention');
+
+    expect(reason.get('position')).toBe('absolute');
+    expect(reason.get('clip-path')).toBe('inset(50%)');
+    expect(rule('.ui-avatar').get('position')).toBe('relative');
+  });
+});
+
+describe('Realce', () => {
+  it.each(['light', 'dark'] as const)('keeps its text AA on the indigo in %s', (theme) => {
+    expect(contrastOf(theme, rule('.ui-realce').get('color')!, rule('.ui-realce').get('background')!)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('is the action pair, carries its fill over a line break and has uneven corners', () => {
+    const realce = rule('.ui-realce');
+
+    expect(realce.get('background')).toBe('var(--action-primary-bg)');
+    expect(realce.get('color')).toBe('var(--action-primary-fg)');
+    expect(realce.get('box-decoration-break')).toBe('clone');
+    expect(realce.get('border-radius')!.split(' ')).toHaveLength(4);
+  });
+
+  it('sweeps in for 240ms from the left and not at all for people who ask for less motion', () => {
+    const base = css.replace(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/g, '');
+
+    expect(declarationsFor(base, '.ui-realce--sweep').get('animation')).toBe('ui-realce-sweep var(--motion-slow) var(--motion-easing-standard) both');
+    expect(declarationsFor(css, 'from').get('clip-path')).toBe('inset(0 100% 0 0)');
+    expect(declarationsFor(reducedMotionBlocks(), '.ui-realce--sweep').get('animation')).toBe('none');
+  });
+});
+
+describe('ButtonLink that cannot be followed', () => {
+  it('is dimmed like a disabled button and lets the pointer through', () => {
+    const disabled = rule('.ui-button--link-disabled');
+
+    expect(disabled.get('opacity')).toBe('0.55');
+    expect(disabled.get('pointer-events')).toBe('none');
+  });
+
+  it('wears no underline on the anchor, so it reads as a button', () => {
+    expect(rule('a.ui-button').get('text-decoration')).toBe('none');
+  });
+});
+
+/** The stylesheet as it is for people who have not asked for less motion: the reduced-motion blocks cut out. */
+const MOTION_ON = css.replace(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/g, '');
+
+/** The block of the empty state that applies on a phone, so the other tests read the rules of the wide screen alone. */
+const PHONE_BLOCK = /@media \(max-width: 40rem\) \{([\s\S]*?)\n\}/g;
+
+describe('Mascot and EmptyState', () => {
+  it('keeps the owl in proportion inside a narrow screen', () => {
+    const mascot = rule('.ui-mascot');
+
+    expect(mascot.get('height')).toBe('auto');
+    expect(mascot.get('max-width')).toBe('100%');
+    expect(mascot.get('flex')).toBe('none');
+  });
+
+  it('puts the owl beside the text and wraps it under the text on a narrow screen', () => {
+    const empty = declarationsFor(css.replace(PHONE_BLOCK, ''), '.ui-empty-state');
+
+    expect(empty.get('display')).toBe('flex');
+    expect(empty.get('flex-wrap')).toBe('wrap');
+    expect(empty.get('gap')).toBe('var(--space-12)');
+  });
+
+  it('sets the title in the heading scale, larger beside the owl', () => {
+    expect(rule('.ui-empty-state__title').get('font')).toBe('var(--heading-lg)');
+    expect(declarationsFor(css.replace(PHONE_BLOCK, ''), '.ui-empty-state--mascot .ui-empty-state__title').get('font')).toBe('var(--heading-xl)');
+  });
+
+  it('gives the text the room on a phone: less padding and gap, and the same title size with or without the owl', () => {
+    const phone = new RegExp(PHONE_BLOCK.source).exec(css.slice(css.indexOf('.ui-empty-state {')))![1]!;
+
+    expect(declarationsFor(phone, '.ui-empty-state').get('padding')).toBe('var(--space-4)');
+    expect(declarationsFor(phone, '.ui-empty-state').get('gap')).toBe('var(--space-6)');
+    expect(declarationsFor(phone, '.ui-empty-state--mascot .ui-empty-state__title').get('font')).toBe('var(--heading-lg)');
+    expect(rule('.ui-empty-state__title').get('overflow-wrap')).toBe('anywhere');
+  });
+
+  it.each(['light', 'dark'] as const)('keeps the title and the description AA on the canvas and the surface in %s', (theme) => {
+    const description = rule('.ui-empty-state__description').get('color')!;
+
+    expect(description).toBe('var(--text-secondary)');
+    // Named, not inherited: a themed region does not recolour the text it inherits, and the title would vanish on the dark surface.
+    expect(rule('.ui-empty-state__title').get('color')).toBe('var(--text-primary)');
+    for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) {
+      expect(contrastOf(theme, description, surface), `description on ${surface}`).toBeGreaterThanOrEqual(4.5);
+      expect(contrastOf(theme, 'var(--text-primary)', surface), `title on ${surface}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+
+describe('ClientStrip', () => {
+  const CURRENT = ".ui-client-strip__item[aria-current='page']";
+
+  it('gives the hovered and the current client the same surface, text and ring gap, so the photo ring never shows a band', () => {
+    for (const selector of ['.ui-client-strip__item:hover', CURRENT]) {
+      const item = rule(selector);
+
+      expect(item.get('background'), selector).toBe('var(--bg-hover)');
+      expect(item.get('color'), selector).toBe('var(--text-primary)');
+      expect(item.get('--ui-avatar-gap'), selector).toBe('var(--bg-hover)');
+    }
+  });
+
+  it('rings the focus inside the item, which sits in a scroll box that would clip an outer ring', () => {
+    const focus = rule('.ui-client-strip__item:focus-visible');
+
+    expect(focus.get('outline')).toBe('3px solid var(--focus-ring)');
+    expect(focus.get('outline-offset')).toBe('-3px');
+  });
+
+  it('scrolls the strip sideways, and sizes the photo at 48px', () => {
+    expect(rule('.ui-client-strip__list').get('overflow-x')).toBe('auto');
+    expect(rule('.ui-client-strip__item .ui-avatar--md').get('width')).toBe('3rem');
+    expect(rule('.ui-client-strip__item .ui-avatar--md').get('height')).toBe('3rem');
+  });
+
+  it('wraps a long name inside its 92px column', () => {
+    expect(rule('.ui-client-strip__item').get('width')).toBe('5.75rem');
+    expect(rule('.ui-client-strip__name').get('overflow-wrap')).toBe('anywhere');
+  });
+
+  it('turns the transition off for people who ask for less motion', () => {
+    const reduced = reducedMotionBlocks();
+
+    expect(declarationsFor(reduced, '.ui-client-strip__item').get('transition')).toBe('none');
+    expect(declarationsFor(MOTION_ON, '.ui-client-strip__item').get('transition')).toContain('var(--motion-fast)');
+  });
+
+  it.each(['light', 'dark'] as const)('keeps the name AA at rest and on its hover surface in %s', (theme) => {
+    for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) {
+      expect(contrastOf(theme, rule('.ui-client-strip__item').get('color')!, surface), surface).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(contrastOf(theme, rule('.ui-client-strip__item:hover').get('color')!, rule('.ui-client-strip__item:hover').get('background')!)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('FilterBar', () => {
+  const base = css.replace(PHONE_BLOCK, '');
+  const phone = [...css.matchAll(new RegExp(PHONE_BLOCK.source, 'g'))].map((match) => match[1]!).join('\n');
+
+  it('splits the filters with a divider on the left of every one but the first', () => {
+    expect(declarationsFor(base, '.ui-filter-bar__item + .ui-filter-bar__item').get('border-left')).toBe('1px solid var(--border-subtle)');
+    expect(declarationsFor(base, '.ui-filter-bar__item:first-child').get('padding-left')).toBe('0');
+  });
+
+  it('stacks the filters on a phone and turns the dividers horizontal', () => {
+    expect(declarationsFor(phone, '.ui-filter-bar').get('flex-direction')).toBe('column');
+    expect(declarationsFor(phone, '.ui-filter-bar__item + .ui-filter-bar__item').get('border-top')).toBe('1px solid var(--border-subtle)');
+    expect(declarationsFor(phone, '.ui-filter-bar__item + .ui-filter-bar__item').get('border-left')).toBe('0');
+    expect(declarationsFor(phone, '.ui-filter-bar__control').get('width')).toBe('100%');
+  });
+
+  it('sets the label in the small caption above, and the choice in the interface label', () => {
+    expect(rule('.ui-filter-bar__label').get('font')).toBe('var(--caption)');
+    expect(rule('.ui-filter-bar__label').get('color')).toBe('var(--text-muted)');
+    expect(rule('.ui-filter-bar__control').get('color')).toBe('var(--text-primary)');
+    expect(rule('.ui-filter-bar__control').get('font')).toBe('var(--label-md)');
+  });
+
+  it('lights the choice on hover, never while disabled', () => {
+    expect(rule('.ui-filter-bar__control:not(.ui-text-input):hover:not(:disabled)').get('background')).toBe('var(--bg-hover)');
+  });
+
+  it('gives a text field in the bar the edge of a field, border/control, and keeps its hover to the edge', () => {
+    const field = rule('.ui-filter-bar__control.ui-text-input');
+
+    expect(field.get('border')).toBe('1px solid var(--border-control)');
+    expect(field.get('border-radius')).toBe('var(--radius-md)');
+    expect(field.get('margin-left')).toBe('0');
+    for (const theme of ['light', 'dark'] as const) {
+      for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) expect(contrastOf(theme, 'var(--border-control)', surface), `${theme} on ${surface}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('dims a disabled filter, label included, and shows it cannot be used', () => {
+    expect(rule('.ui-filter-bar__control:disabled').get('opacity')).toBe('0.55');
+    expect(rule('.ui-filter-bar__control:disabled').get('cursor')).toBe('not-allowed');
+    expect(rule('.ui-filter-bar__item:has(:disabled) > .ui-filter-bar__label').get('opacity')).toBe('0.55');
+  });
+
+  it('shows a spinner after the label of a filter that is loading, and the busy cursor', () => {
+    expect(declarationsFor(MOTION_ON, '.ui-filter-bar__item--loading > .ui-filter-bar__label::after').get('animation')).toContain('ui-button-spin');
+    expect(rule('.ui-filter-bar__item--loading > .ui-filter-bar__control').get('cursor')).toBe('progress');
+  });
+
+  it('rings the keyboard focus of the choice with the global ring', () => {
+    expect(rule('select:focus-visible').get('outline')).toBe('3px solid var(--focus-ring)');
+  });
+
+  it('turns the transition and the spinner off for people who ask for less motion', () => {
+    const reduced = reducedMotionBlocks();
+
+    expect(declarationsFor(reduced, '.ui-filter-bar__control').get('transition')).toBe('none');
+    expect(declarationsFor(reduced, '.ui-filter-bar__item--loading > .ui-filter-bar__label::after').get('animation')).toBe('none');
+  });
+
+  it.each(['light', 'dark'] as const)('keeps the label and the choice AA on the canvas and the surface in %s', (theme) => {
+    for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) {
+      expect(contrastOf(theme, rule('.ui-filter-bar__label').get('color')!, surface), `label on ${surface}`).toBeGreaterThanOrEqual(4.5);
+      expect(contrastOf(theme, rule('.ui-filter-bar__control').get('color')!, surface), `choice on ${surface}`).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(contrastOf(theme, rule('.ui-filter-bar__control').get('color')!, rule('.ui-filter-bar__control:not(.ui-text-input):hover:not(:disabled)').get('background')!)).toBeGreaterThanOrEqual(4.5);
   });
 });

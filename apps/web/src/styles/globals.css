@@ -87,12 +87,6 @@ textarea:focus-visible {
   text-align: center;
 }
 
-.status-panel__mascot {
-  height: 15rem;
-  width: auto;
-  max-width: 100%;
-}
-
 .status-panel h1 {
   margin: var(--space-2) 0 0;
   font: var(--heading-xl);
@@ -109,7 +103,7 @@ textarea:focus-visible {
   margin-top: var(--space-4);
 }
 
-/* An anchor wearing the Button classes (the way out is a navigation): no underline, and it keeps the button's own color. */
+/* ButtonLink: an anchor wearing the Button classes (the way out is a navigation): no underline, and it keeps the button's own color. */
 a.ui-button {
   text-decoration: none;
 }
@@ -378,7 +372,7 @@ a.ui-button {
   opacity: 0.55;
 }
 
-/* Tabs: the open tab is underlined in ink, never in indigo (indigo is the action, today and the viewer's turn). */
+/* Tabs: the open tab is underlined in ink, never in indigo (indigo is the action, today, the viewer's turn and the selected client). */
 .ui-tabs__list {
   display: flex;
   gap: var(--space-4);
@@ -530,6 +524,7 @@ a.ui-button {
 
 /* Avatar, BadgeCard, Select and Pagination: docs/design-system.md section 13 */
 .ui-avatar {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3695,9 +3690,10 @@ a.client-general__block:hover {
   border-radius: var(--radius-full);
 }
 
-/* The ring: something of this client asks for action (a change asked, a day passed, a deadline in two days). */
+/* The ring: something of this client asks for action (a change asked, a day passed, a deadline in two days).
+   Drawn with the Avatar's attention colour, which is 3:1 on the surface in both themes (indigo/550 was 2.97:1 in the dark). */
 .content-story__avatar--attention {
-  box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--action-primary-bg);
+  box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--status-late-fg);
 }
 
 .content-story__name {
@@ -4843,4 +4839,353 @@ a.client-general__block:hover {
   display: block;
   flex: none;
   max-width: 100%;
+}
+
+/* Domain components: docs/design-system.md section 13. A tag is static and its words carry the meaning; colour only helps. */
+.ui-format-tag,
+.ui-status-tag,
+.ui-late-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Filled by format: the label's own fill and text pair (`format/*/tag/*`), never the card's tint. */
+.ui-format-tag {
+  font-weight: 600;
+}
+
+.ui-format-tag--carousel {
+  background: var(--format-carousel-tag-bg);
+  color: var(--format-carousel-tag-fg);
+}
+
+.ui-format-tag--reels {
+  background: var(--format-reels-tag-bg);
+  color: var(--format-reels-tag-fg);
+}
+
+.ui-format-tag--static {
+  background: var(--format-static-tag-bg);
+  color: var(--format-static-tag-fg);
+}
+
+/* Outlined by state: the colour is the icon's (non-text, 3:1) and the label stays `text/secondary`. */
+.ui-status-tag {
+  border-color: var(--border-default);
+  color: var(--text-secondary);
+}
+
+.ui-status-tag .ui-icon > svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.ui-status-tag--ready .ui-icon {
+  color: var(--status-ready-fg);
+}
+
+.ui-status-tag--waiting .ui-icon {
+  color: var(--status-waiting-fg);
+}
+
+.ui-status-tag--adjust .ui-icon {
+  color: var(--status-adjust-fg);
+}
+
+.ui-status-tag--published .ui-icon {
+  color: var(--status-published-fg);
+}
+
+.ui-status-tag--production .ui-icon {
+  color: var(--status-production-fg);
+}
+
+/* The one state in a solid block, on the danger action's own pair. */
+.ui-late-badge {
+  background: var(--action-danger-bg);
+  color: var(--action-danger-fg);
+  font-weight: 600;
+}
+
+/* Attention ring of the Avatar: a 2px gap in the colour it sits on, then the ring in the late-state colour, which is 3:1
+   on the canvas and the surface in both themes. `--ui-avatar-gap` names the background when it is not the canvas. */
+.ui-avatar--attention {
+  box-shadow: 0 0 0 2px var(--ui-avatar-gap, var(--bg-canvas)), 0 0 0 4px var(--status-late-fg);
+}
+
+.ui-avatar__attention {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Realce: the highlighter. Its corners are uneven on purpose, so they are the one shape that does not come from the radius scale. */
+.ui-realce {
+  padding: 0 var(--space-1);
+  border-radius: 0.1875rem 0.4375rem 0.25rem 0.5rem;
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.ui-realce--sweep {
+  animation: ui-realce-sweep var(--motion-slow) var(--motion-easing-standard) both;
+}
+
+@keyframes ui-realce-sweep {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-realce--sweep {
+    animation: none;
+  }
+}
+
+/* ButtonLink that cannot be followed: dimmed like a disabled button, and the pointer passes through it. */
+.ui-button--link-disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* Mascot and EmptyState: what a list shows when it has nothing yet. The owl is decorative and only beside an action. */
+.ui-mascot {
+  display: block;
+  flex: none;
+  max-width: 100%;
+  height: auto;
+}
+
+.ui-empty-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-12);
+  padding: var(--space-8);
+}
+
+.ui-empty-state__body {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 28.75rem;
+}
+
+.ui-empty-state__title {
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--heading-lg);
+  overflow-wrap: anywhere;
+}
+
+.ui-empty-state--mascot .ui-empty-state__title {
+  font: var(--heading-xl);
+}
+
+.ui-empty-state__description {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-lg);
+}
+
+.ui-empty-state__action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+}
+
+/* On a phone the owl sits above the text, which gets the room and a smaller title. */
+@media (max-width: 40rem) {
+  .ui-empty-state {
+    gap: var(--space-6);
+    padding: var(--space-4);
+  }
+
+  .ui-empty-state--mascot .ui-empty-state__title {
+    font: var(--heading-lg);
+  }
+}
+
+/* ClientStrip: the clients as stories. The one you are on carries the highlighter and a surface, not only a colour. */
+.ui-client-strip__list {
+  display: flex;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-1) 0 var(--space-2);
+  overflow-x: auto;
+  list-style: none;
+}
+
+.ui-client-strip__item {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: var(--space-2);
+  width: 5.75rem;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition:
+    background-color var(--motion-fast),
+    color var(--motion-fast);
+}
+
+.ui-client-strip__item:hover,
+.ui-client-strip__item[aria-current='page'] {
+  --ui-avatar-gap: var(--bg-hover);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* The ring of a tab-like item sits inside a scroll box that would clip an outer one. */
+.ui-client-strip__item:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+.ui-client-strip__item .ui-avatar--md {
+  width: 3rem;
+  height: 3rem;
+}
+
+.ui-client-strip__name {
+  font: var(--caption);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* FilterBar: the label above, the choice below, a divider between filters. */
+.ui-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.ui-filter-bar__item {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0 var(--space-4);
+}
+
+.ui-filter-bar__item:first-child {
+  padding-left: 0;
+}
+
+.ui-filter-bar__item + .ui-filter-bar__item {
+  border-left: 1px solid var(--border-subtle);
+}
+
+.ui-filter-bar__label {
+  color: var(--text-muted);
+  font: var(--caption);
+}
+
+.ui-filter-bar__control {
+  min-height: 2rem;
+  max-width: 100%;
+  margin-left: calc(var(--space-2) * -1);
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--label-md);
+  cursor: pointer;
+  transition: background-color var(--motion-fast);
+}
+
+.ui-filter-bar__control:not(.ui-text-input):hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+/* A text field in the bar is not a flat value: it keeps the edge of a field, border/control (3:1), so it never reads as loose text. */
+.ui-filter-bar__control.ui-text-input {
+  min-height: 2.75rem;
+  margin-left: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.ui-filter-bar__control:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ui-filter-bar__item:has(:disabled) > .ui-filter-bar__label {
+  opacity: 0.55;
+}
+
+.ui-filter-bar__item--loading > .ui-filter-bar__control {
+  cursor: progress;
+}
+
+.ui-filter-bar__item--loading > .ui-filter-bar__label::after {
+  content: '';
+  display: inline-block;
+  width: 0.75em;
+  height: 0.75em;
+  margin-left: var(--space-2);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--radius-full);
+  vertical-align: -0.1em;
+  animation: ui-button-spin var(--motion-slow) linear infinite;
+}
+
+/* On a phone the filters stack and the dividers turn horizontal. */
+@media (max-width: 40rem) {
+  .ui-filter-bar {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .ui-filter-bar__item,
+  .ui-filter-bar__item:first-child {
+    padding: 0;
+  }
+
+  .ui-filter-bar__item + .ui-filter-bar__item {
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-subtle);
+    border-left: 0;
+  }
+
+  .ui-filter-bar__control {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-client-strip__item,
+  .ui-filter-bar__control {
+    transition: none;
+  }
+
+  .ui-filter-bar__item--loading > .ui-filter-bar__label::after {
+    animation: none;
+  }
 }
