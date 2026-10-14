@@ -129,7 +129,8 @@ describe('/design-system in development', { timeout: 30_000 }, () => {
     expect(columns).toEqual(['Variante', 'Padrão', 'Hover' + 'passe o mouse', 'Foco' + 'navegue com Tab', 'Desativado', 'Carregando']);
     const row = within(table).getByRole('row', { name: /primary/ });
     const cells = within(row).getAllByRole('cell');
-    expect(cells.map((cell) => cell.querySelector('button')?.hasAttribute('disabled'))).toEqual([false, false, false, true, true]);
+    expect(cells.map((cell) => cell.querySelector('button')?.hasAttribute('disabled'))).toEqual([false, false, false, true, false]);
+    expect(cells.map((cell) => cell.querySelector('button')?.getAttribute('aria-disabled') ?? null)).toEqual([null, null, null, null, 'true']);
     expect(cells.map((cell) => cell.querySelector('button')?.getAttribute('aria-busy') ?? null)).toEqual([null, null, null, null, 'true']);
   });
 
