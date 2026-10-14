@@ -2,9 +2,10 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { EmailChangeDialog } from './email-change.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
@@ -243,5 +244,82 @@ describe('the other auth screens in the new layout', () => {
     expect(status.textContent).toBe('O novo e-mail já vale para a sua conta. Por segurança, todas as sessões foram encerradas.');
     expect(status.querySelector('svg')).not.toBeNull();
     expect(status.compareDocumentPosition(screen.getByRole('link', { name: 'Entrar com o novo e-mail' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+interface CredentialField {
+  readonly label: string;
+  readonly type: string;
+  readonly autocomplete: string;
+  readonly name: string;
+}
+
+/** What the browser and the password manager read: a redesign swaps the markup, and none of this shows on the screen. */
+const expectCredentialField = (field: CredentialField): void => {
+  const control = screen.getByLabelText(field.label) as HTMLInputElement;
+  expect({ type: control.type, autocomplete: control.getAttribute('autocomplete'), name: control.getAttribute('name') })
+    .toEqual({ type: field.type, autocomplete: field.autocomplete, name: field.name });
+};
+
+describe('the credential fields of the auth screens', () => {
+  it.each<[string, string, readonly CredentialField[]]>([
+    ['login', '/entrar', [
+      { label: 'E-mail', type: 'email', autocomplete: 'email', name: 'email' },
+      { label: 'Senha', type: 'password', autocomplete: 'current-password', name: 'password' }
+    ]],
+    ['forgot password', '/senha/esquecida', [
+      { label: 'E-mail', type: 'email', autocomplete: 'email', name: 'email' }
+    ]],
+    ['reset password', '/senha/redefinir?token=abc', [
+      { label: 'Nova senha', type: 'password', autocomplete: 'new-password', name: 'newPassword' }
+    ]]
+  ])('fixes type, autocomplete and name on %s', async (_screen, path, fields) => {
+    renderAt(path);
+    await screen.findByLabelText(fields[0]!.label);
+
+    for (const field of fields) expectCredentialField(field);
+  });
+
+  it('fixes type, autocomplete and name on the invitation of a new account', async () => {
+    renderAt('/convite/abc', invitationFetch(false, json({}, 500)));
+    await screen.findByLabelText('Nome');
+
+    expectCredentialField({ label: 'Nome', type: 'text', autocomplete: 'name', name: 'name' });
+    expectCredentialField({ label: 'Senha', type: 'password', autocomplete: 'new-password', name: 'password' });
+  });
+
+  it('opens the legal documents of the invitation in a new tab without handing over the referrer', async () => {
+    renderAt('/convite/abc', invitationFetch(false, json({}, 500)));
+    await screen.findByLabelText('Nome');
+
+    for (const [name, href] of [['Termos de Uso', '/termos'], ['Política de Privacidade', '/privacidade']] as const) {
+      const link = screen.getByRole('link', { name });
+      expect(link.getAttribute('href')).toBe(href);
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(link.getAttribute('rel')).toBe('noreferrer');
+    }
+  });
+});
+
+describe('the credential fields of the e-mail change request', () => {
+  const descriptors = ['showModal', 'close'].map((name) => [name, Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, name)] as const);
+  beforeAll(() => {
+    // jsdom has no top layer; these stubs only model opening and closing.
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value(this: HTMLDialogElement) { this.open = true; } });
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value(this: HTMLDialogElement) { this.open = false; } });
+  });
+  afterAll(() => {
+    for (const [name, descriptor] of descriptors) {
+      if (descriptor === undefined) Reflect.deleteProperty(HTMLDialogElement.prototype, name);
+      else Object.defineProperty(HTMLDialogElement.prototype, name, descriptor);
+    }
+  });
+
+  it('fixes type, autocomplete and name on the new e-mail and the current password', () => {
+    const client = new HttpClient('http://127.0.0.1:3001', visitorFetch());
+    render(<ApiClientProvider client={client}><EmailChangeDialog onClose={() => undefined} /></ApiClientProvider>);
+
+    expectCredentialField({ label: 'Novo e-mail', type: 'email', autocomplete: 'email', name: 'newEmail' });
+    expectCredentialField({ label: 'Senha atual', type: 'password', autocomplete: 'current-password', name: 'currentPassword' });
   });
 });
