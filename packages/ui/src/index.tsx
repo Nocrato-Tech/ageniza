@@ -1,46 +1,14 @@
 import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 export { Avatar, avatarInitials, type AvatarProps, type AvatarSize } from './avatar.js';
 export { BadgeCard, type BadgeCardProps } from './badge-card.js';
+export { Button, IconButton, type ButtonProps, type ButtonSize, type ButtonVariant, type IconButtonProps } from './button.js';
 export { Logo, BrandSymbol, type LogoProps, type LogoVariant, type BrandSymbolProps, type BrandSymbolVariant } from './brand.js';
 export { ConfirmDialog, Menu, MenuItem, MenuSeparator } from './menu.js';
 export { Modal, type ModalProps } from './modal.js';
 export { Pagination, paginationItems, type PaginationProps } from './pagination.js';
+export { Pill, PillAction, type PillActionProps, type PillProps, type PillTone } from './pill.js';
 export { Select, type SelectOption, type SelectProps } from './select.js';
 export { Textarea, type TextareaProps } from './textarea.js';
-
-export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  /** `secondary` is shadcn's `outline`; Ageniza never exposes `outline` itself (docs/design-system.md section 13). */
-  variant?: 'primary' | 'secondary' | 'ghost' | 'destructive';
-  size?: 'sm' | 'md' | 'lg';
-  loading?: boolean;
-};
-
-/** A semantic button with a stable focus indicator supplied by the consumer stylesheet. */
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { className, variant = 'primary', size = 'md', loading = false, type = 'button', disabled, children, ...props },
-  ref
-) {
-  return (
-    <button
-      ref={ref}
-      type={type}
-      disabled={disabled || loading}
-      aria-busy={loading || undefined}
-      className={[
-        'ui-button',
-        `ui-button--${variant}`,
-        `ui-button--${size}`,
-        loading && 'ui-button--loading',
-        className
-      ]
-        .filter(Boolean)
-        .join(' ')}
-      {...props}
-    >
-      <span className="ui-button__label">{children}</span>
-    </button>
-  );
-});
 
 export type TextInputProps = InputHTMLAttributes<HTMLInputElement>;
 
