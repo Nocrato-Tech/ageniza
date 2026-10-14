@@ -7,7 +7,10 @@ export { ConfirmDialog, Menu, MenuItem, MenuSeparator } from './menu.js';
 export { Modal, type ModalProps } from './modal.js';
 export { Pagination, paginationItems, type PaginationProps } from './pagination.js';
 export { Pill, PillAction, type PillActionProps, type PillProps, type PillTone } from './pill.js';
+export { Segmented, type SegmentedOption, type SegmentedProps } from './segmented.js';
 export { Select, type SelectOption, type SelectProps } from './select.js';
+export { Skeleton } from './skeleton.js';
+export { Tabs, type TabItem, type TabsProps } from './tabs.js';
 export { Textarea, type TextareaProps } from './textarea.js';
 
 export type TextInputProps = InputHTMLAttributes<HTMLInputElement>;
@@ -55,8 +58,3 @@ export const ChoiceCard = forwardRef<HTMLButtonElement, ChoiceCardProps>(functio
     </button>
   );
 });
-
-/** Reserves the shape of content during its first load; decorative, never announced. */
-export function Skeleton({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div aria-hidden="true" className={['ui-skeleton', className].filter(Boolean).join(' ')} {...props} />;
-}

@@ -106,7 +106,8 @@ textarea:focus-visible {
   stroke-width: 1.75;
 }
 
-.ui-pill .ui-icon > svg {
+.ui-pill .ui-icon > svg,
+.ui-tabs__tab .ui-icon > svg {
   width: 1rem;
   height: 1rem;
 }
@@ -282,9 +283,122 @@ textarea:focus-visible {
   outline-offset: 3px;
 }
 
+/* Segmented: Grade/Lista. The chosen option carries a border and a lifted surface, not only a colour. */
+.ui-segmented {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.ui-segmented[aria-busy='true'] {
+  cursor: progress;
+}
+
+.ui-segmented__option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.25rem;
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font: var(--button-md);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast),
+    border-color var(--motion-fast),
+    color var(--motion-fast);
+}
+
+/* Hover only raises the text: a background here would read as the chosen option. */
+.ui-segmented__option:hover:not(:disabled):not([aria-checked='true']) {
+  color: var(--text-primary);
+}
+
+.ui-segmented__option[aria-checked='true'] {
+  border-color: var(--border-default);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.ui-segmented__option:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 0;
+}
+
+.ui-segmented__option:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ui-segmented[aria-busy='true'] > .ui-segmented__option:disabled {
+  cursor: progress;
+}
+
+/* Tabs: the open tab is underlined in ink, never in indigo (indigo is the action, today and the viewer's turn). */
+.ui-tabs__list {
+  display: flex;
+  gap: var(--space-4);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.ui-tabs__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.75rem;
+  margin-bottom: -1px;
+  padding: 0 var(--space-1);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font: var(--button-md);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--motion-fast);
+}
+
+.ui-tabs__tab:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.ui-tabs__tab[aria-selected='true'] {
+  border-bottom-color: var(--text-primary);
+  color: var(--text-primary);
+}
+
+/* Inside the scroll box of the list an outer ring would be clipped. */
+.ui-tabs__tab:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+.ui-tabs__tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ui-tabs__panel {
+  padding-top: var(--space-4);
+}
+
+.ui-tabs__panel:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ui-button,
-  .ui-pill--action {
+  .ui-pill--action,
+  .ui-segmented__option,
+  .ui-tabs__tab {
     transition: none;
   }
 }
