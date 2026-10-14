@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 
@@ -32,6 +32,9 @@ import { PortalContentPage } from './portal-content.js';
 import { ResetPasswordPage } from './reset-password.js';
 import { SessionWatch } from './session-watch.js';
 import { LoadingPage, NotFoundPage, SessionGate } from './status-pages.js';
+
+/** Internal page of tokens and components: dev only. Vite replaces `import.meta.env.DEV` with `false` in the production build, which drops the branch and its chunk. */
+const DesignSystemPage = import.meta.env.DEV ? lazy(() => import('./design-system/page.js')) : null;
 
 /** Contents and the roster behind its picker: both are needed to open the area. */
 const CONTENT_AREA_PERMISSIONS = ['conteudo.visualizar', 'cliente.visualizar'] as const;
@@ -148,6 +151,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="relatorios" element={<PortalSkeletonPage title="Relatórios" description="Aqui você vai ver os resultados do trabalho que sua agência faz para você." />} />
       <Route path="*" element={<NotFoundPage as="section" />} />
     </Route>
+    {DesignSystemPage !== null && <Route path="design-system" element={<Suspense fallback={<LoadingPage />}><DesignSystemPage /></Suspense>} />}
     <Route element={<ProtectedLayout session={session} />}>
       <Route path="contextos" element={<ContextSelectPage />} />
       {/* `/app` is not a destination anymore; the resolve decides where the person enters. */}

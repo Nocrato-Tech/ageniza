@@ -18,6 +18,8 @@ export default defineConfig({
     // The suite runs with a fixed timezone so a date label that depends on
     // America/Sao_Paulo (the client archiving day, review of #379) cannot silently
     // pass on a machine whose local zone happens to be the production one.
-    env: { TZ: 'UTC' }
+    env: { TZ: 'UTC' },
+    // The design-system page reads the token stylesheets as text (`?raw`); vitest would otherwise stub every CSS file as empty.
+    css: { include: [/\.css\?raw$/] }
   }
 });
