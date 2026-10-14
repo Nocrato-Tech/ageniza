@@ -111,7 +111,21 @@ const stateColumns: readonly { key: string; label: string; hint?: string; state:
   { key: 'loading', label: 'Carregando', state: 'loading' }
 ];
 
+function StatesInRows({ entry }: { entry: ComponentEntry }) {
+  return <table>
+    <thead><tr><th scope="col">Estado</th>{entry.examples.map((example) => <th key={example.label} scope="col">{example.label}</th>)}</tr></thead>
+    <tbody>{stateColumns.map((column) => <tr key={column.key}>
+      <th scope="row">{column.label}{column.hint !== undefined && <small>{column.hint}</small>}</th>
+      {entry.examples.map((example) => {
+        const rendered = example.render(column.state);
+        return <td key={example.label}>{rendered ?? <span className="ds-na" aria-label="não se aplica">—</span>}</td>;
+      })}
+    </tr>)}</tbody>
+  </table>;
+}
+
 function ComponentTable({ entry }: { entry: ComponentEntry }) {
+  if (entry.wide === true) return <div className="ds-component"><h3>{entry.name}</h3><StatesInRows entry={entry} /></div>;
   return <div className="ds-component">
     <h3>{entry.name}</h3>
     <table>

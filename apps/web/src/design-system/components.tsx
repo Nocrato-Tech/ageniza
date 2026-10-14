@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from 'react';
-import { ArrowRight, Plus } from 'lucide-react';
+import { ArrowRight, LayoutGrid, List, Plus } from 'lucide-react';
 import {
   Avatar, BadgeCard, BrandSymbol, Button, ChoiceCard, IconButton, Pill, PillAction, ConfirmDialog, FieldMessage, Logo, LiveStatus, Menu, MenuItem, MenuSeparator,
-  Modal, Pagination, Select, Skeleton, Textarea, TextInput
+  Modal, Pagination, Segmented, Select, Skeleton, Tabs, Textarea, TextInput
 } from '@ageniza/ui';
 
 /** `hover` and `focus` are real interactions on the default render, so they are not states a component implements. */
@@ -19,6 +19,8 @@ export interface ComponentEntry {
   readonly name: string;
   /** Exported components this entry shows; a component of `@ageniza/ui` that no entry covers fails the page's test. */
   readonly covers: readonly string[];
+  /** A component too wide for five columns: the page puts the states in rows instead. */
+  readonly wide?: boolean;
   readonly examples: readonly ComponentExample[];
 }
 
@@ -39,6 +41,22 @@ function SelectDemo({ disabled }: { disabled: boolean }) {
   const [value, setValue] = useState('');
   return <Select label="Cliente" value={value} onChange={setValue} placeholder="Todos" disabled={disabled}
     options={[{ value: 'a', label: 'Cliente A' }, { value: 'b', label: 'Cliente B' }]} />;
+}
+
+function SegmentedDemo({ disabled, loading }: { disabled: boolean; loading: boolean }) {
+  const [value, setValue] = useState('grid');
+  return <Segmented label="Visualização" value={value} onChange={setValue} disabled={disabled} loading={loading}
+    options={[{ value: 'grid', label: 'Grade', icon: <LayoutGrid /> }, { value: 'list', label: 'Lista', icon: <List /> }, { value: 'map', label: 'Mapa', disabled: true }]} />;
+}
+
+function TabsDemo({ disabled, loading }: { disabled: boolean; loading: boolean }) {
+  const [value, setValue] = useState('general');
+  return <Tabs label="Seções do cliente" value={value} onChange={setValue} loading={loading}
+    items={[
+      { value: 'general', label: 'Geral', disabled, content: <p>Conteúdo da aba Geral.</p> },
+      { value: 'contents', label: 'Conteúdos', count: 12, disabled, content: <p>Conteúdo da aba Conteúdos.</p> },
+      { value: 'reports', label: 'Relatórios', disabled: true, content: <p>Conteúdo da aba Relatórios.</p> }
+    ]} />;
 }
 
 const stateOnly = (state: RenderedState, only: readonly RenderedState[], node: ReactNode): ReactNode => only.includes(state) ? node : null;
@@ -87,6 +105,20 @@ export const componentEntries: readonly ComponentEntry[] = [
       { label: 'PillAction neutra', render: (state) => <PillAction trailingIcon={<ArrowRight />} disabled={state === 'disabled'} loading={state === 'loading'}>Abrir</PillAction> },
       { label: 'PillAction de destaque', render: (state) => <PillAction tone="accent" disabled={state === 'disabled'} loading={state === 'loading'}>Sua vez</PillAction> }
     ]
+  },
+  {
+    id: 'segmented',
+    name: 'Segmented',
+    covers: ['Segmented'],
+    wide: true,
+    examples: [{ label: 'grade, lista e mapa (desativado)', render: (state) => <SegmentedDemo disabled={state === 'disabled'} loading={state === 'loading'} /> }]
+  },
+  {
+    id: 'tabs',
+    name: 'Tabs',
+    covers: ['Tabs'],
+    wide: true,
+    examples: [{ label: 'com contagem e aba desativada', render: (state) => <TabsDemo disabled={state === 'disabled'} loading={state === 'loading'} /> }]
   },
   {
     id: 'text-input',

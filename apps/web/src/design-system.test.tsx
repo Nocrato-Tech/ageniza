@@ -133,6 +133,19 @@ describe('/design-system in development', { timeout: 30_000 }, () => {
     expect(cells.map((cell) => cell.querySelector('button')?.getAttribute('aria-busy') ?? null)).toEqual([null, null, null, null, 'true']);
   });
 
+  it('shows Segmented frozen when disabled and busy when loading, and Tabs with the disabled tabs', async () => {
+    await renderAt('/design-system');
+    const panel = within(await screen.findByTestId('components-panel'));
+    const rows = (name: string) => within(panel.getByRole('heading', { name, level: 3 }).parentElement!).getAllByRole('row').slice(1)
+      .map((row) => [within(row).getByRole('rowheader').firstChild!.textContent, row.querySelector('td')!] as const);
+    const segmented = rows('Segmented').map(([state, cell]) => [state, cell.querySelector('[role=radiogroup]')!] as const);
+    expect(segmented.map(([state]) => state)).toEqual(['Padrão', 'Hover', 'Foco', 'Desativado', 'Carregando']);
+    expect(segmented.map(([, group]) => group.getAttribute('aria-disabled'))).toEqual([null, null, null, 'true', null]);
+    expect(segmented.map(([, group]) => group.getAttribute('aria-busy'))).toEqual([null, null, null, null, 'true']);
+    const tabs = rows('Tabs').map(([, cell]) => [...cell.querySelectorAll('[role=tab]')].map((tab) => (tab as HTMLButtonElement).disabled));
+    expect(tabs).toEqual([[false, false, true], [false, false, true], [false, false, true], [true, true, true], [false, false, true]]);
+  });
+
   it('says "não se aplica" for a state a component does not have', async () => {
     await renderAt('/design-system');
     const panel = within(await screen.findByTestId('components-panel'));
