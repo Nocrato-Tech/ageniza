@@ -112,7 +112,7 @@ const stateColumns: readonly { key: string; label: string; hint?: string; state:
 ];
 
 function StatesInRows({ entry }: { entry: ComponentEntry }) {
-  return <table>
+  return <table className="ds-wide">
     <thead><tr><th scope="col">Estado</th>{entry.examples.map((example) => <th key={example.label} scope="col">{example.label}</th>)}</tr></thead>
     <tbody>{stateColumns.map((column) => <tr key={column.key}>
       <th scope="row">{column.label}{column.hint !== undefined && <small>{column.hint}</small>}</th>
