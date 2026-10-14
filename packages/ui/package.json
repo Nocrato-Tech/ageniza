@@ -28,5 +28,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "lucide-react": "^1.57.0"
   }
 }
