@@ -2,7 +2,7 @@
 
 Como a identidade visual da Ageniza vira um sistema de UI consistente entre design e código. O objetivo é impedir que telas criem cor, espaçamento, tipografia e componente de forma independente.
 
-**O repositório é a fonte de verdade — confirmado pelo dono do produto em 2026-09-28.** Até então este conteúdo vivia numa página do Notion, ["UI System — Figma, Design Tokens & CSS"](https://app.notion.com/p/3d886d2ba8b08172a3fbcc31e1548c31) (histórico — não usar como referência de trabalho); a página vira registro histórico, e a fonte passa a ser aqui, com uma página em `/design-system` no próprio app mostrando os tokens e componentes ao vivo (parte B, em preparo, PR separado — não é pré-requisito para as telas: ver seção 23 e a entrada de 2026-09-28 em `decisions.md`). Ver a entrada de 2026-09-28 "O repositório é a fonte do design system, com documento e página viva" em [`decisions.md`](business/decisions.md), que registra as decisões fechadas nesta data. O Notion permanece como registro histórico da decisão original, nunca mais como referência para implementar.
+**O repositório é a fonte de verdade — confirmado pelo dono do produto em 2026-09-28.** Até então este conteúdo vivia numa página do Notion, ["UI System — Figma, Design Tokens & CSS"](https://app.notion.com/p/3d886d2ba8b08172a3fbcc31e1548c31) (histórico — não usar como referência de trabalho); a página vira registro histórico, e a fonte passa a ser aqui, com uma página em `/design-system` no próprio app mostrando os tokens e componentes ao vivo (só no servidor de desenvolvimento; ver a seção 24 e a entrada de 2026-09-28 em `decisions.md`). Ver a entrada de 2026-09-28 "O repositório é a fonte do design system, com documento e página viva" em [`decisions.md`](business/decisions.md), que registra as decisões fechadas nesta data. O Notion permanece como registro histórico da decisão original, nunca mais como referência para implementar.
 
 Logo, símbolo e mascote têm documento próprio: [Marca](brand.md).
 
@@ -549,3 +549,11 @@ Uma entrega visual de uma task `escopo:web` só está concluída quando:
 Paridade entre Figma e código **não** é critério de aceite aqui: entra no refino de cada tela, depois que ela está no ar, com o designer (ver [`business/decisions/2026-09-28-a-tela-e-implementada-a-partir-do-esboco-e-o-designer.md`](business/decisions/2026-09-28-a-tela-e-implementada-a-partir-do-esboco-e-o-designer.md)).
 
 > A meta não é construir um design system gigantesco antes do produto. A meta é garantir que cada nova tela aumente um sistema consistente, em vez de criar uma nova linguagem visual a cada implementação.
+
+## 24. Página viva `/design-system`
+
+Rota interna, só no servidor de desenvolvimento (`pnpm --filter @ageniza/web dev`, endereço `/design-system`); o build de produção não a contém (ver [`business/decisions/2026-10-14-pagina-design-system-so-no-ambiente-de-desenvolvimento.md`](business/decisions/2026-10-14-pagina-design-system-so-no-ambiente-de-desenvolvimento.md)).
+
+- **Tokens:** cores primitivas, tokens semânticos nos dois temas (com a marca dos que o escuro sobrescreve), tipografia, espaço, raio, elevação e movimento. Tudo é lido dos arquivos de `apps/web/src/styles`: token novo aparece sozinho, sem editar a página.
+- **Componentes:** `apps/web/src/design-system/components.tsx` guarda um registro. Componente novo em `packages/ui` exige uma entrada nele (o teste `design-system.test.tsx` reprova quando falta e diz o formato; um export em maiúscula que não é componente entra na lista `NOT_COMPONENTS` do teste, com o motivo), com `covers` listando o que exporta e um exemplo por variante; a página monta as colunas Padrão, Hover, Foco, Desativado e Carregando e marca "—" no estado que o componente não tem.
+

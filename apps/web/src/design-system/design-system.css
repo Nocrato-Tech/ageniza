@@ -1,0 +1,82 @@
+/* Scoped to the internal /design-system page; only tokens, never a raw value (docs/design-system.md section 17). */
+.ds-page {
+  min-height: 100vh;
+  padding: var(--space-8) max(var(--space-6), calc((100vw - 72rem) / 2));
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+}
+
+.ds-header h1 { font: var(--heading-xl); margin: 0 0 var(--space-2); }
+.ds-header p { margin: 0 0 var(--space-3); color: var(--text-secondary); }
+.ds-eyebrow { font: var(--caption); text-transform: uppercase; letter-spacing: 0.08em; }
+.ds-header nav ul { display: flex; flex-wrap: wrap; gap: var(--space-4); margin: 0; padding: 0; list-style: none; font: var(--label-md); }
+
+.ds-section { margin-top: var(--space-12); scroll-margin-top: var(--space-6); }
+.ds-section h2 { font: var(--heading-lg); margin: 0 0 var(--space-4); }
+.ds-section h3 { font: var(--title-md); margin: 0 0 var(--space-3); }
+.ds-section h4 { font: var(--label-md); margin: var(--space-4) 0 var(--space-2); color: var(--text-secondary); }
+.ds-group { margin-bottom: var(--space-6); }
+
+.ds-themes { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: var(--space-6); }
+.ds-theme-panel {
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+}
+
+.ds-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--space-3); margin: 0 0 var(--space-4); padding: 0; list-style: none; }
+.ds-token { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: var(--space-3); font: var(--body-md); }
+.ds-token__name { font: var(--label-md); overflow-wrap: anywhere; }
+.ds-token__value, .ds-token__flag { grid-column: 2; font: var(--caption); color: var(--text-muted); overflow-wrap: anywhere; }
+
+.ds-swatch {
+  display: grid;
+  place-items: center;
+  grid-row: span 2;
+  width: var(--space-12);
+  height: var(--space-8);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font: var(--label-md);
+}
+
+.ds-type { display: grid; gap: var(--space-1); padding: var(--space-3) 0; border-bottom: 1px solid var(--border-subtle); }
+.ds-type__sample { overflow-wrap: anywhere; }
+
+.ds-space { grid-row: span 2; height: var(--space-3); background: var(--action-primary-bg); }
+.ds-radius { grid-row: span 2; width: var(--space-12); height: var(--space-12); border: 2px solid var(--action-primary-bg); }
+.ds-elevation { grid-row: span 2; width: var(--space-12); height: var(--space-8); border-radius: var(--radius-md); background: var(--bg-elevated); border: 1px solid var(--border-subtle); }
+
+.ds-play, .ds-toggle button {
+  min-height: 2.75rem;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--button-md);
+  cursor: pointer;
+}
+.ds-toggle { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); }
+.ds-toggle button[aria-pressed='true'] { background: var(--action-primary-bg); color: var(--action-primary-fg); border-color: transparent; }
+.ds-play { margin-bottom: var(--space-4); }
+
+.ds-track { grid-row: span 2; width: 6rem; padding: var(--space-1); border-radius: var(--radius-full); background: var(--bg-hover); }
+.ds-ball { display: block; width: var(--space-4); height: var(--space-4); border-radius: var(--radius-full); background: var(--action-primary-bg); transition-property: transform; }
+.ds-ball--moved { transform: translateX(4.25rem); }
+
+.ds-component { margin-bottom: var(--space-8); overflow-x: auto; }
+.ds-component table { width: 100%; border-collapse: collapse; }
+.ds-component th, .ds-component td { padding: var(--space-3); border-bottom: 1px solid var(--border-subtle); text-align: left; vertical-align: top; font: var(--body-md); }
+.ds-component th small { display: block; font: var(--caption); color: var(--text-muted); }
+.ds-na { color: var(--text-muted); }
+
+.ds-backdrop { display: inline-block; padding: var(--space-3); border-radius: var(--radius-md); }
+.ds-backdrop--light { background: var(--color-white); }
+.ds-backdrop--dark { background: var(--color-ink-900); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-ball { transition-duration: 0ms !important; }
+}
