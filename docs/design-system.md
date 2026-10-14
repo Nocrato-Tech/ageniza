@@ -325,7 +325,9 @@ O `variant` `outline` do shadcn corresponde ao nosso `secondary`; não expor `ou
 
 **Duas adaptações provisórias** no `Button`, até existirem os tokens que o vocabulário prevê: o hover de `primary` e `destructive` usa `filter: brightness(0.94)` no lugar de `action/primary/hover` e `action/danger/hover`, e o estado disabled usa `opacity: 0.55` no lugar de `action/disabled/fg`. No loading, o botão fica desabilitado, com `aria-busy`, e o rótulo fica transparente sem sair da árvore de acessibilidade, para o spinner aparecer na cor do variant.
 
-`leadingIcon`/`trailingIcon`, do vocabulário original, ainda não entraram: nenhuma tela pediu ícone em botão até agora. Adicionar quando pedir.
+`leadingIcon` e `trailingIcon` entraram com a #624. O ícone é sempre de `lucide-react`, o único conjunto do app: 20 px na interface e 16 px dentro de pílula e aba, traço 1,75. Fica fora da árvore de acessibilidade (`aria-hidden`), então o rótulo continua sendo o nome do botão. `IconButton` é o botão só de ícone e exige `label`, que vira `aria-label` e dica de passar o mouse.
+
+Também é da #624, em `packages/ui`: `Pill` (contador ou rótulo curto, estático) e `PillAction` (a próxima ação de um card em cápsula, com os estados do `Button`). O índigo cheio fica só em `tone="accent"`. Nenhum export de `packages/ui` leva o nome de um global do JS.
 
 Os campos de formulário seguem o mesmo princípio de passthrough nativo com tokens da Ageniza: `TextInput`, `Textarea` e `Select` são exports de `packages/ui` (classes `ui-text-input`, `ui-textarea` e `ui-select` em `globals.css`), com foco visível coberto pela regra global de `:focus-visible`.
 

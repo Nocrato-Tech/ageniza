@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode } from 'react';
 
-import { Button } from './index.js';
+import { Button } from './button.js';
 
 interface MenuContextValue {
   close: () => void;

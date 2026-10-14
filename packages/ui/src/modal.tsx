@@ -1,6 +1,6 @@
 import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 
-import { Button } from './index.js';
+import { Button } from './button.js';
 
 export interface ModalProps {
   title: string;
