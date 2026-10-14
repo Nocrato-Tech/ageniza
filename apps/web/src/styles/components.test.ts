@@ -416,6 +416,12 @@ describe('avatar attention ring', () => {
     }
   });
 
+  it.each(['light', 'dark'] as const)('is 3:1 on the hover surface the client strip item gives it in %s', (theme) => {
+    const gap = rule('.ui-client-strip__item:hover').get('--ui-avatar-gap')!;
+    expect(gap).toBe('var(--bg-hover)');
+    expect(contrastOf(theme, ringOf('.ui-avatar--attention'), gap)).toBeGreaterThanOrEqual(3);
+  });
+
   it('hides the reason from the eyes and leaves it to assistive technology', () => {
     const reason = rule('.ui-avatar__attention');
 

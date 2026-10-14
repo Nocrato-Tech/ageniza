@@ -110,7 +110,7 @@ status/info/bg
 status/info/border
 ```
 
-Esses tokens apontam para `Primitives`. Não manter um único `status/success` etc.; Badge, Alert e Toast precisam de foreground, background e border independentes. **Nenhum `status/*` tem valor definido ainda** — nem a página original dava um, só a direção ("success → green, warning → amber, danger → red, info → blue/cyan"); ficam pendentes até uma tela real precisar.
+Esses tokens apontam para `Primitives`. Não manter um único `status/success` etc.; Badge, Alert e Toast precisam de foreground, background e border independentes. **Nenhum `status/{success,warning,danger,info}` tem valor definido** — nem a página original dava um, só a direção ("success → green, warning → amber, danger → red, info → blue/cyan"); ficam pendentes até uma tela real precisar. O que o código tem hoje são os tokens de estado do conteúdo da Pauta, `status/{ready,waiting,adjust,late,published,production}/fg` (seções 6 e 25.1).
 
 ### Collection `Component`
 
@@ -183,8 +183,8 @@ Implementados em [`apps/web/src/styles/tokens/semantic.css`](../apps/web/src/sty
 | `text/muted` | `color/slate/500` |
 | `text/link` | `color/indigo/600` |
 | `text/danger` | `color/red/700` (mensagem de erro de campo) |
-| `border/default` | `color/mist/200` |
-| `border/subtle` | `color/mist/100` |
+| `border/default` | `color/mist/200` (decorativa; o limite de um controle é `border/control`) |
+| `border/subtle` | `color/mist/100` (divisória de baixa ênfase) |
 | `border/control` | `color-mix(slate/400 40%, ink/600)` = `#6D7989` |
 | `action/primary/bg` | `color/indigo/600` |
 | `action/primary/fg` | `color/white` |
@@ -192,7 +192,7 @@ Implementados em [`apps/web/src/styles/tokens/semantic.css`](../apps/web/src/sty
 | `action/danger/fg` | `color/white` |
 | `focus/ring` | `color/indigo/600` |
 
-**Estado, formato e crachá (Pauta).** Implementados em `semantic.css` (claro) e `themes/dark.css`. `status/{ready,waiting,adjust,late,published,production}/fg` é a cor do **ícone** do estado (não-texto, 3:1); o rótulo fica em `text/secondary`, então o par de texto nunca depende da cor do estado. `calendar/today/bg` é `color-mix(action/primary/bg 14%, bg/surface)`. `format/{carousel,reels,static}/{bg,fg,tag/bg,tag/fg}` tinge o card do calendário por formato (fundo e título) e preenche a etiqueta (`tag/bg` com texto `tag/fg`); o índigo fica fora dos formatos porque é da ação e do hoje. `client-badge/fade/{start,end}` é a base do crachá do cliente (índigo/600 e violeta/600 a 60% sobre `ink/900`). `shadow/floating` é a única sombra do sistema.
+**Estado, formato e crachá (Pauta).** Implementados em `semantic.css` (claro) e `themes/dark.css`. `status/{ready,waiting,adjust,late,published,production}/fg` é a cor do **ícone** do estado (não-texto, 3:1); o rótulo fica em `text/secondary`, então o par de texto nunca depende da cor do estado. `calendar/today/bg` é `color-mix(action/primary/bg 14%, bg/surface)`. `format/{carousel,reels,static}/{bg,fg,tag/bg,tag/fg}` tinge o card do calendário por formato (fundo e título) e preenche a etiqueta (`tag/bg` com texto `tag/fg`); o índigo fica fora dos formatos porque é da ação e do hoje. `client-badge/fade/{start,end}` é a base do crachá do cliente (índigo/600 e violeta/600 a 60% sobre `ink/900`), o único degradê da interface (seção 25.3). `shadow/floating` é a única sombra do sistema (seção 11). As regras de uso destas cores estão na seção 25.
 
 `text/muted` está apto para captions, metadata e helper text, inclusive sobre `bg/hover` e `bg/elevated` (seção 20.1, valor de `color/slate/500` ajustado em 2026-09-28 para isso). Conteúdo disabled usa `action/disabled/fg` (sem valor ainda), não `text/muted`.
 
@@ -213,8 +213,8 @@ Implementados em [`apps/web/src/styles/themes/dark.css`](../apps/web/src/styles/
 | `text/muted` | `color/slate/400` |
 | `text/link` | `color/indigo/400` (mesmo primitive do `focus/ring` — seção 20.1) |
 | `text/danger` | `color/red/400` (primitive próprio, distinto de `action/danger/bg` — seção 20.1) |
-| `border/default` | `color/ink/600` |
-| `border/subtle` | `color/ink/700` |
+| `border/default` | `color/ink/600` (decorativa) |
+| `border/subtle` | `color/ink/700` (divisória de baixa ênfase) |
 | `border/control` | `color-mix(slate/400 40%, ink/600)` = `#6D7989` (o mesmo valor do Light) |
 | `action/primary/bg` | `color/indigo/550` |
 | `action/primary/fg` | `color/white` |
@@ -255,7 +255,7 @@ radius/xl   = 20px
 radius/full = 9999px
 ```
 
-Uso (Pauta): `sm` chip e item do calendário; `md` botão e campo; `lg` painel e card; `xl` modal e celular; `full` só avatar, pílula de ação e contador.
+Uso (Pauta): `sm` etiqueta (`FormatTag`, `StatusTag`, `LateBadge`) e controle de filtro; `md` botão, campo e item da navegação; `lg` painel, card e cartão flutuante; `xl` modal; `full` só avatar, pílula (`Pill`, `PillAction`) e o indicador de carregando. O `Realce` é a única forma fora da escala: seus cantos desiguais imitam a caneta marca-texto (seção 25.2).
 
 ## 10. Tipografia
 
@@ -270,22 +270,31 @@ O shorthand `font` não carrega largura e reseta `font-stretch`; por isso cada l
 
 Escala, cada degrau como uma custom property com o shorthand `font` (peso tamanho/entrelinha família):
 
-| Token | Definição | Peso |
-|---|---|---|
-| `display/lg` | Archivo Expanded 48/52 | 800 |
-| `heading/xl` | Archivo Expanded 32/38 | 800 |
-| `heading/lg` | Archivo Semi Expanded 22/28 | 700 |
-| `title/md` | Geist 16/24 | 600 |
-| `body/md` | Geist 14/21 | 400 |
-| `caption` | Geist 12/16 | 500 |
+| Token | Definição | Peso | Quando usar |
+|---|---|---|---|
+| `display/lg` | Archivo Expanded 48/52 | 800 | Abertura de página de marca ou de entrada. Nenhuma tela de trabalho o usa hoje. |
+| `heading/xl` | Archivo Expanded 32/38 | 800 | O título da tela (o `h1`) e o do estado vazio com mascote. |
+| `heading/lg` | Archivo Semi Expanded 22/28 | 700 | Título de painel, de seção e de modal; o do estado vazio sem mascote. |
+| `title/md` | Geist 16/24 | 600 | Título de card e de item de lista. |
+| `body/md` | Geist 14/21 | 400 | Corpo, valor de campo, descrição. |
+| `caption` | Geist 12/16 | 500 | Metadado, rótulo de filtro, etiqueta e contador. |
 
-Degraus mantidos até cada tela ser refeita (apontam para a escala nova e saem quando ninguém mais os usa): `heading/md` = `heading/lg`, `label/sm` = `caption`, `body/lg` Geist 16/24 400, `label/md` Geist 14/21 500, `button/md` Geist 14/21 600.
+Degraus mantidos até cada tela ser refeita (apontam para a escala nova e saem quando ninguém mais os usa): `heading/md` = `heading/lg`, `label/sm` = `caption`, `body/lg` Geist 16/24 400, `label/md` Geist 14/21 500, `button/md` Geist 14/21 600. Tela nova e tela refeita usam só os seis degraus da tabela; `button/md` é do texto de botão, aba e pílula de ação, e fica dentro dos componentes de `packages/ui`.
 
-Regras: no máximo três tamanhos por tela; título com mais espaço acima que abaixo; corpo até 70 caracteres por linha; tracking nunca abaixo de -0,02em. Números são tabulares (`font-variant-numeric: tabular-nums` na raiz), mas o shorthand `font` reseta essa propriedade: a regra que aplica um degrau e mostra número a repete.
+Regras: no máximo três tamanhos por tela; título com mais espaço acima que abaixo; corpo até 70 caracteres por linha; tracking nunca abaixo de -0,02em (hoje nenhum degrau define `letter-spacing`). Números são tabulares (`font-variant-numeric: tabular-nums` na raiz), mas o shorthand `font` reseta essa propriedade: a regra que aplica um degrau e mostra número a repete (`Pill`, `FormatTag`, `StatusTag` e `LateBadge` já o fazem).
 
 ## 11. Shadows / elevation
 
-Implementado em `semantic.css` como `shadow/floating = 0 24px 48px -12px rgb(0 0 0 / .55), 0 2px 6px rgb(0 0 0 / .35)`. **Sombra só no que flutua** (modal, menu, cartão do hover); o resto se separa por luminosidade e borda: canvas `ink/900`, superfície `ink/800` com a borda `border/default` (`ink/600` hoje; a folha do canvas leva a borda para `ink/700`, o que fica para o tema escuro da #623), elevado `ink/700`. `shadow/none`, `sm`, `md` e `lg` continuam conceituais, sem valor.
+Implementado em `semantic.css` como `shadow/floating = 0 24px 48px -12px rgb(0 0 0 / .55), 0 2px 6px rgb(0 0 0 / .35)`, a mesma nos dois temas. **Sombra só no que flutua**: ela é o único token de sombra do sistema e hoje só o `Dialog` e o `Popover` a usam. O resto se separa por luminosidade e borda, em quatro níveis:
+
+| Nível | Escuro | Claro | Separação |
+|---|---|---|---|
+| 0 · canvas | `bg/canvas` `ink/900` | `cloud/50` | o fundo da tela e a navegação lateral |
+| 1 · superfície | `bg/surface` `ink/800` | `white` | painel, card e campo, com a borda `border/default` quando precisa de limite |
+| 2 · elevado | `bg/elevated` `ink/700` | `white` | o que fica sobre a superfície; o hover usa `bg/hover` (`ink/700` no escuro, `mist/100` no claro) |
+| 3 · flutuante | `bg/elevated` + `shadow/floating` | idem | modal, cartão do hover, menu |
+
+A borda do nível 1 no escuro é `border/default` = `ink/600`. A folha Identidade do canvas desenha `ink/700`, mas o CSS não a mudou e vale o CSS: `ink/700` é `border/subtle`, a divisória de baixa ênfase (entre filtros, abas, navegação lateral e barra inferior). As duas são **decorativas**: separam, mas não são o limite de um controle (esse é `border/control`, seção 13 e 20.1). `shadow/none`, `sm`, `md` e `lg` continuam conceituais, sem valor; não criar sombra de card, de botão nem de painel.
 
 ## 12. Motion
 
@@ -301,47 +310,99 @@ motion/slow  = 240ms
 motion/easing/standard = cubic-bezier(0.16, 1, 0.3, 1)
 ```
 
-`motion/easing/exit` segue sem valor: fica pendente até um componente precisar dele. Motion explica mudança de estado, expansão, drag-and-drop ou contexto; nunca atrasa uma ação operacional.
+| Token | Onde |
+|---|---|
+| `motion/fast` | cor de hover e de troca de aba, filtro, item do `ClientStrip`; a entrada do `Popover` |
+| `motion/base` | a entrada do `Dialog`: opacidade e 8 px de subida (`ui-float-in`) |
+| `motion/slow` | o giro do indicador de carregando e a varredura do `Realce` (`sweep`), com `motion/easing/standard` |
+
+Há **um gesto autoral**: o `Realce` entra varrendo da esquerda quando algo vira a vez de quem olha ou é aprovado. O resto é instantâneo ou só de cor. Arrastar um card no calendário não leva transição: o card segue o cursor, sem atraso. `prefers-reduced-motion: reduce` desliga a entrada do modal e do cartão, a varredura do realce, as transições dos controles e o giro do filtro ocupado. Os demais indicadores de carregando (botão, pílula e campo) continuam girando, porque avisam que há trabalho em curso. `motion/easing/exit` segue sem valor: fica pendente até um componente precisar dele. Motion explica mudança de estado, expansão, drag-and-drop ou contexto; nunca atrasa uma ação operacional.
 
 ## 13. Estratégia de componentes — shadcn + Ageniza
 
-Este projeto **não usa shadcn/ui nem Tailwind hoje**. O dono do produto decidiu em 2026-09-28 (ver [`business/decisions/2026-09-28-o-repositorio-e-a-fonte-do-design-system-com-documento-e.md`](business/decisions/2026-09-28-o-repositorio-e-a-fonte-do-design-system-com-documento-e.md)) que a parte B adota shadcn/ui, copiado para o repositório como base de mecânica e acessibilidade, com as variáveis do shadcn como ponte para os tokens Ageniza (seção 15). Até a parte B entrar, vale a estratégia original:
+Este projeto **não usa shadcn/ui nem Tailwind hoje**. O dono do produto decidiu em 2026-09-28 (ver [`business/decisions/2026-09-28-o-repositorio-e-a-fonte-do-design-system-com-documento-e.md`](business/decisions/2026-09-28-o-repositorio-e-a-fonte-do-design-system-com-documento-e.md)) que a parte B adota shadcn/ui, copiado para o repositório como base de mecânica e acessibilidade, com as variáveis do shadcn como ponte para os tokens Ageniza (seção 15). Até a parte B entrar, a mecânica é própria (HTML nativo, `<dialog>`, rádio, `aria-*`) e os tokens são os da Ageniza:
 
-- shadcn/ui como base mecânica e de acessibilidade; o código copiado para o repositório, adaptável sem criar dependência visual;
 - Ageniza define tokens, aparência, semântica e API pública;
 - construir no Figma, quando existir, só os componentes que uma tela real exigir;
 - promover/adaptar componentes conforme a UI divergir do padrão original.
 
 > shadcn define a mecânica do primitive; Ageniza define semântica, aparência e API pública.
 
-`Button` já segue esse vocabulário hoje, implementado em [`packages/ui/src/index.tsx`](../packages/ui/src/index.tsx), mesmo sem shadcn instalado (mecânica própria, tokens da Ageniza):
+Todos os componentes abaixo moram em [`packages/ui`](../packages/ui/src/index.tsx), usam só tokens e têm uma entrada no registro da página `/design-system` (seção 24). **Antes de criar um componente, confira esta lista**: uma tela que monta um botão, uma etiqueta ou um vazio à mão está quebrando a seção 14. O ícone é sempre de `lucide-react`, o único conjunto do app: 20 px na interface e 16 px dentro de pílula, aba e etiqueta (12 px), traço 1,75. Ele fica fora da árvore de acessibilidade (`aria-hidden`), então o rótulo continua sendo o nome do controle.
 
-```
-Button
-├── variant = primary | secondary | ghost | destructive
-├── size = sm | md | lg
-├── state = default | hover | focus | disabled | loading
-```
+### 13.1 Ação
 
-O `variant` `outline` do shadcn corresponde ao nosso `secondary`; não expor `outline` como API pública da aplicação. Evitar cópias soltas como `Button Blue`, `Button New`, `Button Final 2`.
+| Precisa de | Use | Regra |
+|---|---|---|
+| A ação principal da tela | `Button` `variant="primary"` | Uma por tela, em índigo cheio. |
+| Uma ação ao lado da principal | `Button` `secondary` (com borda) ou `ghost` (só texto) | Secundária com borda, terciária só texto. |
+| Apagar, arquivar, encerrar | `Button` `destructive` | Dano real, depois de confirmação (`ConfirmDialog`). |
+| Ação só com ícone | `IconButton` | Exige `label`, que vira `aria-label` e dica de passar o mouse. |
+| Ir para outra tela com cara de botão | `ButtonLink` | Um `<a>` de verdade, ou o componente de `as` (`as={Link} to="/clientes"`); nunca a string de classes copiada. Desativado, vira um `span` com `aria-disabled`, sem endereço e fora da ordem de tabulação. |
+| Um contador ou rótulo curto | `Pill` | Estático; `tone="accent"` só nos usos do realce (seção 25.2). |
+| A próxima ação de um card | `PillAction` | Em cápsula, com os estados do `Button`. |
+
+`Button` aceita `variant` (`primary`, `secondary`, `ghost`, `destructive`), `size` (`sm` 32 px, `md` 44 px, `lg` 52 px de altura), `leadingIcon`, `trailingIcon` e `loading`. O `variant` `outline` do shadcn corresponde ao nosso `secondary`; não expor `outline` como API pública da aplicação. Evitar cópias soltas como `Button Blue`, `Button New`, `Button Final 2`.
 
 **Duas adaptações provisórias** no `Button`, até existirem os tokens que o vocabulário prevê: o hover de `primary` e `destructive` usa `filter: brightness(0.94)` no lugar de `action/primary/hover` e `action/danger/hover`, e o estado disabled usa `opacity: 0.55` no lugar de `action/disabled/fg`. No loading, o botão fica com `aria-busy` e `aria-disabled` (nunca `disabled` nativo, que tira o foco do teclado de quem acabou de acioná-lo), o clique não faz nada, e o rótulo fica transparente sem sair da árvore de acessibilidade, para o spinner aparecer na cor do variant. `PillAction` e `Segmented` seguem a mesma regra.
 
-`leadingIcon` e `trailingIcon` entraram com a #624. O ícone é sempre de `lucide-react`, o único conjunto do app: 20 px na interface e 16 px dentro de pílula e aba, traço 1,75. Fica fora da árvore de acessibilidade (`aria-hidden`), então o rótulo continua sendo o nome do botão. `IconButton` é o botão só de ícone e exige `label`, que vira `aria-label` e dica de passar o mouse.
+### 13.2 Dado e filtro
 
-Também são da #624, em `packages/ui`: `Pill` (contador ou rótulo curto, estático) e `PillAction` (a próxima ação de um card em cápsula, com os estados do `Button`); `Segmented` (escolha entre duas ou três visões, como Grade e Lista: grupo de rádio com uma parada de tabulação e setas) e `Tabs` (abas com ativação automática: setas movem e abrem, Home e End vão às pontas, aba desabilitada é pulada). O índigo cheio fica só em `tone="accent"`; a aba aberta se sublinha em tinta, não em índigo.
+| Precisa de | Use | Regra |
+|---|---|---|
+| Texto numa linha, texto longo, escolha numa lista | `TextInput`, `Textarea`, `Select` | Passthrough nativo (classes `ui-text-input`, `ui-textarea` e `ui-select`), com foco visível pela regra global de `:focus-visible`. |
+| Rótulo, dica, contador e erro de um campo | `Field` | Entrega ao controle `id`, `aria-describedby` (dica, contador e erro, nessa ordem), `aria-invalid` e `aria-busy` por `{(control) => <TextInput {...control} />}`; o erro leva ícone e texto, e passar do limite do contador também marca o controle como inválido. `Select` já usa `Field` e aceita `hint`, `error` e `loading`. |
+| Escolher um item entre poucos, com contexto | `ChoiceCard` | O cartão inteiro é o botão (nome e descrição). |
+| Filtros em faixa | `FilterBar` com `FilterBarSelect` ou `FilterBarItem` | O rótulo pequeno em cima, a escolha embaixo, divisórias entre os filtros; no celular os filtros empilham com divisórias horizontais. `FilterBarSelect` é o `select` nativo, plano; `FilterBarItem` recebe qualquer outro controle e entrega `id`, `className` e `aria-busy` por `{(control) => …}`. |
+| Várias páginas de resultado | `Pagination` | Até sete páginas aparecem todas; acima disso, as pontas ficam fixas e uma janela acompanha a atual. |
 
-`Dialog` (#624) é o modal sobre o `<dialog>` nativo: título, `description` opcional, `actions` no pé (a ação primária por último), `size` `sm`, `md` ou `lg` (28, 40 e 52 rem), raio `xl`, a sombra flutuante e uma entrada de 180 ms (opacidade e 8 px de subida). `Modal` continua exportado como o mesmo componente, para as telas que ainda não migraram. `Popover` é o cartão flutuante ancorado ao gatilho: abre ao clique ou, com `openOn="hover"`, depois de 300 ms com o mouse parado ou na hora no foco do teclado, nunca no toque; no modo hover ele só fecha 150 ms depois de o mouse sair (`hoverLeaveDelay`), tempo de atravessar o vão de 8 px até o cartão sem que ele suma (WCAG 1.4.13), e entrar no cartão cancela o fechamento; Esc e um clique fora fecham e devolvem o foco ao gatilho. Fica na superfície elevada, onde `text/link`, `text/danger` e a borda de controle não estão garantidos: leva texto e ações, não campos. Não troca de lado na borda da tela: quem usa escolhe o `placement` com espaço. Nenhum export de `packages/ui` leva o nome de um global do JS.
+**Borda de controle.** A borda de `input`, `select`, `textarea`, `ChoiceCard` e do `TextInput` dentro de uma `FilterBar` é o limite de um componente de interface e precisa de 3:1 sobre a superfície (WCAG 1.4.11): usa `border/control` (`#6D7989`, o mesmo valor nos dois temas). As demais bordas são **decorativas** e ficam em `border/default` ou `border/subtle`: separam, não delimitam um controle. Os números estão na seção 20.1. Sobre `bg/elevated` e `bg/hover` o token passa no claro (4,42:1 e 4,09:1) e **não passa no escuro** (2,33:1): campo sobre superfície elevada no escuro continua sendo ponto em aberto. Hover e estado inválido de um campo mudam só a cor da borda, para o 3:1 nunca se perder.
 
-**Domínio (#625).** Os componentes que falam do conteúdo e do cliente, todos em `packages/ui` e só com tokens. As etiquetas são estáticas (sem hover, foco nem carregamento): o texto é quem diz, a cor só ajuda. `FormatTag` é a etiqueta preenchida por formato (`carousel`, `reels`, `static`), com o par `format/*/tag/{bg,fg}`; o chamador mapeia o formato dele para um desses três. `StatusTag` é o contorno com o ícone `lucide` do estado (`ready` Check, `waiting` Clock, `adjust` Pencil, `published` CheckCheck, `production` Circle) e o rótulo: a cor `status/*/fg` vai só no ícone (12 px, 3:1) e o rótulo fica em `text/secondary`, então dois estados se distinguem pela forma e o par de texto nunca depende do estado. `LateBadge` ("Atrasado") é o único estado em bloco cheio, no par `action/danger`. `Avatar` ganhou `attention`, o motivo em palavras ("em ajuste, em atraso"): ele desenha o anel (2 px de vão na cor do fundo, depois 2 px na cor `status/late/fg`, 3:1 sobre `bg/canvas` e `bg/surface` nos dois temas, sem cor nova) e o diz para a tecnologia assistiva, então o anel nunca é o único sinal; `--ui-avatar-gap` troca a cor do vão quando o fundo não é o canvas. `Realce` (o antigo "Marca", renomeado porque marca agora é o logo) é o bloco de índigo atrás da palavra que pede decisão, com cantos desiguais de caneta marca-texto, a única forma fora da escala de raios; `sweep` o faz entrar varrendo da esquerda em 240 ms (sem movimento para quem pede menos). O índigo cheio tem quatro usos e só eles: a ação, o hoje, a vez de quem olha e o cliente selecionado (o nome do cliente aberto no `ClientStrip`; decisão do dono, registrada no épico #621).
+### 13.3 Navegação e escolha de visão
 
-`Mascot` (#625) é o único jeito de pôr a coruja numa tela: `<img>` WebP com `srcset` 1x/2x, largura e altura da pose (para nada pular ao carregar) e `alt=""` por padrão, porque o título ao lado já diz tudo; `variant` é `friendly` (estado vazio com ação) ou `serious` (erro). Cabe uma por tela (docs/brand.md). `EmptyState` diz o que falta, por quê e o caminho (`title`, `description`, `action`), com `mascot` opcional: a primeira visita com ação leva a coruja amigável; a busca sem resultado é só texto e "Limpar filtros", sem coruja. O `StatusPanel` das páginas de erro usa o mesmo `Mascot` (sério), mas continua sendo página inteira (`main`, `h1`, saída obrigatória) e não vira `EmptyState`. `ButtonLink` é navegação com cara de botão (mesmas variantes, tamanhos e ícones do `Button`): um `<a>` de verdade, ou o componente de `as` (`as={Link} to="/clientes"` com o roteador), nunca a string de classes copiada; desativado, vira um `span` com `aria-disabled`, sem endereço e fora da ordem de tabulação.
+| Precisa de | Use | Regra |
+|---|---|---|
+| Alternar entre duas ou três visões da mesma coisa (Grade e Lista) | `Segmented` | Grupo de rádio, uma parada de tabulação e setas. A opção escolhida leva borda e superfície, não só cor. |
+| Dividir uma tela em seções | `Tabs` | Ativação automática: setas movem e abrem, Home e End vão às pontas, aba desabilitada é pulada. A aba aberta se sublinha em tinta, nunca em índigo. |
+| Escolher o cliente em que se trabalha | `ClientStrip` | Os clientes como stories, em `<nav>` com um link de verdade por cliente (`href` obrigatório). O aberto leva `aria-current="page"`, uma superfície e o `Realce` no nome. `renderLink` deixa a tela desenhar o link com o roteador. |
+| Ações de um item (os três pontos) | `Menu`, `MenuItem`, `MenuSeparator` | Menu de botão: setas, Home e End movem, Esc fecha; o foco volta ao gatilho. |
 
-`ClientStrip` (#625) são os clientes como stories, em navegação (`<nav>` com um link de verdade por cliente, na ordem dada): foto ou iniciais e o nome. O cliente aberto leva `aria-current="page"`, uma superfície e o `Realce` no nome, nunca só cor. O anel na foto diz que algo daquele cliente pede ação e os motivos entram no nome do link depois do nome do cliente ("Clínica Viver Bem, em ajuste, em atraso"), então o nome acessível ainda contém o texto visível. `href` é obrigatório em cada cliente (um link sem endereço não é link); `renderLink` deixa a tela desenhar o link com o roteador e levar o estado adiante, recebendo as props que o strip precisa que ela espalhe. `FilterBar` é a faixa de filtros: o rótulo pequeno em cima, a escolha embaixo, divisórias entre os filtros, e no celular eles empilham com divisórias horizontais. `FilterBarSelect` é o filtro de sempre (um `select` nativo, que deixa o popup, o teclado e o leitor de tela para a plataforma); `FilterBarItem` recebe qualquer outro controle e entrega `id`, `className` e `aria-busy` por `{(control) => …}`; um `TextInput` na faixa mantém a borda de controle (`border/control`, 3:1), para não parecer texto solto, e o `select` fica plano. Em carregamento o filtro continua usável e diz que está ocupado (`aria-busy` e um indicador no rótulo), como o `Field`.
+O shell da agência (`AgencySidebar`, em `apps/web/src/agency-nav.tsx`) é código do app, não de `packages/ui`: navegação lateral com grupos Trabalho e Agência, o logo no topo, a pessoa e Sair no pé (seção 19).
 
-Os campos de formulário seguem o mesmo princípio de passthrough nativo com tokens da Ageniza: `TextInput`, `Textarea` e `Select` são exports de `packages/ui` (classes `ui-text-input`, `ui-textarea` e `ui-select` em `globals.css`), com foco visível coberto pela regra global de `:focus-visible`. `Field` (#624) envolve qualquer um deles com rótulo, dica, contador e erro: o controle recebe `id`, `aria-describedby` (dica, contador e erro, nessa ordem), `aria-invalid` e `aria-busy` por `{(control) => <TextInput {...control} />}`; o erro leva ícone e texto, e passar do limite do contador também marca o controle como inválido. `Select` já usa `Field` e aceita `hint`, `error` e `loading`.
+### 13.4 Camadas
 
-**Borda de controle.** A borda de `input`, `select`, `textarea` e `ChoiceCard` é limite de componente de interface e precisa de 3:1 sobre a superfície (WCAG 1.4.11): usa `border/control` (`#6D7989`, 3,32:1 sobre `bg/surface` no escuro, 4,42:1 no claro; 4,01:1 e 4,23:1 sobre `bg/canvas`). As demais bordas são decorativas e ficam em `border/default`. O token não foi conferido sobre `bg/elevated`/`bg/hover`: um campo ali volta a ser ponto em aberto.
+| Precisa de | Use | Regra |
+|---|---|---|
+| Uma tarefa que exige interrupção e foco protegido | `Dialog` (`Modal` é o mesmo componente, para as telas que ainda não migraram) | Sobre o `<dialog>` nativo: título, `description` opcional, `actions` no pé (a ação primária por último), `size` `sm`, `md` ou `lg` (28, 40 e 52 rem), raio `xl`, `shadow/floating` e entrada de 180 ms. Uma tarefa que não precisa de interrupção não é modal. |
+| Confirmar uma ação destrutiva | `ConfirmDialog` | Confirmação de tela cheia sobre `bg/canvas`, com borda de dano; o foco começa em cancelar, Esc cancela e a ação destrutiva aceita `busy`. |
+| Um cartão ancorado ao gatilho (o hover do calendário) | `Popover` | Abre ao clique ou, com `openOn="hover"`, depois de 300 ms com o mouse parado ou na hora no foco do teclado, nunca no toque; só fecha 150 ms depois de o mouse sair (`hoverLeaveDelay`), tempo de atravessar o vão de 8 px até o cartão sem que ele suma (WCAG 1.4.13); Esc e um clique fora fecham e devolvem o foco ao gatilho. Não troca de lado na borda da tela: quem usa escolhe o `placement` com espaço. |
+
+`Dialog` e `Popover` ficam na superfície elevada, onde `text/link`, `text/danger` e a borda de controle não estão garantidos no escuro (seção 20.1): levam texto e ações, não campos. Quem pôr link ou erro ali confere o contraste e usa a variante derivada da paleta. Nenhum export de `packages/ui` leva o nome de um global do JS (item 69 do checklist).
+
+### 13.5 Conteúdo e estado
+
+As etiquetas são estáticas (sem hover, foco nem carregamento): o texto é quem diz, a cor só ajuda.
+
+| Precisa de | Use | Regra |
+|---|---|---|
+| O formato de um conteúdo | `FormatTag` (`carousel`, `reels`, `static`) | Etiqueta preenchida, par `format/*/tag/{bg,fg}`; o chamador mapeia o formato dele para um desses três. |
+| O estado de um conteúdo | `StatusTag` (`ready`, `waiting`, `adjust`, `published`, `production`) | Contorno com o ícone `lucide` do estado e o rótulo; a cor `status/*/fg` vai só no ícone (12 px, 3:1) e o rótulo fica em `text/secondary`. |
+| Atrasado | `LateBadge` ("Atrasado") | O único estado em bloco cheio, no par `action/danger`. |
+| Uma pessoa ou um cliente | `Avatar` | Foto ou iniciais, nunca um ícone genérico. `attention` é o motivo em palavras ("em ajuste, em atraso"): desenha o anel (2 px de vão na cor do fundo, depois 2 px em `status/late/fg`) e o diz para a tecnologia assistiva, então o anel nunca é o único sinal. `--ui-avatar-gap` troca a cor do vão quando o fundo não é o canvas. |
+| A pessoa da equipe | `BadgeCard` | Exatamente quatro informações: foto ou iniciais, nome, cargo e papel (mais o marcador de removido); um quinto dado vira tabela, o que a SPEC de colaboradores recusa. |
+| A palavra que pede decisão agora | `Realce` | Seção 25.2. |
+
+### 13.6 Vazio, erro e carga
+
+| Precisa de | Use | Regra |
+|---|---|---|
+| Lista sem nada ainda | `EmptyState` (`title`, `description`, `action`, `mascot` opcional) | Diz o que falta, por quê e o caminho. A primeira visita com ação leva a coruja amigável; busca sem resultado é só texto e "Limpar filtros", sem coruja. |
+| A coruja | `Mascot` (`friendly` ou `serious`) | O único jeito de pôr a coruja numa tela: `<img>` WebP com `srcset` 1x/2x, largura e altura da pose e `alt=""`, porque o título ao lado já diz tudo. Uma por tela e nunca numa tela de trabalho cheia (docs/brand.md). |
+| Página inteira de erro | `StatusPanel` (do app) | Usa o `Mascot` sério, mas continua sendo página inteira (`main`, `h1`, saída obrigatória) e não vira `EmptyState`. |
+| Primeira carga | `Skeleton` | Reserva a forma do conteúdo; decorativo, nunca anunciado. |
+| Logo e símbolo | `Logo`, `BrandSymbol` | docs/brand.md: o logo no login e no topo da navegação aberta, o símbolo chapado no trilho recolhido. |
+
+Erro leva "Tentar de novo"; vazio leva o que falta e um botão. Os três estados (carregando, erro e vazio) têm teste com asserção do texto (item 16 do checklist).
 
 ## 14. Regra de composição
 
@@ -449,22 +510,37 @@ Quando houver necessidade de automação, evoluir para um diretório `design-tok
 
 ## 19. Grid e responsividade
 
-Direção inicial, ainda não exercitada por nenhuma tela real:
+Desktop-first para operação, com o celular funcional: a navegação da agência vira barra inferior, os filtros empilham, o modal vira coluna. O portal do cliente é celular primeiro (ver `specs/clientes.md`), a exceção deliberada a essa direção, não uma contradição: cada produto (operação vs. portal) tem sua prioridade de breakpoint. O portal fica fora da Pauta até o dono decidir sobre ele.
 
-- desktop-first para operação;
-- grid de 12 colunas no desktop quando necessário;
-- tablet responsivo;
-- mobile funcional, sem exigir que toda tela complexa mantenha o mesmo arranjo do desktop — o portal do cliente é celular primeiro (ver `specs/clientes.md`), o que é a exceção deliberada a essa direção "desktop-first", não uma contradição: cada produto (operação vs. portal) tem sua prioridade de breakpoint.
+**Shell da agência** (`.agency-shell` em `globals.css`, `AgencySidebar` em `apps/web/src/agency-nav.tsx`):
 
-Breakpoints se definem no código uma única vez. Não criar breakpoint diferente por tela.
+| Largura | Navegação | Conteúdo |
+|---|---|---|
+| a partir de 48 rem | lateral fixa à esquerda, aberta com 248 px (15,5 rem) ou recolhida no trilho de 80 px (5 rem) | até 80 rem, com `space/8` nas laterais |
+| abaixo de 48 rem | barra inferior fixa, com a área segura do aparelho (`env(safe-area-inset-bottom)`); cada grupo ocupa a barra em proporção aos itens | `space/4` nas laterais e folga embaixo para a barra |
+
+A navegação abre **recolhida** no calendário de um cliente (a rota `/agencia/:agenciaId/conteudos/:clienteId`), onde o mês precisa da largura, e **aberta** nas demais telas; a escolha explícita da pessoa vale até recarregar a página. Aberta, mostra o logo, o contexto ativo, os grupos (Trabalho: Início, Conteúdos, Clientes; Agência: Equipe) e a pessoa com Sair no pé; recolhida, o símbolo chapado e os ícones com o rótulo embaixo; na barra inferior, só os ícones com o rótulo (`label/sm`), sem o logo, o contexto e o Sair solto.
+
+**Breakpoints.** Uma media query não lê custom property, então os valores moram no CSS, em `rem`, e são três: `40rem` (celular largo: filtros e vazio empilham), `48rem` (a navegação vira barra inferior e o modal do conteúdo vira coluna) e `64rem` (o painel do feed ao lado do calendário). Uma tela nova reaproveita esses três; um quarto valor por tela é divergência a discutir, não a decidir localmente.
+
+**Alvo de toque.** O botão `md` tem 44 px de altura e o `lg`, 52 px; o `sm` (32 px) é para linha densa de desktop. No celular, prefira `md` ou maior para o que se toca (é o "área clicável suficiente" da seção 20). Abas e itens de navegação já têm no mínimo 44 px.
+
+**Tela redesenhada, medida no celular.** Em 390 px de viewport emulado (nunca a janela do navegador, que não encolhe tanto), todo controle da versão anterior tem de continuar alcançável: compare `scrollWidth` e os elementos fora da tela com o `develop`. Um painel com `overflow: hidden` ao redor de conteúdo largo esconde controles no celular sem nenhum teste falhar (#657). Quando precisa rolar, o contêiner rola (`overflow-x: auto`) e o anel de foco dos itens fica por dentro.
 
 ## 20. Acessibilidade como foundation
 
-Antes de aprovar um componente: contraste adequado; foco visível; estado disabled identificável; área clicável suficiente; label acessível; estado não comunicado só por cor; navegação por teclado quando aplicável.
+Antes de aprovar um componente: contraste adequado; foco visível; estado disabled identificável; área clicável suficiente; label acessível; estado não comunicado só por cor; navegação por teclado quando aplicável. Na Pauta, isso quer dizer, concretamente:
+
+- **Foco.** `:focus-visible` desenha 3 px sólidos em `focus/ring`, a 3 px de distância. Dentro de um contêiner que rola (`Tabs`, `ClientStrip`) o anel vai por dentro (`outline-offset: -3px`), porque um anel por fora seria cortado; o `Segmented` usa 0. `focus/ring` tem 3:1 sobre `bg/canvas`, `bg/surface` e `bg/hover` nos dois temas (20.1).
+- **Estado nunca só por cor.** Estado de conteúdo vai com ícone e rótulo (`StatusTag`); o anel do `Avatar` vai com o motivo em palavras no nome do link; o cliente aberto leva `aria-current` e superfície além do `Realce`; a opção escolhida do `Segmented` leva borda e superfície.
+- **Carregando** é `aria-busy` com `aria-disabled` e uma guarda no clique, nunca `disabled` nativo, que tira o foco de quem acabou de acionar o controle (item 70 do checklist). O filtro e o campo continuam usáveis e dizem que estão ocupados.
+- **Nome acessível contém o texto visível** do controle: o rótulo do botão, a dica de um `IconButton` e o motivo do anel de atenção depois do nome do cliente.
+- **Movimento reduzido** (`prefers-reduced-motion: reduce`) desliga as transições dos controles, a entrada de modal e cartão e a varredura do `Realce` (seção 12).
+- **Superfície elevada.** `text/link`, `text/danger` e `border/control` não têm contraste garantido no escuro sobre `bg/elevated` e `bg/hover`: nada disso entra em `Dialog`, `Popover` ou cartão do hover sem conferir o par antes (20.1).
 
 ### 20.1 Contraste — tabela final, aprovada em 2026-09-28
 
-Pares de texto sobre fundo em Light e Dark, contra WCAG AA (4.5:1 para texto normal, 3:1 para texto grande e componentes de UI), recalculados com os valores finais do CSS (fórmula de luminância relativa do WCAG 2.x). **Todos os pares em uso passam.** Esta rodada corrigiu as quatro falhas que a migração inicial havia deixado (ver histórico abaixo), ajustando a luminosidade de dois primitives e introduzindo dois primitives novos, sem mudar a matiz de nenhum.
+Pares de texto sobre fundo em Light e Dark, contra WCAG AA (4.5:1 para texto normal, 3:1 para texto grande e componentes de UI), recalculados com os valores finais do CSS (fórmula de luminância relativa do WCAG 2.x, mistura do `color-mix` em sRGB). **Todos os pares em uso passam.** A primeira rodada (2026-09-28) corrigiu as quatro falhas que a migração inicial havia deixado (ver histórico abaixo), ajustando a luminosidade de dois primitives e introduzindo dois primitives novos, sem mudar a matiz de nenhum; a Pauta (#621) acrescentou os pares das tabelas seguintes, sem cor nova além de `violet/400` e `teal/700`.
 
 | Par | Light | Dark |
 |---|---|---|
@@ -480,7 +556,21 @@ Pares de texto sobre fundo em Light e Dark, contra WCAG AA (4.5:1 para texto nor
 | `text/danger` sobre `bg/canvas` / `bg/surface` | 6.28:1 / 6.57:1 | 5.54:1 / 4.59:1 |
 | `action/primary/fg` sobre `action/primary/bg` | 6.29:1 | 4.94:1 |
 | `action/danger/fg` sobre `action/danger/bg` | 6.57:1 | 6.57:1 |
-| `focus/ring` sobre `bg/canvas` | 6.01:1 | 5.95:1 |
+
+Os pares de `action/primary` valem para o `Button`, a `Pill` e a `PillAction` de `tone="accent"` e o `Realce`; os de `action/danger`, para o `Button` destrutivo e o `LateBadge`.
+
+**Não-texto (3:1), claro / escuro.** Limites de controle, anel de foco e anel de atenção do avatar. `border/control` é o limite de `input`, `select`, `textarea`, `ChoiceCard` e do campo de texto da `FilterBar` (WCAG 1.4.11); as bordas decorativas ficam abaixo de 3:1 de propósito, porque não delimitam um controle.
+
+| Par | Light | Dark |
+|---|---|---|
+| `border/control` sobre `bg/canvas` / `bg/surface` | 4.23:1 / 4.42:1 | 4.01:1 / 3.32:1 |
+| `border/control` sobre `bg/elevated` / `bg/hover` | 4.42:1 / 4.09:1 | **2.33:1 / 2.33:1** (restrição) |
+| `focus/ring` sobre `bg/canvas` / `bg/surface` / `bg/hover` | 6.01:1 / 6.29:1 / 5.81:1 | 5.95:1 / 4.92:1 / 3.46:1 |
+| Anel de atenção do avatar (`status/late/fg`) sobre `bg/canvas` / `bg/surface` / `bg/hover` | 6.28:1 / 6.57:1 / 6.08:1 | 5.54:1 / 4.59:1 / 3.22:1 |
+| `border/default` sobre `bg/canvas` / `bg/surface` (decorativa) | 1.13:1 / 1.18:1 | 2.35:1 / 1.94:1 |
+| `border/subtle` sobre `bg/canvas` / `bg/surface` (decorativa) | 1.03:1 / 1.08:1 | 1.72:1 / 1.42:1 |
+
+O anel do avatar sobre `bg/hover` é o do item aberto ou sob o mouse no `ClientStrip` (o vão troca para a cor do item por `--ui-avatar-gap`); no escuro é o par mais apertado desta tabela, e qualquer mudança em `color/red/400` ou `color/ink/700` precisa reconferi-lo.
 
 **Pares da Pauta (#622), claro / escuro**, recalculados pelo teste `apps/web/src/styles/tokens.test.ts` com a mistura em sRGB do `color-mix`. Ícone de estado é não-texto (3:1); título e etiqueta de formato são texto (4,5:1).
 
@@ -500,13 +590,15 @@ Pares de texto sobre fundo em Light e Dark, contra WCAG AA (4.5:1 para texto nor
 | `format/static/tag/fg` sobre `format/static/tag/bg` | 7.58:1 | 11.95:1 |
 | `text/secondary` sobre `format/{carousel,reels,static}/bg` | 6.92:1 · 6.83:1 · 7.00:1 | 8.11:1 · 8.13:1 · 8.50:1 |
 | `text/primary` sobre `calendar/today/bg` | 14.33:1 | 12.23:1 |
-| branco sobre `client-badge/fade/start` / `end` | n/a (crachá é escuro) | 9.96:1 / 9.53:1 |
+| branco sobre `client-badge/fade/start` / `end` | 9.96:1 / 9.53:1 (o crachá é escuro nos dois temas) | 9.96:1 / 9.53:1 |
 | `color/violet/400` sobre `bg/surface` | n/a | 5.39:1 |
 | `color/teal/700` sobre `bg/surface` | 5.47:1 | n/a |
 
-**Restrição de uso, não falha:** `text/link` e `text/danger` só foram conferidos sobre `bg/canvas` e `bg/surface`, os fundos onde link e mensagem de erro aparecem hoje. Sobre `bg/elevated`/`bg/hover` no Dark eles cairiam a 3.46:1 e 3.22:1 — por isso o comentário em `themes/dark.css` e a nota na seção 6 dizem para não os usar ali. Se uma tela real precisar de link ou erro sobre esses fundos, isso volta a ser um ponto em aberto, não uma aprovação silenciosa.
+O rótulo de um `StatusTag` é `text/secondary` sobre `bg/canvas` ou `bg/surface` (primeira tabela), e o da `Pill` neutra, `text/secondary` sobre `bg/hover`: nenhum par de texto depende da cor do estado.
 
-`text/muted` sobre `bg/hover` no Dark (4.62:1) é o par aprovado mais apertado agora: qualquer mudança futura em `color/slate/400` ou `color/ink/700` precisa reconferi-lo.
+**Restrição de uso, não falha:** `text/link` e `text/danger` só foram conferidos sobre `bg/canvas` e `bg/surface`, os fundos onde link e mensagem de erro aparecem hoje. Sobre `bg/elevated`/`bg/hover` no Dark eles cairiam a 3.46:1 e 3.22:1, e `border/control` a 2.33:1 — por isso o comentário em `themes/dark.css` e a nota na seção 6 dizem para não os usar ali. Se uma tela real precisar de link, erro ou campo sobre esses fundos (modal, popover, cartão do hover, crachá), isso volta a ser um ponto em aberto: confira o par e use a variante derivada da paleta, não uma aprovação silenciosa.
+
+`text/muted` sobre `bg/hover` no Dark (4.62:1) é o par de texto aprovado mais apertado: qualquer mudança futura em `color/slate/400` ou `color/ink/700` precisa reconferi-lo.
 
 **Histórico — o que a migração inicial (parte A) tinha deixado em aberto e como foi corrigido:**
 
@@ -565,3 +657,60 @@ Rota interna, só no servidor de desenvolvimento (`pnpm --filter @ageniza/web de
 - **Tokens:** cores primitivas, tokens semânticos nos dois temas (com a marca dos que o escuro sobrescreve), tipografia, espaço, raio, elevação e movimento. Tudo é lido dos arquivos de `apps/web/src/styles`: token novo aparece sozinho, sem editar a página.
 - **Componentes:** `apps/web/src/design-system/components.tsx` guarda um registro. Componente novo em `packages/ui` exige uma entrada nele (o teste `design-system.test.tsx` reprova quando falta e diz o formato; um export em maiúscula que não é componente entra na lista `NOT_COMPONENTS` do teste, com o motivo), com `covers` listando o que exporta e um exemplo por variante; a página monta as colunas Padrão, Hover, Foco, Desativado e Carregando e marca "—" no estado que o componente não tem.
 
+## 25. Regras da Pauta
+
+A direção **Pauta** (épico #621) desenha a área da agência escura: uma mesa editorial à noite, tudo quieto em grafite, e o índigo é o realce que a editora passa só no que pede uma decisão agora. As cores do projeto não mudam; a distinção vem da tipografia expandida, do realce como gesto único de ação, da disciplina de cor por quem tem a vez e das capas dos posts, que carregam a cor da tela (a interface não compete com o trabalho da agência). Estas regras valem em toda tela da área da agência, **somadas** à Definition of Done da seção 23; o portal do cliente fica fora até o dono decidir sobre ele. Estão registradas em [`business/decisions/2026-10-13-pauta-quem-tem-a-vez-decide-a-cor-e-as-quatro-excecoes.md`](business/decisions/2026-10-13-pauta-quem-tem-a-vez-decide-a-cor-e-as-quatro-excecoes.md) e [`business/decisions/2026-10-14-o-realce-tem-quatro-usos-incluindo-o-cliente-selecionado.md`](business/decisions/2026-10-14-o-realce-tem-quatro-usos-incluindo-o-cliente-selecionado.md).
+
+### 25.1 Quem tem a vez decide a cor
+
+A cor de um estado do conteúdo diz de quem é a vez. O que está em dia recua para o cinza; o que está travado salta. A carteira e o calendário são painéis de plantão, não relatórios.
+
+| Estado | Ícone | Claro / escuro | A vez é de quem |
+|---|---|---|---|
+| Em ajuste | `Pencil` | `indigo/600` / `indigo/400` | da agência: usa a cor da ação |
+| Aguardando aprovação | `Clock` | `violet/600` / `violet/400` | do cliente |
+| Pronto para publicar | `Check` | `teal/700` / `teal/500` | aprovado, falta publicar |
+| Atrasado | `LateBadge` | `action/danger` cheio, texto branco | de ninguém: precisa saltar; o único estado em bloco cheio |
+| Publicado | `CheckCheck` | `slate/600` / `slate/400` | de ninguém: feito fica quieto |
+| Em produção | `Circle` | `slate/500` / `slate/400` | neutro |
+
+- A cor vai **no ícone** (`status/*/fg`, não-texto, 3:1) e o rótulo fica em `text/secondary`: o par de texto nunca depende da cor do estado, e o estado nunca é só cor.
+- Erro é `text/danger` e diz como sair ("Tentar de novo").
+- **Dentro do card do calendário** o fundo e o título são tingidos pelo **formato** (`format/{carousel,reels,static}/{bg,fg}`), e o estado vive na etiqueta (`StatusTag`), ao lado da etiqueta preenchida do formato (`FormatTag`). O atrasado passa por cima de tudo, com contorno vermelho no card inteiro, nunca borda lateral. No canvas, stories, vídeo e VSL não têm tinta: ficam em `bg/elevated`, com etiqueta de contorno.
+- O índigo fica fora dos formatos de propósito: é da ação e do hoje. Reels e aguardando dividem o violeta, e carrossel e pronto dividem o teal; o ícone e o rótulo desfazem a dúvida.
+
+### 25.2 O realce: quatro usos
+
+O índigo cheio (`action/primary/bg`, no `Button` primário, na `Pill` e `PillAction` de `tone="accent"` e no `Realce`) tem **quatro usos e só eles**:
+
+1. **a ação primária da tela**, uma só;
+2. **o hoje** (a célula do dia de hoje no calendário, `calendar/today/bg`);
+3. **a vez de quem olha** ("2 posts esperando você"), no `Realce` atrás da palavra que pede a decisão;
+4. **o cliente selecionado** no `ClientStrip` (decisão do dono de 2026-10-14: no tema claro, só a superfície dá 1,03:1 e o selecionado some).
+
+Duas manchas de índigo cheio competindo na mesma tela, fora destes usos, é erro. Não são índigo cheio, e portanto não entram na regra: o ícone do estado em ajuste, o link (`text/link`) e o anel de foco. A aba aberta se sublinha em tinta, nunca em índigo. O `Realce` tem cantos desiguais, como caneta marca-texto, e é a única forma fora da escala de raios; ele entra varrendo da esquerda (`sweep`, 240 ms) quando algo vira a vez de quem olha ou é aprovado, e fica parado quando a pessoa pede menos movimento.
+
+### 25.3 Exceções aprovadas pelo dono
+
+A lista anti-slop abaixo tem quatro exceções, aprovadas com o canvas v2 (2026-10-13):
+
+1. **Degradê só na base do crachá do cliente.** A foto do crachá termina num degradê de índigo e violeta escurecidos sobre `ink/900` (`client-badge/fade/{start,end}`), com branco por cima a 9,5:1 ou mais (9,96:1 e 9,53:1). Sem glow, sem vidro, sem blur. O degradê do símbolo da marca é do arquivo da marca e não vira estilo de interface.
+2. **Cor do card por formato e estado na etiqueta** (25.1), em vez de a cor do card dizer o estado.
+3. **Pílula (raio cheio) na ação do crachá e nos contadores.** O raio cheio, antes só do avatar, vale também para `Pill` e `PillAction` (seção 9).
+4. **Navegação larga com grupos como shell** de toda a agência: aberta com 248 px, recolhível no trilho de 80 px e, no celular, barra inferior (seções 13.3 e 19).
+
+### 25.4 Anti-slop: o que o revisor recusa em toda tela
+
+- **Nenhum gradiente** em texto, botão ou fundo de página (a exceção é a 1 de 25.3). Nada de vidro, glow ou blur decorativo; sombra só no que flutua (seção 11).
+- **Nenhum rótulo acima do título** (eyebrow) nem numeração 01/02/03.
+- **Nenhuma borda colorida lateral** em card, linha ou alerta.
+- **Nenhum card dentro de card.** Agrupar por espaço e linha divisória.
+- **Nenhum número-herói** (número gigante, rótulo e variação) sem a ação que ele pede.
+- **Índigo cheio só nos quatro usos** de 25.2.
+- **Nenhum estado vazio mudo.** Sempre o que falta e um botão que resolve; erro com "Tentar de novo"; skeleton na primeira carga.
+- **Nenhuma cópia genérica** ("Bem-vindo de volta!", "Explore"). O botão diz o que faz; o erro diz o que houve e como sair.
+- **Nenhum ícone genérico de pessoa** no lugar de foto: iniciais. Nenhum emoji nem caractere no lugar de ícone: `lucide-react`, em um traço só.
+- **Nenhum padrão do navegador esquecido:** seleção de texto, foco, barra de rolagem e cursor de texto na paleta. Hoje o app só define `accent-color`; o foco é global (seção 20), e seleção, barra de rolagem e cursor entram nas telas da Pauta, com a varredura final (#639) conferindo.
+- **Modal só quando a tarefa exige interrupção** e foco protegido (seção 13.4).
+
+Mais as regras de tela da issue do épico: uma única ação primária; no máximo três tamanhos de texto por tela; só tokens de `apps/web/src/styles` (nenhum HEX novo além de `violet/400` e `teal/700`); capturas em 1440 e 390 (viewport emulado) ao lado da artboard do canvas.
