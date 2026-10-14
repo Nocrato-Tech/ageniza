@@ -791,7 +791,7 @@ describe('client lifecycle actions (#139)', () => {
 
     const busy = within(dialog).getByRole('button', { name: 'Arquivar' });
     await waitFor(() => expect(busy.hasAttribute('aria-busy')).toBe(true));
-    expect(busy.hasAttribute('disabled')).toBe(true);
+    expect(busy.getAttribute('aria-disabled')).toBe('true');
     expect(within(dialog).getByRole('button', { name: 'Cancelar' }).hasAttribute('disabled')).toBe(true);
     expect(screen.getByRole('dialog', { name: `Arquivar ${padaria.name} agora?` })).toBe(dialog);
 
@@ -811,7 +811,7 @@ describe('client lifecycle actions (#139)', () => {
 
     const schedule = within(dialog).getByRole('button', { name: 'Agendar encerramento' });
     await waitFor(() => expect(schedule.hasAttribute('aria-busy')).toBe(true));
-    expect(schedule.hasAttribute('disabled')).toBe(true);
+    expect(schedule.getAttribute('aria-disabled')).toBe('true');
     expect(within(dialog).getByRole('button', { name: 'Cancelar' }).hasAttribute('disabled')).toBe(true);
     await act(async () => { resolveClosing?.(json({ ...registrationOf(padaria), closingDate: agencyToday() })); });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -827,7 +827,7 @@ describe('client lifecycle actions (#139)', () => {
 
     const reactivateButton = screen.getByRole('button', { name: 'Reativar' });
     await waitFor(() => expect(reactivateButton.hasAttribute('aria-busy')).toBe(true));
-    expect(reactivateButton.hasAttribute('disabled')).toBe(true);
+    expect(reactivateButton.getAttribute('aria-disabled')).toBe('true');
     await act(async () => {
       reactivated = { ...reactivated, status: 'active', archivedAt: null };
       resolveReactivate?.(json(registrationOf(reactivated)));

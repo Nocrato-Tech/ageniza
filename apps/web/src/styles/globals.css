@@ -43,6 +43,7 @@ a {
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
 textarea:focus-visible {
   outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
@@ -76,6 +77,41 @@ textarea:focus-visible {
   min-height: 60vh;
   display: grid;
   align-content: center;
+}
+
+/* Not found, session ended, unexpected error: the serious mascot, what happened, one way out. */
+.status-panel {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+  text-align: center;
+}
+
+.status-panel__mascot {
+  height: 15rem;
+  width: auto;
+  max-width: 100%;
+}
+
+.status-panel h1 {
+  margin: var(--space-2) 0 0;
+  font: var(--heading-xl);
+}
+
+.status-panel p {
+  margin: 0;
+  max-width: 32rem;
+  color: var(--text-secondary);
+  font: var(--body-lg);
+}
+
+.status-panel__action {
+  margin-top: var(--space-4);
+}
+
+/* An anchor wearing the Button classes (the way out is a navigation): no underline, and it keeps the button's own color. */
+a.ui-button {
+  text-decoration: none;
 }
 
 .skip-link {
@@ -169,8 +205,8 @@ textarea:focus-visible {
   color: var(--action-danger-fg);
 }
 
-.ui-button--primary:hover:not(:disabled),
-.ui-button--destructive:hover:not(:disabled) {
+.ui-button--primary:hover:not(:disabled):not(.ui-button--loading),
+.ui-button--destructive:hover:not(:disabled):not(.ui-button--loading) {
   filter: brightness(0.94);
 }
 
@@ -185,8 +221,8 @@ textarea:focus-visible {
   color: var(--text-secondary);
 }
 
-.ui-button--secondary:hover:not(:disabled),
-.ui-button--ghost:hover:not(:disabled) {
+.ui-button--secondary:hover:not(:disabled):not(.ui-button--loading),
+.ui-button--ghost:hover:not(:disabled):not(.ui-button--loading) {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
@@ -270,11 +306,11 @@ textarea:focus-visible {
   color: var(--text-primary);
 }
 
-.ui-pill--action.ui-pill--neutral:hover:not(:disabled) {
+.ui-pill--action.ui-pill--neutral:hover:not(:disabled):not(.ui-pill--loading) {
   background: var(--bg-hover);
 }
 
-.ui-pill--action.ui-pill--accent:hover:not(:disabled) {
+.ui-pill--action.ui-pill--accent:hover:not(:disabled):not(.ui-pill--loading) {
   filter: brightness(0.94);
 }
 
@@ -316,7 +352,7 @@ textarea:focus-visible {
 }
 
 /* Hover only raises the text: a background here would read as the chosen option. */
-.ui-segmented__option:hover:not(:disabled):not([aria-checked='true']) {
+.ui-segmented__option:hover:not(:disabled):not([aria-disabled='true']):not([aria-checked='true']) {
   color: var(--text-primary);
 }
 
@@ -336,8 +372,9 @@ textarea:focus-visible {
   opacity: 0.55;
 }
 
-.ui-segmented[aria-busy='true'] > .ui-segmented__option:disabled {
+.ui-segmented__option[aria-disabled='true'] {
   cursor: progress;
+  opacity: 0.55;
 }
 
 /* Tabs: the open tab is underlined in ink, never in indigo (indigo is the action, today and the viewer's turn). */
@@ -406,8 +443,8 @@ textarea:focus-visible {
 .ui-text-input {
   min-height: 2.75rem;
   width: 100%;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
   padding: var(--space-2) var(--space-3);
   font: var(--body-md);
   background: var(--bg-surface);
@@ -415,6 +452,9 @@ textarea:focus-visible {
 }
 
 .ui-field-message {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   margin: var(--space-1) 0 0;
   font: var(--caption);
   color: var(--text-danger);
@@ -442,7 +482,7 @@ textarea:focus-visible {
   text-align: left;
   background: var(--bg-surface);
   color: var(--text-primary);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   cursor: pointer;
 }
@@ -587,12 +627,94 @@ textarea:focus-visible {
   font: var(--label-sm);
 }
 
+.ui-field:has(:disabled) > .ui-field__label {
+  opacity: 0.55;
+}
+
+.ui-field__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ui-field__hint {
+  margin: 0;
+  color: var(--text-muted);
+  font: var(--caption);
+}
+
+.ui-field__counter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  color: var(--text-muted);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-field__counter--over {
+  color: var(--text-danger);
+}
+
+/* The spinner sits after the label and the control stays editable: loading here is a check in progress. */
+.ui-field--loading > .ui-field__label::after {
+  content: '';
+  display: inline-block;
+  width: 0.75em;
+  height: 0.75em;
+  margin-left: var(--space-2);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--radius-full);
+  vertical-align: -0.1em;
+  animation: ui-button-spin var(--motion-slow) linear infinite;
+}
+
+/* Controls: hover and the invalid state change the edge only, so the 3:1 border/control is never lost. */
+.ui-text-input,
+.ui-select,
+.ui-textarea {
+  transition: border-color var(--motion-fast);
+}
+
+.ui-text-input::placeholder,
+.ui-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.ui-text-input:hover:not(:disabled),
+.ui-select:hover:not(:disabled),
+.ui-textarea:hover:not(:disabled) {
+  border-color: var(--text-muted);
+}
+
+.ui-text-input[aria-invalid='true']:not(:disabled),
+.ui-select[aria-invalid='true']:not(:disabled),
+.ui-textarea[aria-invalid='true']:not(:disabled) {
+  border-color: var(--text-danger);
+}
+
+.ui-text-input:disabled,
+.ui-textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-text-input,
+  .ui-select,
+  .ui-textarea {
+    transition: none;
+  }
+}
+
 .ui-select {
   min-height: 2.75rem;
   width: 100%;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
   background: var(--bg-surface);
   color: var(--text-primary);
   font: var(--body-md);
@@ -1193,10 +1315,19 @@ a.client-general__block:hover {
   margin: auto;
   padding: var(--space-6);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
+  box-shadow: var(--shadow-floating);
   color: var(--text-primary);
   overflow-wrap: anywhere;
+}
+
+.ui-modal--sm {
+  width: min(calc(100% - var(--space-8)), 28rem);
+}
+
+.ui-modal--lg {
+  width: min(calc(100% - var(--space-8)), 52rem);
 }
 
 .ui-modal::backdrop {
@@ -1206,6 +1337,34 @@ a.client-general__block:hover {
 .ui-modal[open] {
   display: grid;
   gap: var(--space-6);
+  animation: ui-float-in var(--motion-base) var(--motion-easing-standard);
+}
+
+/* Opacity and an 8px rise: the only motion of a dialog and of a floating card. */
+@keyframes ui-float-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-2));
+  }
+}
+
+.ui-modal__description {
+  margin: calc(var(--space-4) * -1) 0 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.ui-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-modal[open] {
+    animation: none;
+  }
 }
 
 .ui-modal__heading {
@@ -2383,8 +2542,8 @@ a.client-general__block:hover {
 .ui-textarea {
   width: 100%;
   min-height: 6rem;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
   padding: var(--space-2) var(--space-3);
   font: var(--body-md);
   background: var(--bg-surface);

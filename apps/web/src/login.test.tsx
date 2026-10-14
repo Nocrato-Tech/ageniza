@@ -264,7 +264,7 @@ describe('LoginPage (/entrar)', () => {
     expect(document.title).toBe('Entrar — Ageniza');
     submit('pessoa@example.test', 'a correct password');
 
-    await waitFor(() => expect((screen.getByRole('button', { name: 'Entrar' }) as HTMLButtonElement).disabled).toBe(true));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Entrar' }).getAttribute('aria-disabled')).toBe('true'));
     release?.();
     await waitFor(() => expect(screen.getByRole('link', { name: 'Agência Um' })).toBeTruthy());
   });

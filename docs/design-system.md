@@ -185,6 +185,7 @@ Implementados em [`apps/web/src/styles/tokens/semantic.css`](../apps/web/src/sty
 | `text/danger` | `color/red/700` (mensagem de erro de campo) |
 | `border/default` | `color/mist/200` |
 | `border/subtle` | `color/mist/100` |
+| `border/control` | `color-mix(slate/400 40%, ink/600)` = `#6D7989` |
 | `action/primary/bg` | `color/indigo/600` |
 | `action/primary/fg` | `color/white` |
 | `action/danger/bg` | `color/red/700` (fora da página original — seção 5.1) |
@@ -214,6 +215,7 @@ Implementados em [`apps/web/src/styles/themes/dark.css`](../apps/web/src/styles/
 | `text/danger` | `color/red/400` (primitive próprio, distinto de `action/danger/bg` — seção 20.1) |
 | `border/default` | `color/ink/600` |
 | `border/subtle` | `color/ink/700` |
+| `border/control` | `color-mix(slate/400 40%, ink/600)` = `#6D7989` (o mesmo valor do Light) |
 | `action/primary/bg` | `color/indigo/550` |
 | `action/primary/fg` | `color/white` |
 | `action/danger/bg` | `color/red/700` (mesmo valor do Light; ver seção 20.1) |
@@ -323,13 +325,17 @@ Button
 
 O `variant` `outline` do shadcn corresponde ao nosso `secondary`; não expor `outline` como API pública da aplicação. Evitar cópias soltas como `Button Blue`, `Button New`, `Button Final 2`.
 
-**Duas adaptações provisórias** no `Button`, até existirem os tokens que o vocabulário prevê: o hover de `primary` e `destructive` usa `filter: brightness(0.94)` no lugar de `action/primary/hover` e `action/danger/hover`, e o estado disabled usa `opacity: 0.55` no lugar de `action/disabled/fg`. No loading, o botão fica desabilitado, com `aria-busy`, e o rótulo fica transparente sem sair da árvore de acessibilidade, para o spinner aparecer na cor do variant.
+**Duas adaptações provisórias** no `Button`, até existirem os tokens que o vocabulário prevê: o hover de `primary` e `destructive` usa `filter: brightness(0.94)` no lugar de `action/primary/hover` e `action/danger/hover`, e o estado disabled usa `opacity: 0.55` no lugar de `action/disabled/fg`. No loading, o botão fica com `aria-busy` e `aria-disabled` (nunca `disabled` nativo, que tira o foco do teclado de quem acabou de acioná-lo), o clique não faz nada, e o rótulo fica transparente sem sair da árvore de acessibilidade, para o spinner aparecer na cor do variant. `PillAction` e `Segmented` seguem a mesma regra.
 
 `leadingIcon` e `trailingIcon` entraram com a #624. O ícone é sempre de `lucide-react`, o único conjunto do app: 20 px na interface e 16 px dentro de pílula e aba, traço 1,75. Fica fora da árvore de acessibilidade (`aria-hidden`), então o rótulo continua sendo o nome do botão. `IconButton` é o botão só de ícone e exige `label`, que vira `aria-label` e dica de passar o mouse.
 
-Também são da #624, em `packages/ui`: `Pill` (contador ou rótulo curto, estático) e `PillAction` (a próxima ação de um card em cápsula, com os estados do `Button`); `Segmented` (escolha entre duas ou três visões, como Grade e Lista: grupo de rádio com uma parada de tabulação e setas) e `Tabs` (abas com ativação automática: setas movem e abrem, Home e End vão às pontas, aba desabilitada é pulada). O índigo cheio fica só em `tone="accent"`; a aba aberta se sublinha em tinta, não em índigo. Nenhum export de `packages/ui` leva o nome de um global do JS.
+Também são da #624, em `packages/ui`: `Pill` (contador ou rótulo curto, estático) e `PillAction` (a próxima ação de um card em cápsula, com os estados do `Button`); `Segmented` (escolha entre duas ou três visões, como Grade e Lista: grupo de rádio com uma parada de tabulação e setas) e `Tabs` (abas com ativação automática: setas movem e abrem, Home e End vão às pontas, aba desabilitada é pulada). O índigo cheio fica só em `tone="accent"`; a aba aberta se sublinha em tinta, não em índigo.
 
-Os campos de formulário seguem o mesmo princípio de passthrough nativo com tokens da Ageniza: `TextInput`, `Textarea` e `Select` são exports de `packages/ui` (classes `ui-text-input`, `ui-textarea` e `ui-select` em `globals.css`), com foco visível coberto pela regra global de `:focus-visible`.
+`Dialog` (#624) é o modal sobre o `<dialog>` nativo: título, `description` opcional, `actions` no pé (a ação primária por último), `size` `sm`, `md` ou `lg` (28, 40 e 52 rem), raio `xl`, a sombra flutuante e uma entrada de 180 ms (opacidade e 8 px de subida). `Modal` continua exportado como o mesmo componente, para as telas que ainda não migraram. Nenhum export de `packages/ui` leva o nome de um global do JS.
+
+Os campos de formulário seguem o mesmo princípio de passthrough nativo com tokens da Ageniza: `TextInput`, `Textarea` e `Select` são exports de `packages/ui` (classes `ui-text-input`, `ui-textarea` e `ui-select` em `globals.css`), com foco visível coberto pela regra global de `:focus-visible`. `Field` (#624) envolve qualquer um deles com rótulo, dica, contador e erro: o controle recebe `id`, `aria-describedby` (dica, contador e erro, nessa ordem), `aria-invalid` e `aria-busy` por `{(control) => <TextInput {...control} />}`; o erro leva ícone e texto, e passar do limite do contador também marca o controle como inválido. `Select` já usa `Field` e aceita `hint`, `error` e `loading`.
+
+**Borda de controle.** A borda de `input`, `select`, `textarea` e `ChoiceCard` é limite de componente de interface e precisa de 3:1 sobre a superfície (WCAG 1.4.11): usa `border/control` (`#6D7989`, 3,32:1 sobre `bg/surface` no escuro, 4,42:1 no claro; 4,01:1 e 4,23:1 sobre `bg/canvas`). As demais bordas são decorativas e ficam em `border/default`. O token não foi conferido sobre `bg/elevated`/`bg/hover`: um campo ali volta a ser ponto em aberto.
 
 ## 14. Regra de composição
 
