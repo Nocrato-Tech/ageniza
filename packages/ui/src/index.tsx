@@ -8,6 +8,7 @@ export { Dialog, Dialog as Modal, type DialogProps, type DialogProps as ModalPro
 export { Field, type FieldControlProps, type FieldProps } from './field.js';
 export { Pagination, paginationItems, type PaginationProps } from './pagination.js';
 export { Pill, PillAction, type PillActionProps, type PillProps, type PillTone } from './pill.js';
+export { Popover, type PopoverPlacement, type PopoverProps, type PopoverTriggerProps } from './popover.js';
 export { Segmented, type SegmentedOption, type SegmentedProps } from './segmented.js';
 export { Select, type SelectOption, type SelectProps } from './select.js';
 export { Skeleton } from './skeleton.js';

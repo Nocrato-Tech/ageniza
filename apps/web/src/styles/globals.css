@@ -1326,8 +1326,61 @@ a.client-general__block:hover {
   gap: var(--space-3);
 }
 
+/* Popover: the floating card. It sits on the elevated surface, where text/link, text/danger and the
+   control border are not guaranteed (docs/design-system.md 20.1), so it holds text and actions only. */
+.ui-popover-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.ui-popover {
+  position: absolute;
+  z-index: 20;
+  display: grid;
+  gap: var(--space-3);
+  min-width: 16rem;
+  max-width: min(22rem, calc(100vw - var(--space-8)));
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-floating);
+  color: var(--text-primary);
+  animation: ui-float-in var(--motion-fast) var(--motion-easing-standard);
+}
+
+.ui-popover:focus {
+  outline: none;
+}
+
+.ui-popover:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.ui-popover--bottom-start,
+.ui-popover--bottom-end {
+  top: calc(100% + var(--space-2));
+}
+
+.ui-popover--top-start,
+.ui-popover--top-end {
+  bottom: calc(100% + var(--space-2));
+}
+
+.ui-popover--bottom-start,
+.ui-popover--top-start {
+  left: 0;
+}
+
+.ui-popover--bottom-end,
+.ui-popover--top-end {
+  right: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .ui-modal[open] {
+  .ui-modal[open],
+  .ui-popover {
     animation: none;
   }
 }
