@@ -1,5 +1,8 @@
 import { useLayoutEffect, type ReactNode } from 'react';
 
+/** The addresses `DarkArea` covers, for what renders outside the router (the error boundary). */
+export const isAgencyPath = (pathname: string): boolean => pathname.startsWith('/agencia/');
+
 /**
  * The agency area is dark and everything else is light (docs/design-system.md section 7). The
  * attribute goes on `<html>`, not on a wrapper, so the page background, the scrollbars and what
