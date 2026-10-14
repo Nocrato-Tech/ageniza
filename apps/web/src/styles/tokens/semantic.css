@@ -31,6 +31,10 @@
 
   --border-default: var(--color-mist-200);
   --border-subtle: var(--color-mist-100);
+  /* The edge of a control (input, select, textarea, choice card) is a UI component boundary: 3:1 on the surface
+     (WCAG 1.4.11). Built from existing primitives, so it is the same in both themes; every other border is
+     decorative and stays on `border-default` (docs/design-system.md 20.1). */
+  --border-control: color-mix(in srgb, var(--color-slate-400) 40%, var(--color-ink-600));
 
   --action-primary-bg: var(--color-indigo-600);
   --action-primary-fg: var(--color-white);

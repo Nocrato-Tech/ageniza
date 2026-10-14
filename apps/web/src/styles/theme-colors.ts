@@ -49,6 +49,9 @@ const luminance = (rgb: Rgb): number => {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
 
+/** The sRGB channels of a token reference such as `var(--border-control)`, in the given theme. */
+export const rgbOf = (value: string, theme: keyof typeof themes): number[] => resolve(value, themes[theme]);
+
 /** WCAG contrast of two token references such as `var(--text-secondary)`, in the given theme. */
 export const contrastOf = (theme: keyof typeof themes, fg: string, bg: string): number => {
   const [x, y] = [luminance(resolve(fg, themes[theme])), luminance(resolve(bg, themes[theme]))];

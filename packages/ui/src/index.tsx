@@ -5,6 +5,7 @@ export { Button, IconButton, type ButtonProps, type ButtonSize, type ButtonVaria
 export { Logo, BrandSymbol, type LogoProps, type LogoVariant, type BrandSymbolProps, type BrandSymbolVariant } from './brand.js';
 export { ConfirmDialog, Menu, MenuItem, MenuSeparator } from './menu.js';
 export { Modal, type ModalProps } from './modal.js';
+export { Field, type FieldControlProps, type FieldProps } from './field.js';
 export { Pagination, paginationItems, type PaginationProps } from './pagination.js';
 export { Pill, PillAction, type PillActionProps, type PillProps, type PillTone } from './pill.js';
 export { Segmented, type SegmentedOption, type SegmentedProps } from './segmented.js';

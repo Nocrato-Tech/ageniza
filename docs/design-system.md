@@ -185,6 +185,7 @@ Implementados em [`apps/web/src/styles/tokens/semantic.css`](../apps/web/src/sty
 | `text/danger` | `color/red/700` (mensagem de erro de campo) |
 | `border/default` | `color/mist/200` |
 | `border/subtle` | `color/mist/100` |
+| `border/control` | `color-mix(slate/400 40%, ink/600)` = `#6D7989` |
 | `action/primary/bg` | `color/indigo/600` |
 | `action/primary/fg` | `color/white` |
 | `action/danger/bg` | `color/red/700` (fora da página original — seção 5.1) |
@@ -214,6 +215,7 @@ Implementados em [`apps/web/src/styles/themes/dark.css`](../apps/web/src/styles/
 | `text/danger` | `color/red/400` (primitive próprio, distinto de `action/danger/bg` — seção 20.1) |
 | `border/default` | `color/ink/600` |
 | `border/subtle` | `color/ink/700` |
+| `border/control` | `color-mix(slate/400 40%, ink/600)` = `#6D7989` (o mesmo valor do Light) |
 | `action/primary/bg` | `color/indigo/550` |
 | `action/primary/fg` | `color/white` |
 | `action/danger/bg` | `color/red/700` (mesmo valor do Light; ver seção 20.1) |
@@ -329,7 +331,9 @@ O `variant` `outline` do shadcn corresponde ao nosso `secondary`; não expor `ou
 
 Também são da #624, em `packages/ui`: `Pill` (contador ou rótulo curto, estático) e `PillAction` (a próxima ação de um card em cápsula, com os estados do `Button`); `Segmented` (escolha entre duas ou três visões, como Grade e Lista: grupo de rádio com uma parada de tabulação e setas) e `Tabs` (abas com ativação automática: setas movem e abrem, Home e End vão às pontas, aba desabilitada é pulada). O índigo cheio fica só em `tone="accent"`; a aba aberta se sublinha em tinta, não em índigo. Nenhum export de `packages/ui` leva o nome de um global do JS.
 
-Os campos de formulário seguem o mesmo princípio de passthrough nativo com tokens da Ageniza: `TextInput`, `Textarea` e `Select` são exports de `packages/ui` (classes `ui-text-input`, `ui-textarea` e `ui-select` em `globals.css`), com foco visível coberto pela regra global de `:focus-visible`.
+Os campos de formulário seguem o mesmo princípio de passthrough nativo com tokens da Ageniza: `TextInput`, `Textarea` e `Select` são exports de `packages/ui` (classes `ui-text-input`, `ui-textarea` e `ui-select` em `globals.css`), com foco visível coberto pela regra global de `:focus-visible`. `Field` (#624) envolve qualquer um deles com rótulo, dica, contador e erro: o controle recebe `id`, `aria-describedby` (dica, contador e erro, nessa ordem), `aria-invalid` e `aria-busy` por `{(control) => <TextInput {...control} />}`; o erro leva ícone e texto, e passar do limite do contador também marca o controle como inválido. `Select` já usa `Field` e aceita `hint`, `error` e `loading`.
+
+**Borda de controle.** A borda de `input`, `select`, `textarea` e `ChoiceCard` é limite de componente de interface e precisa de 3:1 sobre a superfície (WCAG 1.4.11): usa `border/control` (`#6D7989`, 3,32:1 sobre `bg/surface` no escuro, 4,42:1 no claro; 4,01:1 e 4,23:1 sobre `bg/canvas`). As demais bordas são decorativas e ficam em `border/default`. O token não foi conferido sobre `bg/elevated`/`bg/hover`: um campo ali volta a ser ponto em aberto.
 
 ## 14. Regra de composição
 

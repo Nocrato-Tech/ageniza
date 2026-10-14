@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { ArrowRight, LayoutGrid, List, Plus } from 'lucide-react';
 import {
-  Avatar, BadgeCard, BrandSymbol, Button, ChoiceCard, IconButton, Pill, PillAction, ConfirmDialog, FieldMessage, Logo, LiveStatus, Menu, MenuItem, MenuSeparator,
+  Avatar, BadgeCard, BrandSymbol, Button, ChoiceCard, IconButton, Pill, PillAction, ConfirmDialog, Field, FieldMessage, Logo, LiveStatus, Menu, MenuItem, MenuSeparator,
   Modal, Pagination, Segmented, Select, Skeleton, Tabs, Textarea, TextInput
 } from '@ageniza/ui';
 
@@ -41,6 +41,13 @@ function SelectDemo({ disabled }: { disabled: boolean }) {
   const [value, setValue] = useState('');
   return <Select label="Cliente" value={value} onChange={setValue} placeholder="Todos" disabled={disabled}
     options={[{ value: 'a', label: 'Cliente A' }, { value: 'b', label: 'Cliente B' }]} />;
+}
+
+function CounterFieldDemo({ disabled, loading }: { disabled: boolean; loading: boolean }) {
+  const [caption, setCaption] = useState('Pão de fermentação natural, 48 horas de espera.');
+  return <Field label="Legenda" hint="Aparece no feed" loading={loading} counter={{ count: caption.length, max: 80 }}>
+    {(control) => <Textarea {...control} value={caption} onChange={(event) => setCaption(event.target.value)} disabled={disabled} />}
+  </Field>;
 }
 
 function SegmentedDemo({ disabled, loading }: { disabled: boolean; loading: boolean }) {
@@ -119,6 +126,26 @@ export const componentEntries: readonly ComponentEntry[] = [
     covers: ['Tabs'],
     wide: true,
     examples: [{ label: 'com contagem e aba desativada', render: (state) => <TabsDemo disabled={state === 'disabled'} loading={state === 'loading'} /> }]
+  },
+  {
+    id: 'field',
+    name: 'Field',
+    covers: ['Field'],
+    examples: [
+      {
+        label: 'com dica',
+        render: (state) => <Field label="Título" hint="Até 80 caracteres" loading={state === 'loading'}>
+          {(control) => <TextInput {...control} defaultValue="Cardápio de outono" disabled={state === 'disabled'} />}
+        </Field>
+      },
+      {
+        label: 'com erro',
+        render: (state) => stateOnly(state, ['default'], <Field label="E-mail" error="Informe um e-mail válido.">
+          {(control) => <TextInput {...control} defaultValue="maria@" />}
+        </Field>)
+      },
+      { label: 'com contador, passe de 80 para ver o limite', render: (state) => <CounterFieldDemo disabled={state === 'disabled'} loading={state === 'loading'} /> }
+    ]
   },
   {
     id: 'text-input',
