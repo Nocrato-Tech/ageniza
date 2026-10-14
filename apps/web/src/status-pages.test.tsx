@@ -45,6 +45,7 @@ const expectSeriousMascotOnce = () => {
 const expectPrimaryButtonLook = (link: HTMLElement) => {
   expect(link.classList.contains('ui-button')).toBe(true);
   expect(link.classList.contains('ui-button--primary')).toBe(true);
+  expect(link.classList.contains('ui-button--lg')).toBe(true);
 };
 
 describe('status pages (serious mascot)', () => {

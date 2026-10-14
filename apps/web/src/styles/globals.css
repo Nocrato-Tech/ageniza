@@ -87,12 +87,6 @@ textarea:focus-visible {
   text-align: center;
 }
 
-.status-panel__mascot {
-  height: 15rem;
-  width: auto;
-  max-width: 100%;
-}
-
 .status-panel h1 {
   margin: var(--space-2) 0 0;
   font: var(--heading-xl);
@@ -109,7 +103,7 @@ textarea:focus-visible {
   margin-top: var(--space-4);
 }
 
-/* An anchor wearing the Button classes (the way out is a navigation): no underline, and it keeps the button's own color. */
+/* ButtonLink: an anchor wearing the Button classes (the way out is a navigation): no underline, and it keeps the button's own color. */
 a.ui-button {
   text-decoration: none;
 }
@@ -4476,4 +4470,56 @@ a.client-general__block:hover {
   .ui-realce--sweep {
     animation: none;
   }
+}
+
+/* ButtonLink that cannot be followed: dimmed like a disabled button, and the pointer passes through it. */
+.ui-button--link-disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* Mascot and EmptyState: what a list shows when it has nothing yet. The owl is decorative and only beside an action. */
+.ui-mascot {
+  display: block;
+  flex: none;
+  max-width: 100%;
+  height: auto;
+}
+
+.ui-empty-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-12);
+  padding: var(--space-8);
+}
+
+.ui-empty-state__body {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 28.75rem;
+}
+
+.ui-empty-state__title {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+.ui-empty-state--mascot .ui-empty-state__title {
+  font: var(--heading-xl);
+}
+
+.ui-empty-state__description {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-lg);
+}
+
+.ui-empty-state__action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
 }

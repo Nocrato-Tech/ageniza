@@ -1,11 +1,11 @@
 import { createContext, useContext } from 'react';
 import { Link } from 'react-router-dom';
 
-import { LiveStatus } from '@ageniza/ui';
+import { ButtonLink, LiveStatus } from '@ageniza/ui';
 
 import type { AuthSessionSnapshot } from './auth.js';
 import { useDocumentTitle } from './document-title.js';
-import { LINK_BUTTON_CLASS, StatusPanel } from './status-panel.js';
+import { StatusPanel } from './status-panel.js';
 
 export function LoadingPage() {
   return <main className="page-status"><LiveStatus>Carregando…</LiveStatus></main>;
@@ -22,7 +22,7 @@ export const NotFoundHomeContext = createContext('/');
 export function NotFoundPage({ as: Landmark = 'main', home }: { as?: 'main' | 'section'; home?: string } = {}) {
   useDocumentTitle('Página não encontrada — Ageniza');
   const areaHome = useContext(NotFoundHomeContext);
-  return <StatusPanel as={Landmark} titleId="not-found-title" title="Página não encontrada" action={<Link className={LINK_BUTTON_CLASS} to={home ?? areaHome}>Voltar ao início</Link>}>
+  return <StatusPanel as={Landmark} titleId="not-found-title" title="Página não encontrada" action={<ButtonLink as={Link} size="lg" to={home ?? areaHome}>Voltar ao início</ButtonLink>}>
     Este endereço não corresponde a uma página do Ageniza.
   </StatusPanel>;
 }
@@ -30,7 +30,7 @@ export function NotFoundPage({ as: Landmark = 'main', home }: { as?: 'main' | 's
 /** The session is gone: say so, and offer the way back in. The login keeps the address for the return. */
 function SessionEndedPage() {
   useDocumentTitle('Área indisponível — Ageniza');
-  return <StatusPanel titleId="session-ended-title" title="Área indisponível" action={<Link className={LINK_BUTTON_CLASS} to="/entrar">Entrar de novo</Link>}>
+  return <StatusPanel titleId="session-ended-title" title="Área indisponível" action={<ButtonLink as={Link} size="lg" to="/entrar">Entrar de novo</ButtonLink>}>
     Esta área exige uma sessão ativa.
   </StatusPanel>;
 }

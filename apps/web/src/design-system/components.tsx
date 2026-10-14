@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { ArrowRight, LayoutGrid, List, Plus } from 'lucide-react';
 import {
-  Avatar, BadgeCard, BrandSymbol, Button, ChoiceCard, IconButton, Pill, PillAction, ConfirmDialog, Dialog, Field, FieldMessage, FormatTag, LateBadge, Logo, LiveStatus, Menu, MenuItem, MenuSeparator,
+  Avatar, BadgeCard, BrandSymbol, Button, ButtonLink, ChoiceCard, IconButton, Pill, PillAction, ConfirmDialog, Dialog, EmptyState, Field, FieldMessage, FormatTag, LateBadge, Logo, LiveStatus, Mascot, Menu, MenuItem, MenuSeparator,
   Modal, Pagination, Popover, Realce, Segmented, Select, Skeleton, StatusTag, Tabs, Textarea, TextInput
 } from '@ageniza/ui';
 
@@ -100,6 +100,18 @@ export const componentEntries: readonly ComponentEntry[] = [
       { label: 'ícone depois', render: (state) => <Button variant="secondary" trailingIcon={<ArrowRight />} disabled={state === 'disabled'} loading={state === 'loading'}>Abrir</Button> },
       { label: 'só ícone', render: (state) => <IconButton label="Adicionar" icon={<Plus />} disabled={state === 'disabled'} loading={state === 'loading'} /> },
       { label: 'só ícone, secundário', render: (state) => <IconButton variant="secondary" label="Adicionar" icon={<Plus />} disabled={state === 'disabled'} loading={state === 'loading'} /> }
+    ]
+  },
+  {
+    id: 'button-link',
+    name: 'ButtonLink',
+    covers: ['ButtonLink'],
+    examples: [
+      ...(['primary', 'secondary', 'ghost', 'destructive'] as const).map((variant) => ({
+        label: variant,
+        render: (state: RenderedState) => stateOnly(state, ['default', 'disabled'], <ButtonLink href="#button-link" variant={variant} disabled={state === 'disabled'}>Ver clientes</ButtonLink>)
+      })),
+      { label: 'com ícone', render: (state: RenderedState) => stateOnly(state, ['default', 'disabled'], <ButtonLink href="#button-link" leadingIcon={<Plus />} trailingIcon={<ArrowRight />} disabled={state === 'disabled'}>Novo cliente</ButtonLink>) }
     ]
   },
   {
@@ -249,6 +261,25 @@ export const componentEntries: readonly ComponentEntry[] = [
     name: 'Skeleton',
     covers: ['Skeleton'],
     examples: [{ label: 'bloco', render: (state) => stateOnly(state, ['loading'], <Skeleton style={{ width: '12rem', height: '1.5rem' }} />) }]
+  },
+  {
+    id: 'mascot',
+    name: 'Mascot',
+    covers: ['Mascot'],
+    examples: [
+      { label: 'amigável (estado vazio)', render: (state) => stateOnly(state, ['default'], <Mascot variant="friendly" height={120} />) },
+      { label: 'sério (erro)', render: (state) => stateOnly(state, ['default'], <Mascot variant="serious" height={120} />) }
+    ]
+  },
+  {
+    id: 'empty-state',
+    name: 'EmptyState',
+    covers: ['EmptyState'],
+    wide: true,
+    examples: [
+      { label: 'com mascote e ação', render: (state) => stateOnly(state, ['default'], <EmptyState mascot headingLevel={4} title="Cadastre o primeiro cliente" description="Com o cliente cadastrado você monta o calendário do mês." action={<Button leadingIcon={<Plus />}>Cadastrar cliente</Button>} />) },
+      { label: 'sem mascote (busca sem resultado)', render: (state) => stateOnly(state, ['default'], <EmptyState headingLevel={4} title="Nenhum cliente encontrado" description="Tente outro nome ou tire um filtro." action={<Button variant="secondary">Limpar filtros</Button>} />) }
+    ]
   },
   {
     id: 'brand',
