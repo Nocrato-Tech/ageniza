@@ -2,7 +2,7 @@ import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type ReactN
 
 import { IconSlot } from './icon.js';
 
-/** `accent` is the filled indigo: reserved for the action, today and what is the viewer's turn (docs/design-system.md). */
+/** `accent` is the filled indigo: reserved for the action, today, what is the viewer's turn and the selected client (docs/design-system.md). */
 export type PillTone = 'neutral' | 'accent';
 
 export type PillProps = HTMLAttributes<HTMLSpanElement> & {
