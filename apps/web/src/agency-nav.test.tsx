@@ -49,7 +49,7 @@ const renderAt = (entry: string, permissions: readonly string[] = ['colaborador.
   const { impl, calls } = makeFetch(permissions, gate);
   const client = new HttpClient('http://127.0.0.1:3001', impl);
   const store = createAuthSessionStore(client);
-  const probe = { pathname: '', navigate: (_to: string): void => undefined };
+  const probe = { pathname: '', navigate: (to: string): void => { void to; } };
   render(
     <AuthSessionProvider store={store}>
       <QueryClientProvider client={createQueryClient()}>
