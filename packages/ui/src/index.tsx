@@ -1,6 +1,7 @@
 import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 export { Avatar, avatarInitials, type AvatarProps, type AvatarSize } from './avatar.js';
 export { BadgeCard, type BadgeCardProps } from './badge-card.js';
+export { Logo, BrandSymbol, type LogoProps, type LogoVariant, type BrandSymbolProps, type BrandSymbolVariant } from './brand.js';
 export { ConfirmDialog, Menu, MenuItem, MenuSeparator } from './menu.js';
 export { Modal, type ModalProps } from './modal.js';
 export { Pagination, paginationItems, type PaginationProps } from './pagination.js';
