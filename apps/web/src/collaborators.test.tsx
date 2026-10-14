@@ -2027,7 +2027,7 @@ describe('invite collaborator modal (#107)', () => {
     fireEvent.click(submit);
 
     await waitFor(() => expect(submit.getAttribute('aria-busy')).toBe('true'));
-    expect(submit.hasAttribute('disabled')).toBe(true);
+    expect(submit.getAttribute('aria-disabled')).toBe('true');
     expect((within(dialog).getByRole('textbox', { name: 'E-mail' }) as HTMLInputElement).disabled).toBe(false);
     await act(async () => { finish(json({ invitationId: inviteAna.id, expiresAt: expiryInDays(7), supersededInvitationId: null }, 201)); });
     expect(await within(dialog).findByText(/Convite enviado para nova@exemplo.com/)).toBeTruthy();

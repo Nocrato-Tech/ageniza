@@ -91,5 +91,6 @@ _Ver também os itens 15 a 17, que estão na faixa Geral._
 66. **Corrida sem o gatilho fica vermelha.** Quando a proteção de uma rota vem de um gatilho de outro PR, o teste de corrida da rota tem de ficar vermelho sem esse gatilho; senão não prova nada sobre a rota (#542).
 68. **Worktree recompila o contrato.** Rodar a API de um worktree pede recompilar `packages/contracts` quando o PR mexe nele; senão constante nova chega `undefined` e comparação numérica passa calada (#575). O risco é local (worktree): o CI compila os contratos antes dos testes.
 69. **Nome de global do JS.** Componente exportado com nome de global do JS (`Symbol`, `Map`, `Image`, `Option`) passa no lint e só quebra quando outro arquivo o importa e sombreia a global. Use um nome composto (`BrandSymbol`) (#642).
+70. **Foco em controle com loading.** O jsdom não aplica a regra do navegador que tira o foco de um elemento quando ele vira `disabled`: um controle com `loading` que usa `disabled` nativo passa em teste e perde o foco do teclado no navegador. Use `aria-disabled` com uma guarda no clique e teste que `document.activeElement` continua nele depois de entrar em loading, com `disabled` falso e `aria-disabled` verdadeiro (#644, #645).
 
 As lições completas de segurança estão em `docs/security-review.md` e nas notas do projeto; este checklist só lista o que mais se repete.

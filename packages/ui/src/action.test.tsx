@@ -36,17 +36,41 @@ describe('Button with an icon', () => {
     expect(screen.getByRole('button', { name: 'Salvar' }).querySelector('.ui-icon')).toBeNull();
   });
 
-  it('does not act while loading, keeps its name and cannot take focus', () => {
+  it('does not act while loading and keeps its name', () => {
     const onClick = vi.fn();
     render(<Button loading leadingIcon={<Plus />} onClick={onClick}>Enviar</Button>);
     const button = screen.getByRole('button', { name: 'Enviar' }) as HTMLButtonElement;
 
     fireEvent.click(button);
-    button.focus();
 
     expect(onClick).not.toHaveBeenCalled();
-    expect(document.activeElement).not.toBe(button);
     expect(button.getAttribute('aria-busy')).toBe('true');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('keeps the keyboard focus when it starts loading, and acts again when it stops', () => {
+    const onClick = vi.fn();
+    const { rerender } = render(<Button onClick={onClick}>Enviar</Button>);
+    const button = screen.getByRole('button', { name: 'Enviar' }) as HTMLButtonElement;
+    button.focus();
+
+    rerender(<Button loading onClick={onClick}>Enviar</Button>);
+    expect(button.disabled).toBe(false);
+    expect(document.activeElement).toBe(button);
+
+    rerender(<Button onClick={onClick}>Enviar</Button>);
+    fireEvent.click(button);
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(button.hasAttribute('aria-disabled')).toBe(false);
+  });
+
+  it('does not submit its form while loading', () => {
+    const onSubmit = vi.fn((event: { preventDefault: () => void }) => event.preventDefault());
+    render(<form onSubmit={onSubmit}><Button type="submit" loading>Enviar</Button></form>);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar' }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it('can take keyboard focus while idle and acts on a click', () => {
@@ -95,16 +119,18 @@ describe('IconButton', () => {
     );
   });
 
-  it('keeps its name while loading and then neither acts nor takes focus', () => {
+  it('keeps its name while loading, does not act and keeps the keyboard focus', () => {
     const onClick = vi.fn();
-    render(<IconButton label="Adicionar" icon={<Plus />} loading onClick={onClick} />);
+    const { rerender } = render(<IconButton label="Adicionar" icon={<Plus />} onClick={onClick} />);
     const button = screen.getByRole('button', { name: 'Adicionar' }) as HTMLButtonElement;
-
-    fireEvent.click(button);
     button.focus();
 
+    rerender(<IconButton label="Adicionar" icon={<Plus />} loading onClick={onClick} />);
+    fireEvent.click(button);
+
     expect(onClick).not.toHaveBeenCalled();
-    expect(document.activeElement).not.toBe(button);
+    expect(button.disabled).toBe(false);
+    expect(document.activeElement).toBe(button);
     expect(button.getAttribute('aria-busy')).toBe('true');
   });
 
@@ -168,18 +194,32 @@ describe('PillAction', () => {
     expect(document.activeElement).not.toBe(button);
   });
 
-  it('keeps its name while loading, then marks itself busy and neither acts nor takes focus', () => {
+  it('keeps its name while loading, marks itself busy, does not act and keeps the keyboard focus', () => {
     const onClick = vi.fn();
-    render(<PillAction loading tone="accent" onClick={onClick}>Abrir</PillAction>);
+    const { rerender } = render(<PillAction tone="accent" onClick={onClick}>Abrir</PillAction>);
     const button = screen.getByRole('button', { name: 'Abrir' }) as HTMLButtonElement;
-
-    fireEvent.click(button);
     button.focus();
 
+    rerender(<PillAction loading tone="accent" onClick={onClick}>Abrir</PillAction>);
+    fireEvent.click(button);
+
     expect(onClick).not.toHaveBeenCalled();
-    expect(document.activeElement).not.toBe(button);
+    expect(button.disabled).toBe(false);
+    expect(document.activeElement).toBe(button);
     expect(button.getAttribute('aria-busy')).toBe('true');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
     expect(button.className.split(' ')).toEqual(expect.arrayContaining(['ui-pill--loading', 'ui-pill--accent']));
+  });
+
+  it('acts again once it stops loading', () => {
+    const onClick = vi.fn();
+    const { rerender } = render(<PillAction loading onClick={onClick}>Abrir</PillAction>);
+    rerender(<PillAction onClick={onClick}>Abrir</PillAction>);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir' }));
+
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Abrir' }).hasAttribute('aria-disabled')).toBe(false);
   });
 });
 
@@ -285,15 +325,32 @@ describe('Segmented', () => {
     expect(screen.getByRole('radiogroup').getAttribute('aria-disabled')).toBe('true');
   });
 
-  it('freezes the choice and says it is busy while loading', () => {
+  it('freezes the choice and says it is busy while loading, without taking the keyboard focus away', () => {
     const onChange = vi.fn();
-    render(<SegmentedHarness loading onChange={onChange} />);
+    const { rerender } = render(<Segmented label="Visualização" value="grid" options={views} onChange={onChange} />);
+    radio('Grade').focus();
 
+    rerender(<Segmented label="Visualização" value="grid" options={views} onChange={onChange} loading />);
     fireEvent.click(radio('Lista'));
+    expect(fireEvent.keyDown(radio('Grade'), { key: 'ArrowRight' })).toBe(false);
 
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.getByRole('radiogroup').getAttribute('aria-busy')).toBe('true');
-    expect(radio('Grade').disabled).toBe(true);
+    expect(radio('Grade').disabled).toBe(false);
+    expect(radio('Grade').getAttribute('aria-disabled')).toBe('true');
+    expect(document.activeElement).toBe(radio('Grade'));
+    expect(radio('Grade').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('chooses again once it stops loading', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<Segmented label="Visualização" value="grid" options={views} onChange={onChange} loading />);
+    rerender(<Segmented label="Visualização" value="grid" options={views} onChange={onChange} />);
+
+    fireEvent.click(radio('Lista'));
+
+    expect(onChange).toHaveBeenCalledWith('list');
+    expect(radio('Lista').hasAttribute('aria-disabled')).toBe(false);
   });
 
   it('is neither busy nor disabled by default', () => {
@@ -409,6 +466,17 @@ describe('Tabs', () => {
     expect(panel.getAttribute('aria-busy')).toBe('true');
     expect(panel.querySelector('.ui-skeleton')).not.toBeNull();
     expect(screen.queryByText('Conteúdo geral')).toBeNull();
+  });
+
+  it('gives every tab and panel an id no other instance shares', () => {
+    render(<><TabsHarness /><TabsHarness /></>);
+    const ids = [...screen.getAllByRole('tab'), ...screen.getAllByRole('tabpanel')].map((element) => element.id);
+
+    expect(ids).toHaveLength(10);
+    expect(new Set(ids).size).toBe(10);
+    expect(ids.every((id) => id !== '')).toBe(true);
+    const [firstPanel, secondPanel] = screen.getAllByRole('tabpanel');
+    expect(firstPanel!.getAttribute('aria-labelledby')).not.toBe(secondPanel!.getAttribute('aria-labelledby'));
   });
 
   it('is not busy once loaded', () => {

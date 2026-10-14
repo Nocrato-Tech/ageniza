@@ -1,17 +1,30 @@
 import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { X } from 'lucide-react';
 
-import { Button } from './button.js';
+import { IconButton } from './button.js';
+import { Skeleton } from './skeleton.js';
 
-export interface ModalProps {
+export type DialogSize = 'sm' | 'md' | 'lg';
+
+export interface DialogProps {
   title: string;
   closeLabel: string;
   onClose: () => void;
-  children: ReactNode;
+  /** One sentence under the title that says what the dialog is for; it describes the dialog to assistive technology. */
+  description?: string;
+  /** The buttons at the foot, right-aligned; the one primary action goes last. */
+  actions?: ReactNode;
+  size?: DialogSize;
+  /** Shows the reserved shape of the body instead of its content while it loads. */
+  loading?: boolean;
+  children?: ReactNode;
 }
 
-export function Modal({ title, closeLabel, onClose, children }: ModalProps) {
+/** A modal dialog on the native `<dialog>`: focus trap, inert background and Esc come from the platform. */
+export function Dialog({ title, closeLabel, onClose, description, actions, size = 'md', loading = false, children }: DialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  const descriptionId = useId();
   const pointerStartedOutside = useRef(false);
 
   useLayoutEffect(() => {
@@ -33,9 +46,11 @@ export function Modal({ title, closeLabel, onClose, children }: ModalProps) {
 
   return <dialog
     ref={dialogRef}
-    className="ui-modal"
+    className={`ui-modal ui-modal--${size}`}
     aria-labelledby={titleId}
+    aria-describedby={description === undefined ? undefined : descriptionId}
     aria-modal="true"
+    aria-busy={loading || undefined}
     onCancel={(event) => { event.preventDefault(); event.stopPropagation(); onClose(); }}
     onPointerDown={(event) => { pointerStartedOutside.current = event.target === event.currentTarget && outside(event.clientX, event.clientY); }}
     onClick={(event) => {
@@ -45,8 +60,10 @@ export function Modal({ title, closeLabel, onClose, children }: ModalProps) {
   >
     <div className="ui-modal__heading">
       <h2 id={titleId}>{title}</h2>
-      <Button variant="ghost" onClick={onClose} aria-label={closeLabel}><span aria-hidden="true">×</span></Button>
+      <IconButton label={closeLabel} icon={<X />} onClick={onClose} />
     </div>
-    {children}
+    {description !== undefined && <p id={descriptionId} className="ui-modal__description">{description}</p>}
+    {loading ? <><Skeleton /><Skeleton /></> : children}
+    {actions !== undefined && <div className="ui-modal__actions">{actions}</div>}
   </dialog>;
 }
