@@ -256,19 +256,19 @@ export const componentEntries: readonly ComponentEntry[] = [
     examples: [
       {
         label: 'ao clique',
-        render: (state) => <Popover label="Detalhes do post" disabled={state === 'disabled'} loading={state === 'loading'}
+        render: (state) => <div className="ds-floating-room"><Popover label="Detalhes do post" disabled={state === 'disabled'} loading={state === 'loading'}
           trigger={(trigger) => <Button variant="secondary" {...trigger}>Ver detalhes</Button>}>
           <strong>Carrossel: Pão de fermentação natural</strong>
           <span>03 de ago. · Instagram</span>
-        </Popover>
+        </Popover></div>
       },
       {
         label: 'ao passar o mouse (300 ms) ou focar',
-        render: (state) => <Popover label="Prévia do post" openOn="hover" placement="bottom-end" disabled={state === 'disabled'} loading={state === 'loading'}
+        render: (state) => <div className="ds-floating-room"><Popover label="Prévia do post" openOn="hover" placement="bottom-end" disabled={state === 'disabled'} loading={state === 'loading'}
           trigger={(trigger) => <Button variant="ghost" {...trigger}>Prévia</Button>}>
           <strong>Reels: Receita do bolo de fubá</strong>
           <span>arraste para outro dia</span>
-        </Popover>
+        </Popover></div>
       }
     ]
   },

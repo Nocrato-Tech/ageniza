@@ -72,6 +72,8 @@
 .ds-component th, .ds-component td { padding: var(--space-3); border-bottom: 1px solid var(--border-subtle); text-align: left; vertical-align: top; font: var(--body-md); }
 .ds-component th small { display: block; font: var(--caption); color: var(--text-muted); }
 .ds-na { color: var(--text-muted); }
+/* A floating card hangs below its trigger inside a scroll box, which would clip it: this keeps the room it needs. */
+.ds-floating-room { padding-bottom: 7rem; }
 
 .ds-backdrop { display: inline-block; padding: var(--space-3); border-radius: var(--radius-md); }
 .ds-backdrop--light { background: var(--color-white); }

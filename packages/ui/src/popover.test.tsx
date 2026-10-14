@@ -223,7 +223,122 @@ describe('Popover on hover', () => {
     rest(300);
     expect(card()).not.toBeNull();
     leave(trigger(), 'mouse');
+    rest(150);
     expect(card()).toBeNull();
+  });
+
+  it('waits 150 ms after the mouse leaves before it closes, and no longer', () => {
+    render(<Harness openOn="hover" />);
+    enter(trigger(), 'mouse');
+    rest(300);
+
+    leave(trigger(), 'mouse');
+    rest(149);
+    expect(card()).not.toBeNull();
+
+    rest(1);
+    expect(card()).toBeNull();
+  });
+
+  it('waits as long as hoverLeaveDelay says', () => {
+    render(<Harness openOn="hover" hoverLeaveDelay={400} />);
+    enter(trigger(), 'mouse');
+    rest(300);
+
+    leave(trigger(), 'mouse');
+    rest(399);
+    expect(card()).not.toBeNull();
+
+    rest(1);
+    expect(card()).toBeNull();
+  });
+
+  it('stays open when the mouse crosses the gap from the trigger onto the card, and keeps staying open', () => {
+    const onOpenChange = vi.fn();
+    render(<Harness openOn="hover" onOpenChange={onOpenChange} />);
+    enter(trigger(), 'mouse');
+    rest(300);
+
+    leave(trigger(), 'mouse');
+    rest(100);
+    enter(card()!, 'mouse');
+    rest(1000);
+
+    expect(card()).not.toBeNull();
+    expect(onOpenChange).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('closes once the mouse leaves both the trigger and the card', () => {
+    render(<Harness openOn="hover" />);
+    enter(trigger(), 'mouse');
+    rest(300);
+    leave(trigger(), 'mouse');
+    enter(card()!, 'mouse');
+
+    leave(card()!, 'mouse');
+    rest(149);
+    expect(card()).not.toBeNull();
+
+    rest(1);
+    expect(card()).toBeNull();
+  });
+
+  it('lets the mouse go back from the card to the trigger without closing', () => {
+    render(<Harness openOn="hover" />);
+    enter(trigger(), 'mouse');
+    rest(300);
+    leave(trigger(), 'mouse');
+    enter(card()!, 'mouse');
+
+    leave(card()!, 'mouse');
+    rest(100);
+    enter(trigger(), 'mouse');
+    rest(1000);
+
+    expect(card()).not.toBeNull();
+  });
+
+  it('closes on Esc while the mouse is on the card, and gives the focus back', () => {
+    render(<Harness openOn="hover" />);
+    enter(trigger(), 'mouse');
+    rest(300);
+    leave(trigger(), 'mouse');
+    enter(card()!, 'mouse');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(card()).toBeNull();
+    expect(document.activeElement).toBe(trigger());
+  });
+
+  it('drops the pending close when it unmounts, so nothing fires afterwards', () => {
+    const onOpenChange = vi.fn();
+    const { unmount } = render(<Harness openOn="hover" onOpenChange={onOpenChange} />);
+    enter(trigger(), 'mouse');
+    rest(300);
+    leave(trigger(), 'mouse');
+    expect(vi.getTimerCount()).toBe(1);
+
+    unmount();
+    rest(1000);
+
+    expect(vi.getTimerCount()).toBe(0);
+    expect(onOpenChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps one timer however often the mouse goes back and forth', () => {
+    render(<Harness openOn="hover" />);
+    enter(trigger(), 'mouse');
+    rest(300);
+
+    leave(trigger(), 'mouse');
+    enter(card()!, 'mouse');
+    leave(card()!, 'mouse');
+    enter(trigger(), 'mouse');
+    leave(trigger(), 'mouse');
+
+    expect(vi.getTimerCount()).toBe(1);
   });
 
   it('never opens on touch or pen', () => {

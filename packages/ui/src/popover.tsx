@@ -24,6 +24,8 @@ export interface PopoverProps {
   openOn?: 'click' | 'hover';
   /** How long a mouse has to rest before a hover card opens, in ms. */
   hoverDelay?: number;
+  /** How long a hover card waits after the mouse leaves before it closes, in ms: the time to cross the gap onto the card (WCAG 1.4.13). */
+  hoverLeaveDelay?: number;
   /** Where the card sits; it does not flip at the edge of the screen, so pick the side with room. */
   placement?: PopoverPlacement;
   onOpenChange?: (open: boolean) => void;
@@ -42,7 +44,7 @@ const keyboardFocus = (target: EventTarget): boolean => {
 };
 
 /** A floating card anchored to its trigger: Esc and a press outside close it and give focus back to the trigger. */
-export function Popover({ label, trigger, children, openOn = 'click', hoverDelay = 300, placement = 'bottom-start', onOpenChange, disabled = false, loading = false, className }: PopoverProps) {
+export function Popover({ label, trigger, children, openOn = 'click', hoverDelay = 300, hoverLeaveDelay = 150, placement = 'bottom-start', onOpenChange, disabled = false, loading = false, className }: PopoverProps) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -89,6 +91,7 @@ export function Popover({ label, trigger, children, openOn = 'click', hoverDelay
 
   const onPointerEnter = (event: PointerEvent): void => {
     if (openOn !== 'hover' || disabled || event.pointerType !== 'mouse') return;
+    // Back from the gap onto the card (or the trigger): this drops the close that was waiting, and the card stays.
     clearTimer();
     timerRef.current = setTimeout(() => change(true), hoverDelay);
   };
@@ -96,7 +99,8 @@ export function Popover({ label, trigger, children, openOn = 'click', hoverDelay
   const onPointerLeave = (event: PointerEvent): void => {
     if (openOn !== 'hover' || event.pointerType !== 'mouse') return;
     clearTimer();
-    change(false);
+    // The card sits a gap away from the trigger, so the mouse leaves both on its way across: wait before closing.
+    if (open) timerRef.current = setTimeout(() => change(false), hoverLeaveDelay);
   };
 
   const onFocus = (event: FocusEvent): void => {
