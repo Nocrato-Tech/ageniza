@@ -9,9 +9,11 @@ export { Field, type FieldControlProps, type FieldProps } from './field.js';
 export { Pagination, paginationItems, type PaginationProps } from './pagination.js';
 export { Pill, PillAction, type PillActionProps, type PillProps, type PillTone } from './pill.js';
 export { Popover, type PopoverPlacement, type PopoverProps, type PopoverTriggerProps } from './popover.js';
+export { Realce, type RealceProps } from './realce.js';
 export { Segmented, type SegmentedOption, type SegmentedProps } from './segmented.js';
 export { Select, type SelectOption, type SelectProps } from './select.js';
 export { Skeleton } from './skeleton.js';
+export { FormatTag, LateBadge, StatusTag, type FormatTagFormat, type FormatTagProps, type StatusTagProps, type StatusTagStatus } from './tags.js';
 export { Tabs, type TabItem, type TabsProps } from './tabs.js';
 export { Textarea, type TextareaProps } from './textarea.js';
 

@@ -8,7 +8,7 @@ const reducedMotionBlocks = () => [...css.matchAll(/@media \(prefers-reduced-mot
 
 const BUTTONS = ['primary', 'secondary', 'ghost', 'destructive'];
 const CONTROLS = ['.ui-pill--action', '.ui-segmented__option', '.ui-tabs__tab', '.ui-tabs__panel'];
-const COMPONENT_RULES = /^\s*\.(ui-icon|ui-icon-button|ui-pill|ui-segmented|ui-tabs|ui-field|ui-text-input|ui-select|ui-textarea|ui-popover|ui-popover-anchor)[^{}]*\{([^{}]*)\}/gm;
+const COMPONENT_RULES = /^\s*\.(ui-icon|ui-icon-button|ui-pill|ui-segmented|ui-tabs|ui-field|ui-text-input|ui-select|ui-textarea|ui-popover|ui-popover-anchor|ui-format-tag|ui-status-tag|ui-late-badge)[^{}]*\{([^{}]*)\}/gm;
 
 describe('component states', () => {
   it.each(BUTTONS)('gives the %s button a hover that changes how it looks', (variant) => {
@@ -345,5 +345,105 @@ describe('dialog and popover', () => {
   it.each(['light', 'dark'] as const)('keeps the text AA on the surface it sits on in %s', (theme) => {
     expect(contrastOf(theme, 'var(--text-primary)', rule('.ui-popover').get('background')!)).toBeGreaterThanOrEqual(4.5);
     expect(contrastOf(theme, rule('.ui-modal__description').get('color')!, rule('.ui-modal').get('background')!)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('format and state tags', () => {
+  const FORMATS = ['carousel', 'reels', 'static'] as const;
+  const STATUSES = ['ready', 'waiting', 'adjust', 'published', 'production'] as const;
+
+  it.each(FORMATS)('fills the %s tag with its own tag pair, not the tint of the card', (format) => {
+    const tag = rule(`.ui-format-tag--${format}`);
+
+    expect(tag.get('background')).toBe(`var(--format-${format}-tag-bg)`);
+    expect(tag.get('color')).toBe(`var(--format-${format}-tag-fg)`);
+  });
+
+  it('puts the colour of a state on its icon and keeps the label on text/secondary, with an outline', () => {
+    expect(rule('.ui-status-tag').get('color')).toBe('var(--text-secondary)');
+    expect(rule('.ui-status-tag').get('border-color')).toBe('var(--border-default)');
+    for (const status of STATUSES) expect(rule(`.ui-status-tag--${status} .ui-icon`).get('color'), status).toBe(`var(--status-${status}-fg)`);
+  });
+
+  it('draws the late badge as a solid block on the danger action pair', () => {
+    expect(rule('.ui-late-badge').get('background')).toBe('var(--action-danger-bg)');
+    expect(rule('.ui-late-badge').get('color')).toBe('var(--action-danger-fg)');
+  });
+
+  it('rounds the tags as a chip and sizes the state icon at 12px', () => {
+    for (const selector of ['.ui-format-tag', '.ui-status-tag', '.ui-late-badge']) expect(rule(selector).get('border-radius'), selector).toBe('var(--radius-sm)');
+    expect(rule('.ui-status-tag .ui-icon > svg').get('width')).toBe('0.75rem');
+    expect(rule('.ui-status-tag .ui-icon > svg').get('height')).toBe('0.75rem');
+  });
+
+  describe.each(['light', 'dark'] as const)('in %s', (theme) => {
+    it.each(FORMATS)('keeps the %s label AA on its fill', (format) => {
+      const tag = rule(`.ui-format-tag--${format}`);
+
+      expect(contrastOf(theme, tag.get('color')!, tag.get('background')!), format).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it.each(STATUSES)('keeps the %s icon 3:1 on the canvas and the surface', (status) => {
+      const icon = rule(`.ui-status-tag--${status} .ui-icon`).get('color')!;
+
+      for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) expect(contrastOf(theme, icon, surface), `${status} on ${surface}`).toBeGreaterThanOrEqual(3);
+    });
+
+    it('keeps the label of a state AA on the canvas and the surface', () => {
+      for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) expect(contrastOf(theme, rule('.ui-status-tag').get('color')!, surface)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it('keeps the late badge AA on its fill', () => {
+      expect(contrastOf(theme, rule('.ui-late-badge').get('color')!, rule('.ui-late-badge').get('background')!)).toBeGreaterThanOrEqual(4.5);
+    });
+  });
+});
+
+describe('avatar attention ring', () => {
+  const ringOf = (selector: string): string => /0 0 0 4px (var\(--[\w-]+\))$/.exec(rule(selector).get('box-shadow')!)![1]!;
+
+  it('is a 2px gap and a 4px ring, with the gap taken from the background the avatar sits on', () => {
+    expect(rule('.ui-avatar--attention').get('box-shadow')).toBe('0 0 0 2px var(--ui-avatar-gap, var(--bg-canvas)), 0 0 0 4px var(--status-late-fg)');
+  });
+
+  it('is the ring of the story avatar of the screen as well, so both agree', () => {
+    expect(ringOf('.content-story__avatar--attention')).toBe(ringOf('.ui-avatar--attention'));
+  });
+
+  it.each(['light', 'dark'] as const)('is 3:1 on the canvas and the surface in %s, for the Avatar and for the story avatar', (theme) => {
+    for (const selector of ['.ui-avatar--attention', '.content-story__avatar--attention']) {
+      for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) expect(contrastOf(theme, ringOf(selector), surface), `${selector} on ${surface}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('hides the reason from the eyes and leaves it to assistive technology', () => {
+    const reason = rule('.ui-avatar__attention');
+
+    expect(reason.get('position')).toBe('absolute');
+    expect(reason.get('clip-path')).toBe('inset(50%)');
+    expect(rule('.ui-avatar').get('position')).toBe('relative');
+  });
+});
+
+describe('Realce', () => {
+  it.each(['light', 'dark'] as const)('keeps its text AA on the indigo in %s', (theme) => {
+    expect(contrastOf(theme, rule('.ui-realce').get('color')!, rule('.ui-realce').get('background')!)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('is the action pair, carries its fill over a line break and has uneven corners', () => {
+    const realce = rule('.ui-realce');
+
+    expect(realce.get('background')).toBe('var(--action-primary-bg)');
+    expect(realce.get('color')).toBe('var(--action-primary-fg)');
+    expect(realce.get('box-decoration-break')).toBe('clone');
+    expect(realce.get('border-radius')!.split(' ')).toHaveLength(4);
+  });
+
+  it('sweeps in for 240ms from the left and not at all for people who ask for less motion', () => {
+    const base = css.replace(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/g, '');
+
+    expect(declarationsFor(base, '.ui-realce--sweep').get('animation')).toBe('ui-realce-sweep var(--motion-slow) var(--motion-easing-standard) both');
+    expect(declarationsFor(css, 'from').get('clip-path')).toBe('inset(0 100% 0 0)');
+    expect(declarationsFor(reducedMotionBlocks(), '.ui-realce--sweep').get('animation')).toBe('none');
   });
 });

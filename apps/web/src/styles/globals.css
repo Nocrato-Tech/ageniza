@@ -529,6 +529,7 @@ a.ui-button {
 
 /* Avatar, BadgeCard, Select and Pagination: docs/design-system.md section 13 */
 .ui-avatar {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3407,9 +3408,10 @@ a.client-general__block:hover {
   border-radius: var(--radius-full);
 }
 
-/* The ring: something of this client asks for action (a change asked, a day passed, a deadline in two days). */
+/* The ring: something of this client asks for action (a change asked, a day passed, a deadline in two days).
+   Drawn with the Avatar's attention colour, which is 3:1 on the surface in both themes (indigo/550 was 2.97:1 in the dark). */
 .content-story__avatar--attention {
-  box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--action-primary-bg);
+  box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--status-late-fg);
 }
 
 .content-story__name {
@@ -4356,4 +4358,122 @@ a.client-general__block:hover {
   display: block;
   flex: none;
   max-width: 100%;
+}
+
+/* Domain components: docs/design-system.md section 13. A tag is static and its words carry the meaning; colour only helps. */
+.ui-format-tag,
+.ui-status-tag,
+.ui-late-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Filled by format: the label's own fill and text pair (`format/*/tag/*`), never the card's tint. */
+.ui-format-tag {
+  font-weight: 600;
+}
+
+.ui-format-tag--carousel {
+  background: var(--format-carousel-tag-bg);
+  color: var(--format-carousel-tag-fg);
+}
+
+.ui-format-tag--reels {
+  background: var(--format-reels-tag-bg);
+  color: var(--format-reels-tag-fg);
+}
+
+.ui-format-tag--static {
+  background: var(--format-static-tag-bg);
+  color: var(--format-static-tag-fg);
+}
+
+/* Outlined by state: the colour is the icon's (non-text, 3:1) and the label stays `text/secondary`. */
+.ui-status-tag {
+  border-color: var(--border-default);
+  color: var(--text-secondary);
+}
+
+.ui-status-tag .ui-icon > svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.ui-status-tag--ready .ui-icon {
+  color: var(--status-ready-fg);
+}
+
+.ui-status-tag--waiting .ui-icon {
+  color: var(--status-waiting-fg);
+}
+
+.ui-status-tag--adjust .ui-icon {
+  color: var(--status-adjust-fg);
+}
+
+.ui-status-tag--published .ui-icon {
+  color: var(--status-published-fg);
+}
+
+.ui-status-tag--production .ui-icon {
+  color: var(--status-production-fg);
+}
+
+/* The one state in a solid block, on the danger action's own pair. */
+.ui-late-badge {
+  background: var(--action-danger-bg);
+  color: var(--action-danger-fg);
+  font-weight: 600;
+}
+
+/* Attention ring of the Avatar: a 2px gap in the colour it sits on, then the ring in the late-state colour, which is 3:1
+   on the canvas and the surface in both themes. `--ui-avatar-gap` names the background when it is not the canvas. */
+.ui-avatar--attention {
+  box-shadow: 0 0 0 2px var(--ui-avatar-gap, var(--bg-canvas)), 0 0 0 4px var(--status-late-fg);
+}
+
+.ui-avatar__attention {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Realce: the highlighter. Its corners are uneven on purpose, so they are the one shape that does not come from the radius scale. */
+.ui-realce {
+  padding: 0 var(--space-1);
+  border-radius: 0.1875rem 0.4375rem 0.25rem 0.5rem;
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.ui-realce--sweep {
+  animation: ui-realce-sweep var(--motion-slow) var(--motion-easing-standard) both;
+}
+
+@keyframes ui-realce-sweep {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-realce--sweep {
+    animation: none;
+  }
 }
