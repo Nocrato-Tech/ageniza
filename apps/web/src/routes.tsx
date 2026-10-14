@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import type { AuthSessionSnapshot } from './auth.js';
 import { AccountMenu } from './account-menu.js';
+import { DarkArea } from './area-theme.js';
 import { AgencyAreaLayout, AgencyHomePage, AgencyPermissionRoute } from './agency.js';
 import { LiveStatus } from '@ageniza/ui';
 import { ClientBrandStudyTab } from './brand-study.js';
@@ -82,7 +83,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="termos" element={<LegalDocumentPage document={termsOfUse} sibling={{ title: 'Política de Privacidade', to: '/privacidade' }} />} />
       <Route path="privacidade" element={<LegalDocumentPage document={privacyPolicy} sibling={{ title: 'Termos de Uso', to: '/termos' }} />} />
     </Route>
-    <Route path="agencia/:agenciaId" element={<SessionGate session={session}><SessionWatch /><AgencyAreaLayout /></SessionGate>}>
+    <Route path="agencia/:agenciaId" element={<DarkArea><SessionGate session={session}><SessionWatch /><AgencyAreaLayout /></SessionGate></DarkArea>}>
       <Route index element={<AgencyHomePage />} />
       <Route path="colaboradores" element={
         <AgencyPermissionRoute permission="colaborador.visualizar">

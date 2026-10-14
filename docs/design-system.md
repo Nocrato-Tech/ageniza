@@ -222,7 +222,7 @@ Implementados em [`apps/web/src/styles/themes/dark.css`](../apps/web/src/styles/
 
 `color/indigo/550 = #5B5FE8` foi escolhido, na página original, para manter contraste suficiente tanto com texto branco quanto contra a superfície escura. Por isso `text/link` no Dark não usa `color/indigo/550`: clareá-lo mais, para passar como texto sobre `bg/surface`, teria enfraquecido o contraste de `action/primary/fg` (branco) sobre ele. `text/link` usa `color/indigo/400`, o mesmo primitive já usado por `focus/ring`. A mesma lógica vale para `text/danger`: `color/red/700` já está no limite certo para servir de fundo sob texto branco (`action/danger/fg`), então `text/danger` no Dark usa um primitive próprio, `color/red/400`, mesma matiz clareada.
 
-Nada no app define `[data-theme="dark"]` ainda — este bloco não tem efeito visível até existir um seletor de tema.
+O app define `[data-theme="dark"]` em `<html>` em toda rota `/agencia/...` (`DarkArea`, `apps/web/src/area-theme.tsx`) e o tira ao sair. Portal, entrada e páginas públicas ficam no claro. Não há seletor de tema: a área decide (decisão `2026-10-14-agencia-sempre-escura-portal-e-entrada-sempre-claros`).
 
 ## 8. Spacing
 
