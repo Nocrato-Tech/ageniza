@@ -30,7 +30,7 @@ export const designTokens = {
   spacing: primitives.filter(startsWith('--space-')),
   radius: primitives.filter(startsWith('--radius-')),
   semantic: semantic.filter((token) => !token.name.startsWith('--shadow-')),
-  darkOverrides: new Set(parseTokens(darkCss).map((token) => token.name)),
+  darkOverrides: new Map(parseTokens(darkCss).map((token) => [token.name, token.value] as const)),
   fonts: typography.filter(startsWith('--font-')),
   typeScale: typography.filter((token) => !token.name.startsWith('--font-')),
   motion: parseTokens(motionCss),
@@ -42,3 +42,6 @@ export const colorFamily = (token: Token): string => token.name.slice('--color-'
 
 /** The group of a semantic token: `--text-muted` belongs to `text`. */
 export const semanticGroup = (token: Token): string => token.name.slice(2).split('-')[0]!;
+
+/** What a token holds in a theme: the dark stylesheet overrides the light value, and what it does not mention stays. */
+export const valueIn = (theme: 'light' | 'dark', token: Token): string => (theme === 'dark' ? designTokens.darkOverrides.get(token.name) : undefined) ?? token.value;

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
+import { ArrowRight, Plus } from 'lucide-react';
 import {
-  Avatar, BadgeCard, BrandSymbol, Button, ChoiceCard, ConfirmDialog, FieldMessage, Logo, LiveStatus, Menu, MenuItem, MenuSeparator,
+  Avatar, BadgeCard, BrandSymbol, Button, ChoiceCard, IconButton, Pill, PillAction, ConfirmDialog, FieldMessage, Logo, LiveStatus, Menu, MenuItem, MenuSeparator,
   Modal, Pagination, Select, Skeleton, Textarea, TextInput
 } from '@ageniza/ui';
 
@@ -64,6 +65,28 @@ export const componentEntries: readonly ComponentEntry[] = [
       label: size,
       render: (state: RenderedState) => <Button size={size} disabled={state === 'disabled'} loading={state === 'loading'}>Salvar</Button>
     }))
+  },
+  {
+    id: 'button-icons',
+    name: 'Button com ícone e IconButton',
+    covers: ['Button', 'IconButton'],
+    examples: [
+      { label: 'ícone antes', render: (state) => <Button leadingIcon={<Plus />} disabled={state === 'disabled'} loading={state === 'loading'}>Novo</Button> },
+      { label: 'ícone depois', render: (state) => <Button variant="secondary" trailingIcon={<ArrowRight />} disabled={state === 'disabled'} loading={state === 'loading'}>Abrir</Button> },
+      { label: 'só ícone', render: (state) => <IconButton label="Adicionar" icon={<Plus />} disabled={state === 'disabled'} loading={state === 'loading'} /> },
+      { label: 'só ícone, secundário', render: (state) => <IconButton variant="secondary" label="Adicionar" icon={<Plus />} disabled={state === 'disabled'} loading={state === 'loading'} /> }
+    ]
+  },
+  {
+    id: 'pill',
+    name: 'Pill e PillAction',
+    covers: ['Pill', 'PillAction'],
+    examples: [
+      { label: 'Pill neutra', render: (state) => stateOnly(state, ['default'], <Pill>12 conteúdos</Pill>) },
+      { label: 'Pill de destaque', render: (state) => stateOnly(state, ['default'], <Pill tone="accent" icon={<Plus />}>Hoje</Pill>) },
+      { label: 'PillAction neutra', render: (state) => <PillAction trailingIcon={<ArrowRight />} disabled={state === 'disabled'} loading={state === 'loading'}>Abrir</PillAction> },
+      { label: 'PillAction de destaque', render: (state) => <PillAction tone="accent" disabled={state === 'disabled'} loading={state === 'loading'}>Sua vez</PillAction> }
+    ]
   },
   {
     id: 'text-input',

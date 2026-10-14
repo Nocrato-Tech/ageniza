@@ -1,7 +1,7 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 
 import { componentEntries, type ComponentEntry, type RenderedState } from './components.js';
-import { colorFamily, designTokens, groupTokens, semanticGroup, type Token } from './tokens.js';
+import { colorFamily, designTokens, groupTokens, semanticGroup, valueIn, type Token } from './tokens.js';
 import './design-system.css';
 
 type ThemeName = 'light' | 'dark';
@@ -16,8 +16,8 @@ const sections = [
 
 const asVar = (token: Token): string => `var(${token.name})`;
 
-function TokenName({ token }: { token: Token }) {
-  return <><code className="ds-token__name">{token.name}</code><span className="ds-token__value">{token.value}</span></>;
+function TokenName({ token, theme }: { token: Token; theme?: ThemeName }) {
+  return <><code className="ds-token__name">{token.name}</code><span className="ds-token__value">{theme === undefined ? token.value : valueIn(theme, token)}</span></>;
 }
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
@@ -45,7 +45,7 @@ function SemanticTokens() {
     {groupTokens(designTokens.semantic, semanticGroup).map((group) => <div key={group.key} className="ds-group">
       <h4>{group.key}</h4>
       <ul className="ds-list">{group.tokens.map((token) => <li key={token.name} className="ds-token">
-        <SemanticSwatch token={token} /><TokenName token={token} />
+        <SemanticSwatch token={token} /><TokenName token={token} theme={theme.name} />
         {theme.name === 'dark' && designTokens.darkOverrides.has(token.name) && <span className="ds-token__flag">sobrescrito no escuro</span>}
       </li>)}</ul>
     </div>)}
@@ -73,11 +73,11 @@ function SpaceAndRadius() {
 }
 
 function Elevation() {
-  return <div className="ds-themes">{themes.map((theme) => <div key={theme.name} data-theme={theme.name} className="ds-theme-panel">
+  return <div className="ds-themes">{themes.map((theme) => <div key={theme.name} data-theme={theme.name} className="ds-theme-panel" data-testid={`elevation-${theme.name}`}>
     <h3>{theme.label}</h3>
     <ul className="ds-list">
       {designTokens.elevation.map((token) => <li key={token.name} className="ds-token">
-        <span className="ds-elevation" style={{ boxShadow: asVar(token) }} aria-hidden="true" /><TokenName token={token} />
+        <span className="ds-elevation" style={{ boxShadow: asVar(token) }} aria-hidden="true" /><TokenName token={token} theme={theme.name} />
       </li>)}
       {['--bg-canvas', '--bg-surface', '--bg-elevated'].map((name) => <li key={name} className="ds-token">
         <span className="ds-elevation" style={{ background: `var(${name})` }} aria-hidden="true" /><code className="ds-token__name">{name}</code><span className="ds-token__value">separa por superfície e borda</span>
