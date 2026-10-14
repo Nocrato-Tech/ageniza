@@ -4537,3 +4537,158 @@ a.client-general__block:hover {
     font: var(--heading-lg);
   }
 }
+
+/* ClientStrip: the clients as stories. The one you are on carries the highlighter and a surface, not only a colour. */
+.ui-client-strip__list {
+  display: flex;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-1) 0 var(--space-2);
+  overflow-x: auto;
+  list-style: none;
+}
+
+.ui-client-strip__item {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: var(--space-2);
+  width: 5.75rem;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition:
+    background-color var(--motion-fast),
+    color var(--motion-fast);
+}
+
+.ui-client-strip__item:hover,
+.ui-client-strip__item[aria-current='page'] {
+  --ui-avatar-gap: var(--bg-hover);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* The ring of a tab-like item sits inside a scroll box that would clip an outer one. */
+.ui-client-strip__item:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+.ui-client-strip__item .ui-avatar--md {
+  width: 3rem;
+  height: 3rem;
+}
+
+.ui-client-strip__name {
+  font: var(--caption);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* FilterBar: the label above, the choice below, a divider between filters. */
+.ui-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.ui-filter-bar__item {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0 var(--space-4);
+}
+
+.ui-filter-bar__item:first-child {
+  padding-left: 0;
+}
+
+.ui-filter-bar__item + .ui-filter-bar__item {
+  border-left: 1px solid var(--border-subtle);
+}
+
+.ui-filter-bar__label {
+  color: var(--text-muted);
+  font: var(--caption);
+}
+
+.ui-filter-bar__control {
+  min-height: 2rem;
+  max-width: 100%;
+  margin-left: calc(var(--space-2) * -1);
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--label-md);
+  cursor: pointer;
+  transition: background-color var(--motion-fast);
+}
+
+.ui-filter-bar__control:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.ui-filter-bar__control:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ui-filter-bar__item:has(:disabled) > .ui-filter-bar__label {
+  opacity: 0.55;
+}
+
+.ui-filter-bar__item--loading > .ui-filter-bar__control {
+  cursor: progress;
+}
+
+.ui-filter-bar__item--loading > .ui-filter-bar__label::after {
+  content: '';
+  display: inline-block;
+  width: 0.75em;
+  height: 0.75em;
+  margin-left: var(--space-2);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--radius-full);
+  vertical-align: -0.1em;
+  animation: ui-button-spin var(--motion-slow) linear infinite;
+}
+
+/* On a phone the filters stack and the dividers turn horizontal. */
+@media (max-width: 40rem) {
+  .ui-filter-bar {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .ui-filter-bar__item,
+  .ui-filter-bar__item:first-child {
+    padding: 0;
+  }
+
+  .ui-filter-bar__item + .ui-filter-bar__item {
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-subtle);
+    border-left: 0;
+  }
+
+  .ui-filter-bar__control {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-client-strip__item,
+  .ui-filter-bar__control {
+    transition: none;
+  }
+
+  .ui-filter-bar__item--loading > .ui-filter-bar__label::after {
+    animation: none;
+  }
+}

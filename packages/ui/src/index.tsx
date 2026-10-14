@@ -7,8 +7,10 @@ export { Logo, BrandSymbol, type LogoProps, type LogoVariant, type BrandSymbolPr
 export { Mascot, type MascotProps, type MascotVariant } from './mascot.js';
 export { ConfirmDialog, Menu, MenuItem, MenuSeparator } from './menu.js';
 export { EmptyState, type EmptyStateProps } from './empty-state.js';
+export { ClientStrip, type ClientStripItem, type ClientStripLinkProps, type ClientStripProps } from './client-strip.js';
 export { Dialog, Dialog as Modal, type DialogProps, type DialogProps as ModalProps, type DialogSize } from './dialog.js';
 export { Field, type FieldControlProps, type FieldProps } from './field.js';
+export { FilterBar, FilterBarItem, FilterBarSelect, type FilterBarControlProps, type FilterBarItemProps, type FilterBarProps, type FilterBarSelectProps } from './filter-bar.js';
 export { Pagination, paginationItems, type PaginationProps } from './pagination.js';
 export { Pill, PillAction, type PillActionProps, type PillProps, type PillTone } from './pill.js';
 export { Popover, type PopoverPlacement, type PopoverProps, type PopoverTriggerProps } from './popover.js';
