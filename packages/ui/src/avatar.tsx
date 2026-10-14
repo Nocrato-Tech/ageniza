@@ -8,6 +8,11 @@ export interface AvatarProps extends HTMLAttributes<HTMLSpanElement> {
   /** Signed photo URL, or null when the person has no photo. */
   photoUrl?: string | null;
   size?: AvatarSize;
+  /**
+   * Why something of this person asks for action ("em ajuste, em atraso"). It draws the attention ring and is read by
+   * assistive technology, so the ring is never the only signal.
+   */
+  attention?: string;
 }
 
 /**
@@ -25,14 +30,18 @@ export const avatarInitials = (name: string): string => {
 /**
  * A person's photo, or their initials when there is none (never a generic person icon, which does
  * not distinguish anyone). The avatar is decorative: the name is always shown next to it, so the
- * image is `alt=""` and the initials are hidden from assistive technology.
+ * image is `alt=""` and the initials are hidden from assistive technology. The one thing it may say is `attention`.
  */
-export function Avatar({ name, photoUrl, size = 'md', className, ...props }: AvatarProps) {
+export function Avatar({ name, photoUrl, size = 'md', attention, className, ...props }: AvatarProps) {
   return (
-    <span className={['ui-avatar', `ui-avatar--${size}`, className].filter(Boolean).join(' ')} {...props}>
+    <span
+      className={['ui-avatar', `ui-avatar--${size}`, attention !== undefined && 'ui-avatar--attention', className].filter(Boolean).join(' ')}
+      {...props}
+    >
       {photoUrl === null || photoUrl === undefined
         ? <span className="ui-avatar__initials" aria-hidden="true">{avatarInitials(name)}</span>
         : <img className="ui-avatar__photo" src={photoUrl} alt="" />}
+      {attention !== undefined && <span className="ui-avatar__attention">{attention}</span>}
     </span>
   );
 }

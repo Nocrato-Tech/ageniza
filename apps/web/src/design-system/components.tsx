@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { ArrowRight, LayoutGrid, List, Plus } from 'lucide-react';
 import {
-  Avatar, BadgeCard, BrandSymbol, Button, ChoiceCard, IconButton, Pill, PillAction, ConfirmDialog, Dialog, Field, FieldMessage, Logo, LiveStatus, Menu, MenuItem, MenuSeparator,
-  Modal, Pagination, Popover, Segmented, Select, Skeleton, Tabs, Textarea, TextInput
+  Avatar, BadgeCard, BrandSymbol, Button, ChoiceCard, IconButton, Pill, PillAction, ConfirmDialog, Dialog, Field, FieldMessage, FormatTag, LateBadge, Logo, LiveStatus, Menu, MenuItem, MenuSeparator,
+  Modal, Pagination, Popover, Realce, Segmented, Select, Skeleton, StatusTag, Tabs, Textarea, TextInput
 } from '@ageniza/ui';
 
 /** `hover` and `focus` are real interactions on the default render, so they are not states a component implements. */
@@ -190,7 +190,43 @@ export const componentEntries: readonly ComponentEntry[] = [
     id: 'avatar',
     name: 'Avatar',
     covers: ['Avatar'],
-    examples: (['sm', 'md', 'lg'] as const).map((size) => ({ label: size, render: (state: RenderedState) => stateOnly(state, ['default'], <Avatar name="Maria Souza" size={size} />) }))
+    examples: [
+      ...(['sm', 'md', 'lg'] as const).map((size) => ({ label: size, render: (state: RenderedState) => stateOnly(state, ['default'], <Avatar name="Maria Souza" size={size} />) })),
+      { label: 'com anel de atenção', render: (state: RenderedState) => stateOnly(state, ['default'], <Avatar name="Padaria Central" size="lg" attention="em ajuste, em atraso" />) }
+    ]
+  },
+  {
+    id: 'format-tag',
+    name: 'FormatTag',
+    covers: ['FormatTag'],
+    examples: [
+      { label: 'carrossel', render: (state) => stateOnly(state, ['default'], <FormatTag format="carousel">Carrossel</FormatTag>) },
+      { label: 'reels', render: (state) => stateOnly(state, ['default'], <FormatTag format="reels">Reels</FormatTag>) },
+      { label: 'estático', render: (state) => stateOnly(state, ['default'], <FormatTag format="static">Estático</FormatTag>) }
+    ]
+  },
+  {
+    id: 'status-tag',
+    name: 'StatusTag',
+    covers: ['StatusTag'],
+    examples: ([
+      ['ready', 'Pronto para publicar'], ['waiting', 'Aguardando'], ['adjust', 'Em ajuste'], ['published', 'Publicado'], ['production', 'Em produção']
+    ] as const).map(([status, label]) => ({ label: status, render: (state: RenderedState) => stateOnly(state, ['default'], <StatusTag status={status}>{label}</StatusTag>) }))
+  },
+  {
+    id: 'late-badge',
+    name: 'LateBadge',
+    covers: ['LateBadge'],
+    examples: [{ label: 'padrão', render: (state) => stateOnly(state, ['default'], <LateBadge />) }]
+  },
+  {
+    id: 'realce',
+    name: 'Realce',
+    covers: ['Realce'],
+    examples: [
+      { label: 'parado', render: (state) => stateOnly(state, ['default'], <span>Você tem <Realce>2 posts</Realce> esperando</span>) },
+      { label: 'varrido', render: (state) => stateOnly(state, ['default'], <span>Hoje, dia <Realce sweep>13</Realce></span>) }
+    ]
   },
   {
     id: 'badge-card',
