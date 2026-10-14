@@ -15,7 +15,9 @@ type ButtonLinkOwnProps = {
 export type ButtonLinkProps<C extends ElementType = 'a'> = ButtonLinkOwnProps & {
   /** The element or component that navigates: `a` by default, the router's `Link` in the app (`as={Link} to="/clientes"`). */
   as?: C;
-} & Omit<ComponentPropsWithoutRef<C>, keyof ButtonLinkOwnProps | 'as'>;
+} & Omit<ComponentPropsWithoutRef<C>, keyof ButtonLinkOwnProps | 'as'>
+  // An anchor without an address is not a link: the plain form needs `href` (a component given in `as` asks for its own, such as `to`).
+  & (C extends 'a' ? { href: string } : unknown);
 
 /**
  * Navigation that looks like a `Button`: same variants, sizes, icons and look, but a real link, so it opens in a new tab,

@@ -712,7 +712,7 @@ describe('the month calendar', () => {
     const { container } = render_(impl, contentsUrl(padaria.id));
 
     expect(await screen.findByText(hostile)).toBeTruthy();
-    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('img:not([src^="/brand/"])')).toBeNull();
     expect(container.querySelector('.content-card b')).toBeNull();
   });
 

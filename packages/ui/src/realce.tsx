@@ -7,7 +7,7 @@ export type RealceProps = HTMLAttributes<HTMLSpanElement> & {
 
 /**
  * The block of indigo behind the one word that asks for a decision now, like a highlighter (it was "Marca" until the logo
- * took that name). Full indigo belongs to the action, today and the viewer's turn, so use it for nothing else.
+ * took that name). Full indigo belongs to four things: the action, today, the viewer's turn and the selected client, so use it for nothing else.
  */
 export function Realce({ sweep = false, className, children, ...props }: RealceProps) {
   return (
