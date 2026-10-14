@@ -8,10 +8,11 @@ import {
   InvitationPreviewResponseSchema,
   type InvitationContext
 } from '@ageniza/contracts';
-import { Button, FieldMessage, LiveStatus, Skeleton, TextInput } from '@ageniza/ui';
+import { Button, Field, LiveStatus, Skeleton, TextInput } from '@ageniza/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuthSession, useAuthSessionStore } from './auth.js';
+import { AuthMessage, AuthPanel } from './auth-layout.js';
 import { apiPath } from './api-path.js';
 import { contextDestination, rememberContext, type ContextTarget } from './context-destination.js';
 import { useDocumentTitle } from './document-title.js';
@@ -148,43 +149,36 @@ export function InvitationPage() {
 
   // Once the invitation is accepted the destination is direct; the accepted context is already known.
   if (accepted) {
-    return <section className="form-panel" aria-labelledby="invite-title">
-      <h1 id="invite-title">Você foi convidado</h1>
+    return <AuthPanel titleId="invite-title" title="Você foi convidado">
       <LiveStatus>Entrando…</LiveStatus>
-    </section>;
+    </AuthPanel>;
   }
 
   if (preview.isPending) {
-    return <section className="form-panel" aria-labelledby="invite-title">
-      <h1 id="invite-title">Convite</h1>
+    return <AuthPanel titleId="invite-title" title="Convite">
       <LiveStatus>Carregando o convite…</LiveStatus>
       <div className="ui-choice-list"><Skeleton /><Skeleton /></div>
-    </section>;
+    </AuthPanel>;
   }
 
   if (preview.isError) {
     const isInvalid = preview.error instanceof HttpClientError && preview.error.status === 410;
-    return <section className="form-panel" aria-labelledby="invite-title">
-      <h1 id="invite-title">{isInvalid ? INVITATION_INVALID : 'Convite'}</h1>
-      {isInvalid
-        ? <>
-          <p>Convites valem por 7 dias e só podem ser usados uma vez.</p>
-          <p>Peça um novo convite a quem administra a agência.</p>
-        </>
-        : <>
-          <p role="alert">Não foi possível carregar o convite.</p>
-          <Button onClick={() => { void preview.refetch(); }} disabled={preview.isFetching}>Tentar de novo</Button>
-        </>}
-    </section>;
+    return isInvalid
+      ? <AuthPanel titleId="invite-title" title={INVITATION_INVALID} lead="Convites valem por 7 dias e só podem ser usados uma vez.">
+        <p className="auth-note">Peça um novo convite a quem administra a agência.</p>
+      </AuthPanel>
+      : <AuthPanel titleId="invite-title" title="Convite">
+        <AuthMessage tone="danger" role="alert">Não foi possível carregar o convite.</AuthMessage>
+        <Button className="auth-submit" onClick={() => { void preview.refetch(); }} disabled={preview.isFetching}>Tentar de novo</Button>
+      </AuthPanel>;
   }
 
   const { agency, client, email, accountExists } = preview.data;
   const connectedWithAnotherAccount = session.user !== null && session.user.email !== email;
   const showMismatch = mismatch || (fromInviteLogin && connectedWithAnotherAccount);
 
-  return <section className="form-panel" aria-labelledby="invite-title">
-    <h1 id="invite-title">Você foi convidado</h1>
-    <dl className="invite-details">
+  return <AuthPanel titleId="invite-title" title="Você foi convidado">
+    <dl className="auth-details">
       <dt>Agência</dt><dd>{agency.name}</dd>
       {client !== null && <><dt>Cliente</dt><dd>{client.name}</dd></>}
       <dt>Convite enviado para</dt><dd>{email}</dd>
@@ -192,44 +186,36 @@ export function InvitationPage() {
 
     {accountExists
       ? showMismatch
-        ? <div role="alert">
-          <p>Você está conectado com outra conta. O convite foi enviado para {email}.</p>
-          <Button onClick={() => { void enterWithAnotherAccount(); }}>Entrar com outra conta</Button>
+        ? <div role="alert" className="auth-retry">
+          <AuthMessage tone="danger">Você está conectado com outra conta. O convite foi enviado para {email}.</AuthMessage>
+          <Button className="auth-submit" onClick={() => { void enterWithAnotherAccount(); }}>Entrar com outra conta</Button>
         </div>
-        : <div className="form-actions">
+        : <div className="auth-form">
+          {formError !== undefined && <AuthMessage tone="danger" role="alert">{formError}</AuthMessage>}
           <Button
+            className="auth-submit"
             onClick={() => { if (session.isAuthenticated) accept.mutate(); else goToLogin(); }}
             loading={accept.isPending}
           >Aceitar convite</Button>
-          <Button variant="ghost" onClick={() => { void enterWithAnotherAccount(); }}>Entrar com outra conta</Button>
-          {formError !== undefined && <p role="alert">{formError}</p>}
+          <Button variant="ghost" className="auth-submit" onClick={() => { void enterWithAnotherAccount(); }}>Entrar com outra conta</Button>
         </div>
-      : <form className="form-stack" onSubmit={onSubmitNewAccount} noValidate>
-        <div className="form-field">
-          <label htmlFor="invite-name">Nome</label>
-          <TextInput id="invite-name" name="name" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)}
-            aria-invalid={errors.name !== undefined} aria-describedby={errors.name === undefined ? undefined : 'invite-name-error'} />
-          {errors.name !== undefined && <FieldMessage id="invite-name-error">{errors.name}</FieldMessage>}
-        </div>
-        <div className="form-field">
-          <label htmlFor="invite-password">Senha</label>
-          <TextInput id="invite-password" name="password" type="password" autoComplete="new-password" value={password}
-            onChange={(event) => setPassword(event.target.value)} aria-invalid={errors.password !== undefined}
-            aria-describedby={errors.password === undefined ? 'invite-password-help' : 'invite-password-help invite-password-error'} />
-          <p id="invite-password-help" className="form-hint">Mínimo de 10 caracteres</p>
-          {errors.password !== undefined && <FieldMessage id="invite-password-error">{errors.password}</FieldMessage>}
-        </div>
-        <label className="form-check">
+      : <form className="auth-form" onSubmit={onSubmitNewAccount} noValidate>
+        <Field label="Nome" id="invite-name" error={errors.name}>
+          {(control) => <TextInput {...control} name="name" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} />}
+        </Field>
+        <Field label="Senha" id="invite-password" hint="Mínimo de 10 caracteres" error={errors.password}>
+          {(control) => <TextInput {...control} name="password" type="password" autoComplete="new-password" value={password}
+            onChange={(event) => setPassword(event.target.value)} />}
+        </Field>
+        <label className="auth-check">
           <input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} />
           <span>
             Li e aceito os <Link to="/termos" target="_blank" rel="noreferrer">Termos de Uso</Link> e a{' '}
             <Link to="/privacidade" target="_blank" rel="noreferrer">Política de Privacidade</Link>
           </span>
         </label>
-        {formError !== undefined && <p role="alert">{formError}</p>}
-        <div className="form-actions">
-          <Button type="submit" loading={createAccount.isPending} disabled={!acceptedTerms}>Criar conta e entrar</Button>
-        </div>
+        {formError !== undefined && <AuthMessage tone="danger" role="alert">{formError}</AuthMessage>}
+        <Button type="submit" className="auth-submit" loading={createAccount.isPending} disabled={!acceptedTerms}>Criar conta e entrar</Button>
       </form>}
-  </section>;
+  </AuthPanel>;
 }
