@@ -6,8 +6,8 @@ const css = readStyles('globals.css');
 const rule = (selector: string) => declarationsFor(css, selector);
 
 const BUTTONS = ['primary', 'secondary', 'ghost', 'destructive'];
-const CONTROLS = ['.ui-pill--action'];
-const COMPONENT_RULES = /^\s*\.(ui-icon|ui-icon-button|ui-pill)[^{}]*\{([^{}]*)\}/gm;
+const CONTROLS = ['.ui-pill--action', '.ui-segmented__option', '.ui-tabs__tab', '.ui-tabs__panel'];
+const COMPONENT_RULES = /^\s*\.(ui-icon|ui-icon-button|ui-pill|ui-segmented|ui-tabs)[^{}]*\{([^{}]*)\}/gm;
 
 describe('component states', () => {
   it.each(BUTTONS)('gives the %s button a hover that changes how it looks', (variant) => {
@@ -21,6 +21,16 @@ describe('component states', () => {
     expect(rule('.ui-pill--action.ui-pill--accent:hover:not(:disabled)').get('filter')).toBe('brightness(0.94)');
   });
 
+  it('raises the text of an unchosen option and a tab on hover, never their background', () => {
+    const option = rule(".ui-segmented__option:hover:not(:disabled):not([aria-checked='true'])");
+    const tab = rule('.ui-tabs__tab:hover:not(:disabled)');
+
+    expect(option.get('color')).toBe('var(--text-primary)');
+    expect(option.has('background')).toBe(false);
+    expect(tab.get('color')).toBe('var(--text-primary)');
+    expect(tab.has('background')).toBe(false);
+  });
+
   it('keeps the global focus ring on buttons and rings every new control with the focus token', () => {
     expect(rule('button:focus-visible').get('outline')).toBe('3px solid var(--focus-ring)');
     for (const selector of CONTROLS.map((control) => `${control}:focus-visible`)) {
@@ -28,9 +38,15 @@ describe('component states', () => {
     }
   });
 
+  it('insets the ring of a tab, which sits inside a scroll box that would clip an outer one', () => {
+    expect(rule('.ui-tabs__tab:focus-visible').get('outline-offset')).toBe('-3px');
+  });
+
   it.each([
     '.ui-button:disabled:not(.ui-button--loading)',
-    '.ui-pill:disabled:not(.ui-pill--loading)'
+    '.ui-pill:disabled:not(.ui-pill--loading)',
+    '.ui-segmented__option:disabled',
+    '.ui-tabs__tab:disabled'
   ])('dims %s and shows it cannot be pressed', (selector) => {
     const disabled = rule(selector);
 
@@ -56,10 +72,15 @@ describe('component states', () => {
     }
   });
 
+  it('shows the busy cursor on a segmented control that is loading', () => {
+    expect(rule(".ui-segmented[aria-busy='true']").get('cursor')).toBe('progress');
+    expect(rule(".ui-segmented[aria-busy='true'] > .ui-segmented__option:disabled").get('cursor')).toBe('progress');
+  });
+
   it('turns the transitions off for people who ask for less motion', () => {
     const reducedAt = css.indexOf('@media (prefers-reduced-motion: reduce)');
     const reduced = /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/.exec(css)![1]!;
-    const animated = ['.ui-button', '.ui-pill--action'];
+    const animated = ['.ui-button', '.ui-pill--action', '.ui-segmented__option', '.ui-tabs__tab'];
 
     for (const selector of animated) {
       expect(declarationsFor(css.slice(0, reducedAt), selector).get('transition'), selector).toMatch(/var\(--motion-fast\)/);
@@ -85,15 +106,18 @@ describe('component tokens', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('rounds the controls with the Pauta radii: capsule and button', () => {
+  it('rounds the controls with the Pauta radii: capsule, field, panel', () => {
     expect(rule('.ui-pill').get('border-radius')).toBe('var(--radius-full)');
+    expect(rule('.ui-segmented__option').get('border-radius')).toBe('var(--radius-md)');
+    expect(rule('.ui-segmented').get('border-radius')).toBe('var(--radius-lg)');
     expect(rule('.ui-button').get('border-radius')).toBe('var(--radius-md)');
   });
 
-  it('sizes every icon the same, 16px inside a capsule', () => {
+  it('sizes every icon the same, 16px inside a capsule or a tab', () => {
     expect(rule('.ui-icon > svg').get('width')).toBe('1.25rem');
     expect(rule('.ui-icon > svg').get('stroke-width')).toBe('1.75');
     expect(rule('.ui-pill .ui-icon > svg').get('width')).toBe('1rem');
+    expect(rule('.ui-tabs__tab .ui-icon > svg').get('height')).toBe('1rem');
   });
 
   it('squares the icon-only button on the height of its size', () => {
@@ -117,7 +141,9 @@ describe.each(['light', 'dark'] as const)('contrast of the new controls in %s', 
   it.each([
     ['.ui-button--ghost', SURFACES],
     ['.ui-button--secondary', SURFACES],
-    ['.ui-pill--action.ui-pill--neutral', SURFACES]
+    ['.ui-pill--action.ui-pill--neutral', SURFACES],
+    ['.ui-segmented__option', ['var(--bg-surface)']],
+    ['.ui-tabs__tab', SURFACES]
   ])('%s text is AA over the surfaces it sits on', (selector, surfaces) => {
     for (const surface of surfaces) expect(contrastOf(theme, colours(selector as string).fg, surface), `${selector} on ${surface}`).toBeGreaterThanOrEqual(4.5);
   });
@@ -128,14 +154,23 @@ describe.each(['light', 'dark'] as const)('contrast of the new controls in %s', 
     expect(contrastOf(theme, hover.get('color')!, hover.get('background')!)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('keeps the neutral pill AA on its own fill', () => {
-    const pill = colours('.ui-pill--neutral');
-
-    expect(contrastOf(theme, pill.fg, pill.bg)).toBeGreaterThanOrEqual(4.5);
+  it('keeps the tab text AA when selected', () => {
+    for (const surface of SURFACES) {
+      expect(contrastOf(theme, rule(".ui-tabs__tab[aria-selected='true']").get('color')!, surface)).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
-  it('pairs the neutral pill as the design system table lists it', () => {
+  it('keeps the neutral pill and the chosen option AA on their own fill', () => {
+    const pill = colours('.ui-pill--neutral');
+    const option = colours(".ui-segmented__option[aria-checked='true']");
+
+    expect(contrastOf(theme, pill.fg, pill.bg)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastOf(theme, option.fg, option.bg)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('pairs the neutral pill and the chosen option as the design system table lists them', () => {
     expect(colours('.ui-pill--neutral')).toEqual({ fg: 'var(--text-secondary)', bg: 'var(--bg-hover)' });
+    expect(colours(".ui-segmented__option[aria-checked='true']")).toEqual({ fg: 'var(--text-primary)', bg: 'var(--bg-hover)' });
   });
 
   it('keeps the accent pill AA on its fill and the hover of the neutral action pill AA', () => {

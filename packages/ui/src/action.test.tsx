@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { ArrowRight, Plus } from 'lucide-react';
+import { useState } from 'react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { ArrowRight, Grid2x2, List, Plus } from 'lucide-react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import * as ui from './index.js';
-import { Button, IconButton, Pill, PillAction } from './index.js';
+import { Button, IconButton, Pill, PillAction, Segmented, Tabs, type SegmentedOption, type TabItem } from './index.js';
 
 afterEach(cleanup);
 
@@ -179,5 +180,248 @@ describe('PillAction', () => {
     expect(document.activeElement).not.toBe(button);
     expect(button.getAttribute('aria-busy')).toBe('true');
     expect(button.className.split(' ')).toEqual(expect.arrayContaining(['ui-pill--loading', 'ui-pill--accent']));
+  });
+});
+
+const views: SegmentedOption[] = [
+  { value: 'grid', label: 'Grade', icon: <Grid2x2 /> },
+  { value: 'list', label: 'Lista', icon: <List /> },
+  { value: 'map', label: 'Mapa', disabled: true },
+  { value: 'table', label: 'Tabela' }
+];
+
+function SegmentedHarness({ onChange = () => undefined, disabled, loading, initial = 'grid' }: { onChange?: (value: string) => void; disabled?: boolean; loading?: boolean; initial?: string }) {
+  const [value, setValue] = useState(initial);
+  return <Segmented label="Visualização" value={value} options={views} disabled={disabled} loading={loading} onChange={(next) => { setValue(next); onChange(next); }} />;
+}
+
+const radio = (name: string): HTMLButtonElement => screen.getByRole('radio', { name }) as HTMLButtonElement;
+const radioNames = ['Grade', 'Lista', 'Mapa', 'Tabela'];
+
+describe('Segmented', () => {
+  it('is a named radio group whose options are named by their visible text', () => {
+    render(<SegmentedHarness />);
+    const group = screen.getByRole('radiogroup', { name: 'Visualização' });
+
+    expect(within(group).getAllByRole('radio').map((option) => option.textContent)).toEqual(radioNames);
+    expect(radio('Grade').querySelector('.ui-icon')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('marks only the chosen option and gives the group a single tab stop on it', () => {
+    render(<SegmentedHarness initial="list" />);
+
+    expect(radioNames.map((name) => radio(name).getAttribute('aria-checked'))).toEqual(['false', 'true', 'false', 'false']);
+    expect(radioNames.map((name) => radio(name).tabIndex)).toEqual([-1, 0, -1, -1]);
+  });
+
+  it('chooses an option on click and reports its value', () => {
+    const onChange = vi.fn();
+    render(<SegmentedHarness onChange={onChange} />);
+
+    fireEvent.click(radio('Lista'));
+
+    expect(onChange).toHaveBeenCalledWith('list');
+    expect(radio('Lista').getAttribute('aria-checked')).toBe('true');
+    expect(radio('Grade').getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('moves focus and choice with the arrow keys, skipping a disabled option and wrapping at the ends', () => {
+    const onChange = vi.fn();
+    render(<SegmentedHarness onChange={onChange} />);
+
+    radio('Grade').focus();
+    expect(fireEvent.keyDown(radio('Grade'), { key: 'ArrowRight' })).toBe(false);
+    expect(document.activeElement).toBe(radio('Lista'));
+    expect(onChange).toHaveBeenLastCalledWith('list');
+
+    fireEvent.keyDown(radio('Lista'), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(radio('Tabela'));
+    expect(onChange).toHaveBeenLastCalledWith('table');
+
+    fireEvent.keyDown(radio('Tabela'), { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(radio('Grade'));
+
+    fireEvent.keyDown(radio('Grade'), { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(radio('Tabela'));
+    expect(radio('Tabela').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('jumps to the first and last usable option with Home and End', () => {
+    render(<SegmentedHarness initial="list" />);
+
+    fireEvent.keyDown(radio('Lista'), { key: 'End' });
+    expect(document.activeElement).toBe(radio('Tabela'));
+
+    fireEvent.keyDown(radio('Tabela'), { key: 'Home' });
+    expect(document.activeElement).toBe(radio('Grade'));
+  });
+
+  it('ignores keys that are not movement and never chooses a disabled option', () => {
+    const onChange = vi.fn();
+    render(<SegmentedHarness onChange={onChange} />);
+
+    expect(fireEvent.keyDown(radio('Grade'), { key: 'Enter' })).toBe(true);
+    fireEvent.click(radio('Mapa'));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(radio('Mapa').disabled).toBe(true);
+  });
+
+  it('puts the tab stop on the first usable option when the value matches none', () => {
+    render(<SegmentedHarness initial="unknown" />);
+
+    expect(radioNames.map((name) => radio(name).tabIndex)).toEqual([0, -1, -1, -1]);
+  });
+
+  it('freezes every option when disabled', () => {
+    const onChange = vi.fn();
+    render(<SegmentedHarness disabled onChange={onChange} />);
+
+    fireEvent.click(radio('Lista'));
+    fireEvent.keyDown(radio('Grade'), { key: 'ArrowRight' });
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(radioNames.every((name) => radio(name).disabled)).toBe(true);
+    expect(screen.getByRole('radiogroup').getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('freezes the choice and says it is busy while loading', () => {
+    const onChange = vi.fn();
+    render(<SegmentedHarness loading onChange={onChange} />);
+
+    fireEvent.click(radio('Lista'));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('radiogroup').getAttribute('aria-busy')).toBe('true');
+    expect(radio('Grade').disabled).toBe(true);
+  });
+
+  it('is neither busy nor disabled by default', () => {
+    render(<SegmentedHarness />);
+    const group = screen.getByRole('radiogroup');
+
+    expect(group.hasAttribute('aria-busy')).toBe(false);
+    expect(group.hasAttribute('aria-disabled')).toBe(false);
+  });
+});
+
+const sections: TabItem[] = [
+  { value: 'general', label: 'Geral', content: <p>Conteúdo geral</p> },
+  { value: 'assignment', label: 'Atribuição', count: 3, content: <p>Quem faz o quê</p> },
+  { value: 'history', label: 'Histórico', disabled: true, content: <p>Linha do tempo</p> },
+  { value: 'files', label: 'Arquivos', icon: <List />, content: <p>Os arquivos</p> }
+];
+
+function TabsHarness({ onChange = () => undefined, loading = false, initial = 'general' }: { onChange?: (value: string) => void; loading?: boolean; initial?: string }) {
+  const [value, setValue] = useState(initial);
+  return <Tabs label="Seções do conteúdo" value={value} items={sections} loading={loading} onChange={(next) => { setValue(next); onChange(next); }} />;
+}
+
+const tab = (name: string): HTMLButtonElement => screen.getByRole('tab', { name }) as HTMLButtonElement;
+const tabNames = ['Geral', 'Atribuição 3', 'Histórico', 'Arquivos'];
+
+describe('Tabs', () => {
+  it('is a named tablist whose tabs are named by their text and count', () => {
+    render(<TabsHarness />);
+    const list = screen.getByRole('tablist', { name: 'Seções do conteúdo' });
+
+    expect(within(list).getAllByRole('tab').map((item) => item.textContent)).toEqual(['Geral', 'Atribuição3', 'Histórico', 'Arquivos']);
+    expect(tab('Atribuição 3')).toBeTruthy();
+  });
+
+  it('shows only the open panel, labelled by its tab, and links the tab to it', () => {
+    render(<TabsHarness initial="assignment" />);
+    const panel = screen.getByRole('tabpanel');
+
+    expect(panel.textContent).toBe('Quem faz o quê');
+    expect(panel.getAttribute('aria-labelledby')).toBe(tab('Atribuição 3').id);
+    expect(tab('Atribuição 3').getAttribute('aria-controls')).toBe(panel.id);
+    expect(tab('Geral').hasAttribute('aria-controls')).toBe(false);
+    expect(screen.queryByText('Conteúdo geral')).toBeNull();
+    expect(tab('Atribuição 3').getAttribute('aria-selected')).toBe('true');
+    expect(tab('Geral').getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('keeps a single tab stop on the open tab and lets the panel be reached by keyboard', () => {
+    render(<TabsHarness />);
+
+    expect(tabNames.map((name) => tab(name).tabIndex)).toEqual([0, -1, -1, -1]);
+    expect(screen.getByRole('tabpanel').tabIndex).toBe(0);
+  });
+
+  it('opens a tab on click and reports its value', () => {
+    const onChange = vi.fn();
+    render(<TabsHarness onChange={onChange} />);
+
+    fireEvent.click(tab('Arquivos'));
+
+    expect(onChange).toHaveBeenCalledWith('files');
+    expect(screen.getByRole('tabpanel').textContent).toBe('Os arquivos');
+  });
+
+  it('moves focus and opens the tab with the horizontal arrows, skipping a disabled tab and wrapping', () => {
+    render(<TabsHarness />);
+
+    tab('Geral').focus();
+    expect(fireEvent.keyDown(tab('Geral'), { key: 'ArrowRight' })).toBe(false);
+    expect(document.activeElement).toBe(tab('Atribuição 3'));
+    expect(screen.getByRole('tabpanel').textContent).toBe('Quem faz o quê');
+
+    fireEvent.keyDown(tab('Atribuição 3'), { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(tab('Arquivos'));
+
+    fireEvent.keyDown(tab('Arquivos'), { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(tab('Geral'));
+
+    fireEvent.keyDown(tab('Geral'), { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(tab('Arquivos'));
+  });
+
+  it('jumps to the first and last tab with Home and End and leaves the vertical arrows alone', () => {
+    const onChange = vi.fn();
+    render(<TabsHarness initial="assignment" onChange={onChange} />);
+
+    expect(fireEvent.keyDown(tab('Atribuição 3'), { key: 'ArrowDown' })).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(tab('Atribuição 3'), { key: 'End' });
+    expect(document.activeElement).toBe(tab('Arquivos'));
+
+    fireEvent.keyDown(tab('Arquivos'), { key: 'Home' });
+    expect(document.activeElement).toBe(tab('Geral'));
+  });
+
+  it('does not open a disabled tab', () => {
+    const onChange = vi.fn();
+    render(<TabsHarness onChange={onChange} />);
+
+    fireEvent.click(tab('Histórico'));
+
+    expect(tab('Histórico').disabled).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByText('Linha do tempo')).toBeNull();
+  });
+
+  it('reserves the panel and marks it busy while loading, without rendering its content', () => {
+    render(<TabsHarness loading />);
+    const panel = screen.getByRole('tabpanel');
+
+    expect(panel.getAttribute('aria-busy')).toBe('true');
+    expect(panel.querySelector('.ui-skeleton')).not.toBeNull();
+    expect(screen.queryByText('Conteúdo geral')).toBeNull();
+  });
+
+  it('is not busy once loaded', () => {
+    render(<TabsHarness />);
+
+    expect(screen.getByRole('tabpanel').hasAttribute('aria-busy')).toBe(false);
+    expect(screen.getByRole('tabpanel').querySelector('.ui-skeleton')).toBeNull();
+  });
+
+  it('shows no panel when the value matches no tab', () => {
+    render(<TabsHarness initial="gone" />);
+
+    expect(screen.queryByRole('tabpanel')).toBeNull();
+    expect(tabNames.map((name) => tab(name).tabIndex)).toEqual([0, -1, -1, -1]);
   });
 });
