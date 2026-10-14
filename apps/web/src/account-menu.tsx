@@ -219,7 +219,7 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
           className='account-menu__leave'
           label='Sair'
           icon={<LogOut />}
-          disabled={pendingAction !== null}
+          loading={pendingAction === 'logout'}
           onClick={() => { void startLogout('logout'); }}
         />
       )}

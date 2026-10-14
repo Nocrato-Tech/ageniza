@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -24,7 +27,7 @@ const agencyMe = (permissions: readonly string[]) => ({
   agencyId: AGENCY, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'custom', name: 'Custom' }, permissions
 });
 
-const makeFetch = (permissions: readonly string[], gate?: Promise<void>) => {
+const makeFetch = (permissions: readonly string[], gate?: Promise<void>, logoutGate?: Promise<void>) => {
   const calls: string[] = [];
   const impl: typeof fetch = async (input, init) => {
     const url = String(input);
@@ -35,7 +38,10 @@ const makeFetch = (permissions: readonly string[], gate?: Promise<void>) => {
       await gate;
       return json(agencyMe(permissions));
     }
-    if (url.endsWith('/auth/logout') && method === 'POST') return new Response(null, { status: 204 });
+    if (url.endsWith('/auth/logout') && method === 'POST') {
+      await logoutGate;
+      return new Response(null, { status: 204 });
+    }
     return notFound();
   };
   return { impl, calls };
@@ -45,8 +51,8 @@ function Harness({ store }: { store: AuthSessionStore }) {
   return <ApplicationRoutes session={useAuthSession(store)} />;
 }
 
-const renderAt = (entry: string, permissions: readonly string[] = ['colaborador.visualizar', 'cliente.visualizar', 'conteudo.visualizar'], gate?: Promise<void>) => {
-  const { impl, calls } = makeFetch(permissions, gate);
+const renderAt = (entry: string, permissions: readonly string[] = ['colaborador.visualizar', 'cliente.visualizar', 'conteudo.visualizar'], gate?: Promise<void>, logoutGate?: Promise<void>) => {
+  const { impl, calls } = makeFetch(permissions, gate, logoutGate);
   const client = new HttpClient('http://127.0.0.1:3001', impl);
   const store = createAuthSessionStore(client);
   const probe = { pathname: '', navigate: (to: string): void => { void to; } };
@@ -202,5 +208,69 @@ describe('agency side navigation (#628)', () => {
     expect(within(aside).queryByRole('link', { name: 'Início' })).toBeNull();
     release();
     await waitFor(() => expect(within(sidebarElement()).getByRole('link', { name: 'Início' })).toBeTruthy());
+  });
+});
+
+describe('Sair at the foot while the sign-out is in flight', () => {
+  it('keeps focus on the button and marks it busy instead of disabling it', async () => {
+    let release: () => void = () => undefined;
+    const { probe } = renderAt(`/agencia/${AGENCY}/clientes`, undefined, undefined, new Promise<void>((resolve) => { release = resolve; }));
+    const aside = await sidebar();
+    const leave = within(aside).getByRole('button', { name: 'Sair' });
+    leave.focus();
+    fireEvent.click(leave);
+
+    await waitFor(() => expect(leave.getAttribute('aria-disabled')).toBe('true'));
+    expect(leave.hasAttribute('disabled')).toBe(false);
+    expect(document.activeElement).toBe(leave);
+
+    release();
+    await waitFor(() => expect(probe.pathname).toBe('/entrar'));
+  });
+});
+
+describe('CSS contract of the rail and the bottom bar', () => {
+  const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
+    selectors: match[1]!.replace(/\/\*[\s\S]*?\*\//g, '').split(',').map((selector) => selector.trim()),
+    body: match[2]!
+  }));
+  const rail = (selector: string): string[] =>
+    rules.filter((rule) => rule.selectors.includes(`.agency-sidebar[data-collapsed='true'] ${selector}`)).map((rule) => rule.body);
+  const bar = (selector: string): string[] => rules.filter((rule) => rule.selectors.includes(selector)).map((rule) => rule.body);
+
+  // Controls that take focus must leave the tab order when hidden: a clipped block is still tabbable (WCAG 2.4.7).
+  it.each(['.agency-sidebar__context', '.account-menu__leave'])('removes %s from the rail with display: none, never clip-path', (selector) => {
+    const found = rail(selector);
+    expect(found.length).toBeGreaterThan(0);
+    for (const body of found) {
+      expect(body).toMatch(/display:\s*none/);
+      expect(body).not.toMatch(/clip-path/);
+    }
+  });
+
+  it.each(['.agency-sidebar__top', '.agency-sidebar__context', '.account-menu__leave'])('removes %s from the bar with display: none, never clip-path', (selector) => {
+    const last = bar(selector).at(-1);
+    expect(last).toMatch(/display:\s*none/);
+    for (const body of bar(selector)) expect(body).not.toMatch(/clip-path/);
+  });
+
+  it.each(['.agency-nav__group-title', '.account-menu__name', '.account-menu__chevron'])('keeps the text of %s readable in the bar with the visually-hidden pattern', (selector) => {
+    expect(bar(selector).at(-1)).toMatch(/clip-path:\s*inset\(50%\)/);
+    expect(bar(selector).at(-1)).not.toMatch(/display:\s*none/);
+  });
+
+  it('lifts the skip link above the sidebar, or the focused link lands behind it', () => {
+    const zIndex = (selector: string): number => {
+      const body = rules.find((rule) => rule.selectors.includes(selector))?.body ?? '';
+      return Number(/z-index:\s*(\d+)/.exec(body)?.[1]);
+    };
+    expect(zIndex('.skip-link')).toBeGreaterThan(zIndex('.agency-sidebar'));
+  });
+
+  it('shares the bar by item: each group takes as much width as it has items', () => {
+    for (const items of [1, 2, 3]) {
+      expect(bar(`.agency-nav__group[data-items='${items}']`).join(' ')).toContain(`flex: ${items};`);
+    }
   });
 });

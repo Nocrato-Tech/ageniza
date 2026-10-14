@@ -19,7 +19,7 @@ export const isCalendarPath = (pathname: string): boolean =>
 
 function NavGroup({ id, title, items }: { id: string; title: string; items: NavItem[] }) {
   if (items.length === 0) return null;
-  return <section className="agency-nav__group" aria-labelledby={id}>
+  return <section className="agency-nav__group" data-items={items.length} aria-labelledby={id}>
     <h2 className="agency-nav__group-title" id={id}>{title}</h2>
     <ul>
       {items.map(({ to, label, icon: Icon, end }) => <li key={to}>

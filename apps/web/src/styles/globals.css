@@ -121,7 +121,8 @@ a.ui-button {
   background: var(--bg-surface);
   color: var(--text-primary);
   padding: var(--space-3);
-  z-index: 1;
+  /* Above the agency sidebar (z-index 3), or the focused link lands behind it. */
+  z-index: 4;
 }
 
 .skip-link:focus {
@@ -2215,11 +2216,16 @@ a.client-general__block:hover {
     padding: 0 0 var(--space-2);
   }
 
+  /* Blocks with a focusable control leave the tab order: the context and Sair stay in the account menu. */
   .agency-sidebar[data-collapsed='true'] .agency-sidebar__context,
+  .agency-sidebar[data-collapsed='true'] .account-menu__leave {
+    display: none;
+  }
+
+  /* Text only, no focus: it still has to be read. */
   .agency-sidebar[data-collapsed='true'] .agency-nav__group-title,
   .agency-sidebar[data-collapsed='true'] .account-menu__name,
-  .agency-sidebar[data-collapsed='true'] .account-menu__chevron,
-  .agency-sidebar[data-collapsed='true'] .account-menu__leave {
+  .agency-sidebar[data-collapsed='true'] .account-menu__chevron {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -2296,10 +2302,13 @@ a.client-general__block:hover {
 
   .agency-sidebar__top,
   .agency-sidebar__context,
+  .account-menu__leave {
+    display: none;
+  }
+
   .agency-nav__group-title,
   .account-menu__name,
-  .account-menu__chevron,
-  .account-menu__leave {
+  .account-menu__chevron {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -2314,9 +2323,21 @@ a.client-general__block:hover {
     overflow: visible;
   }
 
+  /* The width goes by item, not by group: two groups of 3 and 1 items share the bar 3 to 1. */
   .agency-nav__group {
     display: flex;
+  }
+
+  .agency-nav__group[data-items='1'] {
     flex: 1;
+  }
+
+  .agency-nav__group[data-items='2'] {
+    flex: 2;
+  }
+
+  .agency-nav__group[data-items='3'] {
+    flex: 3;
   }
 
   .agency-nav__group + .agency-nav__group {

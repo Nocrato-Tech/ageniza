@@ -636,7 +636,7 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
     const { container } = renderClients(impl);
 
     await screen.findByText(hostile);
-    expect(container.querySelector('main img')).toBeNull();
+    expect(container.querySelector('img:not([src^="/brand/"])')).toBeNull();
   });
 
   it('encodes the search value so it cannot smuggle another parameter', async () => {
