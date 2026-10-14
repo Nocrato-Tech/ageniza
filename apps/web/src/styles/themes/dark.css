@@ -1,8 +1,7 @@
 /**
  * Dark overrides. Not an automatic inversion of Light — see
- * docs/design-system.md section 7. Applies under `[data-theme="dark"]`;
- * nothing in the app sets that attribute yet, so this file has no visible
- * effect until the agency area adopts it.
+ * docs/design-system.md section 7. Applies under `[data-theme="dark"]`,
+ * which `DarkArea` sets on `<html>` for every `/agencia/...` route.
  */
 [data-theme='dark'] {
   color-scheme: dark;
