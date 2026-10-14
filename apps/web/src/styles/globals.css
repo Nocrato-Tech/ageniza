@@ -170,8 +170,8 @@ textarea:focus-visible {
   color: var(--action-danger-fg);
 }
 
-.ui-button--primary:hover:not(:disabled),
-.ui-button--destructive:hover:not(:disabled) {
+.ui-button--primary:hover:not(:disabled):not(.ui-button--loading),
+.ui-button--destructive:hover:not(:disabled):not(.ui-button--loading) {
   filter: brightness(0.94);
 }
 
@@ -186,8 +186,8 @@ textarea:focus-visible {
   color: var(--text-secondary);
 }
 
-.ui-button--secondary:hover:not(:disabled),
-.ui-button--ghost:hover:not(:disabled) {
+.ui-button--secondary:hover:not(:disabled):not(.ui-button--loading),
+.ui-button--ghost:hover:not(:disabled):not(.ui-button--loading) {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
@@ -271,11 +271,11 @@ textarea:focus-visible {
   color: var(--text-primary);
 }
 
-.ui-pill--action.ui-pill--neutral:hover:not(:disabled) {
+.ui-pill--action.ui-pill--neutral:hover:not(:disabled):not(.ui-pill--loading) {
   background: var(--bg-hover);
 }
 
-.ui-pill--action.ui-pill--accent:hover:not(:disabled) {
+.ui-pill--action.ui-pill--accent:hover:not(:disabled):not(.ui-pill--loading) {
   filter: brightness(0.94);
 }
 
@@ -317,7 +317,7 @@ textarea:focus-visible {
 }
 
 /* Hover only raises the text: a background here would read as the chosen option. */
-.ui-segmented__option:hover:not(:disabled):not([aria-checked='true']) {
+.ui-segmented__option:hover:not(:disabled):not([aria-disabled='true']):not([aria-checked='true']) {
   color: var(--text-primary);
 }
 
@@ -337,8 +337,9 @@ textarea:focus-visible {
   opacity: 0.55;
 }
 
-.ui-segmented[aria-busy='true'] > .ui-segmented__option:disabled {
+.ui-segmented__option[aria-disabled='true'] {
   cursor: progress;
+  opacity: 0.55;
 }
 
 /* Tabs: the open tab is underlined in ink, never in indigo (indigo is the action, today and the viewer's turn). */
@@ -1279,10 +1280,19 @@ a.client-general__block:hover {
   margin: auto;
   padding: var(--space-6);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
+  box-shadow: var(--shadow-floating);
   color: var(--text-primary);
   overflow-wrap: anywhere;
+}
+
+.ui-modal--sm {
+  width: min(calc(100% - var(--space-8)), 28rem);
+}
+
+.ui-modal--lg {
+  width: min(calc(100% - var(--space-8)), 52rem);
 }
 
 .ui-modal::backdrop {
@@ -1292,6 +1302,34 @@ a.client-general__block:hover {
 .ui-modal[open] {
   display: grid;
   gap: var(--space-6);
+  animation: ui-float-in var(--motion-base) var(--motion-easing-standard);
+}
+
+/* Opacity and an 8px rise: the only motion of a dialog and of a floating card. */
+@keyframes ui-float-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-2));
+  }
+}
+
+.ui-modal__description {
+  margin: calc(var(--space-4) * -1) 0 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.ui-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-modal[open] {
+    animation: none;
+  }
 }
 
 .ui-modal__heading {

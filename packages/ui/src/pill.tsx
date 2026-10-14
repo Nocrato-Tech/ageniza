@@ -29,15 +29,17 @@ export type PillActionProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 /** The next action of a card in a capsule, e.g. "Abrir"; a real button with the same states as `Button`. */
 export const PillAction = forwardRef<HTMLButtonElement, PillActionProps>(function PillAction(
-  { tone = 'neutral', loading = false, type = 'button', disabled, leadingIcon, trailingIcon, className, children, ...props },
+  { tone = 'neutral', loading = false, type = 'button', disabled, leadingIcon, trailingIcon, className, children, onClick, ...props },
   ref
 ) {
   return (
     <button
       ref={ref}
       type={type}
-      disabled={disabled || loading}
+      disabled={disabled}
       aria-busy={loading || undefined}
+      aria-disabled={loading || undefined}
+      onClick={loading ? (event) => event.preventDefault() : onClick}
       className={['ui-pill', 'ui-pill--action', `ui-pill--${tone}`, loading && 'ui-pill--loading', className].filter(Boolean).join(' ')}
       {...props}
     >

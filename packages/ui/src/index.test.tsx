@@ -18,11 +18,12 @@ describe('Button', () => {
     expect(destructive.className.split(' ')).toEqual(expect.arrayContaining(['ui-button--destructive', 'ui-button--lg']));
   });
 
-  it('disables a loading button and marks it busy, even when disabled={false} is passed', () => {
+  it('marks a loading button busy and aria-disabled, never natively disabled, even when disabled={false} is passed', () => {
     render(<Button loading disabled={false}>Enviar</Button>);
     const button = screen.getByRole('button', { name: 'Enviar' }) as HTMLButtonElement;
 
-    expect(button.disabled).toBe(true);
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
     expect(button.getAttribute('aria-busy')).toBe('true');
     expect(button.classList.contains('ui-button--loading')).toBe(true);
   });
@@ -33,6 +34,7 @@ describe('Button', () => {
     const free = screen.getByRole('button', { name: 'Livre' }) as HTMLButtonElement;
     expect(free.disabled).toBe(false);
     expect(free.hasAttribute('aria-busy')).toBe(false);
+    expect(free.hasAttribute('aria-disabled')).toBe(false);
     expect((screen.getByRole('button', { name: 'Travado' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

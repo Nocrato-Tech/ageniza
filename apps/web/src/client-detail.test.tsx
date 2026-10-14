@@ -931,7 +931,7 @@ describe('edit client modal (#137)', () => {
 
     const submit = within(dialog).getByRole('button', { name: 'Salvar' });
     await waitFor(() => expect(submit.hasAttribute('aria-busy')).toBe(true));
-    expect(submit.hasAttribute('disabled')).toBe(true);
+    expect(submit.getAttribute('aria-disabled')).toBe('true');
     expect(screen.getByRole('dialog', { name: 'Editar cliente' })).toBe(dialog);
 
     await act(async () => { resolvePatch?.(json({ ...registrationOf(padaria), name: 'Padaria Renovada' })); });

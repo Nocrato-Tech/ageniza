@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { ArrowRight, LayoutGrid, List, Plus } from 'lucide-react';
 import {
-  Avatar, BadgeCard, BrandSymbol, Button, ChoiceCard, IconButton, Pill, PillAction, ConfirmDialog, Field, FieldMessage, Logo, LiveStatus, Menu, MenuItem, MenuSeparator,
+  Avatar, BadgeCard, BrandSymbol, Button, ChoiceCard, IconButton, Pill, PillAction, ConfirmDialog, Dialog, Field, FieldMessage, Logo, LiveStatus, Menu, MenuItem, MenuSeparator,
   Modal, Pagination, Segmented, Select, Skeleton, Tabs, Textarea, TextInput
 } from '@ageniza/ui';
 
@@ -234,6 +234,21 @@ export const componentEntries: readonly ComponentEntry[] = [
         <MenuItem>Editar</MenuItem><MenuItem disabled>Duplicar</MenuItem><MenuSeparator /><MenuItem variant="destructive">Excluir</MenuItem>
       </Menu>)
     }]
+  },
+  {
+    id: 'dialog',
+    name: 'Dialog',
+    covers: ['Dialog'],
+    examples: (['sm', 'md', 'lg'] as const).map((size) => ({
+      label: size,
+      render: (state: RenderedState) => stateOnly(state, ['default', 'loading'], <Opener label={`Abrir ${size}`}>
+        {(close) => <Dialog title="Arquivar cliente" closeLabel="Fechar" onClose={close} size={size} loading={state === 'loading'}
+          description="A Padaria Central deixa a carteira, mas o histórico fica."
+          actions={<><Button variant="secondary" onClick={close}>Cancelar</Button><Button variant="destructive" onClick={close}>Arquivar</Button></>}>
+          <p>Conteúdo de exemplo.</p>
+        </Dialog>}
+      </Opener>)
+    }))
   },
   {
     id: 'modal',
