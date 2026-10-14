@@ -8,7 +8,7 @@ const reducedMotionBlocks = () => [...css.matchAll(/@media \(prefers-reduced-mot
 
 const BUTTONS = ['primary', 'secondary', 'ghost', 'destructive'];
 const CONTROLS = ['.ui-pill--action', '.ui-segmented__option', '.ui-tabs__tab', '.ui-tabs__panel'];
-const COMPONENT_RULES = /^\s*\.(ui-icon|ui-icon-button|ui-pill|ui-segmented|ui-tabs|ui-field|ui-text-input|ui-select|ui-textarea|ui-popover|ui-popover-anchor|ui-format-tag|ui-status-tag|ui-late-badge|ui-empty-state)[^{}]*\{([^{}]*)\}/gm;
+const COMPONENT_RULES = /^\s*\.(ui-icon|ui-icon-button|ui-pill|ui-segmented|ui-tabs|ui-field|ui-text-input|ui-select|ui-textarea|ui-popover|ui-popover-anchor|ui-format-tag|ui-status-tag|ui-late-badge|ui-empty-state|ui-client-strip|ui-filter-bar)[^{}]*\{([^{}]*)\}/gm;
 
 describe('component states', () => {
   it.each(BUTTONS)('gives the %s button a hover that changes how it looks', (variant) => {
@@ -461,6 +461,9 @@ describe('ButtonLink that cannot be followed', () => {
   });
 });
 
+/** The stylesheet as it is for people who have not asked for less motion: the reduced-motion blocks cut out. */
+const MOTION_ON = css.replace(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/g, '');
+
 /** The block of the empty state that applies on a phone, so the other tests read the rules of the wide screen alone. */
 const PHONE_BLOCK = /@media \(max-width: 40rem\) \{([\s\S]*?)\n\}/g;
 
@@ -505,5 +508,120 @@ describe('Mascot and EmptyState', () => {
       expect(contrastOf(theme, description, surface), `description on ${surface}`).toBeGreaterThanOrEqual(4.5);
       expect(contrastOf(theme, 'var(--text-primary)', surface), `title on ${surface}`).toBeGreaterThanOrEqual(4.5);
     }
+  });
+});
+
+describe('ClientStrip', () => {
+  const CURRENT = ".ui-client-strip__item[aria-current='page']";
+
+  it('gives the hovered and the current client the same surface, text and ring gap, so the photo ring never shows a band', () => {
+    for (const selector of ['.ui-client-strip__item:hover', CURRENT]) {
+      const item = rule(selector);
+
+      expect(item.get('background'), selector).toBe('var(--bg-hover)');
+      expect(item.get('color'), selector).toBe('var(--text-primary)');
+      expect(item.get('--ui-avatar-gap'), selector).toBe('var(--bg-hover)');
+    }
+  });
+
+  it('rings the focus inside the item, which sits in a scroll box that would clip an outer ring', () => {
+    const focus = rule('.ui-client-strip__item:focus-visible');
+
+    expect(focus.get('outline')).toBe('3px solid var(--focus-ring)');
+    expect(focus.get('outline-offset')).toBe('-3px');
+  });
+
+  it('scrolls the strip sideways, and sizes the photo at 48px', () => {
+    expect(rule('.ui-client-strip__list').get('overflow-x')).toBe('auto');
+    expect(rule('.ui-client-strip__item .ui-avatar--md').get('width')).toBe('3rem');
+    expect(rule('.ui-client-strip__item .ui-avatar--md').get('height')).toBe('3rem');
+  });
+
+  it('wraps a long name inside its 92px column', () => {
+    expect(rule('.ui-client-strip__item').get('width')).toBe('5.75rem');
+    expect(rule('.ui-client-strip__name').get('overflow-wrap')).toBe('anywhere');
+  });
+
+  it('turns the transition off for people who ask for less motion', () => {
+    const reduced = reducedMotionBlocks();
+
+    expect(declarationsFor(reduced, '.ui-client-strip__item').get('transition')).toBe('none');
+    expect(declarationsFor(MOTION_ON, '.ui-client-strip__item').get('transition')).toContain('var(--motion-fast)');
+  });
+
+  it.each(['light', 'dark'] as const)('keeps the name AA at rest and on its hover surface in %s', (theme) => {
+    for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) {
+      expect(contrastOf(theme, rule('.ui-client-strip__item').get('color')!, surface), surface).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(contrastOf(theme, rule('.ui-client-strip__item:hover').get('color')!, rule('.ui-client-strip__item:hover').get('background')!)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('FilterBar', () => {
+  const base = css.replace(PHONE_BLOCK, '');
+  const phone = [...css.matchAll(new RegExp(PHONE_BLOCK.source, 'g'))].map((match) => match[1]!).join('\n');
+
+  it('splits the filters with a divider on the left of every one but the first', () => {
+    expect(declarationsFor(base, '.ui-filter-bar__item + .ui-filter-bar__item').get('border-left')).toBe('1px solid var(--border-subtle)');
+    expect(declarationsFor(base, '.ui-filter-bar__item:first-child').get('padding-left')).toBe('0');
+  });
+
+  it('stacks the filters on a phone and turns the dividers horizontal', () => {
+    expect(declarationsFor(phone, '.ui-filter-bar').get('flex-direction')).toBe('column');
+    expect(declarationsFor(phone, '.ui-filter-bar__item + .ui-filter-bar__item').get('border-top')).toBe('1px solid var(--border-subtle)');
+    expect(declarationsFor(phone, '.ui-filter-bar__item + .ui-filter-bar__item').get('border-left')).toBe('0');
+    expect(declarationsFor(phone, '.ui-filter-bar__control').get('width')).toBe('100%');
+  });
+
+  it('sets the label in the small caption above, and the choice in the interface label', () => {
+    expect(rule('.ui-filter-bar__label').get('font')).toBe('var(--caption)');
+    expect(rule('.ui-filter-bar__label').get('color')).toBe('var(--text-muted)');
+    expect(rule('.ui-filter-bar__control').get('color')).toBe('var(--text-primary)');
+    expect(rule('.ui-filter-bar__control').get('font')).toBe('var(--label-md)');
+  });
+
+  it('lights the choice on hover, never while disabled', () => {
+    expect(rule('.ui-filter-bar__control:not(.ui-text-input):hover:not(:disabled)').get('background')).toBe('var(--bg-hover)');
+  });
+
+  it('gives a text field in the bar the edge of a field, border/control, and keeps its hover to the edge', () => {
+    const field = rule('.ui-filter-bar__control.ui-text-input');
+
+    expect(field.get('border')).toBe('1px solid var(--border-control)');
+    expect(field.get('border-radius')).toBe('var(--radius-md)');
+    expect(field.get('margin-left')).toBe('0');
+    for (const theme of ['light', 'dark'] as const) {
+      for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) expect(contrastOf(theme, 'var(--border-control)', surface), `${theme} on ${surface}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('dims a disabled filter, label included, and shows it cannot be used', () => {
+    expect(rule('.ui-filter-bar__control:disabled').get('opacity')).toBe('0.55');
+    expect(rule('.ui-filter-bar__control:disabled').get('cursor')).toBe('not-allowed');
+    expect(rule('.ui-filter-bar__item:has(:disabled) > .ui-filter-bar__label').get('opacity')).toBe('0.55');
+  });
+
+  it('shows a spinner after the label of a filter that is loading, and the busy cursor', () => {
+    expect(declarationsFor(MOTION_ON, '.ui-filter-bar__item--loading > .ui-filter-bar__label::after').get('animation')).toContain('ui-button-spin');
+    expect(rule('.ui-filter-bar__item--loading > .ui-filter-bar__control').get('cursor')).toBe('progress');
+  });
+
+  it('rings the keyboard focus of the choice with the global ring', () => {
+    expect(rule('select:focus-visible').get('outline')).toBe('3px solid var(--focus-ring)');
+  });
+
+  it('turns the transition and the spinner off for people who ask for less motion', () => {
+    const reduced = reducedMotionBlocks();
+
+    expect(declarationsFor(reduced, '.ui-filter-bar__control').get('transition')).toBe('none');
+    expect(declarationsFor(reduced, '.ui-filter-bar__item--loading > .ui-filter-bar__label::after').get('animation')).toBe('none');
+  });
+
+  it.each(['light', 'dark'] as const)('keeps the label and the choice AA on the canvas and the surface in %s', (theme) => {
+    for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) {
+      expect(contrastOf(theme, rule('.ui-filter-bar__label').get('color')!, surface), `label on ${surface}`).toBeGreaterThanOrEqual(4.5);
+      expect(contrastOf(theme, rule('.ui-filter-bar__control').get('color')!, surface), `choice on ${surface}`).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(contrastOf(theme, rule('.ui-filter-bar__control').get('color')!, rule('.ui-filter-bar__control:not(.ui-text-input):hover:not(:disabled)').get('background')!)).toBeGreaterThanOrEqual(4.5);
   });
 });

@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter, Link } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ButtonLink } from '@ageniza/ui';
+import { ButtonLink, ClientStrip, type ClientStripItem } from '@ageniza/ui';
 
 afterEach(cleanup);
 
@@ -24,6 +24,14 @@ describe('the types of @ageniza/ui that ask for an address', () => {
     const withoutDestination = () => <ButtonLink as={Link}>Sem destino</ButtonLink>;
 
     expect(typeof withoutDestination).toBe('function');
+  });
+
+  it('asks a client of the ClientStrip for its href', () => {
+    // @ts-expect-error `href` is required on every client of the strip
+    const withoutAddress: ClientStripItem = { id: 'c1', name: 'Padaria Central' };
+
+    expect(withoutAddress.name).toBe('Padaria Central');
+    expect(typeof ClientStrip).toBe('function');
   });
 
   it('accepts the address each form asks for', () => {

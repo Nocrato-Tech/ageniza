@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { ArrowRight, LayoutGrid, List, Plus } from 'lucide-react';
 import {
-  Avatar, BadgeCard, BrandSymbol, Button, ButtonLink, ChoiceCard, IconButton, Pill, PillAction, ConfirmDialog, Dialog, EmptyState, Field, FieldMessage, FormatTag, LateBadge, Logo, LiveStatus, Mascot, Menu, MenuItem, MenuSeparator,
+  Avatar, BadgeCard, BrandSymbol, Button, ButtonLink, ChoiceCard, ClientStrip, IconButton, Pill, PillAction, ConfirmDialog, Dialog, EmptyState, Field, FieldMessage, FilterBar, FilterBarItem, FilterBarSelect, FormatTag, LateBadge, Logo, LiveStatus, Mascot, Menu, MenuItem, MenuSeparator,
   Modal, Pagination, Popover, Realce, Segmented, Select, Skeleton, StatusTag, Tabs, Textarea, TextInput
 } from '@ageniza/ui';
 
@@ -48,6 +48,24 @@ function CounterFieldDemo({ disabled, loading }: { disabled: boolean; loading: b
   return <Field label="Legenda" hint="Aparece no feed" loading={loading} counter={{ count: caption.length, max: 80 }}>
     {(control) => <Textarea {...control} value={caption} onChange={(event) => setCaption(event.target.value)} disabled={disabled} />}
   </Field>;
+}
+
+const STRIP_CLIENTS = [
+  { id: 'c1', name: 'Padaria Central', href: '#client-strip' },
+  { id: 'c2', name: 'Clínica Viver Bem', href: '#client-strip', attention: ['em ajuste', 'em atraso'] },
+  { id: 'c3', name: 'Café do Alto', href: '#client-strip' }
+] as const;
+
+function FilterBarDemo({ disabled, loading }: { disabled: boolean; loading: boolean }) {
+  const [month, setMonth] = useState('10');
+  const [client, setClient] = useState('');
+  return <FilterBar label="Filtros do calendário">
+    <FilterBarSelect label="Mês" value={month} onChange={setMonth} disabled={disabled} loading={loading}
+      options={[{ value: '10', label: 'Outubro de 2026' }, { value: '11', label: 'Novembro de 2026' }]} />
+    <FilterBarSelect label="Cliente" value={client} onChange={setClient} placeholder="Todos" disabled={disabled}
+      options={[{ value: 'c1', label: 'Padaria Central' }, { value: 'c2', label: 'Clínica Viver Bem' }]} />
+    <FilterBarItem label="Buscar">{(control) => <TextInput {...control} defaultValue="pão" disabled={disabled} />}</FilterBarItem>
+  </FilterBar>;
 }
 
 function SegmentedDemo({ disabled, loading }: { disabled: boolean; loading: boolean }) {
@@ -206,6 +224,20 @@ export const componentEntries: readonly ComponentEntry[] = [
       ...(['sm', 'md', 'lg'] as const).map((size) => ({ label: size, render: (state: RenderedState) => stateOnly(state, ['default'], <Avatar name="Maria Souza" size={size} />) })),
       { label: 'com anel de atenção', render: (state: RenderedState) => stateOnly(state, ['default'], <Avatar name="Padaria Central" size="lg" attention="em ajuste, em atraso" />) }
     ]
+  },
+  {
+    id: 'client-strip',
+    name: 'ClientStrip',
+    covers: ['ClientStrip'],
+    wide: true,
+    examples: [{ label: 'um cliente aberto e um com anel de atenção', render: (state) => stateOnly(state, ['default'], <ClientStrip label="Clientes de exemplo" items={STRIP_CLIENTS} selectedId="c1" />) }]
+  },
+  {
+    id: 'filter-bar',
+    name: 'FilterBar',
+    covers: ['FilterBar', 'FilterBarItem', 'FilterBarSelect'],
+    wide: true,
+    examples: [{ label: 'rótulo acima, escolha abaixo, divisórias', render: (state) => <FilterBarDemo disabled={state === 'disabled'} loading={state === 'loading'} /> }]
   },
   {
     id: 'format-tag',
