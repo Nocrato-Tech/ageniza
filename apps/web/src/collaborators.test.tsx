@@ -413,7 +413,7 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
     const { container } = renderCollaborators(impl);
 
     await screen.findByText(hostile);
-    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('img:not([src^="/brand/"])')).toBeNull();
   });
 
   it('draws a badge-shaped skeleton on the first load', async () => {

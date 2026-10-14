@@ -113,7 +113,7 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     expect(screen.getByRole('button', { name: /Pessoa/ })).toBeTruthy();
     const nav = screen.getByRole('navigation', { name: 'Navegação da agência' });
     expect(within(nav).getByRole('link', { name: 'Início' })).toBeTruthy();
-    expect(within(nav).getByRole('link', { name: 'Colaboradores' })).toBeTruthy();
+    expect(within(nav).getByRole('link', { name: 'Equipe' })).toBeTruthy();
     expect(within(nav).getByRole('link', { name: 'Clientes' })).toBeTruthy();
     // The home offers the same modules as shortcuts.
     expect(screen.getByRole('heading', { name: 'Agência Um' })).toBeTruthy();
@@ -125,7 +125,7 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
 
     await screen.findByRole('link', { name: 'Agência Um' });
     const nav = screen.getByRole('navigation', { name: 'Navegação da agência' });
-    expect(within(nav).queryByRole('link', { name: 'Colaboradores' })).toBeNull();
+    expect(within(nav).queryByRole('link', { name: 'Equipe' })).toBeNull();
     expect(within(nav).getByRole('link', { name: 'Clientes' })).toBeTruthy();
 
     await navigate(probe, `/agencia/${AGENCY_A}/colaboradores`);
@@ -213,7 +213,7 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     // The loading shell keeps the account menu too, so a slow or failing load never traps the person.
     expect(within(container).getByRole('button', { name: /Pessoa/ })).toBeTruthy();
     expect(within(container).queryByRole('link', { name: 'Agência Um' })).toBeNull();
-    expect(within(container).queryByRole('link', { name: 'Colaboradores' })).toBeNull();
+    expect(within(container).queryByRole('link', { name: 'Equipe' })).toBeNull();
     expect(within(container).queryByRole('heading', { name: 'Colaboradores' })).toBeNull();
     expect(within(container).queryByRole('heading', { name: 'Página não encontrada' })).toBeNull();
     expect(within(container).queryByRole('link', { name: 'Agência Dois' })).toBeNull();
@@ -260,17 +260,17 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     await waitFor(() => expect(within(tabB.container).getByRole('link', { name: 'Agência Dois' })).toBeTruthy());
     const navA = within(tabA.container).getByRole('navigation', { name: 'Navegação da agência' });
     const navB = within(tabB.container).getByRole('navigation', { name: 'Navegação da agência' });
-    expect(within(navA).getByRole('link', { name: 'Colaboradores' })).toBeTruthy();
+    expect(within(navA).getByRole('link', { name: 'Equipe' })).toBeTruthy();
     expect(within(navA).queryByRole('link', { name: 'Clientes' })).toBeNull();
     expect(within(navB).getByRole('link', { name: 'Clientes' })).toBeTruthy();
-    expect(within(navB).queryByRole('link', { name: 'Colaboradores' })).toBeNull();
+    expect(within(navB).queryByRole('link', { name: 'Equipe' })).toBeNull();
 
     // Switching the agency in the same tab switches the whole context: the other agency's cached
     // answer is not reused, and nothing of the previous one stays on screen.
     await navigate(tabA.probe, `/agencia/${AGENCY_B}`);
     await waitFor(() => expect(within(tabA.container).getByRole('link', { name: 'Agência Dois' })).toBeTruthy());
     expect(within(tabA.container).queryByRole('link', { name: 'Agência Um' })).toBeNull();
-    expect(within(tabA.container).queryByRole('link', { name: 'Colaboradores' })).toBeNull();
+    expect(within(tabA.container).queryByRole('link', { name: 'Equipe' })).toBeNull();
     expect(within(tabA.container).getByRole('link', { name: 'Clientes' })).toBeTruthy();
   });
 });

@@ -1,10 +1,11 @@
 import { createContext, useContext } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 import { ButtonLink, LiveStatus } from '@ageniza/ui';
 
 import type { AuthSessionSnapshot } from './auth.js';
 import { useDocumentTitle } from './document-title.js';
+import { loginNavigation } from './session-end.js';
 import { StatusPanel } from './status-panel.js';
 
 export function LoadingPage() {
@@ -29,8 +30,9 @@ export function NotFoundPage({ as: Landmark = 'main', home }: { as?: 'main' | 's
 
 /** The session is gone: say so, and offer the way back in. The login keeps the address for the return. */
 function SessionEndedPage() {
+  const location = useLocation();
   useDocumentTitle('Área indisponível — Ageniza');
-  return <StatusPanel titleId="session-ended-title" title="Área indisponível" action={<ButtonLink as={Link} size="lg" to="/entrar">Entrar de novo</ButtonLink>}>
+  return <StatusPanel titleId="session-ended-title" title="Área indisponível" action={<ButtonLink as={Link} size="lg" {...loginNavigation(location)}>Entrar de novo</ButtonLink>}>
     Esta área exige uma sessão ativa.
   </StatusPanel>;
 }

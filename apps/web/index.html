@@ -2,6 +2,14 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
+    <!-- The agency area is dark: set the theme before the first paint so a reload at /agencia/... never
+         flashes white. DarkArea (src/area-theme.tsx) takes over once the app mounts and clears the marker. -->
+    <script>
+      if (/^\/agencia\/[^/]/.test(location.pathname)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.documentElement.setAttribute('data-theme-early', '');
+      }
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Credential links (/convite/:token, /senha/redefinir?token=…) must not leak through the
          Referer header to any third party; no cross-site navigation needs it. Safe today because
