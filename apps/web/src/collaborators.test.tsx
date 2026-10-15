@@ -2814,3 +2814,225 @@ describe('removed filter and reactivation (#105)', () => {
     await waitFor(() => expect((within(dialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement).disabled).toBe(false));
   });
 });
+
+// Issue #638: the team in the Pauta language. The markup the older tests pin did not change; these pin what the redesign added.
+describe('team screens in the Pauta language (#638)', () => {
+  const globalsCss = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
+  const invitesRegion = () => screen.findByRole('region', { name: 'Convites aguardando aceite' });
+  const PERMISSIONS = ['colaborador.visualizar', 'colaborador.convidar', 'convite.reenviar', 'convite.cancelar', 'colaborador.remover', 'colaborador.alterar_papel', 'colaborador.alterar_funcao'];
+  const headerOf = (container: HTMLElement): HTMLElement => container.querySelector('.collaborators__header') as HTMLElement;
+
+  it('closes the grid in three columns from 64rem, so a page of 24 never leaves a broken row', () => {
+    expect(globalsCss).toMatch(/@media \(min-width: 64rem\) \{\s*\.collaborators__grid \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
+  });
+
+  it('reacts to the pointer by border, never by background, over the badge', () => {
+    const hover = /\.collaborators__badge-link:hover \.ui-badge-card \{([^}]*)\}/.exec(globalsCss);
+    expect(hover?.[1]).toContain('border-color');
+    expect(hover?.[1]).not.toContain('background');
+  });
+
+  it('keeps what only a phone shows from breaking the page: the title shrinks, and the photo column is not squeezed beside the text', () => {
+    expect(globalsCss).toMatch(/\.collaborators__header h1 \{[^}]*font-size: clamp\(2rem, 10vw, 3rem\);/);
+    expect(globalsCss).toMatch(/\.collaborator-detail__photo \{[^}]*flex: none;/);
+    expect(globalsCss).toMatch(/\.collaborator-detail__photo \.ui-button \{[^}]*white-space: nowrap;/);
+  });
+
+  it('lays the filters out as a grid with the search on its own row, above the selects', () => {
+    expect(globalsCss).toMatch(/\.ui-filter-bar\.collaborators__filters \{[^}]*display: grid;/);
+    expect(globalsCss).toMatch(/\.ui-filter-bar\.collaborators__filters \.ui-filter-bar__item:first-child \{[^}]*grid-column: 1 \/ -1;/);
+  });
+
+  it('writes the invite action with an icon, not a plus character', async () => {
+    const { impl } = makeFetch();
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const invite = within(headerOf(container)).getByRole('button', { name: 'Convidar' });
+    expect(invite.textContent).toBe('Convidar');
+    expect(invite.querySelector('svg')).not.toBeNull();
+  });
+
+  it('groups the search and the filters in one labelled bar, each with a visible label', async () => {
+    const { impl } = makeFetch({ permissions: PERMISSIONS });
+    renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const bar = screen.getByRole('group', { name: 'Filtros da equipe' });
+    expect(Array.from(bar.querySelectorAll('.ui-filter-bar__label')).map((label) => label.textContent)).toEqual(['Buscar', 'Papel', 'Cargo', 'Status']);
+    expect(within(bar).getByRole('searchbox', { name: 'Buscar por nome ou e-mail' })).toBeTruthy();
+    for (const name of ['Papel', 'Cargo', 'Status']) expect(within(bar).getByRole('combobox', { name })).toBeTruthy();
+  });
+
+  it('shows the role of a badge as a capsule with its icon, and the removed marker with its own icon', async () => {
+    const { impl } = makeFetch({ permissions: PERMISSIONS, collaborators: (query) => listResponse(query.get('status') === 'removed' ? [pauloLima] : [anaPrado]) });
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const role = container.querySelector('.ui-badge-card__role .ui-pill');
+    expect(role?.textContent).toBe('Produção');
+    expect(role?.querySelector('svg')).not.toBeNull();
+    expect(container.querySelector('.ui-badge-card__removed')).toBeNull();
+    cleanup();
+
+    const removed = renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+    const marker = removed.container.querySelector('.ui-badge-card__removed');
+    expect(marker?.textContent).toBe('removido');
+    expect(marker?.querySelector('svg')).not.toBeNull();
+  });
+
+  describe('pending invitations', () => {
+    it('draws the role as a capsule and the deadline with its clock, and marks only a passed deadline as expired', async () => {
+      const past = pendingInvite('77777777-7777-4777-8777-777777777777', 'velho@exemplo.com', 'sales', 'Vendas', -2);
+      const { impl } = makeFetch({ invitations: (query) => invitationsResponse([inviteAna, past], query) });
+      renderCollaborators(impl);
+      const region = await invitesRegion();
+      await within(region).findByText('velho@exemplo.com');
+
+      const rows = Array.from(region.querySelectorAll('.invites__item'));
+      expect(rows).toHaveLength(2);
+      const [pending, expired] = rows as [Element, Element];
+      expect(pending.querySelector('.invites__role .ui-pill')?.textContent).toBe('Produção');
+      expect(pending.querySelector('.invites__expiry svg')).not.toBeNull();
+      expect(pending.querySelector('.invites__expiry')?.textContent).toBe('expira em 5 dias');
+      expect(pending.querySelector('.invites__expiry--expired')).toBeNull();
+      expect(expired.querySelector('.invites__expiry--expired')?.textContent).toBe('expirado');
+    });
+
+    it('greets the empty invitations with the owl only when the person is alone on a brand new team', async () => {
+      const empty = (query: URLSearchParams) => invitationsResponse([], query);
+      const alone = makeFetch({ collaborators: () => listResponse([anaSelf]), invitations: empty });
+      renderCollaborators(alone.impl);
+      let region = await invitesRegion();
+      await within(region).findByText('Nenhum convite aguardando aceite');
+      expect(region.querySelector('.ui-empty-state--mascot img')).not.toBeNull();
+      cleanup();
+
+      const team = makeFetch({ invitations: empty });
+      renderCollaborators(team.impl);
+      await screen.findByText('Ana Prado');
+      region = await invitesRegion();
+      await within(region).findByText('Nenhum convite aguardando aceite');
+      expect(region.querySelector('.ui-empty-state')).not.toBeNull();
+      expect(region.querySelector('.ui-empty-state--mascot')).toBeNull();
+      expect(region.querySelector('img')).toBeNull();
+      cleanup();
+
+      // A search that happens to find one person is not a new team.
+      const search = makeFetch({ collaborators: () => listResponse([anaSelf]), invitations: empty });
+      renderCollaborators(search.impl, `/agencia/${AGENCY_A}/colaboradores?q=ana`);
+      region = await invitesRegion();
+      await within(region).findByText('Nenhum convite aguardando aceite');
+      expect(region.querySelector('.ui-empty-state--mascot')).toBeNull();
+      cleanup();
+
+      // Nor is the removed filter showing a single removed person.
+      const removed = makeFetch({ permissions: PERMISSIONS, collaborators: () => listResponse([pauloLima]), invitations: empty });
+      renderCollaborators(removed.impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+      region = await invitesRegion();
+      await within(region).findByText('Nenhum convite aguardando aceite');
+      await screen.findByText('Paulo Lima');
+      expect(region.querySelector('.ui-empty-state--mascot')).toBeNull();
+    });
+
+    it('keeps both retry buttons secondary, so a failed screen still holds one primary action', async () => {
+      const failing = (): Response => json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500);
+      const { impl } = makeFetch({ collaborators: failing, invitations: failing });
+      renderCollaborators(impl);
+      // The query client retries a 5xx once, so both errors arrive after its delay.
+      await waitFor(() => expect(screen.getAllByRole('button', { name: 'Tentar de novo' })).toHaveLength(2), { timeout: 8000 });
+      for (const retry of screen.getAllByRole('button', { name: 'Tentar de novo' })) {
+        expect(retry.className).toContain('ui-button--secondary');
+        expect(retry.className).not.toContain('ui-button--primary');
+      }
+    });
+
+    it('keeps the empty-state invite secondary, so the header holds the one primary action', async () => {
+      const { impl } = makeFetch({ invitations: (query) => invitationsResponse([], query) });
+      const { container } = renderCollaborators(impl);
+      const region = await invitesRegion();
+      const inEmpty = await within(region).findByRole('button', { name: 'Convidar' });
+      expect(inEmpty.className).toContain('ui-button--secondary');
+      const inHeader = within(headerOf(container)).getByRole('button', { name: 'Convidar' });
+      expect(inHeader.className).toContain('ui-button--primary');
+    });
+  });
+
+  describe('dialogs', () => {
+    it('puts the invite submit in the dialog footer, bound to its form', async () => {
+      const { impl } = makeFetch();
+      const { container } = renderCollaborators(impl);
+      await screen.findByText('Ana Prado');
+      fireEvent.click(within(headerOf(container)).getByRole('button', { name: 'Convidar' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Convidar colaborador' });
+
+      const form = dialog.querySelector('form') as HTMLFormElement;
+      const submit = within(dialog).getByRole('button', { name: 'Enviar convite' }) as HTMLButtonElement;
+      expect(submit.closest('.ui-modal__actions')).not.toBeNull();
+      expect(form.contains(submit)).toBe(false);
+      expect(submit.form).toBe(form);
+      expect(dialog.classList.contains('ui-modal--sm')).toBe(true);
+    });
+
+    it('puts Cancelar before Reativar in the reactivation footer, the primary action last', async () => {
+      const { impl } = makeFetch({ permissions: PERMISSIONS, collaborators: () => listResponse([pauloLima]) });
+      renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+      await screen.findByText('Paulo Lima');
+      fireEvent.click(screen.getByRole('button', { name: 'Reativar Paulo Lima' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Reativar Paulo Lima' });
+
+      const footer = dialog.querySelector('.ui-modal__actions') as HTMLElement;
+      expect(Array.from(footer.querySelectorAll('button')).map((button) => button.textContent)).toEqual(['Cancelar', 'Reativar']);
+      expect((within(dialog).getByRole('button', { name: 'Reativar' }) as HTMLButtonElement).form).toBe(dialog.querySelector('form'));
+      expect(within(dialog).getByText('Escolha o papel de acesso com que essa pessoa volta.').className).toContain('ui-modal__description');
+    });
+  });
+
+  describe('collaborator detail', () => {
+    const detailUrl = `/agencia/${AGENCY_A}/colaboradores?colaborador=${marioCosta.membershipId}`;
+
+    it('is a real tab set: the open panel is named by its tab, and the disabled tabs are skipped by the arrows', async () => {
+      const { impl } = makeFetch();
+      renderCollaborators(impl, detailUrl);
+      const modal = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+      const details = within(modal).getByRole('tab', { name: 'Detalhes' });
+      const panel = within(modal).getByRole('tabpanel', { name: 'Detalhes' });
+      expect(details.getAttribute('aria-controls')).toBe(panel.id);
+      fireEvent.keyDown(details, { key: 'ArrowRight' });
+      fireEvent.keyDown(details, { key: 'End' });
+      expect(details.getAttribute('aria-selected')).toBe('true');
+      expect(within(modal).getAllByRole('tab').map((tab) => tab.hasAttribute('disabled'))).toEqual([false, true, true]);
+    });
+
+    it('says in words why each future tab is off, next to its name', async () => {
+      const { impl } = makeFetch();
+      renderCollaborators(impl, detailUrl);
+      const modal = await screen.findByRole('dialog', { name: 'Mário Costa' });
+
+      const reasons = Array.from(modal.querySelectorAll('.collaborator-detail__soon > div')).map((row) => [row.querySelector('dt')?.textContent, row.querySelector('dd')?.textContent]);
+      expect(reasons).toEqual([
+        ['Performance', 'Disponível quando o módulo de Tarefas existir.'],
+        ['Entregas', 'Disponível quando o módulo de Tarefas existir.']
+      ]);
+    });
+
+    it('shows the job title and role as the headline of the identity', async () => {
+      const { impl } = makeFetch();
+      renderCollaborators(impl, detailUrl);
+      const modal = await screen.findByRole('dialog', { name: 'Mário Costa' });
+      expect(modal.querySelector('.collaborator-detail__headline')?.textContent).toBe('Copywriter · Produção');
+    });
+
+    it('offers the destructive action and the photo change with their icons', async () => {
+      const admin = makeFetch({ permissions: PERMISSIONS });
+      renderCollaborators(admin.impl, detailUrl);
+      const modal = await screen.findByRole('dialog', { name: 'Mário Costa' });
+      expect(within(modal).getByRole('button', { name: 'Remover do quadro' }).querySelector('svg')).not.toBeNull();
+      cleanup();
+
+      const self = makeSelfFetch();
+      renderCollaborators(self.impl, `/agencia/${AGENCY_A}/colaboradores?colaborador=${anaPrado.membershipId}`);
+      const own = await screen.findByRole('dialog', { name: 'Ana Prado' });
+      expect(within(own).getByRole('button', { name: 'Trocar foto' }).querySelector('svg')).not.toBeNull();
+    });
+  });
+});

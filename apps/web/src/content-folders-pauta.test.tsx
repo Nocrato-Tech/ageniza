@@ -141,6 +141,40 @@ describe('the Pastas view in the Pauta: one place to act in each state', () => {
     expect(empty.querySelector('h3')?.textContent).toBe('Pasta não encontrada.');
     expect(back.classList.contains('ui-button')).toBe(true);
     expect(back.closest('.ui-empty-state__action')).not.toBeNull();
+    expect(back.classList.contains('ui-button--secondary')).toBe(true);
+    expect(empty.querySelectorAll('.ui-button--primary')).toHaveLength(0);
+  });
+
+  it('shows no mascot in any empty state of the view: the screen of work has none', async () => {
+    open(makeWorld({ folders: [] }));
+    await screen.findByText('Nenhuma pasta ainda. Crie a primeira.');
+    expect(view().querySelectorAll('.ui-empty-state--mascot, .ui-mascot')).toHaveLength(0);
+    cleanup();
+
+    open(makeWorld({ folders: [folderFixture(1, 'Vídeos', { isDefault: true })] }), `&pasta=${VIDEOS}`);
+    await screen.findByText('Nenhuma pasta de trabalho nesta pasta.');
+    await screen.findByText('Nenhuma mídia nesta pasta ainda.');
+    expect(screen.getAllByRole('heading', { level: 4 }).filter((title) => title.closest('.ui-empty-state') !== null)).toHaveLength(2);
+    expect(view().querySelectorAll('.ui-empty-state--mascot, .ui-mascot')).toHaveLength(0);
+    cleanup();
+
+    open(makeWorld(), `&pasta=${idOf('9', 1)}`);
+    await screen.findByText('Pasta não encontrada.');
+    expect(document.querySelectorAll('.ui-empty-state--mascot, .ui-mascot')).toHaveLength(0);
+  });
+
+  it('asks nothing of whoever cannot operate in the empty states of the folders either', async () => {
+    open(makeWorld({ folders: [], permissions: READ_ONLY }));
+    const none = (await screen.findByText('Nenhuma pasta ainda.')).closest('.ui-empty-state') as HTMLElement;
+    expect(within(none).queryByRole('button')).toBeNull();
+    expect(none.querySelector('.ui-empty-state__description')).toBeNull();
+    cleanup();
+
+    open(makeWorld({ folders: [folderFixture(1, 'Vídeos', { isDefault: true })], permissions: READ_ONLY }), `&pasta=${VIDEOS}`);
+    const work = (await screen.findByText('Nenhuma pasta de trabalho nesta pasta.')).closest('.ui-empty-state') as HTMLElement;
+    expect(within(work).queryByRole('button')).toBeNull();
+    expect(work.querySelector('.ui-empty-state__description')).toBeNull();
+    expect(screen.queryByRole('button', { name: /nova pasta/i })).toBeNull();
   });
 
   it('draws the Padrão mark as a Pill and the folder as an icon, with no character in its place', async () => {
@@ -187,6 +221,21 @@ describe('the Pastas view in the Pauta: one place to act in each state', () => {
     expect(await screen.findByRole('button', { name: 'Tentar de novo' })).toBeTruthy();
     expect(view().querySelectorAll('.ui-button--primary')).toHaveLength(0);
     expect(screen.getByRole('alert').textContent).toBe('A conexão caiu durante o envio. Tente de novo.');
+  });
+
+  it('turns the picker off while a file is on its way, and reads the progress once, from the bar', async () => {
+    class PendingXhr extends DownXhr { public override send(): void { /* the storage never answers */ } }
+    vi.stubGlobal('XMLHttpRequest', PendingXhr);
+    open(makeWorld({ assets: [assetFixture(1, IMAGES)] }), `&pasta=${IMAGES}`);
+    await screen.findByRole('list', { name: 'Mídias da pasta' });
+    fireEvent.change(inputOf(), { target: { files: [photo()] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar' }));
+
+    const bar = await screen.findByRole('progressbar', { name: 'Enviando foto.jpg' });
+    expect(bar).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Enviar mídia' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(view().querySelector('.media-uploader__percent')?.getAttribute('aria-hidden')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Cancelar envio' }).classList.contains('ui-button--secondary')).toBe(true);
   });
 
   it('keeps the picker on screen after a file the retry cannot fix, so the person picks another', async () => {

@@ -1,6 +1,10 @@
-import { useEffect, useId, useRef, useState, type FocusEvent, type PointerEvent, type ReactNode, type Ref } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type FocusEvent, type PointerEvent, type ReactNode, type Ref } from 'react';
 
+import { placeFloating, type Placed } from './popover-position.js';
 import { Skeleton } from './skeleton.js';
+
+const FLOATING_GAP = 8;
+const FLOATING_MARGIN = 8;
 
 export type PopoverPlacement = 'bottom-start' | 'bottom-end' | 'top-start' | 'top-end';
 
@@ -32,6 +36,12 @@ export interface PopoverProps {
   disabled?: boolean;
   /** Shows the reserved shape of the card instead of its content while it loads. */
   loading?: boolean;
+  /**
+   * `fixed` places the card on the screen, not inside the anchor: it opens towards the side the placement asks for,
+   * flips and slides to stay inside the viewport, and closes when the page scrolls. Use it where a scrolling or
+   * clipping ancestor would cut an absolute card.
+   */
+  strategy?: 'absolute' | 'fixed';
   className?: string;
 }
 
@@ -43,11 +53,16 @@ const keyboardFocus = (target: EventTarget): boolean => {
   }
 };
 
+// Until it is measured the card is laid out out of sight, so its size can be read without a flash at the wrong place.
+const fixedStyle = (placed: Placed | null): CSSProperties => (placed === null ? { visibility: 'hidden', top: 0, left: 0 } : { top: placed.top, left: placed.left });
+
 /** A floating card anchored to its trigger: Esc and a press outside close it and give focus back to the trigger. */
-export function Popover({ label, trigger, children, openOn = 'click', hoverDelay = 300, hoverLeaveDelay = 150, placement = 'bottom-start', onOpenChange, disabled = false, loading = false, className }: PopoverProps) {
+export function Popover({ label, trigger, children, openOn = 'click', hoverDelay = 300, hoverLeaveDelay = 150, placement = 'bottom-start', onOpenChange, disabled = false, loading = false, strategy = 'absolute', className }: PopoverProps) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [placed, setPlaced] = useState<Placed | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const panelId = useId();
 
@@ -79,6 +94,40 @@ export function Popover({ label, trigger, children, openOn = 'click', hoverDelay
     return () => {
       document.removeEventListener('pointerdown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
+    };
+  });
+
+  useLayoutEffect(() => {
+    if (!open || strategy !== 'fixed') {
+      setPlaced(null);
+      return;
+    }
+    const place = (): void => {
+      const anchor = wrapperRef.current?.getBoundingClientRect();
+      const card = panelRef.current?.getBoundingClientRect();
+      if (anchor === undefined || card === undefined) return;
+      setPlaced(placeFloating(anchor, card, { width: window.innerWidth, height: window.innerHeight }, placement, FLOATING_GAP, FLOATING_MARGIN));
+    };
+    place();
+    // The content arrives after the card opens (a request): the card grows, and it has to be placed again.
+    if (typeof ResizeObserver === 'undefined' || panelRef.current === null) return;
+    const observer = new ResizeObserver(place);
+    observer.observe(panelRef.current);
+    return () => observer.disconnect();
+  }, [open, strategy, placement]);
+
+  useEffect(() => {
+    if (!open || strategy !== 'fixed') return;
+    const onScroll = (event: Event): void => {
+      if (event.target instanceof Node && panelRef.current?.contains(event.target)) return;
+      change(false);
+    };
+    const onResize = (): void => change(false);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
     };
   });
 
@@ -133,7 +182,17 @@ export function Popover({ label, trigger, children, openOn = 'click', hoverDelay
         onClick: openOn === 'click' && !disabled ? () => change(!open) : undefined
       })}
       {open && (
-        <div id={panelId} role="dialog" tabIndex={-1} aria-label={label} aria-busy={loading || undefined} className={`ui-popover ui-popover--${placement}`}>
+        <div
+          ref={panelRef}
+          id={panelId}
+          role="dialog"
+          tabIndex={-1}
+          aria-label={label}
+          aria-busy={loading || undefined}
+          data-placement={placement}
+          className={strategy === 'fixed' ? 'ui-popover ui-popover--fixed' : `ui-popover ui-popover--${placement}`}
+          style={strategy === 'fixed' ? fixedStyle(placed) : undefined}
+        >
           {loading ? <><Skeleton /><Skeleton /></> : children}
         </div>
       )}

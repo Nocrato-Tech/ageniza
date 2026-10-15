@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Clock, Plus, Send, ShieldCheck, X } from 'lucide-react';
 
 import {
   AuthNoContentResponseSchema,
@@ -7,7 +8,7 @@ import {
   PendingInvitationListResponseSchema,
   type PendingInvitation
 } from '@ageniza/contracts';
-import { Button, ConfirmDialog, LiveStatus, Pagination, Skeleton } from '@ageniza/ui';
+import { Button, ConfirmDialog, EmptyState, LiveStatus, Pagination, Pill, Skeleton } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -51,6 +52,11 @@ export interface PendingInvitationsSectionProps {
   onPageChange: (page: number) => void;
   /** Opens the invite modal owned by the page; the empty state offers the same action as the header. */
   onInvite: () => void;
+  /**
+   * The owl is for a first visit (docs/brand.md: never on a full work screen), so the page lends it
+   * only while the team is the person alone; with a full team the empty state is plain text.
+   */
+  mascot?: boolean;
 }
 
 /**
@@ -60,7 +66,7 @@ export interface PendingInvitationsSectionProps {
  * the list is invalidated and the deadline is renewed in place; cancelling asks for confirmation
  * first. No response field carries the invitation token, and none is rendered.
  */
-export function PendingInvitationsSection({ page, onPageChange, onInvite }: PendingInvitationsSectionProps) {
+export function PendingInvitationsSection({ page, onPageChange, onInvite, mascot = false }: PendingInvitationsSectionProps) {
   const agency = useAgencyContext();
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
@@ -130,26 +136,32 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite }: Pend
   } else if (invitations.isError) {
     body = <div className="invites__error" role="alert">
       <p>{LIST_ERROR}</p>
-      <Button onClick={() => { void invitations.refetch(); }}>Tentar de novo</Button>
+      <Button variant="secondary" onClick={() => { void invitations.refetch(); }}>Tentar de novo</Button>
     </div>;
   } else if (data === undefined || outOfRange) {
     body = null;
   } else if (data.data.length === 0) {
-    body = <div className="invites__empty">
-      <p>Nenhum convite aguardando aceite</p>
-      <Button onClick={onInvite}><span aria-hidden="true">+</span> Convidar</Button>
-    </div>;
+    body = <EmptyState
+      className="invites__empty"
+      headingLevel={3}
+      mascot={mascot}
+      title="Nenhum convite aguardando aceite"
+      description="Convide por e-mail e escolha o papel: a pessoa entra na equipe assim que aceitar."
+      action={<Button variant="secondary" leadingIcon={<Plus />} onClick={onInvite}>Convidar</Button>}
+    />;
   } else {
     body = <>
       <ul className="invites__list">
         {data.data.map((invitation) => <li key={invitation.id} className="invites__item">
           <p className="invites__email">{invitation.email}</p>
-          <p className="invites__role">{invitation.role.name}</p>
-          <p className="invites__expiry">{pendingInviteExpiryLabel(invitation.expiresAt)}</p>
+          <p className="invites__role"><Pill icon={<ShieldCheck />}>{invitation.role.name}</Pill></p>
+          <p className={['invites__expiry', pendingInviteExpiryLabel(invitation.expiresAt) === 'expirado' && 'invites__expiry--expired'].filter(Boolean).join(' ')}>
+            <Clock aria-hidden="true" size={16} strokeWidth={1.75} />{pendingInviteExpiryLabel(invitation.expiresAt)}
+          </p>
           <div className="invites__actions">
             {canResend && <Button
-              size="sm"
               variant="secondary"
+              leadingIcon={<Send />}
               aria-label={`Reenviar convite de ${invitation.email}`}
               loading={resend.isPending && resend.variables?.id === invitation.id}
               onClick={() => { setResentEmail(null); resend.mutate(invitation); }}
@@ -157,8 +169,8 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite }: Pend
               Reenviar
             </Button>}
             {canCancel && <Button
-              size="sm"
               variant="ghost"
+              leadingIcon={<X />}
               aria-label={`Cancelar convite de ${invitation.email}`}
               onClick={() => { cancel.reset(); setConfirming(invitation); }}
             >
@@ -175,7 +187,7 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite }: Pend
   return <section className="invites" aria-labelledby="pending-invites-title">
     <header className="invites__header">
       <h2 id="pending-invites-title">Convites aguardando aceite</h2>
-      {data !== undefined && <span className="invites__count">{data.meta.totalItems}</span>}
+      {data !== undefined && <Pill className="invites__count">{data.meta.totalItems}</Pill>}
     </header>
     {resentEmail !== null && <LiveStatus>Convite reenviado para {resentEmail}. O link anterior deixou de valer.</LiveStatus>}
     {/* The failure may already have renewed the invitation; the message stays visible above the list. */}

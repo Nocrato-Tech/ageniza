@@ -692,3 +692,171 @@ describe('the states of the modal', () => {
     expect(within(dialog()).queryByRole('button', { name: 'Tentar de novo' })).toBeNull();
   });
 });
+
+const iconOf = (tag: Element): string => tag.querySelector('svg')?.getAttribute('class') ?? '';
+const listRows = (): HTMLElement[] => within(document.querySelector<HTMLElement>('.story-list')!).queryAllByRole('listitem');
+
+describe('the list of scripts of the period (#635)', () => {
+  it('says there is none and offers "Novo roteiro", which opens the new script on today', async () => {
+    const { impl } = makeFetch();
+    render_(impl);
+    await calendarReady();
+
+    const list = document.querySelector<HTMLElement>('.story-list')!;
+    expect(within(list).getByRole('heading', { name: 'Roteiros de stories' })).toBeTruthy();
+    expect(within(list).getByRole('heading', { name: 'Nenhum roteiro de stories neste período' })).toBeTruthy();
+    expect(within(list).queryAllByRole('listitem')).toHaveLength(0);
+    fireEvent.click(within(list).getByRole('button', { name: 'Novo roteiro' }));
+
+    await screen.findByRole('dialog', { name: 'Novo roteiro de stories' });
+    expect((within(dialog()).getByLabelText('Dia dos stories') as HTMLInputElement).value).toBe('2026-10-11');
+  });
+
+  it('offers no way to write one without conteudo.operar, and still says there is none', async () => {
+    const { impl } = makeFetch({ permissions: [VISUALIZE, READ_CLIENTS] });
+    render_(impl);
+    await calendarReady();
+
+    const list = document.querySelector<HTMLElement>('.story-list')!;
+    expect(within(list).getByRole('heading', { name: 'Nenhum roteiro de stories neste período' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Novo roteiro' })).toBeNull();
+  });
+
+  it('lists each script by day with its state, in the order of the days, and opens the one that was chosen', async () => {
+    const later = scriptOf(padaria.id, { scriptOn: '2026-10-22', status: 'recorded', texts: ['Depois'] });
+    const first = scriptOf(padaria.id, { scriptOn: '2026-10-05', status: 'draft', texts: ['Primeiro'] });
+    const middle = scriptOf(padaria.id, { scriptOn: '2026-10-20', status: 'sent', texts: ['Meio'] });
+    const { impl } = makeFetch({ scripts: [later, first, middle] });
+    render_(impl);
+    await calendarReady();
+
+    expect(listRows().map((row) => row.textContent)).toEqual([
+      'segunda-feira, 5 de outubro de 2026RascunhoAbrir',
+      'terça-feira, 20 de outubro de 2026EnviadoAbrir',
+      'quinta-feira, 22 de outubro de 2026GravadoAbrir'
+    ]);
+    expect(within(document.querySelector<HTMLElement>('.story-list')!).getByRole('button', { name: 'Novo roteiro' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Nenhum roteiro de stories neste período' })).toBeNull();
+
+    fireEvent.click(within(listRows()[1]!).getByRole('button', { name: 'Abrir o roteiro de terça-feira, 20 de outubro de 2026' }));
+    await screen.findByRole('dialog', { name: 'Roteiro de stories' });
+    expect(await within(dialog()).findByText('Meio')).toBeTruthy();
+    expect(within(dialog()).queryByText('Primeiro')).toBeNull();
+  });
+
+  it('keeps the other clients and the other periods out of the list', async () => {
+    const { impl } = makeFetch({
+      scripts: [
+        scriptOf(padaria.id, { scriptOn: '2026-10-20' }),
+        scriptOf(academia.id, { scriptOn: '2026-10-21' }),
+        scriptOf(padaria.id, { scriptOn: '2026-11-03' })
+      ]
+    });
+    render_(impl);
+    await calendarReady();
+
+    expect(listRows()).toHaveLength(1);
+  });
+
+  it('is not shown on the feed view, which has no calendar to complete', async () => {
+    const { impl } = makeFetch({ scripts: [scriptOf(padaria.id)] });
+    render_(impl);
+    await calendarReady();
+    expect(document.querySelector('.story-list')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Feed' }));
+    await waitFor(() => expect(document.querySelector('.content-calendar')).toBeNull());
+    expect(document.querySelector('.story-list')).toBeNull();
+  });
+});
+
+describe('the three states of a script (#635)', () => {
+  it('tells draft, sent and recorded apart by word and by icon shape, in the list, on the day and in the modal', async () => {
+    const scripts = [
+      scriptOf(padaria.id, { scriptOn: '2026-10-05', status: 'draft' }),
+      scriptOf(padaria.id, { scriptOn: '2026-10-06', status: 'sent' }),
+      scriptOf(padaria.id, { scriptOn: '2026-10-07', status: 'recorded' })
+    ];
+    const { impl } = makeFetch({ scripts });
+    render_(impl);
+    await calendarReady();
+
+    const inList = listRows().map((row) => row.querySelector('.ui-status-tag')!);
+    const onDays = ['2026-10-05', '2026-10-06', '2026-10-07'].map((day) => within(dayCell(day)).getByRole('button', { name: /^Stories/ }).querySelector('.ui-status-tag')!);
+    for (const tags of [inList, onDays]) {
+      expect(tags.map((tag) => tag.textContent)).toEqual(['Rascunho', 'Enviado', 'Gravado']);
+      expect(new Set(tags.map(iconOf)).size).toBe(3);
+      for (const tag of tags) expect(tag.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    }
+    expect(inList.map(iconOf)).toEqual(onDays.map(iconOf));
+
+    fireEvent.click(within(dayCell('2026-10-06')).getByRole('button', { name: /^Stories/ }));
+    const modal = await screen.findByRole('dialog', { name: 'Roteiro de stories' });
+    await waitFor(() => expect(modal.querySelector('.story-script__status .ui-status-tag')?.textContent).toBe('Enviado'));
+    expect(iconOf(modal.querySelector('.story-script__status .ui-status-tag')!)).toBe(iconOf(inList[1]!));
+  });
+
+  it('shows the state of a draft in the editor, and who recorded a recorded one', async () => {
+    const draft = scriptOf(padaria.id, { scriptOn: '2026-10-05' });
+    const recorded = scriptOf(padaria.id, { scriptOn: '2026-10-06', status: 'recorded' });
+    const { impl } = makeFetch({
+      scripts: [draft, recorded],
+      override: (call) => (call.method === 'GET' && call.path.endsWith(`/story-scripts/${recorded.id}`)
+        ? json({ ...shown(recorded), recordedBy: { name: 'Dona Rosa' }, recordedAt: '2026-10-10T12:00:00.000Z' })
+        : undefined)
+    });
+    render_(impl);
+    await openScript('2026-10-05');
+    await waitFor(() => expect(textsOnScreen()).toHaveLength(2));
+    expect(dialog().querySelector('.story-script__status')?.textContent).toBe('Rascunho');
+
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancelar' }));
+    fireEvent.click(within(dayCell('2026-10-06')).getByRole('button', { name: /^Stories/ }));
+    await within(await screen.findByRole('dialog')).findByText('Gravado por Dona Rosa');
+    expect(dialog().querySelector('.story-script__status')?.textContent).toBe('GravadoGravado por Dona Rosa');
+  });
+});
+
+describe('the modal in the Pauta look (#635)', () => {
+  it('puts every field in a Field, and sending is the one primary action, last in the foot', async () => {
+    const script = scriptOf(padaria.id);
+    const { impl } = makeFetch({ scripts: [script] });
+    render_(impl);
+    await openScript('2026-10-20');
+    await waitFor(() => expect(textsOnScreen()).toHaveLength(2));
+
+    for (const label of ['Dia dos stories', 'Texto da cena 1', 'Orientação da cena 1', 'Texto da cena 2']) {
+      expect(within(dialog()).getByLabelText(label).closest('.ui-field'), label).not.toBeNull();
+    }
+    const buttons = within(dialog().querySelector<HTMLElement>('.form-actions')!).getAllByRole('button');
+    expect(buttons.map((button) => button.textContent)).toEqual(['Cancelar', 'Salvar rascunho', 'Enviar ao cliente']);
+    expect(buttons.map((button) => button.className.match(/ui-button--(primary|secondary|ghost)/)![1])).toEqual(['ghost', 'secondary', 'primary']);
+    expect(dialog().querySelectorAll('.ui-button--primary')).toHaveLength(1);
+  });
+
+  it('gives the dialog a description and moves a scene with icon buttons that keep their names', async () => {
+    const { impl } = makeFetch({ scripts: [scriptOf(padaria.id)] });
+    render_(impl);
+    await openScript('2026-10-20');
+    await waitFor(() => expect(textsOnScreen()).toHaveLength(2));
+
+    expect(document.getElementById(dialog().getAttribute('aria-describedby') ?? '')?.textContent).toBe('Cada cena leva o texto e, se quiser, a orientação para gravar.');
+    const down = within(dialog()).getByRole('button', { name: 'Mover cena 1 para baixo' });
+    expect(down.classList.contains('ui-icon-button')).toBe(true);
+    expect(down.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    expect(down.textContent).toBe('');
+  });
+
+  it('keeps an invalid scene marked and described by its own message', async () => {
+    const { impl } = makeFetch();
+    render_(impl);
+    await openNewScriptOn('2026-10-20');
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Salvar rascunho' }));
+
+    const field = within(dialog()).getByLabelText('Texto da cena 1');
+    const message = await within(dialog()).findByText('Escreva o texto da cena.');
+    expect(field.getAttribute('aria-invalid')).toBe('true');
+    expect(field.getAttribute('aria-describedby')).toBe(message.id);
+    expect(message.getAttribute('role')).toBe('alert');
+  });
+});

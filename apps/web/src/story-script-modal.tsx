@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowDown, ArrowUp, Plus, Send } from 'lucide-react';
 
 import {
   CalendarDaySchema,
@@ -13,21 +14,16 @@ import {
   type StoryScript,
   type UpdateStoryScriptRequest
 } from '@ageniza/contracts';
-import { Button, FieldMessage, Modal, Skeleton, Textarea, TextInput } from '@ageniza/ui';
+import { Button, Dialog, Field, FieldMessage, IconButton, Skeleton, Textarea, TextInput } from '@ageniza/ui';
 
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { StoryScriptStatusTag } from './story-script-status.js';
 
 export type StoryScriptTarget =
   | { readonly kind: 'new'; readonly day: string }
   | { readonly kind: 'open'; readonly scriptId: string };
-
-export const STORY_SCRIPT_STATUS_LABELS: Readonly<Record<StoryScript['status'], string>> = {
-  draft: 'Rascunho',
-  sent: 'Enviado',
-  recorded: 'Gravado'
-};
 
 const SCRIPTS_PATH = '/agencies/:agencyId/clients/:clientId/story-scripts';
 const SCRIPT_PATH = `${SCRIPTS_PATH}/:scriptId`;
@@ -266,10 +262,10 @@ function ScriptEditor({ clientId, initial, initialDay, canOperate, onBusyChange,
   if (!canWrite) {
     return <div className="form-stack story-script">
       <p className="story-script__status">
-        <span className="content-card__badge">{STORY_SCRIPT_STATUS_LABELS[status]}</span>
-        {saved?.recordedBy?.name != null && <> Gravado por {saved.recordedBy.name}</>}
+        <StoryScriptStatusTag status={status} />
+        {saved?.recordedBy?.name != null && <span>Gravado por {saved.recordedBy.name}</span>}
       </p>
-      <p><strong>Dia dos stories:</strong> <time dateTime={form.scriptOn}>{dayText(form.scriptOn)}</time></p>
+      <p className="story-script__day"><strong>Dia dos stories:</strong> <time dateTime={form.scriptOn}>{dayText(form.scriptOn)}</time></p>
       {form.scenes.length === 0
         ? <p className="form-hint">Este roteiro não tem cenas.</p>
         : <ol className="story-script__scenes">
@@ -287,20 +283,21 @@ function ScriptEditor({ clientId, initial, initialDay, canOperate, onBusyChange,
   }
 
   return <form className="form-stack story-script" onSubmit={onSubmit} noValidate>
-    <p className="story-script__status"><span className="content-card__badge">{STORY_SCRIPT_STATUS_LABELS[status]}</span></p>
-    <div className="form-field">
-      <label htmlFor={dayId}>Dia dos stories</label>
-      <TextInput
-        id={dayId}
-        type="date"
-        value={form.scriptOn}
-        disabled={busy}
-        onChange={(event) => { setForm({ ...form, scriptOn: event.target.value }); setErrors((current) => ({ scenes: current.scenes })); setFormError(undefined); }}
-        aria-invalid={errors.scriptOn !== undefined}
-        aria-describedby={errors.scriptOn === undefined ? undefined : `${dayId}-error`}
-      />
-      {errors.scriptOn !== undefined && <FieldMessage id={`${dayId}-error`} role="alert">{errors.scriptOn}</FieldMessage>}
-    </div>
+    <p className="story-script__status"><StoryScriptStatusTag status={status} /></p>
+    <Field id={dayId} label="Dia dos stories">
+      {(control) => <>
+        <TextInput
+          {...control}
+          type="date"
+          value={form.scriptOn}
+          disabled={busy}
+          onChange={(event) => { setForm({ ...form, scriptOn: event.target.value }); setErrors((current) => ({ scenes: current.scenes })); setFormError(undefined); }}
+          aria-invalid={errors.scriptOn !== undefined}
+          aria-describedby={errors.scriptOn === undefined ? undefined : `${dayId}-error`}
+        />
+        {errors.scriptOn !== undefined && <FieldMessage id={`${dayId}-error`} role="alert">{errors.scriptOn}</FieldMessage>}
+      </>}
+    </Field>
     <ol className="story-script__scenes">
       {form.scenes.map((scene, index) => {
         const sceneErrors = errors.scenes[scene.key] ?? {};
@@ -309,64 +306,66 @@ function ScriptEditor({ clientId, initial, initialDay, canOperate, onBusyChange,
           <div className="story-script__scene-heading">
             <h3 className="story-script__scene-title">Cena {number}</h3>
             <div className="story-script__moves">
-              <Button
-                variant="ghost"
-                aria-label={`Mover cena ${number} para cima`}
+              <IconButton
+                label={`Mover cena ${number} para cima`}
+                icon={<ArrowUp />}
                 disabled={busy || index === 0}
                 ref={(element) => { moveButtons.current.set(scene.key, { up: element, down: moveButtons.current.get(scene.key)?.down ?? null }); }}
                 onClick={() => move(index, -1)}
-              ><span aria-hidden="true">↑</span></Button>
-              <Button
-                variant="ghost"
-                aria-label={`Mover cena ${number} para baixo`}
+              />
+              <IconButton
+                label={`Mover cena ${number} para baixo`}
+                icon={<ArrowDown />}
                 disabled={busy || index === form.scenes.length - 1}
                 ref={(element) => { moveButtons.current.set(scene.key, { up: moveButtons.current.get(scene.key)?.up ?? null, down: element }); }}
                 onClick={() => move(index, 1)}
-              ><span aria-hidden="true">↓</span></Button>
+              />
             </div>
           </div>
-          <div className="form-field">
-            <label htmlFor={`${scene.key}-text`}>Texto da cena {number}</label>
-            <Textarea
-              id={`${scene.key}-text`}
-              ref={(element) => { textareas.current.set(scene.key, element); }}
-              rows={3}
-              maxLength={STORY_SCENE_TEXT_MAX_LENGTH}
-              value={scene.text}
-              disabled={busy}
-              onChange={(event) => editScene(scene.key, { text: event.target.value })}
-              aria-invalid={sceneErrors.text !== undefined}
-              aria-describedby={sceneErrors.text === undefined ? undefined : `${scene.key}-text-error`}
-            />
-            {sceneErrors.text !== undefined && <FieldMessage id={`${scene.key}-text-error`} role="alert">{sceneErrors.text}</FieldMessage>}
-          </div>
-          <div className="form-field">
-            <label htmlFor={`${scene.key}-guidance`}>Orientação da cena {number}</label>
-            <Textarea
-              id={`${scene.key}-guidance`}
-              rows={2}
-              maxLength={STORY_SCENE_GUIDANCE_MAX_LENGTH}
-              value={scene.guidance}
-              disabled={busy}
-              onChange={(event) => editScene(scene.key, { guidance: event.target.value })}
-              aria-invalid={sceneErrors.guidance !== undefined}
-              aria-describedby={sceneErrors.guidance === undefined ? undefined : `${scene.key}-guidance-error`}
-            />
-            {sceneErrors.guidance !== undefined && <FieldMessage id={`${scene.key}-guidance-error`} role="alert">{sceneErrors.guidance}</FieldMessage>}
-          </div>
+          <Field id={`${scene.key}-text`} label={`Texto da cena ${number}`}>
+            {(control) => <>
+              <Textarea
+                {...control}
+                ref={(element) => { textareas.current.set(scene.key, element); }}
+                rows={3}
+                maxLength={STORY_SCENE_TEXT_MAX_LENGTH}
+                value={scene.text}
+                disabled={busy}
+                onChange={(event) => editScene(scene.key, { text: event.target.value })}
+                aria-invalid={sceneErrors.text !== undefined}
+                aria-describedby={sceneErrors.text === undefined ? undefined : `${scene.key}-text-error`}
+              />
+              {sceneErrors.text !== undefined && <FieldMessage id={`${scene.key}-text-error`} role="alert">{sceneErrors.text}</FieldMessage>}
+            </>}
+          </Field>
+          <Field id={`${scene.key}-guidance`} label={`Orientação da cena ${number}`}>
+            {(control) => <>
+              <Textarea
+                {...control}
+                rows={2}
+                maxLength={STORY_SCENE_GUIDANCE_MAX_LENGTH}
+                value={scene.guidance}
+                disabled={busy}
+                onChange={(event) => editScene(scene.key, { guidance: event.target.value })}
+                aria-invalid={sceneErrors.guidance !== undefined}
+                aria-describedby={sceneErrors.guidance === undefined ? undefined : `${scene.key}-guidance-error`}
+              />
+              {sceneErrors.guidance !== undefined && <FieldMessage id={`${scene.key}-guidance-error`} role="alert">{sceneErrors.guidance}</FieldMessage>}
+            </>}
+          </Field>
         </li>;
       })}
     </ol>
     <div className="story-script__add">
-      <Button variant="secondary" disabled={busy || form.scenes.length >= STORY_SCRIPT_MAX_SCENES} onClick={addScene}>Adicionar cena</Button>
+      <Button variant="secondary" leadingIcon={<Plus />} disabled={busy || form.scenes.length >= STORY_SCRIPT_MAX_SCENES} onClick={addScene}>Adicionar cena</Button>
       {form.scenes.length >= STORY_SCRIPT_MAX_SCENES && <p className="form-hint">Um roteiro tem no máximo {STORY_SCRIPT_MAX_SCENES} cenas.</p>}
     </div>
     <p className="visually-hidden" role="status" aria-live="polite">{announcement}</p>
     {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
     <div className="form-actions">
-      <Button type="submit" loading={busy && submit.variables === 'save'} disabled={busy}>Salvar rascunho</Button>
-      <Button variant="secondary" loading={busy && submit.variables === 'send'} disabled={busy} onClick={() => run('send')}>Enviar ao cliente</Button>
       <Button variant="ghost" disabled={busy} onClick={onDone}>Cancelar</Button>
+      <Button type="submit" variant="secondary" loading={busy && submit.variables === 'save'} disabled={busy}>Salvar rascunho</Button>
+      <Button leadingIcon={<Send />} loading={busy && submit.variables === 'send'} disabled={busy} onClick={() => run('send')}>Enviar ao cliente</Button>
     </div>
   </form>;
 }
@@ -399,7 +398,12 @@ export function StoryScriptModal({ clientId, target, canOperate, onClose }: {
   const close = (): void => { if (!busy) onClose(); };
   const notFound = script.error instanceof HttpClientError && script.error.status === 404;
 
-  return <Modal title={target.kind === 'new' ? 'Novo roteiro de stories' : 'Roteiro de stories'} closeLabel="Fechar roteiro de stories" onClose={close}>
+  return <Dialog
+    title={target.kind === 'new' ? 'Novo roteiro de stories' : 'Roteiro de stories'}
+    description="Cada cena leva o texto e, se quiser, a orientação para gravar."
+    closeLabel="Fechar roteiro de stories"
+    onClose={close}
+  >
     {target.kind === 'new'
       ? <ScriptEditor clientId={clientId} initial={null} initialDay={target.day} canOperate={canOperate} onBusyChange={setBusy} onDone={onClose} />
       : script.isPending
@@ -413,5 +417,5 @@ export function StoryScriptModal({ clientId, target, canOperate, onClose }: {
             </div>
           </div>
           : <ScriptEditor clientId={clientId} initial={script.data} initialDay={script.data.scriptOn} canOperate={canOperate} onBusyChange={setBusy} onDone={onClose} />}
-  </Modal>;
+  </Dialog>;
 }
