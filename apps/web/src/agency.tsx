@@ -5,13 +5,14 @@ import { useQuery } from '@tanstack/react-query';
 import { AgencyMeResponseSchema, type AgencyMeResponse } from '@ageniza/contracts';
 import { AccountMenu } from './account-menu.js';
 import { AgencySidebar, AgencySidebarSkeleton } from './agency-nav.js';
-import { Button, Skeleton } from '@ageniza/ui';
+import { Button, Logo, Skeleton } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';
+import { StatusPanel } from './status-panel.js';
 import { NotFoundHomeContext, NotFoundPage } from './status-pages.js';
 
 /**
@@ -43,13 +44,9 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}
 /** The API is reachable but did not answer; the screen offers the one action it can: repeat. */
 function AgencyUnavailable({ onRetry }: { onRetry: () => void }) {
   useDocumentTitle('Não foi possível abrir a agência — Ageniza');
-  return <section className="page-status">
-    <div role="alert">
-      <h1>Não foi possível abrir a agência</h1>
-      <p>Tente de novo em instantes.</p>
-      <Button onClick={onRetry}>Tentar de novo</Button>
-    </div>
-  </section>;
+  return <StatusPanel as="section" alert titleId="agency-unavailable-title" title="Não foi possível abrir a agência" action={<Button size="lg" onClick={onRetry}>Tentar de novo</Button>}>
+    Tente de novo em instantes.
+  </StatusPanel>;
 }
 
 /**
@@ -60,7 +57,7 @@ function AgencyUnavailable({ onRetry }: { onRetry: () => void }) {
 function AgencyContextlessShell({ children }: { children: ReactNode }) {
   return <div className="app-shell">
     <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
-    <header className="agency-header"><AccountMenu /></header>
+    <header className="agency-header"><Link to="/contextos"><Logo variant="on-dark" height={30} /></Link><AccountMenu /></header>
     <div className="agency-layout">
       <main className="agency-content" id="main-content">{children}</main>
     </div>

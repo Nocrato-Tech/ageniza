@@ -47,11 +47,13 @@ export type ChoiceCardProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'tit
   highlighted?: boolean;
   /** Short visible label (e.g. "Sugerido"); part of the card's accessible name. */
   badge?: string;
+  /** A lucide icon that says what kind of item this is; decorative, so it never joins the name. */
+  icon?: ReactNode;
 };
 
 /** A full-width, whole-surface clickable card used by single-choice pickers. */
 export const ChoiceCard = forwardRef<HTMLButtonElement, ChoiceCardProps>(function ChoiceCard(
-  { className, title, description, highlighted = false, badge, type = 'button', ...props },
+  { className, title, description, highlighted = false, badge, icon, type = 'button', ...props },
   ref
 ) {
   return (
@@ -61,9 +63,12 @@ export const ChoiceCard = forwardRef<HTMLButtonElement, ChoiceCardProps>(functio
       className={['ui-choice-card', highlighted && 'ui-choice-card--highlighted', className].filter(Boolean).join(' ')}
       {...props}
     >
-      {badge !== undefined && <span className="ui-choice-card__badge">{badge}</span>}
-      <span className="ui-choice-card__title">{title}</span>
-      <span className="ui-choice-card__description">{description}</span>
+      {icon !== undefined && <span className="ui-choice-card__icon" aria-hidden="true">{icon}</span>}
+      <span className="ui-choice-card__text">
+        {badge !== undefined && <span className="ui-choice-card__badge">{badge}</span>}
+        <span className="ui-choice-card__title">{title}</span>
+        <span className="ui-choice-card__description">{description}</span>
+      </span>
     </button>
   );
 });
