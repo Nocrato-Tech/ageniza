@@ -9,7 +9,7 @@
 2. Com o tour de boas-vindas aberto as abas voltam, porque o tour aponta para elas.
 3. Em tela larga as abas continuam no topo, como nas demais telas do portal.
 4. A barra de decisão só existe com o conteúdo aguardando aprovação. Pedir ajuste fica à esquerda e Aprovar, a única ação em índigo cheio da tela, à direita. A barra é o último pedaço da página, para o fim da conversa nunca ficar por baixo dela.
-5. Da artboard ficam de fora o texto "Esperando você" (o estado segue "Aguardando aprovação", que a SPEC e as decisões anteriores fixam) e o "1 de 2 para aprovar" (a API do post não entrega a posição na fila).
+5. Da artboard ficam de fora o texto "Esperando você" (o estado segue "Aguardando aprovação", que a SPEC e as decisões anteriores fixam) e o "1 de 2 para aprovar" (a API do post não entrega a posição na fila; a lacuna é a issue de API #693).
 
 **Consequência.** A frase da SPEC de clientes sobre a barra inferior ganha a exceção do post, e a SPEC de conteúdo passa a descrever a barra de decisão. Quem quiser as abas junto da barra de decisão desfaz o item 1, que é um bloco de CSS do post, sem mudança de rota, API ou banco.
 
