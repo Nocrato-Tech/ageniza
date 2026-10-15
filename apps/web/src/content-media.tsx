@@ -11,7 +11,9 @@ import {
   type MediaFolder,
   type MediaFolderAsset
 } from '@ageniza/contracts';
-import { Button, FieldMessage, Select, Skeleton, TextInput } from '@ageniza/ui';
+import { ArrowLeft, ArrowRight, Plus, X } from 'lucide-react';
+
+import { Button, Field, FieldMessage, IconButton, Select, Skeleton, TextInput } from '@ageniza/ui';
 
 import { useAgencyContext } from './agency.js';
 import { formatAgencyDayMonth } from './client-detail.js';
@@ -125,16 +127,15 @@ function NewFolder({ clientId, folders, onCreated, onCancel }: {
 
   return <fieldset className="content-media__new-folder" disabled={create.isPending}>
     <legend>Nova pasta</legend>
-    <div className="form-field">
-      <label htmlFor={nameId}>Nome da pasta</label>
-      <TextInput
-        id={nameId}
+    <Field label="Nome da pasta" id={nameId}>
+      {(control) => <TextInput
+        {...control}
         value={name}
         onChange={(event) => { setName(event.target.value); setError(undefined); }}
         aria-invalid={error !== undefined}
         aria-describedby={error === undefined ? undefined : `${nameId}-error`}
-      />
-    </div>
+      />}
+    </Field>
     <Select
       label="Dentro de"
       value={parentId}
@@ -242,14 +243,19 @@ export function MediaField({ clientId, folderId, format, selected, onChange, dis
     {selected.length === 0
       ? <p className="form-hint">Nenhuma mídia escolhida.</p>
       : <ol className="content-media__selected">
-        {selected.map((id, index) => <li key={id} className="content-media__item">
-          <AssetThumb asset={{ id, category: accepted ?? 'image' }} />
-          <span>Mídia {index + 1}</span>
-          {!single && <>
-            <Button variant="ghost" disabled={disabled || index === 0} aria-label={`Mover mídia ${index + 1} para antes`} onClick={() => move(index, -1)}><span aria-hidden="true">↑</span></Button>
-            <Button variant="ghost" disabled={disabled || index === selected.length - 1} aria-label={`Mover mídia ${index + 1} para depois`} onClick={() => move(index, 1)}><span aria-hidden="true">↓</span></Button>
-          </>}
-          <Button variant="ghost" disabled={disabled} onClick={() => onChange(selected.filter((other) => other !== id))}>Tirar mídia {index + 1}</Button>
+        {selected.map((id, index) => <li key={id} className="content-media__tile">
+          <div className="content-media__frame">
+            <AssetThumb asset={{ id, category: accepted ?? 'image' }} />
+            <span className="content-media__number" aria-hidden="true">{index + 1}</span>
+            <span className="visually-hidden">Mídia {index + 1}</span>
+          </div>
+          <div className="content-media__tools">
+            {!single && <>
+              <IconButton size="sm" label={`Mover mídia ${index + 1} para antes`} icon={<ArrowLeft />} disabled={disabled || index === 0} onClick={() => move(index, -1)} />
+              <IconButton size="sm" label={`Mover mídia ${index + 1} para depois`} icon={<ArrowRight />} disabled={disabled || index === selected.length - 1} onClick={() => move(index, 1)} />
+            </>}
+            <IconButton size="sm" label={`Tirar mídia ${index + 1}`} icon={<X />} disabled={disabled} onClick={() => onChange(selected.filter((other) => other !== id))} />
+          </div>
         </li>)}
       </ol>}
     {error !== undefined && <FieldMessage id={errorId} role="alert">{error}</FieldMessage>}
@@ -264,13 +270,17 @@ export function MediaField({ clientId, folderId, format, selected, onChange, dis
         const fitting = assets.data.filter((asset) => accepted === null || asset.category === accepted);
         if (fitting.length === 0) return <p className="form-hint">Esta pasta não tem {accepted === 'video' ? 'vídeos' : accepted === 'image' ? 'imagens' : 'mídias'} para este formato.</p>;
         return <ul className="content-media__folder">
-          {fitting.map((asset) => <li key={asset.id} className="content-media__item">
-            <AssetThumb asset={asset} />
-            <Button
+          {fitting.map((asset) => <li key={asset.id} className="content-media__tile">
+            <div className="content-media__frame"><AssetThumb asset={asset} /></div>
+            <span className="content-media__caption">{assetLabel(asset)}</span>
+            <IconButton
+              size="sm"
               variant="secondary"
+              label={`Adicionar ${assetLabel(asset)}`}
+              icon={<Plus />}
               disabled={selected.includes(asset.id)}
               onClick={() => onChange(single ? [asset.id] : [...selected, asset.id])}
-            >{`Adicionar ${assetLabel(asset)}`}</Button>
+            />
           </li>)}
         </ul>;
       })()}
@@ -297,9 +307,10 @@ export function CoverField({ clientId, folderId, value, onChange, disabled, erro
     {!disabled && <>
       {value !== null && <Button variant="ghost" onClick={() => onChange(null)}>Tirar a capa</Button>}
       {images.length > 0 && <ul className="content-media__folder">
-        {images.map((asset) => <li key={asset.id} className="content-media__item">
-          <AssetThumb asset={asset} />
-          <Button variant="secondary" aria-pressed={value === asset.id} disabled={value === asset.id} onClick={() => onChange(asset.id)}>{`Usar ${assetLabel(asset)} como capa`}</Button>
+        {images.map((asset) => <li key={asset.id} className="content-media__tile">
+          <div className="content-media__frame"><AssetThumb asset={asset} /></div>
+          <span className="content-media__caption">{assetLabel(asset)}</span>
+          <Button size="sm" variant="secondary" aria-pressed={value === asset.id} aria-label={`Usar ${assetLabel(asset)} como capa`} disabled={value === asset.id} onClick={() => onChange(asset.id)}>Usar</Button>
         </li>)}
       </ul>}
     </>}

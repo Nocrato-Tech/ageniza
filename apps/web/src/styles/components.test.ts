@@ -658,3 +658,61 @@ describe('breakpoints of docs/design-system.md 19', () => {
     expect(css).not.toMatch(/@media[^{]*\{\s*\.clients__list\b/);
   });
 });
+
+describe('content modal', () => {
+  const SURFACES = ['var(--bg-canvas)', 'var(--bg-surface)'];
+
+  it('puts the footer on the canvas under the surface of the dialog, bleeding over its side padding only', () => {
+    const footer = rule('.content-modal__footer');
+
+    expect(footer.get('background')).toBe('var(--bg-canvas)');
+    expect(footer.get('border-top')).toBe('1px solid var(--border-default)');
+    expect(footer.get('margin')).toBe('0 calc(var(--space-6) * -1)');
+    expect(rule('.ui-modal:has(.content-modal)').get('padding-bottom')).toBe('0');
+  });
+
+  it('sticks the footer only on screens tall enough to keep the form in sight', () => {
+    expect(css).toMatch(/@media \(min-height: 40rem\) \{\s*\.content-modal__footer \{[^}]*position: sticky;[^}]*bottom: 0;/);
+    expect(css.replace(/@media \(min-height: 40rem\) \{[^}]*\{[^}]*\}\s*\}/, '')).not.toMatch(/\.content-modal__footer \{[^}]*position: sticky/);
+  });
+
+  it('stacks the preview over the form below 48rem', () => {
+    expect(css).toMatch(/\.content-modal__body \{[^}]*grid-template-columns: minmax\(0, 20rem\) minmax\(0, 1fr\);/);
+    expect(css).toMatch(/@media \(max-width: 47\.99rem\) \{\s*\.content-modal__body \{\s*grid-template-columns: minmax\(0, 1fr\);/);
+  });
+
+  it.each(['light', 'dark'] as const)('keeps the danger text of "Cancelar conteúdo" AA on the canvas and the surface in %s, hovered too', (theme) => {
+    const cancel = rule('.content-actions__cancel');
+    const hover = rule(".content-actions__cancel:hover:not(:disabled):not([aria-busy='true'])");
+
+    expect(cancel.get('color')).toBe('var(--text-danger)');
+    expect(hover.get('color')).toBe('var(--text-danger)');
+    expect(hover.get('background')).toBe('transparent');
+    for (const surface of SURFACES) expect(contrastOf(theme, 'var(--text-danger)', surface), surface).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each(['light', 'dark'] as const)('draws the adjustment strip on the canvas with the state icon and AA text in %s', (theme) => {
+    const strip = rule('.content-modal__adjustment');
+
+    expect(strip.get('background')).toBe('var(--bg-canvas)');
+    expect(rule('.content-modal__adjustment > svg').get('color')).toBe('var(--status-adjust-fg)');
+    expect(contrastOf(theme, 'var(--status-adjust-fg)', 'var(--bg-canvas)')).toBeGreaterThanOrEqual(3);
+    for (const text of ['var(--text-secondary)', 'var(--text-primary)']) expect(contrastOf(theme, text, 'var(--bg-canvas)'), text).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each(['light', 'dark'] as const)('numbers a media with the primary text on the canvas in %s', (theme) => {
+    const badge = rule('.content-media__number');
+
+    expect(badge.get('background')).toBe('var(--bg-canvas)');
+    expect(contrastOf(theme, badge.get('color')!, badge.get('background')!)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('keeps the fields and the links of the modal on the surface, never on an elevated one', () => {
+    const blocks = [...css.matchAll(/(^|\n)(\.content-(?:modal|actions|media|assignment)[\w-]*[^{}]*)\{([^{}]*)\}/g)];
+
+    expect(blocks.length).toBeGreaterThan(20);
+    for (const [, , selector, body] of blocks.filter((block) => !block[2]!.includes('__thumb'))) {
+      expect(body, selector).not.toMatch(/bg-elevated|bg-hover|action-primary|indigo/);
+    }
+  });
+});
