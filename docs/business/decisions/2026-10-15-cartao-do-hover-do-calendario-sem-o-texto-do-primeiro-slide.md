@@ -9,7 +9,7 @@
 2. "Arraste para outro dia" aparece só no cartão de um conteúdo que pode ser arrastado; num publicado, cancelado ou sem permissão de operar, a dica seria falsa e não aparece.
 3. O cartão mantém as linhas que o hover já tinha (responsável, subtarefas, conversa e última mensagem), porque a SPEC de conteúdo (seção 7) as pede e nada nesta tela as revoga.
 
-**Consequência.** A tela de hoje entrega tudo o que a API sustenta. O texto do slide é uma issue de API (aberta junto com o PR); sem ela, o cartão do carrossel mostra a legenda, como o de qualquer outro formato.
+**Consequência.** A tela de hoje entrega tudo o que a API sustenta. O texto do slide é a issue de API #667; sem ela, o cartão do carrossel mostra a legenda, como o de qualquer outro formato.
 
 **Origem.** Issue #632, épico #621; pedido do dono de 2026-10-13 (cartão flutuante do calendário).
 
