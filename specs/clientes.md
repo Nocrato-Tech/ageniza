@@ -335,7 +335,7 @@ Nenhuma policy de outro módulo é alterada.
 
 | tela | rota | o que mostra | quem acessa |
 |---|---|---|---|
-| Carteira | `/agencia/:agenciaId/clientes` | cards de clientes para triagem | `cliente.visualizar` |
+| Carteira | `/agencia/:agenciaId/clientes` | grade de crachás de clientes para triagem | `cliente.visualizar` |
 | Cadastrar | modal sobre a carteira | só o nome | `cliente.cadastrar` |
 | Detalhe | `/agencia/:agenciaId/clientes/:clienteId/<aba>` | cabeçalho e seis abas; a aba Conteúdos só aparece, e o endereço dela só abre, com `conteudo.visualizar` | `cliente.visualizar` |
 | Editar cadastro | modal sobre o detalhe | todos os campos do cadastro | `cliente.operar` |
@@ -355,41 +355,47 @@ Conteúdos, Tarefas e Relatórios na agência, e Conteúdos e Relatórios no por
 
 ### Carteira — `/agencia/:agenciaId/clientes`
 
+A carteira é uma grade de **crachás**, um por cliente (decisão de 2026-10-15, `decisions/2026-10-15-carteira-em-crachas-sem-dados-que-a-api-nao-entrega.md`, que redefine o card de linha inteira que esta seção descrevia). Cada crachá mostra só o que a listagem entrega.
+
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  Clientes                              [ + Cadastrar cliente ]│
-│                                                              │
-│  [ buscar por nome, razão social ou @.....]  Ativos ▾         │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────────┐│
-│  │ (foto)  Padaria Central        @padariacentral           ││
-│  │         [2 sugestões aguardando] [convite pendente]      ││
-│  │         ┄┄┄┄┄┄ pendentes · em revisão · atrasos ┄┄┄┄┄┄   ││
-│  └──────────────────────────────────────────────────────────┘│
-│  ┌──────────────────────────────────────────────────────────┐│
-│  │ (AC)    Academia Corpo         @academiacorpo            ││
-│  │         [encerra em 30/10]                               ││
-│  │         ┄┄┄┄┄┄ pendentes · em revisão · atrasos ┄┄┄┄┄┄   ││
-│  └──────────────────────────────────────────────────────────┘│
-│                                                              │
-│  ‹ 1 2 ›                                  20 de 34 clientes   │
-└──────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│  Clientes                                 [ + Cadastrar cliente ]│
+│                                                               │
+│  Padaria Central: 2 posts atrasados.                          │
+│  [ buscar por nome, razão social ou @.....]  Status: Ativos ▾  │
+│                                                               │
+│  Seus clientes (34)                          Ver arquivados >  │
+│  ┌──────────────────────┐   ┌──────────────────────┐          │
+│  │ (foto)   [Atrasado] ⋮│   │ (AC)  [Prazo em até 2 dias] ⋮   │
+│  │ ▓ Padaria Central ▓▓ │   │ ▓ Academia Corpo ▓▓▓ │          │
+│  │ @padariacentral Ativo│   │ @academiacorpo  Ativo│          │
+│  │ [2 sugestões aguardando] │ [encerra em 30/10]   │          │
+│  │ 3 pendentes · 1 em revisão · 2 atrasos           │          │
+│  │ 2 posts atrasados  [Resolver atraso →]           │          │
+│  └──────────────────────┘   └──────────────────────┘          │
+│                                                               │
+│  ‹ 1 2 ›                                  20 de 34 clientes    │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 | elemento | função |
 |---|---|
-| Card de linha inteira | um cliente por linha, com espaço para os sinais que Conteúdo e Tarefas vão trazer |
-| Foto ou iniciais | sem foto, as iniciais do nome — nunca ícone genérico, igual ao crachá de Colaboradores |
-| Selo *N sugestões aguardando* | threads abertas cujo último comentário é do cliente. É o sinal de triagem do MVP |
-| Selo *encerra em dd/mm* | cliente com encerramento agendado |
-| Selo *convite pendente* | só para quem tem `cliente.convidar_usuario` |
-| Faixa de indicadores | reservada para pendentes, em revisão e atrasos. Mostra os três números de Conteúdo (#261) para quem tem `conteudo.visualizar`; para os demais segue reservada, sem número |
-| Ordem | para quem lê Conteúdo (`conteudo.visualizar`), quem tem conteúdo atrasado vem primeiro, depois quem tem sugestão aguardando, depois o nome (#261); para os demais, quem tem sugestão aguardando vem primeiro, depois o nome — a tela é de triagem, não de consulta |
+| Crachá | um cliente por crachá, em grade que se ajusta à largura (colunas de pelo menos 20rem; uma só no celular). O link cobre a foto, o nome e as etiquetas e leva à aba Geral; o menu e a ação ficam ao lado dele, nunca dentro |
+| Foto ou iniciais | sem foto, as iniciais do nome — nunca ícone genérico. A base do crachá é escura, com o nome, o @ e a situação (Ativo ou Arquivado) por cima |
+| Selo de triagem | **um só por crachá**, no alto da foto, na ordem: *Atrasado* (conteúdo atrasado), *Prazo em até 2 dias* e *convite pendente* (este só para quem tem `cliente.convidar_usuario`). Quem não lê Conteúdo (`conteudo.visualizar`) nunca vê os dois primeiros |
+| Etiquetas | o que não virou selo: *N sugestões aguardando* (threads abertas cujo último comentário é do cliente), *encerra em dd/mm* (encerramento agendado) e o *convite pendente* que perdeu o selo para outro. As sugestões seguem sendo o sinal de triagem do MVP: entram na ordem da carteira, na frase de triagem e na próxima ação, mesmo sem ser o selo |
+| Faixa de indicadores | pendentes, em revisão e atrasos. Mostra os três números de Conteúdo (#261) para quem tem `conteudo.visualizar`; para os demais segue reservada, sem número |
+| Próxima ação | rodapé do crachá, com o número curto por trás da ação: *Resolver atraso* (posts atrasados), *Ver prazos* (posts com prazo em até 2 dias), *Ver sugestões* (sugestões para responder), *Ver convites* (convites em aberto) ou, sem motivo, *Abrir cliente* sem número. Só leva a abas que o detalhe já tem (Geral, Conteúdos, Estudo de marca, Acessos), cada uma na permissão que o detalhe já exige |
+| Menu de três pontos | as mesmas abas, cada uma só para quem pode abri-la |
+| Frase de triagem | sobre os filtros, montada com as linhas da primeira página da carteira ativa sem busca (quem está atrasado, quem tem prazo em até 2 dias, quem tem sugestões, até dois); em qualquer outro recorte ela não aparece, porque não descreveria o topo da fila |
+| Ordem | a do servidor (`sort=attention`): para quem lê Conteúdo, quem tem conteúdo atrasado vem primeiro, depois quem tem sugestão aguardando, depois o nome (#261); para os demais, quem tem sugestão aguardando vem primeiro, depois o nome — a tela é de triagem, não de consulta |
 | Busca | nome, razão social ou @ — quem liga pode lembrar de qualquer um dos três |
-| Filtro de status | Ativos (padrão) e Arquivados |
+| Filtro de status | rótulo *Status*: Ativos (padrão) e Arquivados. A API não mistura as duas situações, então o link *Ver arquivados* (e *Ver ativos* na visão de arquivados) troca a visão; *ver todos* depende de `status=all` (#661) |
 | Cadastrar cliente | ação primária, só para `cliente.cadastrar` |
 
-Card arquivado, pelo filtro, aparece esmaecido e sem selos.
+Fora desta tela, até a API entregar (#660 e #661): segmento, contato, responsável, "cliente desde", conteúdos do mês, filtros de responsável, de sinais de conteúdo e de segmento, e a visão em lista (sem alternância Grade/Lista).
+
+Crachá arquivado, pelo filtro, aparece esmaecido e sem selo, etiqueta, número ou ação: o único destino é o detalhe, em leitura.
 
 ### Cadastrar — modal curto
 
