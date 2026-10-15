@@ -4933,9 +4933,11 @@ html:has(.portal-shell) {
   font-weight: 600;
 }
 
-/* --- Portal: post em tela cheia (#270) ---
+/* --- Portal: post em tela cheia (#270, #687) ---
    Phone first: every box may shrink (`min-width: 0`), every server text wraps, no width is fixed, and the actions
-   take the whole row, so a 390 px screen never scrolls sideways. */
+   take the whole row, so a 390 px screen never scrolls sideways. While a post is open the bottom bar of the shell steps
+   aside (the way back is the link on top) and the decision bar takes the bottom of the screen, as the last piece of the
+   page: the end of the conversation is never under it, and `scroll-padding-bottom` keeps a focused control clear of it. */
 
 .portal-post {
   display: grid;
@@ -4949,45 +4951,106 @@ html:has(.portal-shell) {
 }
 
 .portal-post h1 {
-  font: var(--heading-lg);
   overflow-wrap: anywhere;
 }
 
 .portal-post h2 {
-  font: var(--heading-md);
+  font: var(--body-md);
+  font-weight: 600;
 }
 
 .portal-post__back {
   justify-self: start;
-  min-height: 2.75rem;
   display: inline-flex;
   align-items: center;
-  color: var(--text-link);
-  font: var(--label-md);
+  gap: var(--space-1);
+  min-height: 2.75rem;
+  /* The chevron hangs in the margin, so the word lines up with the title under it. */
+  margin-inline-start: calc(-1 * var(--space-1));
+  padding-inline-end: var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font: var(--body-md);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.portal-post__back:hover {
+  color: var(--text-primary);
+}
+
+.portal-post__back:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.portal-post__back svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.portal-post__heading {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .portal-post__meta {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2) var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
   color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.portal-post__notes {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  /* The confirmation takes the focus after Aprovar: it lands a step below the edge of the screen. */
+  scroll-margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.portal-post__notes:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.portal-post__notes p {
+  margin: 0;
+}
+
+/* The confirmation and the message about a changed state read in the body size of the screen, not in the 16 px of their components. */
+.portal-post__notes .ui-live-status,
+.portal-post__notes .ui-field-message {
   font: var(--body-md);
 }
 
-.portal-post__status {
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  font: var(--label-sm);
+.portal-post__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  min-width: 0;
 }
 
-.portal-post__status--awaiting_approval {
-  border-color: var(--focus-ring);
-  color: var(--text-link);
+.portal-post__card {
+  display: grid;
+  min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.portal-post__caption-block {
+  padding: var(--space-3) var(--space-4) var(--space-4);
 }
 
 .portal-post__section {
@@ -4997,8 +5060,7 @@ html:has(.portal-shell) {
 }
 
 .portal-post__caption,
-.portal-post__hint,
-.portal-post__request-label {
+.portal-post__hint {
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -5006,7 +5068,7 @@ html:has(.portal-shell) {
 .portal-post__caption {
   white-space: pre-wrap;
   color: var(--text-primary);
-  font: var(--body-lg);
+  font: var(--body-md);
 }
 
 .portal-post__hint {
@@ -5021,13 +5083,46 @@ html:has(.portal-shell) {
   min-width: 0;
 }
 
-.portal-post__request-label {
-  color: var(--text-secondary);
-  font: var(--label-sm);
-}
-
 .portal-post__actions > .ui-button {
   width: 100%;
+}
+
+.portal-post__bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  /* Edge to edge on a phone, over the padding of the content. */
+  margin-inline: calc(-1 * var(--space-4));
+  padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-surface);
+}
+
+.portal-post__bar .portal-post__actions {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+}
+
+/* "Pedir ajuste" and its icon fit the narrower column of a 360 px phone on one line. */
+.portal-post__bar .ui-button {
+  padding-inline: var(--space-3);
+}
+
+/* The section already has its title; the conversation's own is kept for assistive technology only, and its rule is not needed under a title. */
+.portal-post .conversation {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.portal-post .conversation__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .portal-post__title-skeleton {
@@ -5036,6 +5131,53 @@ html:has(.portal-shell) {
 
 .portal-post__media-skeleton {
   height: 16rem;
+}
+
+/* The focused control scrolls clear of the bar, whatever the message above its buttons makes of its height (WCAG 2.4.11). */
+html:has(.portal-post__bar) {
+  scroll-padding-bottom: calc(8.5rem + env(safe-area-inset-bottom));
+}
+
+@media (max-width: 47.99rem) {
+  /* The post is the whole screen: the way back is the link on top. The tour points at the bar, so it keeps the bar while it is open. */
+  .portal-shell:has(.portal-post):not(:has(.portal-tour)) > .portal-nav {
+    display: none;
+  }
+
+  .portal-shell > .portal-content:has(.portal-post__bar) {
+    padding-bottom: 0;
+  }
+
+  /* Under the tour the shell's bar is back at the bottom, and the decision bar is a plain end of the page above it. */
+  .portal-shell:has(.portal-tour) .portal-post__bar {
+    position: static;
+  }
+}
+
+@media (min-width: 48rem) {
+  .portal-post__body {
+    grid-template-columns: minmax(0, 24rem) minmax(0, 1fr);
+    align-items: start;
+    column-gap: var(--space-8);
+  }
+
+  /* The card and the bar share a short wide screen: the picture leaves room for the controls under it. */
+  .portal-post__card .portal-media__item {
+    max-height: 28rem;
+  }
+
+  .portal-post__bar {
+    bottom: var(--space-4);
+    margin-inline: 0;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+  }
+
+  .portal-post__bar .portal-post__actions {
+    grid-template-columns: repeat(2, minmax(0, 12rem));
+    justify-content: end;
+  }
 }
 
 .portal-media {
@@ -5054,6 +5196,16 @@ html:has(.portal-shell) {
   overflow: hidden;
   /* The swipe is ours sideways; the page still scrolls up and down. */
   touch-action: pan-y;
+}
+
+/* In the card the picture is its top, flush with the border. */
+.portal-post__card .portal-media__stage {
+  border-radius: calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 0 0;
+}
+
+.portal-post__card .portal-media__controls,
+.portal-post__card .portal-media__strip {
+  margin-inline: var(--space-3);
 }
 
 .portal-media__item {
@@ -5079,6 +5231,12 @@ html:has(.portal-shell) {
 .portal-media__problem p,
 .portal-media__empty {
   margin: 0;
+}
+
+.portal-media__empty {
+  padding: var(--space-4);
+  color: var(--text-secondary);
+  font: var(--body-md);
 }
 
 .portal-media__controls {

@@ -510,7 +510,7 @@ Esqueleto: o nome da área, uma frase do que ela vai mostrar, e nenhum controle.
 └───────────────────────────┘
 ```
 
-Barra inferior com quatro itens, o padrão que um dono de negócio já sabe usar no celular. No desktop a mesma navegação vai para a lateral ou o topo — decisão do designer. Quem acessa mais de um cliente troca pelo menu de conta decidido em [`auth.md`](auth.md).
+Barra inferior com quatro itens, o padrão que um dono de negócio já sabe usar no celular; só o post em tela cheia a troca, no celular, pela barra de decisão (decisão `2026-10-15-post-do-portal-troca-as-abas-pela-barra-de-decisao`). No desktop a mesma navegação vai para a lateral ou o topo — decisão do designer. Quem acessa mais de um cliente troca pelo menu de conta decidido em [`auth.md`](auth.md).
 
 ### Portal — Início
 
