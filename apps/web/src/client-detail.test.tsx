@@ -320,13 +320,24 @@ describe('client detail (#136)', () => {
     await waitFor(() => expect(probe.pathname).toBe(clientUrl()));
   });
 
+  it('leads back with an arrow icon and the word Clientes, and names the link by what it does', async () => {
+    const { impl } = makeFetch();
+    renderClientDetail(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+
+    const back = screen.getByRole('link', { name: 'Voltar para Clientes' });
+    expect(back.textContent).toBe('Clientes');
+    expect(back.querySelector('.ui-icon[aria-hidden="true"] svg')).not.toBeNull();
+    expect(back.getAttribute('aria-label')).toContain(back.textContent);
+  });
+
   it('preserves the roster search, filter and page when returning from the detail (#136, review of #379)', async () => {
     const { impl } = makeFetch({
       clients: () => json({ data: [listItemOf(padaria)], meta: { page: 2, pageSize: 20, totalItems: 21, totalPages: 2 } })
     });
     const { probe } = renderClientDetail(impl, `/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
     await screen.findByText('Padaria Central');
-    const back = (): HTMLElement => screen.getByRole('link', { name: '← Clientes' });
+    const back = (): HTMLElement => screen.getByRole('link', { name: 'Voltar para Clientes' });
 
     fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
     await waitFor(() => expect(probe.pathname).toBe(clientUrl()));
@@ -360,7 +371,7 @@ describe('client detail (#136)', () => {
     expect(await screen.findByRole('heading', { name: 'Pessoas com acesso ao portal' })).toBeTruthy();
     expect(probe.pathname).toBe(clientUrl(CLIENT_ID, 'acessos'));
 
-    const back = screen.getByRole('link', { name: '← Clientes' });
+    const back = screen.getByRole('link', { name: 'Voltar para Clientes' });
     expect(back.getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
     fireEvent.click(back);
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes`));
@@ -373,17 +384,17 @@ describe('client detail (#136)', () => {
     const { impl } = makeFetch();
     const { probe } = renderClientDetail(impl);
     await screen.findByRole('heading', { name: 'Padaria Central' });
-    expect(screen.getByRole('link', { name: '← Clientes' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes`);
+    expect(screen.getByRole('link', { name: 'Voltar para Clientes' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes`);
 
     // A state naming another agency's roster is refused, falling back to the plain list.
     await act(async () => { probe.navigate(clientUrl(), { state: { clientListUrl: `/agencia/${AGENCY_B}/clientes?search=x` } }); });
     await screen.findByRole('heading', { name: 'Padaria Central' });
-    expect(screen.getByRole('link', { name: '← Clientes' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes`);
+    expect(screen.getByRole('link', { name: 'Voltar para Clientes' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes`);
 
     // A state naming this agency's roster is honored with everything it carried.
     await act(async () => { probe.navigate(clientUrl(), { state: { clientListUrl: `/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2` } }); });
     await screen.findByRole('heading', { name: 'Padaria Central' });
-    expect(screen.getByRole('link', { name: '← Clientes' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
+    expect(screen.getByRole('link', { name: 'Voltar para Clientes' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
   });
 
   it('leads every General block to its tab with a click, and the back link to the wallet', async () => {
@@ -396,7 +407,7 @@ describe('client detail (#136)', () => {
       if (block === null) throw new Error('The General tab was not rendered.');
       return block;
     };
-    expect(screen.getByRole('link', { name: '← Clientes' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes`);
+    expect(screen.getByRole('link', { name: 'Voltar para Clientes' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes`);
     expect(within(general()).getByRole('link', { name: /Estudo de marca/ }).getAttribute('href')).toBe(clientUrl(CLIENT_ID, 'estudo-de-marca'));
     expect(within(general()).getByRole('link', { name: /Conversas/ }).getAttribute('href')).toBe(clientUrl(CLIENT_ID, 'estudo-de-marca'));
     expect(within(general()).getByRole('link', { name: /Portal/ }).getAttribute('href')).toBe(clientUrl(CLIENT_ID, 'acessos'));
@@ -568,7 +579,7 @@ describe('client detail (#136)', () => {
     const { impl } = makeFetch({ client: () => new Promise<Response>(() => undefined) });
     const { container } = renderClientDetail(impl);
 
-    await screen.findByRole('link', { name: '← Clientes' });
+    await screen.findByRole('link', { name: 'Voltar para Clientes' });
     expect(container.querySelectorAll('.client-detail .ui-skeleton').length).toBeGreaterThanOrEqual(5);
   });
 
@@ -889,6 +900,53 @@ describe('edit client modal (#137)', () => {
     expect(dialog.textContent).not.toContain('private');
   });
 
+  it('says every refused field with the error icon, and puts the focus on the first one in the form', async () => {
+    const { impl } = makeFetch({
+      patch: () => json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'validation failed',
+          details: { issues: [{ path: 'contactEmail', code: 'custom', message: 'x' }, { path: 'taxId', code: 'custom', message: 'x' }] }
+        }
+      }, 400)
+    });
+    renderClientDetail(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const dialog = await openEditDialog();
+
+    fireEvent.change(editTaxIdInput(dialog), { target: { value: '123' } });
+    fireEvent.change(editContactEmailInput(dialog), { target: { value: 'sem-arroba' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    for (const [input, text] of [[editTaxIdInput(dialog), 'CNPJ ou CPF deve ter 11 ou 14 dígitos.'], [editContactEmailInput(dialog), 'O e-mail de contato é inválido.']] as const) {
+      const message = await within(dialog).findByText(text);
+      expect(message.querySelector('.ui-icon svg'), text).not.toBeNull();
+      expect(message.getAttribute('role'), text).toBe('alert');
+      expect(input.getAttribute('aria-describedby'), text).toBe(message.id);
+    }
+    expect(document.activeElement).toBe(editTaxIdInput(dialog));
+  });
+
+  it('puts the focus back on the name when it is empty, and Salvar belongs to the form from the foot of the dialog', async () => {
+    const { impl, calls } = makeFetch();
+    renderClientDetail(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const dialog = await openEditDialog();
+    const submit = within(dialog).getByRole('button', { name: 'Salvar' }) as HTMLButtonElement;
+    expect(submit.closest('.ui-modal__actions')).not.toBeNull();
+    expect(submit.form).toBe(dialog.querySelector('form'));
+
+    fireEvent.change(editInstagramInput(dialog), { target: { value: 'outro' } });
+    editNameInput(dialog).blur();
+    fireEvent.change(editNameInput(dialog), { target: { value: '   ' } });
+    fireEvent.click(submit);
+
+    const message = await within(dialog).findByText('Informe o nome do cliente.');
+    expect(message.querySelector('.ui-icon svg')).not.toBeNull();
+    expect(document.activeElement).toBe(editNameInput(dialog));
+    expect(calls.some((call) => call.startsWith('PATCH'))).toBe(false);
+  });
+
   it('keeps a server error inside the modal with the typed value, and allows trying again', async () => {
     let attempts = 0;
     const { impl } = makeFetch({
@@ -962,7 +1020,7 @@ describe('edit client modal (#137)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await screen.findByRole('heading', { name: 'Padaria Renovada' })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('link', { name: '← Clientes' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Voltar para Clientes' }));
     // The roster was invalidated; without it, the cached "Padaria Central" would stay.
     expect(await screen.findByText('Padaria Renovada')).toBeTruthy();
     expect(screen.queryByText('Padaria Central')).toBeNull();
@@ -1116,7 +1174,7 @@ describe('edit client modal (#137)', () => {
     });
     await waitFor(() => expect(dialog.querySelector('img.ui-avatar__photo')?.getAttribute('src')).toBe('https://storage.test/nova.png'));
 
-    fireEvent.click(screen.getByRole('link', { name: '← Clientes' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Voltar para Clientes' }));
     await waitFor(() => expect(container.querySelector('.clients__card img.ui-avatar__photo')?.getAttribute('src')).toBe('https://storage.test/nova.png'));
   });
 
@@ -1136,7 +1194,7 @@ describe('edit client modal (#137)', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Remover' }));
     await waitFor(() => expect(within(dialog).getByText('PC')).toBeTruthy());
 
-    fireEvent.click(screen.getByRole('link', { name: '← Clientes' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Voltar para Clientes' }));
     await waitFor(() => expect(container.querySelector('.clients__card img')).toBeNull());
     expect(within(container.querySelector('.clients__card') as HTMLElement).getByText('PC')).toBeTruthy();
   });

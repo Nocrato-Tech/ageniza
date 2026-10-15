@@ -12,7 +12,7 @@ import {
   type ClientDetailResponse,
   type UpdateClientRequest
 } from '@ageniza/contracts';
-import { Avatar, Button, FieldMessage, LiveStatus, Modal, TextInput } from '@ageniza/ui';
+import { Avatar, Button, Field, FieldMessage, LiveStatus, Modal, TextInput } from '@ageniza/ui';
 
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -135,7 +135,9 @@ export function EditClientDialog({ client, onClose }: { client: ClientDetailResp
   const queryClient = useQueryClient();
   const nameRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const formErrorId = useId();
+  const formId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
+  const focusInvalid = useRef(false);
   const [fields, setFields] = useState<RegistrationFields>(() => fromClient(client));
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof RegistrationFields, string>>>({});
   const [formError, setFormError] = useState<string | undefined>();
@@ -154,8 +156,16 @@ export function EditClientDialog({ client, onClose }: { client: ClientDetailResp
   };
 
   const setFieldError = (field: keyof RegistrationFields, message: string): void => {
+    focusInvalid.current = true;
     setFieldErrors((current) => ({ ...current, [field]: message }));
   };
+
+  // The field error is read through `aria-describedby`, so a refusal puts the focus on the first field it is about.
+  useEffect(() => {
+    if (!focusInvalid.current) return;
+    focusInvalid.current = false;
+    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [fieldErrors]);
 
   // A photo upload or removal answers with a new `client` (setQueryData), and any refetch can
   // answer while the modal is open. The fields follow the server only while the person has not
@@ -290,32 +300,32 @@ export function EditClientDialog({ client, onClose }: { client: ClientDetailResp
   };
 
   const field = (fieldName: keyof RegistrationFields, label: string, props: {
-    autoFocus?: boolean;
     placeholder?: string;
     type?: string;
     inputMode?: 'url' | 'email' | 'tel';
     maxLength?: number;
-  } = {}) => {
-    const id = `${fieldName}-${client.id}`;
-    const error = fieldErrors[fieldName];
-    const errorMessageId = error === undefined ? undefined : `${id}-error`;
-    return <div className="form-field">
-      <label htmlFor={id}>{label}</label>
-      <TextInput
-        ref={fieldName === 'name' ? nameRef : undefined}
-        id={id}
-        name={fieldName}
-        value={fields[fieldName]}
-        onChange={(event) => setField(fieldName, event.target.value)}
-        aria-invalid={error !== undefined}
-        aria-describedby={errorMessageId}
-        {...props}
-      />
-      {error !== undefined && <FieldMessage id={errorMessageId} role="alert">{error}</FieldMessage>}
-    </div>;
-  };
+  } = {}) => (
+    <Field label={label} id={`${fieldName}-${client.id}`} error={fieldErrors[fieldName]}>
+      {(control) => (
+        <TextInput
+          {...control}
+          ref={fieldName === 'name' ? nameRef : undefined}
+          name={fieldName}
+          value={fields[fieldName]}
+          onChange={(event) => setField(fieldName, event.target.value)}
+          {...props}
+        />
+      )}
+    </Field>
+  );
 
-  return <Modal title="Editar cliente" closeLabel="Fechar edição do cliente" onClose={onClose}>
+  return <Modal
+    title="Editar cliente"
+    closeLabel="Fechar edição do cliente"
+    description="Só os campos que você mudar são salvos."
+    onClose={onClose}
+    actions={<Button type="submit" form={formId} disabled={!hasChanges} loading={save.isPending}>Salvar</Button>}
+  >
     <div className="edit-client__photo">
       <Avatar name={client.name} photoUrl={photoUrl} size="lg" />
       <div className="edit-client__photo-actions">
@@ -336,7 +346,7 @@ export function EditClientDialog({ client, onClose }: { client: ClientDetailResp
       {photoError !== undefined && <FieldMessage role="alert">{photoError}</FieldMessage>}
     </div>
 
-    <form className="form-stack" onSubmit={onSubmit} noValidate>
+    <form ref={formRef} id={formId} className="form-stack" onSubmit={onSubmit} noValidate>
       <div className="edit-client__group">
         <h3>Cliente</h3>
         {field('name', 'Nome')}
@@ -357,11 +367,7 @@ export function EditClientDialog({ client, onClose }: { client: ClientDetailResp
         <p className="form-hint">{CONTACT_NOTE}</p>
       </div>
 
-      {formError !== undefined && <FieldMessage id={formErrorId} role="alert">{formError}</FieldMessage>}
-
-      <div className="form-actions">
-        <Button type="submit" disabled={!hasChanges} loading={save.isPending}>Salvar</Button>
-      </div>
+      {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
     </form>
   </Modal>;
 }

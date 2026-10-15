@@ -284,19 +284,16 @@ function ScriptEditor({ clientId, initial, initialDay, canOperate, onBusyChange,
 
   return <form className="form-stack story-script" onSubmit={onSubmit} noValidate>
     <p className="story-script__status"><StoryScriptStatusTag status={status} /></p>
-    <Field id={dayId} label="Dia dos stories">
-      {(control) => <>
+    <Field id={dayId} label="Dia dos stories" error={errors.scriptOn}>
+      {(control) => (
         <TextInput
           {...control}
           type="date"
           value={form.scriptOn}
           disabled={busy}
           onChange={(event) => { setForm({ ...form, scriptOn: event.target.value }); setErrors((current) => ({ scenes: current.scenes })); setFormError(undefined); }}
-          aria-invalid={errors.scriptOn !== undefined}
-          aria-describedby={errors.scriptOn === undefined ? undefined : `${dayId}-error`}
         />
-        {errors.scriptOn !== undefined && <FieldMessage id={`${dayId}-error`} role="alert">{errors.scriptOn}</FieldMessage>}
-      </>}
+      )}
     </Field>
     <ol className="story-script__scenes">
       {form.scenes.map((scene, index) => {
@@ -322,8 +319,8 @@ function ScriptEditor({ clientId, initial, initialDay, canOperate, onBusyChange,
               />
             </div>
           </div>
-          <Field id={`${scene.key}-text`} label={`Texto da cena ${number}`}>
-            {(control) => <>
+          <Field id={`${scene.key}-text`} label={`Texto da cena ${number}`} error={sceneErrors.text}>
+            {(control) => (
               <Textarea
                 {...control}
                 ref={(element) => { textareas.current.set(scene.key, element); }}
@@ -332,14 +329,11 @@ function ScriptEditor({ clientId, initial, initialDay, canOperate, onBusyChange,
                 value={scene.text}
                 disabled={busy}
                 onChange={(event) => editScene(scene.key, { text: event.target.value })}
-                aria-invalid={sceneErrors.text !== undefined}
-                aria-describedby={sceneErrors.text === undefined ? undefined : `${scene.key}-text-error`}
               />
-              {sceneErrors.text !== undefined && <FieldMessage id={`${scene.key}-text-error`} role="alert">{sceneErrors.text}</FieldMessage>}
-            </>}
+            )}
           </Field>
-          <Field id={`${scene.key}-guidance`} label={`Orientação da cena ${number}`}>
-            {(control) => <>
+          <Field id={`${scene.key}-guidance`} label={`Orientação da cena ${number}`} error={sceneErrors.guidance}>
+            {(control) => (
               <Textarea
                 {...control}
                 rows={2}
@@ -347,11 +341,8 @@ function ScriptEditor({ clientId, initial, initialDay, canOperate, onBusyChange,
                 value={scene.guidance}
                 disabled={busy}
                 onChange={(event) => editScene(scene.key, { guidance: event.target.value })}
-                aria-invalid={sceneErrors.guidance !== undefined}
-                aria-describedby={sceneErrors.guidance === undefined ? undefined : `${scene.key}-guidance-error`}
               />
-              {sceneErrors.guidance !== undefined && <FieldMessage id={`${scene.key}-guidance-error`} role="alert">{sceneErrors.guidance}</FieldMessage>}
-            </>}
+            )}
           </Field>
         </li>;
       })}

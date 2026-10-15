@@ -3589,18 +3589,9 @@ a.client-general__block:focus-visible {
   overflow: hidden;
 }
 
+/* The status is a Pill (neutral, or accent when it is the viewer's turn); the row only places it. */
 .conversation__status {
   justify-self: start;
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  font: var(--label-sm);
-}
-
-.conversation__status--awaiting {
-  border-color: var(--focus-ring);
-  color: var(--text-link);
 }
 
 .conversation__empty,
@@ -4927,6 +4918,12 @@ a.client-general__block:focus-visible {
   font: var(--heading-lg);
 }
 
+/* The empty state of the list reads like the roster's: the block and its text centred together, never a centred block with left-aligned text. */
+.story-list__empty:not(.ui-empty-state--mascot) .ui-empty-state__body {
+  justify-items: center;
+  text-align: center;
+}
+
 .story-list__items {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -5688,13 +5685,45 @@ a.client-general__block:focus-visible {
   border-top: 0;
 }
 
+/* The Pauta look of the conversation: rows and messages rest on the canvas under the surface, never as a card inside a card.
+   A row reacts by its border, because text/link is only guaranteed on canvas and surface (docs/design-system.md 20.1). */
 .content-modal__conversation .conversation__thread {
+  border-color: var(--border-subtle);
   border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+}
+
+.content-modal__conversation .conversation__thread:hover,
+.content-modal__conversation .conversation__thread:focus-visible {
+  border-color: var(--focus-ring);
+}
+
+.content-modal__conversation .conversation__thread-meta {
+  color: var(--text-secondary);
 }
 
 .content-modal__conversation .conversation__comment {
-  padding: 0;
+  padding: var(--space-3) var(--space-4);
   border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+}
+
+/* The client's message is outlined, so the two sides differ by more than the word in the line above (and the modal stays off the elevated surfaces). */
+.content-modal__conversation .conversation__comment--client {
+  border: 1px solid var(--border-default);
+}
+
+.content-modal__conversation .conversation__comment-meta {
+  font: var(--body-md);
+}
+
+.content-modal__conversation .conversation__comment-author {
+  font: var(--label-md);
+}
+
+.content-modal__conversation .conversation__actions {
+  justify-content: flex-end;
 }
 
 /* The canvas under the surface, as in the artboard: the footer reads as the floor of the modal. The dialog drops its bottom padding here so that

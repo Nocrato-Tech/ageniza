@@ -789,7 +789,7 @@ describe('create client modal (#135)', () => {
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${createdClient.id}/geral`));
 
     // The creation invalidated the roster: going back shows the new client without a reload.
-    fireEvent.click(screen.getByRole('link', { name: '← Clientes' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Voltar para Clientes' }));
     expect(await screen.findByText('Padaria Nova')).toBeTruthy();
   });
 
@@ -832,6 +832,43 @@ describe('create client modal (#135)', () => {
     expect(dialog.textContent).not.toContain('private diagnostic');
     expect(screen.getByRole('dialog', { name: 'Cadastrar cliente' })).toBe(dialog);
     expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes`);
+  });
+
+  it('says the error with its icon, puts the focus back on the name, and sends from the foot of the dialog', async () => {
+    const { impl } = makeFetch({
+      createClient: () => json({ error: { code: 'CLIENT_NAME_IN_USE', message: 'private diagnostic' } }, 409)
+    });
+    const { container } = renderClients(impl);
+    await screen.findByText('Padaria Central');
+    const dialog = await openCreate(container);
+    const name = within(dialog).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
+    const submit = within(dialog).getByRole('button', { name: 'Cadastrar' }) as HTMLButtonElement;
+    expect(submit.closest('.ui-modal__actions')).not.toBeNull();
+    expect(submit.form).toBe(dialog.querySelector('form'));
+
+    fireEvent.change(name, { target: { value: 'Padaria Central' } });
+    (container.querySelector('button') as HTMLElement).focus();
+    fireEvent.click(submit);
+
+    const error = await within(dialog).findByText('Já existe um cliente ativo com este nome.');
+    expect(error.querySelector('.ui-icon svg')).not.toBeNull();
+    expect(error.getAttribute('role')).toBe('alert');
+    expect(document.activeElement).toBe(name);
+  });
+
+  it('puts the focus on the name and says why when it is submitted empty', async () => {
+    const { impl } = makeFetch();
+    const { container } = renderClients(impl);
+    await screen.findByText('Padaria Central');
+    const dialog = await openCreate(container);
+    const name = within(dialog).getByRole('textbox', { name: 'Nome' });
+    (container.querySelector('button') as HTMLElement).focus();
+
+    fireEvent.submit(dialog.querySelector('form')!);
+
+    const error = await within(dialog).findByText('Informe o nome do cliente.');
+    expect(error.querySelector('.ui-icon svg')).not.toBeNull();
+    expect(document.activeElement).toBe(name);
   });
 
   it('marks the name field when the API refuses the name on a 400', async () => {
@@ -1118,13 +1155,13 @@ describe('the roster address travels to the detail from every way in (#636)', ()
       fireEvent.click(screen.getByRole('menuitem', { name: 'Abrir cliente' }));
     }],
     ['the next action', async () => { fireEvent.click(screen.getByRole('button', { name: 'Ver sugestões, Padaria Central' })); }]
-  ])('brings "← Clientes" back to the filtered roster from %s', async (_way, enter) => {
+  ])('brings "Voltar para Clientes" back to the filtered roster from %s', async (_way, enter) => {
     const { impl } = makeFetch();
     const { probe } = renderClients(impl, entry);
     await screen.findByText('Padaria Central');
 
     await enter();
-    fireEvent.click(await screen.findByRole('link', { name: '← Clientes' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Voltar para Clientes' }));
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes`));
     expect(probe.search).toBe('?search=padaria');
   });

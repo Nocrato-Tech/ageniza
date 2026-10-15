@@ -712,6 +712,17 @@ describe('the list of scripts of the period (#635)', () => {
     expect((within(dialog()).getByLabelText('Dia dos stories') as HTMLInputElement).value).toBe('2026-10-11');
   });
 
+  it('lays the empty state out like the clients roster (no mascot, centred text), through its own class', async () => {
+    const { impl } = makeFetch();
+    render_(impl);
+    await calendarReady();
+
+    const empty = document.querySelector<HTMLElement>('.story-list .ui-empty-state')!;
+    expect(empty.classList.contains('story-list__empty')).toBe(true);
+    expect(empty.classList.contains('ui-empty-state--mascot')).toBe(false);
+    expect(empty.querySelector('img')).toBeNull();
+  });
+
   it('offers no way to write one without conteudo.operar, and still says there is none', async () => {
     const { impl } = makeFetch({ permissions: [VISUALIZE, READ_CLIENTS] });
     render_(impl);
@@ -845,6 +856,28 @@ describe('the modal in the Pauta look (#635)', () => {
     expect(down.classList.contains('ui-icon-button')).toBe(true);
     expect(down.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
     expect(down.textContent).toBe('');
+  });
+
+  it('gives the day, the text and the guidance their error through the Field, each with the icon and its own description', async () => {
+    const { impl } = makeFetch();
+    render_(impl);
+    await openNewScriptOn('2026-10-20');
+    typeInto('Dia dos stories', '');
+    typeInto('Orientação da cena 1', `Luz${String.fromCodePoint(0x200b)}natural`);
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Salvar rascunho' }));
+
+    for (const [label, text] of [
+      ['Dia dos stories', 'Informe o dia dos stories.'],
+      ['Texto da cena 1', 'Escreva o texto da cena.'],
+      ['Orientação da cena 1', 'A orientação tem caracteres invisíveis ou de controle.']
+    ] as const) {
+      const message = await within(dialog()).findByText(text);
+      const control = within(dialog()).getByLabelText(label);
+      expect(message.querySelector('.ui-icon svg'), label).not.toBeNull();
+      expect(message.getAttribute('role'), label).toBe('alert');
+      expect(control.getAttribute('aria-invalid'), label).toBe('true');
+      expect(control.getAttribute('aria-describedby'), label).toBe(message.id);
+    }
   });
 
   it('keeps an invalid scene marked and described by its own message', async () => {
