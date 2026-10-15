@@ -5508,6 +5508,7 @@ main > .shell-notice {
 .content-folders,
 .content-folders__section {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   min-width: 0;
 }
@@ -5531,88 +5532,162 @@ main > .shell-notice {
   font: var(--label-md);
 }
 
+.content-folders__glyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.content-folders__glyph > svg {
+  width: 1rem;
+  height: 1rem;
+  stroke-width: 1.75;
+}
+
 .content-folders__path {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
+  font: var(--label-md);
   overflow-wrap: anywhere;
 }
 
-.content-folders__path li + li::before {
-  content: '›';
-  margin-right: var(--space-2);
-  color: var(--text-secondary);
+.content-folders__path li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .content-folders__list,
-.folder-media__grid {
+.folder-media__grid,
+.content-folders__skeleton {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
   gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+.folder-media__grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
+}
+
 .content-folder {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3);
+  gap: var(--space-3);
+  min-height: 3.5rem;
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
   color: var(--text-primary);
   text-decoration: none;
+  transition: border-color var(--motion-fast);
+}
+
+.content-folder:hover {
+  border-color: var(--border-control);
+}
+
+.content-folder__icon,
+.content-folder__chevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.content-folder__icon > svg,
+.content-folder__chevron > svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  stroke-width: 1.75;
 }
 
 .content-folder__name {
+  flex: 1 1 auto;
+  min-width: 0;
   font: var(--label-md);
   overflow-wrap: anywhere;
 }
 
-.content-folder__badge {
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
+.content-folders__note {
+  margin: 0;
   color: var(--text-secondary);
   font: var(--caption);
 }
 
-.content-folders__empty,
-.content-folders__note {
-  margin: 0;
-  color: var(--text-secondary);
+.content-folders__empty {
+  padding: var(--space-6) var(--space-4);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.content-folders__empty .ui-empty-state__body {
+  justify-items: center;
+  text-align: center;
+}
+
+.content-folders__empty .ui-empty-state__title {
+  font: var(--label-md);
+}
+
+.content-folders__empty .ui-empty-state__description {
+  font: var(--body-md);
 }
 
 .content-folders__error {
   display: grid;
   justify-items: start;
-  gap: var(--space-2);
+  gap: var(--space-3);
   color: var(--text-danger);
 }
 
-.content-folders__skeleton {
-  display: grid;
+.content-folders__error > p {
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
+  margin: 0;
+  font: var(--body-md);
+}
+
+.content-folders__error .content-folders__glyph {
+  color: inherit;
+}
+
+.content-folders__skeleton > .ui-skeleton {
+  height: 3.5rem;
 }
 
 .folder-media {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
-  gap: var(--space-1);
-  padding: var(--space-2);
+  gap: var(--space-3);
+  padding: var(--space-3);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
 }
 
+.folder-media__body {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
 .folder-media__title,
-.folder-media__meta {
+.folder-media__meta,
+.folder-media__failure {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -5624,6 +5699,16 @@ main > .shell-notice {
 .folder-media__meta {
   color: var(--text-secondary);
   font: var(--caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.folder-media__failure {
+  color: var(--text-danger);
+  font: var(--caption);
+}
+
+.folder-media__failure .content-folders__glyph {
+  color: inherit;
 }
 
 .folder-media__actions {
@@ -5633,8 +5718,12 @@ main > .shell-notice {
   gap: var(--space-2);
 }
 
+.folder-media > .ui-field-message {
+  margin: 0;
+}
+
 .folder-media__skeleton {
-  height: 12rem;
+  height: 14rem;
 }
 
 .media-thumbnail {
@@ -5655,7 +5744,54 @@ main > .shell-notice {
 
 .media-thumbnail--placeholder {
   color: var(--text-secondary);
-  font: var(--heading-md);
+}
+
+.media-thumbnail--placeholder svg {
+  width: 2rem;
+  height: 2rem;
+  stroke-width: 1.75;
+}
+
+/* On a phone a media is a row: the thumbnail on the side, the touch targets at the full size. */
+@media (max-width: 40rem) {
+  .folder-media__grid,
+  .content-folders__list,
+  .content-folders__skeleton {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .folder-media {
+    grid-template-columns: 5rem minmax(0, 1fr);
+    grid-template-areas:
+      'thumb body'
+      'thumb actions'
+      'notice notice';
+    align-items: start;
+  }
+
+  .folder-media > .media-thumbnail {
+    grid-area: thumb;
+  }
+
+  .folder-media__body {
+    grid-area: body;
+  }
+
+  .folder-media__actions {
+    grid-area: actions;
+  }
+
+  .folder-media > .ui-field-message {
+    grid-area: notice;
+  }
+
+  .folder-media__actions .ui-button--sm {
+    min-height: 2.75rem;
+  }
+
+  .folder-media__skeleton {
+    height: 7rem;
+  }
 }
 
 .content-card__link {
@@ -6062,42 +6198,112 @@ main > .shell-notice {
 
 .media-uploader {
   display: grid;
-  gap: var(--space-2);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
   min-width: 0;
-  padding: var(--space-3);
-  border: 1px dashed var(--border-default);
+}
+
+.media-uploader__file {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
 }
 
-.media-uploader__label {
-  font: var(--label-md);
+.media-uploader__kind {
+  display: inline-flex;
+  color: var(--text-secondary);
 }
 
-.media-uploader__input {
-  max-width: 100%;
-  font: var(--body-md);
+.media-uploader__kind > svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  stroke-width: 1.75;
 }
 
-.media-uploader__file,
-.media-uploader__actions {
+.media-uploader__text {
   display: grid;
   gap: var(--space-2);
-  justify-items: start;
+  min-width: 0;
 }
 
-.media-uploader__name,
-.media-uploader__percent,
-.media-uploader__done {
+.media-uploader__name {
   margin: 0;
   overflow-wrap: anywhere;
+  font: var(--label-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.media-uploader__meter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.media-uploader__percent {
+  flex: none;
+  min-width: 2.5rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.media-uploader__progress {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 0.5rem;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--bg-hover);
+  appearance: none;
+  overflow: hidden;
+}
+
+.media-uploader__progress::-webkit-progress-bar {
+  background: var(--bg-hover);
+}
+
+.media-uploader__progress::-webkit-progress-value {
+  border-radius: var(--radius-full);
+  background: var(--text-primary);
+}
+
+.media-uploader__progress::-moz-progress-bar {
+  border-radius: var(--radius-full);
+  background: var(--text-primary);
+}
+
+.media-uploader__done {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
   color: var(--text-secondary);
   font: var(--caption);
 }
 
-.media-uploader__progress {
-  width: 100%;
-  accent-color: var(--action-primary-bg);
+.media-uploader .ui-field-message {
+  margin: 0;
+}
+
+@media (max-width: 40rem) {
+  .media-uploader__file {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .media-uploader__actions {
+    grid-column: 1 / -1;
+  }
+
+  .media-uploader__actions .ui-button {
+    width: 100%;
+  }
 }
 
 /* Logo and Symbol: docs/brand.md */
