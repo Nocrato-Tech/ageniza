@@ -680,3 +680,57 @@ describe('portal access tab (#140)', () => {
     expect(await screen.findByText('Maria Souza')).toBeTruthy();
   });
 });
+
+describe('portal access in the Pauta (#637)', () => {
+  const primaryInvites = (): HTMLElement[] =>
+    screen.getAllByRole('button', { name: 'Convidar' }).filter((button) => button.classList.contains('ui-button--primary'));
+
+  it('keeps one primary action: Convidar in the empty state with the owl while nobody has access, in the header otherwise', async () => {
+    const empty = makeFetch({ members: () => json(pageOf([])), clientInvitations: () => json(pageOf([])) });
+    renderAccess(empty.impl);
+    await screen.findByText('Ninguém deste cliente acessa o portal ainda');
+
+    expect(screen.getAllByRole('button', { name: 'Convidar' })).toHaveLength(2);
+    expect(primaryInvites()).toHaveLength(1);
+    expect(primaryInvites()[0]!.closest('.ui-empty-state')).not.toBeNull();
+    expect(document.querySelector('.ui-empty-state--mascot img')).not.toBeNull();
+
+    cleanup();
+    const filled = makeFetch({ members: () => json(pageOf([maria])), clientInvitations: () => json(pageOf([])) });
+    renderAccess(filled.impl);
+    await screen.findByText('Maria Souza');
+
+    expect(primaryInvites()).toHaveLength(1);
+    expect(primaryInvites()[0]!.closest('.ui-empty-state')).toBeNull();
+    expect(document.querySelector('.ui-empty-state')).toBeNull();
+  });
+
+  it('draws the empty list of an archived client without the owl, the sentence about the invite or any action', async () => {
+    const { impl } = makeFetch({
+      client: () => json({ ...padaria, status: 'archived', archivedAt: '2026-10-04T12:00:00.000Z' }),
+      members: () => json(pageOf([])),
+      clientInvitations: () => json(pageOf([]))
+    });
+    renderAccess(impl);
+    await screen.findByText('Ninguém deste cliente acessa o portal ainda');
+
+    expect(document.querySelector('.ui-empty-state--mascot')).toBeNull();
+    expect(document.querySelector('.ui-empty-state img')).toBeNull();
+    expect(screen.queryByText('A pessoa recebe um link para criar a conta e entrar no portal deste cliente.')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Convidar' })).toBeNull();
+  });
+
+  it('names each person with an avatar, and tells the expiry of an invitation in a pill with an icon', async () => {
+    const { impl } = makeFetch({ members: () => json(pageOf([maria])), clientInvitations: () => json(pageOf([carla])) });
+    renderAccess(impl);
+
+    const row = (await screen.findByText('Maria Souza')).closest('li');
+    if (row === null) throw new Error('The person row was not rendered.');
+    expect(row.querySelector('.ui-avatar')?.textContent).toBe('MS');
+    const invitation = screen.getByText('carla@padaria.test').closest('li');
+    if (invitation === null) throw new Error('The invitation row was not rendered.');
+    const expiry = invitation.querySelector('.ui-pill');
+    expect(expiry?.querySelector('svg')).not.toBeNull();
+    expect(expiry?.textContent).toMatch(/expira/);
+  });
+});

@@ -1012,9 +1012,11 @@ ul.clients__indicators {
   color: var(--text-danger);
 }
 
-/* Client detail: specs/clientes.md section 7, the header and the six tabs. */
+/* Client detail: specs/clientes.md section 7. The header answers the roster's badge: the same photo, the same situation pill and the
+   same surface, so opening a badge feels like the same client. Docs/design-system.md sections 13.3 and 25. */
 .client-detail {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-6);
 }
 
@@ -1028,8 +1030,8 @@ ul.clients__indicators {
   margin: 0;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-hover);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
   color: var(--text-secondary);
   font: var(--body-md);
 }
@@ -1038,20 +1040,36 @@ ul.clients__indicators {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-4) var(--space-6);
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.client-detail__header .ui-avatar {
+  width: 6rem;
+  height: 6rem;
+  flex: none;
+  background: var(--bg-elevated);
+}
+
+.client-detail__header .ui-avatar__initials {
+  font: var(--heading-xl);
 }
 
 .client-detail__avatar-skeleton {
-  width: 4rem;
-  height: 4rem;
+  width: 6rem;
+  height: 6rem;
   border-radius: var(--radius-full);
 }
 
 .client-detail__identity {
   display: grid;
-  flex: 1 1 16rem;
+  flex: 1 1 14rem;
   align-content: start;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .client-detail__identity .ui-skeleton {
@@ -1060,7 +1078,8 @@ ul.clients__indicators {
 
 .client-detail__identity h1 {
   margin: 0;
-  font: var(--heading-lg);
+  font: var(--heading-xl);
+  letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
 
@@ -1080,24 +1099,36 @@ ul.clients__indicators {
   list-style: none;
 }
 
-.client-detail__status,
-.client-detail__closing {
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  font: var(--label-sm);
-}
-
-.client-detail__closing {
-  color: var(--text-muted);
-}
-
 .client-detail__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
   margin-left: auto;
+}
+
+@media (max-width: 40rem) {
+  .client-detail__header {
+    padding: var(--space-4);
+  }
+
+  .client-detail__header .ui-avatar,
+  .client-detail__avatar-skeleton {
+    width: 4.5rem;
+    height: 4.5rem;
+  }
+
+  .client-detail__header .ui-avatar__initials {
+    font: var(--heading-lg);
+  }
+
+  .client-detail__identity {
+    flex-basis: 10rem;
+  }
+
+  .client-detail__identity h1 {
+    font: var(--heading-lg);
+  }
 }
 
 /* The lifecycle controls of #139 (⋯ menu / Reativar) and the error they can report. */
@@ -1122,42 +1153,34 @@ ul.clients__indicators {
   font: var(--body-md);
 }
 
-.client-detail__tabs {
-  border-bottom: 1px solid var(--border-default);
-}
-
-.client-detail__tabs ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
+/* The tabs are routes (a link each, the open one is aria-current), drawn as the Tabs component: ink underline, never indigo. */
+.client-detail__tabs ul.ui-tabs__list {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.client-detail__tabs a {
-  display: inline-block;
-  padding-block: var(--space-3);
-  border-bottom: 2px solid transparent;
-  color: var(--text-secondary);
-  font: var(--label-md);
+.client-detail__tabs li {
+  display: flex;
+}
+
+.client-detail__tabs .ui-tabs__tab {
   text-decoration: none;
 }
 
-/* Hover changes the text color only; the tab never gains a background, so `text/link` on the
-   active tab stays over `bg/canvas` (docs/design-system.md 20.1). */
-.client-detail__tabs a:hover {
+.client-detail__tabs .ui-tabs__tab[aria-current='page'] {
+  border-bottom-color: var(--text-primary);
   color: var(--text-primary);
 }
 
-.client-detail__tabs a[aria-current='page'] {
-  border-bottom-color: var(--focus-ring);
-  color: var(--text-link);
+.client-detail__tabs-skeleton .ui-skeleton {
+  height: 2.75rem;
 }
 
 .client-detail__panel {
   display: grid;
-  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
   min-height: var(--space-12);
 }
 
@@ -1172,34 +1195,37 @@ ul.clients__indicators {
   margin: 0;
 }
 
-.client-skeleton-tab {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.client-skeleton-tab h2 {
-  margin: 0;
-  font: var(--heading-md);
-}
-
-.client-skeleton-tab p {
-  margin: 0;
-  color: var(--text-secondary);
+.client-detail .client-skeleton-tab {
+  justify-content: flex-start;
+  padding: var(--space-6) 0;
 }
 
 .client-general {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
 }
 
+@media (min-width: 64rem) {
+  .client-general {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    align-items: start;
+  }
+
+  .client-general > :first-child {
+    grid-row: span 3;
+  }
+}
+
 .client-general__block {
+  position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: var(--space-3);
-  padding: var(--space-4);
+  padding: var(--space-6);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
   color: var(--text-primary);
   text-decoration: none;
@@ -1211,9 +1237,15 @@ a.client-general__block:hover {
   background: var(--bg-hover);
 }
 
+a.client-general__block:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
 .client-general__block h2 {
   margin: 0;
-  font: var(--heading-md);
+  padding-right: var(--space-8);
+  font: var(--heading-lg);
 }
 
 .client-general__block p {
@@ -1222,39 +1254,84 @@ a.client-general__block:hover {
   font: var(--body-md);
 }
 
+.client-general__go {
+  position: absolute;
+  top: var(--space-6);
+  right: var(--space-6);
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--text-secondary);
+}
+
 .client-general__fields {
   display: grid;
-  gap: var(--space-1);
+  grid-template-columns: minmax(0, 1fr);
   margin: 0;
 }
 
+.client-general__fields dt,
+.client-general__fields dd {
+  margin: 0;
+  padding-block: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
 .client-general__fields dt {
+  padding-bottom: 0;
+  border-top-color: var(--border-subtle);
   color: var(--text-secondary);
-  font: var(--label-sm);
+  font: var(--label-md);
 }
 
 .client-general__fields dd {
-  margin: 0 0 var(--space-2);
-  overflow-wrap: anywhere;
+  padding-top: var(--space-1);
+  border-top: 0;
+}
+
+.client-general__fields dt:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+@media (min-width: 40rem) {
+  .client-general__fields {
+    grid-template-columns: minmax(7rem, 10rem) minmax(0, 1fr);
+    column-gap: var(--space-4);
+  }
+
+  .client-general__fields dt,
+  .client-general__fields dd {
+    padding-block: var(--space-3);
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .client-general__fields dt:first-child,
+  .client-general__fields dt:first-child + dd {
+    padding-top: 0;
+    border-top: 0;
+  }
 }
 
 .client-general__progress {
   width: 100%;
-  accent-color: var(--action-primary-bg);
+  height: 0.5rem;
+  accent-color: var(--text-primary);
 }
 
+/* What the later modules will fill: a quiet line under the blocks, not a block of its own. */
 .client-general__reserved {
   display: grid;
   grid-column: 1 / -1;
   gap: var(--space-1);
-  padding: var(--space-4);
-  border: 1px dashed var(--border-default);
-  border-radius: var(--radius-md);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .client-general__reserved h2 {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font: var(--label-md);
 }
 
@@ -1653,10 +1730,11 @@ a.client-general__block:hover {
   color: var(--text-danger);
 }
 
-/* Portal access tab: specs/clientes.md section 7, issue #140. */
+/* Portal access tab: specs/clientes.md section 7, issue #140. Rows set apart by a line, no card: a row is a person, and what it holds is the first level. */
 .portal-access {
   display: grid;
-  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
 }
 
 .portal-access__header {
@@ -1669,12 +1747,12 @@ a.client-general__block:hover {
 
 .portal-access__header h2 {
   margin: 0;
-  font: var(--heading-md);
+  font: var(--heading-lg);
 }
 
 .portal-access__list {
   display: grid;
-  gap: var(--space-1);
+  grid-template-columns: minmax(0, 1fr);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1685,29 +1763,29 @@ a.client-general__block:hover {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) var(--space-4);
-  padding-block: var(--space-3);
-  border-top: 1px solid var(--border-default);
+  padding-block: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
 }
 
-.portal-access__row:first-child {
-  border-top: none;
+.portal-access__who {
+  display: grid;
+  flex: 1 1 12rem;
+  min-width: 0;
 }
 
 .portal-access__name {
-  flex: 1 1 12rem;
   font: var(--label-md);
   overflow-wrap: anywhere;
 }
 
 .portal-access__email {
-  flex: 1 1 12rem;
   color: var(--text-secondary);
   font: var(--body-md);
   overflow-wrap: anywhere;
 }
 
 .portal-access__since {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font: var(--body-md);
 }
 
@@ -1718,19 +1796,24 @@ a.client-general__block:hover {
   margin-left: auto;
 }
 
-.portal-access__empty,
+.portal-access__row > .ui-button {
+  margin-left: auto;
+}
+
+.portal-access > .ui-button,
+.brand-personas > .ui-button {
+  justify-self: start;
+}
+
 .portal-access__error {
   display: grid;
   justify-items: start;
   gap: var(--space-2);
   padding: var(--space-6) 0;
-}
-
-.portal-access__error {
   color: var(--text-danger);
 }
 
-.portal-access__empty p {
+.portal-access__error p {
   margin: 0;
 }
 
@@ -1740,9 +1823,13 @@ a.client-general__block:hover {
   font: var(--body-md);
 }
 
-.portal-access__removed {
+.portal-access__removed,
+.portal-access__invites {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border-default);
 }
 
 .portal-access__removed-header {
@@ -1756,13 +1843,7 @@ a.client-general__block:hover {
 .portal-access__removed-header h3,
 .portal-access__invites h3 {
   margin: 0;
-  font: var(--label-md);
-  color: var(--text-secondary);
-}
-
-.portal-access__invites {
-  display: grid;
-  gap: var(--space-3);
+  font: var(--heading-lg);
 }
 
 /* Auth form layout: specs/auth.md section 7, the centred single column the auth screens share. */
@@ -2839,26 +2920,21 @@ a.client-general__block:hover {
 /* Brand study tab: specs/clientes.md section 7, the seven fixed sections of issue #138. */
 .brand-study {
   display: grid;
-  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
 }
 
 .brand-study__header {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
 }
 
 .brand-study__header h2 {
   margin: 0;
-  font: var(--heading-md);
-}
-
-.brand-study__count {
-  margin: 0;
-  color: var(--text-secondary);
-  font: var(--label-md);
+  font: var(--heading-lg);
 }
 
 .brand-study__error {
@@ -2874,16 +2950,16 @@ a.client-general__block:hover {
 
 .brand-section-skeleton {
   height: 5rem;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
 }
 
+/* A section is a row of the study, set apart by a line: no card, so what it holds (colours, personas, threads) is the first level. */
 .brand-section {
   display: grid;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border-default);
 }
 
 .brand-section__header {
@@ -2897,16 +2973,17 @@ a.client-general__block:hover {
 .brand-section__header h3,
 .brand-personas__header h3 {
   margin: 0;
-  font: var(--heading-md);
+  font: var(--heading-lg);
 }
 
 .brand-section__updated {
   margin: 0;
-  color: var(--text-muted);
-  font: var(--caption);
+  color: var(--text-secondary);
+  font: var(--body-md);
 }
 
 .brand-section__body {
+  max-width: 70ch;
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -2922,12 +2999,37 @@ a.client-general__block:hover {
 
 .brand-section__editor {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
 }
 
 .brand-section__editor-label {
   color: var(--text-secondary);
-  font: var(--label-sm);
+  font: var(--label-md);
+}
+
+/* An empty section says what is missing and carries its one way forward; the title is a label here, not a heading of the screen. */
+.brand-study .brand-section__empty {
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: 0;
+}
+
+.brand-study .brand-section__empty .ui-empty-state__body {
+  gap: var(--space-2);
+}
+
+.brand-study .brand-section__empty .ui-empty-state__title {
+  font: var(--label-md);
+}
+
+.brand-study .brand-section__empty .ui-empty-state__description {
+  font: var(--body-md);
+}
+
+.brand-study .brand-section__empty .ui-empty-state__action {
+  padding-top: var(--space-1);
 }
 
 .ui-textarea {
@@ -2943,24 +3045,28 @@ a.client-general__block:hover {
 }
 
 .brand-colors {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  gap: var(--space-4);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .brand-colors--edit {
-  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
 }
 
 .brand-colors__item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
   font: var(--body-md);
+}
+
+.brand-colors__name {
+  overflow-wrap: anywhere;
 }
 
 .brand-colors__row {
@@ -2976,20 +3082,22 @@ a.client-general__block:hover {
 
 /* The client's own colour is data, not theme: the swatch paints the hex the registration stores. */
 .brand-colors__swatch {
-  width: 1.5rem;
-  height: 1.5rem;
+  height: 3.5rem;
+  margin-bottom: var(--space-1);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-lg);
 }
 
 .brand-colors__hex {
-  color: var(--text-muted);
-  font: var(--caption);
+  color: var(--text-secondary);
+  font: var(--body-md);
+  font-variant-numeric: tabular-nums;
 }
 
 .brand-personas {
   display: grid;
-  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
 }
 
 .brand-personas__header {
@@ -3002,8 +3110,8 @@ a.client-general__block:hover {
 
 .brand-personas__list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+  gap: var(--space-4);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -3011,21 +3119,27 @@ a.client-general__block:hover {
 
 .brand-personas__card {
   display: grid;
-  gap: var(--space-1);
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-3);
+  align-content: start;
   width: 100%;
   height: 100%;
-  padding: var(--space-3);
+  padding: var(--space-4);
   text-align: left;
   background: var(--bg-surface);
   color: var(--text-primary);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   cursor: pointer;
+}
+
+.brand-personas__card .ui-avatar {
+  grid-row: span 2;
 }
 
 .brand-personas__card:hover,
 .brand-personas__card:focus-visible {
-  border-color: var(--focus-ring);
+  background: var(--bg-hover);
 }
 
 .brand-personas__name {
@@ -3034,6 +3148,10 @@ a.client-general__block:hover {
 }
 
 .brand-personas__description {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   color: var(--text-secondary);
   font: var(--body-md);
   overflow-wrap: anywhere;
@@ -3223,6 +3341,92 @@ a.client-general__block:hover {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+/* The conversation inside the brand study: rows set apart by a line instead of cards, so a thread is not a card inside a section.
+   Scoped to the study; the portal and the content modal keep their own look (their own goals). */
+.brand-study .conversation {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.brand-study .conversation__threads {
+  gap: 0;
+}
+
+.brand-study .conversation__thread {
+  padding: var(--space-3) var(--space-2);
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+}
+
+.brand-study .conversation__threads > li:first-child .conversation__thread {
+  border-top: 0;
+}
+
+.brand-study .conversation__thread:hover {
+  background: var(--bg-hover);
+}
+
+.brand-study .conversation__thread:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+.brand-study .conversation__thread-meta,
+.brand-study .conversation__thread-last,
+.brand-study .conversation__empty,
+.brand-study .conversation__note,
+.brand-study .conversation__resolved {
+  font: var(--body-md);
+}
+
+.brand-study .conversation__empty,
+.brand-study .conversation__note,
+.brand-study .conversation__resolved {
+  color: var(--text-secondary);
+}
+
+/* The viewer's turn is the filled pill, not link-coloured text: a thread row hovers over `bg/hover`, where `text/link` is not guaranteed. */
+.brand-study .conversation__status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
+  padding: 0 var(--space-2);
+  border-color: var(--border-default);
+  background: transparent;
+  font: var(--caption);
+}
+
+.brand-study .conversation__status--awaiting {
+  border-color: transparent;
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+}
+
+.brand-study .conversation__comment {
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+}
+
+.brand-study .conversation__comment--client {
+  background: var(--bg-hover);
+}
+
+.brand-study .conversation__comment-meta {
+  font: var(--body-md);
+}
+
+.brand-study .conversation__comment-author {
+  font: var(--label-md);
+}
+
+.brand-study .conversation__composer-label {
+  font: var(--label-md);
 }
 
 /* --- Portal do cliente (#141): celular primeiro, barra inferior de quatro itens --- */

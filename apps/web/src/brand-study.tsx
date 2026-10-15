@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type Ref } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type Ref } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ChevronDown, Pencil, Plus } from 'lucide-react';
 import { z } from 'zod';
 
 import {
@@ -16,7 +17,7 @@ import {
   type Persona,
   type ThreadSubject
 } from '@ageniza/contracts';
-import { Button, ConfirmDialog, FieldMessage, Modal, Select, Skeleton, TextInput, Textarea } from '@ageniza/ui';
+import { Avatar, Button, ConfirmDialog, EmptyState, Field, FieldMessage, Modal, Pill, Select, Skeleton, TextInput, Textarea } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -52,6 +53,27 @@ const SECTION_LABELS = {
 type SectionKey = keyof typeof SECTION_LABELS;
 const SECTION_ORDER: readonly SectionKey[] = ['branding', 'tone_of_voice', 'colors', 'positioning', 'archetype', 'personas', 'observations'];
 type TextSectionKey = 'branding' | 'tone_of_voice' | 'positioning' | 'observations';
+
+/** What each unfilled section asks for: shown only to whoever can fill it. */
+const EMPTY_HINTS: Record<Exclude<SectionKey, 'personas'>, string> = {
+  branding: 'Conte quem é a marca e o que ela defende.',
+  tone_of_voice: 'Registre como a marca fala com o público.',
+  colors: 'Cadastre as cores da marca, cada uma com nome e código.',
+  positioning: 'Diga onde a marca se coloca diante dos concorrentes.',
+  archetype: 'Escolha o arquétipo que melhor descreve a marca.',
+  observations: 'Anote o que a equipe precisa lembrar sobre este cliente.'
+};
+
+/** The empty section: what is missing and the one way to fill it. Without permission it only says it is missing. */
+function EmptySection({ sectionKey, canEdit, onFill }: { sectionKey: Exclude<SectionKey, 'personas'>; canEdit: boolean; onFill: () => void }) {
+  return <EmptyState
+    className="brand-section__empty"
+    headingLevel={4}
+    title={EMPTY_SECTION}
+    description={canEdit ? EMPTY_HINTS[sectionKey] : undefined}
+    action={canEdit ? <Button size="sm" variant="secondary" leadingIcon={<Plus />} aria-label={`Preencher ${SECTION_LABELS[sectionKey]}`} onClick={onFill}>Preencher</Button> : undefined}
+  />;
+}
 
 export const brandStudyQueryKey = (agencyId: string, clientId: string) =>
   ['agency', agencyId, 'clients', 'brand-study', clientId] as const;
@@ -162,11 +184,12 @@ function TextSection({ client, sectionKey, section, canEdit }: {
 
   const empty = section.body === null;
   if (!editing) {
+    if (empty) return <EmptySection sectionKey={sectionKey} canEdit={canEdit} onFill={startEditing} />;
     return <>
-      <p className="brand-section__body">{empty ? EMPTY_SECTION : section.body}</p>
-      <div className="brand-section__actions">
-        {canEdit && <Button size="sm" variant="secondary" aria-label={`${empty ? 'Preencher' : 'Editar'} ${label}`} onClick={startEditing}>{empty ? 'Preencher' : 'Editar'}</Button>}
-      </div>
+      <p className="brand-section__body">{section.body}</p>
+      {canEdit && <div className="brand-section__actions">
+        <Button size="sm" variant="secondary" leadingIcon={<Pencil />} aria-label={`Editar ${label}`} onClick={startEditing}>Editar</Button>
+      </div>}
     </>;
   }
 
@@ -179,16 +202,16 @@ function TextSection({ client, sectionKey, section, canEdit }: {
   };
 
   return <form className="brand-section__editor" onSubmit={onSubmit} noValidate>
-    <label className="brand-section__editor-label" htmlFor={`${sectionKey}-${client.id}`}>Editar {label}</label>
-    <Textarea
-      ref={textareaRef}
-      id={`${sectionKey}-${client.id}`}
-      name={sectionKey}
-      value={draft}
-      rows={6}
-      onChange={(event) => { setDraft(event.target.value); setError(undefined); }}
-    />
-    {error !== undefined && <FieldMessage role="alert">{error}</FieldMessage>}
+    <Field label={`Editar ${label}`} error={error}>
+      {(control) => <Textarea
+        ref={textareaRef}
+        {...control}
+        name={sectionKey}
+        value={draft}
+        rows={6}
+        onChange={(event) => { setDraft(event.target.value); setError(undefined); }}
+      />}
+    </Field>
     <div className="brand-section__actions">
       <Button type="submit" size="sm" loading={save.isPending}>Salvar</Button>
       <Button type="button" size="sm" variant="ghost" disabled={save.isPending} onClick={() => { setEditing(false); setError(undefined); }}>Cancelar</Button>
@@ -238,20 +261,18 @@ function ColorsSection({ client, colors, canEdit }: { client: ClientDetailRespon
   };
 
   if (!editing) {
-    const empty = colors === null || colors.length === 0;
+    if (colors === null || colors.length === 0) return <EmptySection sectionKey="colors" canEdit={canEdit} onFill={startEditing} />;
     return <>
-      {empty
-        ? <p className="brand-section__body">{EMPTY_SECTION}</p>
-        : <ul className="brand-colors">
-          {colors.map((color) => <li key={`${color.name}-${color.hex}`} className="brand-colors__item">
-            <span className="brand-colors__swatch" style={{ background: color.hex }} aria-hidden="true" />
-            <span>{color.name}</span>
-            <span className="brand-colors__hex">{color.hex}</span>
-          </li>)}
-        </ul>}
-      <div className="brand-section__actions">
-        {canEdit && <Button size="sm" variant="secondary" aria-label={`${empty ? 'Preencher' : 'Editar'} Cores`} onClick={startEditing}>{empty ? 'Preencher' : 'Editar'}</Button>}
-      </div>
+      <ul className="brand-colors">
+        {colors.map((color) => <li key={`${color.name}-${color.hex}`} className="brand-colors__item">
+          <span className="brand-colors__swatch" style={{ background: color.hex }} aria-hidden="true" />
+          <span className="brand-colors__name">{color.name}</span>
+          <span className="brand-colors__hex">{color.hex}</span>
+        </li>)}
+      </ul>
+      {canEdit && <div className="brand-section__actions">
+        <Button size="sm" variant="secondary" leadingIcon={<Pencil />} aria-label="Editar Cores" onClick={startEditing}>Editar</Button>
+      </div>}
     </>;
   }
 
@@ -291,7 +312,7 @@ function ColorsSection({ client, colors, canEdit }: { client: ClientDetailRespon
       </li>)}
     </ul>
     <div className="brand-section__actions">
-      <Button type="button" size="sm" variant="secondary" disabled={draft.length >= 24} onClick={() => { setDraft((current) => [...current, { name: '', hex: '' }]); setError(undefined); }}>Adicionar cor</Button>
+      <Button type="button" size="sm" variant="secondary" leadingIcon={<Plus />} disabled={draft.length >= 24} onClick={() => { setDraft((current) => [...current, { name: '', hex: '' }]); setError(undefined); }}>Adicionar cor</Button>
     </div>
     {error !== undefined && <FieldMessage role="alert">{error}</FieldMessage>}
     <div className="brand-section__actions">
@@ -333,11 +354,13 @@ function ArchetypeSection({ client, archetype, canEdit }: { client: ClientDetail
 
   const label = archetype === null ? null : ARCHETYPE_LABELS[archetype as keyof typeof ARCHETYPE_LABELS];
   if (!editing) {
+    const startEditing = (): void => { setDraft(archetype ?? ''); setError(undefined); setEditing(true); };
+    if (label === null) return <EmptySection sectionKey="archetype" canEdit={canEdit} onFill={startEditing} />;
     return <>
-      <p className="brand-section__body">{label ?? EMPTY_SECTION}</p>
-      <div className="brand-section__actions">
-        {canEdit && <Button size="sm" variant="secondary" aria-label={`${label === null ? 'Preencher' : 'Editar'} Arquétipo`} onClick={() => { setDraft(archetype ?? ''); setError(undefined); setEditing(true); }}>{label === null ? 'Preencher' : 'Editar'}</Button>}
-      </div>
+      <p className="brand-section__body">{label}</p>
+      {canEdit && <div className="brand-section__actions">
+        <Button size="sm" variant="secondary" leadingIcon={<Pencil />} aria-label="Editar Arquétipo" onClick={startEditing}>Editar</Button>
+      </div>}
     </>;
   }
 
@@ -353,9 +376,9 @@ function ArchetypeSection({ client, archetype, canEdit }: { client: ClientDetail
       value={draft}
       placeholder="Selecione"
       options={ARCHETYPE_OPTIONS}
+      error={error}
       onChange={(value) => { setDraft(value); setError(undefined); }}
     />
-    {error !== undefined && <FieldMessage role="alert">{error}</FieldMessage>}
     <div className="brand-section__actions">
       <Button type="submit" size="sm" loading={save.isPending}>Salvar</Button>
       <Button type="button" size="sm" variant="ghost" disabled={save.isPending} onClick={() => { setEditing(false); setError(undefined); }}>Cancelar</Button>
@@ -388,33 +411,14 @@ function PersonaFields({ draft, onChange, nameRef, nameError }: {
   nameRef?: Ref<HTMLInputElement>;
   nameError?: string;
 }) {
-  const nameId = useId();
-  const nameErrorId = useId();
   return <>
-    <div className="form-field">
-      <label htmlFor={nameId}>Nome</label>
-      <TextInput
-        ref={nameRef}
-        id={nameId}
-        name="name"
-        value={draft.name}
-        onChange={(event) => onChange({ name: event.target.value })}
-        aria-invalid={nameError !== undefined}
-        aria-describedby={nameError === undefined ? undefined : nameErrorId}
-      />
-      {nameError !== undefined && <FieldMessage id={nameErrorId} role="alert">{nameError}</FieldMessage>}
-    </div>
+    <Field label="Nome" error={nameError}>
+      {(control) => <TextInput ref={nameRef} {...control} name="name" value={draft.name} onChange={(event) => onChange({ name: event.target.value })} />}
+    </Field>
     {([['description', 'Descrição'], ['pains', 'Dores'], ['desires', 'Desejos'], ['objections', 'Objeções']] as const).map(([field, label]) => (
-      <div key={field} className="form-field">
-        <label htmlFor={`${field}-${nameId}`}>{label}</label>
-        <Textarea
-          id={`${field}-${nameId}`}
-          name={field}
-          rows={3}
-          value={draft[field]}
-          onChange={(event) => onChange({ [field]: event.target.value })}
-        />
-      </div>
+      <Field key={field} label={label}>
+        {(control) => <Textarea {...control} name={field} rows={3} value={draft[field]} onChange={(event) => onChange({ [field]: event.target.value })} />}
+      </Field>
     ))}
   </>;
 }
@@ -587,7 +591,7 @@ function PersonaDialog({ client, persona, onClose }: { client: ClientDetailRespo
         <StudyConversation client={client} subject={{ personaId: persona.id }} subjectLabel={persona.name} readOnly={persona.status === 'archived'} headingLevel={3} />
         {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
         {canEdit && <div className="brand-persona__actions">
-          <Button size="sm" variant="secondary" onClick={() => { setDraft(draftFromPersona(persona)); setEditing(true); setNameError(undefined); }}>Editar</Button>
+          <Button size="sm" variant="secondary" leadingIcon={<Pencil />} onClick={() => { setDraft(draftFromPersona(persona)); setEditing(true); setNameError(undefined); }}>Editar</Button>
           <Button size="sm" variant="secondary" onClick={() => { setFormError(undefined); setConfirmingArchive(true); }}>Arquivar</Button>
         </div>}
         <ConfirmDialog
@@ -636,21 +640,29 @@ function PersonasSection({ client, personas, canEdit }: { client: ClientDetailRe
   // The open modal reads the persona from the refetched list, so it never shows a stale copy.
   const currentOpen = openPersona === null ? null : personas.find((persona) => persona.id === openPersona.id) ?? null;
 
-  return <div className="brand-personas">
-    {canEdit && <div className="brand-personas__header">
-      <Button size="sm" variant="secondary" aria-label="Adicionar persona" onClick={() => setCreating(true)}><span aria-hidden="true">+</span> persona</Button>
-    </div>}
+  const addPersona = <Button size="sm" variant="secondary" leadingIcon={<Plus />} aria-label="Adicionar persona" onClick={() => setCreating(true)}>Persona</Button>;
 
+  return <div className="brand-personas">
     {active.length === 0
-      ? <p className="brand-section__body">Nenhuma persona ainda</p>
-      : <ul className="brand-personas__list">
-        {active.map((persona) => <li key={persona.id}>
-          <button type="button" className="brand-personas__card" onClick={() => setOpenPersona(persona)}>
-            <span className="brand-personas__name">{persona.name}</span>
-            {persona.description !== null && <span className="brand-personas__description">{persona.description}</span>}
-          </button>
-        </li>)}
-      </ul>}
+      ? <EmptyState
+        className="brand-section__empty"
+        headingLevel={4}
+        title="Nenhuma persona ainda"
+        description={canEdit ? 'Descreva para quem a marca fala: dores, desejos e objeções.' : undefined}
+        action={canEdit ? addPersona : undefined}
+      />
+      : <>
+        {canEdit && <div className="brand-personas__header">{addPersona}</div>}
+        <ul className="brand-personas__list">
+          {active.map((persona) => <li key={persona.id}>
+            <button type="button" className="brand-personas__card" onClick={() => setOpenPersona(persona)}>
+              <Avatar name={persona.name} size="md" />
+              <span className="brand-personas__name">{persona.name}</span>
+              {persona.description !== null && <span className="brand-personas__description">{persona.description}</span>}
+            </button>
+          </li>)}
+        </ul>
+      </>}
 
     {archived.length > 0 && (archivedOpen
       ? <section className="brand-personas__archived" aria-label="Personas arquivadas">
@@ -671,7 +683,7 @@ function PersonasSection({ client, personas, canEdit }: { client: ClientDetailRe
           </li>)}
         </ul>
       </section>
-      : <Button variant="ghost" aria-expanded={archivedOpen} onClick={() => setArchivedOpen(true)}>{`Arquivadas (${archived.length})`} <span aria-hidden="true">▾</span></Button>)}
+      : <Button variant="ghost" aria-expanded={archivedOpen} trailingIcon={<ChevronDown />} onClick={() => setArchivedOpen(true)}>{`Arquivadas (${archived.length})`}</Button>)}
 
     <StudyConversation client={client} subject={{ sectionKey: 'personas' }} subjectLabel={SECTION_LABELS.personas} readOnly={false} />
     {error !== undefined && <FieldMessage role="alert">{error}</FieldMessage>}
@@ -723,7 +735,7 @@ export function ClientBrandStudyTab() {
   return <div className="brand-study">
     <header className="brand-study__header">
       <h2>Estudo de marca</h2>
-      <p className="brand-study__count">{data.filled} de 7 preenchidas</p>
+      <Pill className="brand-study__count">{data.filled} de 7 preenchidas</Pill>
     </header>
 
     {SECTION_ORDER.map((key) => {
