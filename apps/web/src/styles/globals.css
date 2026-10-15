@@ -4643,6 +4643,13 @@ a.client-general__block:hover {
   font: var(--body-md);
 }
 
+/* The last row of the month opens its detail upward: below it the calendar would scroll and clip the detail. */
+.content-calendar[data-view='month'] .content-day:nth-last-child(-n + 7) .content-card__detail {
+  top: auto;
+  bottom: 100%;
+  margin: 0;
+}
+
 .content-card__detail p,
 .content-card__detail dl,
 .content-card__detail dd {

@@ -1952,6 +1952,12 @@ describe('the header and the grid of the calendar', () => {
       expect(body('.content-day')).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\);/);
     });
 
+    it('opens the detail of a card of the last row of the month upward, so the scrolling calendar does not clip it', () => {
+      const rule = body(".content-calendar[data-view='month'] .content-day:nth-last-child(-n + 7) .content-card__detail");
+      expect(rule).toMatch(/bottom:\s*100%;/);
+      expect(rule).toMatch(/top:\s*auto;/);
+    });
+
     it('puts no shadow on the profile preview (only what floats has one) and sets the tile state in the scale', () => {
       expect(body('.contents__feed')).not.toMatch(/box-shadow/);
       expect(body('.content-feed__status')).toMatch(/font:\s*var\(--caption\);/);
