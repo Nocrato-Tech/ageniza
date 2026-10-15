@@ -1,5 +1,6 @@
 import { useId, useState, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { EllipsisVertical } from 'lucide-react';
 
 import { ClientSchema, type Client, type ClientDetailResponse } from '@ageniza/contracts';
 import { Button, FieldMessage, Menu, MenuItem, Modal, TextInput } from '@ageniza/ui';
@@ -220,7 +221,7 @@ export function ClientLifecycleActions({ client }: { client: ClientDetailRespons
       : <Menu
           label="Ações do cliente"
           triggerLabel="Ações do cliente"
-          trigger={<span aria-hidden="true">⋯</span>}
+          trigger={<EllipsisVertical aria-hidden="true" />}
         >
           <MenuItem onClick={() => { setError(undefined); setClosingOpen(true); }}>Encerrar contrato…</MenuItem>
           {client.closingDate !== null && <MenuItem onClick={() => { setError(undefined); clearClosing.mutate(); }}>Desmarcar encerramento</MenuItem>}

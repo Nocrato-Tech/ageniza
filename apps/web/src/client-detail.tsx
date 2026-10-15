@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, NavLink, Outlet, useLocation, useMatch, useOutletContext, useParams } from 'react-router-dom';
+import { Archive, ArrowRight, Circle, Clock, Pencil } from 'lucide-react';
 import { z } from 'zod';
 
 import { ClientDetailResponseSchema, ClientSchema, type ClientDetailResponse } from '@ageniza/contracts';
-import { Avatar, Button, Skeleton } from '@ageniza/ui';
+import { Avatar, Button, EmptyState, Pill, Realce, Skeleton } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -79,17 +80,17 @@ function ClientHeader({ client, onEdit }: { client: ClientDetailResponse; onEdit
   const active = client.status === 'active';
 
   return <header className="client-detail__header">
-    <Avatar name={client.name} photoUrl={client.photoUrl} size="lg" />
+    <Avatar className="client-detail__avatar" name={client.name} photoUrl={client.photoUrl} size="lg" />
     <div className="client-detail__identity">
       <h1 id="client-detail-title">{client.name}</h1>
       {client.instagramHandle !== null && <p className="client-detail__handle">@{client.instagramHandle}</p>}
       <ul className="client-detail__meta">
-        <li className="client-detail__status">{active ? 'Ativo' : 'Arquivado'}</li>
-        {active && client.closingDate !== null && <li className="client-detail__closing">encerra em {formatDayMonth(client.closingDate)}</li>}
+        <li><Pill className="client-detail__status" icon={active ? <Circle /> : <Archive />}>{active ? 'Ativo' : 'Arquivado'}</Pill></li>
+        {active && client.closingDate !== null && <li><Pill className="client-detail__closing" icon={<Clock />}>encerra em {formatDayMonth(client.closingDate)}</Pill></li>}
       </ul>
     </div>
     <div className="client-detail__actions">
-      {canOperate && active && <Button onClick={onEdit}>Editar</Button>}
+      {canOperate && active && <Button variant="secondary" leadingIcon={<Pencil />} onClick={onEdit}>Editar</Button>}
       <ClientLifecycleActions client={client} />
     </div>
   </header>;
@@ -164,6 +165,7 @@ export function ClientDetailPage() {
         <Skeleton className="client-detail__avatar-skeleton" />
         <div className="client-detail__identity"><Skeleton /><Skeleton /></div>
       </header>
+      <div className="client-detail__tabs-skeleton" aria-hidden="true"><Skeleton /></div>
       <div className="client-detail__panel"><Skeleton /><Skeleton /><Skeleton /></div>
     </section>;
   }
@@ -180,11 +182,11 @@ export function ClientDetailPage() {
     )}
     <ClientHeader client={client} onEdit={() => setEditOpen(true)} />
     <nav className="client-detail__tabs" aria-label="Seções do cliente">
-      <ul>
+      <ul className="ui-tabs__list">
         {tabs.map((tab) => <li key={tab.slug}>
           {/* In-app navigations carry the roster address forward (state), so "← Clientes" still
               knows it after any tab or block click (review of #379 r2). */}
-          <NavLink state={location.state} to={`/agencia/${agenciaId}/clientes/${client.id}/${tab.slug}`}>{tab.label}</NavLink>
+          <NavLink className="ui-tabs__tab" state={location.state} to={`/agencia/${agenciaId}/clientes/${client.id}/${tab.slug}`}>{tab.label}</NavLink>
         </li>)}
       </ul>
     </nav>
@@ -232,16 +234,21 @@ export function ClientGeneralTab() {
       <h2>Estudo de marca</h2>
       <progress className="client-general__progress" max={7} value={summary.brandStudyFilled} aria-label="Seções preenchidas do estudo de marca" />
       <p>{summary.brandStudyFilled} de 7</p>
+      <ArrowRight className="client-general__go" aria-hidden="true" />
     </Link>
     <Link className="client-general__block" state={location.state} to={`${base}/estudo-de-marca`}>
       <h2>Conversas</h2>
-      <p>{summary.threadsAwaitingAgency} aguardando a agência</p>
+      <p>{summary.threadsAwaitingAgency > 0
+        ? <Realce>{summary.threadsAwaitingAgency} aguardando a agência</Realce>
+        : `${summary.threadsAwaitingAgency} aguardando a agência`}</p>
       <p>{summary.threadsAnsweredByAgency} com resposta da agência</p>
+      <ArrowRight className="client-general__go" aria-hidden="true" />
     </Link>
     {canSeeAccess
       ? <Link className="client-general__block" state={location.state} to={`${base}/acessos`}>
         <h2>Portal</h2>
         <p>{portalCount}</p>
+        <ArrowRight className="client-general__go" aria-hidden="true" />
       </Link>
       : portalBlock}
     <section className="client-general__reserved" aria-labelledby="client-health-title">
@@ -257,8 +264,5 @@ export function ClientGeneralTab() {
  * does not work, so there is nothing clickable here beyond the tab itself.
  */
 export function ClientSkeletonTab({ title, description }: { title: string; description: string }) {
-  return <section className="client-skeleton-tab">
-    <h2>{title}</h2>
-    <p>{description}</p>
-  </section>;
+  return <EmptyState className="client-skeleton-tab" title={title} description={description} />;
 }
