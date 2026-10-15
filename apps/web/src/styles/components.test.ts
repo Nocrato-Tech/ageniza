@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { contrastOf, declarationsFor, readStyles, rgbOf, themes } from './theme-colors';
@@ -633,6 +636,39 @@ describe('FilterBar', () => {
       expect(contrastOf(theme, rule('.ui-filter-bar__control').get('color')!, surface), `choice on ${surface}`).toBeGreaterThanOrEqual(4.5);
     }
     expect(contrastOf(theme, rule('.ui-filter-bar__control').get('color')!, rule('.ui-filter-bar__control:not(.ui-text-input):hover:not(:disabled)').get('background')!)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('breakpoints of docs/design-system.md 19', () => {
+  const doc = readFileSync(join(__dirname, '..', '..', '..', '..', 'docs', 'design-system.md'), 'utf8').replace(/\r\n/g, '\n');
+  const registered = (): Set<string> => {
+    const paragraph = /\*\*Breakpoints\.\*\*[^\n]*/.exec(doc)?.[0] ?? '';
+    const [points = ''] = paragraph.split('Uma grade de cards');
+    return new Set([...points.matchAll(/`(\d+(?:\.\d+)?rem)`/g)].map((match) => match[1]!));
+  };
+  const used = (): Set<string> => new Set([...css.matchAll(/@media \((?:min|max)-width: (\d+(?:\.\d+)?rem)\)/g)].map((match) => match[1]!));
+
+  it('registers the points and their complements, not the width of a card that has no breakpoint', () => {
+    expect([...registered()].sort()).toEqual(['40.0625rem', '40rem', '47.99rem', '48rem', '64rem']);
+  });
+
+  it('registers every width a media query of the stylesheet uses', () => {
+    const known = registered();
+    expect(known.size).toBeGreaterThan(0);
+    expect([...used()].filter((width) => !known.has(width))).toEqual([]);
+  });
+
+  it('wraps the tabs of the client detail on any width: a scrolling list hides the last ones on a phone', () => {
+    const list = rule('.client-detail__tabs ul.ui-tabs__list');
+
+    expect(list.get('flex-wrap')).toBe('wrap');
+    expect(list.get('row-gap')).toBe('0');
+    expect(list.get('overflow-x')).toBe('visible');
+  });
+
+  it('leaves the roster grid without a breakpoint of its own: the columns follow the room the badge needs', () => {
+    expect(rule('.clients__list').get('grid-template-columns')).toBe('repeat(auto-fill, minmax(min(100%, 20rem), 1fr))');
+    expect(css).not.toMatch(/@media[^{]*\{\s*\.clients__list\b/);
   });
 });
 

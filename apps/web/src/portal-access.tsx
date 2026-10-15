@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ChevronDown, Clock, Plus } from 'lucide-react';
 import { useLocation, useSearchParams, type SetURLSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 
@@ -14,7 +15,7 @@ import {
   type ClientPendingInvitation,
   type ClientDetailResponse
 } from '@ageniza/contracts';
-import { Button, ConfirmDialog, FieldMessage, LiveStatus, Modal, Pagination, Skeleton, TextInput } from '@ageniza/ui';
+import { Avatar, Button, ConfirmDialog, EmptyState, Field, FieldMessage, LiveStatus, Modal, Pagination, Pill, Skeleton, TextInput } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -91,9 +92,6 @@ function InviteClientDialog({ client, onClose }: { client: ClientDetailResponse;
   const agency = useAgencyContext();
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
-  const emailId = useId();
-  const emailErrorId = useId();
-  const hintId = useId();
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | undefined>();
   const [formError, setFormError] = useState<string | undefined>();
@@ -158,22 +156,17 @@ function InviteClientDialog({ client, onClose }: { client: ClientDetailResponse;
 
   return <Modal title="Convidar para o portal" closeLabel="Fechar convite para o portal" onClose={onClose}>
     <form className="form-stack" onSubmit={onSubmit} noValidate>
-      <div className="form-field">
-        <label htmlFor={emailId}>E-mail</label>
-        <TextInput
+      <Field label="E-mail" hint={INVITE_HINT} error={emailError}>
+        {(control) => <TextInput
           ref={emailRef}
-          id={emailId}
+          {...control}
           name="email"
           type="email"
           autoComplete="email"
           value={email}
           onChange={(event) => { setEmail(event.target.value); setEmailError(undefined); setFormError(undefined); }}
-          aria-invalid={emailError !== undefined}
-          aria-describedby={emailError === undefined ? hintId : `${hintId} ${emailErrorId}`}
-        />
-        <p id={hintId} className="form-hint">{INVITE_HINT}</p>
-        {emailError !== undefined && <FieldMessage id={emailErrorId} role="alert">{emailError}</FieldMessage>}
-      </div>
+        />}
+      </Field>
       {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
       <div className="form-actions">
         <Button type="submit" disabled={email.trim() === ''} loading={invite.isPending}>Enviar convite</Button>
@@ -315,11 +308,13 @@ export function ClientAccessTab() {
   const removedRows = removed.data?.data ?? [];
   const removedTotal = removed.data?.meta.totalItems ?? 0;
   const hasRemoved = removed.data !== undefined && removedTotal > 0;
+  // With nobody listed the empty state carries the one primary action, so the header's drops to secondary.
+  const emptyList = members.data !== undefined && memberRows.length === 0;
 
   return <section className="portal-access" aria-labelledby="portal-access-title">
     <header className="portal-access__header">
       <h2 id="portal-access-title">Pessoas com acesso ao portal</h2>
-      {activeClient && <Button onClick={() => setInviteOpen(true)}><span aria-hidden="true">+</span> Convidar</Button>}
+      {activeClient && <Button variant={emptyList ? 'secondary' : 'primary'} leadingIcon={<Plus />} onClick={() => setInviteOpen(true)}>Convidar</Button>}
     </header>
 
     {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
@@ -336,15 +331,22 @@ export function ClientAccessTab() {
         <Button onClick={() => { void members.refetch(); }}>Tentar de novo</Button>
       </div>
     ) : memberRows.length === 0 ? (
-      <div className="portal-access__empty">
-        <p>Ninguém deste cliente acessa o portal ainda</p>
-        {activeClient && <Button onClick={() => setInviteOpen(true)}>Convidar</Button>}
-      </div>
+      <EmptyState
+        className="portal-access__empty"
+        mascot={activeClient}
+        headingLevel={3}
+        title="Ninguém deste cliente acessa o portal ainda"
+        description={activeClient ? INVITE_HINT : undefined}
+        action={activeClient ? <Button leadingIcon={<Plus />} onClick={() => setInviteOpen(true)}>Convidar</Button> : undefined}
+      />
     ) : <>
       <ul className="portal-access__list">
         {memberRows.map((member: ClientMember) => <li key={member.membershipId} className="portal-access__row">
-          <span className="portal-access__name">{member.name}</span>
-          <span className="portal-access__email">{member.email}</span>
+          <Avatar name={member.name} size="md" />
+          <span className="portal-access__who">
+            <span className="portal-access__name">{member.name}</span>
+            <span className="portal-access__email">{member.email}</span>
+          </span>
           <span className="portal-access__since">desde {formatAgencyDayMonth(member.since)}</span>
           {activeClient && canRemove && <Button
             size="sm"
@@ -375,8 +377,11 @@ export function ClientAccessTab() {
         ) : <>
           <ul className="portal-access__list">
             {removedRows.map((member: ClientMember) => <li key={member.membershipId} className="portal-access__row">
-              <span className="portal-access__name">{member.name}</span>
-              <span className="portal-access__email">{member.email}</span>
+              <Avatar name={member.name} size="md" />
+              <span className="portal-access__who">
+                <span className="portal-access__name">{member.name}</span>
+                <span className="portal-access__email">{member.email}</span>
+              </span>
               <span className="portal-access__since">removido</span>
               {activeClient && canRemove && <Button
                 size="sm"
@@ -390,7 +395,7 @@ export function ClientAccessTab() {
           <Pagination page={removed.data?.meta.page ?? 1} totalPages={removed.data?.meta.totalPages ?? 1} onPageChange={(page) => { replacePage(setSearchParams, location.state, 'removidas', page); }} />
         </>}
       </section>
-      : <Button variant="ghost" aria-expanded={removedOpen} onClick={() => setRemovedOpen(true)}>{`Removidas (${removedTotal})`} <span aria-hidden="true">▾</span></Button>)}
+      : <Button variant="ghost" aria-expanded={removedOpen} trailingIcon={<ChevronDown />} onClick={() => setRemovedOpen(true)}>{`Removidas (${removedTotal})`}</Button>)}
 
     {invitations.isPending ? (
       <section className="portal-access__invites" aria-labelledby="portal-invites-title">
@@ -410,8 +415,8 @@ export function ClientAccessTab() {
         <h3 id="portal-invites-title">Convites aguardando aceite</h3>
         <ul className="portal-access__list">
           {invitationRows.map((invitation: ClientPendingInvitation) => <li key={invitation.invitationId} className="portal-access__row">
-            <span className="portal-access__email">{invitation.email}</span>
-            <span className="portal-access__since">{pendingInviteExpiryLabel(invitation.expiresAt)}</span>
+            <span className="portal-access__who"><span className="portal-access__email">{invitation.email}</span></span>
+            <Pill icon={<Clock />}>{pendingInviteExpiryLabel(invitation.expiresAt)}</Pill>
             <span className="portal-access__actions">
               {activeClient && canResend && <Button
                 size="sm"
