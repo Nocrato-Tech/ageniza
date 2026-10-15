@@ -365,7 +365,7 @@ Todos os componentes abaixo moram em [`packages/ui`](../packages/ui/src/index.ts
 | Precisa de | Use | Regra |
 |---|---|---|
 | Alternar entre duas ou três visões da mesma coisa (Grade e Lista) | `Segmented` | Grupo de rádio, uma parada de tabulação e setas. A opção escolhida leva borda e superfície, não só cor. |
-| Dividir uma tela em seções | `Tabs` | Ativação automática: setas movem e abrem, Home e End vão às pontas, aba desabilitada é pulada. A aba aberta se sublinha em tinta, nunca em índigo. |
+| Dividir uma tela em seções | `Tabs` | Ativação automática: setas movem e abrem, Home e End vão às pontas, aba desabilitada é pulada. A aba aberta se sublinha em tinta, nunca em índigo. `keepMounted` numa aba mantém o painel dela montado e oculto enquanto outra está aberta, para o que foi digitado sobreviver à visita (o formulário do modal do conteúdo). |
 | Escolher o cliente em que se trabalha | `ClientStrip` | Os clientes como stories, em `<nav>` com um link de verdade por cliente (`href` obrigatório). O aberto leva `aria-current="page"`, uma superfície e o `Realce` no nome. `renderLink` deixa a tela desenhar o link com o roteador. |
 | Ações de um item (os três pontos) | `Menu`, `MenuItem`, `MenuSeparator` | Menu de botão: setas, Home e End movem, Esc fecha; o foco volta ao gatilho. |
 
