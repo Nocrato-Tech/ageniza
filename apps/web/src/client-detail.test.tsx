@@ -1185,3 +1185,52 @@ describe('formatArchivedDay (#379 review)', () => {
     expect(formatArchivedDay(value)).toBe(expected);
   });
 });
+
+describe('client detail in the Pauta (#637)', () => {
+  it('draws the section links as the Tabs component does, and marks only the open one', async () => {
+    const { impl } = makeFetch();
+    renderClientDetail(impl, clientUrl(CLIENT_ID, 'tarefas'));
+
+    const nav = await screen.findByRole('navigation', { name: 'Seções do cliente' });
+    const links = within(nav).getAllByRole('link');
+    expect(links.map((link) => link.classList.contains('ui-tabs__tab'))).toEqual(links.map(() => true));
+    expect(links.filter((link) => link.getAttribute('aria-current') === 'page').map((link) => link.textContent)).toEqual(['Tarefas']);
+  });
+
+  it('says the situation with an icon and a label, and leaves the screen without a competing primary action', async () => {
+    const { impl } = makeFetch();
+    renderClientDetail(impl);
+
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    for (const label of ['Ativo', 'encerra em 30/10']) {
+      const pill = screen.getByText(label);
+      expect(pill.classList.contains('ui-pill')).toBe(true);
+      expect(pill.querySelector('svg')).not.toBeNull();
+    }
+    expect(screen.getByRole('button', { name: 'Editar' }).classList.contains('ui-button--secondary')).toBe(true);
+    expect(document.querySelectorAll('.client-detail .ui-button--primary')).toHaveLength(0);
+  });
+
+  it('highlights the agency turn on Geral only while a thread is waiting for it', async () => {
+    const waiting = makeFetch();
+    renderClientDetail(waiting.impl);
+    const turn = await screen.findByText('2 aguardando a agência');
+    expect(turn.classList.contains('ui-realce')).toBe(true);
+
+    cleanup();
+    const quiet = makeFetch({ client: () => json({ ...padaria, summary: { ...padaria.summary, threadsAwaitingAgency: 0 } }) });
+    renderClientDetail(quiet.impl);
+    const none = await screen.findByText('0 aguardando a agência');
+    expect(none.classList.contains('ui-realce')).toBe(false);
+    expect(document.querySelector('.ui-realce')).toBeNull();
+  });
+
+  it('draws the tab still to come as an empty state, with its title and the sentence about what it will show', async () => {
+    const { impl } = makeFetch();
+    renderClientDetail(impl, clientUrl(CLIENT_ID, 'tarefas'));
+
+    const title = await screen.findByRole('heading', { name: 'Tarefas' });
+    expect(title.closest('.ui-empty-state')).not.toBeNull();
+    expect(screen.getByText('Aqui vão ficar as tarefas deste cliente, com prazos e responsáveis.').closest('.ui-empty-state')).not.toBeNull();
+  });
+});
