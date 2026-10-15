@@ -42,7 +42,7 @@ const DesignSystemPage = import.meta.env.DEV ? lazy(() => import('./design-syste
 const CONTENT_AREA_PERMISSIONS = ['conteudo.visualizar', 'cliente.visualizar'] as const;
 
 export function PublicLayout() {
-  return <div className="app-shell"><a className="skip-link" href="#main-content">Pular para o conteúdo</a><header className="public-header"><Link to="/"><Logo variant="on-light" height={32} /></Link></header><main id="main-content"><Outlet /></main></div>;
+  return <div className="app-shell"><a className="skip-link" href="#main-content">Pular para o conteúdo</a><header className="public-header"><div className="public-header__inner"><Link to="/"><Logo variant="on-light" height={32} /></Link></div></header><main id="main-content"><Outlet /></main></div>;
 }
 
 export function ProtectedLayout({ session, children }: { session: AuthSessionSnapshot; children?: ReactNode }) {
@@ -61,8 +61,8 @@ function PortalCalendarRedirect() {
 
 function PublicHome() {
   return <section className="public-page public-home" aria-labelledby="public-home-title">
-    <h1 id="public-home-title">Ageniza</h1>
-    <p>Operações de agência, em um só lugar.</p>
+    <h1 id="public-home-title" className="visually-hidden">Ageniza</h1>
+    <p className="public-home__lead">Operações de agência, em um só lugar.</p>
     <div className="public-page__actions">
       <ButtonLink as={Link} to="/entrar" size="lg">Entrar</ButtonLink>
       <ButtonLink as={Link} to="/status" variant="secondary" size="lg">Status do serviço</ButtonLink>
@@ -72,12 +72,13 @@ function PublicHome() {
 function ServiceStatus() {
   const httpClient = useApiClient();
   const health = useQuery({ queryKey: ['health'], queryFn: () => getHealth(httpClient) });
-  if (health.isPending) return <LoadingPage />;
-  if (health.isError) return <section className="public-page" aria-labelledby="service-status-title">
+  // A retry of a query that never answered goes back to `pending`: the section and its button stay mounted, so the focus stays.
+  if (health.isPending && health.errorUpdateCount === 0) return <LoadingPage />;
+  if (health.isError || health.isPending) return <section className="public-page" aria-labelledby="service-status-title">
     <h1 id="service-status-title">Status do serviço</h1>
     <div role="alert" className="public-page__alert">
       <p><CircleAlert aria-hidden="true" />O status está temporariamente indisponível.</p>
-      <Button onClick={() => { void health.refetch(); }} disabled={health.isFetching}>Tentar de novo</Button>
+      <Button loading={health.isFetching} onClick={() => { void health.refetch(); }}>Tentar de novo</Button>
     </div>
   </section>;
   return <section className="public-page" aria-labelledby="service-status-title">
