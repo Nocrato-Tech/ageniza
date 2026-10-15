@@ -85,6 +85,8 @@ interface Scenario {
   readonly studies?: Readonly<Record<string, Record<string, unknown>>>;
   /** Holds the first read of the study until released, to look at the loading state. */
   readonly holdStudy?: Promise<void>;
+  /** Holds the read that follows a failed one (the retry) until released. */
+  readonly holdRetry?: Promise<void>;
   /** Answers the next read of the study instead of the study. */
   readonly failStudy?: () => Response;
   /** The person is also a collaborator of the agency of this client (the "pessoa dupla"). */
@@ -101,6 +103,7 @@ const makeWorld = (scenario: Scenario = {}) => {
   const calls: string[] = [];
   let failStudy = scenario.failStudy;
   let held = scenario.holdStudy;
+  let heldRetry = scenario.holdRetry;
 
   const impl: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
@@ -127,6 +130,7 @@ const makeWorld = (scenario: Scenario = {}) => {
       if (path === `/clients/${clientId}/brand-study`) {
         if (held !== undefined) { const release = held; held = undefined; await release; }
         if (failStudy !== undefined) { const make = failStudy; failStudy = undefined; return make(); }
+        if (heldRetry !== undefined && scenario.failStudy !== undefined) { const release = heldRetry; heldRetry = undefined; await release; }
         return json(studies[clientId]);
       }
       const answered = apis[clientId as keyof typeof apis].handle(url, method, init?.body === undefined ? undefined : JSON.parse(String(init.body)));
@@ -663,14 +667,51 @@ describe('portal Marca na Pauta (#689)', () => {
     expect(within(alert).getByRole('button', { name: 'Tentar de novo' }).className).toContain('ui-button--secondary');
   });
 
+  it('breaks a long colour name inside its swatch column instead of widening the page', async () => {
+    const long = 'W'.repeat(58);
+    const study = portalStudyBody({ colors: { colors: [{ name: long, hex: '#7A1F2B' }] } });
+    const { impl } = makeWorld({ studies: { [CLIENT_ID]: study, [SECOND_ID]: SECOND_STUDY } });
+    renderPortal(impl);
+    await page();
+
+    const name = within(sectionOf('Cores')).getByText(long);
+    expect(name.className).toBe('brand-colors__name');
+  });
+
+  it('keeps the error, its button and the focus in place while a retry is in flight, and only the first read is a skeleton', async () => {
+    let release: () => void = () => undefined;
+    const holdRetry = new Promise<void>((resolve) => { release = resolve; });
+    const { impl } = makeWorld({ failStudy: () => apiError(404, 'NOT_FOUND'), holdRetry });
+    renderPortal(impl);
+
+    const alert = await screen.findByRole('alert');
+    const retry = within(alert).getByRole('button', { name: 'Tentar de novo' });
+    retry.focus();
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(retry.getAttribute('aria-busy')).toBe('true'));
+    expect(screen.getByRole('alert')).toBe(alert);
+    expect(within(alert).getByRole('button', { name: 'Tentar de novo' })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByRole('heading', { level: 1, name: 'Sua marca' })).toBeTruthy();
+    expect(screen.queryByLabelText('Carregando sua marca')).toBeNull();
+    release();
+    expect(await screen.findByText('Padaria de bairro desde 1990')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   describe('style', () => {
+    const raw = readFileSync(join(__dirname, 'styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
+    const marker = '/* --- Portal: Marca (#143, #689)';
+    const from = raw.indexOf(marker);
+    // The block is the run of rules after its banner that belong to the screen: a block added later opens with other selectors.
+    const afterBanner = raw.slice(from).replace(/\/\*[\s\S]*?\*\//g, '').split('\n}\n');
+    const ownRules = afterBanner.slice(0, afterBanner.findIndex((rule) => !/^\s*\.portal-(brand|persona)/.test(rule)));
+    const block = ownRules.join('\n}\n');
     const css = readStyles('globals.css');
-    const start = css.indexOf('.portal-brand {');
-    const block = css.slice(start, css.indexOf('.visually-hidden {', start));
 
     it('has its own block, made only of tokens, so it neither mints a value nor restyles a shared piece', () => {
-      expect(start).toBeGreaterThan(0);
-      expect(readFileSync(join(__dirname, 'styles/globals.css'), 'utf8')).toContain('/* --- Portal: Marca (#143, #689)');
+      expect(from).toBeGreaterThan(0);
       expect(block).not.toMatch(/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/);
       expect(block).not.toMatch(/font(-size)?:\s*[\d.]+(px|rem)/);
       const selectors = Array.from(block.matchAll(/^([^\s/*][^{]*)\{/gm)).map((match) => match[1]!.trim());
@@ -678,11 +719,17 @@ describe('portal Marca na Pauta (#689)', () => {
       expect(selectors.filter((selector) => /^\.portal-(section|headline|block|cover|row|meta|action|error|nav|shell)/.test(selector))).toEqual([]);
     });
 
+    it('keeps the rhythm of the screen in its own class, so the error branch (which has no .brand-study) keeps it too', () => {
+      const study = declarationsFor(css, '.portal-brand');
+      expect([study.get('display'), study.get('grid-template-columns'), study.get('gap')]).toEqual(['grid', 'minmax(0, 1fr)', 'var(--space-6)']);
+    });
+
     it('lets a persona and the study shrink inside a phone width, and keeps the pending line readable', () => {
       expect(declarationsFor(css, '.portal-persona').get('grid-template-columns')).toBe('minmax(0, 1fr)');
       expect(declarationsFor(css, '.portal-persona-list').get('grid-template-columns')).toBe('minmax(0, 1fr)');
       expect(declarationsFor(css, '.portal-brand__pending').get('color')).toBe('var(--text-secondary)');
       expect(declarationsFor(css, '.portal-persona').get('min-width')).toBe('0');
+      expect(declarationsFor(css, '.brand-colors__name').get('overflow-wrap')).toBe('anywhere');
       expect(declarationsFor(css, '.portal-persona .brand-persona__fields dd').get('font')).toBe('var(--body-md)');
     });
   });

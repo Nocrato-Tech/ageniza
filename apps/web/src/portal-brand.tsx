@@ -47,7 +47,7 @@ function SectionContent({ sectionKey, study }: { sectionKey: Exclude<SectionKey,
     return <ul className="brand-colors">
       {(section?.colors ?? []).map((color) => <li key={`${color.name}-${color.hex}`} className="brand-colors__item">
         <span className="brand-colors__swatch" style={{ background: color.hex }} aria-hidden="true" />
-        <span>{color.name}</span>
+        <span className="brand-colors__name">{color.name}</span>
         <span className="brand-colors__hex">{color.hex}</span>
       </li>)}
     </ul>;
@@ -131,7 +131,8 @@ export function PortalBrandPage() {
   // The agency archived a persona or emptied a section under the client: read the study again.
   const onStale = (): void => { void queryClient.invalidateQueries({ queryKey: portalBrandStudyQueryKey(client.id) }); };
 
-  if (study.isPending) {
+  // A retry keeps the error and its button mounted (and the focus on it): only the first read is a skeleton.
+  if (study.isPending && study.errorUpdateCount === 0) {
     return <section className="portal-brand brand-study" aria-busy="true" aria-label="Carregando sua marca">
       {SECTIONS.map((section) => <Skeleton key={section.key} className="brand-section-skeleton" />)}
     </section>;

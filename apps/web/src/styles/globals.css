@@ -5087,11 +5087,11 @@ html:has(.portal-shell) {
   object-fit: cover;
 }
 
-/* --- Portal: Marca (#143, #689) ---
-   O estudo em leitura no padrão das seções do detalhe do cliente (.brand-study / .brand-section, #637): linhas, não cartões.
-   A tela usa três tamanhos de texto: --heading-xl (título), --body-md e --caption (o que a conversa já traz). */
+/* --- Portal: Marca (#143, #689) --- rows, not cards, as the agency client detail (#637) */
 
 .portal-brand {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-6);
 }
 
