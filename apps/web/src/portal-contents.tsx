@@ -16,26 +16,13 @@ import { useDocumentTitle } from './document-title.js';
 import { useApiClient } from './http.js';
 import { PortalContentCover } from './portal-content-cover.js';
 import { usePortalClient } from './portal.js';
+import { PORTAL_STATUS_LABELS, portalPostAddress as postAddress, type PortalStatus } from './portal-status.js';
 
 const LIST_PATH = '/clients/:clientId/contents';
 const AWAITING_PATH = '/clients/:clientId/contents/awaiting-approval';
 
-/** The post in full screen (issue #600): the title of a card is the link, and the card is the area of the tap. */
-const postAddress = (clientId: string, contentId: string): string => `/portal/${encodeURIComponent(clientId)}/conteudos/${encodeURIComponent(contentId)}`;
-
 /** Two rows of the grid of three: what waits for the person is a few posts to look at, not a list to scroll. */
 const AWAITING_PAGE_SIZE = 6;
-
-type PortalStatus = PortalContentListItem['status'];
-
-/** The client's words (specs/conteudo.md section 7): "aprovado" is "Aprovado" here, and "Pronto para publicar" only in the agency. */
-export const PORTAL_STATUS_LABELS: Readonly<Record<PortalStatus, string>> = {
-  in_production: 'Em produção',
-  awaiting_approval: 'Aguardando aprovação',
-  adjusting: 'Em ajuste',
-  approved: 'Aprovado',
-  published: 'Publicado'
-};
 
 const STATUS_FILTERS: readonly PortalStatus[] = ['approved', 'awaiting_approval', 'adjusting', 'in_production', 'published'];
 const STATUS_OPTIONS = STATUS_FILTERS.map((status) => ({ value: status, label: PORTAL_STATUS_LABELS[status] }));

@@ -522,7 +522,7 @@ Quando houver necessidade de automação, evoluir para um diretório `design-tok
 
 ## 19. Grid e responsividade
 
-Desktop-first para operação, com o celular funcional: a navegação da agência vira barra inferior, os filtros empilham, o modal vira coluna. O portal do cliente é celular primeiro (ver `specs/clientes.md`), a exceção deliberada a essa direção, não uma contradição: cada produto (operação vs. portal) tem sua prioridade de breakpoint. O portal fica fora da Pauta até o dono decidir sobre ele.
+Desktop-first para operação, com o celular funcional: a navegação da agência vira barra inferior, os filtros empilham, o modal vira coluna. O portal do cliente é celular primeiro (ver `specs/clientes.md`), a exceção deliberada a essa direção, não uma contradição: cada produto (operação vs. portal) tem sua prioridade de breakpoint. O portal entra na Pauta no tema claro (decisão `2026-10-15-portal-na-pauta-tema-claro-sem-tokens-novos`).
 
 **Shell da agência** (`.agency-shell` em `globals.css`, `AgencySidebar` em `apps/web/src/agency-nav.tsx`):
 
@@ -671,7 +671,7 @@ Rota interna, só no servidor de desenvolvimento (`pnpm --filter @ageniza/web de
 
 ## 25. Regras da Pauta
 
-A direção **Pauta** (épico #621) desenha a área da agência escura: uma mesa editorial à noite, tudo quieto em grafite, e o índigo é o realce que a editora passa só no que pede uma decisão agora. As cores do projeto não mudam; a distinção vem da tipografia expandida, do realce como gesto único de ação, da disciplina de cor por quem tem a vez e das capas dos posts, que carregam a cor da tela (a interface não compete com o trabalho da agência). Estas regras valem em toda tela da área da agência, **somadas** à Definition of Done da seção 23; o portal do cliente fica fora até o dono decidir sobre ele. Estão registradas em [`business/decisions/2026-10-13-pauta-quem-tem-a-vez-decide-a-cor-e-as-quatro-excecoes.md`](business/decisions/2026-10-13-pauta-quem-tem-a-vez-decide-a-cor-e-as-quatro-excecoes.md) e [`business/decisions/2026-10-14-o-realce-tem-quatro-usos-incluindo-o-cliente-selecionado.md`](business/decisions/2026-10-14-o-realce-tem-quatro-usos-incluindo-o-cliente-selecionado.md).
+A direção **Pauta** (épico #621) desenha a área da agência escura: uma mesa editorial à noite, tudo quieto em grafite, e o índigo é o realce que a editora passa só no que pede uma decisão agora. As cores do projeto não mudam; a distinção vem da tipografia expandida, do realce como gesto único de ação, da disciplina de cor por quem tem a vez e das capas dos posts, que carregam a cor da tela (a interface não compete com o trabalho da agência). Estas regras valem em toda tela da área da agência, **somadas** à Definition of Done da seção 23; o portal do cliente também, no tema claro (decisão `2026-10-15-portal-na-pauta-tema-claro-sem-tokens-novos`). Estão registradas em [`business/decisions/2026-10-13-pauta-quem-tem-a-vez-decide-a-cor-e-as-quatro-excecoes.md`](business/decisions/2026-10-13-pauta-quem-tem-a-vez-decide-a-cor-e-as-quatro-excecoes.md) e [`business/decisions/2026-10-14-o-realce-tem-quatro-usos-incluindo-o-cliente-selecionado.md`](business/decisions/2026-10-14-o-realce-tem-quatro-usos-incluindo-o-cliente-selecionado.md).
 
 ### 25.1 Quem tem a vez decide a cor
 
