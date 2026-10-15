@@ -1,6 +1,7 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { ChevronRight, CircleAlert, Download, Folder, FolderPlus, Image as ImageIcon, LoaderCircle, RotateCcw, Trash2, Upload, Video } from 'lucide-react';
 import type { z } from 'zod';
 
 import {
@@ -15,7 +16,7 @@ import {
   type MediaFolder,
   type MediaFolderAsset
 } from '@ageniza/contracts';
-import { Button, ConfirmDialog, FieldMessage, Modal, Pagination, Skeleton, TextInput } from '@ageniza/ui';
+import { Button, ButtonLink, ConfirmDialog, EmptyState, FieldMessage, Modal, Pagination, Pill, Skeleton, TextInput } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -31,6 +32,7 @@ const ASSETS_PAGE_SIZE = 48;
 type MediaFolderAssetListResponse = z.infer<typeof MediaFolderAssetListResponseSchema>;
 
 const CATEGORY_LABELS: Readonly<Record<MediaCategory, string>> = { image: 'Imagem', video: 'Vídeo' };
+const CATEGORY_ICONS: Readonly<Record<MediaCategory, ReactNode>> = { image: <ImageIcon />, video: <Video /> };
 
 const NO_PERMISSION = 'Você não tem permissão para fazer isso.';
 const NAME_REQUIRED = 'Informe o nome da pasta.';
@@ -96,6 +98,18 @@ const hrefWith = (searchParams: URLSearchParams, changes: Readonly<Record<string
   }
   return `?${next.toString()}`;
 };
+
+/** The icon of a line of text: it never names anything, the words beside it do. */
+function Glyph({ children }: { children: ReactNode }) {
+  return <span className="content-folders__glyph" aria-hidden="true">{children}</span>;
+}
+
+function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return <div className="content-folders__error" role="alert">
+    <p><Glyph><CircleAlert /></Glyph>{message}</p>
+    <Button variant="secondary" leadingIcon={<RotateCcw />} onClick={onRetry}>Tentar de novo</Button>
+  </div>;
+}
 
 function FolderCreateDialog({ clientId, parent, onClose }: { clientId: string; parent: MediaFolder | null; onClose: () => void }) {
   const agency = useAgencyContext();
@@ -175,9 +189,10 @@ function FolderLinks({ folders, searchParams, param, extra }: {
         to={hrefWith(searchParams, { ...extra, [param]: folder.id, pagina: null })}
         state={location.state}
       >
-        <span className="content-folder__icon" aria-hidden="true">▤</span>
+        <span className="content-folder__icon" aria-hidden="true"><Folder /></span>
         <span className="content-folder__name">{folder.name}</span>
-        {folder.isDefault && <span className="content-folder__badge">Padrão</span>}
+        {folder.isDefault && <Pill>Padrão</Pill>}
+        <span className="content-folder__chevron" aria-hidden="true"><ChevronRight /></span>
       </Link>
     </li>)}
   </ul>;
@@ -235,15 +250,19 @@ function MediaTile({ clientId, folderId, asset, canOperate }: { clientId: string
     onError: () => { setNotice('Não foi possível preparar o download. Tente de novo.'); }
   });
 
+  const processing = asset.category === 'video' && (asset.videoProcessingStatus === 'pending' || asset.videoProcessingStatus === 'processing');
+  const processingFailed = asset.category === 'video' && asset.videoProcessingStatus === 'failed';
   return <li className="folder-media">
     <MediaThumbnail assetId={asset.id} category={asset.category} />
-    <p className="folder-media__title">{CATEGORY_LABELS[asset.category]}</p>
-    <p className="folder-media__meta">{dateFormat.format(new Date(asset.createdAt))} · {sizeLabel(asset.sizeBytes)}</p>
-    {asset.category === 'video' && (asset.videoProcessingStatus === 'pending' || asset.videoProcessingStatus === 'processing') && <p className="folder-media__meta">Processando vídeo</p>}
-    {asset.category === 'video' && asset.videoProcessingStatus === 'failed' && <p className="folder-media__meta">Falha no processamento do vídeo</p>}
+    <div className="folder-media__body">
+      <p className="folder-media__title"><Glyph>{CATEGORY_ICONS[asset.category]}</Glyph>{CATEGORY_LABELS[asset.category]}</p>
+      <p className="folder-media__meta">{dateFormat.format(new Date(asset.createdAt))} · {sizeLabel(asset.sizeBytes)}</p>
+      {processing && <Pill icon={<LoaderCircle />}>Processando vídeo</Pill>}
+      {processingFailed && <p className="folder-media__failure"><Glyph><CircleAlert /></Glyph>Falha no processamento do vídeo</p>}
+    </div>
     <div className="folder-media__actions">
-      <Button size="sm" variant="secondary" aria-label={`Baixar ${label}`} loading={download.isPending} onClick={() => { setNotice(undefined); download.mutate(); }}>Baixar</Button>
-      {canOperate && <Button size="sm" variant="ghost" aria-label={`Remover ${label}`} onClick={() => { setNotice(undefined); setConfirming(true); }}>Remover</Button>}
+      <Button size="sm" variant="secondary" leadingIcon={<Download />} aria-label={`Baixar ${label}`} loading={download.isPending} onClick={() => { setNotice(undefined); download.mutate(); }}>Baixar</Button>
+      {canOperate && <Button size="sm" variant="ghost" leadingIcon={<Trash2 />} aria-label={`Remover ${label}`} onClick={() => { setNotice(undefined); setConfirming(true); }}>Remover</Button>}
     </div>
     {notice !== undefined && <FieldMessage role="alert">{notice}</FieldMessage>}
     <ConfirmDialog
@@ -269,6 +288,7 @@ function FolderMedia({ clientId, folder, canOperate }: { clientId: string; folde
   const agency = useAgencyContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const page = parsePage(searchParams.get('pagina'));
+  const picker = useRef<HTMLInputElement>(null);
 
   const assets = useQuery({
     queryKey: [...assetsQueryKey(agency.agencyId, clientId, folder.id), page],
@@ -291,17 +311,22 @@ function FolderMedia({ clientId, folder, canOperate }: { clientId: string; folde
       {Array.from({ length: 6 }, (_value, index) => <li key={index}><Skeleton className="folder-media__skeleton" /></li>)}
     </ul>;
   } else if (assets.isError && assets.data === undefined) {
-    body = <div className="content-folders__error" role="alert">
-      <p>Não foi possível carregar as mídias. Tente de novo.</p>
-      <Button onClick={() => { void assets.refetch(); }}>Tentar de novo</Button>
-    </div>;
+    body = <LoadError message="Não foi possível carregar as mídias. Tente de novo." onRetry={() => { void assets.refetch(); }} />;
   } else if (assets.data.meta.totalItems === 0) {
-    body = <p className="content-folders__empty">Nenhuma mídia nesta pasta ainda.</p>;
+    body = <EmptyState
+      className="content-folders__empty"
+      headingLevel={4}
+      title="Nenhuma mídia nesta pasta ainda."
+      description={canOperate ? 'Envie imagens ou vídeos para esta pasta.' : undefined}
+      action={canOperate ? <Button variant="secondary" leadingIcon={<Upload />} onClick={() => picker.current?.click()}>Enviar mídia</Button> : undefined}
+    />;
   } else if (assets.data.data.length === 0) {
-    body = <div className="content-folders__empty">
-      <p>Esta página não tem mídias.</p>
-      <Button variant="secondary" onClick={() => goToPage(assets.data.meta.totalPages)}>Ir para a última página</Button>
-    </div>;
+    body = <EmptyState
+      className="content-folders__empty"
+      headingLevel={4}
+      title="Esta página não tem mídias."
+      action={<Button variant="secondary" onClick={() => goToPage(assets.data.meta.totalPages)}>Ir para a última página</Button>}
+    />;
   } else {
     body = <>
       <ul className="folder-media__grid" aria-label="Mídias da pasta">
@@ -316,9 +341,20 @@ function FolderMedia({ clientId, folder, canOperate }: { clientId: string; folde
     </>;
   }
 
+  const heading = <h3 id={`media-${folder.id}`}>Mídias</h3>;
+  const empty = assets.data?.meta.totalItems === 0;
   return <section className="content-folders__section" aria-labelledby={`media-${folder.id}`}>
-    <h3 id={`media-${folder.id}`}>Mídias</h3>
-    {canOperate && <MediaUploader clientId={clientId} folderId={folder.id} onUploaded={() => { goToPage(1); }} sizeLabel={sizeLabel} />}
+    {canOperate
+      ? <MediaUploader
+        clientId={clientId}
+        folderId={folder.id}
+        onUploaded={() => { goToPage(1); }}
+        sizeLabel={sizeLabel}
+        heading={heading}
+        inputRef={picker}
+        triggerHidden={empty}
+      />
+      : <div className="content-folders__heading">{heading}</div>}
     {body}
   </section>;
 }
@@ -337,13 +373,10 @@ export function ContentFolders({ clientId, canWrite }: { clientId: string; canWr
   const folders = useClientFolders(clientId);
 
   if (folders.isPending) {
-    return <div className="content-folders__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>;
+    return <div className="content-folders__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /><Skeleton /></div>;
   }
   if (folders.isError && folders.data === undefined) {
-    return <div className="content-folders__error" role="alert">
-      <p>Não foi possível carregar as pastas. Tente de novo.</p>
-      <Button onClick={() => { void folders.refetch(); }}>Tentar de novo</Button>
-    </div>;
+    return <LoadError message="Não foi possível carregar as pastas. Tente de novo." onRetry={() => { void folders.refetch(); }} />;
   }
 
   const all = folders.data.folders;
@@ -356,10 +389,12 @@ export function ContentFolders({ clientId, canWrite }: { clientId: string; canWr
   const toRoot = hrefWith(searchParams, { pasta: null, subpasta: null, pagina: null });
 
   if (missing) {
-    return <div className="content-folders__empty">
-      <p>Pasta não encontrada.</p>
-      <Link to={toRoot} state={location.state}>Voltar às pastas</Link>
-    </div>;
+    return <EmptyState
+      className="content-folders__empty"
+      headingLevel={3}
+      title="Pasta não encontrada."
+      action={<ButtonLink as={Link} to={toRoot} state={location.state} variant="secondary" leadingIcon={<Folder />}>Voltar às pastas</ButtonLink>}
+    />;
   }
 
   const open = sub ?? top;
@@ -370,30 +405,42 @@ export function ContentFolders({ clientId, canWrite }: { clientId: string; canWr
     {top !== undefined && <nav aria-label="Caminho da pasta">
       <ol className="content-folders__path">
         <li><Link to={toRoot} state={location.state}>Pastas</Link></li>
-        <li>{sub === undefined
+        <li><Glyph><ChevronRight /></Glyph>{sub === undefined
           ? <span aria-current="page">{top.name}</span>
           : <Link to={hrefWith(searchParams, { subpasta: null, pagina: null })} state={location.state}>{top.name}</Link>}</li>
-        {sub !== undefined && <li><span aria-current="page">{sub.name}</span></li>}
+        {sub !== undefined && <li><Glyph><ChevronRight /></Glyph><span aria-current="page">{sub.name}</span></li>}
       </ol>
     </nav>}
     {open === undefined && <>
       <div className="content-folders__heading">
         <h3>Pastas</h3>
-        {canOperate && <Button variant="secondary" onClick={() => setCreating(true)}>Nova pasta</Button>}
+        {canOperate && firstLevel.length > 0 && <Button variant="secondary" leadingIcon={<FolderPlus />} onClick={() => setCreating(true)}>Nova pasta</Button>}
       </div>
       {firstLevel.length === 0
-        ? <p className="content-folders__empty">{canOperate ? 'Nenhuma pasta ainda. Crie a primeira.' : 'Nenhuma pasta ainda.'}</p>
+        ? <EmptyState
+          className="content-folders__empty"
+          headingLevel={4}
+          title={canOperate ? 'Nenhuma pasta ainda. Crie a primeira.' : 'Nenhuma pasta ainda.'}
+          description={canOperate ? 'As pastas guardam as mídias deste cliente.' : undefined}
+          action={canOperate ? <Button variant="secondary" leadingIcon={<FolderPlus />} onClick={() => setCreating(true)}>Nova pasta</Button> : undefined}
+        />
         : <FolderLinks folders={firstLevel} searchParams={searchParams} param="pasta" extra={{ subpasta: null }} />}
     </>}
     {top !== undefined && sub === undefined && <>
       <div className="content-folders__heading">
         <h3>{top.name}</h3>
-        {canOperate && <Button variant="secondary" onClick={() => setCreating(true)}>Nova pasta de trabalho</Button>}
+        {canOperate && children.length > 0 && <Button variant="secondary" leadingIcon={<FolderPlus />} onClick={() => setCreating(true)}>Nova pasta de trabalho</Button>}
       </div>
       <section className="content-folders__section" aria-labelledby={`work-${top.id}`}>
         <h4 id={`work-${top.id}`}>Pastas de trabalho</h4>
         {children.length === 0
-          ? <p className="content-folders__empty">Nenhuma pasta de trabalho nesta pasta.</p>
+          ? <EmptyState
+            className="content-folders__empty"
+            headingLevel={4}
+            title="Nenhuma pasta de trabalho nesta pasta."
+            description={canOperate ? 'Uma pasta de trabalho agrupa mídias dentro desta pasta.' : undefined}
+            action={canOperate ? <Button variant="secondary" leadingIcon={<FolderPlus />} onClick={() => setCreating(true)}>Nova pasta de trabalho</Button> : undefined}
+          />
           : <FolderLinks folders={children} searchParams={searchParams} param="subpasta" />}
       </section>
     </>}
