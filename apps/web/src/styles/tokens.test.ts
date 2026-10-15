@@ -232,3 +232,55 @@ describe('Pauta tokens', () => {
     }
   });
 });
+
+describe('contrast table of docs/design-system.md 20.1', () => {
+  const doc = readFileSync(join(STYLES, '..', '..', '..', '..', 'docs', 'design-system.md'), 'utf8').replace(/\r\n/g, '\n');
+  const section = doc.slice(doc.indexOf('### 20.1'), doc.indexOf('\n## 21.'));
+
+  const tokenName = (cell: string) => cell.replace(/`/g, '').replace(/\//g, '-');
+  const expand = (name: string): string[] => {
+    const group = /\{([^}]+)\}/.exec(name);
+    return group ? group[1]!.split(',').flatMap((option) => expand(name.replace(group[0], option))) : [name];
+  };
+
+  // A pair is a cell that starts with the foreground token, or names it in parentheses ("Anel ... (`status/late/fg`) sobre"), or says "branco".
+  const foreground = (pair: string) => {
+    const match = /^(?:`([^`]+)`|[^`|]*\(`([^`]+)`\)|(branco)) sobre (.+)$/.exec(pair);
+    return match && { fg: match[3] ? 'color-white' : tokenName((match[1] ?? match[2])!), backgrounds: match[4]! };
+  };
+
+  // "`client-badge/fade/start` / `end`": a token with no path continues the one before it.
+  const backgroundsOf = (cell: string) => {
+    let previous = '';
+    return [...cell.matchAll(/`([^`]+)`/g)].flatMap((token) =>
+      expand(tokenName(token[1]!)).map((name) => (previous = name.includes('-') ? name : previous.replace(/[^-]+$/, name))),
+    );
+  };
+
+  const rows = section
+    .split('\n')
+    .filter((line) => line.startsWith('|'))
+    .map((line) => line.split('|').slice(1, -1).map((cell) => cell.trim()))
+    .flatMap(([pair, lightCell, darkCell]) => {
+      const match = foreground(pair!);
+      if (!match) return [];
+      const backgrounds = backgroundsOf(match.backgrounds);
+      return (['light', 'dark'] as const).map((theme) => {
+        const cell = (theme === 'light' ? lightCell : darkCell)!;
+        const stated = [...cell.matchAll(/(\d+\.\d+):1/g)].map((value) => Number(value[1]));
+        return { pair: pair!, theme, fg: match.fg, backgrounds, stated };
+      });
+    })
+    .filter((row) => row.stated.length > 0);
+
+  it('reads the pairs of every table', () => {
+    expect(rows).toHaveLength(68);
+  });
+
+  it.each(rows)('states for $pair in $theme the ratio the stylesheets give', ({ theme, fg, backgrounds, stated }) => {
+    expect(stated).toHaveLength(backgrounds.length);
+    backgrounds.forEach((background, index) => {
+      expect(contrast(theme, fg, background), `${fg} on ${background}`).toBeCloseTo(stated[index]!, 2);
+    });
+  });
+});

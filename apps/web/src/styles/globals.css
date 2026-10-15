@@ -3991,40 +3991,6 @@ a.client-general__block:hover {
   list-style: none;
 }
 
-.content-story {
-  display: grid;
-  justify-items: center;
-  gap: var(--space-1);
-  width: 5.5rem;
-  padding: var(--space-2);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  text-decoration: none;
-}
-
-.content-story:hover,
-.content-story[aria-current='page'] {
-  background: var(--bg-hover);
-}
-
-.content-story__avatar {
-  display: inline-flex;
-  border-radius: var(--radius-full);
-}
-
-/* The ring: something of this client asks for action (a change asked, a day passed, a deadline in two days).
-   Drawn with the Avatar's attention colour, which is 3:1 on the surface in both themes (indigo/550 was 2.97:1 in the dark). */
-.content-story__avatar--attention {
-  box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--status-late-fg);
-}
-
-.content-story__name {
-  max-width: 100%;
-  font: var(--label-sm);
-  text-align: center;
-  overflow-wrap: anywhere;
-}
-
 .content-stories__skeleton {
   width: 4.5rem;
   height: 5.5rem;
@@ -4238,14 +4204,16 @@ a.client-general__block:hover {
   padding: var(--space-2);
 }
 
+/* `minmax(0, 1fr)` lets a card shrink to the day: tags that do not fit wrap inside it instead of widening the column. */
 .content-day {
   position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: var(--space-2);
   min-width: 0;
   min-height: 8.25rem;
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-1);
   border-top: 1px solid var(--border-subtle);
   border-right: 1px solid var(--border-subtle);
   background: transparent;
@@ -4270,6 +4238,7 @@ a.client-general__block:hover {
 
 .content-day__number {
   margin: 0;
+  padding: 0 var(--space-1);
   font: var(--label-md);
   font-variant-numeric: tabular-nums;
 }
@@ -4287,8 +4256,23 @@ a.client-general__block:hover {
   font: var(--caption);
 }
 
+/* A tag wraps its words inside a card as narrow as a day. */
+.content-card .ui-format-tag,
+.content-card .ui-status-tag,
+.content-card .ui-late-badge {
+  min-width: 0;
+  padding: 0 var(--space-1);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.content-day__items > li {
+  min-width: 0;
+}
+
 .content-day__items {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
   margin: 0;
   padding: 0;
@@ -4441,29 +4425,59 @@ a.client-general__block:hover {
 
 .content-card {
   display: grid;
-  gap: var(--space-1);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
   padding: var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--bg-canvas);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
   color: var(--text-primary);
+  min-width: 0;
 }
 
-.content-card[data-status='published'],
-.content-card[data-status='cancelled'] {
-  color: var(--text-secondary);
+/* The card is tinted by its format (`format/*`); the state is the tag, and the late card is the one with a red edge. */
+.content-card[data-format='carousel'] {
+  background: var(--format-carousel-bg);
+  --content-card-title: var(--format-carousel-fg);
+}
+
+.content-card[data-format='reels'] {
+  background: var(--format-reels-bg);
+  --content-card-title: var(--format-reels-fg);
+}
+
+.content-card[data-format='static'] {
+  background: var(--format-static-bg);
+  --content-card-title: var(--format-static-fg);
+}
+
+.content-card:hover {
+  border-color: var(--border-default);
+}
+
+.content-card[data-late] {
+  border-color: var(--status-late-fg);
 }
 
 .content-card__title {
   margin: 0;
+  padding: 0 var(--space-1);
+  color: var(--content-card-title, var(--text-primary));
   font: var(--label-md);
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
 }
 
 .content-card__meta {
   margin: 0;
+  padding: 0 var(--space-1);
   color: var(--text-secondary);
   font: var(--caption);
+  font-variant-numeric: tabular-nums;
 }
 
 .content-card__badges {
@@ -4481,11 +4495,6 @@ a.client-general__block:hover {
   border-radius: var(--radius-full);
   color: var(--text-secondary);
   font: var(--caption);
-}
-
-.content-card__badge--overdue {
-  border-color: var(--text-danger);
-  color: var(--text-danger);
 }
 
 .content-card__badge--due-soon {
@@ -4518,7 +4527,7 @@ a.client-general__block:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 16 / 11;
   overflow: hidden;
   border-radius: var(--radius-sm);
 }
@@ -4606,6 +4615,10 @@ a.client-general__block:hover {
   object-fit: cover;
 }
 
+.content-card__cover--bare {
+  display: none;
+}
+
 .content-card__cover--placeholder {
   background: var(--bg-hover);
   color: var(--text-secondary);
@@ -4632,6 +4645,13 @@ a.client-general__block:hover {
   background: var(--bg-surface);
   color: var(--text-primary);
   font: var(--body-md);
+}
+
+/* The last row of the month opens its detail upward: below it the calendar would scroll and clip the detail. */
+.content-calendar[data-view='month'] .content-day:nth-last-child(-n + 7) .content-card__detail {
+  top: auto;
+  bottom: 100%;
+  margin: 0;
 }
 
 .content-card__detail p,

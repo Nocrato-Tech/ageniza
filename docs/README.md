@@ -33,7 +33,7 @@ Encontre o documento certo pela tarefa. Cada linha diz **que pergunta o document
 
 ## Implementar tela
 
-- [Design system](design-system.md) — tokens, cores, espaçamento e componentes permitidos na interface. **Leia quando:** for escrever qualquer estilo ou componente de tela.
+- [Design system](design-system.md) — tokens, cores, espaçamento e componentes permitidos na interface. **Leia quando:** for escrever qualquer estilo ou componente de tela. Vá direto à seção que a tarefa pede: [tipografia](design-system.md#10-tipografia), [elevação](design-system.md#11-shadows--elevation), [movimento](design-system.md#12-motion), [componentes e quando usar cada um](design-system.md#13-estratégia-de-componentes--shadcn--ageniza), [grid e responsividade](design-system.md#19-grid-e-responsividade), [contraste](design-system.md#201-contraste--tabela-final-aprovada-em-2026-09-28) e, em toda tela da área da agência, as [regras da Pauta](design-system.md#25-regras-da-pauta) (quem tem a vez decide a cor, o realce, as exceções aprovadas e a lista anti-slop).
 - [Marca: logo, símbolo e mascote](brand.md) — as peças da marca, quando usar cada uma e o que falta para entrarem no app. **Leia quando:** uma tela precisar de logo, símbolo, favicon ou mascote (login, estado vazio, erro, e-mail).
 - [Aplicação web](../apps/web/README.md) — a SPA React/Vite, as fronteiras de rota pública e protegida e a configuração do navegador (só variáveis `VITE_` públicas). **Leia quando:** for criar uma rota ou tela nova, ou mexer na configuração do app web.
 - [SPEC de autenticação, convite e contexto](../specs/auth.md) — telas de login, convite e troca de contexto. **Leia quando:** for implementar ou alterar essas telas.

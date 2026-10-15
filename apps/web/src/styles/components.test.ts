@@ -290,6 +290,14 @@ describe('dialog and popover', () => {
     expect(modal.get('border')).toBe('1px solid var(--border-default)');
   });
 
+  it('puts only the popover on the elevated surface: the dialogs and the menu sit on the surface (design-system.md 11 and 13.4)', () => {
+    expect(rule('.ui-popover').get('background')).toBe('var(--bg-elevated)');
+    expect(rule('.ui-modal').get('background')).toBe('var(--bg-surface)');
+    expect(rule('.ui-dialog').get('background')).toBe('var(--bg-surface)');
+    expect(rule('.ui-menu__content').get('background')).toBe('var(--bg-surface)');
+    expect(rule('.ui-menu__content').has('box-shadow')).toBe(false);
+  });
+
   it('sizes the dialog small, medium and large, and keeps it inside the screen', () => {
     expect(rule('.ui-modal--sm').get('width')).toBe('min(calc(100% - var(--space-8)), 28rem)');
     expect(rule('.ui-modal').get('width')).toBe('min(calc(100% - var(--space-8)), 40rem)');
@@ -406,14 +414,16 @@ describe('avatar attention ring', () => {
     expect(rule('.ui-avatar--attention').get('box-shadow')).toBe('0 0 0 2px var(--ui-avatar-gap, var(--bg-canvas)), 0 0 0 4px var(--status-late-fg)');
   });
 
-  it('is the ring of the story avatar of the screen as well, so both agree', () => {
-    expect(ringOf('.content-story__avatar--attention')).toBe(ringOf('.ui-avatar--attention'));
-  });
-
-  it.each(['light', 'dark'] as const)('is 3:1 on the canvas and the surface in %s, for the Avatar and for the story avatar', (theme) => {
-    for (const selector of ['.ui-avatar--attention', '.content-story__avatar--attention']) {
+  it.each(['light', 'dark'] as const)('is 3:1 on the canvas and the surface in %s, for the Avatar of the client strip as well', (theme) => {
+    for (const selector of ['.ui-avatar--attention']) {
       for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) expect(contrastOf(theme, ringOf(selector), surface), `${selector} on ${surface}`).toBeGreaterThanOrEqual(3);
     }
+  });
+
+  it.each(['light', 'dark'] as const)('is 3:1 on the hover surface the client strip item gives it in %s', (theme) => {
+    const gap = rule('.ui-client-strip__item:hover').get('--ui-avatar-gap')!;
+    expect(gap).toBe('var(--bg-hover)');
+    expect(contrastOf(theme, ringOf('.ui-avatar--attention'), gap)).toBeGreaterThanOrEqual(3);
   });
 
   it('hides the reason from the eyes and leaves it to assistive technology', () => {
