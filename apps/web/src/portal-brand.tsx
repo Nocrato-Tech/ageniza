@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Hourglass } from 'lucide-react';
 
 import {
   ARCHETYPE_LABELS,
@@ -46,7 +47,7 @@ function SectionContent({ sectionKey, study }: { sectionKey: Exclude<SectionKey,
     return <ul className="brand-colors">
       {(section?.colors ?? []).map((color) => <li key={`${color.name}-${color.hex}`} className="brand-colors__item">
         <span className="brand-colors__swatch" style={{ background: color.hex }} aria-hidden="true" />
-        <span>{color.name}</span>
+        <span className="brand-colors__name">{color.name}</span>
         <span className="brand-colors__hex">{color.hex}</span>
       </li>)}
     </ul>;
@@ -130,31 +131,32 @@ export function PortalBrandPage() {
   // The agency archived a persona or emptied a section under the client: read the study again.
   const onStale = (): void => { void queryClient.invalidateQueries({ queryKey: portalBrandStudyQueryKey(client.id) }); };
 
-  if (study.isPending) {
-    return <section className="portal-brand" aria-busy="true" aria-label="Carregando sua marca">
+  // A retry keeps the error and its button mounted (and the focus on it): only the first read is a skeleton.
+  if (study.isPending && study.errorUpdateCount === 0) {
+    return <section className="portal-brand brand-study" aria-busy="true" aria-label="Carregando sua marca">
       {SECTIONS.map((section) => <Skeleton key={section.key} className="brand-section-skeleton" />)}
     </section>;
   }
 
   if (study.data === undefined) {
     return <section className="portal-brand">
-      <h1>Sua marca</h1>
-      <div className="brand-study__error" role="alert">
+      <h1 className="portal-headline">Sua marca</h1>
+      <div className="portal-error" role="alert">
         <p>{LOAD_FAILED}</p>
-        <Button onClick={() => { void study.refetch(); }} loading={study.isFetching}>Tentar de novo</Button>
+        <Button variant="secondary" onClick={() => { void study.refetch(); }} loading={study.isFetching}>Tentar de novo</Button>
       </div>
     </section>;
   }
 
   const data = study.data;
-  return <section className="portal-brand" aria-labelledby="portal-brand-title">
-    <h1 id="portal-brand-title">Sua marca</h1>
+  return <section className="portal-brand brand-study" aria-labelledby="portal-brand-title">
+    <h1 id="portal-brand-title" className="portal-headline">Sua marca</h1>
     {SECTIONS.map((section) => {
       const filled = isFilled(section.key, data);
       const titleId = `portal-brand-${section.key}`;
       return <section key={section.key} className="brand-section" aria-labelledby={titleId}>
         <header className="brand-section__header"><h2 id={titleId}>{section.label}</h2></header>
-        {!filled && <p className="brand-section__body">{NOT_PREPARED}</p>}
+        {!filled && <p className="portal-brand__pending"><Hourglass aria-hidden="true" />{NOT_PREPARED}</p>}
         {filled && section.key === 'personas' && <ul className="portal-persona-list">
           {data.personas.map((persona) => <PersonaCard key={persona.id} persona={persona} onWritten={onWritten} onStale={onStale} />)}
         </ul>}

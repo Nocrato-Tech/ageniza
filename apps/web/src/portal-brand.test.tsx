@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
@@ -11,6 +14,7 @@ import { portalClientBody, portalPersona, portalStudyBody } from './portal-fixtu
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
+import { declarationsFor, readStyles } from './styles/theme-colors';
 
 afterEach(cleanup);
 
@@ -81,6 +85,8 @@ interface Scenario {
   readonly studies?: Readonly<Record<string, Record<string, unknown>>>;
   /** Holds the first read of the study until released, to look at the loading state. */
   readonly holdStudy?: Promise<void>;
+  /** Holds the read that follows a failed one (the retry) until released. */
+  readonly holdRetry?: Promise<void>;
   /** Answers the next read of the study instead of the study. */
   readonly failStudy?: () => Response;
   /** The person is also a collaborator of the agency of this client (the "pessoa dupla"). */
@@ -97,6 +103,7 @@ const makeWorld = (scenario: Scenario = {}) => {
   const calls: string[] = [];
   let failStudy = scenario.failStudy;
   let held = scenario.holdStudy;
+  let heldRetry = scenario.holdRetry;
 
   const impl: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
@@ -123,6 +130,7 @@ const makeWorld = (scenario: Scenario = {}) => {
       if (path === `/clients/${clientId}/brand-study`) {
         if (held !== undefined) { const release = held; held = undefined; await release; }
         if (failStudy !== undefined) { const make = failStudy; failStudy = undefined; return make(); }
+        if (heldRetry !== undefined && scenario.failStudy !== undefined) { const release = heldRetry; heldRetry = undefined; await release; }
         return json(studies[clientId]);
       }
       const answered = apis[clientId as keyof typeof apis].handle(url, method, init?.body === undefined ? undefined : JSON.parse(String(init.body)));
@@ -605,5 +613,123 @@ describe('portal Marca (#143)', () => {
     await within(main).findByText('Mais simples');
 
     expect(main.textContent).not.toMatch(/\b(thread|status|arquivad\w*|onboarding|persona|editado por|resolvid\w*)\b/i);
+  });
+});
+
+describe('portal Marca na Pauta (#689)', () => {
+  it('paints each swatch with the hex the client registered, in order, and hides it from the reader', async () => {
+    const { impl } = makeWorld();
+    renderPortal(impl);
+    await page();
+
+    const swatches = Array.from(sectionOf('Cores').querySelectorAll<HTMLElement>('.brand-colors__swatch'));
+    expect(swatches.map((swatch) => swatch.style.background)).toEqual(['rgb(122, 31, 43)', 'rgb(245, 235, 221)']);
+    for (const swatch of swatches) expect(swatch.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('marks a part the agency is still preparing with an icon beside the words, never with colour alone', async () => {
+    const study = portalStudyBody({ branding: { body: 'Padaria de bairro' } });
+    const { impl } = makeWorld({ studies: { [CLIENT_ID]: study, [SECOND_ID]: SECOND_STUDY } });
+    renderPortal(impl);
+    const main = await page();
+
+    const pending = Array.from(main.querySelectorAll<HTMLElement>('.portal-brand__pending'));
+    expect(pending).toHaveLength(6);
+    for (const line of pending) {
+      expect(line.textContent).toBe(NOT_PREPARED);
+      expect(line.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    }
+    expect(sectionOf('Sobre sua marca').querySelector('.portal-brand__pending')).toBeNull();
+  });
+
+  it('reads as the sections of the agency client detail: one headline, rows set apart, personas in blocks', async () => {
+    const { impl } = makeWorld();
+    renderPortal(impl);
+    const main = await page();
+
+    const headline = within(main).getByRole('heading', { level: 1, name: 'Sua marca' });
+    expect(headline.className).toBe('portal-headline');
+    expect(main.querySelectorAll('h1')).toHaveLength(1);
+    const study = headline.closest('section')!;
+    expect(study.classList.contains('brand-study')).toBe(true);
+    expect(Array.from(study.children).slice(1).map((child) => child.className)).toEqual(Array(7).fill('brand-section'));
+    expect(Array.from(sectionOf('Quem é seu público').querySelectorAll('.portal-persona-list > li')).map((card) => card.className)).toEqual(['portal-persona', 'portal-persona']);
+    expect(main.querySelector('.ui-empty-state')).toBeNull();
+  });
+
+  it('keeps the error in the shared portal block, with a secondary retry', async () => {
+    const { impl } = makeWorld({ failStudy: () => apiError(404, 'NOT_FOUND') });
+    renderPortal(impl);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.className).toBe('portal-error');
+    expect(screen.getByRole('heading', { level: 1, name: 'Sua marca' }).className).toBe('portal-headline');
+    expect(within(alert).getByRole('button', { name: 'Tentar de novo' }).className).toContain('ui-button--secondary');
+  });
+
+  it('breaks a long colour name inside its swatch column instead of widening the page', async () => {
+    const long = 'W'.repeat(58);
+    const study = portalStudyBody({ colors: { colors: [{ name: long, hex: '#7A1F2B' }] } });
+    const { impl } = makeWorld({ studies: { [CLIENT_ID]: study, [SECOND_ID]: SECOND_STUDY } });
+    renderPortal(impl);
+    await page();
+
+    const name = within(sectionOf('Cores')).getByText(long);
+    expect(name.className).toBe('brand-colors__name');
+  });
+
+  it('keeps the error, its button and the focus in place while a retry is in flight, and only the first read is a skeleton', async () => {
+    let release: () => void = () => undefined;
+    const holdRetry = new Promise<void>((resolve) => { release = resolve; });
+    const { impl } = makeWorld({ failStudy: () => apiError(404, 'NOT_FOUND'), holdRetry });
+    renderPortal(impl);
+
+    const alert = await screen.findByRole('alert');
+    const retry = within(alert).getByRole('button', { name: 'Tentar de novo' });
+    retry.focus();
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(retry.getAttribute('aria-busy')).toBe('true'));
+    expect(screen.getByRole('alert')).toBe(alert);
+    expect(within(alert).getByRole('button', { name: 'Tentar de novo' })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+    expect(screen.getByRole('heading', { level: 1, name: 'Sua marca' })).toBeTruthy();
+    expect(screen.queryByLabelText('Carregando sua marca')).toBeNull();
+    release();
+    expect(await screen.findByText('Padaria de bairro desde 1990')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  describe('style', () => {
+    const raw = readFileSync(join(__dirname, 'styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
+    const marker = '/* --- Portal: Marca (#143, #689)';
+    const from = raw.indexOf(marker);
+    // The block ends at the next banner or, for the last block before the utilities, at `.visually-hidden`.
+    const ends = [raw.indexOf('/* --- ', from + marker.length), raw.indexOf('.visually-hidden {', from)].filter((end) => end > from);
+    const block = raw.slice(from, Math.min(...ends)).replace(/\/\*[\s\S]*?\*\//g, '');
+    const css = readStyles('globals.css');
+
+    it('has its own block, made only of tokens, so it neither mints a value nor restyles a shared piece', () => {
+      expect(from).toBeGreaterThan(0);
+      expect(block).not.toMatch(/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/);
+      expect(block).not.toMatch(/font(-size)?:\s*[\d.]+(px|rem)/);
+      const selectors = Array.from(block.matchAll(/^([^\s/*}][^{}]*)\{/gm)).map((match) => match[1]!.trim());
+      expect(selectors.length).toBeGreaterThan(5);
+      expect(selectors.filter((selector) => /^\.portal-(section|headline|block|cover|row|meta|action|error|nav|shell)/.test(selector))).toEqual([]);
+    });
+
+    it('keeps the rhythm of the screen in its own class, so the error branch (which has no .brand-study) keeps it too', () => {
+      const study = declarationsFor(css, '.portal-brand');
+      expect([study.get('display'), study.get('grid-template-columns'), study.get('gap')]).toEqual(['grid', 'minmax(0, 1fr)', 'var(--space-6)']);
+    });
+
+    it('lets a persona and the study shrink inside a phone width, and keeps the pending line readable', () => {
+      expect(declarationsFor(css, '.portal-persona').get('grid-template-columns')).toBe('minmax(0, 1fr)');
+      expect(declarationsFor(css, '.portal-persona-list').get('grid-template-columns')).toBe('minmax(0, 1fr)');
+      expect(declarationsFor(css, '.portal-brand__pending').get('color')).toBe('var(--text-secondary)');
+      expect(declarationsFor(css, '.portal-persona').get('min-width')).toBe('0');
+      expect(declarationsFor(css, '.brand-colors__name').get('overflow-wrap')).toBe('anywhere');
+      expect(declarationsFor(css, '.portal-persona .brand-persona__fields dd').get('font')).toBe('var(--body-md)');
+    });
   });
 });
