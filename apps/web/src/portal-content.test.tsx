@@ -151,7 +151,9 @@ describe('the post of the portal (#270)', () => {
 
     it('links back to the contents of the client', async () => {
       const { probe } = await open();
-      const back = await screen.findByRole('link', { name: 'Conteúdos' });
+      await title('Lançamento da primavera');
+      // The link of the post, not the item of the bottom bar that carries the same name.
+      const back = within(screen.getByRole('main')).getByRole('link', { name: 'Conteúdos' });
       expect(back.getAttribute('href')).toBe(`/portal/${CLIENT}/conteudos`);
       fireEvent.click(back);
       await waitFor(() => { expect(probe.pathname).toBe(`/portal/${CLIENT}/conteudos`); });
@@ -731,6 +733,158 @@ describe('the post of the portal (#270)', () => {
     });
   });
 
+  describe('the request for changes is a field of the form, not an alert (#684, #687)', () => {
+    const dialog = (): HTMLElement => screen.getByRole('dialog', { name: 'Pedir ajuste' });
+    const field = (): HTMLTextAreaElement => screen.getByLabelText('O que precisa mudar?');
+    const described = (control: HTMLElement): string[] =>
+      (control.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean).map((id) => document.getElementById(id)?.textContent ?? '');
+
+    it('ties the refusal to the field: marked invalid, described by its message, which is no alert, and the focus goes to it', async () => {
+      await open();
+      fireEvent.click(await screen.findByRole('button', { name: 'Pedir ajuste' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar pedido' }));
+      const message = await screen.findByText('Escreva o que precisa mudar.');
+      expect(field().getAttribute('aria-invalid')).toBe('true');
+      expect(described(field())).toContain('Escreva o que precisa mudar.');
+      expect(message.getAttribute('role')).toBeNull();
+      expect(message.closest('[role="alert"]')).toBeNull();
+      expect(within(dialog()).queryAllByRole('alert')).toEqual([]);
+      await waitFor(() => { expect(document.activeElement).toBe(field()); });
+    });
+
+    it('describes the field by its hint too, and clears the mark as soon as the person types', async () => {
+      await open();
+      fireEvent.click(await screen.findByRole('button', { name: 'Pedir ajuste' }));
+      expect(described(field())).toEqual(['A agência vai ver a sua mensagem e responder na conversa deste conteúdo.']);
+      expect(field().hasAttribute('aria-invalid')).toBe(false);
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar pedido' }));
+      await screen.findByText('Escreva o que precisa mudar.');
+      fireEvent.change(field(), { target: { value: 'Mude' } });
+      expect(field().hasAttribute('aria-invalid')).toBe(false);
+      expect(described(field())).toEqual(['A agência vai ver a sua mensagem e responder na conversa deste conteúdo.']);
+    });
+
+    it('marks the field and brings the focus back to it when the server refuses the text itself', async () => {
+      const { contents } = await open();
+      await screen.findByRole('button', { name: 'Pedir ajuste' });
+      contents.failNextWrite(() => portalContentError(400, 'CONTENT_COMMENT_INVALID', 'MENSAGEM DO SERVIDOR'));
+      await askForChanges('Texto aceito aqui');
+      const message = await screen.findByText('O texto contém caracteres que não são aceitos.');
+      expect(field().getAttribute('aria-invalid')).toBe('true');
+      expect(described(field())).toContain('O texto contém caracteres que não são aceitos.');
+      expect(message.closest('[role="alert"]')).toBeNull();
+      await waitFor(() => { expect(document.activeElement).toBe(field()); });
+      expect(field().value).toBe('Texto aceito aqui');
+    });
+
+    it('says a failure of the request as one alert and leaves the field unmarked, with what was typed', async () => {
+      const { contents } = await open();
+      await screen.findByRole('button', { name: 'Pedir ajuste' });
+      contents.failNextWrite(() => portalContentError(500, 'INTERNAL_ERROR', 'ERRO DO SERVIDOR'));
+      await askForChanges('Mude o tom');
+      const alert = await within(dialog()).findByRole('alert');
+      expect(alert.textContent).toBe('Não foi possível enviar o pedido. Tente de novo.');
+      expect(within(dialog()).getAllByRole('alert')).toHaveLength(1);
+      expect(field().hasAttribute('aria-invalid')).toBe(false);
+      expect(field().value).toBe('Mude o tom');
+    });
+
+    it('takes the old failure of the request away as soon as the person types, and a new refusal stands alone', async () => {
+      const { contents } = await open();
+      await screen.findByRole('button', { name: 'Pedir ajuste' });
+      contents.failNextWrite(() => portalContentError(500, 'INTERNAL_ERROR'));
+      await askForChanges('Mude o tom');
+      await within(dialog()).findByRole('alert');
+      fireEvent.change(field(), { target: { value: '   ' } });
+      expect(within(dialog()).queryByRole('alert')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar pedido' }));
+      await screen.findByText('Escreva o que precisa mudar.');
+      expect(within(dialog()).queryAllByRole('alert')).toEqual([]);
+    });
+  });
+
+  describe('the screen in the Pauta (#687)', () => {
+    const bar = (): HTMLElement => screen.getByRole('region', { name: 'Sua decisão' });
+
+    it('names the state with its shape and word, and the format as a label with its own colour', async () => {
+      await open({ format: 'reels' });
+      await title('Lançamento da primavera');
+      const meta = screen.getByRole('list', { name: 'Dados do conteúdo' });
+      const status = within(meta).getByText('Aguardando aprovação');
+      expect(status.classList.contains('ui-status-tag--waiting')).toBe(true);
+      expect(status.querySelector('svg')).not.toBeNull();
+      expect(within(meta).getByText('Reels').classList.contains('ui-format-tag--reels')).toBe(true);
+    });
+
+    it.each([
+      ['adjusting', 'Em ajuste', 'ui-status-tag--adjust'],
+      ['approved', 'Aprovado', 'ui-status-tag--ready'],
+      ['published', 'Publicado', 'ui-status-tag--published']
+    ] as const)('draws %s with the shape of its state', async (state, label, shape) => {
+      await open({ state, publishedOn: state === 'published' ? '2026-10-13' : null });
+      await title('Lançamento da primavera');
+      const tag = within(screen.getByRole('list', { name: 'Dados do conteúdo' })).getByText(label);
+      expect(tag.classList.contains(shape)).toBe(true);
+      expect(tag.querySelector('svg')).not.toBeNull();
+    });
+
+    it('keeps the two decisions in one bar, the last piece of the post, with Aprovar as the action on the right', async () => {
+      const { container } = await open();
+      await title('Lançamento da primavera');
+      expect(within(bar()).getAllByRole('button').map((button) => button.textContent)).toEqual(['Pedir ajuste', 'Aprovar']);
+      expect(within(bar()).getByRole('heading', { level: 2, name: 'Sua decisão' })).toBeTruthy();
+      // The end of the conversation is never under the bar: the bar comes after everything else in the page.
+      const post = container.querySelector('.portal-post') as HTMLElement;
+      expect(post.lastElementChild).toBe(bar());
+      expect(post.contains(screen.getByRole('region', { name: 'Conversa sobre Lançamento da primavera' }))).toBe(true);
+      expect(bar().classList.contains('portal-post__bar')).toBe(true);
+    });
+
+    it('says a failure of Aprovar inside the bar, next to the buttons', async () => {
+      const { contents } = await open();
+      await screen.findByRole('button', { name: 'Aprovar' });
+      contents.failNextWrite(() => portalContentError(500, 'INTERNAL_ERROR'));
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
+      expect((await within(bar()).findByRole('alert')).textContent).toBe('Não foi possível aprovar. Tente de novo.');
+    });
+
+    it.each([
+      ['the confirmation of Aprovar', async () => { fireEvent.click(await screen.findByRole('button', { name: 'Aprovar' })); }, 'Conteúdo aprovado. Obrigado!'],
+      ['the confirmation of Pedir ajuste', async () => { await askForChanges('Troque a primeira foto'); }, 'Pedido de ajuste enviado. A agência vai ver a sua mensagem na conversa abaixo.']
+    ])('takes the focus to %s when the buttons that were pressed leave with the bar', async (_name, act, text) => {
+      await open();
+      await act();
+      const notice = (await screen.findByText(text)).closest('.portal-post__notes') as HTMLElement;
+      expect(notice).not.toBeNull();
+      await waitFor(() => { expect(document.activeElement).toBe(notice); });
+      expect(screen.queryByRole('region', { name: 'Sua decisão' })).toBeNull();
+    });
+
+    it('keeps the way back on every state of the screen, since the bottom bar of the shell steps aside', async () => {
+      const main = (): HTMLElement => screen.getByRole('main');
+      const back = (): HTMLElement => within(main()).getByRole('link', { name: 'Conteúdos' });
+      let release: () => void = () => undefined;
+      const holdRead = new Promise<void>((resolveHold) => { release = resolveHold; });
+      await open({}, { holdRead });
+      await screen.findByLabelText('Carregando o conteúdo');
+      expect(back().getAttribute('href')).toBe(`/portal/${CLIENT}/conteudos`);
+      release();
+      await title('Lançamento da primavera');
+      expect(back().getAttribute('href')).toBe(`/portal/${CLIENT}/conteudos`);
+      cleanup();
+
+      const scenario = setup();
+      const failing: typeof fetch = async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === `/clients/${CLIENT}/contents/${CONTENT}`) return portalContentError(500, 'INTERNAL_ERROR');
+        return scenario.impl(input, init);
+      };
+      renderPost(failing);
+      expect(await screen.findByText('Não foi possível carregar o conteúdo.', undefined, { timeout: 5000 })).toBeTruthy();
+      expect(back().getAttribute('href')).toBe(`/portal/${CLIENT}/conteudos`);
+    });
+  });
+
   describe('on a phone', () => {
     const css = (): string => readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
     const rule = (selector: string): string => {
@@ -758,7 +912,7 @@ describe('the post of the portal (#270)', () => {
         expect(rule(selector)).toMatch(/min-width:\s*0;/);
       }
       expect(rule('.portal-post h1')).toMatch(/overflow-wrap:\s*anywhere;/);
-      const text = rule('.portal-post__caption,\n.portal-post__hint,\n.portal-post__request-label');
+      const text = rule('.portal-post__caption,\n.portal-post__hint');
       expect(text).toMatch(/overflow-wrap:\s*anywhere;/);
       expect(rule('.portal-post__caption')).toMatch(/white-space:\s*pre-wrap;/);
       const item = rule('.portal-media__item');
@@ -775,6 +929,41 @@ describe('the post of the portal (#270)', () => {
 
     it('lets the swipe be ours sideways and the page scroll up and down', () => {
       expect(rule('.portal-media__stage')).toMatch(/touch-action:\s*pan-y;/);
+    });
+
+    /** The `@media` block of this query that holds `inside`: the stylesheet has several blocks of the same query. */
+    const mediaBlock = (query: string, inside: string): string => {
+      const text = css();
+      for (let start = text.indexOf(`@media ${query} {`); start !== -1; start = text.indexOf(`@media ${query} {`, start + 1)) {
+        let depth = 0;
+        for (let index = text.indexOf('{', start); index < text.length; index += 1) {
+          if (text[index] === '{') depth += 1;
+          if (text[index] === '}' && --depth === 0) {
+            const block = text.slice(start, index + 1);
+            if (block.includes(inside)) return block;
+            break;
+          }
+        }
+      }
+      throw new Error(`No @media ${query} block holds ${inside} in globals.css.`);
+    };
+
+    it('holds the decision bar at the bottom of the screen and keeps a focused control clear of it', () => {
+      expect(rule('.portal-post__bar')).toMatch(/position:\s*sticky;/);
+      expect(rule('.portal-post__bar')).toMatch(/bottom:\s*0;/);
+      expect(rule('.portal-post__bar')).toMatch(/padding:[^;]*env\(safe-area-inset-bottom\)/);
+      // The bar is about 5 rem tall and grows with a message above its buttons: the room kept is never less than that.
+      const room = /scroll-padding-bottom:\s*calc\((\d+(?:\.\d+)?)rem \+ env\(safe-area-inset-bottom\)\)/.exec(rule('html:has(.portal-post__bar)'));
+      expect(Number(room?.[1])).toBeGreaterThanOrEqual(8);
+    });
+
+    it('steps the bottom bar of the shell aside while a post is open, except under the tour that points at it', () => {
+      const phone = mediaBlock('(max-width: 47.99rem)', '.portal-post__bar');
+      expect(phone).toMatch(/\.portal-shell:has\(\.portal-post\):not\(:has\(\.portal-tour\)\) > \.portal-nav \{\s*display:\s*none;/);
+      expect(phone).toMatch(/\.portal-shell:has\(\.portal-tour\) \.portal-post__bar \{\s*position:\s*static;/);
+      expect(phone).toMatch(/\.portal-shell > \.portal-content:has\(\.portal-post__bar\) \{\s*padding-bottom:\s*0;/);
+      // On a wide screen the navigation is the tabs under the header and stays: the phone block is the only place that hides it.
+      expect(css().match(/\.portal-nav \{\s*display:\s*none;/g)).toHaveLength(1);
     });
   });
 });

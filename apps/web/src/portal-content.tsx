@@ -1,6 +1,7 @@
-import { useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Check, ChevronLeft, Pencil } from 'lucide-react';
 
 import {
   CalendarDaySchema,
@@ -11,16 +12,17 @@ import {
   type PortalContentDetail,
   type PortalRequestContentChangesRequest
 } from '@ageniza/contracts';
-import { Button, FieldMessage, LiveStatus, Modal, Skeleton, Textarea } from '@ageniza/ui';
+import { Button, Field, FieldMessage, FormatTag, LiveStatus, Modal, Skeleton, StatusTag, Textarea, useFormErrors } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { Conversation } from './conversation.js';
 import { fullDayLabel } from './content-dates.js';
-import { FORMAT_LABELS } from './content-labels.js';
+import { FORMAT_LABELS, FORMAT_TONES } from './content-labels.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { portalClientQueryKey, usePortalClient, uuidPattern } from './portal.js';
 import { PortalMediaCarousel } from './portal-content-media.js';
+import { PORTAL_STATUS_LABELS, PORTAL_STATUS_TAGS } from './portal-status.js';
 import { NotFoundPage } from './status-pages.js';
 
 /**
@@ -35,15 +37,6 @@ type OpenContent = Exclude<PortalContent, { status: 'in_production' }>;
 const DETAIL_PATH = '/clients/:clientId/contents/:contentId';
 
 export const portalContentQueryKey = (clientId: string, contentId: string) => ['portal', clientId, 'content', contentId] as const;
-
-/** In the portal "aprovado" reads "Aprovado" (the agency's "Pronto para publicar" is its own word). */
-const STATUS_LABELS: Readonly<Record<PortalContent['status'], string>> = {
-  in_production: 'Em produção',
-  awaiting_approval: 'Aguardando aprovação',
-  adjusting: 'Em ajuste',
-  approved: 'Aprovado',
-  published: 'Publicado'
-};
 
 const STATE_NOTES: Readonly<Partial<Record<PortalContent['status'], string>>> = {
   adjusting: 'Foi pedido um ajuste. A agência vai revisar e enviar de novo para a sua aprovação.',
@@ -81,11 +74,17 @@ const commentProblem = (comment: string): string | undefined => {
 /** A day is read as text and never through a `Date`: the planned day is São Paulo's, whatever the browser's zone. */
 const dayText = (day: string): string => CalendarDaySchema.safeParse(day).success ? fullDayLabel(day) : day;
 
+/** The way back on every state of the screen: while a post is open the bottom bar of the shell steps aside (issue #687). */
+function PostBack() {
+  const client = usePortalClient();
+  return <Link className="portal-post__back" to={`/portal/${client.id}/conteudos`}><ChevronLeft aria-hidden="true" />Conteúdos</Link>;
+}
+
 function PostMeta({ content }: { content: PortalContent }) {
   const format: ContentFormat = content.format;
   return <ul className="portal-post__meta" aria-label="Dados do conteúdo">
-    <li><span className={`portal-post__status portal-post__status--${content.status}`}>{STATUS_LABELS[content.status]}</span></li>
-    <li>{FORMAT_LABELS[format]}</li>
+    <li><StatusTag status={PORTAL_STATUS_TAGS[content.status]}>{PORTAL_STATUS_LABELS[content.status]}</StatusTag></li>
+    <li><FormatTag format={FORMAT_TONES[format]}>{FORMAT_LABELS[format]}</FormatTag></li>
     <li>
       <time dateTime={content.publishOn}>{dayText(content.publishOn)}</time>
       {'publishAtTime' in content && content.publishAtTime !== null && <> · {content.publishAtTime}</>}
@@ -94,16 +93,23 @@ function PostMeta({ content }: { content: PortalContent }) {
   </ul>;
 }
 
+/** What went wrong with the request: `field` when it is the text itself (the server refused its characters), otherwise the request as a whole. */
+interface RequestError {
+  readonly message: string;
+  readonly field: boolean;
+}
+
 function RequestChangesDialog({ draft, onDraft, pending, error, onSubmit, onClose }: {
   draft: string;
   onDraft: (value: string) => void;
   pending: boolean;
-  error: string | undefined;
+  error: RequestError | undefined;
   onSubmit: (comment: string) => void;
   onClose: () => void;
 }) {
-  const fieldId = useId();
   const [problem, setProblem] = useState<string | undefined>();
+  const { formRef, summary } = useFormErrors();
+  const fieldProblem = problem ?? (error?.field === true ? error.message : undefined);
 
   const submit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
@@ -113,18 +119,19 @@ function RequestChangesDialog({ draft, onDraft, pending, error, onSubmit, onClos
   };
 
   return <Modal title="Pedir ajuste" closeLabel="Fechar pedido de ajuste" onClose={onClose}>
-    <form className="portal-post__request" onSubmit={submit} noValidate>
-      <label className="portal-post__request-label" htmlFor={fieldId}>O que precisa mudar?</label>
-      <Textarea
-        id={fieldId}
-        value={draft}
-        rows={5}
-        placeholder="Escreva aqui"
-        readOnly={pending}
-        onChange={(event) => { onDraft(event.target.value); setProblem(undefined); }}
-      />
-      <p className="portal-post__hint">A agência vai ver a sua mensagem e responder na conversa deste conteúdo.</p>
-      {(problem ?? error) !== undefined && <FieldMessage role="alert">{problem ?? error}</FieldMessage>}
+    <form ref={formRef} className="portal-post__request" onSubmit={submit} noValidate>
+      {summary}
+      <Field label="O que precisa mudar?" hint="A agência vai ver a sua mensagem e responder na conversa deste conteúdo." error={fieldProblem}>
+        {(control) => <Textarea
+          {...control}
+          value={draft}
+          rows={5}
+          placeholder="Escreva aqui"
+          readOnly={pending}
+          onChange={(event) => { onDraft(event.target.value); setProblem(undefined); }}
+        />}
+      </Field>
+      {error?.field === false && <FieldMessage role="alert">{error.message}</FieldMessage>}
       <div className="portal-post__actions">
         <Button type="submit" loading={pending}>Enviar pedido</Button>
       </div>
@@ -140,9 +147,10 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
   const key = portalContentQueryKey(client.id, content.id);
   const [notice, setNotice] = useState<string | undefined>();
   const [actionError, setActionError] = useState<string | undefined>();
-  const [requestError, setRequestError] = useState<string | undefined>();
+  const [requestError, setRequestError] = useState<RequestError | undefined>();
   const [asking, setAsking] = useState(false);
   const [draft, setDraft] = useState('');
+  const noticeRef = useRef<HTMLDivElement>(null);
   // The mutation's own pending state reaches the button a tick late: a second tap in between must not send a second request.
   const sending = useRef(false);
 
@@ -199,8 +207,8 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
     },
     onError: (error: unknown) => {
       if (isCode(error, 'CONTENT_NOT_AWAITING_APPROVAL')) { setAsking(false); setActionError(MESSAGES.stateChanged); }
-      else if (isCode(error, 'CONTENT_COMMENT_INVALID')) setRequestError(MESSAGES.invalidCharacters);
-      else setRequestError(stale(error) ?? MESSAGES.requestFailed);
+      else if (isCode(error, 'CONTENT_COMMENT_INVALID')) setRequestError({ message: MESSAGES.invalidCharacters, field: true });
+      else setRequestError({ message: stale(error) ?? MESSAGES.requestFailed, field: false });
       refresh();
     },
     onSettled: () => { sending.current = false; }
@@ -215,43 +223,54 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
   const awaiting = content.status === 'awaiting_approval';
   const stateNote = STATE_NOTES[content.status];
 
+  // The Aprovar the person pressed leaves with the bar: the confirmation takes the focus, so it is read and seen where the person is.
+  useEffect(() => {
+    if (notice !== undefined) noticeRef.current?.focus();
+  }, [notice]);
+
   return <>
-    <PortalMediaCarousel
-      key={content.id}
-      ids={{ clientId: client.id, contentId: content.id }}
-      format={content.format}
-      coverAssetId={content.coverAssetId}
-      media={content.media}
-      title={content.title}
-    />
-    <section className="portal-post__section" aria-labelledby="portal-post-caption">
-      <h2 id="portal-post-caption">Legenda</h2>
-      {content.caption === null || content.caption === ''
-        ? <p className="portal-post__hint">Este post não tem legenda.</p>
-        : <p className="portal-post__caption">{content.caption}</p>}
-    </section>
-    {awaiting && <section className="portal-post__section" aria-labelledby="portal-post-decision">
-      <h2 id="portal-post-decision">Sua decisão</h2>
+    {(notice !== undefined || stateNote !== undefined) && <div ref={noticeRef} className="portal-post__notes" tabIndex={-1}>
+      {notice !== undefined && <LiveStatus>{notice}</LiveStatus>}
+      {stateNote !== undefined && <p className="portal-post__hint">{stateNote}</p>}
+    </div>}
+    <div className="portal-post__body">
+      <div className="portal-post__card">
+        <PortalMediaCarousel
+          key={content.id}
+          ids={{ clientId: client.id, contentId: content.id }}
+          format={content.format}
+          coverAssetId={content.coverAssetId}
+          media={content.media}
+          title={content.title}
+        />
+        <section className="portal-post__section portal-post__caption-block" aria-labelledby="portal-post-caption">
+          <h2 id="portal-post-caption" className="visually-hidden">Legenda</h2>
+          {content.caption === null || content.caption === ''
+            ? <p className="portal-post__hint">Este post não tem legenda.</p>
+            : <p className="portal-post__caption">{content.caption}</p>}
+        </section>
+      </div>
+      <section className="portal-post__section" aria-labelledby="portal-post-conversation">
+        <h2 id="portal-post-conversation">Conversa com a agência</h2>
+        <Conversation
+          scope={{ side: 'client', clientId: client.id }}
+          subject={{ contentId: content.id }}
+          subjectLabel={content.title}
+          canWrite
+          readOnly={false}
+          onWritten={refresh}
+          headingLevel={3}
+        />
+      </section>
+    </div>
+    {awaiting && <section className="portal-post__bar" aria-labelledby="portal-post-decision">
+      <h2 id="portal-post-decision" className="visually-hidden">Sua decisão</h2>
+      {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
       <div className="portal-post__actions">
-        <Button loading={approve.isPending} disabled={reloading || requestChanges.isPending} onClick={() => { setActionError(undefined); setNotice(undefined); send(() => { approve.mutate(); }); }}>Aprovar</Button>
-        <Button variant="secondary" disabled={reloading || approve.isPending} onClick={() => { setRequestError(undefined); setAsking(true); }}>Pedir ajuste</Button>
+        <Button variant="secondary" size="lg" leadingIcon={<Pencil />} disabled={reloading || approve.isPending} onClick={() => { setRequestError(undefined); setAsking(true); }}>Pedir ajuste</Button>
+        <Button size="lg" leadingIcon={<Check />} loading={approve.isPending} disabled={reloading || requestChanges.isPending} onClick={() => { setActionError(undefined); setNotice(undefined); send(() => { approve.mutate(); }); }}>Aprovar</Button>
       </div>
     </section>}
-    {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
-    {notice !== undefined && <LiveStatus>{notice}</LiveStatus>}
-    {stateNote !== undefined && <p className="portal-post__hint">{stateNote}</p>}
-    <section className="portal-post__section" aria-labelledby="portal-post-conversation">
-      <h2 id="portal-post-conversation">Conversa com a agência</h2>
-      <Conversation
-        scope={{ side: 'client', clientId: client.id }}
-        subject={{ contentId: content.id }}
-        subjectLabel={content.title}
-        canWrite
-        readOnly={false}
-        onWritten={refresh}
-        headingLevel={3}
-      />
-    </section>
     {asking && <RequestChangesDialog
       draft={draft}
       onDraft={(value) => { setDraft(value); setRequestError(undefined); }}
@@ -265,6 +284,7 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
 
 function PostSkeleton() {
   return <section className="portal-post" aria-busy="true" aria-label="Carregando o conteúdo">
+    <PostBack />
     <Skeleton className="portal-post__title-skeleton" />
     <Skeleton className="portal-post__media-skeleton" />
     <Skeleton />
@@ -273,7 +293,8 @@ function PostSkeleton() {
 
 function PostFailure({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }) {
   return <section className="portal-post">
-    <div role="alert">
+    <PostBack />
+    <div className="portal-error" role="alert">
       <p>{MESSAGES.loadError}</p>
       <Button variant="secondary" loading={retrying} onClick={onRetry}>Tentar de novo</Button>
     </div>
@@ -307,15 +328,17 @@ function Post({ contentId }: { contentId: string }) {
   if (content.id !== contentId) return <NotFoundPage as="section" />;
 
   return <article className="portal-post" aria-labelledby="portal-post-title">
-    <Link className="portal-post__back" to={`/portal/${client.id}/conteudos`}><span aria-hidden="true">‹ </span>Conteúdos</Link>
-    <h1 id="portal-post-title">{content.title}</h1>
-    <PostMeta content={content} />
-    {query.isError && <div role="alert">
+    <PostBack />
+    <div className="portal-post__heading">
+      <h1 id="portal-post-title" className="portal-headline">{content.title}</h1>
+      <PostMeta content={content} />
+    </div>
+    {query.isError && <div className="portal-error" role="alert">
       <p>{MESSAGES.loadError}</p>
       <Button variant="secondary" loading={query.isFetching} onClick={() => { void query.refetch(); }}>Tentar de novo</Button>
     </div>}
     {content.status === 'in_production'
-      ? <p className="portal-post__hint">Este conteúdo ainda está em produção. Quando estiver pronto, ele aparece aqui para você aprovar.</p>
+      ? <p className="portal-block portal-post__hint">Este conteúdo ainda está em produção. Quando estiver pronto, ele aparece aqui para você aprovar.</p>
       : <OpenPost content={content} reloading={query.isFetching} />}
   </article>;
 }
