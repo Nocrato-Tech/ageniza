@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, type Location, type NavigateFunction } from 'react-router-dom';
@@ -1785,7 +1788,7 @@ describe('the Conteúdos tab of the client (#272)', () => {
     const { probe } = render_(impl, { pathname: tabUrl(), search: '?data=2026-10-14', state: { clientListUrl: ROSTER_ADDRESS } });
     await screen.findByText('Treino da semana');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Criar conteúdo' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Nova publicação' }));
     await waitFor(() => expect(probe.pathname).toBe(`${tabUrl()}/novo`));
     // The form of a new content, not the reading of a content called "novo": the route of the creation is in the tab.
     const modal = await screen.findByRole('dialog', { name: 'Novo conteúdo' });
@@ -1811,5 +1814,54 @@ describe('the Conteúdos tab of the client (#272)', () => {
     await waitFor(() => expect(probe.pathname).toBe(`${contentsUrl(padaria.id)}/${row.id}`));
     fireEvent.click(await screen.findByRole('button', { name: 'Fechar conteúdo' }));
     await waitFor(() => expect(probe.pathname).toBe(contentsUrl(padaria.id)));
+  });
+});
+
+describe('the header and the grid of the calendar', () => {
+  it('names the screen with a large title and says what it is for, and keeps "Conteúdos" as the heading of the page', async () => {
+    const { impl } = makeFetch({ permissions: [VISUALIZE, READ_CLIENTS, 'conteudo.operar'] });
+    render_(impl, contentsUrl(padaria.id));
+    await calendarReady();
+
+    expect(screen.getByRole('heading', { name: 'Calendário Editorial' })).toBeTruthy();
+    expect(screen.getByText('Planeje, agende e acompanhe todas as publicações.')).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: 'Conteúdos' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Nova publicação' })).toBeTruthy();
+  });
+
+  describe('CSS contract', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
+      selectors: match[1]!.replace(/\/\*[\s\S]*?\*\//g, '').split(',').map((selector) => selector.trim()),
+      body: match[2]!
+    }));
+    const body = (selector: string): string => rules.filter((rule) => rule.selectors.includes(selector)).map((rule) => rule.body).join('\n');
+
+    it('fills only the number of today with the action colour and says "hoje" beside it', () => {
+      expect(body(".content-day--today .content-day__number span[aria-hidden='true']")).toMatch(/background:\s*var\(--action-primary-bg\)/);
+      expect(body('.content-day--today .content-day__number::after')).toMatch(/content:\s*' hoje'/);
+      expect(body('.content-day__number')).not.toMatch(/--action-primary-bg/);
+    });
+
+    it('shows the "+" of the day on hover and on focus, and always where there is no hover', () => {
+      expect(body('.content-day__tools .ui-menu__trigger')).toMatch(/opacity:\s*0;/);
+      const shown = rules.find((rule) => rule.selectors.includes('.content-day:hover .ui-menu__trigger') && rule.selectors.includes('.content-day:focus-within .ui-menu__trigger'));
+      expect(shown?.body).toMatch(/opacity:\s*1;/);
+      expect(css).toMatch(/@media \(hover: none\)\s*\{\s*\.content-day__tools \.ui-menu__trigger\s*\{\s*opacity:\s*1;/);
+    });
+
+    it('lets the grid scroll inside the panel at phone width: the panel track shrinks and only the grid keeps its width', () => {
+      expect(body('.contents__panel')).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\);/);
+      expect(body('.contents__panel')).toMatch(/overflow:\s*hidden;/);
+      expect(body('.content-calendar')).toMatch(/overflow-x:\s*auto;/);
+      expect(body('.content-calendar')).toMatch(/min-width:\s*0;/);
+      expect(body('.content-calendar')).not.toMatch(/min-width:\s*42rem/);
+      expect(body('.content-calendar__days')).toMatch(/min-width:\s*42rem;/);
+    });
+
+    it('puts no shadow on the profile preview (only what floats has one) and sets the tile state in the scale', () => {
+      expect(body('.contents__feed')).not.toMatch(/box-shadow/);
+      expect(body('.content-feed__status')).toMatch(/font:\s*var\(--caption\);/);
+    });
   });
 });
