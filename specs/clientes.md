@@ -541,6 +541,8 @@ Abaixo, o bloco **Roteiro de hoje** traz as cenas em ordem (texto e "Orientaçã
 - **Gravado:** "Gravado por {nome} em dd/mm", sem botão.
 - **Erro ao carregar o bloco:** "Não foi possível carregar o roteiro de hoje.", com "Tentar de novo". O resto do Início continua na tela.
 
+Por último, o bloco **Nesta semana** traz os conteúdos de segunda a domingo, sem os que esperam a aprovação do cliente, como diz [`conteudo.md`](conteudo.md) e a [decisão](../docs/business/decisions/2026-10-15-portal-na-pauta-tema-claro-sem-tokens-novos.md) do portal na Pauta.
+
 ### Portal — Marca
 
 - As seções em leitura, em linguagem de cliente. A SPEC registra a intenção; os rótulos — "Como sua marca fala" em vez de "Tom de voz" — são do designer.

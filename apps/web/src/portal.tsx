@@ -188,7 +188,7 @@ export function PortalAreaLayout() {
  * client's language, and offers no control and no fake data. Relatórios waits for its module.
  */
 export function PortalSkeletonPage({ title, description }: { title: string; description: string }) {
-  const titleId = `portal-${title.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')}-title`;
+  const titleId = `portal-${title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}-title`;
   useDocumentTitle(`${title} — Portal do cliente — Ageniza`);
   return <section className="portal-skeleton" aria-labelledby={titleId}>
     <h1 id={titleId}>{title}</h1>

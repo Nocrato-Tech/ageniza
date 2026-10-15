@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { PortalContentMediaUrlResponseSchema, type ContentFormat, type PortalContentMediaUrlResponse } from '@ageniza/contracts';
 
 import { apiPath } from './api-path.js';
-import { FORMAT_GLYPHS, isHttpUrl } from './content-cover.js';
+import { FormatShape, isHttpUrl } from './content-cover.js';
 import { useApiClient } from './http.js';
 import { signedUrlStaleTime } from './signed-url.js';
 import { useSeen } from './use-seen.js';
@@ -44,6 +44,6 @@ export function PortalContentCover({ clientId, contentId, assetId, format, class
   return <div ref={ref} className={`${className}${usable ? '' : ` ${className}--placeholder`}`}>
     {usable
       ? <img src={url} alt="" loading="lazy" onError={() => setBroken(url)} />
-      : <span aria-hidden="true">{FORMAT_GLYPHS[format]}</span>}
+      : <FormatShape format={format} />}
   </div>;
 }

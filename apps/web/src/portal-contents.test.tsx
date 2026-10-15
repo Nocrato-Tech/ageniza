@@ -135,6 +135,22 @@ const cardOf = (title: string): HTMLElement => {
   if (found.length !== 1) throw new Error(`Expected one card titled "${title}", found ${found.length}.`);
   return found[0]!;
 };
+/** The lucide icon that draws the shape of a format: the name lucide-react gives the class of its svg. */
+const shapeOf = (scope: HTMLElement): string | null => {
+  const names = (scope.querySelector('.format-shape > svg')?.getAttribute('class') ?? '').split(' ').filter((name) => name.startsWith('lucide-'));
+  return names.length === 0 ? null : names[0]!.slice('lucide-'.length);
+};
+/** What the tags of a card say, and the tone and the state each one draws: the format and the state are two tags, never one sentence. */
+const tagsOf = (card: HTMLElement): { format: string | null; formatTone: string | undefined; status: string | null; statusIcon: string | undefined } => {
+  const format = card.querySelector('.ui-format-tag');
+  const status = card.querySelector('.ui-status-tag');
+  return {
+    format: format?.textContent ?? null,
+    formatTone: format?.className.split(' ').find((name) => name.startsWith('ui-format-tag--')),
+    status: status?.textContent ?? null,
+    statusIcon: status?.className.split(' ').find((name) => name.startsWith('ui-status-tag--'))
+  };
+};
 const titlesOf = (container: HTMLElement): string[] => Array.from(days(container).querySelectorAll('.portal-card__title')).map((node) => node.textContent ?? '');
 const periodCalls = (world: World): string[] => world.api.calls.filter((call) => call.startsWith(`GET /clients/${CLIENT_ID}/contents?`));
 const mediaCalls = (world: World): string[] => world.api.calls.filter((call) => call.includes('/media/'));
@@ -301,11 +317,36 @@ describe('the portal Conteúdos (#269)', () => {
       await screen.findByText('Reels de segunda');
 
       expect(titlesOf(container)).toEqual(['Vídeo publicado', 'Manhã', 'Tarde', 'Reels de segunda', 'Carrossel da semana', 'Imagem em ajuste', 'Post em produção']);
-      expect(within(cardOf('Reels de segunda')).getByText('Reels · Aprovado')).toBeTruthy();
-      expect(within(cardOf('Carrossel da semana')).getByText('Carrossel · Aguardando aprovação')).toBeTruthy();
-      expect(within(cardOf('Imagem em ajuste')).getByText('Imagem · Em ajuste')).toBeTruthy();
-      expect(within(cardOf('Post em produção')).getByText('Imagem · Em produção')).toBeTruthy();
-      expect(within(cardOf('Vídeo publicado')).getByText('Vídeo longo · Publicado')).toBeTruthy();
+      expect(tagsOf(cardOf('Reels de segunda'))).toEqual({ format: 'Reels', formatTone: 'ui-format-tag--reels', status: 'Aprovado', statusIcon: 'ui-status-tag--ready' });
+      expect(tagsOf(cardOf('Carrossel da semana'))).toEqual({ format: 'Carrossel', formatTone: 'ui-format-tag--carousel', status: 'Aguardando aprovação', statusIcon: 'ui-status-tag--waiting' });
+      expect(tagsOf(cardOf('Imagem em ajuste'))).toEqual({ format: 'Imagem', formatTone: 'ui-format-tag--static', status: 'Em ajuste', statusIcon: 'ui-status-tag--adjust' });
+      expect(tagsOf(cardOf('Post em produção'))).toEqual({ format: 'Imagem', formatTone: 'ui-format-tag--static', status: 'Em produção', statusIcon: 'ui-status-tag--production' });
+      expect(tagsOf(cardOf('Vídeo publicado'))).toEqual({ format: 'Vídeo longo', formatTone: 'ui-format-tag--static', status: 'Publicado', statusIcon: 'ui-status-tag--published' });
+    });
+
+    it('tints each card by its format, as the calendar of the agency does, and the status is the tag and not the tint', async () => {
+      const world = makeWorld();
+      world.api.seed({ title: 'Um reels', format: 'reels', publishOn: '2026-10-12', status: 'awaiting_approval' });
+      world.api.seed({ title: 'Um carrossel', format: 'carousel', publishOn: '2026-10-13', status: 'awaiting_approval' });
+      world.api.seed({ title: 'Uma imagem', format: 'image', publishOn: '2026-10-14', status: 'awaiting_approval' });
+      world.api.seed({ title: 'Um vídeo', format: 'long_video', publishOn: '2026-10-15', status: 'approved' });
+      world.api.seed({ title: 'Uma VSL', format: 'vsl', publishOn: '2026-10-16', status: 'approved' });
+      renderPortal(world);
+      await ready();
+      await screen.findByText('Um reels');
+
+      const tones = ['Um reels', 'Um carrossel', 'Uma imagem', 'Um vídeo', 'Uma VSL'].map((title) => cardOf(title).getAttribute('data-format'));
+      expect(tones).toEqual(['reels', 'carousel', 'static', 'static', 'static']);
+      expect(cardOf('Um reels').getAttribute('data-status')).toBe('awaiting_approval');
+    });
+
+    it('draws no primary action on the list: the screen has nothing to decide, the post does', async () => {
+      const world = makeWorld();
+      seedOctober(world);
+      const { container } = renderPortal(world);
+      await ready();
+      await screen.findByText('Reels de segunda');
+      expect(container.querySelectorAll('.ui-button--primary')).toHaveLength(0);
     });
 
     it('names each day by its number and weekday, once for the contents of that day, and in full for who does not see the grid', async () => {
@@ -342,7 +383,8 @@ describe('the portal Conteúdos (#269)', () => {
       await ready();
       await screen.findByText('Post em produção');
 
-      expect(cardOf('Post em produção').textContent).toBe('▣Post em produçãoImagem · Em produção');
+      expect(cardOf('Post em produção').textContent).toBe('Post em produçãoImagemEm produção');
+      expect(shapeOf(cardOf('Post em produção'))).toBe('image');
       expect(container.querySelector('img')).toBeNull();
       expect(container.textContent).not.toMatch(/LEGENDA INTERNA|10:00/);
       expect(within(days(container)).getByText('22 qui')).toBeTruthy();
@@ -447,7 +489,8 @@ describe('the portal Conteúdos (#269)', () => {
       await waitFor(() => expect(cardOf('Com capa').querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${COVER_ID}.png?variant=thumbnail`));
       expect(mediaCalls(world)).toEqual([`GET /clients/${CLIENT_ID}/contents/${content.id}/media/${COVER_ID}/url?variant=thumbnail`]);
       expect(cardOf('Sem capa').querySelector('img')).toBeNull();
-      expect(within(cardOf('Sem capa')).getByText('▶')).toBeTruthy();
+      expect(shapeOf(cardOf('Sem capa'))).toBe('clapperboard');
+      expect(cardOf('Com capa').querySelector('.format-shape')).toBeNull();
       expect(container.querySelectorAll('img')).toHaveLength(1);
     });
 
@@ -462,7 +505,7 @@ describe('the portal Conteúdos (#269)', () => {
 
       await waitFor(() => expect(cardOf('Post de imagem').querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${COVER_ID}.png?variant=thumbnail`));
       await waitFor(() => expect(awaitingBlock().querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${COVER_TWO_ID}.png?variant=thumbnail`));
-      expect(within(cardOf('Sem mídia')).getByText('▣')).toBeTruthy();
+      expect(shapeOf(cardOf('Sem mídia'))).toBe('image');
       expect([...mediaCalls(world)].sort()).toEqual([
         `GET /clients/${CLIENT_ID}/contents/${post.id}/media/${COVER_ID}/url?variant=thumbnail`,
         `GET /clients/${CLIENT_ID}/contents/${waiting.id}/media/${COVER_TWO_ID}/url?variant=thumbnail`
@@ -479,7 +522,7 @@ describe('the portal Conteúdos (#269)', () => {
 
       fireEvent.error(cardOf('Imagem quebrada').querySelector('img') as HTMLImageElement);
       await waitFor(() => expect(cardOf('Imagem quebrada').querySelector('img')).toBeNull());
-      expect(within(cardOf('Imagem quebrada')).getByText('▣')).toBeTruthy();
+      expect(shapeOf(cardOf('Imagem quebrada'))).toBe('image');
       expect(mediaCalls(world)).toHaveLength(1);
     });
 
@@ -497,9 +540,9 @@ describe('the portal Conteúdos (#269)', () => {
       await waitFor(() => expect(mediaCalls(world)).toHaveLength(3));
 
       expect(container.querySelectorAll('img')).toHaveLength(0);
-      expect(within(cardOf('Recusada')).getByText('▤')).toBeTruthy();
-      expect(within(cardOf('Ainda processando')).getByText('▶')).toBeTruthy();
-      expect(within(cardOf('Endereço estranho')).getByText('▣')).toBeTruthy();
+      expect(shapeOf(cardOf('Recusada'))).toBe('gallery-vertical');
+      expect(shapeOf(cardOf('Ainda processando'))).toBe('clapperboard');
+      expect(shapeOf(cardOf('Endereço estranho'))).toBe('image');
     });
   });
 
@@ -717,7 +760,7 @@ describe('the portal Conteúdos (#269)', () => {
       ]);
 
       fireEvent.click(screen.getByRole('button', { name: 'Calendário' }));
-      expect(await screen.findByText('Vídeo longo')).toBeTruthy();
+      expect(await screen.findByRole('link', { name: 'Vídeo longo' })).toBeTruthy();
       expect(probe.search).toBe('');
       expect(screen.queryByRole('region', { name: 'Prévia do feed' })).toBeNull();
     });
@@ -859,6 +902,117 @@ describe('the portal Conteúdos (#269)', () => {
     });
   });
 
+  describe('the icons and the empty states (#688)', () => {
+    it.each([
+      ['image', 'image'],
+      ['carousel', 'gallery-vertical'],
+      ['reels', 'clapperboard'],
+      ['long_video', 'video'],
+      ['vsl', 'monitor-play']
+    ] as const)('draws a %s that has no cover as the %s icon, and no character', async (format, icon) => {
+      const world = makeWorld();
+      world.api.seed({ title: 'Sem capa', format, publishOn: '2026-10-12' });
+      renderPortal(world);
+      await ready();
+      await screen.findByText('Sem capa');
+      expect(shapeOf(cardOf('Sem capa'))).toBe(icon);
+      expect(cardOf('Sem capa').querySelector('.portal-card__cover')?.textContent).toBe('');
+      expect(cardOf('Sem capa').querySelector('.format-shape')?.getAttribute('aria-hidden')).toBe('true');
+    });
+
+    it('draws no character as an icon in the files that draw the list and the cover', () => {
+      for (const file of ['portal-contents.tsx', 'portal-content-cover.tsx', 'content-cover.tsx']) {
+        expect(readFileSync(resolve(process.cwd(), 'src', file), 'utf8'), file).not.toMatch(/[▣▤▶‹›]/u);
+      }
+    });
+
+    it('moves the month with a chevron on each button, named by where it goes', async () => {
+      renderPortal(makeWorld());
+      await ready();
+      const previous = screen.getByRole('button', { name: 'Mês anterior' });
+      const next = screen.getByRole('button', { name: 'Próximo mês' });
+      expect(previous.querySelector('svg')?.getAttribute('class')).toContain('lucide-chevron-left');
+      expect(next.querySelector('svg')?.getAttribute('class')).toContain('lucide-chevron-right');
+      expect(previous.textContent).toBe('');
+      expect(next.textContent).toBe('');
+    });
+
+    it('uses the pieces the portal shares: the headline of the page, the title of a block and the error block', async () => {
+      const world = makeWorld();
+      world.api.seed({ title: 'Para aprovar', publishOn: '2026-10-14', status: 'awaiting_approval' });
+      world.api.state.failAwaiting = () => contentsError(500, 'INTERNAL_ERROR');
+      renderPortal(world);
+      await ready();
+      expect(screen.getByRole('heading', { level: 1, name: 'Conteúdos' }).classList.contains('portal-headline')).toBe(true);
+      expect(screen.getByRole('heading', { level: 2, name: 'Outubro 2026' }).classList.contains('portal-contents__period-title')).toBe(true);
+      const block = await screen.findByRole('region', { name: 'O que precisa de você' }, { timeout: 5000 });
+      expect(within(block).getByRole('heading', { level: 2 }).classList.contains('portal-section__title')).toBe(true);
+      expect(within(block).getByRole('alert').classList.contains('portal-error')).toBe(true);
+    });
+
+    it('says what is missing in an empty month, with the owl, and offers no way out in the month of today', async () => {
+      renderPortal(makeWorld());
+      await ready();
+      expect(await screen.findByRole('heading', { name: 'Nenhum conteúdo planejado para este mês' })).toBeTruthy();
+      expect(screen.getByText('Quando a agência planejar, os posts aparecem aqui.')).toBeTruthy();
+      expect(document.querySelectorAll('.ui-empty-state--mascot')).toHaveLength(1);
+      expect(screen.queryByRole('button', { name: 'Ir para este mês' })).toBeNull();
+    });
+
+    it('takes the person back to the month of today from an empty month that is not it', async () => {
+      const world = makeWorld();
+      world.api.seed({ title: 'De outubro', publishOn: '2026-10-12' });
+      const { probe } = renderPortal(world, [contentsUrl('?data=2026-12-10')]);
+      await ready();
+      expect(await screen.findByRole('heading', { name: 'Nenhum conteúdo planejado para este mês' })).toBeTruthy();
+      expect(document.querySelectorAll('.ui-empty-state--mascot')).toHaveLength(1);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Ir para este mês' }));
+      expect(await screen.findByText('De outubro')).toBeTruthy();
+      expect(probe.search).toBe('');
+      expect(screen.getByRole('heading', { name: 'Outubro 2026' })).toBeTruthy();
+    });
+
+    it('offers to clear the filter when no content of the month has that status, without the owl', async () => {
+      const world = makeWorld();
+      world.api.seed({ title: 'Aprovado de outubro', publishOn: '2026-10-12', status: 'approved' });
+      const { probe } = renderPortal(world, [contentsUrl('?situacao=adjusting')]);
+      await ready();
+      expect(await screen.findByRole('heading', { name: 'Nenhum conteúdo nesta situação neste mês' })).toBeTruthy();
+      expect(document.querySelectorAll('.ui-empty-state--mascot')).toHaveLength(0);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Limpar o filtro' }));
+      expect(await screen.findByText('Aprovado de outubro')).toBeTruthy();
+      expect(probe.search).toBe('');
+      expect(screen.queryByRole('heading', { name: 'Nenhum conteúdo nesta situação neste mês' })).toBeNull();
+    });
+
+    it('offers the list when the feed has no post of its formats, and keeps the month', async () => {
+      const world = makeWorld();
+      world.api.seed({ title: 'Só vídeo longo', format: 'long_video', publishOn: '2026-10-12' });
+      const { probe } = renderPortal(world, [contentsUrl('?vista=feed&data=2026-10-01')]);
+      await ready();
+      expect(await screen.findByRole('heading', { name: 'Nenhum post do feed planejado para este mês' })).toBeTruthy();
+      expect(screen.getByText('O feed mostra imagens, carrosséis e reels. Os outros formatos estão na lista.')).toBeTruthy();
+      expect(document.querySelectorAll('.ui-empty-state--mascot')).toHaveLength(0);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Ver a lista' }));
+      expect(await screen.findByRole('link', { name: 'Só vídeo longo' })).toBeTruthy();
+      expect(probe.search).toBe('?data=2026-10-01');
+    });
+
+    it('offers Tentar de novo as a secondary action when the month does not load, and draws no primary one', async () => {
+      const world = makeWorld();
+      world.api.state.failPeriod = () => contentsError(500, 'INTERNAL_ERROR');
+      const { container } = renderPortal(world);
+      await ready();
+      expect(await screen.findByText('Não foi possível carregar os conteúdos. Tente de novo.', undefined, { timeout: 5000 })).toBeTruthy();
+      const retry = within(container.querySelector('.portal-error[role="alert"]') as HTMLElement).getByRole('button', { name: 'Tentar de novo' });
+      expect(retry.classList.contains('ui-button--secondary')).toBe(true);
+      expect(container.querySelectorAll('.ui-button--primary')).toHaveLength(0);
+    });
+  });
+
   describe('on a phone', () => {
     const css = (): string => readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
     /** The block that opens with `selector`, not one that merely ends with it (a line of a longer selector list). */
@@ -897,7 +1051,7 @@ describe('the portal Conteúdos (#269)', () => {
       expect(rule('.portal-contents__toggle')).toMatch(/grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/);
       expect(rule('.portal-day__items,\n.portal-card__text')).toMatch(/min-width:\s*0;/);
       expect(rule('.portal-contents .ui-select')).toMatch(/width:\s*100%;/);
-      const wrapping = rule('.portal-awaiting__title,\n.portal-awaiting__day,\n.portal-awaiting__more,\n.portal-card__title,\n.portal-card__meta,\n.portal-day__label,\n.portal-contents__empty');
+      const wrapping = rule('.portal-awaiting__title,\n.portal-awaiting__day,\n.portal-awaiting__more,\n.portal-card__title,\n.portal-day__label');
       expect(wrapping).toMatch(/overflow-wrap:\s*anywhere;/);
       expect(rule('.portal-contents__period-title')).toMatch(/overflow-wrap:\s*anywhere;/);
       for (const selector of ['.portal-contents', '.portal-awaiting', '.portal-awaiting__list', '.portal-days,\n.portal-day__items', '.portal-card__text', '.portal-awaiting__skeleton']) {
@@ -920,5 +1074,52 @@ describe('the portal Conteúdos (#269)', () => {
       expect(rule('.portal-card__cover')).toMatch(/aspect-ratio:\s*1;/);
       expect(rule('.portal-awaiting__cover')).toMatch(/aspect-ratio:\s*4 \/ 5;/);
     });
+    it('tints the card by its format with the tokens of the agency calendar, and writes the title in the foreground of the format', () => {
+      for (const format of ['carousel', 'reels', 'static']) {
+        const block = rule(`.portal-card[data-format='${format}']`);
+        expect(block).toContain(`background: var(--format-${format}-bg);`);
+        expect(block).toContain(`--portal-card-title: var(--format-${format}-fg);`);
+      }
+      expect(rule('.portal-card__title')).toContain('color: var(--portal-card-title, var(--text-primary));');
+      expect(rule('.portal-card')).toContain('border: 1px solid var(--border-default);');
+      expect(rule('.portal-card .portal-meta')).toContain('margin: 0;');
+    });
+
+    it('sizes the shape of a format by a property of the cover, or by its own font', () => {
+      expect(rule('.format-shape > svg')).toContain('width: var(--format-shape-size, 1em);');
+      expect(rule('.format-shape > svg')).toContain('height: var(--format-shape-size, 1em);');
+      expect(rule('.portal-awaiting__cover--placeholder,\n.portal-card__cover--placeholder')).toContain('--format-shape-size: 1.5rem;');
+    });
+
+    it('keeps the screen to the three sizes of text of the Pauta: the title of the page, the line and the caption', () => {
+      const text = css();
+      const start = text.indexOf('/* --- Portal: Conteúdos (#269, #688)');
+      const end = text.indexOf('/* --- Portal: post em tela cheia');
+      expect(start).toBeGreaterThan(-1);
+      expect(end).toBeGreaterThan(start);
+      const fonts = new Set(Array.from(text.slice(start, end).matchAll(/\n\s*font: var\(--([a-z-]+)\)/g), (match) => match[1]));
+      expect([...fonts].sort()).toEqual(['body-md', 'caption']);
+      expect(rule('.portal-contents .portal-empty .ui-empty-state__title')).toContain('font: var(--body-md);');
+    });
+
+    it('does not let a cover of a third of the page, nor a card as wide as the page, on a wide screen', () => {
+      const text = css();
+      const start = text.indexOf('/* A wide screen is not three covers');
+      const block = text.slice(start, text.indexOf('\n}\n\n', text.indexOf('.portal-day__items', start)) + 3);
+      expect(block).toContain('@media (min-width: 48rem)');
+      expect(block).toMatch(/\.portal-awaiting__list \{\n\s+grid-template-columns: repeat\(3, minmax\(0, 10rem\)\);/);
+      expect(block).toMatch(/\.portal-day__items \{\n\s+grid-template-columns: repeat\(auto-fill, minmax\(min\(100%, 18rem\), 24rem\)\);/);
+    });
+
+    it('scrolls the whole card clear of the bottom bar when its link takes the focus, not only the link', () => {
+      expect(rule('.portal-card-link')).toMatch(/scroll-margin-bottom:\s*4rem;/);
+      expect(rule('html:has(.portal-shell)')).toMatch(/scroll-padding-bottom:\s*calc\(5\.5rem/);
+    });
+
+    it('draws the skeleton with the shape of a card, so the first load does not jump', () => {
+      expect(rule('.portal-contents__skeleton .ui-skeleton')).toMatch(/height:\s*5rem;/);
+      expect(rule('.portal-contents__skeleton .ui-skeleton')).toMatch(/border-radius:\s*var\(--radius-md\);/);
+    });
+
   });
 });

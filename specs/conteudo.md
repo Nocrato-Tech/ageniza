@@ -331,7 +331,7 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 └───────────────────────────┘
 ```
 
-- Card: capa, título, data e status (aprovado, aguardando aprovação, em ajuste, em produção). Filtro por status.
+- Card: capa, título, a etiqueta do formato e a etiqueta da situação (aprovado, aguardando aprovação, em ajuste, em produção, publicado), tingido pelo formato como o do calendário da agência; o dia é o rótulo do grupo. Sem capa, o ícone do formato. Filtro por status.
 - Post em tela cheia: legenda inteira, mídias navegáveis, **Pedir ajuste** (pede comentário), **Aprovar** e a conversa. Os dois botões ficam numa barra fixa no pé da tela, que no celular toma o lugar da barra inferior de quatro itens; o caminho de volta é o link "Conteúdos" no topo (decisão `2026-10-15-post-do-portal-troca-as-abas-pela-barra-de-decisao`). Em produção, só título, data e formato.
 - Início: "N posts esperando sua aprovação", o roteiro de stories de hoje, com **Já gravei**, e "Nesta semana" (os conteúdos de segunda a domingo, sem os que esperam aprovação).
 
@@ -347,7 +347,7 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 
 ### Estados da tela
 
-- **Vazio:** calendário vazio com Criar para quem opera; feed com a grade marcada "planeje o primeiro post"; no portal, "Nenhum conteúdo planejado para este mês".
+- **Vazio:** calendário vazio com Criar para quem opera; feed com a grade marcada "planeje o primeiro post"; no portal, "Nenhum conteúdo planejado para este mês" (com "Ir para este mês" quando o mês aberto não é o de hoje), o filtro sem resultado com "Limpar o filtro" e o feed sem post dos formatos do feed com "Ver a lista".
 - **Carregando:** skeleton na primeira carga; revalidação não muda a tela.
 - **Erro:** mensagem com Tentar de novo.
 - **Sem permissão:** o item não aparece no menu, e a URL digitada cai no mesmo "não encontrado".

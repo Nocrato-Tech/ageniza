@@ -151,6 +151,12 @@ const deferred = <T,>() => {
 const url = (clientId: string, search = '') => `/agencia/${AGENCY_A}/conteudos/${clientId}${search}`;
 
 /** The feed region of the page, wherever it is: beside the calendar or in place of it. */
+/** The lucide icon that draws the shape of a format: the name lucide-react gives the class of its svg. */
+const shapeOf = (cover: Element | null | undefined): string | null => {
+  const names = (cover?.querySelector('.format-shape > svg')?.getAttribute('class') ?? '').split(' ').filter((name) => name.startsWith('lucide-'));
+  return names.length === 0 ? null : names[0]!.slice('lucide-'.length);
+};
+
 const feedRegion = (): HTMLElement => screen.getByRole(screen.queryByRole('complementary', { name: 'Prévia do feed' }) === null ? 'region' : 'complementary', { name: 'Prévia do feed' });
 const tiles = (): HTMLElement[] => within(feedRegion()).queryAllByRole('listitem');
 /** What a tile says in words, latest first: "title · format · dd/mm". */
@@ -422,7 +428,7 @@ describe('the cover of a tile', () => {
     await ready();
 
     await waitFor(() => expect(coverCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET}/download-url?variant=thumbnail`]));
-    await waitFor(() => expect(feedRegion().querySelector('.content-feed__cover--placeholder')?.textContent).toBe('▶'));
+    await waitFor(() => expect(shapeOf(feedRegion().querySelector('.content-feed__cover--placeholder'))).toBe('clapperboard'));
     expect(feedRegion().querySelector('img')).toBeNull();
   });
 
@@ -462,8 +468,8 @@ describe('the cover of a tile', () => {
     await ready();
 
     await waitFor(() => expect(coverCalls(calls)).toHaveLength(1));
-    const shapes = Array.from(feedRegion().querySelectorAll('.content-feed__cover--placeholder')).map((cover) => cover.textContent);
-    expect(shapes).toEqual(['▣', '▤', '▶']);
+    const shapes = Array.from(feedRegion().querySelectorAll('.content-feed__cover--placeholder')).map((cover) => shapeOf(cover));
+    expect(shapes).toEqual(['image', 'gallery-vertical', 'clapperboard']);
     expect(feedRegion().querySelector('img')).toBeNull();
   });
 });

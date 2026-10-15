@@ -4667,7 +4667,7 @@ html:has(.portal-shell) {
   }
 }
 
-/* --- Portal: Conteúdos (#269): celular primeiro. Toda caixa pode encolher e todo texto quebra, para 390 px nunca rolar de lado. --- */
+/* --- Portal: Conteúdos (#269, #688): celular primeiro, a lista no padrão do Calendário da agência, no claro. Toda caixa pode encolher e todo texto quebra, para 390 px nunca rolar de lado. --- */
 
 .portal-contents {
   display: grid;
@@ -4712,9 +4712,7 @@ html:has(.portal-shell) {
 .portal-awaiting__day,
 .portal-awaiting__more,
 .portal-card__title,
-.portal-card__meta,
-.portal-day__label,
-.portal-contents__empty {
+.portal-day__label {
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -4727,6 +4725,8 @@ html:has(.portal-shell) {
 .portal-card-link {
   color: inherit;
   text-decoration: none;
+  /* The card is taller than its link: the focus ring of the card must clear the bar as well (the page's scroll-padding is for the link alone). */
+  scroll-margin-bottom: 4rem;
 }
 
 .portal-card-link::after {
@@ -4746,9 +4746,7 @@ html:has(.portal-shell) {
 }
 
 .portal-awaiting__day,
-.portal-awaiting__more,
-.portal-card__meta,
-.portal-contents__empty {
+.portal-awaiting__more {
   color: var(--text-secondary);
   font: var(--caption);
 }
@@ -4780,9 +4778,20 @@ html:has(.portal-shell) {
 
 .portal-awaiting__cover--placeholder,
 .portal-card__cover--placeholder {
+  --format-shape-size: 1.5rem;
   background: var(--bg-hover);
   color: var(--text-secondary);
-  font: var(--heading-md);
+}
+
+/* The shape of a format stands for a cover that is not there, in every screen that draws one: a cover that sets no size gets the size of its own font. */
+.format-shape {
+  display: inline-flex;
+}
+
+.format-shape > svg {
+  width: var(--format-shape-size, 1em);
+  height: var(--format-shape-size, 1em);
+  stroke-width: 1.75;
 }
 
 .portal-contents__period {
@@ -4793,7 +4802,8 @@ html:has(.portal-shell) {
 }
 
 .portal-contents__period-title {
-  font: var(--heading-md);
+  font: var(--body-md);
+  font-weight: 600;
   text-align: center;
   overflow-wrap: anywhere;
 }
@@ -4824,20 +4834,12 @@ html:has(.portal-shell) {
 
 .portal-contents__skeleton {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
-.portal-contents__error,
-.portal-awaiting [role='alert'] {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-2);
-  color: var(--text-danger);
-}
-
-.portal-contents__error p,
-.portal-awaiting [role='alert'] p {
-  margin: 0;
+.portal-contents__skeleton .ui-skeleton {
+  height: 5rem;
+  border-radius: var(--radius-md);
 }
 
 .portal-days,
@@ -4856,12 +4858,25 @@ html:has(.portal-shell) {
 }
 
 .portal-day__label {
-  font: var(--label-md);
+  font: var(--body-md);
+  font-weight: 600;
 }
 
 .portal-day__items,
 .portal-card__text {
   min-width: 0;
+}
+
+/* A wide screen is not three covers of a third of the page each, nor a card as wide as the page. */
+@media (min-width: 48rem) {
+  .portal-awaiting__list {
+    grid-template-columns: repeat(3, minmax(0, 10rem));
+    gap: var(--space-3);
+  }
+
+  .portal-day__items {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 24rem));
+  }
 }
 
 .portal-card {
@@ -4873,20 +4888,49 @@ html:has(.portal-shell) {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+/* The card is tinted by its format, as in the agency's calendar (`format/*`); the state is the tag, and the tint only helps. */
+.portal-card[data-format='carousel'] {
+  background: var(--format-carousel-bg);
+  --portal-card-title: var(--format-carousel-fg);
+}
+
+.portal-card[data-format='reels'] {
+  background: var(--format-reels-bg);
+  --portal-card-title: var(--format-reels-fg);
+}
+
+.portal-card[data-format='static'] {
+  background: var(--format-static-bg);
+  --portal-card-title: var(--format-static-fg);
 }
 
 .portal-card__text {
   display: grid;
   align-content: start;
-  gap: var(--space-1);
+  gap: var(--space-2);
 }
 
 .portal-card__title {
-  font: var(--label-md);
+  color: var(--portal-card-title, var(--text-primary));
+  font: var(--body-md);
+  font-weight: 600;
+}
+
+.portal-card .portal-meta {
+  margin: 0;
 }
 
 .portal-contents .content-feed {
   min-width: 0;
+}
+
+/* An empty state without the owl keeps the three sizes of the screen: its title is a body line, as the one with the owl. */
+.portal-contents .portal-empty .ui-empty-state__title {
+  font: var(--body-md);
+  font-weight: 600;
 }
 
 /* --- Portal: post em tela cheia (#270, #687) ---
@@ -5245,20 +5289,39 @@ html:has(.portal-post__bar) {
   object-fit: cover;
 }
 
-/* --- Portal: Marca (#143) --- */
+/* --- Portal: Marca (#143, #689) --- rows, not cards, as the agency client detail (#637) */
 
 .portal-brand {
   display: grid;
-  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
 }
 
-.portal-brand h1 {
+.portal-brand .brand-section__header h2 {
   margin: 0;
+  font: var(--body-md);
+  font-weight: 600;
+}
+
+.portal-brand__pending {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.portal-brand__pending svg {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
 }
 
 .portal-persona-list {
   display: grid;
-  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -5266,21 +5329,28 @@ html:has(.portal-post__bar) {
 
 .portal-persona {
   display: grid;
-  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
   min-width: 0;
-  padding: var(--space-3);
+  padding: var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
 }
 
 .portal-persona__name {
   margin: 0;
-  font: var(--label-md);
+  font: var(--body-md);
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
 .portal-persona__field {
   display: contents;
+}
+
+.portal-persona .brand-persona__fields dd {
+  font: var(--body-md);
 }
 
 .visually-hidden {
