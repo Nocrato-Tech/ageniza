@@ -255,7 +255,7 @@ radius/xl   = 20px
 radius/full = 9999px
 ```
 
-Uso (Pauta): `sm` etiqueta (`FormatTag`, `StatusTag`, `LateBadge`) e controle de filtro; `md` botão, campo e item da navegação; `lg` painel, card e cartão flutuante; `xl` modal; `full` só avatar, pílula (`Pill`, `PillAction`) e o indicador de carregando. O `Realce` é a única forma fora da escala: seus cantos desiguais imitam a caneta marca-texto (seção 25.2).
+Uso (Pauta): `sm` etiqueta (`FormatTag`, `StatusTag`, `LateBadge`) e controle de filtro; `md` botão, campo e item da navegação; `lg` painel, card e cartão flutuante; `xl` modal; nas telas refeitas, `full` só avatar (e seu esqueleto), pílula (`Pill`, `PillAction`) e o indicador de carregando. O CSS ainda usa `full` em selos e marcas de telas não refeitas (`.clients__badge`, `.client-detail__status`, `.conversation__status`, `.portal-post__status`, `.content-card__badge`, `.content-folder__badge`, `.content-day__script`, `.content-feed__planned`, `.ui-choice-card__badge`) e na amostra de cor (`.brand-colors__swatch`, o hex é dado da agência); cada uma muda quando a tela for refeita. O `Realce` é a única forma fora da escala: seus cantos desiguais imitam a caneta marca-texto (seção 25.2).
 
 ## 10. Tipografia
 
@@ -292,7 +292,9 @@ Implementado em `semantic.css` como `shadow/floating = 0 24px 48px -12px rgb(0 0
 | 0 · canvas | `bg/canvas` `ink/900` | `cloud/50` | o fundo da tela e a navegação lateral |
 | 1 · superfície | `bg/surface` `ink/800` | `white` | painel, card e campo, com a borda `border/default` quando precisa de limite |
 | 2 · elevado | `bg/elevated` `ink/700` | `white` | o que fica sobre a superfície; o hover usa `bg/hover` (`ink/700` no escuro, `mist/100` no claro) |
-| 3 · flutuante | `bg/elevated` + `shadow/floating` | idem | modal, cartão do hover, menu |
+| 3 · flutuante | `bg/elevated` + `shadow/floating` | idem | o `Popover` (o cartão do hover) |
+
+O `Dialog` e o `ConfirmDialog` ficam em `bg/surface`, não no nível 3: o `Dialog` leva a borda `border/default` e a sombra, o `ConfirmDialog` a borda de dano e nenhuma sombra. O menu (`.ui-menu__content`) também é `bg/surface`, com borda e sem sombra. Só o `Popover` usa `bg/elevated`.
 
 A borda do nível 1 no escuro é `border/default` = `ink/600`. A folha Identidade do canvas desenha `ink/700`, mas o CSS não a mudou e vale o CSS: `ink/700` é `border/subtle`, a divisória de baixa ênfase (entre filtros, abas, navegação lateral e barra inferior). As duas são **decorativas**: separam, mas não são o limite de um controle (esse é `border/control`, seção 13 e 20.1). `shadow/none`, `sm`, `md` e `lg` continuam conceituais, sem valor; não criar sombra de card, de botão nem de painel.
 
@@ -377,7 +379,7 @@ O shell da agência (`AgencySidebar`, em `apps/web/src/agency-nav.tsx`) é códi
 | Confirmar uma ação destrutiva | `ConfirmDialog` | Confirmação de tela cheia sobre `bg/canvas`, com borda de dano; o foco começa em cancelar, Esc cancela e a ação destrutiva aceita `busy`. |
 | Um cartão ancorado ao gatilho (o hover do calendário) | `Popover` | Abre ao clique ou, com `openOn="hover"`, depois de 300 ms com o mouse parado ou na hora no foco do teclado, nunca no toque; só fecha 150 ms depois de o mouse sair (`hoverLeaveDelay`), tempo de atravessar o vão de 8 px até o cartão sem que ele suma (WCAG 1.4.13); Esc e um clique fora fecham e devolvem o foco ao gatilho. Não troca de lado na borda da tela: quem usa escolhe o `placement` com espaço. |
 
-`Dialog` e `Popover` ficam na superfície elevada, onde `text/link`, `text/danger` e a borda de controle não estão garantidos no escuro (seção 20.1): levam texto e ações, não campos. Quem pôr link ou erro ali confere o contraste e usa a variante derivada da paleta. Nenhum export de `packages/ui` leva o nome de um global do JS (item 69 do checklist).
+O `Popover` fica na superfície elevada, onde `text/link`, `text/danger` e a borda de controle não estão garantidos no escuro (seção 20.1): leva texto e ações, não campos. O mesmo vale para qualquer cartão sobre `bg/elevated` ou `bg/hover`. Quem pôr link ou erro ali confere o contraste e usa a variante derivada da paleta. O `Dialog` e o `ConfirmDialog` ficam em `bg/surface`, onde link, erro e campo passam (20.1): levam campo. Nenhum export de `packages/ui` leva o nome de um global do JS (item 69 do checklist).
 
 ### 13.5 Conteúdo e estado
 
@@ -521,7 +523,7 @@ Desktop-first para operação, com o celular funcional: a navegação da agênci
 
 A navegação abre **recolhida** no calendário de um cliente (a rota `/agencia/:agenciaId/conteudos/:clienteId`), onde o mês precisa da largura, e **aberta** nas demais telas; a escolha explícita da pessoa vale até recarregar a página. Aberta, mostra o logo, o contexto ativo, os grupos (Trabalho: Início, Conteúdos, Clientes; Agência: Equipe) e a pessoa com Sair no pé; recolhida, o símbolo chapado e os ícones com o rótulo embaixo; na barra inferior, só os ícones com o rótulo (`label/sm`), sem o logo, o contexto e o Sair solto.
 
-**Breakpoints.** Uma media query não lê custom property, então os valores moram no CSS, em `rem`, e são três: `40rem` (celular largo: filtros e vazio empilham), `48rem` (a navegação vira barra inferior e o modal do conteúdo vira coluna) e `64rem` (um painel ao lado do principal: o feed junto ao calendário e a semana de exemplo das telas de entrada, que abaixo disso ficam em uma coluna só). Uma tela nova reaproveita esses três; um quarto valor por tela é divergência a discutir, não a decidir localmente.
+**Breakpoints.** Uma media query não lê custom property, então os valores moram no CSS, em `rem`, e são três: `40rem` (celular largo: filtros e vazio empilham), `48rem` (a navegação vira lateral a partir dele e barra inferior abaixo, com `max-width: 47.99rem` como o complemento; o modal do conteúdo vira coluna com `max-width: 48rem`, então em exatos 48 rem já está em coluna e a navegação já é lateral) e `64rem` (um painel ao lado do principal: o feed junto ao calendário e a semana de exemplo das telas de entrada, que abaixo disso ficam em uma coluna só). Uma tela nova reaproveita esses três; um quarto valor por tela é divergência a discutir, não a decidir localmente.
 
 **Alvo de toque.** O botão `md` tem 44 px de altura e o `lg`, 52 px; o `sm` (32 px) é para linha densa de desktop. No celular, prefira `md` ou maior para o que se toca (é o "área clicável suficiente" da seção 20). Abas e itens de navegação já têm no mínimo 44 px.
 
@@ -536,7 +538,7 @@ Antes de aprovar um componente: contraste adequado; foco visível; estado disabl
 - **Carregando** é `aria-busy` com `aria-disabled` e uma guarda no clique, nunca `disabled` nativo, que tira o foco de quem acabou de acionar o controle (item 70 do checklist). O filtro e o campo continuam usáveis e dizem que estão ocupados.
 - **Nome acessível contém o texto visível** do controle: o rótulo do botão, a dica de um `IconButton` e o motivo do anel de atenção depois do nome do cliente.
 - **Movimento reduzido** (`prefers-reduced-motion: reduce`) desliga as transições dos controles, a entrada de modal e cartão e a varredura do `Realce` (seção 12).
-- **Superfície elevada.** `text/link`, `text/danger` e `border/control` não têm contraste garantido no escuro sobre `bg/elevated` e `bg/hover`: nada disso entra em `Dialog`, `Popover` ou cartão do hover sem conferir o par antes (20.1).
+- **Superfície elevada.** `text/link`, `text/danger` e `border/control` não têm contraste garantido no escuro sobre `bg/elevated` e `bg/hover`: nada disso entra em `Popover` ou cartão do hover sem conferir o par antes (20.1). O `Dialog`, o `ConfirmDialog` e o menu ficam em `bg/surface`, onde os três passam.
 
 ### 20.1 Contraste — tabela final, aprovada em 2026-09-28
 
@@ -596,7 +598,7 @@ O anel do avatar sobre `bg/hover` é o do item aberto ou sob o mouse no `ClientS
 
 O rótulo de um `StatusTag` é `text/secondary` sobre `bg/canvas` ou `bg/surface` (primeira tabela), e o da `Pill` neutra, `text/secondary` sobre `bg/hover`: nenhum par de texto depende da cor do estado.
 
-**Restrição de uso, não falha:** `text/link` e `text/danger` só foram conferidos sobre `bg/canvas` e `bg/surface`, os fundos onde link e mensagem de erro aparecem hoje. Sobre `bg/elevated`/`bg/hover` no Dark eles cairiam a 3.46:1 e 3.22:1, e `border/control` a 2.33:1 — por isso o comentário em `themes/dark.css` e a nota na seção 6 dizem para não os usar ali. Se uma tela real precisar de link, erro ou campo sobre esses fundos (modal, popover, cartão do hover, crachá), isso volta a ser um ponto em aberto: confira o par e use a variante derivada da paleta, não uma aprovação silenciosa.
+**Restrição de uso, não falha:** `text/link` e `text/danger` só foram conferidos sobre `bg/canvas` e `bg/surface`, os fundos onde link e mensagem de erro aparecem hoje. Sobre `bg/elevated`/`bg/hover` no Dark eles cairiam a 3.46:1 e 3.22:1, e `border/control` a 2.33:1 — por isso o comentário em `themes/dark.css` e a nota na seção 6 dizem para não os usar ali. Se uma tela real precisar de link, erro ou campo sobre esses fundos (popover, cartão do hover, crachá), isso volta a ser um ponto em aberto: confira o par e use a variante derivada da paleta, não uma aprovação silenciosa.
 
 `text/muted` sobre `bg/hover` no Dark (4.62:1) é o par de texto aprovado mais apertado: qualquer mudança futura em `color/slate/400` ou `color/ink/700` precisa reconferi-lo.
 
@@ -676,7 +678,7 @@ A cor de um estado do conteúdo diz de quem é a vez. O que está em dia recua p
 
 - A cor vai **no ícone** (`status/*/fg`, não-texto, 3:1) e o rótulo fica em `text/secondary`: o par de texto nunca depende da cor do estado, e o estado nunca é só cor.
 - Erro é `text/danger` e diz como sair ("Tentar de novo").
-- **Dentro do card do calendário** o fundo e o título são tingidos pelo **formato** (`format/{carousel,reels,static}/{bg,fg}`), e o estado vive na etiqueta (`StatusTag`), ao lado da etiqueta preenchida do formato (`FormatTag`). O atrasado passa por cima de tudo, com contorno vermelho no card inteiro, nunca borda lateral. No canvas, stories, vídeo e VSL não têm tinta: ficam em `bg/elevated`, com etiqueta de contorno.
+- **Dentro do card do calendário** o fundo e o título são tingidos pelo **formato** (`format/{carousel,reels,static}/{bg,fg}`), e o estado vive na etiqueta (`StatusTag`), ao lado da etiqueta preenchida do formato (`FormatTag`). O atrasado passa por cima de tudo, com contorno vermelho no card inteiro, nunca borda lateral (vem com a #631; hoje o CSS só tem o `LateBadge` e `.content-card__badge--overdue`). No canvas, stories, vídeo e VSL não têm tinta: ficam em `bg/elevated`, com etiqueta de contorno.
 - O índigo fica fora dos formatos de propósito: é da ação e do hoje. Reels e aguardando dividem o violeta, e carrossel e pronto dividem o teal; o ícone e o rótulo desfazem a dúvida.
 
 ### 25.2 O realce: quatro usos
