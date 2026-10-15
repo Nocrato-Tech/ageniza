@@ -332,7 +332,7 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 ```
 
 - Card: capa, título, data e status (aprovado, aguardando aprovação, em ajuste, em produção). Filtro por status.
-- Post em tela cheia: legenda inteira, mídias navegáveis, **Pedir ajuste** (pede comentário), **Aprovar** e a conversa. Os dois botões ficam numa barra fixa no pé da tela, que no celular toma o lugar da barra inferior de quatro itens; o caminho de volta é o link "Conteúdos" no topo. Em produção, só título, data e formato.
+- Post em tela cheia: legenda inteira, mídias navegáveis, **Pedir ajuste** (pede comentário), **Aprovar** e a conversa. Os dois botões ficam numa barra fixa no pé da tela, que no celular toma o lugar da barra inferior de quatro itens; o caminho de volta é o link "Conteúdos" no topo (decisão `2026-10-15-post-do-portal-troca-as-abas-pela-barra-de-decisao`). Em produção, só título, data e formato.
 - Início: "N posts esperando sua aprovação", o roteiro de stories de hoje, com **Já gravei**, e "Nesta semana" (os conteúdos de segunda a domingo, sem os que esperam aprovação).
 
 ### Variação por papel
