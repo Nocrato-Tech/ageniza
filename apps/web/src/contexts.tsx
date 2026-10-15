@@ -7,6 +7,7 @@ import {
   PutLastContextResponseSchema,
   type Context
 } from '@ageniza/contracts';
+import { Briefcase, CircleAlert, LogOut, Store } from 'lucide-react';
 import { Button, ChoiceCard, LiveStatus, Skeleton } from '@ageniza/ui';
 
 import { useAuthSessionStore } from './auth.js';
@@ -97,7 +98,7 @@ export function ContextSelectPage() {
   }, [enteredContext, httpClient, queryClient, navigate]);
 
   if (resolve.isPending) {
-    return <section aria-labelledby="context-select-title">
+    return <section aria-labelledby="context-select-title" className="contexts">
       <h1 id="context-select-title">Onde você quer entrar?</h1>
       <LiveStatus>Carregando seus contextos…</LiveStatus>
       <div className="ui-choice-list"><Skeleton /><Skeleton /></div>
@@ -105,9 +106,9 @@ export function ContextSelectPage() {
   }
 
   if (resolve.isError) {
-    return <section aria-labelledby="context-select-title">
+    return <section aria-labelledby="context-select-title" className="contexts">
       <h1 id="context-select-title">Onde você quer entrar?</h1>
-      <p role="alert">Não foi possível carregar seus contextos.</p>
+      <div role="alert" className="contexts__error"><p><CircleAlert aria-hidden="true" />Não foi possível carregar seus contextos.</p></div>
       <Button onClick={() => { void resolve.refetch(); }} disabled={resolve.isFetching}>Tentar de novo</Button>
     </section>;
   }
@@ -132,10 +133,10 @@ export function ContextSelectPage() {
     else if (signOut.isError) signOut.mutate();
   };
 
-  return <section aria-labelledby="context-select-title">
+  return <section aria-labelledby="context-select-title" className="contexts">
     <h1 id="context-select-title">Onde você quer entrar?</h1>
-    {actionError !== undefined && <div role="alert">
-      <p>{actionError}</p>
+    {actionError !== undefined && <div role="alert" className="contexts__error">
+      <p><CircleAlert aria-hidden="true" />{actionError}</p>
       <Button onClick={retryAction}>Tentar de novo</Button>
     </div>}
     <ul className="ui-choice-list">
@@ -145,6 +146,7 @@ export function ContextSelectPage() {
           <ChoiceCard
             title={contextTitle(context)}
             description={contextDescription(context)}
+            icon={context.type === 'agency' ? <Briefcase /> : <Store />}
             highlighted={isHighlighted}
             badge={isHighlighted ? 'Sugerido' : undefined}
             disabled={choose.isPending}
@@ -154,6 +156,6 @@ export function ContextSelectPage() {
         </li>;
       })}
     </ul>
-    <Button variant="ghost" onClick={() => signOut.mutate()} disabled={signOut.isPending}>Sair</Button>
+    <Button variant="ghost" leadingIcon={<LogOut />} onClick={() => signOut.mutate()} disabled={signOut.isPending}>Sair</Button>
   </section>;
 }

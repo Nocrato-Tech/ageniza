@@ -13,6 +13,7 @@ import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
+import { declarationsFor, readStyles } from './styles/theme-colors';
 
 afterEach(cleanup);
 
@@ -38,6 +39,8 @@ interface Scenario {
   failAccept?: boolean;
   /** Makes the status read fail with a 500. */
   failRead?: boolean;
+  /** Holds every valid acceptance POST until it resolves, to keep the request pending. */
+  holdAccept?: Promise<void>;
 }
 
 const status = (account: Account) => ({
@@ -68,6 +71,7 @@ const makeFetch = (scenario: Scenario) => {
       posted.push(body);
       const parsed = AcceptLegalDocumentRequestSchema.safeParse(body);
       if (!parsed.success) return json({ error: { code: 'VALIDATION_ERROR', message: 'Request validation failed' } }, 400);
+      if (scenario.holdAccept !== undefined) await scenario.holdAccept;
       if (scenario.failAccept === true) return json({ error: { code: 'INTERNAL_ERROR', message: 'Internal error.' } }, 500);
       const { document } = parsed.data;
       const accepted = scenario.account.accepted[document];
@@ -229,6 +233,68 @@ describe('legal notice in the agency shell (issue #81)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Li e aceito os Termos de Uso' }));
     await waitFor(() => expect(within(notice()).queryByText('Atualizamos os Termos de Uso.')).toBeNull());
     expect(scenario.account.accepted.terms).toBe('2026-03-01');
+  });
+});
+
+describe('legal notice acceptance while pending (#639)', () => {
+  const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
+
+  it('a second click on the same accept button while the POST is pending sends nothing, and the button keeps focus', async () => {
+    let release: () => void = () => undefined;
+    const holdAccept = new Promise<void>((resolve) => { release = resolve; });
+    const { impl, posted } = makeFetch({ account: outdatedAccount(), holdAccept });
+    renderApp(impl, `/agencia/${AGENCY}`);
+
+    const accept = await screen.findByRole('button', { name: 'Li e aceito os Termos de Uso' });
+    accept.focus();
+    fireEvent.click(accept);
+    await waitFor(() => expect(posted).toHaveLength(1));
+    fireEvent.click(accept);
+    fireEvent.click(accept);
+    await settle();
+
+    expect(posted).toEqual([{ document: 'terms' }]);
+    expect(accept.getAttribute('aria-busy')).toBe('true');
+    expect(accept.getAttribute('aria-disabled')).toBe('true');
+    expect((accept as HTMLButtonElement).disabled).toBe(false);
+    expect(document.activeElement).toBe(accept);
+
+    release();
+    await waitFor(() => expect(within(notice()).queryByText('Atualizamos os Termos de Uso.')).toBeNull());
+    expect(posted).toEqual([{ document: 'terms' }]);
+  });
+
+  it('the other document cannot be accepted while one POST is pending, and works once it settles', async () => {
+    let release: () => void = () => undefined;
+    const holdAccept = new Promise<void>((resolve) => { release = resolve; });
+    const account = outdatedAccount();
+    const { impl, posted } = makeFetch({ account, holdAccept });
+    renderApp(impl, `/agencia/${AGENCY}`);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Li e aceito os Termos de Uso' }));
+    await waitFor(() => expect(posted).toHaveLength(1));
+    const other = screen.getByRole('button', { name: 'Li e aceito a Política de Privacidade' });
+    expect(other.getAttribute('aria-disabled')).toBe('true');
+    expect(other.getAttribute('aria-busy')).toBeNull();
+    fireEvent.click(other);
+    await settle();
+    expect(posted).toEqual([{ document: 'terms' }]);
+
+    release();
+    await waitFor(() => expect(within(notice()).queryByText('Atualizamos os Termos de Uso.')).toBeNull());
+    const again = screen.getByRole('button', { name: 'Li e aceito a Política de Privacidade' });
+    expect(again.getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(again);
+    await waitFor(() => expect(queryNotice()).toBeNull());
+    expect(posted).toEqual([{ document: 'terms' }, { document: 'privacy' }]);
+  });
+});
+
+describe('legal notice pending look (#639)', () => {
+  it('dims the accept button that answers nothing, and leaves the pending one to the loading state', () => {
+    const dimmed = declarationsFor(readStyles('globals.css'), ".legal-notice__item .ui-button[aria-disabled='true']:not(.ui-button--loading)");
+    expect(dimmed.get('opacity')).toBe('0.55');
+    expect(dimmed.get('cursor')).toBe('not-allowed');
   });
 });
 

@@ -48,7 +48,7 @@ export function PublicLayout() {
 export function ProtectedLayout({ session, children }: { session: AuthSessionSnapshot; children?: ReactNode }) {
   return <SessionGate session={session}>
     <SessionWatch />
-    <div className="app-shell"><a className="skip-link" href="#main-content">Pular para o conteúdo</a><header className="protected-header"><Link to="/">Ageniza</Link><AccountMenu user={session.user} /></header><main id="main-content">{children ?? <Outlet />}</main></div>
+    <div className="app-shell"><a className="skip-link" href="#main-content">Pular para o conteúdo</a><header className="protected-header"><Link to="/"><Logo variant="on-dark" height={30} /></Link><AccountMenu user={session.user} /></header><main id="main-content">{children ?? <Outlet />}</main></div>
   </SessionGate>;
 }
 
