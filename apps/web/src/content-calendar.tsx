@@ -1,13 +1,27 @@
 import { useId, useState, type DragEvent, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
-import type { ContentListItem } from '@ageniza/contracts';
+import type { ContentFormat, ContentListItem, ContentStatus } from '@ageniza/contracts';
+import { FormatTag, LateBadge, StatusTag, type FormatTagFormat, type StatusTagStatus } from '@ageniza/ui';
 
 import { useContentsAddress } from './content-address.js';
 import { ContentHoverDetail } from './content-card-extras.js';
 import { ContentCover } from './content-cover.js';
 import { fullDayLabel, WEEKDAY_LABELS, type CalendarView } from './content-dates.js';
 import { DEADLINE_LABELS, deadlineAlert, FORMAT_LABELS, isClosed, STATUS_LABELS, subtaskPercent } from './content-labels.js';
+
+/** The formats with a colour of their own are the carousel and the reels; every other one reads as the neutral "static". */
+const FORMAT_TONES: Readonly<Record<ContentFormat, FormatTagFormat>> = { image: 'static', carousel: 'carousel', reels: 'reels', long_video: 'static', vsl: 'static' };
+
+/** A cancelled content has no state of the flow, so it takes the empty mark of "em produção" with its own word beside it. */
+const STATUS_TAGS: Readonly<Record<ContentStatus, StatusTagStatus>> = {
+  in_production: 'production',
+  awaiting_approval: 'waiting',
+  adjusting: 'adjust',
+  approved: 'ready',
+  published: 'published',
+  cancelled: 'production'
+};
 
 /**
  * The card of the calendar (`specs/conteudo.md` section 7). Every string that came from the server
@@ -32,6 +46,8 @@ export function ContentCard({ content, clientId, today, draggable = false, busy 
   return <article
     className={`content-card${draggable ? ' content-card--movable' : ''}${busy ? ' content-card--busy' : ''}`}
     data-status={content.status}
+    data-format={FORMAT_TONES[content.format]}
+    data-late={alert === 'overdue' || undefined}
     draggable={draggable}
     tabIndex={0}
     aria-busy={busy || undefined}
@@ -44,8 +60,9 @@ export function ContentCard({ content, clientId, today, draggable = false, busy 
     onDragStart={draggable ? (event) => { setPointed(false); onDragStart?.(event); } : undefined}
     onDragEnd={draggable ? onDragEnd : undefined}
   >
-    <ContentCover assetId={content.thumbnailAssetId} format={content.format} />
+    <ContentCover assetId={content.thumbnailAssetId} format={content.format} bare={content.thumbnailAssetId === null} />
     <p className="content-card__title">
+      <span className="content-card__prefix">{FORMAT_LABELS[content.format]}: </span>
       {/* A link is draggable by itself: without this the drag of the card would carry the address instead of the card. */}
       <Link
         className="content-card__link"
@@ -54,12 +71,12 @@ export function ContentCard({ content, clientId, today, draggable = false, busy 
         state={location.state}
       >{content.title}</Link>
     </p>
-    <p className="content-card__meta">
-      {FORMAT_LABELS[content.format]}{content.publishAtTime !== null && <> · {content.publishAtTime}</>}
-    </p>
+    {content.publishAtTime !== null && <p className="content-card__meta">{content.publishAtTime}</p>}
     <ul className="content-card__badges">
-      <li className="content-card__badge">{STATUS_LABELS[content.status]}</li>
-      {alert !== null && <li className={`content-card__badge content-card__badge--${alert}`}>{DEADLINE_LABELS[alert]}</li>}
+      <li><FormatTag format={FORMAT_TONES[content.format]}>{FORMAT_LABELS[content.format]}</FormatTag></li>
+      {alert === 'overdue' && <li className="content-card__badge--overdue"><LateBadge>{DEADLINE_LABELS.overdue}</LateBadge></li>}
+      <li><StatusTag status={STATUS_TAGS[content.status]}>{STATUS_LABELS[content.status]}</StatusTag></li>
+      {alert === 'due-soon' && <li className="content-card__badge content-card__badge--due-soon">{DEADLINE_LABELS['due-soon']}</li>}
       {percent !== null && <li className="content-card__badge">{percent}% das subtarefas</li>}
     </ul>
     {pointed && <ContentHoverDetail id={detailId} clientId={clientId} contentId={content.id} />}
