@@ -5052,7 +5052,7 @@ html:has(.portal-shell) {
 }
 
 .portal-post__bar .portal-post__actions {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
 }
 
 /* "Pedir ajuste" and its icon fit the narrower column of a 360 px phone on one line. */
