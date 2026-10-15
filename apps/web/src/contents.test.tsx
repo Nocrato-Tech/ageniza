@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, type Location, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -1383,6 +1383,14 @@ describe('the detail on a card (hover and focus)', () => {
     if (card === null) throw new Error(`The card of ${title} was not rendered.`);
     return card;
   };
+  // A mouse that rests: the card opens after 300 ms, and closes a moment after the mouse leaves.
+  const pointer = (type: 'pointerOver' | 'pointerOut', element: HTMLElement): void => {
+    const event = createEvent[type](element, { bubbles: true });
+    Object.defineProperty(event, 'pointerType', { value: 'mouse' });
+    fireEvent(element, event);
+  };
+  const point = (element: HTMLElement): void => pointer('pointerOver', element);
+  const unpoint = (element: HTMLElement): void => pointer('pointerOut', element);
   const detailCalls = (calls: readonly string[]): string[] => calls.filter((call) => /\/contents\/[^/?]+$/.test(call) && call.startsWith('GET'));
   const withDetail = (row: ReturnType<typeof contentFixture>, extra: Record<string, unknown>) => (_client: string, id: string) =>
     id === row.id ? json({ ...detailOfContent(padaria.id, row), ...extra }) : undefined;
@@ -1403,10 +1411,10 @@ describe('the detail on a card (hover and focus)', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Lançamento');
     expect(detailCalls(calls)).toEqual([]);
-    expect(screen.queryByRole('tooltip')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
 
-    fireEvent.mouseEnter(cardOf('Lançamento'));
-    const tooltip = await screen.findByRole('tooltip');
+    point(cardOf('Lançamento'));
+    const tooltip = await screen.findByRole('dialog');
     expect(await within(tooltip).findByText('Hoje tem pão quente na padaria!')).toBeTruthy();
     expect(within(tooltip).getByText('Legenda')).toBeTruthy();
     expect(within(tooltip).getByText('2 de 4 aprovadas · 1 entregue · 1 pendente')).toBeTruthy();
@@ -1414,12 +1422,12 @@ describe('the detail on a card (hover and focus)', () => {
     expect(within(tooltip).getByText('3 comentários · último em 11/10')).toBeTruthy();
     expect(await within(tooltip).findByText('Cliente: “Podemos trocar a foto da capa?” · 11/10')).toBeTruthy();
     expect(calls).toContain(`GET /agencies/${AGENCY_A}/clients/${padaria.id}/threads?contentId=${row.id}`);
-    expect(cardOf('Lançamento').getAttribute('aria-describedby')).toBe(tooltip.id);
+    expect(within(cardOf('Lançamento')).getByRole('link', { name: 'Lançamento' }).getAttribute('aria-controls')).toBe(tooltip.id);
     expect(detailCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/clients/${padaria.id}/contents/${row.id}`]);
 
-    fireEvent.mouseLeave(cardOf('Lançamento'));
-    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
-    expect(cardOf('Lançamento').getAttribute('aria-describedby')).toBeNull();
+    unpoint(cardOf('Lançamento'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(within(cardOf('Lançamento')).getByRole('link', { name: 'Lançamento' }).hasAttribute('aria-controls')).toBe(false);
   });
 
   const withComments = (row: ReturnType<typeof contentFixture>, count = 2) =>
@@ -1438,14 +1446,14 @@ describe('the detail on a card (hover and focus)', () => {
     await screen.findByText('Com conversa');
     expect(threadCalls(calls)).toEqual([]);
 
-    fireEvent.mouseEnter(cardOf('Sem conversa'));
-    await within(await screen.findByRole('tooltip')).findByText('Sem comentários');
+    point(cardOf('Sem conversa'));
+    await within(await screen.findByRole('dialog')).findByText('Sem comentários');
     expect(threadCalls(calls)).toEqual([]);
-    fireEvent.mouseLeave(cardOf('Sem conversa'));
-    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+    unpoint(cardOf('Sem conversa'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
-    fireEvent.mouseEnter(cardOf('Com conversa'));
-    const tooltip = await screen.findByRole('tooltip');
+    point(cardOf('Com conversa'));
+    const tooltip = await screen.findByRole('dialog');
     expect(await within(tooltip).findByText('Agência: “Enviamos a arte nova.” · 12/10')).toBeTruthy();
     expect(threadCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/clients/${padaria.id}/threads?contentId=${withTalk.id}`]);
   });
@@ -1462,13 +1470,13 @@ describe('the detail on a card (hover and focus)', () => {
     await screen.findByText('Segundo');
 
     // The first card is read before, so a cache that ignored the content would answer the second with its message.
-    fireEvent.mouseEnter(cardOf('Primeiro'));
-    expect(await within(await screen.findByRole('tooltip')).findByText(/Fala do primeiro/)).toBeTruthy();
-    fireEvent.mouseLeave(cardOf('Primeiro'));
-    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+    point(cardOf('Primeiro'));
+    expect(await within(await screen.findByRole('dialog')).findByText(/Fala do primeiro/)).toBeTruthy();
+    unpoint(cardOf('Primeiro'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
-    fireEvent.mouseEnter(cardOf('Segundo'));
-    const tooltip = await screen.findByRole('tooltip');
+    point(cardOf('Segundo'));
+    const tooltip = await screen.findByRole('dialog');
     expect(await within(tooltip).findByText(/Fala do segundo/)).toBeTruthy();
     expect(within(tooltip).queryByText(/Fala do primeiro/)).toBeNull();
   });
@@ -1484,8 +1492,8 @@ describe('the detail on a card (hover and focus)', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Texto');
 
-    fireEvent.mouseEnter(cardOf('Texto'));
-    const tooltip = await screen.findByRole('tooltip');
+    point(cardOf('Texto'));
+    const tooltip = await screen.findByRole('dialog');
     expect(await within(tooltip).findByText('Carregando…')).toBeTruthy();
     await act(async () => { answer.resolve(json({ error: { code: 'FORBIDDEN', message: 'Forbidden <b>x</b>' } }, 403)); });
     expect(await within(tooltip).findByText('Não foi possível carregar a última mensagem.')).toBeTruthy();
@@ -1503,8 +1511,8 @@ describe('the detail on a card (hover and focus)', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Marcação');
 
-    fireEvent.mouseEnter(cardOf('Marcação'));
-    const tooltip = await screen.findByRole('tooltip');
+    point(cardOf('Marcação'));
+    const tooltip = await screen.findByRole('dialog');
     expect(await within(tooltip).findByText(/<img src=x onerror=alert\(1\)> <b>oi<\/b>/)).toBeTruthy();
     expect(tooltip.querySelector('img')).toBeNull();
     expect(tooltip.querySelector('b')).toBeNull();
@@ -1516,8 +1524,8 @@ describe('the detail on a card (hover and focus)', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Vazio');
 
-    fireEvent.mouseEnter(cardOf('Vazio'));
-    const tooltip = await screen.findByRole('tooltip');
+    point(cardOf('Vazio'));
+    const tooltip = await screen.findByRole('dialog');
     expect(await within(tooltip).findByText('Sem legenda')).toBeTruthy();
     expect(within(tooltip).getByText('Sem subtarefas')).toBeTruthy();
     expect(within(tooltip).getByText('Sem comentários')).toBeTruthy();
@@ -1536,8 +1544,8 @@ describe('the detail on a card (hover and focus)', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Longa');
 
-    fireEvent.mouseEnter(cardOf('Longa'));
-    const tooltip = await screen.findByRole('tooltip');
+    point(cardOf('Longa'));
+    const tooltip = await screen.findByRole('dialog');
     expect(await within(tooltip).findByText(`${'a'.repeat(140)}…`)).toBeTruthy();
     expect(within(tooltip).getByText('0 de 1 aprovadas · 1 pendente')).toBeTruthy();
     expect(within(tooltip).getByText('1 comentário')).toBeTruthy();
@@ -1553,16 +1561,16 @@ describe('the detail on a card (hover and focus)', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Segunda');
 
-    fireEvent.mouseEnter(cardOf('Segunda'));
+    point(cardOf('Segunda'));
     expect(await screen.findByText('Legenda da segunda')).toBeTruthy();
     expect(screen.queryByText('Legenda da primeira')).toBeNull();
-    fireEvent.mouseLeave(cardOf('Segunda'));
-    fireEvent.mouseEnter(cardOf('Primeira'));
+    unpoint(cardOf('Segunda'));
+    point(cardOf('Primeira'));
     expect(await screen.findByText('Legenda da primeira')).toBeTruthy();
     expect(screen.queryByText('Legenda da segunda')).toBeNull();
     // Back on the first one: it was read already.
-    fireEvent.mouseLeave(cardOf('Primeira'));
-    fireEvent.mouseEnter(cardOf('Segunda'));
+    unpoint(cardOf('Primeira'));
+    point(cardOf('Segunda'));
     expect(await screen.findByText('Legenda da segunda')).toBeTruthy();
     expect(detailCalls(calls).sort()).toEqual([
       `GET /agencies/${AGENCY_A}/clients/${padaria.id}/contents/${first.id}`,
@@ -1577,14 +1585,97 @@ describe('the detail on a card (hover and focus)', () => {
     await screen.findByText('Teclado');
 
     expect(cardOf('Teclado').getAttribute('tabindex')).toBe('0');
-    fireEvent.focus(cardOf('Teclado'));
-    expect(await screen.findByRole('tooltip')).toBeTruthy();
+    // Tab reaches the card and then its link: a real focus, which the browser marks as keyboard focus, opens the card at once.
+    act(() => { cardOf('Teclado').focus(); });
+    expect(await screen.findByRole('dialog', { name: 'Detalhes de Teclado' })).toBeTruthy();
     fireEvent.keyDown(cardOf('Teclado'), { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
-    fireEvent.focus(cardOf('Teclado'));
-    await screen.findByRole('tooltip');
-    fireEvent.blur(cardOf('Teclado'));
-    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // Closed by Escape, the focus stays where it was: the card does not reopen by itself.
+    expect(document.activeElement).toBe(cardOf('Teclado'));
+    act(() => { screen.getByRole('link', { name: 'Teclado' }).focus(); });
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    // Moving from the card into its own floating card keeps it open; leaving both closes it.
+    act(() => { (document.activeElement as HTMLElement).blur(); });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('stays open when the mouse crosses from the card onto the floating card, and closes when it leaves both (WCAG 1.4.13)', async () => {
+    const row = contentFixture({ title: 'Travessia', publishOn: '2026-10-14' });
+    const { impl } = makeFetch({ contents: { [padaria.id]: [row] } });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Travessia');
+
+    point(cardOf('Travessia'));
+    const hover = await screen.findByRole('dialog');
+    unpoint(cardOf('Travessia'));
+    point(hover);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(screen.queryByRole('dialog')).toBe(hover);
+
+    unpoint(hover);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('does not open on a touch, not even after resting', async () => {
+    const row = contentFixture({ title: 'Toque', publishOn: '2026-10-14' });
+    const { impl, calls } = makeFetch({ contents: { [padaria.id]: [row] } });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Toque');
+
+    const event = createEvent.pointerOver(cardOf('Toque'), { bubbles: true });
+    Object.defineProperty(event, 'pointerType', { value: 'touch' });
+    fireEvent(cardOf('Toque'), event);
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(detailCalls(calls)).toEqual([]);
+  });
+
+  it('waits the 300 ms before opening on a mouse', async () => {
+    const row = contentFixture({ title: 'Parado', publishOn: '2026-10-14' });
+    const { impl } = makeFetch({ contents: { [padaria.id]: [row] } });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Parado');
+
+    point(cardOf('Parado'));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+  });
+
+  it('shows the cover, the whole title, the day and the network, both tags and the hint to drag, in the floating card', async () => {
+    const long = `${'Título muito longo '.repeat(8)}fim`;
+    const row = contentFixture({ title: long, publishOn: '2026-10-03', format: 'carousel', status: 'awaiting_approval', coverAssetId: ASSET_A });
+    const { impl, calls } = makeFetch({ permissions: [VISUALIZE, READ_CLIENTS, 'conteudo.operar'], contents: { [padaria.id]: [row] } });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText(long);
+
+    point(cardOf(long));
+    const hover = await screen.findByRole('dialog', { name: `Detalhes de ${long}` });
+    expect(within(hover).getByText(`Carrossel: ${long}`)).toBeTruthy();
+    expect(within(hover).getByText('03 de out. · Instagram')).toBeTruthy();
+    expect(within(hover).getByText('Carrossel')).toBeTruthy();
+    expect(within(hover).getByText('Aguardando aprovação')).toBeTruthy();
+    expect(within(hover).getByText('Arraste para outro dia')).toBeTruthy();
+    await waitFor(() => expect(hover.querySelector('.content-hover__cover img')?.getAttribute('src')).toBe(`https://storage.test/${ASSET_A}.jpg`));
+    // The card and its floating card share the cover: pointing at it asks for nothing more.
+    expect(calls.filter((call) => /\/download-url/.test(call))).toEqual([`GET /agencies/${AGENCY_A}/media/${ASSET_A}/download-url?variant=thumbnail`]);
+  });
+
+  it('says "arraste para outro dia" only for a card that can be dragged', async () => {
+    const open = contentFixture({ title: 'Aberto', publishOn: '2026-10-14' });
+    const done = contentFixture({ title: 'Já foi ao ar', publishOn: '2026-10-15', status: 'published' });
+    const { impl } = makeFetch({ permissions: [VISUALIZE, READ_CLIENTS, 'conteudo.operar'], contents: { [padaria.id]: [open, done] } });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Já foi ao ar');
+
+    point(cardOf('Já foi ao ar'));
+    await within(await screen.findByRole('dialog')).findByText('Sem legenda');
+    expect(screen.queryByText('Arraste para outro dia')).toBeNull();
+    unpoint(cardOf('Já foi ao ar'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    point(cardOf('Aberto'));
+    expect(await screen.findByText('Arraste para outro dia')).toBeTruthy();
   });
 
   it('says it is loading, and says when it could not load', async () => {
@@ -1593,7 +1684,7 @@ describe('the detail on a card (hover and focus)', () => {
     const slow = makeFetch({ contents: { [padaria.id]: [row] }, content: () => held.promise });
     const first = render_(slow.impl, contentsUrl(padaria.id));
     await screen.findByText('Lenta');
-    fireEvent.mouseEnter(cardOf('Lenta'));
+    point(cardOf('Lenta'));
     expect(await screen.findByText('Carregando detalhes…')).toBeTruthy();
     held.resolve(json(detailOfContent(padaria.id, row)));
     expect(await screen.findByText('Sem legenda')).toBeTruthy();
@@ -1602,7 +1693,7 @@ describe('the detail on a card (hover and focus)', () => {
     const failing = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Falha', publishOn: '2026-10-14' })] }, content: () => notFound() });
     render_(failing.impl, contentsUrl(padaria.id));
     await screen.findByText('Falha');
-    fireEvent.mouseEnter(cardOf('Falha'));
+    point(cardOf('Falha'));
     expect(await screen.findByText('Não foi possível carregar os detalhes.')).toBeTruthy();
   });
 
@@ -1613,10 +1704,10 @@ describe('the detail on a card (hover and focus)', () => {
     const { container } = render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Hostil');
 
-    fireEvent.mouseEnter(cardOf('Hostil'));
+    point(cardOf('Hostil'));
     expect(await screen.findByText(hostile)).toBeTruthy();
-    expect(container.querySelector('.content-card__detail b')).toBeNull();
-    expect(container.querySelector('.content-card__detail img')).toBeNull();
+    expect(container.querySelector('.content-hover b')).toBeNull();
+    expect(container.querySelector('.content-hover img')).toBeNull();
   });
 
   it('closes the detail when the card is picked up to be dragged', async () => {
@@ -1625,10 +1716,10 @@ describe('the detail on a card (hover and focus)', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Levantada');
 
-    fireEvent.mouseEnter(cardOf('Levantada'));
-    await screen.findByRole('tooltip');
+    point(cardOf('Levantada'));
+    await screen.findByRole('dialog');
     fireEvent.dragStart(cardOf('Levantada'));
-    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('shows the name of the responsible of the card that is pointed at, never the link behind it (#552)', async () => {
@@ -1638,16 +1729,17 @@ describe('the detail on a card (hover and focus)', () => {
     const { container } = render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Do Paulo');
 
-    fireEvent.mouseEnter(cardOf('Do Paulo'));
-    const detail = await screen.findByRole('tooltip');
+    point(cardOf('Do Paulo'));
+    const detail = await screen.findByRole('dialog');
     expect(await within(detail).findByText('Responsável')).toBeTruthy();
     expect(within(detail).getByText('Paulo Lima')).toBeTruthy();
     expect(within(detail).queryByText('Ana Souza')).toBeNull();
     expect(container.textContent).not.toContain('e0e0e0e0-0000-4000-8000-000000000002');
-    fireEvent.mouseLeave(cardOf('Do Paulo'));
+    unpoint(cardOf('Do Paulo'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
-    fireEvent.mouseEnter(cardOf('Da Ana'));
-    expect(await within(await screen.findByRole('tooltip')).findByText('Ana Souza')).toBeTruthy();
+    point(cardOf('Da Ana'));
+    expect(await within(await screen.findByRole('dialog')).findByText('Ana Souza')).toBeTruthy();
   });
 
   it('shows no responsible for a content whose person has no link to the agency (owner null)', async () => {
@@ -1656,9 +1748,68 @@ describe('the detail on a card (hover and focus)', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Sem vínculo');
 
-    fireEvent.mouseEnter(cardOf('Sem vínculo'));
+    point(cardOf('Sem vínculo'));
     await screen.findByText('Sem legenda');
     expect(screen.queryByText('Responsável')).toBeNull();
+  });
+});
+
+describe('where the floating card of a calendar card opens', () => {
+  const cardOf = (title: string): HTMLElement => {
+    const card = screen.getByText(title).closest('article');
+    if (card === null) throw new Error(`The card of ${title} was not rendered.`);
+    return card;
+  };
+  const open = async (title: string): Promise<string | null> => {
+    const event = createEvent.pointerOver(cardOf(title), { bubbles: true });
+    Object.defineProperty(event, 'pointerType', { value: 'mouse' });
+    fireEvent(cardOf(title), event);
+    const dialog = await screen.findByRole('dialog', { name: `Detalhes de ${title}` });
+    // On the screen, not inside the calendar: its scrolling container would clip a card placed inside it.
+    expect(dialog.className).toContain('ui-popover--fixed');
+    const placement = dialog.getAttribute('data-placement');
+    const out = createEvent.pointerOut(cardOf(title), { bubbles: true });
+    Object.defineProperty(out, 'pointerType', { value: 'mouse' });
+    fireEvent(cardOf(title), out);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    return placement;
+  };
+  // October 2026 starts on a Thursday: the grid runs from Monday 28 September to Sunday 1 November (35 days, 5 rows).
+  const month = [
+    contentFixture({ title: 'Quarta', publishOn: '2026-10-14' }),
+    contentFixture({ title: 'Domingo da penúltima linha', publishOn: '2026-10-25' }),
+    contentFixture({ title: 'Segunda da última linha', publishOn: '2026-10-26' }),
+    contentFixture({ title: 'Sábado', publishOn: '2026-10-10' }),
+    contentFixture({ title: 'Domingo', publishOn: '2026-10-11' }),
+    contentFixture({ title: 'Sexta da última linha', publishOn: '2026-10-30' }),
+    contentFixture({ title: 'Sábado da última linha', publishOn: '2026-10-31' })
+  ];
+
+  it('opens towards the inside of the month: sábado and domingo to the left, the last row upwards', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: month } });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Quarta');
+
+    expect(await open('Quarta')).toBe('bottom-start');
+    expect(await open('Sábado')).toBe('bottom-end');
+    expect(await open('Domingo')).toBe('bottom-end');
+    expect(await open('Domingo da penúltima linha')).toBe('bottom-end');
+    expect(await open('Segunda da última linha')).toBe('top-start');
+    expect(await open('Sexta da última linha')).toBe('top-start');
+    expect(await open('Sábado da última linha')).toBe('top-end');
+  });
+
+  it('opens upwards on every day of the week view, and to the left on sábado and domingo', async () => {
+    const week = [
+      contentFixture({ title: 'Segunda', publishOn: '2026-10-12' }),
+      contentFixture({ title: 'Sábado', publishOn: '2026-10-17' })
+    ];
+    const { impl } = makeFetch({ contents: { [padaria.id]: week } });
+    render_(impl, contentsUrl(padaria.id, '?visao=semana&data=2026-10-14'));
+    await screen.findByText('Segunda');
+
+    expect(await open('Segunda')).toBe('top-start');
+    expect(await open('Sábado')).toBe('top-end');
   });
 });
 
@@ -1956,10 +2107,18 @@ describe('the header and the grid of the calendar', () => {
       expect(body('.content-card')).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\);/);
     });
 
-    it('opens the detail of a card of the last row of the month upward, so the scrolling calendar does not clip it', () => {
-      const rule = body(".content-calendar[data-view='month'] .content-day:nth-last-child(-n + 7) .content-card__detail");
-      expect(rule).toMatch(/bottom:\s*100%;/);
-      expect(rule).toMatch(/top:\s*auto;/);
+    it('places the floating card on the screen, so the scrolling calendar cannot clip it, and gives the card no shadow of its own', () => {
+      expect(body('.ui-popover--fixed')).toMatch(/position:\s*fixed;/);
+      expect(body('.ui-popover--fixed')).toMatch(/max-height:\s*calc\(100vh - var\(--space-4\)\);/);
+      expect(body('.ui-popover')).toMatch(/box-shadow:\s*var\(--shadow-floating\);/);
+      expect(body('.ui-popover')).toMatch(/background:\s*var\(--bg-elevated\);/);
+      expect(body('.content-card')).not.toMatch(/box-shadow/);
+      expect(body('.content-hover')).not.toMatch(/box-shadow/);
+    });
+
+    it('keeps the floating card to text, tags and the hint: no link, no danger text, no field on the elevated surface', () => {
+      const hover = rules.filter((rule) => rule.selectors.some((selector) => selector.startsWith('.content-hover'))).map((rule) => rule.body).join(' ');
+      expect(hover).not.toMatch(/--text-link|--text-danger|--status-late|input/);
     });
 
     it('puts no shadow on the profile preview (only what floats has one) and sets the tile state in the scale', () => {

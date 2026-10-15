@@ -1,11 +1,16 @@
 import type { ReactNode } from 'react';
+import { CalendarDays } from 'lucide-react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 
-import { ContentDetailSchema, ThreadListResponseSchema, type ConversationSide, type ThreadListResponse } from '@ageniza/contracts';
+import { ContentDetailSchema, ThreadListResponseSchema, type ContentListItem, type ConversationSide, type ThreadListResponse } from '@ageniza/contracts';
+import { FormatTag, StatusTag } from '@ageniza/ui';
 
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
 import { formatAgencyDayMonth } from './client-detail.js';
+import { ContentCover } from './content-cover.js';
+import { dayMonthNameLabel } from './content-dates.js';
+import { FORMAT_LABELS, FORMAT_TONES, PLATFORM_LABELS, STATUS_LABELS, STATUS_TAGS } from './content-labels.js';
 import { useApiClient } from './http.js';
 
 const CAPTION_EXCERPT_LENGTH = 140;
@@ -32,10 +37,28 @@ const lastMessageRow = (query: LastMessage): ReactNode => {
 };
 
 /**
- * What the calendar card cannot hold (`specs/conteudo.md` section 7): the start of the caption, the subtasks
- * and the conversation. It reads the content only while someone is pointing at it, once per content.
+ * The floating card of a calendar card (`specs/conteudo.md` section 7): what the card is too small to hold. The
+ * cover, the title, the day, the tags and the hint come from the list; the caption, the subtasks and the conversation are
+ * read only while the card is open, once per content.
  */
-export function ContentHoverDetail({ id, clientId, contentId }: { id: string; clientId: string; contentId: string }) {
+export function ContentHoverCard({ content, clientId, movable }: { content: ContentListItem; clientId: string; movable: boolean }) {
+  return <div className="content-hover">
+    <ContentCover assetId={content.thumbnailAssetId} format={content.format} className="content-hover__cover" bare={content.thumbnailAssetId === null} />
+    <p className="content-hover__title">{`${FORMAT_LABELS[content.format]}: ${content.title}`}</p>
+    <p className="content-hover__when">
+      <span className="ui-icon" aria-hidden="true"><CalendarDays /></span>
+      <span>{dayMonthNameLabel(content.publishOn)} · {PLATFORM_LABELS[content.platform]}{content.publishAtTime === null ? '' : ` · ${content.publishAtTime}`}</span>
+    </p>
+    <ContentHoverDetail clientId={clientId} contentId={content.id} />
+    <ul className="content-hover__tags">
+      <li><FormatTag format={FORMAT_TONES[content.format]}>{FORMAT_LABELS[content.format]}</FormatTag></li>
+      <li><StatusTag status={STATUS_TAGS[content.status]}>{STATUS_LABELS[content.status]}</StatusTag></li>
+    </ul>
+    {movable && <p className="content-hover__hint">Arraste para outro dia</p>}
+  </div>;
+}
+
+function ContentHoverDetail({ clientId, contentId }: { clientId: string; contentId: string }) {
   const httpClient = useApiClient();
   const agency = useAgencyContext();
   const detail = useQuery({
@@ -58,8 +81,8 @@ export function ContentHoverDetail({ id, clientId, contentId }: { id: string; cl
     enabled: detail.data !== undefined && detail.data.conversation.commentCount > 0
   });
 
-  if (detail.isPending) return <div role="tooltip" id={id} className="content-card__detail"><p>Carregando detalhes…</p></div>;
-  if (detail.isError) return <div role="tooltip" id={id} className="content-card__detail"><p>Não foi possível carregar os detalhes.</p></div>;
+  if (detail.isPending) return <p className="content-hover__note">Carregando detalhes…</p>;
+  if (detail.isError) return <p className="content-hover__note">Não foi possível carregar os detalhes.</p>;
 
   const { caption, owner, tasks, conversation } = detail.data;
   const delivered = tasks.filter((task) => task.status === 'delivered').length;
@@ -76,13 +99,11 @@ export function ContentHoverDetail({ id, clientId, contentId }: { id: string; cl
     ? 'Sem comentários'
     : `${conversation.commentCount} ${plural(conversation.commentCount, 'comentário', 'comentários')}${conversation.lastCommentAt === null ? '' : ` · último em ${formatAgencyDayMonth(conversation.lastCommentAt)}`}`;
 
-  return <div role="tooltip" id={id} className="content-card__detail">
-    <dl>
-      <dt>Legenda</dt><dd>{captionExcerpt(caption)}</dd>
-      {owner !== null && <><dt>Responsável</dt><dd>{owner.name}</dd></>}
-      <dt>Subtarefas</dt><dd>{subtasks}</dd>
-      <dt>Conversa</dt><dd>{comments}</dd>
-      {conversation.commentCount > 0 && lastMessageRow(lastMessage)}
-    </dl>
-  </div>;
+  return <dl className="content-hover__detail">
+    <dt>Legenda</dt><dd>{captionExcerpt(caption)}</dd>
+    {owner !== null && <><dt>Responsável</dt><dd>{owner.name}</dd></>}
+    <dt>Subtarefas</dt><dd>{subtasks}</dd>
+    <dt>Conversa</dt><dd>{comments}</dd>
+    {conversation.commentCount > 0 && lastMessageRow(lastMessage)}
+  </dl>;
 }

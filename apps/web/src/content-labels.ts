@@ -1,4 +1,5 @@
 import { contentDeadline, type ContentDeadline, type ContentFormat, type ContentListItem, type ContentStatus } from '@ageniza/contracts';
+import type { FormatTagFormat, StatusTagStatus } from '@ageniza/ui';
 
 /** In the agency, "aprovado" reads "Pronto para publicar" (specs/conteudo.md section 4). */
 export const STATUS_LABELS: Readonly<Record<ContentStatus, string>> = {
@@ -16,6 +17,21 @@ export const FORMAT_LABELS: Readonly<Record<ContentFormat, string>> = {
   reels: 'Reels',
   long_video: 'Vídeo longo',
   vsl: 'VSL'
+};
+
+export const PLATFORM_LABELS: Readonly<Record<ContentListItem['platform'], string>> = { instagram: 'Instagram' };
+
+/** The formats with a colour of their own are the carousel and the reels; every other one reads as the neutral "static". */
+export const FORMAT_TONES: Readonly<Record<ContentFormat, FormatTagFormat>> = { image: 'static', carousel: 'carousel', reels: 'reels', long_video: 'static', vsl: 'static' };
+
+/** A cancelled content has no state of the flow, so it takes the empty mark of "em produção" with its own word beside it. */
+export const STATUS_TAGS: Readonly<Record<ContentStatus, StatusTagStatus>> = {
+  in_production: 'production',
+  awaiting_approval: 'waiting',
+  adjusting: 'adjust',
+  approved: 'ready',
+  published: 'published',
+  cancelled: 'production'
 };
 
 /** A published or cancelled content has no deadline left, and it cannot be moved either (specs/conteudo.md section 4). */

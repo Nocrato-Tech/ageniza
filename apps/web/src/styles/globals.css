@@ -1409,6 +1409,13 @@ a.client-general__block:hover {
   right: 0;
 }
 
+/* Placed on the screen by the component, so no scrolling ancestor clips it; it never outgrows the viewport. */
+.ui-popover--fixed {
+  position: fixed;
+  max-height: calc(100vh - var(--space-4));
+  overflow-y: auto;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ui-modal[open],
   .ui-popover {
@@ -4630,43 +4637,100 @@ a.client-general__block:hover {
   font: var(--heading-md);
 }
 
-.content-card__detail {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 1;
+.content-card-anchor {
+  display: block;
+  min-width: 0;
+}
+
+/* The floating card sits on bg/elevated: only text, tags and the hint, no link, no danger text, no field. */
+.content-hover {
   display: grid;
-  gap: var(--space-1);
-  width: 16rem;
-  margin-top: var(--space-1);
-  padding: var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  color: var(--text-primary);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  width: min(20rem, calc(100vw - var(--space-8)));
   font: var(--body-md);
 }
 
-/* The last row of the month opens its detail upward: below it the calendar would scroll and clip the detail. */
-.content-calendar[data-view='month'] .content-day:nth-last-child(-n + 7) .content-card__detail {
-  top: auto;
-  bottom: 100%;
+.content-hover__cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+}
+
+.content-hover__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.content-hover__cover--bare {
+  display: none;
+}
+
+.content-hover__cover--placeholder {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font: var(--heading-md);
+}
+
+.content-hover__title,
+.content-hover__when,
+.content-hover__note,
+.content-hover__hint,
+.content-hover__detail,
+.content-hover__detail dd {
   margin: 0;
 }
 
-.content-card__detail p,
-.content-card__detail dl,
-.content-card__detail dd {
-  margin: 0;
+.content-hover__title {
+  font: var(--label-md);
+  overflow-wrap: anywhere;
 }
 
-.content-card__detail dt {
+.content-hover__when {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.content-hover__when .ui-icon > svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.content-hover__detail {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.content-hover__detail dt {
   color: var(--text-secondary);
   font: var(--label-sm);
 }
 
-.content-card__detail dd {
+.content-hover__detail dd {
   overflow-wrap: anywhere;
+}
+
+.content-hover__note,
+.content-hover__hint {
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.content-hover__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .content-feed__skeleton {

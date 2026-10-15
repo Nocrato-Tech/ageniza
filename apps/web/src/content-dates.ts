@@ -89,3 +89,8 @@ export const weekdayShortLabel = (day: string): string => WEEKDAY_LABELS[weekday
 
 /** "12/10": a day and month from the text, never from a `Date`. */
 export const dayMonthLabel = (day: string): string => `${day.slice(8, 10)}/${day.slice(5, 7)}`;
+
+const MONTH_ABBREVIATIONS = ['jan.', 'fev.', 'mar.', 'abr.', 'mai.', 'jun.', 'jul.', 'ago.', 'set.', 'out.', 'nov.', 'dez.'] as const;
+
+/** "03 de ago.": the day the hover card says the content goes out, from the text, never from a `Date`. */
+export const dayMonthNameLabel = (day: string): string => `${day.slice(8, 10)} de ${MONTH_ABBREVIATIONS[Number(day.slice(5, 7)) - 1]!}`;
