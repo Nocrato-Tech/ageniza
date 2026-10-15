@@ -4186,7 +4186,7 @@ a.client-general__block:hover {
 .content-calendar__days {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  min-width: 42rem;
+  min-width: 54rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -4213,7 +4213,7 @@ a.client-general__block:hover {
   gap: var(--space-2);
   min-width: 0;
   min-height: 8.25rem;
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-1);
   border-top: 1px solid var(--border-subtle);
   border-right: 1px solid var(--border-subtle);
   background: transparent;
@@ -4238,6 +4238,7 @@ a.client-general__block:hover {
 
 .content-day__number {
   margin: 0;
+  padding: 0 var(--space-1);
   font: var(--label-md);
   font-variant-numeric: tabular-nums;
 }
@@ -4260,6 +4261,8 @@ a.client-general__block:hover {
 .content-card .ui-status-tag,
 .content-card .ui-late-badge {
   min-width: 0;
+  padding: 0 var(--space-1);
+  overflow-wrap: anywhere;
   white-space: normal;
 }
 
@@ -4422,6 +4425,7 @@ a.client-general__block:hover {
 
 .content-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
   padding: var(--space-2);
   border: 1px solid transparent;
@@ -4481,7 +4485,7 @@ a.client-general__block:hover {
   flex-wrap: wrap;
   gap: var(--space-1);
   margin: 0;
-  padding: 0 var(--space-1);
+  padding: 0;
   list-style: none;
 }
 

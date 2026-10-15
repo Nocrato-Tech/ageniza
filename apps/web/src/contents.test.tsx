@@ -1934,8 +1934,8 @@ describe('the header and the grid of the calendar', () => {
       expect(body('.contents__panel')).toMatch(/overflow:\s*hidden;/);
       expect(body('.content-calendar')).toMatch(/overflow-x:\s*auto;/);
       expect(body('.content-calendar')).toMatch(/min-width:\s*0;/);
-      expect(body('.content-calendar')).not.toMatch(/min-width:\s*42rem/);
-      expect(body('.content-calendar__days')).toMatch(/min-width:\s*42rem;/);
+      expect(body('.content-calendar')).not.toMatch(/min-width:\s*54rem/);
+      expect(body('.content-calendar__days')).toMatch(/min-width:\s*54rem;/);
     });
 
     it('tints the card and its title by format with the format tokens, and keeps the late edge red', () => {
@@ -1950,6 +1950,10 @@ describe('the header and the grid of the calendar', () => {
       expect(body('.content-card__title')).toMatch(/-webkit-line-clamp:\s*4;/);
       expect(body('.content-card__cover--bare')).toMatch(/display:\s*none;/);
       expect(body('.content-day')).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\);/);
+    });
+
+    it('lets the card shrink to its day: one shrinking column, or the longest word of a tag widens it past the day', () => {
+      expect(body('.content-card')).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\);/);
     });
 
     it('opens the detail of a card of the last row of the month upward, so the scrolling calendar does not clip it', () => {
