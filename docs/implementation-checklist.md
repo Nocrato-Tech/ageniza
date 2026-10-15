@@ -74,6 +74,8 @@ _Ver também os itens 15 a 17, que estão na faixa Geral._
 46. **Aviso de uso único e barra sticky.** O aviso de uso único é conferido depois dos redirects e da casca assentarem. A barra inferior sticky é conferida a 360 px com conteúdo curto (#401).
 47. **Tela acima do teto de diff.** Acima de ~800 linhas de diff de código, o PR se divide (decisão `2026-10-07-pr-agrupado-por-tema`); numa tela com abas, a divisão natural é por aba.
 
+72. **Campo de credencial.** Em redesign de tela de autenticação (login, recuperação, redefinição, convite, troca de e-mail), um teste em tabela fixa `type`, `autocomplete` e `name` de cada campo de credencial, e `target` e `rel="noreferrer"` dos links externos. A refatoração visual troca a marcação inteira e nada na tela mostra a regressão: senha como `text`, `autocomplete` desligado ou trocado entre `current-password` e `new-password`, `name` renomeado. Mute cada atributo de cada campo, não só um por tela (#656).
+
 ## Testes e mutação
 
 48. **Mutação que aplica migration.** Mutação com knex no mesmo processo usa um diretório por mutante e um controle sem mudança, por causa do cache de import do `.mjs` (#389).
