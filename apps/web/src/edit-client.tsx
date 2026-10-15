@@ -12,7 +12,7 @@ import {
   type ClientDetailResponse,
   type UpdateClientRequest
 } from '@ageniza/contracts';
-import { Avatar, Button, Field, FieldMessage, LiveStatus, Modal, TextInput } from '@ageniza/ui';
+import { Avatar, Button, Field, FieldMessage, LiveStatus, Modal, TextInput, useFormErrors } from '@ageniza/ui';
 
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -136,8 +136,7 @@ export function EditClientDialog({ client, onClose }: { client: ClientDetailResp
   const nameRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const formId = useId();
-  const formRef = useRef<HTMLFormElement>(null);
-  const focusInvalid = useRef(false);
+  const { formRef, summary } = useFormErrors();
   const [fields, setFields] = useState<RegistrationFields>(() => fromClient(client));
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof RegistrationFields, string>>>({});
   const [formError, setFormError] = useState<string | undefined>();
@@ -156,16 +155,8 @@ export function EditClientDialog({ client, onClose }: { client: ClientDetailResp
   };
 
   const setFieldError = (field: keyof RegistrationFields, message: string): void => {
-    focusInvalid.current = true;
     setFieldErrors((current) => ({ ...current, [field]: message }));
   };
-
-  // The field error is read through `aria-describedby`, so a refusal puts the focus on the first field it is about.
-  useEffect(() => {
-    if (!focusInvalid.current) return;
-    focusInvalid.current = false;
-    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
-  }, [fieldErrors]);
 
   // A photo upload or removal answers with a new `client` (setQueryData), and any refetch can
   // answer while the modal is open. The fields follow the server only while the person has not
@@ -347,6 +338,7 @@ export function EditClientDialog({ client, onClose }: { client: ClientDetailResp
     </div>
 
     <form ref={formRef} id={formId} className="form-stack" onSubmit={onSubmit} noValidate>
+      {summary}
       <div className="edit-client__group">
         <h3>Cliente</h3>
         {field('name', 'Nome')}

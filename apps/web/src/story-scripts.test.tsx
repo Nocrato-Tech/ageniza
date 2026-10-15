@@ -858,7 +858,7 @@ describe('the modal in the Pauta look (#635)', () => {
     expect(down.textContent).toBe('');
   });
 
-  it('gives the day, the text and the guidance their error through the Field, each with the icon and its own description', async () => {
+  it('puts the focus on the first invalid field and gives one alert that names the three, each field keeping its own description', async () => {
     const { impl } = makeFetch();
     render_(impl);
     await openNewScriptOn('2026-10-20');
@@ -874,10 +874,30 @@ describe('the modal in the Pauta look (#635)', () => {
       const message = await within(dialog()).findByText(text);
       const control = within(dialog()).getByLabelText(label);
       expect(message.querySelector('.ui-icon svg'), label).not.toBeNull();
-      expect(message.getAttribute('role'), label).toBe('alert');
+      expect(message.getAttribute('role'), label).toBeNull();
       expect(control.getAttribute('aria-invalid'), label).toBe('true');
       expect(control.getAttribute('aria-describedby'), label).toBe(message.id);
     }
+    expect(document.activeElement).toBe(within(dialog()).getByLabelText('Dia dos stories'));
+    const alerts = within(dialog()).getAllByRole('alert');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.textContent).toBe('Corrija 3 campos: Dia dos stories, Texto da cena 1, Orientação da cena 1.');
+  });
+
+  it('also asks for the focus and the summary when the send button, which is not a submit, refuses the script', async () => {
+    const { impl, calls } = makeFetch();
+    render_(impl);
+    await openNewScriptOn('2026-10-20');
+    typeInto('Dia dos stories', '');
+    within(dialog()).getByRole('button', { name: 'Enviar ao cliente' }).focus();
+
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Enviar ao cliente' }));
+
+    await within(dialog()).findByText('Informe o dia dos stories.');
+    expect(document.activeElement).toBe(within(dialog()).getByLabelText('Dia dos stories'));
+    expect(within(dialog()).getAllByRole('alert')).toHaveLength(1);
+    expect(within(dialog()).getByRole('alert').textContent).toBe('Corrija 2 campos: Dia dos stories, Texto da cena 1.');
+    expect(writes(calls)).toEqual([]);
   });
 
   it('keeps an invalid scene marked and described by its own message', async () => {
@@ -890,6 +910,9 @@ describe('the modal in the Pauta look (#635)', () => {
     const message = await within(dialog()).findByText('Escreva o texto da cena.');
     expect(field.getAttribute('aria-invalid')).toBe('true');
     expect(field.getAttribute('aria-describedby')).toBe(message.id);
-    expect(message.getAttribute('role')).toBe('alert');
+    // One field is wrong: the focus takes the person to it and the description is read there, with no alert of its own.
+    expect(message.getAttribute('role')).toBeNull();
+    expect(document.activeElement).toBe(field);
+    expect(within(dialog()).queryByRole('alert')).toBeNull();
   });
 });

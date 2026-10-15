@@ -268,7 +268,7 @@ describe('conversation component (#142)', () => {
     expect(api.bodies).toEqual([]);
   });
 
-  it('describes the box by the refusal, which carries the error icon and is announced', async () => {
+  it('describes the box by the refusal, which carries the error icon, and puts the focus back on it', async () => {
     const { api } = mount();
     api.seed(TONE, [{ side: 'client', body: 'Acho formal demais', at: LATE }]);
     const dialog = await openRow(await area(), /Acho formal demais/);
@@ -278,7 +278,9 @@ describe('conversation component (#142)', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
     const message = within(dialog).getByText('Escreva a mensagem.');
     expect(message.querySelector('.ui-icon svg')).not.toBeNull();
-    expect(message.getAttribute('role')).toBe('alert');
+    expect(message.getAttribute('role')).toBeNull();
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    expect(document.activeElement).toBe(box);
     expect(box.getAttribute('aria-invalid')).toBe('true');
     expect(box.getAttribute('aria-describedby')).toBe(message.id);
 

@@ -14,7 +14,7 @@ import {
   type Thread,
   type ThreadComment
 } from '@ageniza/contracts';
-import { Avatar, Button, Field, FieldMessage, Modal, Pill, Skeleton, Textarea } from '@ageniza/ui';
+import { Avatar, Button, Field, FieldMessage, Modal, Pill, Skeleton, Textarea, useFormErrors } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -179,6 +179,7 @@ function Composer({ label, submitLabel, placeholder, note, pending, error, onSub
   const [draft, setDraft] = useState('');
   const [problem, setProblem] = useState<string | undefined>();
   const fieldId = useId();
+  const { formRef, summary } = useFormErrors();
 
   const submit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
@@ -187,7 +188,8 @@ function Composer({ label, submitLabel, placeholder, note, pending, error, onSub
     onSubmit(draft.trim());
   };
 
-  return <form className="conversation__composer" onSubmit={submit} noValidate>
+  return <form ref={formRef} className="conversation__composer" onSubmit={submit} noValidate>
+    {summary}
     <Field label={label} id={fieldId} error={problem}>
       {(control) => (
         <Textarea

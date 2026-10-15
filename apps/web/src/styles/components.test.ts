@@ -785,6 +785,22 @@ describe('the story scripts in the Pauta look (#635)', () => {
   });
 });
 
+describe('the error summary of a refused form (#639)', () => {
+  it.each(['light', 'dark'] as const)('reads in the danger text at AA on the surface and the canvas in %s', (theme) => {
+    const summary = rule('.ui-error-summary');
+
+    expect(summary.get('color')).toBe('var(--text-danger)');
+    for (const surface of ['var(--bg-surface)', 'var(--bg-canvas)']) expect(contrastOf(theme, summary.get('color')!, surface), surface).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('puts the icon beside the sentence, which wraps inside the form instead of widening it', () => {
+    const summary = rule('.ui-error-summary');
+
+    expect(summary.get('display')).toBe('flex');
+    expect(summary.get('align-items')).toBe('flex-start');
+  });
+});
+
 describe('the conversation of a content in the Pauta look (#639)', () => {
   const inModal = (selector: string) => rule(`.content-modal__conversation ${selector}`);
 

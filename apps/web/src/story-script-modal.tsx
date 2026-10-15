@@ -14,7 +14,7 @@ import {
   type StoryScript,
   type UpdateStoryScriptRequest
 } from '@ageniza/contracts';
-import { Button, Dialog, Field, FieldMessage, IconButton, Skeleton, Textarea, TextInput } from '@ageniza/ui';
+import { Button, Dialog, Field, FieldMessage, IconButton, Skeleton, Textarea, TextInput, useFormErrors } from '@ageniza/ui';
 
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -121,6 +121,7 @@ function ScriptEditor({ clientId, initial, initialDay, canOperate, onBusyChange,
   onDone: () => void;
 }) {
   const httpClient = useApiClient();
+  const { formRef, summary, attempted } = useFormErrors();
   const agency = useAgencyContext();
   const queryClient = useQueryClient();
   const keyCounter = useRef(0);
@@ -222,6 +223,7 @@ function ScriptEditor({ clientId, initial, initialDay, canOperate, onBusyChange,
   useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
 
   const run = (intent: 'save' | 'send'): void => {
+    attempted();
     setFormError(undefined);
     const problems = validate(form);
     setErrors(problems ?? NO_ERRORS);
@@ -282,7 +284,8 @@ function ScriptEditor({ clientId, initial, initialDay, canOperate, onBusyChange,
     </div>;
   }
 
-  return <form className="form-stack story-script" onSubmit={onSubmit} noValidate>
+  return <form ref={formRef} className="form-stack story-script" onSubmit={onSubmit} noValidate>
+    {summary}
     <p className="story-script__status"><StoryScriptStatusTag status={status} /></p>
     <Field id={dayId} label="Dia dos stories" error={errors.scriptOn}>
       {(control) => (

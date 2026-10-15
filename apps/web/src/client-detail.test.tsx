@@ -900,7 +900,7 @@ describe('edit client modal (#137)', () => {
     expect(dialog.textContent).not.toContain('private');
   });
 
-  it('says every refused field with the error icon, and puts the focus on the first one in the form', async () => {
+  it('says every refused field with the error icon, puts the focus on the first one and gives one alert naming both', async () => {
     const { impl } = makeFetch({
       patch: () => json({
         error: {
@@ -921,10 +921,13 @@ describe('edit client modal (#137)', () => {
     for (const [input, text] of [[editTaxIdInput(dialog), 'CNPJ ou CPF deve ter 11 ou 14 dígitos.'], [editContactEmailInput(dialog), 'O e-mail de contato é inválido.']] as const) {
       const message = await within(dialog).findByText(text);
       expect(message.querySelector('.ui-icon svg'), text).not.toBeNull();
-      expect(message.getAttribute('role'), text).toBe('alert');
+      expect(message.getAttribute('role'), text).toBeNull();
       expect(input.getAttribute('aria-describedby'), text).toBe(message.id);
     }
     expect(document.activeElement).toBe(editTaxIdInput(dialog));
+    const alerts = within(dialog).getAllByRole('alert');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.textContent).toBe('Corrija 2 campos: CNPJ ou CPF, E-mail.');
   });
 
   it('puts the focus back on the name when it is empty, and Salvar belongs to the form from the foot of the dialog', async () => {

@@ -57,7 +57,7 @@ export function Field({ label, hint, error, counter, loading = false, id, classN
         </div>
       )}
       {error !== undefined && (
-        <p id={errorId} className="ui-field-message" role="alert">
+        <p id={errorId} className="ui-field-message">
           <IconSlot><CircleAlert /></IconSlot>
           {error}
         </p>

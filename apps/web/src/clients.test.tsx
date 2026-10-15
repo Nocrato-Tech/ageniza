@@ -852,7 +852,8 @@ describe('create client modal (#135)', () => {
 
     const error = await within(dialog).findByText('Já existe um cliente ativo com este nome.');
     expect(error.querySelector('.ui-icon svg')).not.toBeNull();
-    expect(error.getAttribute('role')).toBe('alert');
+    expect(error.getAttribute('role')).toBeNull();
+    expect(within(dialog).queryByRole('alert')).toBeNull();
     expect(document.activeElement).toBe(name);
   });
 

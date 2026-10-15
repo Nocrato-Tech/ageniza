@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 
 import { ClientNameSchema, ClientSchema } from '@ageniza/contracts';
-import { Button, Field, FieldMessage, Modal, TextInput } from '@ageniza/ui';
+import { Button, Field, FieldMessage, Modal, TextInput, useFormErrors } from '@ageniza/ui';
 
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -36,6 +36,7 @@ export function CreateClientDialog({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const nameId = useId();
   const formId = useId();
+  const { formRef, summary } = useFormErrors();
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState<string | undefined>();
   const [formError, setFormError] = useState<string | undefined>();
@@ -43,9 +44,6 @@ export function CreateClientDialog({ onClose }: { onClose: () => void }) {
 
   // `autoFocus` would run before `Modal` captures the previous focus and break the focus return.
   useEffect(() => { nameRef.current?.focus(); }, []);
-
-  // The field error is read through `aria-describedby`, so a refusal puts the focus back on the field it is about.
-  useEffect(() => { if (nameError !== undefined) nameRef.current?.focus(); }, [nameError]);
 
   const applyError = (error: unknown): void => {
     if (!(error instanceof HttpClientError)) { setFormError(CREATE_FAILED); return; }
@@ -92,7 +90,8 @@ export function CreateClientDialog({ onClose }: { onClose: () => void }) {
     onClose={onClose}
     actions={<Button type="submit" form={formId} disabled={!canSubmit} loading={create.isPending}>Cadastrar</Button>}
   >
-    <form id={formId} className="form-stack" onSubmit={onSubmit} noValidate>
+    <form ref={formRef} id={formId} className="form-stack" onSubmit={onSubmit} noValidate>
+      {summary}
       <Field label="Nome" id={nameId} hint={NAME_HINT} error={nameError}>
         {(control) => (
           <TextInput

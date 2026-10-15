@@ -455,6 +455,16 @@ a.ui-button {
   color: var(--text-danger);
 }
 
+/* One summary per refused form, above the fields: text/danger is guaranteed on the surface and the canvas (docs/design-system.md 20.1). */
+.ui-error-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  font: var(--body-md);
+  color: var(--text-danger);
+}
+
 .ui-live-status {
   min-height: 1.5rem;
 }
