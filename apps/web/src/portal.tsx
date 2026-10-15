@@ -1,10 +1,11 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
+import { CalendarDays, ChartColumn, House, MessageCircle, type LucideIcon } from 'lucide-react';
+import { NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { AuthNoContentResponseSchema, PortalClientResponseSchema, type PortalClientResponse } from '@ageniza/contracts';
 import { AccountMenu } from './account-menu.js';
-import { Avatar, Button, Skeleton } from '@ageniza/ui';
+import { Avatar, Button, EmptyState, Skeleton } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { useAuthSession, useAuthSessionStore } from './auth.js';
@@ -12,7 +13,6 @@ import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';
-import { PortalTodayScripts } from './portal-story-scripts.js';
 import { PortalTour, type PortalTourTarget } from './portal-tour.js';
 import { NotFoundHomeContext, NotFoundPage } from './status-pages.js';
 
@@ -35,12 +35,12 @@ export const usePortalClient = (): PortalClientResponse => {
 /** Same shape the API guard accepts; a malformed id never becomes a request (security review #190). */
 export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const PORTAL_TABS = [
-  { slug: 'inicio', label: 'Início' },
-  { slug: 'conteudos', label: 'Conteúdos' },
-  { slug: 'marca', label: 'Marca' },
-  { slug: 'relatorios', label: 'Relatórios' }
-] as const;
+const PORTAL_TABS: readonly { slug: string; label: string; icon: LucideIcon }[] = [
+  { slug: 'inicio', label: 'Início', icon: House },
+  { slug: 'conteudos', label: 'Conteúdos', icon: CalendarDays },
+  { slug: 'marca', label: 'Marca', icon: MessageCircle },
+  { slug: 'relatorios', label: 'Relatórios', icon: ChartColumn }
+];
 
 const isNotFound = (error: unknown): boolean => error instanceof HttpClientError && error.status === 404;
 
@@ -85,8 +85,8 @@ function PortalShellSkeleton() {
 function PortalNav({ clienteId, tourTarget, children }: { clienteId: string; tourTarget: PortalTourTarget | null; children?: React.ReactNode }) {
   return <nav className="portal-nav" aria-label="Navegação do portal">
     <ul>
-      {PORTAL_TABS.map((tab) => <li key={tab.slug}>
-        <NavLink end to={`/portal/${clienteId}/${tab.slug}`} data-tour-target={tab.slug === tourTarget ? 'true' : undefined}>{tab.label}</NavLink>
+      {PORTAL_TABS.map(({ slug, label, icon: Icon }) => <li key={slug}>
+        <NavLink end to={`/portal/${clienteId}/${slug}`} data-tour-target={slug === tourTarget ? 'true' : undefined}><Icon aria-hidden="true" /><span>{label}</span></NavLink>
       </li>)}
     </ul>
     {children}
@@ -184,46 +184,14 @@ export function PortalAreaLayout() {
 }
 
 /**
- * The Início (specs/clientes.md §7, issues #141 and #271): greeting by the person's name, and one next action — the contents
- * waiting for the client's approval when there are any, otherwise the agency's answer, otherwise the brand study — then the
- * story script of today, which is not there when the agency sent none.
- */
-export function PortalHomePage() {
-  const client = usePortalClient();
-  const { clienteId = '' } = useParams();
-  const session = useAuthSession(useAuthSessionStore());
-  useDocumentTitle('Início — Portal do cliente — Ageniza');
-
-  const answered = client.home.threadsAnsweredByAgency;
-  const awaiting = client.home.contentsAwaitingApproval;
-  const nextAction = answered > 0
-    ? `A agência respondeu ${answered} ${answered === 1 ? 'sugestão sua' : 'sugestões suas'}`
-    : 'Conheça o estudo da sua marca';
-
-  return <section className="portal-home" aria-labelledby="portal-home-title">
-    <h1 id="portal-home-title">Olá, {session.user?.name ?? ''}</h1>
-    {awaiting > 0
-      ? <Link className="portal-home__action" to={`/portal/${clienteId}/conteudos`}>
-        <span className="portal-home__action-text">{awaiting} {awaiting === 1 ? 'conteúdo esperando' : 'conteúdos esperando'} sua aprovação</span>
-        <span className="portal-home__action-link">ver</span>
-      </Link>
-      : <Link className="portal-home__action" to={`/portal/${clienteId}/marca`}>
-        <span className="portal-home__action-text">{nextAction}</span>
-        <span className="portal-home__action-link">ver</span>
-      </Link>}
-    <PortalTodayScripts clientId={clienteId} />
-  </section>;
-}
-
-/**
  * A reserved area of the portal shell (`docs/design-system.md` §23): it says what will come, in the
  * client's language, and offers no control and no fake data. Relatórios waits for its module.
  */
 export function PortalSkeletonPage({ title, description }: { title: string; description: string }) {
-  const titleId = `portal-${title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}-title`;
+  const titleId = `portal-${title.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')}-title`;
   useDocumentTitle(`${title} — Portal do cliente — Ageniza`);
   return <section className="portal-skeleton" aria-labelledby={titleId}>
     <h1 id={titleId}>{title}</h1>
-    <p>{description}</p>
+    <EmptyState mascot className="portal-empty" title="Ainda não há resultados para mostrar" description={description} />
   </section>;
 }

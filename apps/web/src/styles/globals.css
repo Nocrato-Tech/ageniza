@@ -3162,6 +3162,13 @@ a.client-general__block:focus-visible {
   color: var(--text-muted);
 }
 
+.account-menu__caret {
+  width: 1rem;
+  height: 1rem;
+  margin-left: var(--space-1);
+  vertical-align: middle;
+}
+
 @media (min-width: 48rem) {
   .agency-sidebar[data-collapsed='true'] {
     align-items: center;
@@ -4017,7 +4024,24 @@ main > .shell-notice {
   font: var(--label-md);
 }
 
-/* --- Portal do cliente (#141): celular primeiro, barra inferior de quatro itens --- */
+/* --- Portal do cliente (#141, #686): tema claro, celular primeiro, Pauta ---
+   Peças comuns do portal, para as telas de dentro (#687 post, #688 lista, #689 marca) usarem sem criar as suas:
+   .portal-section / .portal-section__title   um bloco da tela e o seu título
+   .portal-headline                           a frase de destaque da tela, em tipografia expandida
+   .portal-block                              o bloco com borda (um roteiro, um formulário)
+   .portal-cover / .portal-cover-link         a capa 4:5 de um post e o link que a leva com título e etiquetas
+   .portal-row                                a linha de lista com capa pequena, título e estado
+   .portal-meta                               a linha de etiqueta e data embaixo de um título
+   .portal-action                             a única ação primária da tela, em largura cheia no celular
+   .portal-error                              o erro de um bloco, com "Tentar de novo"
+   Três tamanhos de texto por tela: --heading-xl, --body-md e --caption. --- */
+
+.portal-shell > .portal-header {
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font: var(--body-md);
+}
 
 .portal-header {
   display: flex;
@@ -4036,20 +4060,21 @@ main > .shell-notice {
 .portal-header__labels {
   display: grid;
   min-width: 0;
-  gap: var(--space-1);
+  gap: 0;
 }
 
 .portal-header__name {
   margin: 0;
   color: inherit;
-  font: var(--heading-md);
+  font: var(--body-md);
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
 .portal-header__agency {
   margin: 0;
-  color: var(--color-slate-300);
-  font: var(--label-sm);
+  color: var(--text-muted);
+  font: var(--caption);
 }
 
 .portal-header__avatar-skeleton {
@@ -4070,18 +4095,28 @@ main > .shell-notice {
   flex-direction: column;
   min-height: 100vh;
   min-height: 100dvh;
+  background: var(--bg-canvas);
+}
+
+/* The focused control scrolls clear of the sticky bar: below it on a phone, under the tabs on a wide screen (WCAG 2.4.11). */
+html:has(.portal-shell) {
+  scroll-padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
 }
 
 /* A flex item with auto side margins shrinks to its content: the width is restated. */
 .portal-shell > .portal-content {
   width: 100%;
   flex: 1;
+  box-sizing: border-box;
+  max-width: 64rem;
+  padding: var(--space-3) var(--space-4) var(--space-8);
 }
 
 .portal-nav {
   /* Also the containing block of the tour card, which rests on the bar's own top edge. */
   position: sticky;
   bottom: 0;
+  z-index: 5;
   background: var(--bg-surface);
   border-top: 1px solid var(--border-default);
   padding-bottom: env(safe-area-inset-bottom);
@@ -4089,24 +4124,30 @@ main > .shell-notice {
 
 .portal-nav ul {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-1);
   margin: 0;
-  padding: var(--space-2);
+  padding: var(--space-1) var(--space-2);
   list-style: none;
 }
 
 .portal-nav a {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 2.75rem;
-  padding: 0 var(--space-2);
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: var(--space-1);
+  min-height: 3.25rem;
+  padding: var(--space-1) 0;
   border-radius: var(--radius-md);
   color: var(--text-secondary);
-  font: var(--label-md);
+  font: var(--caption);
   text-align: center;
   text-decoration: none;
+}
+
+.portal-nav a svg {
+  width: 1.375rem;
+  height: 1.375rem;
 }
 
 .portal-nav a:hover,
@@ -4115,9 +4156,23 @@ main > .shell-notice {
   color: var(--text-primary);
 }
 
+/* The open tab is underlined in ink, never in indigo (docs/design-system.md section 25.2). */
 .portal-nav a[aria-current='page'] {
+  position: relative;
   color: var(--text-primary);
-  box-shadow: inset 0 -2px 0 var(--text-primary);
+}
+
+.portal-nav a[aria-current='page']::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 2rem;
+  height: 2px;
+  background: var(--text-primary);
+}
+
+.portal-nav a[aria-current='page'] svg {
+  stroke-width: 2.25;
 }
 
 .portal-nav a[data-tour-target='true'] {
@@ -4139,7 +4194,8 @@ main > .shell-notice {
   padding: var(--space-4);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-floating);
   color: var(--text-primary);
 }
 
@@ -4157,7 +4213,14 @@ main > .shell-notice {
 }
 
 .portal-tour h2 {
-  font: var(--heading-md);
+  font: var(--body-md);
+  font-weight: 600;
+}
+
+.portal-tour[data-step='welcome'] h2 {
+  font: var(--heading-xl);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
 }
 
 .portal-tour p {
@@ -4166,6 +4229,7 @@ main > .shell-notice {
 
 .portal-tour .portal-tour__progress {
   color: var(--text-secondary);
+  font: var(--caption);
 }
 
 .portal-tour__actions {
@@ -4175,14 +4239,218 @@ main > .shell-notice {
   gap: var(--space-2);
 }
 
+/* --- Portal: peças comuns --- */
+
+.portal-section {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.portal-section__title {
+  margin: 0;
+  font: var(--body-md);
+  font-weight: 600;
+}
+
+.portal-headline {
+  margin: 0;
+  font: var(--heading-xl);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.portal-block {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.portal-cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+}
+
+.portal-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.portal-cover--placeholder {
+  color: var(--text-secondary);
+  font: var(--heading-xl);
+}
+
+.portal-covers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.portal-covers__skeleton {
+  aspect-ratio: 4 / 5;
+  border-radius: var(--radius-md);
+}
+
+.portal-cover-link {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.portal-cover-link:focus-visible,
+.portal-row:focus-visible,
+.portal-next:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.portal-cover-link__title {
+  font: var(--body-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.portal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.portal-action {
+  width: 100%;
+}
+
+.portal-error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+
+.portal-error p {
+  margin: 0;
+  color: var(--text-danger);
+  font: var(--body-md);
+}
+
+.portal-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.portal-rows li + li {
+  border-top: 1px solid var(--border-default);
+}
+
+.portal-rows__skeleton {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.portal-row {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 3.5rem;
+  padding: var(--space-3) 0;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.portal-row__cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
+.portal-row__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.portal-row__cover--placeholder {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.portal-row__text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.portal-row__title {
+  font: var(--body-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.portal-row__go {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--text-muted);
+}
+
+.portal-more {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  font: var(--body-md);
+  font-weight: 600;
+}
+
+/* --- Portal: Início (#686) --- */
+
 .portal-home {
   display: grid;
   gap: var(--space-6);
   min-width: 0;
 }
 
-.portal-home h1 {
+.portal-home__greeting {
   margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.portal-home__main {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.portal-home__week {
+  min-width: 0;
+  align-content: start;
 }
 
 .portal-home__title-skeleton {
@@ -4190,54 +4458,51 @@ main > .shell-notice {
   height: 2rem;
 }
 
-.portal-home__action {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  text-decoration: none;
-}
-
-.portal-home__action:hover,
-.portal-home__action:focus-visible {
-  background: var(--bg-hover);
-}
-
-/* On bg-hover, text/link is not an approved pair (design-system §20.1): the label follows the
-   primary text colour there, like every card that gains a hover background. */
-.portal-home__action:hover .portal-home__action-link,
-.portal-home__action:focus-visible .portal-home__action-link {
-  color: var(--text-primary);
-}
-
-.portal-home__action-text {
-  font: var(--body-lg);
-}
-
-.portal-home__action-link {
-  color: var(--text-link);
-  font: var(--label-md);
-}
-
 .portal-home__action-skeleton {
   width: 100%;
   height: 5rem;
 }
 
-.portal-today {
-  display: grid;
+.portal-next {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-4);
-  min-width: 0;
+  min-height: 3.25rem;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  text-decoration: none;
 }
 
-.portal-today h2,
-.portal-script__title {
-  margin: 0;
+.portal-next:hover {
+  background: var(--bg-hover);
+}
+
+.portal-next__text {
+  font: var(--body-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.portal-next__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  color: var(--text-primary);
+  font: var(--body-md);
+}
+
+.portal-next__link svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.portal-today {
+  min-width: 0;
 }
 
 .portal-today__skeleton {
@@ -4246,13 +4511,13 @@ main > .shell-notice {
 }
 
 .portal-script {
-  display: grid;
-  gap: var(--space-3);
   min-width: 0;
-  padding: var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
+}
+
+.portal-script__title {
+  margin: 0;
+  font: var(--body-md);
+  font-weight: 600;
 }
 
 .portal-script__scenes {
@@ -4266,6 +4531,7 @@ main > .shell-notice {
 .portal-script__guidance,
 .portal-script__recorded {
   margin: 0;
+  font: var(--body-md);
   overflow-wrap: anywhere;
   white-space: pre-line;
 }
@@ -4275,25 +4541,130 @@ main > .shell-notice {
 }
 
 .portal-script__recorded {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   color: var(--text-secondary);
+}
+
+.portal-script__recorded svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  color: var(--color-teal-700);
 }
 
 .portal-script > .ui-button {
   width: 100%;
 }
 
+/* Relatórios, still empty: the owl, what is missing and no control. */
 .portal-skeleton {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-4);
+  min-width: 0;
 }
 
 .portal-skeleton h1 {
   margin: 0;
+  font: var(--heading-xl);
+  letter-spacing: -0.02em;
 }
 
-.portal-skeleton p {
-  margin: 0;
-  color: var(--text-secondary);
+.portal-empty {
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+}
+
+.portal-empty .ui-empty-state__body {
+  justify-items: center;
+  text-align: center;
+}
+
+.portal-empty .ui-mascot {
+  width: auto;
+  height: 7.5rem;
+}
+
+.portal-empty.ui-empty-state--mascot .ui-empty-state__title {
+  font: var(--body-md);
+  font-weight: 600;
+}
+
+.portal-empty .ui-empty-state__description {
+  font: var(--body-md);
+}
+
+@media (min-width: 48rem) {
+  html:has(.portal-shell) {
+    scroll-padding-top: 5rem;
+    scroll-padding-bottom: 0;
+  }
+
+  .portal-shell > .portal-header {
+    padding: var(--space-4) var(--space-8);
+  }
+
+  .portal-shell > .portal-content {
+    margin: 0 auto;
+    padding: var(--space-6) var(--space-8) var(--space-12);
+    order: 2;
+  }
+
+  /* On a wide screen the bar is the tabs under the header, and the tour card hangs from it. */
+  .portal-shell > .portal-nav {
+    position: sticky;
+    top: 0;
+    bottom: auto;
+    order: 1;
+    border-top: 0;
+    border-bottom: 1px solid var(--border-default);
+  }
+
+  .portal-nav ul {
+    grid-template-columns: repeat(4, 8rem);
+    justify-content: center;
+  }
+
+  .portal-nav a {
+    grid-auto-flow: column;
+    justify-content: center;
+    min-height: 2.75rem;
+    font: var(--body-md);
+  }
+
+  .portal-nav a[aria-current='page']::before {
+    top: auto;
+    bottom: 0;
+    width: 100%;
+  }
+
+  .portal-nav .portal-tour:not([data-step='welcome']) {
+    top: 100%;
+    bottom: auto;
+    margin: var(--space-2) auto 0;
+  }
+
+  .portal-home {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    column-gap: var(--space-12);
+    align-items: start;
+  }
+
+  .portal-home__greeting {
+    grid-column: 1 / -1;
+  }
+
+  .portal-action {
+    width: auto;
+    justify-self: start;
+  }
+
+  .portal-covers {
+    grid-template-columns: repeat(2, minmax(0, 12rem));
+  }
 }
 
 /* --- Portal: Conteúdos (#269): celular primeiro. Toda caixa pode encolher e todo texto quebra, para 390 px nunca rolar de lado. --- */

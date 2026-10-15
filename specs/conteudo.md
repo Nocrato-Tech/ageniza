@@ -255,7 +255,7 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 | Aba Conteúdos do cliente | `/agencia/:agenciaId/clientes/:clienteId/conteudos` | a mesma visão do cliente | `conteudo.visualizar` |
 | Portal — Conteúdos | `/portal/:clienteId/conteudos` | o que precisa de você, calendário, feed | pessoa do portal |
 | Portal — post | `/portal/:clienteId/conteudos/:conteudoId` | post em tela cheia, Aprovar, Pedir ajuste, conversa | pessoa do portal |
-| Portal — Início | `/portal/:clienteId` | "N conteúdos esperando sua aprovação" e o roteiro de hoje | pessoa do portal |
+| Portal — Início | `/portal/:clienteId` | "N posts esperando sua aprovação", o roteiro de hoje e "Nesta semana" | pessoa do portal |
 
 ### Esboço — agência
 
@@ -333,7 +333,7 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 
 - Card: capa, título, data e status (aprovado, aguardando aprovação, em ajuste, em produção). Filtro por status.
 - Post em tela cheia: legenda inteira, mídias navegáveis, **Aprovar**, **Pedir ajuste** (pede comentário) e a conversa. Em produção, só título, data e formato.
-- Início: "N conteúdos esperando sua aprovação" e o roteiro de stories de hoje, com **Marcar como gravado**.
+- Início: "N posts esperando sua aprovação", o roteiro de stories de hoje, com **Já gravei**, e "Nesta semana" (os conteúdos de segunda a domingo, sem os que esperam aprovação).
 
 ### Variação por papel
 

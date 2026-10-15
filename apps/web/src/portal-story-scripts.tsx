@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Check } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { PortalStoryScriptPeriodResponseSchema, PortalStoryScriptSchema, type PortalStoryScript } from '@ageniza/contracts';
@@ -30,7 +31,7 @@ function Script({ script, number, several, sending, onRecord }: {
   sending: string | null;
   onRecord: (script: PortalStoryScript) => void;
 }) {
-  return <article className="portal-script">
+  return <article className="portal-script portal-block">
     {several && <h3 className="portal-script__title">Roteiro {number}</h3>}
     <ol className="portal-script__scenes">
       {script.scenes.map((scene) => <li key={scene.position} className="portal-script__scene">
@@ -40,12 +41,15 @@ function Script({ script, number, several, sending, onRecord }: {
     </ol>
     {script.status === 'sent'
       ? <Button
-        aria-label={several ? `Marcar como gravado o roteiro ${number}` : undefined}
+        variant="secondary"
+        aria-label={several ? `Já gravei o roteiro ${number}` : undefined}
         loading={sending === script.id}
         disabled={sending !== null}
+        leadingIcon={<Check />}
         onClick={() => onRecord(script)}
-      >Marcar como gravado</Button>
+      >Já gravei</Button>
       : <p className="portal-script__recorded">
+        <Check aria-hidden="true" />
         {script.recordedBy?.name == null ? 'Gravado' : `Gravado por ${script.recordedBy.name}`}
         {script.recordedAt !== null && ` em ${formatAgencyDayMonth(script.recordedAt)}`}
       </p>}
@@ -54,7 +58,7 @@ function Script({ script, number, several, sending, onRecord }: {
 
 /**
  * The story script of today of the Início (`specs/conteudo.md` section 7): the scenes the agency sent for today's day in São Paulo, and
- * "Marcar como gravado" on the ones not yet recorded. Without a script for today the block is not there at all.
+ * "Já gravei" on the ones not yet recorded. Without a script for today the block is not there at all.
  */
 export function PortalTodayScripts({ clientId }: { clientId: string }) {
   const httpClient = useApiClient();
@@ -96,9 +100,9 @@ export function PortalTodayScripts({ clientId }: { clientId: string }) {
     return <div className="portal-today" aria-hidden="true"><Skeleton className="portal-today__skeleton" /></div>;
   }
   if (scripts.isError && scripts.data === undefined) {
-    return <section className="portal-today" aria-labelledby="portal-today-title">
-      <h2 id="portal-today-title">Roteiro de hoje</h2>
-      <div role="alert">
+    return <section className="portal-section portal-today" aria-labelledby="portal-today-title">
+      <h2 id="portal-today-title" className="portal-section__title">Roteiro de hoje</h2>
+      <div className="portal-error" role="alert">
         <p>Não foi possível carregar o roteiro de hoje.</p>
         <Button variant="secondary" loading={scripts.isFetching} onClick={() => { void scripts.refetch(); }}>Tentar de novo</Button>
       </div>
@@ -106,8 +110,8 @@ export function PortalTodayScripts({ clientId }: { clientId: string }) {
   }
   const list = scripts.data?.data ?? [];
   if (list.length === 0) return null;
-  return <section className="portal-today" aria-labelledby="portal-today-title">
-    <h2 id="portal-today-title">Roteiro de hoje</h2>
+  return <section className="portal-section portal-today" aria-labelledby="portal-today-title">
+    <h2 id="portal-today-title" className="portal-section__title">Roteiro de hoje</h2>
     {list.map((script, index) => <Script
       key={script.id}
       script={script}
