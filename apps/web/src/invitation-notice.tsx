@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { Info } from 'lucide-react';
 
 import { Button } from '@ageniza/ui';
 
@@ -44,8 +45,9 @@ export function InvitationNotice() {
 
   if (!visible || agencyName === null) return null;
 
-  return <>
-    <p role="status">Você já fazia parte de {agencyName}. Nada mudou no seu acesso.</p>
+  return <div className="shell-notice">
+    <Info className="shell-notice__icon" aria-hidden="true" />
+    <p className="shell-notice__text" role="status">Você já fazia parte de {agencyName}. Nada mudou no seu acesso.</p>
     <Button variant="ghost" size="sm" onClick={() => setVisible(false)}>Fechar</Button>
-  </>;
+  </div>;
 }

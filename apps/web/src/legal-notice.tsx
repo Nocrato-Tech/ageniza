@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { CircleAlert, Info } from 'lucide-react';
 
 import { LegalAcceptancesResponseSchema, type LegalAcceptancesResponse, type LegalDocumentKind } from '@ageniza/contracts';
 import { Button } from '@ageniza/ui';
@@ -52,6 +53,8 @@ export function LegalNotice() {
   if (dismissed.data || pending.length === 0) return null;
 
   return <section className="legal-notice" aria-label="Aviso sobre os documentos legais">
+    <Info className="legal-notice__icon" aria-hidden="true" />
+    <div className="legal-notice__body">
     <ul className="legal-notice__list">
       {pending.map(({ document }) => {
         const copy = DOCUMENTS[document];
@@ -61,6 +64,7 @@ export function LegalNotice() {
             <Link to={copy.to} target="_blank" rel="noopener noreferrer">{copy.read}</Link>
           </p>
           <Button
+            variant="secondary"
             size="sm"
             aria-label={copy.acceptLabel}
             loading={accept.isPending && accept.variables === document}
@@ -70,7 +74,8 @@ export function LegalNotice() {
         </li>;
       })}
     </ul>
-    {accept.isError && <p className="legal-notice__error" role="alert">{acceptErrorMessage}</p>}
+    {accept.isError && <p className="legal-notice__error" role="alert"><CircleAlert aria-hidden="true" />{acceptErrorMessage}</p>}
+    </div>
     <Button variant="ghost" size="sm" aria-label="Fechar o aviso" onClick={() => { queryClient.setQueryData(DISMISSED_KEY, true); }}>Fechar</Button>
   </section>;
 }

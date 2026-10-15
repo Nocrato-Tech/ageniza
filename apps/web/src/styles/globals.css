@@ -3026,52 +3026,111 @@ a.client-general__block:focus-visible {
   }
 }
 
+.agency-home {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.agency-home h1 {
+  margin: 0;
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.agency-home__empty {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.agency-home__empty .ui-empty-state__body {
+  justify-items: center;
+  text-align: center;
+}
+
 .agency-shortcuts {
   display: grid;
-  gap: var(--space-3);
-  margin: var(--space-6) 0 0;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+  gap: var(--space-4);
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .agency-shortcut {
   display: grid;
-  gap: var(--space-1);
-  padding: var(--space-4);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  height: 100%;
+  box-sizing: border-box;
+  padding: var(--space-4) var(--space-6);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
   color: var(--text-primary);
   text-decoration: none;
 }
 
-.agency-shortcut:hover,
-.agency-shortcut:focus-visible {
-  background: var(--bg-hover);
+.agency-shortcut:hover {
+  border-color: var(--focus-ring);
+}
+
+.agency-shortcut__icon,
+.agency-shortcut__chevron {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--text-secondary);
+}
+
+.agency-shortcut__text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .agency-shortcut__label {
-  font: var(--body-lg);
+  font: var(--title-md);
 }
 
 .agency-shortcut__description {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font: var(--body-md);
 }
 
+/* One quiet strip for what the shell tells the person: no color, no side border, the icon says what it is. */
+.shell-notice,
 .legal-notice {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
   max-width: 72rem;
   margin: var(--space-4) auto 0;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
   color: var(--text-primary);
   font: var(--body-md);
+}
+
+.shell-notice__icon,
+.legal-notice__icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--text-secondary);
+}
+
+.shell-notice__text {
+  margin: 0;
+}
+
+.legal-notice__body {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .legal-notice__list {
@@ -3098,8 +3157,17 @@ a.client-general__block:focus-visible {
 }
 
 .legal-notice__error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   margin: 0;
   color: var(--text-danger);
+}
+
+.legal-notice__error svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
 }
 
 /* Inside `main`, which already carries the page padding. */
@@ -3107,10 +3175,25 @@ a.client-general__block:focus-visible {
   margin: 0 auto var(--space-6);
 }
 
+/* Inside `main` too: the notice of an invitation already accepted. */
+main > .shell-notice {
+  margin: 0 auto var(--space-6);
+}
+
 @media (max-width: 47.99rem) {
   .legal-notice {
     margin-inline: var(--space-4);
-    flex-direction: column;
+  }
+
+  .shell-notice,
+  .legal-notice {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .shell-notice > .ui-button,
+  .legal-notice > .ui-button {
+    grid-column: 2;
+    justify-self: start;
   }
 }
 
