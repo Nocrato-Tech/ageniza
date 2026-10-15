@@ -54,6 +54,7 @@ export function ContentCard({ content, clientId, today, placement = 'bottom-star
       draggable={draggable}
       tabIndex={0}
       aria-busy={busy || undefined}
+      aria-describedby={hover['aria-expanded'] ? hover['aria-controls'] : undefined}
       onDragStart={draggable ? (event) => { setGrabbed(true); onDragStart?.(event); } : undefined}
       onDragEnd={draggable ? () => { setGrabbed(false); onDragEnd?.(); } : undefined}
     >

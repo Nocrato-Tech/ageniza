@@ -472,6 +472,41 @@ describe('Popover with a fixed strategy', () => {
     expect(panel.style.left).toBe('650px');
   });
 
+  it('places the card again when its content makes it grow, and stops watching it when it closes', () => {
+    const observers: Array<{ callback: () => void; observed: Element[]; disconnected: boolean }> = [];
+    vi.stubGlobal('ResizeObserver', class {
+      private readonly record: { callback: () => void; observed: Element[]; disconnected: boolean };
+      public constructor(callback: () => void) { this.record = { callback, observed: [], disconnected: false }; observers.push(this.record); }
+      public observe(element: Element): void { this.record.observed.push(element); }
+      public disconnect(): void { this.record.disconnected = true; }
+    });
+    let height = 200;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.getAttribute('role') === 'dialog'
+        ? rectOf({ top: 0, left: 0, width: 300, height })
+        : rectOf({ top: 400, left: 850, width: 100, height: 60 });
+    });
+    Object.defineProperty(window, 'innerWidth', { value: 1000, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    render(<Harness openOn="hover" strategy="fixed" placement="top-end" />);
+    enter(trigger(), 'mouse');
+    rest(300);
+
+    expect(card()!.style.top).toBe('192px');
+    expect(observers).toHaveLength(1);
+    expect(observers[0]!.observed).toEqual([card()]);
+
+    height = 300;
+    act(() => { observers[0]!.callback(); });
+    expect(card()!.style.top).toBe('92px');
+
+    leave(trigger(), 'mouse');
+    rest(150);
+    expect(card()).toBeNull();
+    expect(observers[0]!.disconnected).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
   it('closes when the page scrolls or resizes, and not when the card itself scrolls', () => {
     measure();
     render(<Harness openOn="click" strategy="fixed" />);

@@ -1423,11 +1423,13 @@ describe('the detail on a card (hover and focus)', () => {
     expect(await within(tooltip).findByText('Cliente: “Podemos trocar a foto da capa?” · 11/10')).toBeTruthy();
     expect(calls).toContain(`GET /agencies/${AGENCY_A}/clients/${padaria.id}/threads?contentId=${row.id}`);
     expect(within(cardOf('Lançamento')).getByRole('link', { name: 'Lançamento' }).getAttribute('aria-controls')).toBe(tooltip.id);
+    expect(cardOf('Lançamento').getAttribute('aria-describedby')).toBe(tooltip.id);
     expect(detailCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/clients/${padaria.id}/contents/${row.id}`]);
 
     unpoint(cardOf('Lançamento'));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(within(cardOf('Lançamento')).getByRole('link', { name: 'Lançamento' }).hasAttribute('aria-controls')).toBe(false);
+    expect(cardOf('Lançamento').getAttribute('aria-describedby')).toBeNull();
   });
 
   const withComments = (row: ReturnType<typeof contentFixture>, count = 2) =>
