@@ -241,6 +241,7 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
             {(deliver || judge || editable) && <div className="form-actions">
               {deliver && <Button
                 size="sm"
+                variant="secondary"
                 aria-label={`Entregar “${task.title}”`}
                 loading={sending === `${task.id}:deliver`}
                 disabled={busy}
@@ -248,6 +249,7 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
               >Entregar</Button>}
               {judge && <Button
                 size="sm"
+                variant="secondary"
                 aria-label={`Aprovar “${task.title}”`}
                 loading={sending === `${task.id}:approve`}
                 disabled={busy}

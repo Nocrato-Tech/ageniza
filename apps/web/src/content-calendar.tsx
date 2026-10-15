@@ -1,27 +1,14 @@
 import { useId, useState, type DragEvent, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
-import type { ContentFormat, ContentListItem, ContentStatus } from '@ageniza/contracts';
-import { FormatTag, LateBadge, StatusTag, type FormatTagFormat, type StatusTagStatus } from '@ageniza/ui';
+import type { ContentListItem } from '@ageniza/contracts';
+import { FormatTag, LateBadge, StatusTag } from '@ageniza/ui';
 
 import { useContentsAddress } from './content-address.js';
 import { ContentHoverDetail } from './content-card-extras.js';
 import { ContentCover } from './content-cover.js';
 import { fullDayLabel, WEEKDAY_LABELS, type CalendarView } from './content-dates.js';
-import { DEADLINE_LABELS, deadlineAlert, FORMAT_LABELS, isClosed, STATUS_LABELS, subtaskPercent } from './content-labels.js';
-
-/** The formats with a colour of their own are the carousel and the reels; every other one reads as the neutral "static". */
-const FORMAT_TONES: Readonly<Record<ContentFormat, FormatTagFormat>> = { image: 'static', carousel: 'carousel', reels: 'reels', long_video: 'static', vsl: 'static' };
-
-/** A cancelled content has no state of the flow, so it takes the empty mark of "em produção" with its own word beside it. */
-const STATUS_TAGS: Readonly<Record<ContentStatus, StatusTagStatus>> = {
-  in_production: 'production',
-  awaiting_approval: 'waiting',
-  adjusting: 'adjust',
-  approved: 'ready',
-  published: 'published',
-  cancelled: 'production'
-};
+import { DEADLINE_LABELS, deadlineAlert, FORMAT_LABELS, FORMAT_TONES, isClosed, STATUS_LABELS, STATUS_TAGS, subtaskPercent } from './content-labels.js';
 
 /**
  * The card of the calendar (`specs/conteudo.md` section 7). Every string that came from the server

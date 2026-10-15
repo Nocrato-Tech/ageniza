@@ -80,7 +80,8 @@ describe('the tab', () => {
     expect(await within(dialogOf(row)).findByRole('heading', { name: 'Responsável pelo conteúdo' })).toBeTruthy();
     expect(within(dialogOf(row)).getByRole('tab', { name: 'Atribuição' }).getAttribute('aria-selected')).toBe('true');
     expect(within(dialogOf(row)).getByRole('tab', { name: 'Geral' }).getAttribute('aria-selected')).toBe('false');
-    expect(dialogOf(row).querySelector('[role="tabpanel"][aria-label="Geral"]')?.hasAttribute('hidden')).toBe(true);
+    const generalTab = within(dialogOf(row)).getByRole('tab', { name: 'Geral' });
+    expect(dialogOf(row).querySelector(`[role="tabpanel"][aria-labelledby="${generalTab.id}"]`)?.hasAttribute('hidden')).toBe(true);
 
     fireEvent.click(within(dialogOf(row)).getByRole('tab', { name: 'Geral' }));
     expect((within(dialogOf(row)).getByLabelText('Título') as HTMLInputElement).value).toBe('Título que ainda não foi salvo');

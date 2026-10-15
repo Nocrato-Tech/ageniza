@@ -492,4 +492,47 @@ describe('Tabs', () => {
     expect(screen.queryByRole('tabpanel')).toBeNull();
     expect(tabNames.map((name) => tab(name).tabIndex)).toEqual([0, -1, -1, -1]);
   });
+  describe('keepMounted', () => {
+    const kept: TabItem[] = [
+      { value: 'general', label: 'Geral', keepMounted: true, content: <input aria-label="Título" defaultValue="" /> },
+      { value: 'assignment', label: 'Atribuição', content: <p>Quem faz o quê</p> }
+    ];
+    function KeptHarness() {
+      const [value, setValue] = useState('general');
+      return <Tabs label="Seções" value={value} items={kept} onChange={setValue} />;
+    }
+
+    it('keeps what was typed in a panel that was left, hidden, and gives it back', () => {
+      render(<KeptHarness />);
+      fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Digitado' } });
+
+      fireEvent.click(tab('Atribuição'));
+      const left = document.querySelector('input')!;
+      expect(left.closest('[role="tabpanel"]')?.hasAttribute('hidden')).toBe(true);
+      expect(screen.queryByRole('textbox')).toBeNull();
+      expect(screen.getByRole('tabpanel').textContent).toBe('Quem faz o quê');
+
+      fireEvent.click(tab('Geral'));
+      expect((screen.getByLabelText('Título') as HTMLInputElement).value).toBe('Digitado');
+    });
+
+    it('mounts the others only while they are open, and points each tab at the panel it has', () => {
+      render(<KeptHarness />);
+
+      expect(screen.queryByText('Quem faz o quê')).toBeNull();
+      expect(tab('Atribuição').hasAttribute('aria-controls')).toBe(false);
+      expect(tab('Geral').getAttribute('aria-controls')).toBe(screen.getByRole('tabpanel').id);
+      fireEvent.click(tab('Atribuição'));
+      expect(tab('Atribuição').getAttribute('aria-controls')).toBe(screen.getByRole('tabpanel').id);
+      expect(tab('Geral').getAttribute('aria-controls')).not.toBe(tab('Atribuição').getAttribute('aria-controls'));
+    });
+
+    it('does not mark the hidden panel busy while the open one loads', () => {
+      render(<Tabs label="Seções" value="assignment" items={kept} onChange={() => undefined} loading />);
+      const [general, assignment] = screen.getAllByRole('tabpanel', { hidden: true });
+
+      expect(general!.hasAttribute('aria-busy')).toBe(false);
+      expect(assignment!.getAttribute('aria-busy')).toBe('true');
+    });
+  });
 });
