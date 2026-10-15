@@ -231,6 +231,16 @@ describe('Pauta tokens', () => {
       expect(contrast('dark', 'color-white', `client-badge-fade-${end}`)).toBeGreaterThanOrEqual(9.5);
     }
   });
+
+  it('keeps the handle on the client badge fade and the content numbers on the canvas readable', () => {
+    for (const end of ['start', 'end']) {
+      expect(contrast('dark', 'color-slate-300', `client-badge-fade-${end}`)).toBeGreaterThanOrEqual(6.3);
+    }
+    for (const theme of ['light', 'dark'] as const) {
+      expect(contrast(theme, 'text-muted', 'bg-canvas')).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(theme, 'text-danger', 'bg-canvas')).toBeGreaterThanOrEqual(4.5);
+    }
+  });
 });
 
 describe('contrast table of docs/design-system.md 20.1', () => {

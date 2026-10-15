@@ -371,6 +371,8 @@ Todos os componentes abaixo moram em [`packages/ui`](../packages/ui/src/index.ts
 
 O shell da agência (`AgencySidebar`, em `apps/web/src/agency-nav.tsx`) é código do app, não de `packages/ui`: navegação lateral com grupos Trabalho e Agência, o logo no topo, a pessoa e Sair no pé (seção 19).
 
+**Crachá do cliente (#636).** A carteira é uma grade de crachás (3 colunas a partir de 80 rem, 2 a partir de 48 rem, 1 abaixo), só com tokens e os componentes acima, sem componente novo em `packages/ui`. O topo do crachá é o `Avatar` grande (foto ou iniciais) sobre `bg/elevated`, com a base em `client-badge/fade/{start,end}`: nome em branco e @ em `color/slate/300` (6,4:1 ou mais sobre as duas pontas), sem brilho nem vidro. O selo de triagem é um só, na ordem atrasado (`LateBadge`), prazo em até 2 dias e convite pendente (`Pill` com ícone); o que não virou selo continua como etiqueta no corpo. Os três números de conteúdo ficam sobre `bg/canvas`, onde `text/muted` e `text/danger` estão garantidos, e a próxima ação é um `PillAction` neutro (o índigo cheio fica com a ação da página, `Cadastrar cliente`). O link do crachá leva a foto, o nome e as etiquetas e tem o nome do cliente como nome acessível; o menu de três pontos e a ação são botões ao lado dele, nunca dentro. O crachá não leva `overflow: hidden`, porque o menu abre por cima dele. A tela usa 48 (título), 22 ("Seus clientes" e nome) e 14 px, e o 12 px só dos componentes (rótulo do filtro, `Pill`) e dos rótulos dos números.
+
 ### 13.4 Camadas
 
 | Precisa de | Use | Regra |
