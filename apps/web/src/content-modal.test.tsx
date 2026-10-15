@@ -822,7 +822,7 @@ describe('the conversation of the content (#266)', () => {
     const region = await conversationOf(row);
     const form = dialog().querySelector('form.content-modal__form')!;
     expect(form.contains(region)).toBe(false);
-    expect(region.closest('[role="tabpanel"]')?.getAttribute('aria-label')).toBe('Geral');
+    expect(region.closest('[role="tabpanel"]')?.getAttribute('aria-labelledby')).toBe(within(dialog()).getByRole('tab', { name: 'Geral' }).id);
     expect(form.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(region).getByRole('heading', { name: 'Conversa' })).toBeTruthy();
     await within(region).findByText('Nenhuma conversa sobre este conteúdo');

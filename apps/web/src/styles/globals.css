@@ -4885,17 +4885,27 @@ a.client-general__block:hover {
   text-decoration: underline;
 }
 
-.ui-modal:has(.content-modal) {
-  width: min(calc(100% - var(--space-8)), 64rem);
+/* Modal do conteúdo (#633). It stays on the Dialog's own surface (bg/surface), so fields and links are where the pairs of docs/design-system.md 20.1
+   guarantee them. The preview sits beside the form, the conversation under both, and the footer follows the scroll while the screen is tall enough. */
+.ui-modal:has(.content-modal, .content-modal__loading, .content-modal__notice) {
+  width: min(calc(100% - var(--space-8)), 70rem);
   overflow-y: auto;
 }
 
-.content-modal__tabs {
-  display: flex;
-  gap: var(--space-2);
+.ui-modal:has(.content-modal) .ui-tabs__panel {
+  padding-top: var(--space-6);
 }
 
-.content-modal__loading {
+.content-modal__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: calc(var(--space-4) * -1) 0 0;
+}
+
+.content-modal__loading,
+.content-modal__notice {
   display: grid;
   gap: var(--space-3);
 }
@@ -4903,18 +4913,53 @@ a.client-general__block:hover {
 .content-modal {
   display: grid;
   gap: var(--space-6);
-  grid-template-columns: minmax(0, 18rem) minmax(0, 1fr);
+  min-width: 0;
+}
+
+.content-modal__body {
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: minmax(0, 20rem) minmax(0, 1fr);
   align-items: start;
 }
 
-@media (max-width: 48rem) {
-  .content-modal {
+@media (max-width: 47.99rem) {
+  .content-modal__body {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
-.content-modal__status {
+/* The client's request is in the conversation; this strip only says the content is waiting for the answer to it. Ink on the canvas, the state's icon in its own colour. */
+.content-modal__adjustment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+  font: var(--body-md);
+}
+
+.content-modal__adjustment > svg {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--status-adjust-fg);
+  stroke-width: 1.75;
+}
+
+.content-modal__adjustment p {
+  flex: 1 1 16rem;
+  min-width: 0;
   margin: 0;
+  color: var(--text-secondary);
+}
+
+.content-modal__adjustment strong {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .content-modal__when {
@@ -4923,13 +4968,120 @@ a.client-general__block:hover {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.content-modal__counter {
-  text-align: right;
+.content-modal__caption .ui-field__meta {
+  justify-content: flex-end;
 }
 
+.content-modal__conversation {
+  min-width: 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.content-modal__conversation:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.content-modal__conversation .conversation {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.content-modal__conversation .conversation__thread {
+  border-radius: var(--radius-lg);
+}
+
+.content-modal__conversation .conversation__comment {
+  padding: 0;
+  border: 0;
+}
+
+/* The canvas under the surface, as in the artboard: the footer reads as the floor of the modal. The dialog drops its bottom padding here so that
+   the footer, which bleeds over the side padding, also rests on the edge, still or stuck. */
+.ui-modal:has(.content-modal) {
+  padding-bottom: 0;
+}
+
+.content-modal__footer {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0 calc(var(--space-6) * -1);
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-canvas);
+}
+
+@media (min-height: 40rem) {
+  .content-modal__footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+  }
+}
+
+.content-modal__footer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+}
+
+.content-modal__form-actions,
+.content-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.content-actions {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
+.content-actions__notes {
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* Danger text is only guaranteed on the canvas and the surface (20.1): the hover keeps that background instead of taking bg/hover. */
+.content-actions__cancel {
+  margin-right: auto;
+  color: var(--text-danger);
+}
+
+.content-actions__cancel:hover:not(:disabled):not([aria-busy='true']) {
+  background: transparent;
+  color: var(--text-danger);
+  text-decoration: underline;
+}
+
+.content-actions__missing {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.content-actions__missing p,
+.content-actions__missing ul {
+  margin: 0;
+}
+
+.content-actions__panel {
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+/* Atribuição: the owner and the subtasks as two plain blocks; each subtask is a panel of its own, and the forms inside it keep the surface. */
 .content-assignment {
   display: grid;
   gap: var(--space-6);
+  padding-bottom: var(--space-6);
 }
 
 .content-assignment__block {
@@ -4940,6 +5092,10 @@ a.client-general__block:hover {
 .content-assignment__block h3,
 .content-assignment__block p {
   margin: 0;
+}
+
+.content-assignment__block h3 {
+  font: var(--label-md);
 }
 
 .content-assignment__tasks {
@@ -4953,9 +5109,9 @@ a.client-general__block:hover {
 .content-assignment__task {
   display: grid;
   gap: var(--space-2);
-  padding: var(--space-3);
+  padding: var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
 }
 
 .content-assignment__task p {
@@ -4970,10 +5126,16 @@ a.client-general__block:hover {
 .content-assignment__task-meta,
 .content-assignment__task-description {
   color: var(--text-secondary);
+  font: var(--caption);
 }
 
 .content-assignment__task-return {
   color: var(--text-primary);
+}
+
+.content-assignment__task .form-actions {
+  display: flex;
+  flex-wrap: wrap;
 }
 
 .content-assignment__late {
@@ -4981,9 +5143,9 @@ a.client-general__block:hover {
 }
 
 .content-assignment__new {
-  padding: var(--space-3);
+  padding: var(--space-4);
   border: 1px dashed var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
 }
 
 .content-preview {
@@ -5015,7 +5177,7 @@ a.client-general__block:hover {
 
 .content-media__thumb {
   width: 4rem;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: 4 / 5;
 }
 
 .content-preview__media img,
@@ -5051,65 +5213,65 @@ a.client-general__block:hover {
   white-space: pre-wrap;
 }
 
+/* The media of a content as tiles: a numbered frame and the controls under it; the folder lists the same tiles with "Adicionar". */
 .content-media {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .content-media__title {
   margin: 0;
-  font: var(--label-md);
+  color: var(--text-secondary);
+  font: var(--caption);
 }
 
 .content-media__selected,
 .content-media__folder {
-  display: grid;
-  gap: var(--space-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.content-media__item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+.content-media__tile {
+  display: grid;
   gap: var(--space-2);
+  justify-items: center;
+  align-content: start;
+  width: 6rem;
+}
+
+.content-media__frame {
+  position: relative;
+}
+
+.content-media__number {
+  position: absolute;
+  top: var(--space-1);
+  left: var(--space-1);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.content-media__tools {
+  display: flex;
+}
+
+.content-media__caption {
+  color: var(--text-secondary);
+  font: var(--caption);
+  text-align: center;
 }
 
 .content-media__new-folder {
   display: grid;
   gap: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-}
-
-.content-modal__main,
-.content-actions {
-  display: grid;
-  gap: var(--space-4);
-}
-
-.content-actions {
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border-default);
-}
-
-.content-actions__missing {
-  display: grid;
-  gap: var(--space-1);
-  padding: var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-}
-
-.content-actions__missing p,
-.content-actions__missing ul {
-  margin: 0;
-}
-
-.content-actions__panel {
   padding: var(--space-3);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
