@@ -693,3 +693,42 @@ describe('content modal', () => {
     }
   });
 });
+
+describe('the story scripts in the Pauta look (#635)', () => {
+  it.each(['light', 'dark'] as const)('reads the chip of a day and the list with AA text on the canvas and the surface in %s', (theme) => {
+    const chip = rule('.content-day__script');
+    const scene = rule('.story-script__scene');
+
+    expect(chip.get('background')).toBe('var(--bg-canvas)');
+    expect(contrastOf(theme, chip.get('color')!, chip.get('background')!)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastOf(theme, rule('.content-day__script:hover').get('color')!, 'var(--bg-canvas)')).toBeGreaterThanOrEqual(4.5);
+    expect(rule('.story-list').get('background')).toBe('var(--bg-surface)');
+    expect(scene.get('background')).toBe('var(--bg-canvas)');
+    for (const text of ['var(--text-primary)', 'var(--text-secondary)']) {
+      expect(contrastOf(theme, text, 'var(--bg-surface)'), text).toBeGreaterThanOrEqual(4.5);
+      expect(contrastOf(theme, text, 'var(--bg-canvas)'), text).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('leaves the chip with no outline of its own for the state tag, which is already one', () => {
+    expect(rule('.content-day__script .ui-status-tag').get('border-color')).toBe('transparent');
+    expect(rule('.content-day__script').get('border')).toBe('1px solid var(--border-default)');
+  });
+
+  it('keeps the list and the scenes off the elevated surfaces, the indigo and the shadow', () => {
+    const blocks = [...css.matchAll(/(^|\n)(\.(?:story-list|story-script|content-day__script)[\w-]*[^{}]*)\{([^{}]*)\}/g)];
+
+    expect(blocks.length).toBeGreaterThan(15);
+    for (const [, , selector, body] of blocks) expect(body, selector).not.toMatch(/bg-elevated|bg-hover|action-primary|indigo|shadow/);
+  });
+
+  it('lets a script row and a scene shrink inside their grid instead of pushing it wide', () => {
+    for (const selector of ['.story-list', '.story-list__items', '.story-script__scenes', '.story-script__scene']) {
+      expect(rule(selector).get('grid-template-columns'), selector).toBe('minmax(0, 1fr)');
+    }
+    expect(rule('.story-list__item').get('flex-wrap')).toBe('wrap');
+    expect(rule('.story-list__item > :last-child').get('margin-left')).toBe('auto');
+    expect(css).toMatch(/@media \(max-width: 40rem\) \{\s*\.story-list__day \{\s*flex-basis: 100%;/);
+    for (const selector of ['.story-script__text', '.story-script__guidance']) expect(rule(selector).get('overflow-wrap'), selector).toBe('anywhere');
+  });
+});

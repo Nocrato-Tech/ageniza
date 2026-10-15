@@ -396,6 +396,8 @@ As etiquetas são estáticas (sem hover, foco nem carregamento): o texto é quem
 | A pessoa da equipe | `BadgeCard` | Exatamente quatro informações: foto ou iniciais, nome, cargo e papel (mais o marcador de removido); um quinto dado vira tabela, o que a SPEC de colaboradores recusa. |
 | A palavra que pede decisão agora | `Realce` | Seção 25.2. |
 
+**Roteiro de stories (#635).** O estado do roteiro usa o `StatusTag`, sem componente novo: rascunho é o círculo vazio (`production`), enviado é o relógio (`waiting`) e gravado é o visto (`ready`), cada um com a sua palavra (Rascunho, Enviado, Gravado); a cor vai só no ícone. O mesmo `StatusTag` marca o dia da grade, a lista "Roteiros de stories" abaixo do calendário e o cabeçalho do modal. O modal é um `Dialog` sobre `bg/surface` com `Field` em cada campo, cada cena num bloco sobre `bg/canvas` (o campo passa nos dois fundos, 20.1) e "Enviar ao cliente" como a única ação primária, por último. A lista e as cenas usam `minmax(0, 1fr)` para o conteúdo largo quebrar dentro do bloco em 390 px. O vazio da lista leva o botão "Novo roteiro", secundário, e não leva o mascote.
+
 ### 13.6 Vazio, erro e carga
 
 | Precisa de | Use | Regra |
