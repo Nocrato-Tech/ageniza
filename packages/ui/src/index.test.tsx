@@ -328,3 +328,31 @@ describe('Textarea', () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('BadgeCard in the Pauta language (#638)', () => {
+  it('puts the photo on its own cover and the three lines in the body', () => {
+    const { container } = render(<BadgeCard name="Ana Prado" photoUrl="https://storage.test/ana.png" jobTitle="Editora" role="Produção" />);
+    const cover = container.querySelector('.ui-badge-card__cover');
+    const body = container.querySelector('.ui-badge-card__body');
+    expect(cover?.querySelector('img.ui-avatar__photo')?.getAttribute('src')).toBe('https://storage.test/ana.png');
+    expect(Array.from(body?.children ?? []).map((child) => child.className)).toEqual(['ui-badge-card__name', 'ui-badge-card__job', 'ui-badge-card__role']);
+    expect(cover?.querySelector('.ui-badge-card__name')).toBeNull();
+  });
+
+  it('draws the role as a neutral capsule with its icon, and nothing else carries one', () => {
+    const { container } = render(<BadgeCard name="Ana Prado" photoUrl={null} jobTitle="Editora" role="Produção" />);
+    const capsule = container.querySelector('.ui-badge-card__role .ui-pill');
+    expect(capsule?.textContent).toBe('Produção');
+    expect(capsule?.classList.contains('ui-pill--neutral')).toBe(true);
+    expect(capsule?.querySelector('svg')).not.toBeNull();
+    expect(container.querySelectorAll('.ui-pill')).toHaveLength(1);
+  });
+
+  it('says the link ended in words and with an icon, inside the body', () => {
+    const { container } = render(<BadgeCard name="Paulo Lima" photoUrl={null} jobTitle="Motion" role="Produção" removed />);
+    const marker = container.querySelector('.ui-badge-card__body .ui-badge-card__removed');
+    expect(marker?.textContent).toBe('removido');
+    expect(marker?.querySelector('svg')).not.toBeNull();
+    expect(marker?.querySelector('svg')?.closest('[aria-hidden="true"]')).not.toBeNull();
+  });
+});

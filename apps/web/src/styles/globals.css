@@ -564,25 +564,48 @@ a.ui-button {
   font: var(--heading-md);
 }
 
+/* The team badge speaks the client badge's language (docs/design-system.md 13.3) without its fade: the fade is the
+   client badge's exception (25.3). No `overflow: hidden`, so the cover rounds its own top corners. */
 .ui-badge-card {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  align-content: start;
-  gap: var(--space-1);
-  padding: var(--space-4);
+  height: 100%;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
   color: var(--text-primary);
+  transition: border-color var(--motion-fast);
+}
+
+.ui-badge-card__cover {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-6) var(--space-4);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: var(--bg-elevated);
 }
 
 .ui-badge-card .ui-avatar {
-  margin-bottom: var(--space-2);
+  width: 5rem;
+  height: 5rem;
+  background: var(--bg-surface);
+}
+
+.ui-badge-card__body {
+  display: grid;
+  flex: 1;
+  align-content: start;
+  justify-items: start;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-4);
 }
 
 .ui-badge-card__name {
   margin: 0;
-  font: var(--label-md);
+  font: var(--heading-lg);
+  letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
 
@@ -594,15 +617,24 @@ a.ui-button {
 }
 
 .ui-badge-card__role {
-  margin: 0;
-  color: var(--text-muted);
-  font: var(--body-md);
+  margin: var(--space-2) 0 0;
+  max-width: 100%;
+}
+
+/* A custom role can have a long name: the capsule wraps instead of widening its track. */
+.ui-badge-card__role .ui-pill {
+  padding-block: var(--space-1);
+  white-space: normal;
   overflow-wrap: anywhere;
 }
 
-/* The link ended: a divider plus the label, inside the badge (specs/colaboradores.md §7, #105). */
+/* The link ended: a divider, the icon and the label, inside the badge (specs/colaboradores.md §7, #105). */
 .ui-badge-card__removed {
-  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: stretch;
+  margin: var(--space-2) 0 0;
   padding-top: var(--space-2);
   border-top: 1px solid var(--border-default);
   color: var(--text-muted);
@@ -610,7 +642,8 @@ a.ui-button {
 }
 
 .ui-badge-card__skeleton {
-  height: 11rem;
+  height: 17rem;
+  border-radius: var(--radius-xl);
 }
 
 .ui-field {
@@ -775,7 +808,9 @@ a.ui-button {
   font: var(--body-md);
 }
 
-/* Team grid: specs/colaboradores.md section 7. */
+/* Team grid: specs/colaboradores.md section 7. Below 64rem the badge minimum decides (1 to 3 columns); from 64rem on it
+   is three, because on a wide screen the minimum would add a fifth column and leave the last row of a 24-person page
+   broken (24 is a multiple of 1, 2, 3 and 4, never of 5). The only breakpoint is a registered one (design-system.md 19). */
 .collaborators {
   display: grid;
   gap: var(--space-6);
@@ -786,32 +821,45 @@ a.ui-button {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 
 .collaborators__header h1 {
   margin: 0;
+  font: var(--display-lg);
+  /* "Colaboradores" at 48px is 418px wide: on a phone the title shrinks to the 358px of content instead of widening the page. */
+  font-size: clamp(2rem, 10vw, 3rem);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
 }
 
 .collaborators__filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
 }
 
-.collaborators__filters > .ui-text-input {
-  flex: 1 1 16rem;
+/* The search has a row of its own and the selects share the one below, in columns wide enough for "Todos os papéis"
+   ("Cargo" is free text). No divider between them: the grid gap is the separator. On a phone the bar is the stacked
+   column of the FilterBar, and its own top dividers still apply. */
+.ui-filter-bar.collaborators__filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-4);
 }
 
-.collaborators__filters > .ui-field {
-  flex: 0 1 12rem;
+.ui-filter-bar.collaborators__filters .ui-filter-bar__item {
+  padding-inline: 0;
+  border-left: 0;
+}
+
+.ui-filter-bar.collaborators__filters .ui-filter-bar__item:first-child {
+  grid-column: 1 / -1;
 }
 
 .collaborators__grid {
   display: grid;
-  /* 12rem lets four columns fit the 840px `.agency-content` at the shell's widest:
-     4 × 12rem + 3 × var(--space-4) = 51rem = 816px ≤ 840px (issue #228). */
   grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
   gap: var(--space-4);
   margin: 0;
@@ -819,19 +867,28 @@ a.ui-button {
   list-style: none;
 }
 
+@media (min-width: 64rem) {
+  .collaborators__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 .collaborators__grid > li {
   display: grid;
+  grid-template-rows: 1fr;
+  min-width: 0;
 }
 
 .collaborators__badge-link {
   display: grid;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-xl);
   color: var(--text-primary);
   text-decoration: none;
 }
 
+/* Hover by border, never by background: the capsule and the muted text are only guaranteed over `bg/surface` (docs/design-system.md 20.1). */
 .collaborators__badge-link:hover .ui-badge-card {
-  background: var(--bg-hover);
+  border-color: var(--focus-ring);
 }
 
 /* The reactivate action of a removed badge sits under the card, never inside the link (#105). */
@@ -1632,22 +1689,59 @@ a.client-general__block:hover {
   gap: var(--space-4);
 }
 
+.collaborator-detail__identity .ui-avatar {
+  width: 5rem;
+  height: 5rem;
+}
+
 .collaborator-detail__identity p {
   margin: 0;
   color: var(--text-secondary);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
 }
 
-.collaborator-detail__tabs {
+/* The line that says who the person is in the agency: the one that reads first. */
+.collaborator-detail__identity .collaborator-detail__headline {
+  color: var(--text-primary);
+  font: var(--label-md);
+}
+
+/* Labels of the modal fields speak one language, whether the field is plain or a Select. */
+.ui-modal .form-field > label {
+  color: var(--text-secondary);
+  font: var(--label-sm);
+}
+
+/* The panel of the open tab: the fields sit a step below the tab list. */
+.ui-modal .ui-tabs__panel {
+  padding-top: var(--space-4);
+}
+
+/* Why Performance and Entregas are off (specs/colaboradores.md section 7): words, never only a disabled tab. */
+.collaborator-detail__soon {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-default);
+  color: var(--text-muted);
+  font: var(--body-md);
+}
+
+.collaborator-detail__soon > div {
   display: flex;
   flex-wrap: wrap;
-  align-items: start;
-  gap: var(--space-3);
-  padding-block: var(--space-4);
-  border-block: 1px solid var(--border-default);
+  gap: var(--space-1) var(--space-3);
 }
 
-.collaborator-detail__tab {
-  flex: 1 1 10rem;
+.collaborator-detail__soon dt {
+  color: var(--text-secondary);
+  font: var(--label-md);
+}
+
+.collaborator-detail__soon dd {
+  margin: 0;
 }
 
 .collaborator-detail__fields,
@@ -1697,9 +1791,15 @@ a.client-general__block:hover {
 /* Self profile (specs/colaboradores.md section 7): the same modal, editable only for its own person. */
 .collaborator-detail__photo {
   display: grid;
+  flex: none;
   justify-items: center;
   align-content: start;
   gap: var(--space-2);
+}
+
+/* The photo column keeps the width of its button: beside the text it must not be squeezed into a letter per line. */
+.collaborator-detail__photo .ui-button {
+  white-space: nowrap;
 }
 
 /* Driven by the visible "Trocar foto" button; kept in the DOM for its file picker and accept
@@ -1745,46 +1845,57 @@ a.client-general__block:hover {
   font: var(--label-sm);
 }
 
+/* No-result and error states of the team list: one quiet surface, like the client roster's. */
 .collaborators__empty,
+.collaborators__error {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.collaborators__empty:not(.ui-empty-state--mascot) .ui-empty-state__body {
+  justify-items: center;
+  text-align: center;
+}
+
 .collaborators__error {
   display: grid;
   justify-items: start;
-  gap: var(--space-2);
-  padding: var(--space-6) 0;
-}
-
-.collaborators__error {
+  gap: var(--space-3);
+  padding: var(--space-6);
   color: var(--text-danger);
 }
 
-/* Pending invitations: specs/colaboradores.md section 7. A list, not a grid: an invitation has no
- * photo or identity, only an e-mail, a role and a deadline. */
+.collaborators__error p {
+  margin: 0;
+}
+
+/* Pending invitations: specs/colaboradores.md section 7. One surface with rows split by lines (no card inside a card):
+   an invitation has no photo or identity, only an e-mail, a role and a deadline. */
 .invites {
   display: grid;
   gap: var(--space-4);
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
 }
 
 .invites__header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-3);
 }
 
 .invites__header h2 {
   margin: 0;
-  font: var(--heading-md);
-}
-
-.invites__count {
-  color: var(--text-secondary);
-  font: var(--label-md);
+  font: var(--heading-lg);
+  letter-spacing: -0.01em;
 }
 
 .invites__list {
   display: grid;
-  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1795,33 +1906,39 @@ a.client-general__block:hover {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) var(--space-4);
-  padding-block: var(--space-3);
+  padding-block: var(--space-4);
   border-top: 1px solid var(--border-default);
 }
 
 .invites__item:first-child {
+  padding-top: 0;
   border-top: none;
 }
 
 .invites__email {
   flex: 1 1 14rem;
+  min-width: 0;
   margin: 0;
   font: var(--label-md);
   overflow-wrap: anywhere;
 }
 
-.invites__role,
-.invites__expiry {
+.invites__role {
   margin: 0;
+}
+
+.invites__expiry {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--text-muted);
   font: var(--body-md);
 }
 
-.invites__role {
-  color: var(--text-secondary);
-}
-
-.invites__expiry {
-  color: var(--text-muted);
+/* A deadline that passed says so in words and in the danger colour, over `bg/surface` where it is guaranteed. */
+.invites__expiry--expired {
+  color: var(--text-danger);
 }
 
 .invites__actions {
@@ -1838,16 +1955,23 @@ a.client-general__block:hover {
   font: var(--body-md);
 }
 
-.invites__empty,
+.invites__empty {
+  padding: var(--space-2) 0;
+}
+
+.invites__empty:not(.ui-empty-state--mascot) {
+  justify-content: flex-start;
+}
+
 .invites__error {
   display: grid;
   justify-items: start;
   gap: var(--space-2);
-  padding: var(--space-6) 0;
+  color: var(--text-danger);
 }
 
-.invites__error {
-  color: var(--text-danger);
+.invites__error p {
+  margin: 0;
 }
 
 /* Portal access tab: specs/clientes.md section 7, issue #140. */
@@ -2334,6 +2458,11 @@ a.client-general__block:hover {
 .form-stack {
   display: grid;
   gap: var(--space-4);
+}
+
+/* Room for the focus ring between the label and the field it names. */
+.form-stack .ui-field {
+  gap: var(--space-2);
 }
 
 .form-actions {

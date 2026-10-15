@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Plus, RotateCcw } from 'lucide-react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 
 import { CollaboratorListResponseSchema } from '@ageniza/contracts';
-import { BadgeCard, Button, Pagination, Select, Skeleton, TextInput } from '@ageniza/ui';
+import { BadgeCard, Button, EmptyState, FilterBar, FilterBarItem, FilterBarSelect, Pagination, Skeleton, TextInput } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -173,6 +174,8 @@ export function CollaboratorsPage() {
   // Placeholder rows are the previous filter's: an empty one must not become this filter's empty state or "0 de 0" summary, so it keeps the skeleton.
   const loading = collaborators.isPending || (collaborators.isPlaceholderData && collaborators.data.data.length === 0);
   const outOfRange = collaborators.data !== undefined && !collaborators.isPlaceholderData && page > Math.max(1, collaborators.data.meta.totalPages);
+  // A brand new agency has the Owner and nobody else: the only moment the owl may greet the empty invitations (docs/brand.md).
+  const aloneInTheTeam = collaborators.data !== undefined && !collaborators.isPlaceholderData && collaborators.data.meta.totalItems === 1 && !hasFilters && status === 'active';
   const jobTitleOptions = (jobTitles.data?.data ?? []).map((value) => ({ value, label: value }));
 
   return (
@@ -180,32 +183,40 @@ export function CollaboratorsPage() {
       <header className="collaborators__header">
         <h1 id="collaborators-title">Colaboradores</h1>
         {canInvite && (
-          <Button onClick={() => setInviteOpen(true)}>
-            <span aria-hidden="true">+</span> Convidar
-          </Button>
+          <Button size="lg" leadingIcon={<Plus />} onClick={() => setInviteOpen(true)}>Convidar</Button>
         )}
       </header>
 
-      <div className="collaborators__filters">
-        <TextInput
-          type="search"
-          aria-label="Buscar por nome ou e-mail"
-          placeholder="Buscar por nome ou e-mail"
-          value={q}
-          onChange={(event) => setFilter('q', event.target.value)}
-        />
-        <Select label="Papel" value={role} placeholder="Todos os papéis" options={SYSTEM_ROLES} onChange={(value) => setFilter('role', value)} />
-        <Select
-          label="Cargo"
-          value={jobTitle}
-          placeholder="Todos os cargos"
-          options={jobTitleOptions}
-          disabled={jobTitles.isPending || jobTitles.isError}
-          title={jobTitles.isError ? 'Não foi possível carregar os cargos.' : undefined}
-          onChange={(value) => setFilter('jobTitle', value)}
-        />
-        {canSeeRemoved && <Select label="Status" value={status} options={STATUS_OPTIONS} onChange={(value) => setFilter('status', value)} />}
-      </div>
+      <FilterBar label="Filtros da equipe" className="collaborators__filters">
+        <FilterBarItem label="Buscar">
+          {(control) => (
+            <TextInput
+              {...control}
+              type="search"
+              aria-label="Buscar por nome ou e-mail"
+              placeholder="Buscar por nome ou e-mail"
+              value={q}
+              onChange={(event) => setFilter('q', event.target.value)}
+            />
+          )}
+        </FilterBarItem>
+        <FilterBarSelect label="Papel" value={role} placeholder="Todos os papéis" options={SYSTEM_ROLES} onChange={(value) => setFilter('role', value)} />
+        <FilterBarItem label="Cargo">
+          {(control) => (
+            <select
+              {...control}
+              value={jobTitle}
+              disabled={jobTitles.isPending || jobTitles.isError}
+              title={jobTitles.isError ? 'Não foi possível carregar os cargos.' : undefined}
+              onChange={(event) => setFilter('jobTitle', event.target.value)}
+            >
+              <option value="">Todos os cargos</option>
+              {jobTitleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          )}
+        </FilterBarItem>
+        {canSeeRemoved && <FilterBarSelect label="Status" value={status} options={STATUS_OPTIONS} onChange={(value) => setFilter('status', value)} />}
+      </FilterBar>
 
       {removedFilterIgnored && <p>Você não tem permissão para ver colaboradores removidos. Mostrando os ativos.</p>}
 
@@ -216,21 +227,21 @@ export function CollaboratorsPage() {
       ) : collaborators.isError ? (
         <div className="collaborators__error" role="alert">
           <p>Não foi possível carregar a equipe. Tente de novo.</p>
-          <Button onClick={() => { void collaborators.refetch(); }}>Tentar de novo</Button>
+          <Button variant="secondary" onClick={() => { void collaborators.refetch(); }}>Tentar de novo</Button>
         </div>
       ) : outOfRange ? null : <>
         {collaborators.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
         {collaborators.data.data.length === 0 && status === 'removed' && !hasFilters ? (
-          <div className="collaborators__empty">
-            <p>Ninguém foi removido desta agência</p>
-          </div>
+          <EmptyState className="collaborators__empty" headingLevel={3} title="Ninguém foi removido desta agência" />
         ) : collaborators.data.data.length === 0 && hasFilters ? (
-          <div className="collaborators__empty">
-            <p>{search !== '' ? `Nenhuma pessoa encontrada para "${search}"` : 'Nenhuma pessoa encontrada com esses filtros.'}</p>
-            <Button variant="ghost" onClick={() => { setSearchParams({}, { replace: true }); }}>
+          <EmptyState
+            className="collaborators__empty"
+            headingLevel={3}
+            title={search !== '' ? `Nenhuma pessoa encontrada para "${search}"` : 'Nenhuma pessoa encontrada com esses filtros.'}
+            action={<Button variant="secondary" onClick={() => { setSearchParams({}, { replace: true }); }}>
               {search !== '' ? 'Limpar busca' : 'Limpar filtros'}
-            </Button>
-          </div>
+            </Button>}
+          />
         ) : (
           <ul className="collaborators__grid">
             {collaborators.data.data.map((collaborator) => (
@@ -254,6 +265,7 @@ export function CollaboratorsPage() {
                     className="collaborators__reactivate"
                     size="sm"
                     variant="secondary"
+                    leadingIcon={<RotateCcw />}
                     aria-label={`Reativar ${collaborator.name}`}
                     onClick={() => setReactivating({ membershipId: collaborator.membershipId, name: collaborator.name })}
                   >Reativar</Button>
@@ -269,7 +281,7 @@ export function CollaboratorsPage() {
           summary={`${collaborators.data.data.length} de ${collaborators.data.meta.totalItems} pessoas`}
         />
       </>}
-      <PendingInvitationsSection page={invitesPage} onPageChange={changeInvitesPage} onInvite={() => setInviteOpen(true)} />
+      <PendingInvitationsSection page={invitesPage} onPageChange={changeInvitesPage} onInvite={() => setInviteOpen(true)} mascot={aloneInTheTeam} />
       {membershipId !== null && <CollaboratorDetailDialog key={agency.agencyId + membershipId} membershipId={membershipId} onClose={closeDetail} />}
       {inviteOpen && <InviteCollaboratorDialog onClose={() => setInviteOpen(false)} />}
       {reactivating !== null && <ReactivateCollaboratorDialog
