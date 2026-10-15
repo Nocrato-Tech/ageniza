@@ -161,6 +161,12 @@ describe('the Pastas view in the Pauta: one place to act in each state', () => {
     open(makeWorld(), `&pasta=${idOf('9', 1)}`);
     await screen.findByText('Pasta não encontrada.');
     expect(document.querySelectorAll('.ui-empty-state--mascot, .ui-mascot')).toHaveLength(0);
+    cleanup();
+
+    open(makeWorld({ assets: [assetFixture(1, VIDEOS)] }), `&pasta=${VIDEOS}&pagina=9`);
+    const pastEnd = (await screen.findByText('Esta página não tem mídias.')).closest('.ui-empty-state');
+    expect(pastEnd).not.toBeNull();
+    expect(view().querySelectorAll('.ui-empty-state--mascot, .ui-mascot')).toHaveLength(0);
   });
 
   it('asks nothing of whoever cannot operate in the empty states of the folders either', async () => {
@@ -286,6 +292,7 @@ describe('the Pastas view in the Pauta: one place to act in each state', () => {
     expect(declarationsFor(css, '.media-uploader__progress::-webkit-progress-value').get('background')).toBe('var(--text-primary)');
     expect(declarationsFor(css, '.media-uploader__progress::-moz-progress-bar').get('background')).toBe('var(--text-primary)');
     expect(declarationsFor(css, '.media-uploader__percent').get('font-variant-numeric')).toBe('tabular-nums');
+    expect(declarationsFor(css, '.media-uploader__percent').get('font')).toBe('var(--caption)');
   });
 
   it('draws icons with lucide and not with characters in the three files of the view', () => {

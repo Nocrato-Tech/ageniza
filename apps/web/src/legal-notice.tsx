@@ -68,8 +68,8 @@ export function LegalNotice() {
             size="sm"
             aria-label={copy.acceptLabel}
             loading={accept.isPending && accept.variables === document}
-            disabled={accept.isPending}
-            onClick={() => { accept.mutate(document); }}
+            aria-disabled={accept.isPending || undefined}
+            onClick={() => { if (!accept.isPending) accept.mutate(document); }}
           >Li e aceito</Button>
         </li>;
       })}
