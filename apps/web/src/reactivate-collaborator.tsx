@@ -31,8 +31,7 @@ export function ReactivateCollaboratorDialog({ membershipId, name, onClose }: {
   const agency = useAgencyContext();
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
-  const roleHintId = useId();
-  const roleErrorId = useId();
+  const formId = useId();
   const [roleId, setRoleId] = useState('');
   const [roleError, setRoleError] = useState<string | undefined>();
   const [formError, setFormError] = useState<string | undefined>();
@@ -81,35 +80,34 @@ export function ReactivateCollaboratorDialog({ membershipId, name, onClose }: {
     reactivate.mutate(roleId);
   };
 
-  return <Modal title={`Reativar ${name}`} closeLabel="Fechar reativação" onClose={onClose}>
-    <form className="form-stack" onSubmit={onSubmit} noValidate>
-      <p>{INTRO}</p>
-
-      <div className="form-field">
-        <Select
-          label="Papel"
-          value={roleId}
-          placeholder="Selecione"
-          options={roleOptions}
-          disabled={roles.isPending || roles.isError}
-          onChange={(value) => { setRoleId(value); setRoleError(undefined); setFormError(undefined); }}
-          aria-invalid={roleError !== undefined}
-          aria-describedby={roleError === undefined ? roleHintId : `${roleHintId} ${roleErrorId}`}
-        />
-        <p id={roleHintId} className="form-hint">{ROLE_HINT}</p>
-        {roleError !== undefined && <FieldMessage id={roleErrorId} role="alert">{roleError}</FieldMessage>}
-        {roles.isError && <div className="form-field">
-          <FieldMessage role="alert">{ROLES_FAILED}</FieldMessage>
-          <Button variant="secondary" size="sm" onClick={() => { void roles.refetch(); }} loading={roles.isFetching}>Tentar de novo</Button>
-        </div>}
-      </div>
+  return <Modal
+    title={`Reativar ${name}`}
+    closeLabel="Fechar reativação"
+    size="sm"
+    description={INTRO}
+    onClose={onClose}
+    actions={<>
+      <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+      <Button type="submit" form={formId} disabled={roleId === ''} loading={reactivate.isPending}>Reativar</Button>
+    </>}
+  >
+    <form id={formId} className="form-stack" onSubmit={onSubmit} noValidate>
+      <Select
+        label="Papel"
+        value={roleId}
+        placeholder="Selecione"
+        options={roleOptions}
+        hint={ROLE_HINT}
+        error={roleError}
+        disabled={roles.isPending || roles.isError}
+        onChange={(value) => { setRoleId(value); setRoleError(undefined); setFormError(undefined); }}
+      />
+      {roles.isError && <div className="form-field">
+        <FieldMessage role="alert">{ROLES_FAILED}</FieldMessage>
+        <Button variant="secondary" size="sm" onClick={() => { void roles.refetch(); }} loading={roles.isFetching}>Tentar de novo</Button>
+      </div>}
 
       {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
-
-      <div className="form-actions">
-        <Button type="submit" disabled={roleId === ''} loading={reactivate.isPending}>Reativar</Button>
-        <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-      </div>
     </form>
   </Modal>;
 }

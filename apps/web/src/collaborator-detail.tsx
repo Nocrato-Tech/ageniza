@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { Camera, UserMinus } from 'lucide-react';
 import { z } from 'zod';
 
 import {
@@ -15,7 +16,7 @@ import {
   type Collaborator,
   type UpdateCollaboratorRequest
 } from '@ageniza/contracts';
-import { Avatar, Button, ConfirmDialog, FieldMessage, LiveStatus, Modal, Select, Skeleton, TextInput } from '@ageniza/ui';
+import { Avatar, Button, ConfirmDialog, FieldMessage, LiveStatus, Modal, Select, Skeleton, Tabs, TextInput } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -168,7 +169,7 @@ function SelfProfilePhoto({ collaborator, membershipId }: { collaborator: Collab
       aria-label="Escolher foto"
       onChange={onFileChange}
     />
-    <Button size="sm" variant="secondary" disabled={uploading} onClick={() => inputRef.current?.click()}>Trocar foto</Button>
+    <Button size="sm" variant="secondary" leadingIcon={<Camera />} disabled={uploading} onClick={() => inputRef.current?.click()}>Trocar foto</Button>
     {uploading && <progress className="collaborator-detail__photo-progress" max={100} value={upload.isPending ? undefined : progress ?? undefined} aria-label="Progresso do envio da foto" />}
     {uploading && <LiveStatus>{upload.isPending ? 'Enviando foto…' : `Preparando foto… ${progress ?? 0}%`}</LiveStatus>}
     {error !== undefined && <FieldMessage role="alert">{error}</FieldMessage>}
@@ -451,7 +452,7 @@ function RemoveCollaborator({ collaborator, membershipId, onRemoved }: { collabo
   });
 
   return <div className="collaborator-detail__remove">
-    <Button variant="destructive" onClick={() => { setError(undefined); setConfirming(true); }}>Remover do quadro</Button>
+    <Button variant="destructive" leadingIcon={<UserMinus />} onClick={() => { setError(undefined); setConfirming(true); }}>Remover do quadro</Button>
     {error !== undefined && <FieldMessage role="alert">{error}</FieldMessage>}
     <ConfirmDialog
       open={confirming}
@@ -467,8 +468,7 @@ function RemoveCollaborator({ collaborator, membershipId, onRemoved }: { collabo
 }
 
 function CollaboratorDetails({ collaborator, isSelf, onRemoved }: { collaborator: Collaborator; isSelf: boolean; onRemoved: () => void }) {
-  const tabId = useId();
-  const panelId = useId();
+  const [tab, setTab] = useState('details');
   const membershipId = collaborator.membershipId.toLowerCase();
   const canAlterJobTitle = useCan('colaborador.alterar_funcao');
   const canChangeRole = useCan('colaborador.alterar_papel');
@@ -494,37 +494,48 @@ function CollaboratorDetails({ collaborator, isSelf, onRemoved }: { collaborator
       : <div className="collaborator-detail__identity">
         <Avatar name={collaborator.name} photoUrl={collaborator.photoUrl} size="lg" />
         <div>
-          <p>{[collaborator.jobTitle, collaborator.role.name].filter(Boolean).join(' · ')}</p>
+          <p className="collaborator-detail__headline">{[collaborator.jobTitle, collaborator.role.name].filter(Boolean).join(' · ')}</p>
           <p>{collaborator.email}</p>
           <AgencySince joinedAt={collaborator.joinedAt} />
         </div>
       </div>}
-    <div className="collaborator-detail__tabs" role="tablist" aria-label="Informações do colaborador">
-      <Button id={tabId} role="tab" aria-selected="true" aria-controls={panelId} variant="secondary">Detalhes</Button>
-      {['Performance', 'Entregas'].map((label) => <div key={label} className="collaborator-detail__tab">
-        <Button role="tab" aria-selected="false" disabled variant="ghost">{label}</Button>
-        <p className="form-hint">{UNAVAILABLE_REASON}</p>
+    <Tabs
+      label="Informações do colaborador"
+      value={tab}
+      onChange={setTab}
+      items={[
+        {
+          value: 'details',
+          label: 'Detalhes',
+          content: isSelf
+            ? <SelfProfileFields collaborator={collaborator} membershipId={membershipId} />
+            : <>
+              {editable
+                ? <AdminEditFields
+                    collaborator={collaborator}
+                    membershipId={membershipId}
+                    canChangeJobTitle={canChangeJobTitle}
+                    canChangeRole={roleEditable}
+                  />
+                : <dl className="collaborator-detail__fields">
+                  <dt>Cargo</dt><dd>{collaborator.jobTitle ?? 'Não informado'}</dd>
+                  <dt>Papel</dt><dd>{collaborator.role.name}</dd>
+                  <dt>E-mail</dt><dd>{collaborator.email}<p className="form-hint">{EMAIL_NOTE}</p></dd>
+                </dl>}
+              {removeOffered && <RemoveCollaborator collaborator={collaborator} membershipId={membershipId} onRemoved={onRemoved} />}
+            </>
+        },
+        { value: 'performance', label: 'Performance', disabled: true, content: null },
+        { value: 'deliveries', label: 'Entregas', disabled: true, content: null }
+      ]}
+    />
+    {/* The two future tabs say why they are off (specs/colaboradores.md §7), in words next to the tab list. */}
+    <dl className="collaborator-detail__soon">
+      {['Performance', 'Entregas'].map((label) => <div key={label}>
+        <dt>{label}</dt>
+        <dd>{UNAVAILABLE_REASON}</dd>
       </div>)}
-    </div>
-    <div role="tabpanel" id={panelId} aria-labelledby={tabId} tabIndex={0}>
-      {isSelf
-        ? <SelfProfileFields collaborator={collaborator} membershipId={membershipId} />
-        : <>
-          {editable
-            ? <AdminEditFields
-                collaborator={collaborator}
-                membershipId={membershipId}
-                canChangeJobTitle={canChangeJobTitle}
-                canChangeRole={roleEditable}
-              />
-            : <dl className="collaborator-detail__fields">
-              <dt>Cargo</dt><dd>{collaborator.jobTitle ?? 'Não informado'}</dd>
-              <dt>Papel</dt><dd>{collaborator.role.name}</dd>
-              <dt>E-mail</dt><dd>{collaborator.email}<p className="form-hint">{EMAIL_NOTE}</p></dd>
-            </dl>}
-          {removeOffered && <RemoveCollaborator collaborator={collaborator} membershipId={membershipId} onRemoved={onRemoved} />}
-        </>}
-    </div>
+    </dl>
   </>;
 }
 

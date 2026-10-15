@@ -7,7 +7,7 @@ import {
   AuthEmailSchema,
   CollaboratorInvitationCreatedResponseSchema
 } from '@ageniza/contracts';
-import { Button, FieldMessage, LiveStatus, Modal, Select, TextInput } from '@ageniza/ui';
+import { Button, Field, FieldMessage, LiveStatus, Modal, Select, TextInput } from '@ageniza/ui';
 
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -62,9 +62,7 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
   const emailId = useId();
-  const emailErrorId = useId();
-  const roleHintId = useId();
-  const roleErrorId = useId();
+  const formId = useId();
   const [email, setEmail] = useState('');
   const [roleId, setRoleId] = useState('');
   const [emailError, setEmailError] = useState<string | undefined>();
@@ -138,59 +136,53 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
   };
 
   if (sent !== null) {
-    return <Modal title="Convidar colaborador" closeLabel="Fechar convite de colaborador" onClose={onClose}>
+    return <Modal title="Convidar colaborador" closeLabel="Fechar convite de colaborador" size="sm" onClose={onClose} actions={<Button ref={closeRef} onClick={onClose}>Fechar</Button>}>
       <div className="form-stack">
         <LiveStatus>Convite enviado para {sent.email}. O link vale por {sent.days} dias.</LiveStatus>
         {sent.superseded && <p className="form-hint">{SUPERSEDED_NOTE}</p>}
-        <div className="form-actions">
-          <Button ref={closeRef} onClick={onClose}>Fechar</Button>
-        </div>
       </div>
     </Modal>;
   }
 
-  return <Modal title="Convidar colaborador" closeLabel="Fechar convite de colaborador" onClose={onClose}>
-    <form className="form-stack" onSubmit={onSubmit} noValidate>
-      <div className="form-field">
-        <label htmlFor={emailId}>E-mail</label>
-        <TextInput
-          ref={emailRef}
-          id={emailId}
-          name="email"
-          type="email"
-          autoComplete="email"
-          value={email}
-          onChange={(event) => { setEmail(event.target.value); setEmailError(undefined); setFormError(undefined); }}
-          aria-invalid={emailError !== undefined}
-          aria-describedby={emailError === undefined ? undefined : emailErrorId}
-        />
-        {emailError !== undefined && <FieldMessage id={emailErrorId} role="alert">{emailError}</FieldMessage>}
-      </div>
+  return <Modal
+    title="Convidar colaborador"
+    closeLabel="Fechar convite de colaborador"
+    size="sm"
+    description="Informe o e-mail e o papel. A pessoa recebe um link para entrar na equipe."
+    onClose={onClose}
+    actions={<Button type="submit" form={formId} disabled={!canSubmit} loading={send.isPending}>Enviar convite</Button>}
+  >
+    <form id={formId} className="form-stack" onSubmit={onSubmit} noValidate>
+      <Field label="E-mail" id={emailId} error={emailError}>
+        {(control) => (
+          <TextInput
+            {...control}
+            ref={emailRef}
+            name="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => { setEmail(event.target.value); setEmailError(undefined); setFormError(undefined); }}
+          />
+        )}
+      </Field>
 
-      <div className="form-field">
-        <Select
-          label="Papel"
-          value={roleId}
-          placeholder="Selecione"
-          options={roleOptions}
-          disabled={roles.isPending || roles.isError}
-          onChange={(value) => { setRoleId(value); setRoleError(undefined); setFormError(undefined); }}
-          aria-invalid={roleError !== undefined}
-          aria-describedby={roleError === undefined ? roleHintId : `${roleHintId} ${roleErrorId}`}
-        />
-        <p id={roleHintId} className="form-hint">{ROLE_HINT}</p>
-        {roleError !== undefined && <FieldMessage id={roleErrorId} role="alert">{roleError}</FieldMessage>}
-        {roles.isError && <div className="form-field">
-          <FieldMessage role="alert">{ROLES_FAILED}</FieldMessage>
-          <Button variant="secondary" size="sm" onClick={() => { void roles.refetch(); }} loading={roles.isFetching}>Tentar de novo</Button>
-        </div>}
-      </div>
+      <Select
+        label="Papel"
+        value={roleId}
+        placeholder="Selecione"
+        options={roleOptions}
+        hint={ROLE_HINT}
+        error={roleError}
+        disabled={roles.isPending || roles.isError}
+        onChange={(value) => { setRoleId(value); setRoleError(undefined); setFormError(undefined); }}
+      />
+      {roles.isError && <div className="form-field">
+        <FieldMessage role="alert">{ROLES_FAILED}</FieldMessage>
+        <Button variant="secondary" size="sm" onClick={() => { void roles.refetch(); }} loading={roles.isFetching}>Tentar de novo</Button>
+      </div>}
 
       {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
-
-      <div className="form-actions">
-        <Button type="submit" disabled={!canSubmit} loading={send.isPending}>Enviar convite</Button>
-      </div>
     </form>
   </Modal>;
 }
