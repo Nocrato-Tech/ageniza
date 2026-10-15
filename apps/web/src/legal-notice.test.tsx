@@ -252,3 +252,20 @@ describe('legal notice in the portal (issue #81)', () => {
     expect(queryNotice()).toBeNull();
   });
 });
+
+describe('legal notice look (#639)', () => {
+  it('leaves the primary action to the screen: accepting is secondary, and a failure carries its icon', async () => {
+    const scenario: Scenario = { account: outdatedAccount(), failAccept: true };
+    const { impl } = makeFetch(scenario);
+    renderApp(impl, `/agencia/${AGENCY}`);
+
+    const accept = await screen.findByRole('button', { name: 'Li e aceito os Termos de Uso' });
+    expect(accept.classList.contains('ui-button--secondary')).toBe(true);
+    expect(accept.classList.contains('ui-button--primary')).toBe(false);
+
+    fireEvent.click(accept);
+    const alert = await screen.findByRole('alert');
+    expect(alert.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    expect(alert.textContent).toBe('Não foi possível registrar o aceite. Tente de novo.');
+  });
+});

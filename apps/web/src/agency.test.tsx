@@ -383,3 +383,53 @@ describe('agency shell landmarks (#193)', () => {
     expectSingleMain(container);
   });
 });
+
+describe('the agency home in the Pauta look (#639)', () => {
+  const shortcutsOf = (): Array<{ name: string; href: string | null }> =>
+    screen.queryAllByRole('link').filter((link) => link.classList.contains('agency-shortcut')).map((link) => ({
+      name: link.querySelector('.agency-shortcut__label')?.textContent ?? '',
+      href: link.getAttribute('href')
+    }));
+
+  const openHome = async (permissions: readonly string[]) => {
+    const { impl } = makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_A, 'Agência Um', permissions)) } });
+    const rendered = renderAgency(impl, `/agencia/${AGENCY_A}`);
+    await screen.findByRole('heading', { name: 'Agência Um', level: 1 });
+    return rendered;
+  };
+
+  it.each([
+    ['colaborador.visualizar', [{ name: 'Equipe', href: `/agencia/${AGENCY_A}/colaboradores` }]],
+    ['cliente.visualizar', [{ name: 'Clientes', href: `/agencia/${AGENCY_A}/clientes` }]],
+    // Contents without the roster behind its picker is not a screen (the menu says the same).
+    ['conteudo.visualizar', []]
+  ])('offers only what the single permission %s opens', async (permission, expected) => {
+    await openHome([permission]);
+    expect(shortcutsOf()).toEqual(expected);
+  });
+
+  it('offers the contents only with both the contents and the roster, in the order of the menu', async () => {
+    await openHome(['colaborador.visualizar', 'cliente.visualizar', 'conteudo.visualizar']);
+    expect(shortcutsOf()).toEqual([
+      { name: 'Conteúdos', href: `/agencia/${AGENCY_A}/conteudos` },
+      { name: 'Clientes', href: `/agencia/${AGENCY_A}/clientes` },
+      { name: 'Equipe', href: `/agencia/${AGENCY_A}/colaboradores` }
+    ]);
+  });
+
+  it('says what each module is for', async () => {
+    await openHome(['colaborador.visualizar', 'cliente.visualizar', 'conteudo.visualizar']);
+    expect(screen.getByText('Calendário do mês, aprovação e roteiros de stories.')).toBeTruthy();
+    expect(screen.getByText('Carteira, estudo de marca e conversas.')).toBeTruthy();
+    expect(screen.getByText('Colaboradores, papéis e convites.')).toBeTruthy();
+    // The icons add nothing to the name a screen reader reads.
+    expect(screen.getByRole('link', { name: 'Clientes Carteira, estudo de marca e conversas.' })).toBeTruthy();
+  });
+
+  it('gives a person with no module the way out instead of a mute screen', async () => {
+    await openHome([]);
+    expect(screen.getByRole('heading', { name: 'Nenhum módulo disponível para o seu papel', level: 2 })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Trocar de contexto' }).getAttribute('href')).toBe('/contextos');
+    expect(shortcutsOf()).toEqual([]);
+  });
+});
