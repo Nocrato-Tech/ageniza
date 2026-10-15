@@ -2552,43 +2552,134 @@ a.client-general__block:focus-visible {
   justify-items: start;
 }
 
-/* Legal pages: specs/auth.md section 7, a long-form reading column with a comfortable line length. */
+/* Legal pages: specs/auth.md section 7, a long-form reading column with a comfortable line length. Two sizes: the title and the text. */
 .legal-document {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-3);
   max-width: 40rem;
-  margin: 0 auto;
+  margin: 0;
 }
 
 .legal-document h1 {
-  font: var(--heading-lg);
+  margin: 0;
+  font: var(--heading-xl);
+  letter-spacing: -0.02em;
+}
+
+.legal-document section {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
 }
 
 .legal-document h2 {
-  margin-top: var(--space-6);
-  font: var(--heading-md);
+  margin: 0;
+  font: var(--title-md);
 }
 
 .legal-document p,
 .legal-document li {
+  margin: 0;
   font: var(--body-lg);
 }
 
+.legal-document ul {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
 .legal-version {
-  color: var(--text-muted);
-  font: var(--body-md);
+  color: var(--text-secondary);
 }
 
 .legal-draft {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
   color: var(--text-danger);
-  font: var(--body-md);
+}
+
+.legal-draft svg {
+  flex: none;
+  width: 1.25rem;
+  height: 1.5rem;
 }
 
 .legal-footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4);
   margin-top: var(--space-8);
+}
+
+/* Public pages (home, status): the logo on the light page, one column, and the way forward. */
+.app-shell > header.public-header {
+  padding-inline: max(var(--space-4), calc((100vw - 72rem) / 2 + var(--space-4)));
+  background: transparent;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.public-page {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-4);
+  max-width: 40rem;
+  margin: 0;
+}
+
+.public-page h1 {
+  margin: 0;
+  font: var(--heading-xl);
+  letter-spacing: -0.02em;
+}
+
+.public-page p {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-lg);
+}
+
+.public-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.public-page__ok,
+.public-page__alert p {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.public-page__ok svg {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--status-ready-fg);
+}
+
+.public-page__alert {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+
+.public-page__alert p {
+  color: var(--text-danger);
+}
+
+.public-page__alert svg {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
 /* Agency area shell: issue #181. Header, side navigation and content, all on tokens. */

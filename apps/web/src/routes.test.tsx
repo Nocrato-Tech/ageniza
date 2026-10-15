@@ -220,3 +220,42 @@ describe('screens that open with a valid session (rule 11 exceptions, issue #342
     expect(screen.queryByRole('heading', { name: 'Entrar' })).toBeNull();
   });
 });
+
+describe('public pages in the Pauta look (#639)', () => {
+  it('leads the home with one primary way in, and keeps the status as the quiet one', () => {
+    renderRoute('/', false);
+    const enter = screen.getByRole('link', { name: 'Entrar' });
+    expect(enter.getAttribute('href')).toBe('/entrar');
+    expect(enter.classList.contains('ui-button--primary')).toBe(true);
+    expect(screen.getByRole('link', { name: 'Status do serviço' }).classList.contains('ui-button--secondary')).toBe(true);
+  });
+
+  it('wears the logo, not the word, in the header of the public pages', () => {
+    renderRoute('/', false);
+    const link = screen.getByRole('link', { name: 'Ageniza' });
+    expect(link.getAttribute('href')).toBe('/');
+    expect(link.querySelector('img')?.getAttribute('src')).toBe('/brand/logo-para-fundo-claro.svg');
+    expect(link.closest('header')?.classList.contains('public-header')).toBe(true);
+  });
+
+  it('marks the healthy status with an icon beside the sentence, never the sentence alone', async () => {
+    const healthy: typeof fetch = async (input) => (String(input).endsWith('/health') ? json({ status: 'ok' }) : new Response(null, { status: 401 }));
+    renderRoute('/status', false, healthy);
+    const sentence = await screen.findByText('A API está ok.');
+    expect(sentence.parentElement?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('offers "Tentar de novo" on the unavailable status, and shows the answer once it comes', async () => {
+    let up = false;
+    const flaky: typeof fetch = async (input) => String(input).endsWith('/health') && up
+      ? json({ status: 'ok' })
+      : json({ error: { code: 'INTERNAL_ERROR', message: 'Unexpected error.' } }, 500);
+    renderRoute('/status', false, flaky);
+
+    const retry = await screen.findByRole('button', { name: 'Tentar de novo' }, { timeout: 5000 });
+    expect(screen.getByRole('alert').querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    up = true;
+    fireEvent.click(retry);
+    expect(await screen.findByText('A API está ok.')).toBeTruthy();
+  });
+});

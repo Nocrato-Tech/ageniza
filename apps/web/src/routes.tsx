@@ -7,7 +7,8 @@ import { AccountMenu } from './account-menu.js';
 import { DarkArea } from './area-theme.js';
 import { AgencyAreaLayout, AgencyHomePage, AgencyPermissionRoute } from './agency.js';
 import { AuthLayout } from './auth-layout.js';
-import { LiveStatus } from '@ageniza/ui';
+import { CircleAlert, CircleCheck } from 'lucide-react';
+import { Button, ButtonLink, LiveStatus, Logo } from '@ageniza/ui';
 import { ClientBrandStudyTab } from './brand-study.js';
 import { ClientDetailPage, ClientGeneralTab, ClientSkeletonTab } from './client-detail.js';
 import { ClientsPage } from './clients.js';
@@ -41,7 +42,7 @@ const DesignSystemPage = import.meta.env.DEV ? lazy(() => import('./design-syste
 const CONTENT_AREA_PERMISSIONS = ['conteudo.visualizar', 'cliente.visualizar'] as const;
 
 export function PublicLayout() {
-  return <div className="app-shell"><a className="skip-link" href="#main-content">Pular para o conteúdo</a><header><Link to="/">Ageniza</Link></header><main id="main-content"><Outlet /></main></div>;
+  return <div className="app-shell"><a className="skip-link" href="#main-content">Pular para o conteúdo</a><header className="public-header"><Link to="/"><Logo variant="on-light" height={32} /></Link></header><main id="main-content"><Outlet /></main></div>;
 }
 
 export function ProtectedLayout({ session, children }: { session: AuthSessionSnapshot; children?: ReactNode }) {
@@ -58,13 +59,31 @@ function PortalCalendarRedirect() {
   return <Navigate to={{ pathname: `/portal/${encodeURIComponent(clienteId)}/conteudos`, search }} replace />;
 }
 
-function PublicHome() { return <section><h1>Ageniza</h1><p>Operações de agência, em um só lugar.</p><Link to="/status">Status do serviço</Link></section>; }
+function PublicHome() {
+  return <section className="public-page public-home" aria-labelledby="public-home-title">
+    <h1 id="public-home-title">Ageniza</h1>
+    <p>Operações de agência, em um só lugar.</p>
+    <div className="public-page__actions">
+      <ButtonLink as={Link} to="/entrar" size="lg">Entrar</ButtonLink>
+      <ButtonLink as={Link} to="/status" variant="secondary" size="lg">Status do serviço</ButtonLink>
+    </div>
+  </section>;
+}
 function ServiceStatus() {
   const httpClient = useApiClient();
   const health = useQuery({ queryKey: ['health'], queryFn: () => getHealth(httpClient) });
   if (health.isPending) return <LoadingPage />;
-  if (health.isError) return <section><h1>Status do serviço</h1><p role="alert">O status está temporariamente indisponível.</p></section>;
-  return <section><h1>Status do serviço</h1><LiveStatus>A API está {health.data.status}.</LiveStatus></section>;
+  if (health.isError) return <section className="public-page" aria-labelledby="service-status-title">
+    <h1 id="service-status-title">Status do serviço</h1>
+    <div role="alert" className="public-page__alert">
+      <p><CircleAlert aria-hidden="true" />O status está temporariamente indisponível.</p>
+      <Button onClick={() => { void health.refetch(); }} disabled={health.isFetching}>Tentar de novo</Button>
+    </div>
+  </section>;
+  return <section className="public-page" aria-labelledby="service-status-title">
+    <h1 id="service-status-title">Status do serviço</h1>
+    <div className="public-page__ok"><CircleCheck aria-hidden="true" /><LiveStatus>A API está {health.data.status}.</LiveStatus></div>
+  </section>;
 }
 
 /**
