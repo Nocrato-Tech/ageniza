@@ -18,9 +18,10 @@ export const isHttpUrl = (value: string): boolean => /^https?:\/\//i.test(value)
 /**
  * The cover of a content, in the calendar and in the feed. The signed URL of an image is asked only once the
  * element was on screen and only for a content that has a cover; any refusal of the route (no thumbnail, removed,
- * not allowed) leaves the shape of the format. `className` places it in the card that uses it.
+ * not allowed) leaves the shape of the format. `className` places it in the card that uses it; `bare` is a content with
+ * no media at all, whose card is text only (the shape stays in the DOM, only it is not drawn).
  */
-export function ContentCover({ assetId, format, className = 'content-card__cover' }: { assetId: string | null; format: ContentFormat; className?: string }) {
+export function ContentCover({ assetId, format, className = 'content-card__cover', bare = false }: { assetId: string | null; format: ContentFormat; className?: string; bare?: boolean }) {
   const httpClient = useApiClient();
   const agency = useAgencyContext();
   const [ref, seen] = useSeen<HTMLDivElement>();
@@ -41,7 +42,7 @@ export function ContentCover({ assetId, format, className = 'content-card__cover
   });
   const url = cover.data?.url;
   const usable = url !== undefined && isHttpUrl(url) && broken !== url;
-  return <div ref={ref} className={`${className}${usable ? '' : ` ${className}--placeholder`}`}>
+  return <div ref={ref} className={`${className}${usable ? '' : ` ${className}--placeholder`}${bare ? ` ${className}--bare` : ''}`}>
     {usable
       ? <img src={url} alt="" loading="lazy" onError={() => setBroken(url)} />
       : <span aria-hidden="true">{FORMAT_GLYPHS[format]}</span>}

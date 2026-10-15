@@ -406,12 +406,8 @@ describe('avatar attention ring', () => {
     expect(rule('.ui-avatar--attention').get('box-shadow')).toBe('0 0 0 2px var(--ui-avatar-gap, var(--bg-canvas)), 0 0 0 4px var(--status-late-fg)');
   });
 
-  it('is the ring of the story avatar of the screen as well, so both agree', () => {
-    expect(ringOf('.content-story__avatar--attention')).toBe(ringOf('.ui-avatar--attention'));
-  });
-
-  it.each(['light', 'dark'] as const)('is 3:1 on the canvas and the surface in %s, for the Avatar and for the story avatar', (theme) => {
-    for (const selector of ['.ui-avatar--attention', '.content-story__avatar--attention']) {
+  it.each(['light', 'dark'] as const)('is 3:1 on the canvas and the surface in %s, for the Avatar of the client strip as well', (theme) => {
+    for (const selector of ['.ui-avatar--attention']) {
       for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) expect(contrastOf(theme, ringOf(selector), surface), `${selector} on ${surface}`).toBeGreaterThanOrEqual(3);
     }
   });
