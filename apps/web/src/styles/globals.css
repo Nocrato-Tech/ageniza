@@ -1679,7 +1679,6 @@ a.client-general__block:focus-visible {
 
 .edit-client__photo-progress {
   width: 100%;
-  accent-color: var(--action-primary-bg);
 }
 
 .edit-client__group {
@@ -1957,7 +1956,6 @@ a.client-general__block:focus-visible {
 
 .collaborator-detail__photo-progress {
   width: 100%;
-  accent-color: var(--action-primary-bg);
 }
 
 .collaborator-detail__self {
@@ -3345,6 +3343,13 @@ a.client-general__block:focus-visible {
 
 .legal-notice__text {
   margin: 0;
+}
+
+/* The accept button of the other document while one acceptance is pending: it answers nothing (aria-disabled keeps
+   its focus), so it looks as dimmed as a disabled one. The pending button shows the loading state instead. */
+.legal-notice__item .ui-button[aria-disabled='true']:not(.ui-button--loading) {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .legal-notice__text a {
@@ -6323,6 +6328,13 @@ main > .shell-notice {
 .media-uploader__progress {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* The neutral progress bar of the Pauta, shared by the media upload and the two photo uploads: a quiet
+   track and a primary-text fill, never the indigo of the action (docs/design-system.md section 25). */
+.media-uploader__progress,
+.edit-client__photo-progress,
+.collaborator-detail__photo-progress {
   height: 0.5rem;
   border: 0;
   border-radius: var(--radius-full);
@@ -6331,18 +6343,52 @@ main > .shell-notice {
   overflow: hidden;
 }
 
-.media-uploader__progress::-webkit-progress-bar {
+.media-uploader__progress::-webkit-progress-bar,
+.edit-client__photo-progress::-webkit-progress-bar,
+.collaborator-detail__photo-progress::-webkit-progress-bar {
   background: var(--bg-hover);
 }
 
-.media-uploader__progress::-webkit-progress-value {
+.media-uploader__progress::-webkit-progress-value,
+.edit-client__photo-progress::-webkit-progress-value,
+.collaborator-detail__photo-progress::-webkit-progress-value {
   border-radius: var(--radius-full);
   background: var(--text-primary);
 }
 
-.media-uploader__progress::-moz-progress-bar {
+.media-uploader__progress::-moz-progress-bar,
+.edit-client__photo-progress::-moz-progress-bar,
+.collaborator-detail__photo-progress::-moz-progress-bar {
   border-radius: var(--radius-full);
   background: var(--text-primary);
+}
+
+/* A photo waiting for the server has no value to show: a primary-text segment slides along the track. */
+.edit-client__photo-progress:indeterminate,
+.edit-client__photo-progress:indeterminate::-webkit-progress-bar,
+.collaborator-detail__photo-progress:indeterminate,
+.collaborator-detail__photo-progress:indeterminate::-webkit-progress-bar {
+  background: linear-gradient(90deg, transparent 0 40%, var(--text-primary) 40% 60%, transparent 60% 100%) 0 0 / 200% 100% var(--bg-hover);
+  animation: ui-progress-slide 1.2s linear infinite;
+}
+
+@keyframes ui-progress-slide {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edit-client__photo-progress:indeterminate,
+  .edit-client__photo-progress:indeterminate::-webkit-progress-bar,
+  .collaborator-detail__photo-progress:indeterminate,
+  .collaborator-detail__photo-progress:indeterminate::-webkit-progress-bar {
+    animation: none;
+  }
 }
 
 .media-uploader__done {
