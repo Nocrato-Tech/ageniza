@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import {
@@ -6,17 +7,17 @@ import {
   PortalContentPeriodResponseSchema,
   type PortalContentListItem
 } from '@ageniza/contracts';
-import { Button, Select, Skeleton } from '@ageniza/ui';
+import { Button, EmptyState, FormatTag, Select, Skeleton, StatusTag } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { dayMonthLabel, fullDayLabel, monthPeriod, parseAnchor, periodTitle, shiftAnchor, todayInSaoPaulo, weekdayShortLabel } from './content-dates.js';
 import { FEED_FORMATS } from './content-feed.js';
-import { FORMAT_LABELS } from './content-labels.js';
+import { FORMAT_LABELS, FORMAT_TONES } from './content-labels.js';
 import { useDocumentTitle } from './document-title.js';
 import { useApiClient } from './http.js';
 import { PortalContentCover } from './portal-content-cover.js';
 import { usePortalClient } from './portal.js';
-import { PORTAL_STATUS_LABELS, portalPostAddress as postAddress, type PortalStatus } from './portal-status.js';
+import { PORTAL_STATUS_LABELS, PORTAL_STATUS_TAGS, portalPostAddress as postAddress, type PortalStatus } from './portal-status.js';
 
 const LIST_PATH = '/clients/:clientId/contents';
 const AWAITING_PATH = '/clients/:clientId/contents/awaiting-approval';
@@ -61,8 +62,8 @@ function Awaiting({ clientId }: { clientId: string }) {
   if (awaiting.isPending) return <div className="portal-awaiting" aria-hidden="true"><Skeleton className="portal-awaiting__skeleton" /></div>;
   if (awaiting.isError && awaiting.data === undefined) {
     return <section className="portal-awaiting" aria-labelledby="portal-awaiting-title">
-      <h2 id="portal-awaiting-title">O que precisa de você</h2>
-      <div role="alert">
+      <h2 id="portal-awaiting-title" className="portal-section__title">O que precisa de você</h2>
+      <div className="portal-error" role="alert">
         <p>Não foi possível carregar o que precisa de você.</p>
         <Button variant="secondary" loading={awaiting.isFetching} onClick={() => { void awaiting.refetch(); }}>Tentar de novo</Button>
       </div>
@@ -71,7 +72,7 @@ function Awaiting({ clientId }: { clientId: string }) {
   const { data, meta } = awaiting.data!;
   if (meta.totalItems === 0) return null;
   return <section className="portal-awaiting" aria-labelledby="portal-awaiting-title">
-    <h2 id="portal-awaiting-title">O que precisa de você <span>({meta.totalItems})</span></h2>
+    <h2 id="portal-awaiting-title" className="portal-section__title">O que precisa de você <span>({meta.totalItems})</span></h2>
     <ul className="portal-awaiting__list">
       {data.map((content) => <li key={content.id} className="portal-awaiting__item">
         <PortalContentCover clientId={clientId} contentId={content.id} assetId={content.thumbnailAssetId} format={content.format} className="portal-awaiting__cover" />
@@ -84,11 +85,14 @@ function Awaiting({ clientId }: { clientId: string }) {
 }
 
 function ContentCard({ clientId, content }: { clientId: string; content: PortalContentListItem }) {
-  return <article className="portal-card" data-status={content.status}>
+  return <article className="portal-card" data-status={content.status} data-format={FORMAT_TONES[content.format]}>
     <PortalContentCover clientId={clientId} contentId={content.id} assetId={coverOf(content)} format={content.format} className="portal-card__cover" />
     <div className="portal-card__text">
       <p className="portal-card__title"><Link className="portal-card-link" to={postAddress(clientId, content.id)}>{content.title}</Link></p>
-      <p className="portal-card__meta">{FORMAT_LABELS[content.format]} · {PORTAL_STATUS_LABELS[content.status]}</p>
+      <p className="portal-meta">
+        <FormatTag format={FORMAT_TONES[content.format]}>{FORMAT_LABELS[content.format]}</FormatTag>
+        <StatusTag status={PORTAL_STATUS_TAGS[content.status]}>{PORTAL_STATUS_LABELS[content.status]}</StatusTag>
+      </p>
     </div>
   </article>;
 }
@@ -112,9 +116,16 @@ function MonthList({ clientId, contents }: { clientId: string; contents: readonl
   </ol>;
 }
 
-function Feed({ clientId, contents, today, handle }: { clientId: string; contents: readonly PortalContentListItem[]; today: string; handle: string | null }) {
+function Feed({ clientId, contents, today, handle, onBack }: { clientId: string; contents: readonly PortalContentListItem[]; today: string; handle: string | null; onBack: () => void }) {
   const items = feedItems(contents);
-  if (items.length === 0) return <p className="portal-contents__empty">Nenhum post do feed planejado para este mês</p>;
+  if (items.length === 0) {
+    return <EmptyState
+      className="portal-empty"
+      title="Nenhum post do feed planejado para este mês"
+      description="O feed mostra imagens, carrosséis e reels. Os outros formatos estão na lista."
+      action={<Button variant="secondary" onClick={onBack}>Ver a lista</Button>}
+    />;
+  }
   return <section className="content-feed" aria-label="Prévia do feed">
     {handle !== null && <p className="content-feed__handle">@{handle}</p>}
     <ol className="content-feed__grid">
@@ -164,12 +175,12 @@ export function PortalContentsPage() {
   const shown = contents.data === undefined ? [] : status === '' || vista === 'feed' ? contents.data.data : contents.data.data.filter((content) => content.status === status);
 
   return <section className="portal-contents" aria-labelledby="portal-contents-title">
-    <h1 id="portal-contents-title">Conteúdos</h1>
+    <h1 id="portal-contents-title" className="portal-headline">Conteúdos</h1>
     <Awaiting clientId={clientId} />
     <div className="portal-contents__period" role="group" aria-label="Período">
-      <Button variant="secondary" aria-label="Mês anterior" onClick={() => change('data', shiftAnchor('month', anchor, -1))}><span aria-hidden="true">‹</span></Button>
+      <Button variant="secondary" aria-label="Mês anterior" leadingIcon={<ChevronLeft />} onClick={() => change('data', shiftAnchor('month', anchor, -1))} />
       <h2 className="portal-contents__period-title" aria-live="polite">{periodTitle('month', anchor)}</h2>
-      <Button variant="secondary" aria-label="Próximo mês" onClick={() => change('data', shiftAnchor('month', anchor, 1))}><span aria-hidden="true">›</span></Button>
+      <Button variant="secondary" aria-label="Próximo mês" leadingIcon={<ChevronRight />} onClick={() => change('data', shiftAnchor('month', anchor, 1))} />
     </div>
     <div className="portal-contents__toggle" role="group" aria-label="Visão">
       <Button variant={vista === 'calendar' ? 'secondary' : 'ghost'} aria-pressed={vista === 'calendar'} onClick={() => change('vista', null)}>Calendário</Button>
@@ -179,16 +190,26 @@ export function PortalContentsPage() {
     {contents.isPending
       ? <div className="portal-contents__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>
       : contents.isError && contents.data === undefined
-        ? <div className="portal-contents__error" role="alert">
+        ? <div className="portal-error" role="alert">
           <p>Não foi possível carregar os conteúdos. Tente de novo.</p>
-          <Button loading={contents.isFetching} onClick={() => { void contents.refetch(); }}>Tentar de novo</Button>
+          <Button variant="secondary" loading={contents.isFetching} onClick={() => { void contents.refetch(); }}>Tentar de novo</Button>
         </div>
         : contents.data!.data.length === 0
-          ? <p className="portal-contents__empty">Nenhum conteúdo planejado para este mês</p>
+          ? <EmptyState
+            mascot
+            className="portal-empty"
+            title="Nenhum conteúdo planejado para este mês"
+            description="Quando a agência planejar, os posts aparecem aqui."
+            action={anchor.slice(0, 7) === today.slice(0, 7) ? undefined : <Button variant="secondary" onClick={() => change('data', null)}>Ir para este mês</Button>}
+          />
           : vista === 'feed'
-            ? <Feed clientId={clientId} contents={shown} today={today} handle={client.instagramHandle} />
+            ? <Feed clientId={clientId} contents={shown} today={today} handle={client.instagramHandle} onBack={() => change('vista', null)} />
             : shown.length === 0
-              ? <p className="portal-contents__empty">Nenhum conteúdo nesta situação neste mês</p>
+              ? <EmptyState
+                className="portal-empty"
+                title="Nenhum conteúdo nesta situação neste mês"
+                action={<Button variant="secondary" onClick={() => change('situacao', null)}>Limpar o filtro</Button>}
+              />
               : <MonthList clientId={clientId} contents={shown} />}
   </section>;
 }

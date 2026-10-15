@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Clapperboard, GalleryVertical, Image as ImageIcon, MonitorPlay, Video, type LucideIcon } from 'lucide-react';
 
 import { MediaDownloadUrlResponseSchema, type ContentFormat, type MediaDownloadUrlResponse } from '@ageniza/contracts';
 
@@ -9,8 +10,14 @@ import { useApiClient } from './http.js';
 import { signedUrlStaleTime } from './signed-url.js';
 import { useSeen } from './use-seen.js';
 
-/** What stands for the cover while there is none: the shape of the format, never a cover someone did not choose. */
-export const FORMAT_GLYPHS: Readonly<Record<ContentFormat, string>> = { image: '▣', carousel: '▤', reels: '▶', long_video: '▶', vsl: '▶' };
+/** The lucide icon of each format: the feed tile and the covers draw the same shape for the same format. */
+export const FORMAT_ICONS: Readonly<Record<ContentFormat, LucideIcon>> = { image: ImageIcon, carousel: GalleryVertical, reels: Clapperboard, long_video: Video, vsl: MonitorPlay };
+
+/** What stands for the cover while there is none: the shape of the format, never a cover someone did not choose. It is as large as the font of the cover that holds it. */
+export function FormatShape({ format }: { format: ContentFormat }) {
+  const Icon = FORMAT_ICONS[format];
+  return <span className="format-shape" aria-hidden="true"><Icon /></span>;
+}
 
 /** The contract validates the URL; a response is untrusted input and only an http(s) address becomes an `src`. */
 export const isHttpUrl = (value: string): boolean => /^https?:\/\//i.test(value);
@@ -45,6 +52,6 @@ export function ContentCover({ assetId, format, className = 'content-card__cover
   return <div ref={ref} className={`${className}${usable ? '' : ` ${className}--placeholder`}${bare ? ` ${className}--bare` : ''}`}>
     {usable
       ? <img src={url} alt="" loading="lazy" onError={() => setBroken(url)} />
-      : <span aria-hidden="true">{FORMAT_GLYPHS[format]}</span>}
+      : <FormatShape format={format} />}
   </div>;
 }

@@ -340,6 +340,12 @@ const calendarReady = (): Promise<HTMLElement> => waitFor(() => {
   return calendar;
 });
 
+/** The lucide icon that draws the shape of a format: the name lucide-react gives the class of its svg. */
+const shapeOf = (cover: Element | null | undefined): string | null => {
+  const names = (cover?.querySelector('.format-shape > svg')?.getAttribute('class') ?? '').split(' ').filter((name) => name.startsWith('lucide-'));
+  return names.length === 0 ? null : names[0]!.slice('lucide-'.length);
+};
+
 describe('the Conteúdos item and the guard', () => {
   it('gives the item to whoever has conteudo.visualizar, linked to the selector', async () => {
     const { impl } = makeFetch({ permissions: [VISUALIZE, READ_CLIENTS] });
@@ -1210,7 +1216,7 @@ describe('the cover of a card', () => {
     await screen.findByText('Sem quadro');
 
     await waitFor(() => expect(coverCalls(calls)).toHaveLength(1));
-    await waitFor(() => expect(cardOf('Sem quadro').querySelector('.content-card__cover--placeholder')?.textContent).toBe('▶'));
+    await waitFor(() => expect(shapeOf(cardOf('Sem quadro').querySelector('.content-card__cover--placeholder'))).toBe('clapperboard'));
     expect(cardOf('Sem quadro').querySelector('img')).toBeNull();
   });
 
@@ -1221,7 +1227,7 @@ describe('the cover of a card', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Capa removida');
 
-    expect(cardOf('Capa removida').querySelector('.content-card__cover--placeholder')?.textContent).toBe('▶');
+    expect(shapeOf(cardOf('Capa removida').querySelector('.content-card__cover--placeholder'))).toBe('clapperboard');
     expect(coverCalls(calls)).toEqual([]);
   });
 
@@ -1233,8 +1239,8 @@ describe('the cover of a card', () => {
     await screen.findByText('Sem capa');
 
     expect(cardOf('Sem capa').querySelector('img')).toBeNull();
-    expect(cardOf('Sem capa').querySelector('.content-card__cover--placeholder')?.textContent).toBe('▤');
-    expect(cardOf('Filme').querySelector('.content-card__cover--placeholder')?.textContent).toBe('▶');
+    expect(shapeOf(cardOf('Sem capa').querySelector('.content-card__cover--placeholder'))).toBe('gallery-vertical');
+    expect(shapeOf(cardOf('Filme').querySelector('.content-card__cover--placeholder'))).toBe('clapperboard');
     expect(coverCalls(calls)).toEqual([]);
   });
 
@@ -1259,7 +1265,7 @@ describe('the cover of a card', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Recusada');
     await waitFor(() => expect(cardOf('Recusada').querySelector('.content-card__cover--placeholder')).not.toBeNull());
-    expect(cardOf('Recusada').querySelector('.content-card__cover--placeholder')?.textContent).toBe('▶');
+    expect(shapeOf(cardOf('Recusada').querySelector('.content-card__cover--placeholder'))).toBe('clapperboard');
     expect(cardOf('Recusada').querySelector('img')).toBeNull();
   });
 
