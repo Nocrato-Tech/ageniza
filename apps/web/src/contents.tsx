@@ -216,6 +216,7 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
     clientId: normalizedId,
     canOperate: canWriteScripts,
     scripts: contents.data?.data.storyScripts ?? [],
+    today,
     onCreateContent: startContent
   });
 
@@ -339,6 +340,7 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
                   </>}
               </>}
           </div>}
+        {vista === 'calendar' && loaded !== undefined && scriptLayer.list}
       </div>
       {vista === 'calendar' && <aside className="contents__feed" aria-label="Prévia do feed">
         {loaded === undefined
