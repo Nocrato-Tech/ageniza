@@ -398,7 +398,7 @@ describe('the stories (/agencia/:agenciaId/conteudos)', () => {
     render_(impl);
 
     const nav = await screen.findByRole('navigation', { name: 'Clientes' });
-    const names = within(nav).getAllByRole('link').map((link) => link.querySelector('.content-story__name')?.textContent);
+    const names = within(nav).getAllByRole('link').map((link) => link.querySelector('.ui-client-strip__name')?.textContent);
     // The archived client is not here, and the order is the server's, not alphabetical.
     expect(names).toEqual(['Padaria Central', 'Academia Corpo', 'Confeitaria Doce']);
     expect(screen.queryByText('Barbearia Lima')).toBeNull();
@@ -486,7 +486,7 @@ describe('the ring on the stories (contentIndicators of #261)', () => {
     ({ pending: 0, inReview: 0, overdue: 0, adjusting: 0, dueSoon: 0, ...overrides });
   const withIndicators = (id: string, name: string, contentIndicators?: ReturnType<typeof indicators>) =>
     ({ ...clientFixture(id, name, null), ...(contentIndicators === undefined ? {} : { contentIndicators }) });
-  const ringed = (link: HTMLElement): boolean => link.querySelector('.content-story__avatar--attention') !== null;
+  const ringed = (link: HTMLElement): boolean => link.querySelector('.ui-avatar--attention') !== null;
 
   it.each([
     ['a change asked by the client (adjusting)', { adjusting: 1 }, 'em ajuste'],
@@ -652,7 +652,8 @@ describe('the month calendar', () => {
     const day = dayCell('2026-10-14');
     expect(within(day).getAllByRole('article').map((card) => within(card).getByText(/./, { selector: '.content-card__link' }).textContent)).toEqual(['Lançamento do pão', 'Bastidores']);
     const launch = within(day).getByText('Lançamento do pão').closest('article')!;
-    expect(within(launch).getByText('Carrossel · 18:00')).toBeTruthy();
+    expect(within(launch).getByText('Carrossel')).toBeTruthy();
+    expect(within(launch).getByText('18:00')).toBeTruthy();
     expect(within(launch).getByText('Aguardando aprovação')).toBeTruthy();
     expect(within(launch).getByText('50% das subtarefas')).toBeTruthy();
     const behind = within(day).getByText('Bastidores').closest('article')!;
@@ -1829,6 +1830,84 @@ describe('the header and the grid of the calendar', () => {
     expect(await screen.findByRole('button', { name: 'Nova publicação' })).toBeTruthy();
   });
 
+  describe('the card of a post', () => {
+    const cardTitled = (title: string): HTMLElement => screen.getByText(title).closest('article')!;
+
+    it.each([
+      ['carousel', 'carousel', 'Carrossel'], ['reels', 'reels', 'Reels'], ['image', 'static', 'Imagem'], ['long_video', 'static', 'Vídeo longo'], ['vsl', 'static', 'VSL']
+    ] as const)('tints a %s card as %s and names the format in front of the title and in a filled tag', async (format, tone, label) => {
+      const { impl } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Um post', publishOn: '2026-10-20', format })] } });
+      render_(impl, contentsUrl(padaria.id));
+      await screen.findByText('Um post');
+
+      const card = cardTitled('Um post');
+      expect(card.getAttribute('data-format')).toBe(tone);
+      expect(card.querySelector('.content-card__title')?.textContent).toBe(`${label}: Um post`);
+      expect(card.querySelector(`.ui-format-tag--${tone}`)?.textContent).toBe(label);
+    });
+
+    it.each([
+      ['in_production', 'production', 'Em produção'], ['awaiting_approval', 'waiting', 'Aguardando aprovação'], ['adjusting', 'adjust', 'Em ajuste'],
+      ['approved', 'ready', 'Pronto para publicar'], ['published', 'published', 'Publicado'], ['cancelled', 'production', 'Cancelado']
+    ] as const)('draws the state %s as an outlined tag of the %s kind, with its words', async (status, kind, label) => {
+      const { impl } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Estado', publishOn: '2026-10-25', status })] } });
+      render_(impl, contentsUrl(padaria.id));
+      await screen.findByText('Estado');
+
+      const tag = cardTitled('Estado').querySelector(`.ui-status-tag--${kind}`);
+      expect(tag?.textContent).toBe(label);
+      expect(tag?.querySelector('svg')).not.toBeNull();
+    });
+
+    it('puts the solid "Atrasado" block, and the red edge, only on a late card, and keeps its state tag', async () => {
+      const { impl } = makeFetch({
+        contents: { [padaria.id]: [
+          contentFixture({ title: 'Passou', publishOn: '2026-10-10', status: 'approved' }),
+          contentFixture({ title: 'Em dia', publishOn: '2026-10-25', status: 'approved' }),
+          contentFixture({ title: 'Publicado antigo', publishOn: '2026-10-05', status: 'published' }),
+          contentFixture({ title: 'Quase lá', publishOn: '2026-10-13', status: 'in_production' })
+        ] }
+      });
+      render_(impl, contentsUrl(padaria.id));
+      await screen.findByText('Passou');
+
+      const late = cardTitled('Passou');
+      expect(late.getAttribute('data-late')).toBe('true');
+      expect(late.querySelector('.ui-late-badge')?.textContent).toBe('Atrasado');
+      expect(within(late).getByText('Pronto para publicar')).toBeTruthy();
+      for (const title of ['Em dia', 'Publicado antigo', 'Quase lá']) {
+        expect(cardTitled(title).getAttribute('data-late')).toBeNull();
+        expect(cardTitled(title).querySelector('.ui-late-badge')).toBeNull();
+      }
+    });
+
+    it('is text only when the post has no media, and keeps the cover when it has one', async () => {
+      const { impl } = makeFetch({
+        contents: { [padaria.id]: [
+          contentFixture({ title: 'Sem mídia', publishOn: '2026-10-20', format: 'carousel' }),
+          contentFixture({ title: 'Com mídia', publishOn: '2026-10-21', format: 'carousel', coverAssetId: ASSET_A })
+        ] }
+      });
+      render_(impl, contentsUrl(padaria.id));
+      await screen.findByText('Sem mídia');
+
+      expect(cardTitled('Sem mídia').querySelector('.content-card__cover--bare')).not.toBeNull();
+      expect(cardTitled('Com mídia').querySelector('.content-card__cover--bare')).toBeNull();
+      expect(cardTitled('Com mídia').querySelector('.content-card__cover')).not.toBeNull();
+    });
+
+    it('shows the time of a post on its own line, and nothing when it has none', async () => {
+      const { impl } = makeFetch({
+        contents: { [padaria.id]: [contentFixture({ title: 'Com hora', publishOn: '2026-10-20', publishAtTime: '09:30' }), contentFixture({ title: 'Sem hora', publishOn: '2026-10-21' })] }
+      });
+      render_(impl, contentsUrl(padaria.id));
+      await screen.findByText('Com hora');
+
+      expect(cardTitled('Com hora').querySelector('.content-card__meta')?.textContent).toBe('09:30');
+      expect(cardTitled('Sem hora').querySelector('.content-card__meta')).toBeNull();
+    });
+  });
+
   describe('CSS contract', () => {
     const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
     const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
@@ -1857,6 +1936,30 @@ describe('the header and the grid of the calendar', () => {
       expect(body('.content-calendar')).toMatch(/min-width:\s*0;/);
       expect(body('.content-calendar')).not.toMatch(/min-width:\s*42rem/);
       expect(body('.content-calendar__days')).toMatch(/min-width:\s*42rem;/);
+    });
+
+    it('tints the card and its title by format with the format tokens, and keeps the late edge red', () => {
+      for (const [tone, name] of [['carousel', 'carousel'], ['reels', 'reels'], ['static', 'static']] as const) {
+        expect(body(`.content-card[data-format='${tone}']`)).toContain(`background: var(--format-${name}-bg);`);
+        expect(body(`.content-card[data-format='${tone}']`)).toContain(`--content-card-title: var(--format-${name}-fg);`);
+      }
+      expect(body('.content-card[data-late]')).toMatch(/border-color:\s*var\(--status-late-fg\)/);
+    });
+
+    it('cuts the title at four lines, hides the cover of a post with no media, and lets a day shrink its cards', () => {
+      expect(body('.content-card__title')).toMatch(/-webkit-line-clamp:\s*4;/);
+      expect(body('.content-card__cover--bare')).toMatch(/display:\s*none;/);
+      expect(body('.content-day')).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\);/);
+    });
+
+    it('lets the card shrink to its day: one shrinking column, or the longest word of a tag widens it past the day', () => {
+      expect(body('.content-card')).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\);/);
+    });
+
+    it('opens the detail of a card of the last row of the month upward, so the scrolling calendar does not clip it', () => {
+      const rule = body(".content-calendar[data-view='month'] .content-day:nth-last-child(-n + 7) .content-card__detail");
+      expect(rule).toMatch(/bottom:\s*100%;/);
+      expect(rule).toMatch(/top:\s*auto;/);
     });
 
     it('puts no shadow on the profile preview (only what floats has one) and sets the tile state in the scale', () => {

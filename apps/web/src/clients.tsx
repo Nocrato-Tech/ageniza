@@ -1,12 +1,15 @@
+import { ChevronRight, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
-import { ClientListResponseSchema, type ClientListItem } from '@ageniza/contracts';
-import { Avatar, Button, Pagination, Select, Skeleton, TextInput } from '@ageniza/ui';
+import { ClientListResponseSchema } from '@ageniza/contracts';
+import { Button, ButtonLink, EmptyState, FilterBar, FilterBarItem, FilterBarSelect, Pagination, Pill, Skeleton, TextInput } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
+import { ClientCard } from './client-card.js';
+import { triageSentence } from './clients-triage.js';
 import { CreateClientDialog } from './create-client.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -46,53 +49,11 @@ const listPath = (agenciaId: string, filters: Filters): string => {
 const isNotVisible = (error: unknown): boolean =>
   error instanceof HttpClientError && (error.status === 403 || error.status === 404);
 
-/** "2026-10-30" → "30/10". Built from the string: a UTC parse would flip the day in Brazil. */
-const closingLabel = (closingDate: string): string => `${closingDate.slice(8, 10)}/${closingDate.slice(5, 7)}`;
-
-const suggestionLabel = (count: number): string =>
-  count === 1 ? '1 sugestão aguardando' : `${count} sugestões aguardando`;
-
 /**
- * The triage card (`specs/clientes.md` §7): photo or initials, name and @, the badges and the
- * reserved indicator strip. The strip never shows a number in the MVP — it only says the area
- * exists. An archived card is dimmed and carries no badge; its only destination is the read-only
- * detail.
- */
-function ClientCard({ client, canSeeInvitations, canSeeContents }: { client: ClientListItem; canSeeInvitations: boolean; canSeeContents: boolean }) {
-  const archived = client.status === 'archived';
-  // The API omits the field for who cannot read contents; the permission is checked again, as for the invitations.
-  const indicators = canSeeContents ? client.contentIndicators : undefined;
-  return <article className={`clients__card${archived ? ' clients__card--archived' : ''}`}>
-    <Avatar name={client.name} photoUrl={client.photoUrl} size="lg" />
-    <div className="clients__card-body">
-      <p className="clients__card-name" id={`client-${client.id}-name`}>{client.name}</p>
-      {client.instagramHandle !== null && <p className="clients__card-handle">@{client.instagramHandle}</p>}
-      {!archived && <ul className="clients__badges">
-        {client.threadsAwaitingAgency > 0 && (
-          <li className="clients__badge clients__badge--attention">{suggestionLabel(client.threadsAwaitingAgency)}</li>
-        )}
-        {client.closingDate !== null && <li className="clients__badge">encerra em {closingLabel(client.closingDate)}</li>}
-        {/* The API omits the field for who cannot invite; the extra check keeps the promise if the
-            response ever leaks it (the same convenience, not barrier, as specs/clientes.md §7). */}
-        {canSeeInvitations && client.pendingInvitations !== undefined && client.pendingInvitations > 0 && (
-          <li className="clients__badge">convite pendente</li>
-        )}
-      </ul>}
-    </div>
-    {!archived && (indicators === undefined
-      ? <p className="clients__indicators">pendentes · em revisão · atrasos</p>
-      : <ul className="clients__indicators" aria-label="Indicadores de conteúdo">
-        <li>{indicators.pending} {indicators.pending === 1 ? 'pendente' : 'pendentes'}</li>
-        <li>{indicators.inReview} em revisão</li>
-        <li className={indicators.overdue > 0 ? 'clients__indicator--late' : undefined}>{indicators.overdue} {indicators.overdue === 1 ? 'atraso' : 'atrasos'}</li>
-      </ul>)}
-  </article>;
-}
-
-/**
- * The client roster (specs/clientes.md §7): one full-width card per client, in the server's order
- * and page — the screen never reorders or groups. Search, status and page live in the URL. The
- * default order is the server's `sort=attention`, so no order parameter leaves the browser.
+ * The client roster (specs/clientes.md §7): one badge per client, in the server's order and page —
+ * the screen never reorders or groups. Search, status and page live in the URL. The default order is
+ * the server's `sort=attention`, so no order parameter leaves the browser. The API filters only by
+ * search and status, so those are the only filters the bar offers.
  */
 export function ClientsPage() {
   const httpClient = useApiClient();
@@ -166,79 +127,118 @@ export function ClientsPage() {
   const loading = clients.isPending || (clients.isPlaceholderData && clients.data.data.length === 0);
   const outOfRange = clients.data !== undefined && !clients.isPlaceholderData && page > Math.max(1, clients.data.meta.totalPages);
 
+  const visible = { contents: canSeeContents, invitations: canSeeInvitations };
+  const listUrl = location.pathname + location.search;
+  const rows = clients.data?.data ?? [];
+  const defaultView = status === 'active' && search === '';
+  // No client at all, on the default view: the first visit, whose only way forward is to register one.
+  const firstVisit = !loading && !clients.isError && !outOfRange && rows.length === 0 && defaultView;
+  // The sentence reads the top of the queue, which is only the first page of the unfiltered active roster.
+  const triage = !loading && !clients.isError && defaultView && page === 1 && rows.length > 0 ? triageSentence(rows, visible) : [];
+
+  const otherStatusParams = new URLSearchParams(searchParams);
+  otherStatusParams.delete('page');
+  if (status === 'active') otherStatusParams.set('status', 'archived'); else otherStatusParams.delete('status');
+  const otherStatusQuery = otherStatusParams.toString();
+  const otherStatusHref = otherStatusQuery === '' ? location.pathname : `${location.pathname}?${otherStatusQuery}`;
+
   return (
     <section aria-labelledby="clients-title" className="clients">
       <header className="clients__header">
         <h1 id="clients-title">Clientes</h1>
-        {canCreate && (
-          <Button onClick={() => setCreateOpen(true)}>
-            <span aria-hidden="true">+</span> Cadastrar cliente
-          </Button>
+        {canCreate && !firstVisit && (
+          <Button size="lg" leadingIcon={<Plus />} onClick={() => setCreateOpen(true)}>Cadastrar cliente</Button>
         )}
       </header>
 
-      <div className="clients__filters">
-        <TextInput
-          type="search"
-          aria-label="Buscar por nome, razão social ou @"
-          placeholder="Buscar por nome, razão social ou @"
-          value={rawSearch}
-          onChange={(event) => setFilter('search', event.target.value)}
+      {firstVisit ? (
+        <EmptyState
+          className="clients__empty"
+          mascot={canCreate}
+          title="Nenhum cliente ainda"
+          description={canCreate ? 'Com o cliente cadastrado você monta o calendário do mês e convida quem aprova os posts. Só o nome é obrigatório: o resto você completa depois.' : undefined}
+          action={<>
+            {canCreate && <Button size="lg" leadingIcon={<Plus />} onClick={() => setCreateOpen(true)}>Cadastrar cliente</Button>}
+            <ButtonLink as={Link} to={otherStatusHref} replace variant="secondary" size="lg">Ver arquivados</ButtonLink>
+          </>}
         />
-        <Select label="Status" value={status} options={STATUS_OPTIONS} onChange={(value) => setFilter('status', value)} />
-      </div>
+      ) : <>
+        <section aria-label="Triagem e filtros" className="clients__panel">
+          {triage.length > 0 && (
+            <p className="clients__triage">
+              {triage.map((part) => <span key={part.lead}><strong>{part.lead}</strong>{part.rest} </span>)}
+            </p>
+          )}
+          <FilterBar label="Filtros da carteira" className="clients__filters">
+            <FilterBarItem label="Buscar">
+              {(control) => (
+                <TextInput
+                  {...control}
+                  type="search"
+                  aria-label="Buscar por nome, razão social ou @"
+                  placeholder="Nome, razão social ou @"
+                  value={rawSearch}
+                  onChange={(event) => setFilter('search', event.target.value)}
+                />
+              )}
+            </FilterBarItem>
+            <FilterBarSelect label="Status" value={status} options={STATUS_OPTIONS} onChange={(value) => setFilter('status', value)} />
+          </FilterBar>
+        </section>
 
-      {loading ? (
-        <ul className="clients__list" aria-hidden="true">
-          {Array.from({ length: PAGE_SIZE }, (_value, index) => <li key={index}><Skeleton className="clients__card-skeleton" /></li>)}
-        </ul>
-      ) : clients.isError ? (
-        <div className="clients__error" role="alert">
-          <p>Não foi possível carregar os clientes. Tente de novo.</p>
-          <Button onClick={() => { void clients.refetch(); }}>Tentar de novo</Button>
+        <div className="clients__section-head">
+          <div className="clients__section-title">
+            <h2>{status === 'archived' ? 'Clientes arquivados' : 'Seus clientes'}</h2>
+            {clients.data !== undefined && <Pill>{clients.data.meta.totalItems}</Pill>}
+          </div>
+          <ButtonLink as={Link} to={otherStatusHref} replace variant="secondary" trailingIcon={<ChevronRight />}>
+            {status === 'active' ? 'Ver arquivados' : 'Ver ativos'}
+          </ButtonLink>
         </div>
-      ) : outOfRange ? null : <>
-        {clients.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
-        {clients.data.data.length === 0 ? (
-          status === 'archived' && search === '' ? (
-            <div className="clients__empty">
-              <p>Nenhum cliente arquivado</p>
-            </div>
-          ) : search !== '' ? (
-            <div className="clients__empty">
-              <p>Nenhum cliente encontrado para "{search}"</p>
-              <Button variant="ghost" onClick={clearSearch}>Limpar busca</Button>
-            </div>
-          ) : (
-            <div className="clients__empty">
-              <p>Nenhum cliente ainda</p>
-              {canCreate && <Button onClick={() => setCreateOpen(true)}>Cadastrar cliente</Button>}
-            </div>
-          )
-        ) : (
-          <ul className="clients__list">
-            {clients.data.data.map((client) => (
-              <li key={client.id}>
-                <Link
-                  className="clients__card-link"
-                  to={`/agencia/${agency.agencyId}/clientes/${client.id}/geral`}
-                  // The detail's "← Clientes" restores this exact address (filters and page
-                  // included) through the navigation state (specs/clientes.md §7, review of #379).
-                  state={{ clientListUrl: location.pathname + location.search }}
-                  aria-labelledby={`client-${client.id}-name`}
-                >
-                  <ClientCard client={client} canSeeInvitations={canSeeInvitations} canSeeContents={canSeeContents} />
-                </Link>
-              </li>
-            ))}
+
+        {loading ? (
+          <ul className="clients__list" aria-hidden="true">
+            {Array.from({ length: PAGE_SIZE }, (_value, index) => <li key={index}><Skeleton className="clients__card-skeleton" /></li>)}
           </ul>
-        )}
-        <Pagination
-          page={clients.data.meta.page}
-          totalPages={clients.data.meta.totalPages}
-          onPageChange={changePage}
-          summary={`${clients.data.data.length} de ${clients.data.meta.totalItems} clientes`}
-        />
+        ) : clients.isError ? (
+          <div className="clients__error" role="alert">
+            <p>Não foi possível carregar os clientes. Tente de novo.</p>
+            <Button onClick={() => { void clients.refetch(); }}>Tentar de novo</Button>
+          </div>
+        ) : outOfRange ? null : <>
+          {clients.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
+          {rows.length === 0 ? (
+            status === 'archived' && search === '' ? (
+              <EmptyState
+                className="clients__empty"
+                headingLevel={3}
+                title="Nenhum cliente arquivado"
+                description="Os clientes que você arquivar aparecem aqui, só para leitura."
+              />
+            ) : (
+              <EmptyState
+                className="clients__empty"
+                headingLevel={3}
+                title={`Nenhum cliente encontrado para "${search}"`}
+                action={<Button variant="secondary" onClick={clearSearch}>Limpar busca</Button>}
+              />
+            )
+          ) : (
+            <ul className="clients__list">
+              {rows.map((client) => (
+                <li key={client.id}>
+                  <ClientCard client={client} visible={visible} agencyId={agency.agencyId} listUrl={listUrl} />
+                </li>
+              ))}
+            </ul>
+          )}
+          <Pagination
+            page={clients.data.meta.page}
+            totalPages={clients.data.meta.totalPages}
+            onPageChange={changePage}
+            summary={`${rows.length} de ${clients.data.meta.totalItems} clientes`}
+          />
+        </>}
       </>}
       {createOpen && <CreateClientDialog onClose={() => setCreateOpen(false)} />}
     </section>

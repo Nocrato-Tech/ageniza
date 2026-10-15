@@ -13,7 +13,7 @@ import {
   type ContentListItem,
   type UpdateContentRequest
 } from '@ageniza/contracts';
-import { Avatar, Button, Skeleton } from '@ageniza/ui';
+import { Avatar, Button, ClientStrip, Skeleton } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -89,29 +89,18 @@ function ContentStories({ stories, selectedId }: { stories: StoryClients; select
   if (stories.data.data.length === 0) return <p className="content-stories__empty">Nenhum cliente ativo ainda.</p>;
   const total = stories.data.meta.totalItems;
   return <>
-    <nav aria-label="Clientes">
-      <ul className="content-stories">
-        {stories.data.data.map((client) => {
-          const attention = attentionOf(client);
-          return <li key={client.id}>
-            <Link
-              className="content-story"
-              to={`/agencia/${agency.agencyId}/conteudos/${client.id}`}
-              state={location.state}
-              aria-current={client.id === selectedId ? 'page' : undefined}
-            >
-              <span className={`content-story__avatar${attention.length > 0 ? ' content-story__avatar--attention' : ''}`}>
-                <Avatar name={client.name} photoUrl={client.photoUrl} size="lg" />
-              </span>
-              <span className="content-story__name">
-                {client.name}
-                {attention.length > 0 && <span className="visually-hidden">, {attention.join(', ')}</span>}
-              </span>
-            </Link>
-          </li>;
-        })}
-      </ul>
-    </nav>
+    <ClientStrip
+      label="Clientes"
+      selectedId={selectedId}
+      items={stories.data.data.map((client) => ({
+        id: client.id,
+        name: client.name,
+        photoUrl: client.photoUrl,
+        attention: attentionOf(client),
+        href: `/agencia/${agency.agencyId}/conteudos/${client.id}`
+      }))}
+      renderLink={(item, link) => <Link {...link} to={item.href} state={location.state} />}
+    />
     {total > stories.data.data.length && <p className="content-stories__note">Mostrando {stories.data.data.length} de {total} clientes.</p>}
   </>;
 }

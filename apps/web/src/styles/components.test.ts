@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { contrastOf, declarationsFor, readStyles, rgbOf, themes } from './theme-colors';
@@ -414,12 +417,8 @@ describe('avatar attention ring', () => {
     expect(rule('.ui-avatar--attention').get('box-shadow')).toBe('0 0 0 2px var(--ui-avatar-gap, var(--bg-canvas)), 0 0 0 4px var(--status-late-fg)');
   });
 
-  it('is the ring of the story avatar of the screen as well, so both agree', () => {
-    expect(ringOf('.content-story__avatar--attention')).toBe(ringOf('.ui-avatar--attention'));
-  });
-
-  it.each(['light', 'dark'] as const)('is 3:1 on the canvas and the surface in %s, for the Avatar and for the story avatar', (theme) => {
-    for (const selector of ['.ui-avatar--attention', '.content-story__avatar--attention']) {
+  it.each(['light', 'dark'] as const)('is 3:1 on the canvas and the surface in %s, for the Avatar of the client strip as well', (theme) => {
+    for (const selector of ['.ui-avatar--attention']) {
       for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) expect(contrastOf(theme, ringOf(selector), surface), `${selector} on ${surface}`).toBeGreaterThanOrEqual(3);
     }
   });
@@ -637,5 +636,25 @@ describe('FilterBar', () => {
       expect(contrastOf(theme, rule('.ui-filter-bar__control').get('color')!, surface), `choice on ${surface}`).toBeGreaterThanOrEqual(4.5);
     }
     expect(contrastOf(theme, rule('.ui-filter-bar__control').get('color')!, rule('.ui-filter-bar__control:not(.ui-text-input):hover:not(:disabled)').get('background')!)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('breakpoints of docs/design-system.md 19', () => {
+  const doc = readFileSync(join(__dirname, '..', '..', '..', '..', 'docs', 'design-system.md'), 'utf8').replace(/\r\n/g, '\n');
+  const registered = (): Set<string> => {
+    const paragraph = /\*\*Breakpoints\.\*\*[^\n]*/.exec(doc)?.[0] ?? '';
+    return new Set([...paragraph.matchAll(/`(\d+(?:\.\d+)?rem)`/g)].map((match) => match[1]!));
+  };
+  const used = (): Set<string> => new Set([...css.matchAll(/@media \((?:min|max)-width: (\d+(?:\.\d+)?rem)\)/g)].map((match) => match[1]!));
+
+  it('registers every width a media query of the stylesheet uses', () => {
+    const known = registered();
+    expect(known.size).toBeGreaterThan(0);
+    expect([...used()].filter((width) => !known.has(width))).toEqual([]);
+  });
+
+  it('leaves the roster grid without a breakpoint of its own: the columns follow the room the badge needs', () => {
+    expect(rule('.clients__list').get('grid-template-columns')).toBe('repeat(auto-fill, minmax(min(100%, 20rem), 1fr))');
+    expect(css).not.toMatch(/@media[^{]*\{\s*\.clients__list\b/);
   });
 });
