@@ -469,11 +469,13 @@ a.ui-button {
 }
 
 .ui-choice-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+  box-sizing: border-box;
   width: 100%;
-  padding: var(--space-4);
+  padding: var(--space-4) var(--space-6);
   text-align: left;
   background: var(--bg-surface);
   color: var(--text-primary);
@@ -482,14 +484,14 @@ a.ui-button {
   cursor: pointer;
 }
 
-.ui-choice-card:hover:not(:disabled),
-.ui-choice-card:focus-visible:not(:disabled) {
-  background: var(--bg-hover);
+.ui-choice-card:hover:not(:disabled) {
+  border-color: var(--text-muted);
 }
 
 /* There is no "emphasis/suggested" border token yet; `--focus-ring` is the documented strong
  * emphasis colour, used here on purpose and registered as a design-system gap in the PR. */
-.ui-choice-card--highlighted {
+.ui-choice-card--highlighted,
+.ui-choice-card--highlighted:hover:not(:disabled) {
   border-color: var(--focus-ring);
 }
 
@@ -498,12 +500,34 @@ a.ui-button {
   opacity: 0.55;
 }
 
+.ui-choice-card__icon {
+  display: inline-flex;
+  color: var(--text-secondary);
+}
+
+.ui-choice-card__icon svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.ui-choice-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ui-choice-card:not(:has(.ui-choice-card__icon)) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .ui-choice-card__title {
-  font: var(--body-lg);
+  font: var(--title-md);
+  overflow-wrap: anywhere;
 }
 
 .ui-choice-card__description {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font: var(--body-md);
 }
 
@@ -514,6 +538,48 @@ a.ui-button {
   background: var(--bg-hover);
   color: var(--text-secondary);
   font: var(--label-sm);
+}
+
+/* /contextos: one quiet column, like the sign-in it comes from. */
+.contexts {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 40rem;
+  margin: 0 auto;
+}
+
+.contexts h1 {
+  margin: 0;
+  font: var(--heading-xl);
+  letter-spacing: -0.02em;
+}
+
+.contexts > .ui-button {
+  justify-self: start;
+}
+
+.contexts .ui-choice-list {
+  margin: var(--space-2) 0;
+}
+
+.contexts__error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  color: var(--text-danger);
+}
+
+.contexts__error p {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.contexts__error svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
 }
 
 .ui-skeleton {

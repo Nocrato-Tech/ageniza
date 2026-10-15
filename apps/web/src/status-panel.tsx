@@ -7,15 +7,17 @@ import { Mascot } from '@ageniza/ui';
  * has a status component to replace it. The mascot is decorative (`alt=""`): the title says it all,
  * and there is exactly one per screen (docs/brand.md).
  */
-export function StatusPanel({ as: Landmark = 'main', titleId, title, action, children }: {
+export function StatusPanel({ as: Landmark = 'main', alert = false, titleId, title, action, children }: {
   as?: 'main' | 'section';
+  /** The state is a failure the person must hear now: the role goes on the inner block, never on the landmark. */
+  alert?: boolean;
   titleId: string;
   title: string;
   action: ReactNode;
   children: ReactNode;
 }) {
   return <Landmark className="page-status" aria-labelledby={titleId}>
-    <div className="status-panel">
+    <div className="status-panel" role={alert ? 'alert' : undefined}>
       <Mascot variant="serious" />
       <h1 id={titleId}>{title}</h1>
       <p>{children}</p>

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { ArrowRight, LayoutGrid, List, Plus } from 'lucide-react';
+import { ArrowRight, LayoutGrid, List, Plus, Store } from 'lucide-react';
 import {
   Avatar, BadgeCard, BrandSymbol, Button, ButtonLink, ChoiceCard, ClientStrip, IconButton, Pill, PillAction, ConfirmDialog, Dialog, EmptyState, Field, FieldMessage, FilterBar, FilterBarItem, FilterBarSelect, FormatTag, LateBadge, Logo, LiveStatus, Mascot, Menu, MenuItem, MenuSeparator,
   Modal, Pagination, Popover, Realce, Segmented, Select, Skeleton, StatusTag, Tabs, Textarea, TextInput
@@ -204,7 +204,8 @@ export const componentEntries: readonly ComponentEntry[] = [
     covers: ['ChoiceCard'],
     examples: [
       { label: 'padrão', render: (state) => stateOnly(state, ['default', 'disabled'], <ChoiceCard title="Agência Um" description="Proprietário" disabled={state === 'disabled'} />) },
-      { label: 'sugerido', render: (state) => stateOnly(state, ['default', 'disabled'], <ChoiceCard title="Agência Dois" description="Colaborador" highlighted badge="Sugerido" disabled={state === 'disabled'} />) }
+      { label: 'sugerido', render: (state) => stateOnly(state, ['default', 'disabled'], <ChoiceCard title="Agência Dois" description="Colaborador" highlighted badge="Sugerido" disabled={state === 'disabled'} />) },
+      { label: 'com ícone do tipo', render: (state) => stateOnly(state, ['default', 'disabled'], <ChoiceCard title="Padaria Santa Clara" description="Portal do cliente · Estúdio Aurora" icon={<Store />} disabled={state === 'disabled'} />) }
     ]
   },
   {
