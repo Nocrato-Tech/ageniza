@@ -24,7 +24,7 @@ Entrega **o cliente e a casca**: cadastro, estudo de marca com conversa em threa
 - **Calendário editorial, conteúdo, aprovação e comentário de post.** Módulo Conteúdo. O que o bloco 0 desta entrevista levantou para ele está registrado em `decisions.md` como bloco 0 já colhido daquela entrevista.
 - **Pastas de mídia e mídia visível ao cliente.** Conteúdo — é a estrutural pendente da seção 9.
 - **Tarefas, responsável e atribuição de colaborador a cliente.** Tarefas e Conteúdo.
-- **Indicadores de pendente, em revisão e atrasado.** Dependem de Conteúdo e Tarefas; o card reserva o espaço.
+- **Indicadores de pendente, em revisão e atrasado.** Dependem de Conteúdo e Tarefas; o crachá reserva o espaço.
 - **Relatório.** O de dado interno é decidido quando Conteúdo e Tarefas existirem; o de métrica externa (Meta) está fora do MVP — seção 10.
 - **Notificação** por e-mail ou push — seção 10.
 - **Valor de contrato, início, forma de pagamento.** Financeiro.
@@ -324,7 +324,7 @@ Nenhuma policy de outro módulo é alterada.
 | agendar ou desmarcar encerramento | listagem, detalhe |
 | arquivar, reativar | listagem, detalhe, convites de portal, contextos do usuário |
 | editar seção, criar, editar, arquivar ou desarquivar persona | estudo de marca, detalhe (preenchimento) |
-| abrir thread, comentar | threads do assunto, comentários da thread, detalhe (resumo), listagem de clientes (selo) |
+| abrir thread, comentar | threads do assunto, comentários da thread, detalhe (resumo), listagem de clientes (etiqueta, ordem e próxima ação) |
 | resolver | threads do assunto, detalhe (resumo), listagem de clientes |
 | remover, reativar pessoa | pessoas do portal, detalhe (resumo) |
 | convidar, reenviar, cancelar | convites de portal, listagem de clientes (selo) |
@@ -358,36 +358,37 @@ Conteúdos, Tarefas e Relatórios na agência, e Conteúdos e Relatórios no por
 A carteira é uma grade de **crachás**, um por cliente (decisão de 2026-10-15, `decisions/2026-10-15-carteira-em-crachas-sem-dados-que-a-api-nao-entrega.md`, que redefine o card de linha inteira que esta seção descrevia). Cada crachá mostra só o que a listagem entrega.
 
 ```
-┌───────────────────────────────────────────────────────────────┐
-│  Clientes                                 [ + Cadastrar cliente ]│
-│                                                               │
-│  Padaria Central: 2 posts atrasados.                          │
-│  [ buscar por nome, razão social ou @.....]  Status: Ativos ▾  │
-│                                                               │
-│  Seus clientes (34)                          Ver arquivados >  │
-│  ┌──────────────────────┐   ┌──────────────────────┐          │
-│  │ (foto)   [Atrasado] ⋮│   │ (AC)  [Prazo em até 2 dias] ⋮   │
-│  │ ▓ Padaria Central ▓▓ │   │ ▓ Academia Corpo ▓▓▓ │          │
-│  │ @padariacentral Ativo│   │ @academiacorpo  Ativo│          │
-│  │ [2 sugestões aguardando] │ [encerra em 30/10]   │          │
-│  │ 3 pendentes · 1 em revisão · 2 atrasos           │          │
-│  │ 2 posts atrasados  [Resolver atraso →]           │          │
-│  └──────────────────────┘   └──────────────────────┘          │
-│                                                               │
-│  ‹ 1 2 ›                                  20 de 34 clientes    │
-└───────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────────────────┐
+│  Clientes                                    [ + Cadastrar cliente ]                      │
+│                                                                                           │
+│  Padaria Central: 2 posts atrasados.                                                      │
+│  [ buscar por nome, razão social ou @ ]     Status: Ativos ▾                              │
+│                                                                                           │
+│  Seus clientes (34)                          Ver arquivados >                             │
+│  ┌────────────────────────────────────────┐   ┌────────────────────────────────────────┐  │
+│  │  (foto)        [Atrasado]        ⋮     │   │  (AC)     [Prazo em até 2 dias]    ⋮   │  │
+│  │▓▓ Padaria Central ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│   │▓▓ Academia Corpo ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│  │
+│  │▓▓ @padariacentral · Ativo ▓▓▓▓▓▓▓▓▓▓▓▓▓│   │▓▓ @academiacorpo · Ativo ▓▓▓▓▓▓▓▓▓▓▓▓▓▓│  │
+│  │ [2 sugestões aguardando]               │   │ [encerra em 30/10]                     │  │
+│  │ 3 pendentes · 1 em revisão · 2 atrasos │   │ 3 pendentes · 0 em revisão · 0 atrasos │  │
+│  │ 2 posts atrasados                      │   │ 1 post com prazo em até 2 dias         │  │
+│  │ [Resolver atraso →]                    │   │ [Ver prazos →]                         │  │
+│  └────────────────────────────────────────┘   └────────────────────────────────────────┘  │
+│                                                                                           │
+│  ‹ 1 2 ›                                   20 de 34 clientes                              │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 | elemento | função |
 |---|---|
-| Crachá | um cliente por crachá, em grade que se ajusta à largura (colunas de pelo menos 20rem; uma só no celular). O link cobre a foto, o nome e as etiquetas e leva à aba Geral; o menu e a ação ficam ao lado dele, nunca dentro |
+| Crachá | um cliente por crachá, em grade que se ajusta à largura (colunas de pelo menos 20rem; uma só no celular). O link cobre a foto, o selo, o nome, a situação, as etiquetas e a faixa de indicadores, e leva à aba Geral; o menu e a ação (rodapé) ficam fora dele, nunca dentro |
 | Foto ou iniciais | sem foto, as iniciais do nome — nunca ícone genérico. A base do crachá é escura, com o nome, o @ e a situação (Ativo ou Arquivado) por cima |
 | Selo de triagem | **um só por crachá**, no alto da foto, na ordem: *Atrasado* (conteúdo atrasado), *Prazo em até 2 dias* e *convite pendente* (este só para quem tem `cliente.convidar_usuario`). Quem não lê Conteúdo (`conteudo.visualizar`) nunca vê os dois primeiros |
 | Etiquetas | o que não virou selo: *N sugestões aguardando* (threads abertas cujo último comentário é do cliente), *encerra em dd/mm* (encerramento agendado) e o *convite pendente* que perdeu o selo para outro. As sugestões seguem sendo o sinal de triagem do MVP: entram na ordem da carteira, na frase de triagem e na próxima ação, mesmo sem ser o selo |
 | Faixa de indicadores | pendentes, em revisão e atrasos. Mostra os três números de Conteúdo (#261) para quem tem `conteudo.visualizar`; para os demais segue reservada, sem número |
 | Próxima ação | rodapé do crachá, com o número curto por trás da ação: *Resolver atraso* (posts atrasados), *Ver prazos* (posts com prazo em até 2 dias), *Ver sugestões* (sugestões para responder), *Ver convites* (convites em aberto) ou, sem motivo, *Abrir cliente* sem número. Só leva a abas que o detalhe já tem (Geral, Conteúdos, Estudo de marca, Acessos), cada uma na permissão que o detalhe já exige |
 | Menu de três pontos | as mesmas abas, cada uma só para quem pode abri-la |
-| Frase de triagem | sobre os filtros, montada com as linhas da primeira página da carteira ativa sem busca (quem está atrasado, quem tem prazo em até 2 dias, quem tem sugestões, até dois); em qualquer outro recorte ela não aparece, porque não descreveria o topo da fila |
+| Frase de triagem | sobre os filtros, montada com as linhas da primeira página da carteira ativa sem busca (quem está atrasado, quem tem prazo em até 2 dias, quem tem sugestões, até dois); se ninguém tiver motivo, ela diz *Nada urgente nesta lista: …* para quem lê Conteúdo e *Nenhuma sugestão aguardando nesta lista.* para os demais; em qualquer outro recorte ela não aparece, porque não descreveria o topo da fila |
 | Ordem | a do servidor (`sort=attention`): para quem lê Conteúdo, quem tem conteúdo atrasado vem primeiro, depois quem tem sugestão aguardando, depois o nome (#261); para os demais, quem tem sugestão aguardando vem primeiro, depois o nome — a tela é de triagem, não de consulta |
 | Busca | nome, razão social ou @ — quem liga pode lembrar de qualquer um dos três |
 | Filtro de status | rótulo *Status*: Ativos (padrão) e Arquivados. A API não mistura as duas situações, então o link *Ver arquivados* (e *Ver ativos* na visão de arquivados) troca a visão; *ver todos* depende de `status=all` (#661) |
@@ -569,7 +570,7 @@ Na primeira entrada daquela pessoa naquele cliente, um tour guiado aponta os ite
 | **Vazio — arquivados** | "Nenhum cliente arquivado" |
 | **Busca sem resultado** | "Nenhum cliente encontrado para "…"", com **limpar busca** — estado distinto de vazio |
 | **Vazio — conversas** | "Nenhuma conversa sobre esta parte" |
-| **Carregando** | skeleton na forma do card, na quantidade da página; na primeira carga do detalhe, cabeçalho e aba em skeleton |
+| **Carregando** | skeleton na forma do crachá, na quantidade da página; na primeira carga do detalhe, cabeçalho e aba em skeleton |
 | **Erro** | oferece repetir a ação |
 | **Sem permissão** | não é tela: a aba ou o item não aparece, e a URL cai em "não encontrado". Cliente arquivado no portal cai no mesmo "não encontrado" |
 | **Salvando** | estado no próprio controle; ao concluir, as queries da seção 6 são invalidadas |
