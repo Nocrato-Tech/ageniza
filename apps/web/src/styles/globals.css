@@ -5057,8 +5057,22 @@ a.client-general__block:hover {
 }
 
 .content-folders__empty {
+  padding: var(--space-6) var(--space-4);
   border: 1px dashed var(--border-default);
   border-radius: var(--radius-md);
+}
+
+.content-folders__empty .ui-empty-state__body {
+  justify-items: center;
+  text-align: center;
+}
+
+.content-folders__empty .ui-empty-state__title {
+  font: var(--label-md);
+}
+
+.content-folders__empty .ui-empty-state__description {
+  font: var(--body-md);
 }
 
 .content-folders__error {

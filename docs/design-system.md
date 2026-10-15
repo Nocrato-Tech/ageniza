@@ -396,6 +396,8 @@ As etiquetas são estáticas (sem hover, foco nem carregamento): o texto é quem
 | A pessoa da equipe | `BadgeCard` | Exatamente quatro informações: foto ou iniciais, nome, cargo e papel (mais o marcador de removido); um quinto dado vira tabela, o que a SPEC de colaboradores recusa. |
 | A palavra que pede decisão agora | `Realce` | Seção 25.2. |
 
+**Pastas de mídia (#634).** A visão Pastas do cliente é só composição, sem componente novo em `packages/ui`: o caminho (`ChevronRight` entre os níveis), a pasta como link com `Folder`, o nome e a `Pill` "Padrão", a mídia em cartão com a miniatura (`bg/hover`, com `Image` ou `Video` no lugar enquanto não há imagem), o rótulo com ícone e, quando o vídeo não está pronto, a `Pill` "Processando vídeo" ou o aviso "Falha no processamento do vídeo" em `text/danger`. Nenhum botão da visão é índigo cheio (a ação primária é a da página). O envio é um `Button` secundário "Enviar mídia" que abre o seletor nativo, escondido da tela e do leitor de tela; o arquivo escolhido fica numa linha com ícone, nome e tamanho, a barra de progresso é neutra (tinta, nunca índigo) com o número em tabular, e o erro leva ícone, texto e "Tentar de novo" quando repetir ajuda (arquivo recusado pede outro arquivo, não o mesmo). Pasta e mídia vazias usam o `EmptyState` compacto e sem mascote, com o botão que resolve; erro de carga leva ícone, texto e "Tentar de novo". No celular a mídia vira linha (miniatura de 5 rem ao lado) com alvos de 44 px, e as grades usam `grid-template-columns` com `minmax(0, 1fr)` ou `repeat(auto-fill, minmax(min(100%, 14rem), 1fr))`, para nenhum filho passar do cartão. A tela usa 22 (títulos), 14 e 12 px.
+
 ### 13.6 Vazio, erro e carga
 
 | Precisa de | Use | Regra |
