@@ -71,3 +71,20 @@ describe('legal pages', () => {
     expect(screen.getByRole('note').textContent).toBe(termsOfUse.draftNotice);
   });
 });
+
+describe('legal pages look (#639)', () => {
+  it('keeps the way back with its arrow and shows the draft notice with its warning icon', () => {
+    renderAt('/termos');
+
+    expect(screen.getByRole('button', { name: 'Voltar' }).querySelector('svg')).not.toBeNull();
+    expect(screen.getByRole('note').querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('puts every heading and its blocks in one section, so the spacing between sections is the layout', () => {
+    const { container } = renderAt('/privacidade');
+
+    const sections = container.querySelectorAll('.legal-document > section');
+    expect(sections).toHaveLength(privacyPolicy.sections.length);
+    sections.forEach((section) => { expect(section.firstElementChild?.tagName).toBe('H2'); });
+  });
+});

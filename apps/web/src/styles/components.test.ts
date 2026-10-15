@@ -826,3 +826,28 @@ describe('the conversation of a content in the Pauta look (#639)', () => {
     ] as const) expect(contrastOf(theme, text, surface), `${text} on ${surface}`).toBeGreaterThanOrEqual(4.5);
   });
 });
+
+describe('public pages (#639)', () => {
+  it('keeps the legal draft notice as a box with an icon, never with a coloured side border', () => {
+    const notice = rule('.legal-document .legal-draft, .legal-draft');
+    const all = [...notice.keys(), ...rule('.legal-draft').keys()];
+    expect(all.filter((property) => /^border-(left|right|inline)/.test(property))).toEqual([]);
+    expect(rule('.legal-draft').get('border')).toBe('1px solid var(--border-default)');
+  });
+
+  it('leaves the public header light and aligned by the container, not by the viewport width', () => {
+    const header = rule('.app-shell > header.public-header');
+    expect(header.get('background')).toBe('transparent');
+    expect(header.get('padding-inline')).not.toMatch(/vw/);
+    expect(rule('.public-header__inner').get('max-width')).toBe('calc(72rem - 2 * var(--space-4))');
+    expect(rule('.public-header__inner').get('margin-inline')).toBe('auto');
+  });
+
+  it('sizes the logo link to the logo, so the empty space beside it is not a link', () => {
+    expect(rule('.public-header__inner > a').get('display')).toBe('inline-flex');
+  });
+
+  it('shows the ok status in the ready colour', () => {
+    expect(rule('.public-page__ok svg').get('color')).toBe('var(--status-ready-fg)');
+  });
+});
