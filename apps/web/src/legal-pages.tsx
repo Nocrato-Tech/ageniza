@@ -1,4 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ArrowLeft, TriangleAlert } from 'lucide-react';
 import { Button } from '@ageniza/ui';
 
 import { useDocumentTitle } from './document-title.js';
@@ -28,7 +29,7 @@ export function LegalDocumentPage({ document, sibling }: {
   return <article className="legal-document" aria-labelledby="legal-title">
     <h1 id="legal-title">{document.title}</h1>
     <p className="legal-version">Versão {document.version}</p>
-    {document.draftNotice !== undefined && <p className="legal-draft" role="note">{document.draftNotice}</p>}
+    {document.draftNotice !== undefined && <p className="legal-draft" role="note"><TriangleAlert aria-hidden="true" />{document.draftNotice}</p>}
     {document.sections.map((section, index) => (
       <section key={section.heading}>
         <h2>{index + 1}. {section.heading}</h2>
@@ -41,7 +42,7 @@ export function LegalDocumentPage({ document, sibling }: {
     ))}
     <footer className="legal-footer">
       <Link to={sibling.to}>{sibling.title}</Link>
-      <Button variant="ghost" onClick={goBack}>Voltar</Button>
+      <Button variant="ghost" leadingIcon={<ArrowLeft />} onClick={goBack}>Voltar</Button>
     </footer>
   </article>;
 }

@@ -51,6 +51,7 @@ function StoryScriptList({ scripts, canCreate, today, onOpen, onCreate }: {
     </div>
     {ordered.length === 0
       ? <EmptyState
+        className="story-list__empty"
         headingLevel={3}
         title="Nenhum roteiro de stories neste período"
         description="Escreva as cenas do dia e envie ao cliente quando estiver pronto."

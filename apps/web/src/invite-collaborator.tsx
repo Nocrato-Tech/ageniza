@@ -7,7 +7,7 @@ import {
   AuthEmailSchema,
   CollaboratorInvitationCreatedResponseSchema
 } from '@ageniza/contracts';
-import { Button, Field, FieldMessage, LiveStatus, Modal, Select, TextInput } from '@ageniza/ui';
+import { Button, Field, FieldMessage, LiveStatus, Modal, Select, TextInput, useFormErrors } from '@ageniza/ui';
 
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -60,6 +60,7 @@ const refusedField = (details: unknown): 'email' | 'roleId' | undefined => {
 export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
   const agency = useAgencyContext();
   const httpClient = useApiClient();
+  const { formRef, summary } = useFormErrors();
   const queryClient = useQueryClient();
   const emailId = useId();
   const formId = useId();
@@ -152,7 +153,8 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
     onClose={onClose}
     actions={<Button type="submit" form={formId} disabled={!canSubmit} loading={send.isPending}>Enviar convite</Button>}
   >
-    <form id={formId} className="form-stack" onSubmit={onSubmit} noValidate>
+    <form ref={formRef} id={formId} className="form-stack" onSubmit={onSubmit} noValidate>
+      {summary}
       <Field label="E-mail" id={emailId} error={emailError}>
         {(control) => (
           <TextInput

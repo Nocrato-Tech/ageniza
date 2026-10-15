@@ -120,7 +120,29 @@ describe('conversation component (#142)', () => {
     expect(within(region).getByText('1 aguardando')).toBeTruthy();
   });
 
-  it('shows the empty state with + conversa for who can write, and without it for who only reads', async () => {
+  it('says the status in a Pill with its icon, filled only on the thread that awaits the viewer', async () => {
+    const { api } = mount();
+    api.seed(TONE, [{ side: 'agency', body: 'Ajustamos o exemplo de legenda', at: EARLIER }], { at: LATE, by: 'Ana' });
+    api.seed(TONE, [{ side: 'client', body: 'Acho formal demais para o nosso público', at: LATE }]);
+    api.seed(TONE, [{ side: 'agency', body: 'Mandei três opções novas', at: LATE }]);
+
+    const region = await area();
+    await within(region).findByText('Acho formal demais para o nosso público');
+    const statusOf = (excerpt: string): HTMLElement => rowsOf(region).find((row) => row.textContent?.includes(excerpt))!.querySelector<HTMLElement>('.conversation__status')!;
+
+    expect([statusOf('Acho formal').textContent, statusOf('Mandei').textContent, statusOf('Ajustamos').textContent]).toEqual(['aguardando você', 'aberta', 'resolvida']);
+    expect(statusOf('Acho formal').classList.contains('ui-pill--accent')).toBe(true);
+    for (const excerpt of ['Mandei', 'Ajustamos']) {
+      expect(statusOf(excerpt).classList.contains('ui-pill--neutral'), excerpt).toBe(true);
+      expect(statusOf(excerpt).classList.contains('ui-pill--accent'), excerpt).toBe(false);
+    }
+    for (const excerpt of ['Acho formal', 'Mandei', 'Ajustamos']) expect(statusOf(excerpt).querySelector('.ui-icon svg'), excerpt).not.toBeNull();
+    const header = region.querySelector<HTMLElement>('.conversation__header .conversation__status')!;
+    expect(header.textContent).toBe('1 aguardando');
+    expect(header.classList.contains('ui-pill--accent')).toBe(true);
+  });
+
+  it('shows the empty state with the new-conversation button for who can write, and without it for who only reads', async () => {
     const writer = mount();
     const region = await area();
     await within(region).findByText('Nenhuma conversa sobre esta parte');
@@ -246,6 +268,27 @@ describe('conversation component (#142)', () => {
     expect(api.bodies).toEqual([]);
   });
 
+  it('describes the box by the refusal, which carries the error icon, and puts the focus back on it', async () => {
+    const { api } = mount();
+    api.seed(TONE, [{ side: 'client', body: 'Acho formal demais', at: LATE }]);
+    const dialog = await openRow(await area(), /Acho formal demais/);
+    const box = within(dialog).getByRole('textbox', { name: 'Escrever resposta' });
+    expect(box.getAttribute('aria-invalid')).toBeNull();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+    const message = within(dialog).getByText('Escreva a mensagem.');
+    expect(message.querySelector('.ui-icon svg')).not.toBeNull();
+    expect(message.getAttribute('role')).toBeNull();
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    expect(document.activeElement).toBe(box);
+    expect(box.getAttribute('aria-invalid')).toBe('true');
+    expect(box.getAttribute('aria-describedby')).toBe(message.id);
+
+    fireEvent.change(box, { target: { value: 'ok' } });
+    expect(within(dialog).queryByText('Escreva a mensagem.')).toBeNull();
+    expect(box.getAttribute('aria-invalid')).toBeNull();
+  });
+
   it('resolves exactly the opened thread, who resolved and when stay readable, and an answer reopens it', async () => {
     const { api, onWritten } = mount();
     const other = api.seed(TONE, [{ side: 'client', body: 'Outra conversa aberta', at: EARLIER }]);
@@ -332,7 +375,7 @@ describe('conversation component (#142)', () => {
   it.each([
     ['without write permission', { canWrite: false }],
     ['on a read-only subject', { readOnly: true }]
-  ])('is read-only %s: no + conversa, no composer, no Resolver', async (_name, options) => {
+  ])('is read-only %s: no new-conversation button, no composer, no Resolver', async (_name, options) => {
     const { api } = mount(options);
     api.seed(TONE, [{ side: 'client', body: 'Acho formal demais', at: LATE }]);
     const region = await area();
@@ -375,7 +418,7 @@ describe('conversation component (#142)', () => {
     expect(api.bodies).toEqual([{ body: 'Ficou ótimo' }]);
   });
 
-  it('suggests, on the client side, with its own words, and the agency side keeps "+ conversa"', async () => {
+  it('suggests, on the client side, with its own words, and the agency side keeps the plus-icon "conversa" button', async () => {
     const client = mount({ scope: clientScope });
     const region = await area();
     await within(region).findByText('Nenhuma conversa sobre esta parte');
@@ -398,7 +441,8 @@ describe('conversation component (#142)', () => {
     mount({ scope: agencyScope });
     const agency = await area();
     const plus = await within(agency).findByRole('button', { name: 'Nova conversa sobre Tom de voz' });
-    expect(plus.textContent).toBe('+ conversa');
+    expect(plus.textContent).toBe('conversa');
+    expect(plus.querySelector('.ui-icon[aria-hidden="true"] svg')).not.toBeNull();
     fireEvent.click(plus);
     const opened = await screen.findByRole('dialog', { name: 'Nova conversa sobre Tom de voz' });
     expect(within(opened).getByRole('button', { name: 'Iniciar conversa' })).toBeTruthy();
@@ -696,7 +740,7 @@ describe('conversation of a content (#266)', () => {
     expect(within(region).queryByText(/Mensagem de outro conteúdo|Mensagem do estudo/)).toBeNull();
   });
 
-  it('opens the one conversation of the content with + conversa, writes the content as the subject and then offers no second one', async () => {
+  it('opens the one conversation of the content with the new-conversation button, writes the content as the subject and then offers no second one', async () => {
     const { api, onWritten } = mountContent();
     const region = await contentArea();
     await within(region).findByText('Nenhuma conversa sobre este conteúdo');

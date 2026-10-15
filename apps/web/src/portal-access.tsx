@@ -15,7 +15,7 @@ import {
   type ClientPendingInvitation,
   type ClientDetailResponse
 } from '@ageniza/contracts';
-import { Avatar, Button, ConfirmDialog, EmptyState, Field, FieldMessage, LiveStatus, Modal, Pagination, Pill, Skeleton, TextInput } from '@ageniza/ui';
+import { Avatar, Button, ConfirmDialog, EmptyState, Field, FieldMessage, LiveStatus, Modal, Pagination, Pill, Skeleton, TextInput, useFormErrors } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -91,6 +91,7 @@ interface PendingAction {
 function InviteClientDialog({ client, onClose }: { client: ClientDetailResponse; onClose: () => void }) {
   const agency = useAgencyContext();
   const httpClient = useApiClient();
+  const { formRef, summary } = useFormErrors();
   const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | undefined>();
@@ -155,7 +156,8 @@ function InviteClientDialog({ client, onClose }: { client: ClientDetailResponse;
   }
 
   return <Modal title="Convidar para o portal" closeLabel="Fechar convite para o portal" onClose={onClose}>
-    <form className="form-stack" onSubmit={onSubmit} noValidate>
+    <form ref={formRef} className="form-stack" onSubmit={onSubmit} noValidate>
+      {summary}
       <Field label="E-mail" hint={INVITE_HINT} error={emailError}>
         {(control) => <TextInput
           ref={emailRef}

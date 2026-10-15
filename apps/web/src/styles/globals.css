@@ -455,6 +455,16 @@ a.ui-button {
   color: var(--text-danger);
 }
 
+/* One summary per refused form, above the fields: text/danger is guaranteed on the surface and the canvas (docs/design-system.md 20.1). */
+.ui-error-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  font: var(--body-md);
+  color: var(--text-danger);
+}
+
 .ui-live-status {
   min-height: 1.5rem;
 }
@@ -2616,43 +2626,150 @@ a.client-general__block:focus-visible {
   justify-items: start;
 }
 
-/* Legal pages: specs/auth.md section 7, a long-form reading column with a comfortable line length. */
+/* Legal pages: specs/auth.md section 7, a long-form reading column with a comfortable line length. Two sizes: the title and the text. */
 .legal-document {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-3);
   max-width: 40rem;
-  margin: 0 auto;
+  margin: 0;
 }
 
 .legal-document h1 {
-  font: var(--heading-lg);
+  margin: 0;
+  font: var(--heading-xl);
+  letter-spacing: -0.02em;
+}
+
+.legal-document section {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
 }
 
 .legal-document h2 {
-  margin-top: var(--space-6);
-  font: var(--heading-md);
+  margin: 0;
+  font: var(--title-md);
 }
 
 .legal-document p,
 .legal-document li {
+  margin: 0;
   font: var(--body-lg);
 }
 
+.legal-document ul {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
 .legal-version {
-  color: var(--text-muted);
-  font: var(--body-md);
+  color: var(--text-secondary);
 }
 
 .legal-draft {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
   color: var(--text-danger);
-  font: var(--body-md);
+}
+
+.legal-draft svg {
+  flex: none;
+  width: 1.25rem;
+  height: 1.5rem;
 }
 
 .legal-footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4);
   margin-top: var(--space-8);
+}
+
+/* Public pages (home, status): the logo on the light page, one column, and the way forward. */
+.app-shell > header.public-header {
+  padding-inline: var(--space-4);
+  background: transparent;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.public-header__inner {
+  display: flex;
+  max-width: calc(72rem - 2 * var(--space-4));
+  margin-inline: auto;
+}
+
+.public-header__inner > a {
+  display: inline-flex;
+}
+
+.public-page {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-4);
+  max-width: 40rem;
+  margin: 0;
+}
+
+.public-page h1 {
+  margin: 0;
+  font: var(--heading-xl);
+  letter-spacing: -0.02em;
+}
+
+.public-page p {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-lg);
+}
+
+.public-page .public-home__lead {
+  font: var(--heading-xl);
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.public-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.public-page__ok,
+.public-page__alert p {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.public-page__ok svg {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--status-ready-fg);
+}
+
+.public-page__alert {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+
+.public-page__alert p {
+  color: var(--text-danger);
+}
+
+.public-page__alert svg {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
 /* Agency area shell: issue #181. Header, side navigation and content, all on tokens. */
@@ -3743,18 +3860,9 @@ main > .shell-notice {
   overflow: hidden;
 }
 
+/* The status is a Pill (neutral, or accent when it is the viewer's turn); the row only places it. */
 .conversation__status {
   justify-self: start;
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  font: var(--label-sm);
-}
-
-.conversation__status--awaiting {
-  border-color: var(--focus-ring);
-  color: var(--text-link);
 }
 
 .conversation__empty,
@@ -5081,6 +5189,12 @@ main > .shell-notice {
   font: var(--heading-lg);
 }
 
+/* The empty state of the list reads like the roster's: the block and its text centred together, never a centred block with left-aligned text. */
+.story-list__empty:not(.ui-empty-state--mascot) .ui-empty-state__body {
+  justify-items: center;
+  text-align: center;
+}
+
 .story-list__items {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -5978,13 +6092,45 @@ main > .shell-notice {
   border-top: 0;
 }
 
+/* The Pauta look of the conversation: rows and messages rest on the canvas under the surface, never as a card inside a card.
+   A row reacts by its border, because text/link is only guaranteed on canvas and surface (docs/design-system.md 20.1). */
 .content-modal__conversation .conversation__thread {
+  border-color: var(--border-subtle);
   border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+}
+
+.content-modal__conversation .conversation__thread:hover,
+.content-modal__conversation .conversation__thread:focus-visible {
+  border-color: var(--focus-ring);
+}
+
+.content-modal__conversation .conversation__thread-meta {
+  color: var(--text-secondary);
 }
 
 .content-modal__conversation .conversation__comment {
-  padding: 0;
+  padding: var(--space-3) var(--space-4);
   border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+}
+
+/* The client's message is outlined, so the two sides differ by more than the word in the line above (and the modal stays off the elevated surfaces). */
+.content-modal__conversation .conversation__comment--client {
+  border: 1px solid var(--border-default);
+}
+
+.content-modal__conversation .conversation__comment-meta {
+  font: var(--body-md);
+}
+
+.content-modal__conversation .conversation__comment-author {
+  font: var(--label-md);
+}
+
+.content-modal__conversation .conversation__actions {
+  justify-content: flex-end;
 }
 
 /* The canvas under the surface, as in the artboard: the footer reads as the floor of the modal. The dialog drops its bottom padding here so that

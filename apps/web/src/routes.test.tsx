@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -218,5 +218,89 @@ describe('screens that open with a valid session (rule 11 exceptions, issue #342
     const { probe } = renderRoute('/entrar', true, signedInFetch);
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
     expect(screen.queryByRole('heading', { name: 'Entrar' })).toBeNull();
+  });
+});
+
+describe('public pages in the Pauta look (#639)', () => {
+  it('leads the home with one primary way in, and keeps the status as the quiet one', () => {
+    renderRoute('/', false);
+    const enter = screen.getByRole('link', { name: 'Entrar' });
+    expect(enter.getAttribute('href')).toBe('/entrar');
+    expect(enter.classList.contains('ui-button--primary')).toBe(true);
+    expect(screen.getByRole('link', { name: 'Status do serviço' }).classList.contains('ui-button--secondary')).toBe(true);
+  });
+
+  it('wears the logo, not the word, in the header of the public pages', () => {
+    renderRoute('/', false);
+    const link = screen.getByRole('link', { name: 'Ageniza' });
+    expect(link.getAttribute('href')).toBe('/');
+    expect(link.querySelector('img')?.getAttribute('src')).toBe('/brand/logo-para-fundo-claro.svg');
+    expect(link.closest('header')?.classList.contains('public-header')).toBe(true);
+  });
+
+  it('marks the healthy status with an icon beside the sentence, never the sentence alone', async () => {
+    const healthy: typeof fetch = async (input) => (String(input).endsWith('/health') ? json({ status: 'ok' }) : new Response(null, { status: 401 }));
+    renderRoute('/status', false, healthy);
+    const sentence = await screen.findByText('A API está ok.');
+    expect(sentence.parentElement?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('offers "Tentar de novo" on the unavailable status, and shows the answer once it comes', async () => {
+    let up = false;
+    const flaky: typeof fetch = async (input) => String(input).endsWith('/health') && up
+      ? json({ status: 'ok' })
+      : json({ error: { code: 'INTERNAL_ERROR', message: 'Unexpected error.' } }, 500);
+    renderRoute('/status', false, flaky);
+
+    const retry = await screen.findByRole('button', { name: 'Tentar de novo' }, { timeout: 5000 });
+    expect(screen.getByRole('alert').querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    up = true;
+    fireEvent.click(retry);
+    expect(await screen.findByText('A API está ok.')).toBeTruthy();
+  });
+});
+
+describe('the retry of the service status keeps the keyboard where it was (#639)', () => {
+  it('keeps the button mounted, focused and busy while the new request runs, and ignores a second click', async () => {
+    let release: () => void = () => undefined;
+    const slow = new Promise<void>((resolve) => { release = resolve; });
+    let healthCalls = 0;
+    const flaky: typeof fetch = async (input) => {
+      if (!String(input).endsWith('/health')) return new Response(null, { status: 401 });
+      healthCalls += 1;
+      if (healthCalls <= 2) return json({ error: { code: 'INTERNAL_ERROR', message: 'Unexpected error.' } }, 500);
+      await slow;
+      return json({ status: 'ok' });
+    };
+    renderRoute('/status', false, flaky);
+
+    const retry = await screen.findByRole('button', { name: 'Tentar de novo' }, { timeout: 5000 });
+    const callsBefore = healthCalls;
+    retry.focus();
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(healthCalls).toBe(callsBefore + 1));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    const same = screen.getByRole('button', { name: 'Tentar de novo' });
+    expect(same).toBe(retry);
+    expect(retry.isConnected).toBe(true);
+    expect(document.activeElement).toBe(retry);
+    expect(retry.getAttribute('aria-busy')).toBe('true');
+    expect(retry.getAttribute('aria-disabled')).toBe('true');
+    expect((retry as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText('Carregando…')).toBeNull();
+    fireEvent.click(retry);
+    expect(healthCalls).toBe(callsBefore + 1);
+
+    release();
+    expect(await screen.findByText('A API está ok.')).toBeTruthy();
+  });
+});
+
+describe('the public home does not say the brand twice (#639)', () => {
+  it('keeps the title for assistive technology and shows the sentence as the visible heading line', () => {
+    renderRoute('/', false);
+    expect(screen.getByRole('heading', { name: 'Ageniza', level: 1 }).classList.contains('visually-hidden')).toBe(true);
+    expect(screen.getByText('Operações de agência, em um só lugar.').classList.contains('public-home__lead')).toBe(true);
   });
 });

@@ -53,3 +53,13 @@ describe('NoAccessPage (/sem-acesso)', () => {
     expect(end).not.toHaveBeenCalled();
   });
 });
+
+describe('NoAccessPage look (#639)', () => {
+  it('is the product status panel: one mascot, the way back as a button-link, and no second main', () => {
+    const { container } = renderAt('/sem-acesso');
+
+    expect(container.querySelectorAll('.status-panel img')).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Voltar para entrar' }).classList.contains('ui-button--primary')).toBe(true);
+    expect(container.querySelectorAll('main')).toHaveLength(1);
+  });
+});

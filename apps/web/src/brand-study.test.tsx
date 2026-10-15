@@ -304,6 +304,43 @@ describe('brand study tab (#138)', () => {
     expect(calls.filter((call) => call.endsWith('/brand-study'))).toHaveLength(1);
   });
 
+  it('puts the focus back on the field that a refused section edit is about, with no alert of its own', async () => {
+    const { impl, calls } = makeFetch();
+    const { container } = renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+
+    fireEvent.click(within(sectionCard(container, 'Tom de voz')).getByRole('button', { name: 'Preencher Tom de voz' }));
+    const card = sectionCard(container, 'Tom de voz');
+    const editor = within(card).getByRole('textbox', { name: 'Editar Tom de voz' });
+    // The editor takes the focus on its own a tick after it opens: wait for that before moving away from it.
+    await waitFor(() => expect(document.activeElement).toBe(editor));
+    within(card).getByRole('button', { name: 'Salvar' }).focus();
+    fireEvent.click(within(card).getByRole('button', { name: 'Salvar' }));
+
+    const message = await within(card).findByText('Escreva o conteúdo da seção.');
+    expect(document.activeElement).toBe(editor);
+    expect(editor.getAttribute('aria-describedby')).toBe(message.id);
+    expect(message.getAttribute('role')).toBeNull();
+    expect(within(card).queryByRole('alert')).toBeNull();
+    expect(calls.some((call) => call.startsWith('PUT') || call.startsWith('PATCH'))).toBe(false);
+  });
+
+  it('puts the focus on the archetype list when none is chosen', async () => {
+    const { impl } = makeFetch();
+    const { container } = renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+
+    fireEvent.click(within(sectionCard(container, 'Arquétipo')).getByRole('button', { name: 'Editar Arquétipo' }));
+    const card = sectionCard(container, 'Arquétipo');
+    const select = within(card).getByLabelText('Arquétipo');
+    fireEvent.change(select, { target: { value: '' } });
+    within(card).getByRole('button', { name: 'Salvar' }).focus();
+    fireEvent.click(within(card).getByRole('button', { name: 'Salvar' }));
+
+    await within(card).findByText('Escolha um arquétipo da lista.');
+    expect(document.activeElement).toBe(select);
+  });
+
   it('keeps the typed text on a save error and lets the same edit be retried', async () => {
     let attempts = 0;
     const { impl } = makeFetch({
@@ -512,6 +549,21 @@ describe('brand study tab (#138)', () => {
     expect(await screen.findByText('5 de 7')).toBeTruthy();
   });
 
+  it('puts the focus on the name when the edit of a persona is refused', async () => {
+    const { impl } = makeFetch();
+    renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    const dialog = await openPersona('Dona Maria');
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Editar' }));
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Nome' }), { target: { value: '   ' } });
+    within(dialog).getByRole('button', { name: 'Salvar' }).focus();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+
+    await within(dialog).findByText('Informe o nome da persona.');
+    expect(document.activeElement).toBe(within(dialog).getByRole('textbox', { name: 'Nome' }));
+  });
+
   it('keeps reading and opening personas for a reader role, with no editing control at all', async () => {
     const { impl } = makeFetch({ permissions: READER_PERMISSIONS });
     renderStudy(impl);
@@ -580,8 +632,10 @@ describe('brand study tab (#138)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Adicionar persona' }));
     const dialog = await screen.findByRole('dialog', { name: 'Nova persona' });
+    within(dialog).getByRole('button', { name: 'Criar persona' }).focus();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Criar persona' }));
     expect(await within(dialog).findByText('Informe o nome da persona.')).toBeTruthy();
+    expect(document.activeElement).toBe(within(dialog).getByRole('textbox', { name: 'Nome' }));
     expect(bodies).toEqual([]);
 
     const name = within(dialog).getByRole('textbox', { name: 'Nome' });

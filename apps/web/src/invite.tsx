@@ -8,7 +8,7 @@ import {
   InvitationPreviewResponseSchema,
   type InvitationContext
 } from '@ageniza/contracts';
-import { Button, Field, LiveStatus, Skeleton, TextInput } from '@ageniza/ui';
+import { Button, Field, LiveStatus, Skeleton, TextInput, useFormErrors } from '@ageniza/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuthSession, useAuthSessionStore } from './auth.js';
@@ -36,6 +36,7 @@ const ACCEPT_FAILED = 'Não foi possível aceitar o convite. Tente de novo.';
 export function InvitationPage() {
   const { token = '' } = useParams();
   const httpClient = useApiClient();
+  const { formRef, summary } = useFormErrors();
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -199,7 +200,8 @@ export function InvitationPage() {
           >Aceitar convite</Button>
           <Button variant="ghost" className="auth-submit" onClick={() => { void enterWithAnotherAccount(); }}>Entrar com outra conta</Button>
         </div>
-      : <form className="auth-form" onSubmit={onSubmitNewAccount} noValidate>
+      : <form ref={formRef} className="auth-form" onSubmit={onSubmitNewAccount} noValidate>
+        {summary}
         <Field label="Nome" id="invite-name" error={errors.name}>
           {(control) => <TextInput {...control} name="name" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} />}
         </Field>

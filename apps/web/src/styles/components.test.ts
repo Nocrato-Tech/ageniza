@@ -767,4 +767,87 @@ describe('the story scripts in the Pauta look (#635)', () => {
     expect(css).toMatch(/@media \(max-width: 40rem\) \{\s*\.story-list__day \{\s*flex-basis: 100%;/);
     for (const selector of ['.story-script__text', '.story-script__guidance']) expect(rule(selector).get('overflow-wrap'), selector).toBe('anywhere');
   });
+
+  it('lets the foot of the modal wrap onto a second line, with the primary action last at the right', () => {
+    const foot = rule('.story-script .form-actions');
+
+    expect(foot.get('display')).toBe('flex');
+    expect(foot.get('flex-wrap')).toBe('wrap');
+    expect(foot.get('justify-content')).toBe('flex-end');
+  });
+
+  it('centres the text of the empty list together with its block, as the clients roster does', () => {
+    const empty = rule('.story-list__empty:not(.ui-empty-state--mascot) .ui-empty-state__body');
+    const roster = rule('.clients__empty:not(.ui-empty-state--mascot) .ui-empty-state__body');
+
+    for (const property of ['justify-items', 'text-align']) expect(empty.get(property), property).toBe(roster.get(property));
+    expect(empty.get('text-align')).toBe('center');
+  });
+});
+
+describe('the error summary of a refused form (#639)', () => {
+  it.each(['light', 'dark'] as const)('reads in the danger text at AA on the surface and the canvas in %s', (theme) => {
+    const summary = rule('.ui-error-summary');
+
+    expect(summary.get('color')).toBe('var(--text-danger)');
+    for (const surface of ['var(--bg-surface)', 'var(--bg-canvas)']) expect(contrastOf(theme, summary.get('color')!, surface), surface).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('puts the icon beside the sentence, which wraps inside the form instead of widening it', () => {
+    const summary = rule('.ui-error-summary');
+
+    expect(summary.get('display')).toBe('flex');
+    expect(summary.get('align-items')).toBe('flex-start');
+  });
+});
+
+describe('the conversation of a content in the Pauta look (#639)', () => {
+  const inModal = (selector: string) => rule(`.content-modal__conversation ${selector}`);
+
+  it('rests the rows and the messages on the canvas, and outlines the client message', () => {
+    expect(inModal('.conversation__thread').get('background')).toBe('var(--bg-canvas)');
+    expect(inModal('.conversation__comment').get('background')).toBe('var(--bg-canvas)');
+    expect(inModal('.conversation__comment--client').get('border')).toBe('1px solid var(--border-default)');
+    expect(inModal('.conversation__comment').get('border')).toBe('0');
+  });
+
+  it('reacts to the pointer and to the keyboard by the border, never by the background', () => {
+    for (const state of [':hover', ':focus-visible']) {
+      const reaction = inModal(`.conversation__thread${state}`);
+      expect(reaction.get('border-color'), state).toBe('var(--focus-ring)');
+      expect(reaction.has('background'), state).toBe(false);
+    }
+  });
+
+  it.each(['light', 'dark'] as const)('keeps every text of a message at AA on its own surface in %s', (theme) => {
+    for (const [text, surface] of [
+      ['var(--text-primary)', 'var(--bg-canvas)'],
+      ['var(--text-secondary)', 'var(--bg-canvas)']
+    ] as const) expect(contrastOf(theme, text, surface), `${text} on ${surface}`).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('public pages (#639)', () => {
+  it('keeps the legal draft notice as a box with an icon, never with a coloured side border', () => {
+    const notice = rule('.legal-document .legal-draft, .legal-draft');
+    const all = [...notice.keys(), ...rule('.legal-draft').keys()];
+    expect(all.filter((property) => /^border-(left|right|inline)/.test(property))).toEqual([]);
+    expect(rule('.legal-draft').get('border')).toBe('1px solid var(--border-default)');
+  });
+
+  it('leaves the public header light and aligned by the container, not by the viewport width', () => {
+    const header = rule('.app-shell > header.public-header');
+    expect(header.get('background')).toBe('transparent');
+    expect(header.get('padding-inline')).not.toMatch(/vw/);
+    expect(rule('.public-header__inner').get('max-width')).toBe('calc(72rem - 2 * var(--space-4))');
+    expect(rule('.public-header__inner').get('margin-inline')).toBe('auto');
+  });
+
+  it('sizes the logo link to the logo, so the empty space beside it is not a link', () => {
+    expect(rule('.public-header__inner > a').get('display')).toBe('inline-flex');
+  });
+
+  it('shows the ok status in the ready colour', () => {
+    expect(rule('.public-page__ok svg').get('color')).toBe('var(--status-ready-fg)');
+  });
 });

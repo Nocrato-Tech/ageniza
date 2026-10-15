@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { ArrowRight, LayoutGrid, List, Plus, Store } from 'lucide-react';
 import {
-  Avatar, BadgeCard, BrandSymbol, Button, ButtonLink, ChoiceCard, ClientStrip, IconButton, Pill, PillAction, ConfirmDialog, Dialog, EmptyState, Field, FieldMessage, FilterBar, FilterBarItem, FilterBarSelect, FormatTag, LateBadge, Logo, LiveStatus, Mascot, Menu, MenuItem, MenuSeparator,
+  Avatar, BadgeCard, BrandSymbol, Button, ButtonLink, ChoiceCard, ClientStrip, IconButton, Pill, PillAction, ConfirmDialog, Dialog, EmptyState, ErrorSummary, Field, FieldMessage, FilterBar, FilterBarItem, FilterBarSelect, FormatTag, LateBadge, Logo, LiveStatus, Mascot, Menu, MenuItem, MenuSeparator,
   Modal, Pagination, Popover, Realce, Segmented, Select, Skeleton, StatusTag, Tabs, Textarea, TextInput
 } from '@ageniza/ui';
 
@@ -175,6 +175,14 @@ export const componentEntries: readonly ComponentEntry[] = [
         </Field>)
       },
       { label: 'com contador, passe de 80 para ver o limite', render: (state) => <CounterFieldDemo disabled={state === 'disabled'} loading={state === 'loading'} /> }
+    ]
+  },
+  {
+    id: 'error-summary',
+    name: 'ErrorSummary',
+    covers: ['ErrorSummary'],
+    examples: [
+      { label: 'com três campos recusados', render: (state) => stateOnly(state, ['default'], <ErrorSummary labels={['Dia dos stories', 'Texto da cena 1', 'Orientação da cena 1']} />) }
     ]
   },
   {

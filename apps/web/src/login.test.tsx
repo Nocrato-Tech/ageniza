@@ -143,6 +143,26 @@ describe('LoginPage (/entrar)', () => {
     expect(calls.login).toBe(0);
   });
 
+  it('puts the focus on the one invalid field, and says nothing more than its own description', () => {
+    const { impl } = makeFetch();
+    renderLogin(impl);
+    submit('pessoa@example.test', 'short');
+
+    expect(document.activeElement).toBe(screen.getByLabelText('Senha'));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('puts the focus on the first invalid field and gives one alert that names both', () => {
+    const { impl, calls } = makeFetch();
+    renderLogin(impl);
+    submit('not-an-email', 'short');
+
+    expect(document.activeElement).toBe(screen.getByLabelText('E-mail'));
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.getByRole('alert').textContent).toBe('Corrija 2 campos: E-mail, Senha.');
+    expect(calls.login).toBe(0);
+  });
+
   it('offers the invite line and the recovery link', () => {
     const { impl } = makeFetch();
     renderLogin(impl);

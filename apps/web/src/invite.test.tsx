@@ -186,6 +186,19 @@ describe('InvitationPage (/convite/:token)', () => {
     expect(calls).not.toContain('create');
   });
 
+  it('puts the focus on the first invalid field and gives one alert that names both', async () => {
+    const { impl } = makeFetch({ preview: () => json(previewBody(false)) });
+    renderInvite(impl);
+    await screen.findByRole('heading', { name: 'Você foi convidado' });
+    fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'short' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Criar conta e entrar' }));
+
+    expect(document.activeElement).toBe(screen.getByLabelText('Nome'));
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.getByRole('alert').textContent).toBe('Corrija 2 campos: Nome, Senha.');
+  });
+
   it('creates the account and enters the invitation context directly, recording it', async () => {
     const { impl, calls, lastContextBodies } = makeFetch({ preview: () => json(previewBody(false)) });
     const { probe } = renderInvite(impl);

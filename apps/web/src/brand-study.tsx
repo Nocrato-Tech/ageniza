@@ -17,7 +17,7 @@ import {
   type Persona,
   type ThreadSubject
 } from '@ageniza/contracts';
-import { Avatar, Button, ConfirmDialog, EmptyState, Field, FieldMessage, Modal, Pill, Select, Skeleton, TextInput, Textarea } from '@ageniza/ui';
+import { Avatar, Button, ConfirmDialog, EmptyState, Field, FieldMessage, Modal, Pill, Select, Skeleton, TextInput, Textarea, useFormErrors } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -146,6 +146,7 @@ function TextSection({ client, sectionKey, section, canEdit }: {
 }) {
   const agency = useAgencyContext();
   const httpClient = useApiClient();
+  const { formRef, summary } = useFormErrors();
   const queryClient = useQueryClient();
   const label = SECTION_LABELS[sectionKey];
   const [editing, setEditing] = useState(false);
@@ -201,7 +202,8 @@ function TextSection({ client, sectionKey, section, canEdit }: {
     save.mutate(draft);
   };
 
-  return <form className="brand-section__editor" onSubmit={onSubmit} noValidate>
+  return <form ref={formRef} className="brand-section__editor" onSubmit={onSubmit} noValidate>
+    {summary}
     <Field label={`Editar ${label}`} error={error}>
       {(control) => <Textarea
         ref={textareaRef}
@@ -326,6 +328,7 @@ function ColorsSection({ client, colors, canEdit }: { client: ClientDetailRespon
 function ArchetypeSection({ client, archetype, canEdit }: { client: ClientDetailResponse; archetype: string | null; canEdit: boolean }) {
   const agency = useAgencyContext();
   const httpClient = useApiClient();
+  const { formRef, summary } = useFormErrors();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -370,7 +373,8 @@ function ArchetypeSection({ client, archetype, canEdit }: { client: ClientDetail
     save.mutate(draft);
   };
 
-  return <form className="brand-section__editor" onSubmit={onSubmit} noValidate>
+  return <form ref={formRef} className="brand-section__editor" onSubmit={onSubmit} noValidate>
+    {summary}
     <Select
       label="Arquétipo"
       value={draft}
@@ -438,6 +442,7 @@ const personaChanges = (persona: Persona, draft: PersonaDraft): Record<string, s
 function CreatePersonaDialog({ client, onClose }: { client: ClientDetailResponse; onClose: () => void }) {
   const agency = useAgencyContext();
   const httpClient = useApiClient();
+  const { formRef, summary } = useFormErrors();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<PersonaDraft>(emptyDraft);
   const [nameError, setNameError] = useState<string | undefined>();
@@ -482,7 +487,8 @@ function CreatePersonaDialog({ client, onClose }: { client: ClientDetailResponse
   };
 
   return <Modal title="Nova persona" closeLabel="Fechar nova persona" onClose={onClose}>
-    <form className="form-stack" onSubmit={onSubmit} noValidate>
+    <form ref={formRef} className="form-stack" onSubmit={onSubmit} noValidate>
+      {summary}
       <PersonaFields
         draft={draft}
         nameRef={nameRef}
@@ -501,6 +507,7 @@ function CreatePersonaDialog({ client, onClose }: { client: ClientDetailResponse
 function PersonaDialog({ client, persona, onClose }: { client: ClientDetailResponse; persona: Persona; onClose: () => void }) {
   const agency = useAgencyContext();
   const httpClient = useApiClient();
+  const { formRef, summary } = useFormErrors();
   const queryClient = useQueryClient();
   const canOperate = useCan('cliente.operar');
   const canEdit = canOperate && client.status === 'active';
@@ -569,7 +576,8 @@ function PersonaDialog({ client, persona, onClose }: { client: ClientDetailRespo
 
   return <Modal title={persona.name} closeLabel="Fechar persona" onClose={onClose}>
     {editing
-      ? <form className="form-stack" onSubmit={onSubmit} noValidate>
+      ? <form ref={formRef} className="form-stack" onSubmit={onSubmit} noValidate>
+        {summary}
         <PersonaFields
           draft={draft}
           nameError={nameError}

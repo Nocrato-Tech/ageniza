@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { AuthPasswordForgotRequestSchema, AuthPasswordForgotResponseSchema } from '@ageniza/contracts';
 import { ArrowLeft } from 'lucide-react';
-import { Button, Field, TextInput } from '@ageniza/ui';
+import { Button, Field, TextInput, useFormErrors } from '@ageniza/ui';
 
 import { AuthMessage, AuthPanel } from './auth-layout.js';
 import { useDocumentTitle } from './document-title.js';
@@ -20,6 +20,7 @@ import { HttpClientError, useApiClient } from './http.js';
  */
 export function ForgotPasswordPage() {
   const httpClient = useApiClient();
+  const { formRef, summary } = useFormErrors();
   const location = useLocation();
   const confirmationRef = useRef<HTMLHeadingElement>(null);
   const [email, setEmail] = useState('');
@@ -87,7 +88,8 @@ export function ForgotPasswordPage() {
     title="Recuperar acesso"
     lead="Informe o e-mail da sua conta e enviaremos um link para definir uma nova senha."
   >
-    <form className="auth-form" onSubmit={onSubmit} noValidate>
+    <form ref={formRef} className="auth-form" onSubmit={onSubmit} noValidate>
+      {summary}
       <Field label="E-mail" id="forgot-email" error={emailError}>
         {(control) => <TextInput
           {...control}

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 
 import { ClientNameSchema, ClientSchema } from '@ageniza/contracts';
-import { Button, FieldMessage, Modal, TextInput } from '@ageniza/ui';
+import { Button, Field, FieldMessage, Modal, TextInput, useFormErrors } from '@ageniza/ui';
 
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -35,8 +35,8 @@ export function CreateClientDialog({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const nameId = useId();
-  const hintId = useId();
-  const errorId = useId();
+  const formId = useId();
+  const { formRef, summary } = useFormErrors();
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState<string | undefined>();
   const [formError, setFormError] = useState<string | undefined>();
@@ -82,28 +82,29 @@ export function CreateClientDialog({ onClose }: { onClose: () => void }) {
     create.mutate(value);
   };
 
-  return <Modal title="Cadastrar cliente" closeLabel="Fechar cadastro de cliente" onClose={onClose}>
-    <form className="form-stack" onSubmit={onSubmit} noValidate>
-      <div className="form-field">
-        <label htmlFor={nameId}>Nome</label>
-        <TextInput
-          ref={nameRef}
-          id={nameId}
-          name="name"
-          value={name}
-          onChange={(event) => { setName(event.target.value); setNameError(undefined); setFormError(undefined); }}
-          aria-invalid={nameError !== undefined}
-          aria-describedby={nameError === undefined ? hintId : `${hintId} ${errorId}`}
-        />
-        <p id={hintId} className="form-hint">{NAME_HINT}</p>
-        {nameError !== undefined && <FieldMessage id={errorId} role="alert">{nameError}</FieldMessage>}
-      </div>
+  return <Modal
+    title="Cadastrar cliente"
+    closeLabel="Fechar cadastro de cliente"
+    size="sm"
+    description="O cadastro começa só pelo nome do cliente."
+    onClose={onClose}
+    actions={<Button type="submit" form={formId} disabled={!canSubmit} loading={create.isPending}>Cadastrar</Button>}
+  >
+    <form ref={formRef} id={formId} className="form-stack" onSubmit={onSubmit} noValidate>
+      {summary}
+      <Field label="Nome" id={nameId} hint={NAME_HINT} error={nameError}>
+        {(control) => (
+          <TextInput
+            {...control}
+            ref={nameRef}
+            name="name"
+            value={name}
+            onChange={(event) => { setName(event.target.value); setNameError(undefined); setFormError(undefined); }}
+          />
+        )}
+      </Field>
 
       {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
-
-      <div className="form-actions">
-        <Button type="submit" disabled={!canSubmit} loading={create.isPending}>Cadastrar</Button>
-      </div>
     </form>
   </Modal>;
 }
