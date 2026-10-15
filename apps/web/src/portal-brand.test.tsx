@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
@@ -11,6 +14,7 @@ import { portalClientBody, portalPersona, portalStudyBody } from './portal-fixtu
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
+import { declarationsFor, readStyles } from './styles/theme-colors';
 
 afterEach(cleanup);
 
@@ -605,5 +609,81 @@ describe('portal Marca (#143)', () => {
     await within(main).findByText('Mais simples');
 
     expect(main.textContent).not.toMatch(/\b(thread|status|arquivad\w*|onboarding|persona|editado por|resolvid\w*)\b/i);
+  });
+});
+
+describe('portal Marca na Pauta (#689)', () => {
+  it('paints each swatch with the hex the client registered, in order, and hides it from the reader', async () => {
+    const { impl } = makeWorld();
+    renderPortal(impl);
+    await page();
+
+    const swatches = Array.from(sectionOf('Cores').querySelectorAll<HTMLElement>('.brand-colors__swatch'));
+    expect(swatches.map((swatch) => swatch.style.background)).toEqual(['rgb(122, 31, 43)', 'rgb(245, 235, 221)']);
+    for (const swatch of swatches) expect(swatch.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('marks a part the agency is still preparing with an icon beside the words, never with colour alone', async () => {
+    const study = portalStudyBody({ branding: { body: 'Padaria de bairro' } });
+    const { impl } = makeWorld({ studies: { [CLIENT_ID]: study, [SECOND_ID]: SECOND_STUDY } });
+    renderPortal(impl);
+    const main = await page();
+
+    const pending = Array.from(main.querySelectorAll<HTMLElement>('.portal-brand__pending'));
+    expect(pending).toHaveLength(6);
+    for (const line of pending) {
+      expect(line.textContent).toBe(NOT_PREPARED);
+      expect(line.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    }
+    expect(sectionOf('Sobre sua marca').querySelector('.portal-brand__pending')).toBeNull();
+  });
+
+  it('reads as the sections of the agency client detail: one headline, rows set apart, personas in blocks', async () => {
+    const { impl } = makeWorld();
+    renderPortal(impl);
+    const main = await page();
+
+    const headline = within(main).getByRole('heading', { level: 1, name: 'Sua marca' });
+    expect(headline.className).toBe('portal-headline');
+    expect(main.querySelectorAll('h1')).toHaveLength(1);
+    const study = headline.closest('section')!;
+    expect(study.classList.contains('brand-study')).toBe(true);
+    expect(Array.from(study.children).slice(1).map((child) => child.className)).toEqual(Array(7).fill('brand-section'));
+    expect(Array.from(sectionOf('Quem é seu público').querySelectorAll('.portal-persona-list > li')).map((card) => card.className)).toEqual(['portal-persona', 'portal-persona']);
+    expect(main.querySelector('.ui-empty-state')).toBeNull();
+  });
+
+  it('keeps the error in the shared portal block, with a secondary retry', async () => {
+    const { impl } = makeWorld({ failStudy: () => apiError(404, 'NOT_FOUND') });
+    renderPortal(impl);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.className).toBe('portal-error');
+    expect(screen.getByRole('heading', { level: 1, name: 'Sua marca' }).className).toBe('portal-headline');
+    expect(within(alert).getByRole('button', { name: 'Tentar de novo' }).className).toContain('ui-button--secondary');
+  });
+
+  describe('style', () => {
+    const css = readStyles('globals.css');
+    const start = css.indexOf('.portal-brand {');
+    const block = css.slice(start, css.indexOf('.visually-hidden {', start));
+
+    it('has its own block, made only of tokens, so it neither mints a value nor restyles a shared piece', () => {
+      expect(start).toBeGreaterThan(0);
+      expect(readFileSync(join(__dirname, 'styles/globals.css'), 'utf8')).toContain('/* --- Portal: Marca (#143, #689)');
+      expect(block).not.toMatch(/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/);
+      expect(block).not.toMatch(/font(-size)?:\s*[\d.]+(px|rem)/);
+      const selectors = Array.from(block.matchAll(/^([^\s/*][^{]*)\{/gm)).map((match) => match[1]!.trim());
+      expect(selectors.length).toBeGreaterThan(5);
+      expect(selectors.filter((selector) => /^\.portal-(section|headline|block|cover|row|meta|action|error|nav|shell)/.test(selector))).toEqual([]);
+    });
+
+    it('lets a persona and the study shrink inside a phone width, and keeps the pending line readable', () => {
+      expect(declarationsFor(css, '.portal-persona').get('grid-template-columns')).toBe('minmax(0, 1fr)');
+      expect(declarationsFor(css, '.portal-persona-list').get('grid-template-columns')).toBe('minmax(0, 1fr)');
+      expect(declarationsFor(css, '.portal-brand__pending').get('color')).toBe('var(--text-secondary)');
+      expect(declarationsFor(css, '.portal-persona').get('min-width')).toBe('0');
+      expect(declarationsFor(css, '.portal-persona .brand-persona__fields dd').get('font')).toBe('var(--body-md)');
+    });
   });
 });

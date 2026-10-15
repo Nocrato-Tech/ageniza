@@ -5087,20 +5087,39 @@ html:has(.portal-shell) {
   object-fit: cover;
 }
 
-/* --- Portal: Marca (#143) --- */
+/* --- Portal: Marca (#143, #689) ---
+   O estudo em leitura no padrão das seções do detalhe do cliente (.brand-study / .brand-section, #637): linhas, não cartões.
+   A tela usa três tamanhos de texto: --heading-xl (título), --body-md e --caption (o que a conversa já traz). */
 
 .portal-brand {
-  display: grid;
-  gap: var(--space-4);
+  gap: var(--space-6);
 }
 
-.portal-brand h1 {
+.portal-brand .brand-section__header h2 {
   margin: 0;
+  font: var(--body-md);
+  font-weight: 600;
+}
+
+.portal-brand__pending {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.portal-brand__pending svg {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
 }
 
 .portal-persona-list {
   display: grid;
-  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -5108,21 +5127,28 @@ html:has(.portal-shell) {
 
 .portal-persona {
   display: grid;
-  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
   min-width: 0;
-  padding: var(--space-3);
+  padding: var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
 }
 
 .portal-persona__name {
   margin: 0;
-  font: var(--label-md);
+  font: var(--body-md);
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
 .portal-persona__field {
   display: contents;
+}
+
+.portal-persona .brand-persona__fields dd {
+  font: var(--body-md);
 }
 
 .visually-hidden {

@@ -990,3 +990,12 @@ describe('the Início: approvals and the script of today (#271)', () => {
     });
   });
 });
+
+describe('portal.tsx source (#689)', () => {
+  it('writes the accent-stripping range as escapes, never as invisible combining characters', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/portal.tsx'), 'utf8');
+    const escape = String.fromCharCode(92);
+    expect(source).toContain(`[${escape}u0300-${escape}u036f]`);
+    expect(source).not.toMatch(/[\u0300-\u036f]/);
+  });
+});
