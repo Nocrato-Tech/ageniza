@@ -7,9 +7,10 @@ import {
   EmailChangeRequestResponseSchema,
   EmailChangeRequestSchema
 } from '@ageniza/contracts';
-import { Button, FieldMessage, Modal, TextInput } from '@ageniza/ui';
+import { Button, Field, Modal, TextInput } from '@ageniza/ui';
 
 import { useOptionalAuthSessionStore } from './auth.js';
+import { AUTH_LINK_BUTTON_CLASS, AuthMessage, AuthPanel } from './auth-layout.js';
 import { useDocumentTitle } from './document-title.js';
 import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -69,35 +70,27 @@ export function EmailChangeDialog({ onClose }: { onClose: () => void }) {
           <div className='form-actions'><Button onClick={onClose}>Fechar</Button></div>
         </div>
       : <form className='form-stack' onSubmit={onSubmit} noValidate>
-          <div className='form-field'>
-            <label htmlFor='email-change-new'>Novo e-mail</label>
-            <TextInput
-              id='email-change-new'
+          <Field label='Novo e-mail' id='email-change-new' error={emailError}>
+            {(control) => <TextInput
+              {...control}
               name='newEmail'
               type='email'
               autoComplete='email'
               value={newEmail}
               onChange={(event) => setNewEmail(event.target.value)}
-              aria-invalid={emailError !== undefined}
-              aria-describedby={emailError === undefined ? undefined : 'email-change-new-error'}
-            />
-            {emailError !== undefined && <FieldMessage id='email-change-new-error'>{emailError}</FieldMessage>}
-          </div>
-          <div className='form-field'>
-            <label htmlFor='email-change-password'>Senha atual</label>
-            <TextInput
-              id='email-change-password'
+            />}
+          </Field>
+          <Field label='Senha atual' id='email-change-password' error={passwordError}>
+            {(control) => <TextInput
+              {...control}
               name='currentPassword'
               type='password'
               autoComplete='current-password'
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              aria-invalid={passwordError !== undefined}
-              aria-describedby={passwordError === undefined ? undefined : 'email-change-password-error'}
-            />
-            {passwordError !== undefined && <FieldMessage id='email-change-password-error'>{passwordError}</FieldMessage>}
-          </div>
-          {formError !== undefined && <p role='alert'>{formError}</p>}
+            />}
+          </Field>
+          {formError !== undefined && <AuthMessage tone='danger' role='alert'>{formError}</AuthMessage>}
           <div className='form-actions'>
             <Button variant='ghost' onClick={onClose}>Cancelar</Button>
             <Button type='submit' loading={submitting}>Enviar pedido</Button>
@@ -150,27 +143,28 @@ export function ConfirmEmailChangePage() {
   };
 
   if (state === 'invalid') {
-    return <section className='form-panel' aria-labelledby='email-change-title'>
-      <h1 id='email-change-title'>Este link não é mais válido</h1>
-      <p>Links de confirmação valem por 48 horas e só podem ser usados uma vez. Se ainda quiser trocar o e-mail, peça de novo pelo menu da conta.</p>
-      <Link to='/entrar'>Entrar</Link>
-    </section>;
+    return <AuthPanel
+      titleId='email-change-title'
+      title='Este link não é mais válido'
+      lead='Links de confirmação valem por 48 horas e só podem ser usados uma vez. Se ainda quiser trocar o e-mail, peça de novo pelo menu da conta.'
+    >
+      <Link className={AUTH_LINK_BUTTON_CLASS} to='/entrar'>Entrar</Link>
+    </AuthPanel>;
   }
 
   if (state === 'done') {
-    return <section className='form-panel' aria-labelledby='email-change-title'>
-      <h1 id='email-change-title'>E-mail alterado</h1>
-      <p role='status'>O novo e-mail já vale para a sua conta. Por segurança, todas as sessões foram encerradas.</p>
-      <Link to='/entrar'>Entrar com o novo e-mail</Link>
-    </section>;
+    return <AuthPanel titleId='email-change-title' title='E-mail alterado'>
+      <AuthMessage tone='success' role='status'>O novo e-mail já vale para a sua conta. Por segurança, todas as sessões foram encerradas.</AuthMessage>
+      <Link className={AUTH_LINK_BUTTON_CLASS} to='/entrar'>Entrar com o novo e-mail</Link>
+    </AuthPanel>;
   }
 
-  return <section className='form-panel' aria-labelledby='email-change-title'>
-    <h1 id='email-change-title'>Confirmar novo e-mail</h1>
-    <p>Confirme para usar este endereço como o e-mail da sua conta no Ageniza. Todas as sessões abertas serão encerradas.</p>
-    {error !== undefined && <p role='alert'>{error}</p>}
-    <div className='form-actions'>
-      <Button onClick={() => { void confirm(); }} loading={submitting}>Confirmar troca de e-mail</Button>
-    </div>
-  </section>;
+  return <AuthPanel
+    titleId='email-change-title'
+    title='Confirmar novo e-mail'
+    lead='Confirme para usar este endereço como o e-mail da sua conta no Ageniza. Todas as sessões abertas serão encerradas.'
+  >
+    {error !== undefined && <AuthMessage tone='danger' role='alert'>{error}</AuthMessage>}
+    <Button className='auth-submit' onClick={() => { void confirm(); }} loading={submitting}>Confirmar troca de e-mail</Button>
+  </AuthPanel>;
 }

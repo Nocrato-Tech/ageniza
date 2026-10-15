@@ -6,6 +6,7 @@ import type { AuthSessionSnapshot } from './auth.js';
 import { AccountMenu } from './account-menu.js';
 import { DarkArea } from './area-theme.js';
 import { AgencyAreaLayout, AgencyHomePage, AgencyPermissionRoute } from './agency.js';
+import { AuthLayout } from './auth-layout.js';
 import { LiveStatus } from '@ageniza/ui';
 import { ClientBrandStudyTab } from './brand-study.js';
 import { ClientDetailPage, ClientGeneralTab, ClientSkeletonTab } from './client-detail.js';
@@ -77,14 +78,16 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
     <Route element={<PublicLayout />}>
       <Route index element={<PublicHome />} />
       <Route path="status" element={<ServiceStatus />} />
-      <Route path="entrar" element={<LoginPage />} />
       <Route path="sem-acesso" element={session.isAuthenticated ? <Navigate to="/app" replace /> : <NoAccessPage />} />
+      <Route path="termos" element={<LegalDocumentPage document={termsOfUse} sibling={{ title: 'Política de Privacidade', to: '/privacidade' }} />} />
+      <Route path="privacidade" element={<LegalDocumentPage document={privacyPolicy} sibling={{ title: 'Termos de Uso', to: '/termos' }} />} />
+    </Route>
+    <Route element={<AuthLayout />}>
+      <Route path="entrar" element={<LoginPage />} />
       <Route path="senha/esquecida" element={session.isAuthenticated ? <Navigate to="/app" replace /> : <ForgotPasswordPage />} />
       <Route path="senha/redefinir" element={<ResetPasswordPage />} />
       <Route path="convite/:token" element={<InvitationPage />} />
       <Route path="email/confirmar" element={<ConfirmEmailChangePage />} />
-      <Route path="termos" element={<LegalDocumentPage document={termsOfUse} sibling={{ title: 'Política de Privacidade', to: '/privacidade' }} />} />
-      <Route path="privacidade" element={<LegalDocumentPage document={privacyPolicy} sibling={{ title: 'Termos de Uso', to: '/termos' }} />} />
     </Route>
     <Route path="agencia/:agenciaId" element={<DarkArea><SessionGate session={session}><SessionWatch /><AgencyAreaLayout /></SessionGate></DarkArea>}>
       <Route index element={<AgencyHomePage />} />

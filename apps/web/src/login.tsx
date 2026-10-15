@@ -5,10 +5,11 @@ import {
   AuthLoginResponseSchema,
   ContextResolveResponseSchema
 } from '@ageniza/contracts';
-import { Button, FieldMessage, TextInput } from '@ageniza/ui';
+import { Button, Field, TextInput } from '@ageniza/ui';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { useAuthSession, useAuthSessionStore } from './auth.js';
+import { AuthMessage, AuthPanel } from './auth-layout.js';
 import { contextDestination, contextTarget, rememberContext, targetFromDestination } from './context-destination.js';
 import { useDocumentTitle } from './document-title.js';
 import { validateForm } from './forms.js';
@@ -148,48 +149,39 @@ export function LoginPage() {
     await runResolve();
   };
 
-  return <section className="form-panel" aria-labelledby="login-title">
-    <h1 id="login-title">Ageniza</h1>
-    {notice !== undefined && <p role="status">{notice}</p>}
-    <form className="form-stack" onSubmit={onSubmit} noValidate>
-      <div className="form-field">
-        <label htmlFor="login-email">E-mail</label>
-        <TextInput
-          id="login-email"
+  return <AuthPanel titleId="login-title" title="Entrar" lead="A pauta da sua agência está te esperando.">
+    {notice !== undefined && <AuthMessage tone="success" role="status">{notice}</AuthMessage>}
+    <form className="auth-form" onSubmit={onSubmit} noValidate>
+      <Field label="E-mail" id="login-email" error={errors.email}>
+        {(control) => <TextInput
+          {...control}
           name="email"
           type="email"
           autoComplete="email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
-          aria-invalid={errors.email !== undefined}
-          aria-describedby={errors.email === undefined ? undefined : 'login-email-error'}
-        />
-        {errors.email !== undefined && <FieldMessage id="login-email-error">{errors.email}</FieldMessage>}
+        />}
+      </Field>
+      <div className="auth-field-link">
+        <Field label="Senha" id="login-password" error={errors.password}>
+          {(control) => <TextInput
+            {...control}
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />}
+        </Field>
+        <Link className="auth-field-link__link" to="/senha/esquecida" state={inviteToken === undefined ? undefined : { inviteToken }}>Esqueci minha senha</Link>
       </div>
-      <div className="form-field">
-        <label htmlFor="login-password">Senha</label>
-        <TextInput
-          id="login-password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          aria-invalid={errors.password !== undefined}
-          aria-describedby={errors.password === undefined ? undefined : 'login-password-error'}
-        />
-        {errors.password !== undefined && <FieldMessage id="login-password-error">{errors.password}</FieldMessage>}
-      </div>
-      {resolveError !== undefined && <div role="alert">
-        <p>{resolveError}</p>
-        <Button onClick={() => { void runResolve(); }} loading={resolving}>Tentar de novo</Button>
+      {resolveError !== undefined && <div role="alert" className="auth-retry">
+        <AuthMessage tone="danger">{resolveError}</AuthMessage>
+        <Button variant="secondary" className="auth-submit" onClick={() => { void runResolve(); }} loading={resolving}>Tentar de novo</Button>
       </div>}
-      {formError !== undefined && <p role="alert">{formError}</p>}
-      <div className="form-actions">
-        <Button type="submit" loading={submitting}>Entrar</Button>
-        <Link to="/senha/esquecida" state={inviteToken === undefined ? undefined : { inviteToken }}>Esqueci minha senha</Link>
-        <p>O acesso ao Ageniza é por convite.</p>
-      </div>
+      {formError !== undefined && <AuthMessage tone="danger" role="alert">{formError}</AuthMessage>}
+      <Button type="submit" className="auth-submit" loading={submitting}>Entrar</Button>
+      <p className="auth-note">O acesso ao Ageniza é por convite.</p>
     </form>
-  </section>;
+  </AuthPanel>;
 }
