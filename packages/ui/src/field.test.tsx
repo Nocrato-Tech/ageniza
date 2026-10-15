@@ -85,6 +85,14 @@ describe('Field', () => {
     expect(message.querySelector('.ui-icon')?.getAttribute('aria-hidden')).toBe('true');
   });
 
+  it('leaves the error to the description of the field: it is not an alert of its own (the form summarises, see ErrorSummary)', () => {
+    render(<Field label="E-mail" error="Esse e-mail não parece certo">{(control) => <TextInput {...control} />}</Field>);
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    const message = screen.getByText('Esse e-mail não parece certo');
+    expect(screen.getByLabelText('E-mail').getAttribute('aria-describedby')).toBe(message.id);
+  });
+
   it('counts the characters used against the limit', () => {
     render(<Field label="Legenda" counter={{ count: 2200, max: 2200 }}>{(control) => <Textarea {...control} />}</Field>);
     const counter = screen.getByText('2200/2200');

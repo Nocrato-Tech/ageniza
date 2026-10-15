@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, NavLink, Outlet, useLocation, useMatch, useOutletContext, useParams } from 'react-router-dom';
-import { Archive, ArrowRight, Circle, Clock, Pencil } from 'lucide-react';
+import { Archive, ArrowLeft, ArrowRight, Circle, Clock, Pencil } from 'lucide-react';
 import { z } from 'zod';
 
 import { ClientDetailResponseSchema, ClientSchema, type ClientDetailResponse } from '@ageniza/contracts';
-import { Avatar, Button, EmptyState, Pill, Realce, Skeleton } from '@ageniza/ui';
+import { Avatar, Button, ButtonLink, EmptyState, Pill, Realce, Skeleton } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -143,7 +143,7 @@ export function ClientDetailPage() {
     const url = state.data.clientListUrl;
     return url === prefix || url.startsWith(`${prefix}?`) ? url : undefined;
   })();
-  const back = <Link className="client-detail__back" to={listUrlFromState ?? `/agencia/${agenciaId}/clientes`}>← Clientes</Link>;
+  const back = <ButtonLink as={Link} variant="ghost" size="sm" leadingIcon={<ArrowLeft />} className="client-detail__back" aria-label="Voltar para Clientes" to={listUrlFromState ?? `/agencia/${agenciaId}/clientes`}>Clientes</ButtonLink>;
 
   // A background refetch that fails (e.g. after the save invalidation) must not replace the page
   // nor unmount an open modal: the error screen is only for when there is nothing to show.

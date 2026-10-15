@@ -1,5 +1,6 @@
 import { useId, useState, type FormEvent } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CheckCheck, Clock, MessageSquare, Plus } from 'lucide-react';
 
 import {
   CommentBodySchema,
@@ -13,7 +14,7 @@ import {
   type Thread,
   type ThreadComment
 } from '@ageniza/contracts';
-import { Avatar, Button, FieldMessage, Modal, Skeleton, Textarea } from '@ageniza/ui';
+import { Avatar, Button, Field, FieldMessage, Modal, Pill, Skeleton, Textarea, useFormErrors } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -178,6 +179,7 @@ function Composer({ label, submitLabel, placeholder, note, pending, error, onSub
   const [draft, setDraft] = useState('');
   const [problem, setProblem] = useState<string | undefined>();
   const fieldId = useId();
+  const { formRef, summary } = useFormErrors();
 
   const submit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
@@ -186,19 +188,23 @@ function Composer({ label, submitLabel, placeholder, note, pending, error, onSub
     onSubmit(draft.trim());
   };
 
-  return <form className="conversation__composer" onSubmit={submit} noValidate>
-    <label className="conversation__composer-label" htmlFor={fieldId}>{label}</label>
-    <Textarea
-      id={fieldId}
-      value={draft}
-      rows={4}
-      placeholder={placeholder}
-      readOnly={pending}
-      onChange={(event) => { setDraft(event.target.value); setProblem(undefined); onEdit(); }}
-    />
+  return <form ref={formRef} className="conversation__composer" onSubmit={submit} noValidate>
+    {summary}
+    <Field label={label} id={fieldId} error={problem}>
+      {(control) => (
+        <Textarea
+          {...control}
+          value={draft}
+          rows={4}
+          placeholder={placeholder}
+          readOnly={pending}
+          onChange={(event) => { setDraft(event.target.value); setProblem(undefined); onEdit(); }}
+        />
+      )}
+    </Field>
     {note !== undefined && <p className="conversation__note">{note}</p>}
     <p className="conversation__note">{NO_EDIT_NOTE}</p>
-    {(problem ?? error) !== undefined && <FieldMessage role="alert">{problem ?? error}</FieldMessage>}
+    {problem === undefined && error !== undefined && <FieldMessage role="alert">{error}</FieldMessage>}
     <div className="conversation__actions">
       <Button type="submit" loading={pending}>{error === undefined ? submitLabel : 'Tentar de novo'}</Button>
     </div>
@@ -351,6 +357,7 @@ function ThreadRow({ thread, viewer, onOpen }: { thread: Thread; viewer: Convers
   const status = thread.state === 'resolved'
     ? (viewer === 'client' ? 'concluída' : 'resolvida')
     : awaiting ? (viewer === 'agency' ? 'aguardando você' : 'a agência respondeu') : 'aberta';
+  const icon = thread.state === 'resolved' ? <CheckCheck /> : awaiting ? <Clock /> : <MessageSquare />;
   return <li>
     <button type="button" className="conversation__thread" onClick={onOpen}>
       <span className="conversation__thread-meta">
@@ -360,7 +367,7 @@ function ThreadRow({ thread, viewer, onOpen }: { thread: Thread; viewer: Convers
       </span>
       <span className="conversation__thread-last">{SIDE_TITLE[thread.lastComment.side]} · {formatDay(thread.lastComment.at)}</span>
       <span className="conversation__thread-excerpt">{thread.lastComment.excerpt}</span>
-      <span className={awaiting ? 'conversation__status conversation__status--awaiting' : 'conversation__status'}>{status}</span>
+      <Pill tone={awaiting ? 'accent' : 'neutral'} icon={icon} className={awaiting ? 'conversation__status conversation__status--awaiting' : 'conversation__status'}>{status}</Pill>
     </button>
   </li>;
 }
@@ -406,12 +413,12 @@ export function Conversation(props: ConversationProps) {
       <Heading className="conversation__title">
         {ofContent ? 'Conversa' : `Conversas${threads.data === undefined ? '' : ` (${totalItems})`}`}
       </Heading>
-      {awaiting > 0 && <span className="conversation__status conversation__status--awaiting">
+      {awaiting > 0 && <Pill tone="accent" className="conversation__status conversation__status--awaiting">
         {scope.side === 'agency' ? `${awaiting} aguardando` : `${awaiting} com resposta da agência`}
-      </span>}
+      </Pill>}
       {canStart && (scope.side === 'client'
         ? <Button variant="secondary" aria-label={opening.buttonName(subjectLabel)} onClick={() => setCreating(true)}>Sugerir</Button>
-        : <Button size="sm" variant="secondary" aria-label={opening.buttonName(subjectLabel)} onClick={() => setCreating(true)}><span aria-hidden="true">+</span> conversa</Button>)}
+        : <Button size="sm" variant="secondary" leadingIcon={<Plus />} aria-label={opening.buttonName(subjectLabel)} onClick={() => setCreating(true)}>conversa</Button>)}
     </header>
 
     {threads.isPending && <div className="conversation__threads-skeleton" aria-busy="true"><Skeleton /><Skeleton /></div>}

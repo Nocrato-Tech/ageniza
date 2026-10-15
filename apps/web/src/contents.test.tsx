@@ -1897,7 +1897,7 @@ describe('the Conteúdos tab of the client (#272)', () => {
     const { impl } = makeFetch({ contents: { [padaria.id]: [treino()] } });
     const { probe } = render_(impl, { pathname: tabUrl(), search: '?visao=semana&data=2026-10-14', state: { clientListUrl: ROSTER_ADDRESS } });
     await screen.findByText('Treino da semana');
-    const back = (): HTMLElement => screen.getByRole('link', { name: '← Clientes' });
+    const back = (): HTMLElement => screen.getByRole('link', { name: 'Voltar para Clientes' });
     expect(back().getAttribute('href')).toBe(ROSTER_ADDRESS);
 
     const toScreen = screen.getByRole('link', { name: 'Abrir na tela de Conteúdos' });
@@ -1915,7 +1915,7 @@ describe('the Conteúdos tab of the client (#272)', () => {
     await waitFor(() => expect(probe.pathname).toBe(tabUrl()));
     expect(probe.search).toBe('?visao=semana&data=2026-10-14');
     expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
-    expect((await screen.findByRole('link', { name: '← Clientes' })).getAttribute('href')).toBe(ROSTER_ADDRESS);
+    expect((await screen.findByRole('link', { name: 'Voltar para Clientes' })).getAttribute('href')).toBe(ROSTER_ADDRESS);
   });
 
   it('opens a content inside the tab, and closing it comes back to the same tab, period and roster address', async () => {
