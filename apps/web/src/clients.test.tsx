@@ -970,3 +970,162 @@ describe('the content indicators of the card (#272, contentIndicators of #261)',
     expect(container.textContent).not.toContain('3 atrasos');
   });
 });
+
+describe('the client badge (#636)', () => {
+  const ALL = ['cliente.visualizar', 'cliente.cadastrar', 'cliente.convidar_usuario', 'conteudo.visualizar'];
+  const zero = { pending: 0, inReview: 0, overdue: 0, adjusting: 0, dueSoon: 0 };
+  const badge = (n: number, name: string, extra: Record<string, unknown> = {}) => ({
+    id: `8b8b8b8b-8888-4888-8888-${String(n).padStart(12, '0')}`,
+    name, photoUrl: null, instagramHandle: null, status: 'active', closingDate: null, threadsAwaitingAgency: 0, ...extra
+  });
+  const lateAndInvited = badge(1, 'Cliente Atrasado', { pendingInvitations: 1, contentIndicators: { ...zero, pending: 2, overdue: 1, dueSoon: 1 } });
+  const dueSoon = badge(2, 'Cliente Prazo', { pendingInvitations: 0, contentIndicators: { ...zero, dueSoon: 2 } });
+  const invited = badge(3, 'Cliente Convite', { pendingInvitations: 1, contentIndicators: zero });
+  const quiet = badge(4, 'Cliente Quieto', { pendingInvitations: 0, contentIndicators: zero });
+  const roster = (rows: readonly unknown[], permissions: readonly string[] = ALL) => makeFetch({ permissions, clients: () => listResponse(rows) });
+
+  it('wears one seal per card: late, then due soon, then the invitation, which is not said twice', async () => {
+    const { impl } = roster([lateAndInvited, dueSoon, invited, quiet]);
+    renderClients(impl);
+    await screen.findByText('Cliente Atrasado');
+
+    expect(within(cardOf('Cliente Atrasado')).getByText('Atrasado')).toBeTruthy();
+    expect(within(cardOf('Cliente Atrasado')).queryByText('Prazo em até 2 dias')).toBeNull();
+    // The invitation did not become the seal there, so it is still said, once, as a badge.
+    expect(within(cardOf('Cliente Atrasado')).getAllByText('convite pendente')).toHaveLength(1);
+    expect(within(cardOf('Cliente Prazo')).getByText('Prazo em até 2 dias')).toBeTruthy();
+    expect(within(cardOf('Cliente Prazo')).queryByText('Atrasado')).toBeNull();
+    expect(within(cardOf('Cliente Convite')).getAllByText('convite pendente')).toHaveLength(1);
+    expect(within(cardOf('Cliente Quieto')).queryByText('Atrasado')).toBeNull();
+    expect(within(cardOf('Cliente Quieto')).queryByText('Prazo em até 2 dias')).toBeNull();
+    expect(within(cardOf('Cliente Quieto')).queryByText('convite pendente')).toBeNull();
+  });
+
+  it('opens the tab the next action is about, and shows the number behind it', async () => {
+    const { impl } = roster([lateAndInvited, invited, quiet]);
+    const { probe } = renderClients(impl);
+    await screen.findByText('Cliente Atrasado');
+
+    expect(cardOf('Cliente Atrasado').querySelector('.clients__figure')?.textContent).toBe('1post atrasado');
+    fireEvent.click(within(cardOf('Cliente Convite')).getByRole('button', { name: 'Ver convites, Cliente Convite' }));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${invited.id}/acessos`));
+    cleanup();
+
+    const again = renderClients(impl);
+    await screen.findByText('Cliente Atrasado');
+    fireEvent.click(within(cardOf('Cliente Atrasado')).getByRole('button', { name: 'Resolver atraso, Cliente Atrasado' }));
+    await waitFor(() => expect(again.probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${lateAndInvited.id}/conteudos`));
+    cleanup();
+
+    renderClients(impl);
+    await screen.findByText('Cliente Quieto');
+    expect(within(cardOf('Cliente Quieto')).getByRole('button', { name: 'Abrir cliente, Cliente Quieto' })).toBeTruthy();
+    expect(cardOf('Cliente Quieto').querySelector('.clients__figure')).toBeNull();
+  });
+
+  it('opens the detail tabs from the menu, offering only the tabs the caller can see', async () => {
+    const { impl } = roster([quiet]);
+    const { probe } = renderClients(impl);
+    await screen.findByText('Cliente Quieto');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mais ações para Cliente Quieto' }));
+    const menu = screen.getByRole('menu', { name: 'Ações de Cliente Quieto' });
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Abrir cliente', 'Conteúdos', 'Estudo de marca', 'Acessos']);
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Conteúdos' }));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${quiet.id}/conteudos`));
+    cleanup();
+
+    const limited = roster([quiet], ['cliente.visualizar']);
+    renderClients(limited.impl);
+    await screen.findByText('Cliente Quieto');
+    fireEvent.click(screen.getByRole('button', { name: 'Mais ações para Cliente Quieto' }));
+    expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Abrir cliente', 'Estudo de marca']);
+  });
+
+  it('keeps an archived card to the name, the situation and the read-only detail', async () => {
+    const archived = badge(5, 'Cliente Arquivado', { status: 'archived', threadsAwaitingAgency: 2, pendingInvitations: 1, contentIndicators: { ...zero, overdue: 4 } });
+    const { impl } = roster([archived]);
+    renderClients(impl, `/agencia/${AGENCY_A}/clientes?status=archived`);
+    await screen.findByText('Cliente Arquivado');
+
+    const card = cardOf('Cliente Arquivado');
+    expect(within(card).getByText('Arquivado')).toBeTruthy();
+    expect(within(card).queryByText('Atrasado')).toBeNull();
+    expect(card.querySelector('.clients__footer')).toBeNull();
+    fireEvent.click(within(card).getByRole('button', { name: 'Mais ações para Cliente Arquivado' }));
+    expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Abrir cliente']);
+  });
+
+  it('writes the triage sentence from the first page of the unfiltered active roster, and only there', async () => {
+    const { impl } = roster([lateAndInvited, dueSoon, quiet]);
+    renderClients(impl);
+    await screen.findByText('Cliente Atrasado');
+    const panel = screen.getByRole('region', { name: 'Triagem e filtros' });
+    expect(panel.textContent).toContain('Comece por Cliente Atrasado: 1 post atrasado.');
+    expect(panel.textContent).toContain('Depois, Cliente Prazo: 2 posts com prazo em até 2 dias.');
+    cleanup();
+
+    for (const entry of ['?search=cliente', '?page=2', '?status=archived']) {
+      const other = makeFetch({ permissions: ALL, clients: () => listResponse([lateAndInvited, dueSoon, quiet], 1, { totalItems: 40, totalPages: 2 }) });
+      renderClients(other.impl, `/agencia/${AGENCY_A}/clientes${entry}`);
+      await screen.findByText('Cliente Atrasado');
+      expect(screen.getByRole('region', { name: 'Triagem e filtros' }).textContent).not.toContain('Comece por');
+      cleanup();
+    }
+  });
+
+  it('counts the roster in the section title and switches between active and archived by a link', async () => {
+    const { impl } = makeFetch({ permissions: ALL, clients: () => listResponse([quiet, invited], 1, { totalItems: 24, totalPages: 2 }) });
+    renderClients(impl, `/agencia/${AGENCY_A}/clientes?search=cl&page=2`);
+    await screen.findByText('Cliente Quieto');
+
+    const title = screen.getByRole('heading', { name: 'Seus clientes' });
+    expect(title.nextElementSibling?.textContent).toBe('24');
+    expect(screen.getByRole('link', { name: 'Ver arquivados' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes?search=cl&status=archived`);
+    cleanup();
+
+    renderClients(impl, `/agencia/${AGENCY_A}/clientes?status=archived&search=cl`);
+    await screen.findByText('Cliente Quieto');
+    expect(screen.getByRole('heading', { name: 'Clientes arquivados' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Ver ativos' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes?search=cl`);
+  });
+
+  it('offers a first visit one primary action, with the friendly owl only beside it', async () => {
+    const withPermission = makeFetch({ permissions: ALL, clients: () => listResponse([]) });
+    const { container } = renderClients(withPermission.impl);
+    await screen.findByText('Nenhum cliente ainda');
+
+    expect(screen.getAllByRole('button', { name: 'Cadastrar cliente' })).toHaveLength(1);
+    expect(container.querySelector('img.ui-mascot')).not.toBeNull();
+    expect(container.querySelector('.clients__panel')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Ver arquivados' })).toBeTruthy();
+    cleanup();
+
+    const without = makeFetch({ permissions: ['cliente.visualizar'], clients: () => listResponse([]) });
+    const bare = renderClients(without.impl);
+    await screen.findByText('Nenhum cliente ainda');
+    expect(bare.container.querySelector('img.ui-mascot')).toBeNull();
+  });
+});
+
+describe('the roster address travels to the detail from every way in (#636)', () => {
+  const entry = `/agencia/${AGENCY_A}/clientes?search=padaria`;
+
+  it.each([
+    ['the name link', async () => { fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' })); }],
+    ['the menu', async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mais ações para Padaria Central' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Abrir cliente' }));
+    }],
+    ['the next action', async () => { fireEvent.click(screen.getByRole('button', { name: 'Ver sugestões, Padaria Central' })); }]
+  ])('brings "← Clientes" back to the filtered roster from %s', async (_way, enter) => {
+    const { impl } = makeFetch();
+    const { probe } = renderClients(impl, entry);
+    await screen.findByText('Padaria Central');
+
+    await enter();
+    fireEvent.click(await screen.findByRole('link', { name: '← Clientes' }));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes`));
+    expect(probe.search).toBe('?search=padaria');
+  });
+});

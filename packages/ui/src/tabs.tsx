@@ -12,6 +12,8 @@ export interface TabItem {
   /** A short number shown beside the label, e.g. how many items the tab holds; it is part of the tab's name. */
   readonly count?: number;
   readonly disabled?: boolean;
+  /** Keeps the panel in the tree, hidden, while another tab is open: what was typed in it is still there when the person comes back. */
+  readonly keepMounted?: boolean;
   readonly content: ReactNode;
 }
 
@@ -25,13 +27,15 @@ export interface TabsProps {
   className?: string;
 }
 
-/** Tabs with automatic activation: arrow keys move focus and select, Home/End jump, and only the open panel is rendered. */
+/** Tabs with automatic activation: arrow keys move focus and select, Home/End jump, and only the open panel is rendered (plus the `keepMounted` ones, hidden). */
 export function Tabs({ label, value, items, onChange, loading = false, className }: TabsProps) {
   const baseId = useId();
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const enabled = items.map((item) => item.disabled !== true);
   const selected = items.findIndex((item) => item.value === value);
   const stop = selected !== -1 && enabled[selected] ? selected : enabled.indexOf(true);
+  const panelId = (index: number): string => `${baseId}-panel-${index}`;
+  const hasPanel = (index: number): boolean => index === selected || items[index]!.keepMounted === true;
 
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
     const target = rovingTarget(event.key, index, enabled, false);
@@ -52,7 +56,7 @@ export function Tabs({ label, value, items, onChange, loading = false, className
             type="button"
             role="tab"
             aria-selected={index === selected}
-            aria-controls={index === selected ? `${baseId}-panel` : undefined}
+            aria-controls={hasPanel(index) ? panelId(index) : undefined}
             tabIndex={index === stop ? 0 : -1}
             disabled={item.disabled === true}
             className="ui-tabs__tab"
@@ -65,18 +69,20 @@ export function Tabs({ label, value, items, onChange, loading = false, className
           </button>
         ))}
       </div>
-      {selected !== -1 && (
+      {items.map((item, index) => hasPanel(index) && (
         <div
+          key={item.value}
           role="tabpanel"
-          id={`${baseId}-panel`}
-          aria-labelledby={`${baseId}-tab-${selected}`}
-          aria-busy={loading || undefined}
+          id={panelId(index)}
+          aria-labelledby={`${baseId}-tab-${index}`}
+          aria-busy={(index === selected && loading) || undefined}
+          hidden={index !== selected}
           tabIndex={0}
           className="ui-tabs__panel"
         >
-          {loading ? <Skeleton className="ui-tabs__skeleton" /> : items[selected]!.content}
+          {index === selected && loading ? <Skeleton className="ui-tabs__skeleton" /> : item.content}
         </div>
-      )}
+      ))}
     </div>
   );
 }

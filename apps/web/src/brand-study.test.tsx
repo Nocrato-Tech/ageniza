@@ -934,3 +934,61 @@ describe('brand study conversations (#142)', () => {
     expect(screen.getByRole('dialog', { name: 'Dona Maria' })).toBeTruthy();
   });
 });
+
+describe('brand study in the Pauta (#637)', () => {
+  const emptySections = (keys: string[]) => studyOf().sections.map((section) => (keys.includes(section.key) ? sectionOf(section.key) : section));
+
+  it('draws each empty section as an empty state: what is missing, what it asks for and the one way to fill it', async () => {
+    const { impl } = makeFetch({ study: () => json({ ...studyOf(), sections: emptySections(['colors', 'archetype']) }) });
+    const { container } = renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+
+    const cases = [
+      ['Tom de voz', 'Registre como a marca fala com o público.'],
+      ['Cores', 'Cadastre as cores da marca, cada uma com nome e código.'],
+      ['Posicionamento', 'Diga onde a marca se coloca diante dos concorrentes.'],
+      ['Arquétipo', 'Escolha o arquétipo que melhor descreve a marca.'],
+      ['Observações', 'Anote o que a equipe precisa lembrar sobre este cliente.']
+    ] as const;
+    for (const [label, hint] of cases) {
+      const empty = sectionCard(container, label).querySelector<HTMLElement>('.ui-empty-state');
+      if (empty === null) throw new Error(`The ${label} section has no empty state.`);
+      expect(within(empty).getByText('Ainda não preenchida')).toBeTruthy();
+      expect(within(empty).getByText(hint)).toBeTruthy();
+      expect(within(empty).getByRole('button', { name: `Preencher ${label}` })).toBeTruthy();
+    }
+    expect(sectionCard(container, 'Branding').querySelector('.ui-empty-state')).toBeNull();
+  });
+
+  it('says only that a section is missing to who cannot fill it: no hint, no button', async () => {
+    const { impl } = makeFetch({ permissions: READER_PERMISSIONS });
+    const { container } = renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+
+    const empty = sectionCard(container, 'Tom de voz').querySelector<HTMLElement>('.ui-empty-state');
+    if (empty === null) throw new Error('The Tom de voz section has no empty state.');
+    expect(within(empty).getByText('Ainda não preenchida')).toBeTruthy();
+    expect(within(empty).queryByText('Registre como a marca fala com o público.')).toBeNull();
+    expect(within(empty).queryByRole('button')).toBeNull();
+  });
+
+  it('keeps the way to add a persona in the empty state while there is none, and in the header once there is one', async () => {
+    const none = makeFetch({ study: () => json(studyOf({ personas: [], filled: 4 })) });
+    const first = renderStudy(none.impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    const empty = sectionCard(first.container, 'Personas').querySelector<HTMLElement>('.ui-empty-state');
+    if (empty === null) throw new Error('The Personas section has no empty state.');
+    expect(within(empty).getByText('Nenhuma persona ainda')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Adicionar persona' })).toHaveLength(1);
+    expect(within(empty).getByRole('button', { name: 'Adicionar persona' })).toBeTruthy();
+
+    cleanup();
+    const some = makeFetch();
+    const second = renderStudy(some.impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    const personas = sectionCard(second.container, 'Personas');
+    expect(personas.querySelector('.ui-empty-state')).toBeNull();
+    expect(within(personas).getAllByRole('button', { name: 'Adicionar persona' })).toHaveLength(1);
+    expect(within(personas).getByRole('button', { name: /Dona Maria/ }).querySelector('.ui-avatar')?.textContent).toBe('DM');
+  });
+});

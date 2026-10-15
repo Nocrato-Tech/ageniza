@@ -1,5 +1,6 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Ban, CalendarClock, Check, CheckCheck, Send, Undo2 } from 'lucide-react';
 
 import {
   CalendarDaySchema,
@@ -27,6 +28,18 @@ import { useApiClient } from './http.js';
 
 const ACTION_PATH = '/agencies/:agencyId/clients/:clientId/contents/:contentId';
 
+const ACTION_ICONS: Readonly<Record<ContentAction, ReactNode>> = {
+  submit: <Send />,
+  approve: <Check />,
+  publish: <CheckCheck />,
+  unpublish: <Undo2 />,
+  reschedule: <CalendarClock />,
+  cancel: <Ban />
+};
+
+/** The move that carries the state forward is the one filled button of the footer, and only while nothing is waiting to be saved. */
+const FORWARD: ReadonlySet<ContentAction> = new Set(['submit', 'approve', 'publish', 'reschedule']);
+
 /** The moves that ask something first: a reason, the real day of the publication, the new day. */
 type Panel = 'approve' | 'publish' | 'reschedule';
 
@@ -40,13 +53,15 @@ interface Request {
  * only in the state where the move exists. They act on the content as it is saved: while the form holds changes that
  * were not saved they wait, so a move never leaves with a caption nobody sent. UX only; the API checks every move.
  */
-export function ContentActions({ clientId, content, dirty, onBusyChange, onDone }: {
+export function ContentActions({ clientId, content, dirty, onBusyChange, onDone, children }: {
   clientId: string;
   /** The content as saved: what the move acts on, and the revision an approval confirms. */
   content: ContentDetail;
   dirty: boolean;
   onBusyChange: (busy: boolean) => void;
   onDone: () => void;
+  /** The buttons of the form itself, which share the row of the footer with the moves but are not one of them. */
+  children?: ReactNode;
 }) {
   const httpClient = useApiClient();
   const agency = useAgencyContext();
@@ -99,7 +114,7 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone 
   const busy = sending !== null;
   useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
 
-  if (available.length === 0) return null;
+  if (available.length === 0) return <div className="content-modal__footer-row">{children}</div>;
 
   const send = (request: Request): void => {
     if (sending !== null) return;
@@ -136,80 +151,93 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone 
   const button = (action: ContentAction, handler: () => void, disabled = false) => (
     <Button
       key={action}
-      variant={action === 'submit' ? 'primary' : 'secondary'}
+      className={action === 'cancel' ? 'content-actions__cancel' : undefined}
+      variant={FORWARD.has(action) && !dirty ? 'primary' : action === 'cancel' ? 'ghost' : 'secondary'}
+      leadingIcon={ACTION_ICONS[action]}
       loading={sending === action}
       disabled={waiting || disabled}
       aria-expanded={action === 'approve' || action === 'publish' || action === 'reschedule' ? panel === action : undefined}
       onClick={handler}
     >{ACTION_RULES[action].label}</Button>
   );
+  const buttonOf = (action: ContentAction) => {
+    switch (action) {
+      case 'submit': return button(action, () => send({ action }), missing.length > 0);
+      case 'approve': return button(action, () => open('approve'));
+      case 'publish': return button(action, () => open('publish'));
+      case 'reschedule': return button(action, () => open('reschedule'));
+      default: return button(action, () => send({ action }));
+    }
+  };
 
-  return <section className="content-actions" aria-label="Ações do conteúdo">
-    {canSubmit && missing.length > 0 && <div role="status" className="content-actions__missing">
-      <p>Antes de enviar para aprovação, falta:</p>
-      <ul>{missing.map((line) => <li key={line}>{line}</li>)}</ul>
+  const showMissing = canSubmit && missing.length > 0;
+  const showPanel = panel !== null && available.includes(panel);
+  const hasNotes = showMissing || dirty || showPanel || error !== undefined;
+
+  return <>
+    {hasNotes && <div className="content-actions__notes">
+      {showMissing && <div role="status" className="content-actions__missing">
+        <p>Antes de enviar para aprovação, falta:</p>
+        <ul>{missing.map((line) => <li key={line}>{line}</li>)}</ul>
+      </div>}
+      {dirty && <p className="form-hint">Salve as mudanças antes de usar estas ações.</p>}
+      {panel === 'approve' && available.includes('approve') && <div className="form-field content-actions__panel">
+        <label htmlFor={`${ids}-reason`}>Motivo da aprovação</label>
+        <Textarea
+          id={`${ids}-reason`}
+          rows={3}
+          value={reason}
+          disabled={busy}
+          onChange={(event) => { setReason(event.target.value); setProblem(undefined); }}
+          aria-invalid={problem !== undefined}
+          aria-describedby={problem === undefined ? undefined : `${ids}-problem`}
+        />
+        {problem !== undefined && <FieldMessage id={`${ids}-problem`} role="alert">{problem}</FieldMessage>}
+        <div className="form-actions">
+          <Button loading={busy} disabled={waiting} onClick={confirmApprove}>Confirmar aprovação</Button>
+        </div>
+      </div>}
+      {panel === 'publish' && available.includes('publish') && <div className="form-field content-actions__panel">
+        <label htmlFor={`${ids}-published`}>Dia real da publicação</label>
+        <TextInput
+          id={`${ids}-published`}
+          type="date"
+          max={todayInSaoPaulo()}
+          value={publishedOn}
+          disabled={busy}
+          onChange={(event) => { setPublishedOn(event.target.value); setProblem(undefined); }}
+          aria-invalid={problem !== undefined}
+          aria-describedby={problem === undefined ? undefined : `${ids}-problem`}
+        />
+        {problem !== undefined && <FieldMessage id={`${ids}-problem`} role="alert">{problem}</FieldMessage>}
+        <div className="form-actions">
+          <Button loading={busy} disabled={waiting} onClick={confirmPublish}>Confirmar publicação</Button>
+        </div>
+      </div>}
+      {panel === 'reschedule' && available.includes('reschedule') && <div className="form-field content-actions__panel">
+        <label htmlFor={`${ids}-reschedule`}>Novo dia da publicação</label>
+        <TextInput
+          id={`${ids}-reschedule`}
+          type="date"
+          value={publishOn}
+          disabled={busy}
+          onChange={(event) => { setPublishOn(event.target.value); setProblem(undefined); }}
+          aria-invalid={problem !== undefined}
+          aria-describedby={problem === undefined ? undefined : `${ids}-problem`}
+        />
+        {problem !== undefined && <FieldMessage id={`${ids}-problem`} role="alert">{problem}</FieldMessage>}
+        <div className="form-actions">
+          <Button loading={busy} disabled={waiting} onClick={confirmReschedule}>Confirmar novo dia</Button>
+        </div>
+      </div>}
+      {error !== undefined && <FieldMessage role="alert">{error}</FieldMessage>}
     </div>}
-    {dirty && <p className="form-hint">Salve as mudanças antes de usar estas ações.</p>}
-    <div className="form-actions">
-      {available.map((action) => {
-        switch (action) {
-          case 'submit': return button(action, () => send({ action }), missing.length > 0);
-          case 'approve': return button(action, () => open('approve'));
-          case 'publish': return button(action, () => open('publish'));
-          case 'reschedule': return button(action, () => open('reschedule'));
-          default: return button(action, () => send({ action }));
-        }
-      })}
+    <div className="content-modal__footer-row">
+      {children}
+      <section className="content-actions" aria-label="Ações do conteúdo">
+        {available.includes('cancel') && buttonOf('cancel')}
+        {available.filter((action) => action !== 'cancel').map(buttonOf)}
+      </section>
     </div>
-    {panel === 'approve' && available.includes('approve') && <div className="form-field content-actions__panel">
-      <label htmlFor={`${ids}-reason`}>Motivo da aprovação</label>
-      <Textarea
-        id={`${ids}-reason`}
-        rows={3}
-        value={reason}
-        disabled={busy}
-        onChange={(event) => { setReason(event.target.value); setProblem(undefined); }}
-        aria-invalid={problem !== undefined}
-        aria-describedby={problem === undefined ? undefined : `${ids}-problem`}
-      />
-      {problem !== undefined && <FieldMessage id={`${ids}-problem`} role="alert">{problem}</FieldMessage>}
-      <div className="form-actions">
-        <Button loading={busy} disabled={waiting} onClick={confirmApprove}>Confirmar aprovação</Button>
-      </div>
-    </div>}
-    {panel === 'publish' && available.includes('publish') && <div className="form-field content-actions__panel">
-      <label htmlFor={`${ids}-published`}>Dia real da publicação</label>
-      <TextInput
-        id={`${ids}-published`}
-        type="date"
-        max={todayInSaoPaulo()}
-        value={publishedOn}
-        disabled={busy}
-        onChange={(event) => { setPublishedOn(event.target.value); setProblem(undefined); }}
-        aria-invalid={problem !== undefined}
-        aria-describedby={problem === undefined ? undefined : `${ids}-problem`}
-      />
-      {problem !== undefined && <FieldMessage id={`${ids}-problem`} role="alert">{problem}</FieldMessage>}
-      <div className="form-actions">
-        <Button loading={busy} disabled={waiting} onClick={confirmPublish}>Confirmar publicação</Button>
-      </div>
-    </div>}
-    {panel === 'reschedule' && available.includes('reschedule') && <div className="form-field content-actions__panel">
-      <label htmlFor={`${ids}-reschedule`}>Novo dia da publicação</label>
-      <TextInput
-        id={`${ids}-reschedule`}
-        type="date"
-        value={publishOn}
-        disabled={busy}
-        onChange={(event) => { setPublishOn(event.target.value); setProblem(undefined); }}
-        aria-invalid={problem !== undefined}
-        aria-describedby={problem === undefined ? undefined : `${ids}-problem`}
-      />
-      {problem !== undefined && <FieldMessage id={`${ids}-problem`} role="alert">{problem}</FieldMessage>}
-      <div className="form-actions">
-        <Button loading={busy} disabled={waiting} onClick={confirmReschedule}>Confirmar novo dia</Button>
-      </div>
-    </div>}
-    {error !== undefined && <FieldMessage role="alert">{error}</FieldMessage>}
-  </section>;
+  </>;
 }

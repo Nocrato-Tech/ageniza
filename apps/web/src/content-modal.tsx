@@ -1,6 +1,7 @@
-import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
+import { Pencil, Save } from 'lucide-react';
 
 import {
   CalendarDaySchema,
@@ -10,7 +11,7 @@ import {
   type CreateContentRequest,
   type UpdateContentRequest
 } from '@ageniza/contracts';
-import { Button, FieldMessage, Modal, Select, Skeleton, Textarea, TextInput } from '@ageniza/ui';
+import { Button, Dialog, Field, FieldMessage, FormatTag, Select, Skeleton, StatusTag, Tabs, Textarea, TextInput } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -27,7 +28,7 @@ import {
   type ContentFormValues
 } from './content-form.js';
 import { ContentActions } from './content-action-bar.js';
-import { FORMAT_LABELS, isClosed, STATUS_LABELS } from './content-labels.js';
+import { FORMAT_LABELS, FORMAT_TONES, isClosed, STATUS_LABELS, STATUS_TAGS } from './content-labels.js';
 import { ContentAssignment } from './content-assignment.js';
 import { CoverField, FolderField, MediaField } from './content-media.js';
 import { Conversation } from './conversation.js';
@@ -192,124 +193,112 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
     ? (context.archived ? 'Cliente arquivado: o conteúdo é só leitura.' : 'Você pode ver este conteúdo, mas não editar.')
     : closed ? 'Este conteúdo já foi publicado ou cancelado e não pode mais ser editado.' : undefined;
   const captionError = errors.caption;
+  const formId = `${ids}-form`;
+  const conversation = useRef<HTMLDivElement>(null);
+  const seeConversation = (): void => {
+    conversation.current?.scrollIntoView?.({ block: 'start' });
+    conversation.current?.focus({ preventScroll: true });
+  };
+
+  const textField = (field: 'title' | 'publishOn' | 'publishAtTime', label: string, type?: 'date' | 'time') => {
+    const error = errors[field];
+    return <Field label={label}>
+      {(control) => <>
+        <TextInput
+          {...control}
+          type={type}
+          value={form[field]}
+          disabled={busy || !writable}
+          onChange={(event) => edit({ [field]: event.target.value }, field)}
+          aria-invalid={error !== undefined}
+          aria-describedby={error === undefined ? undefined : `${control.id}-error`}
+        />
+        {error !== undefined && <FieldMessage id={`${control.id}-error`} role="alert">{error}</FieldMessage>}
+      </>}
+    </Field>;
+  };
+
+  const formActions = <div className="content-modal__form-actions">
+    <Button variant="ghost" disabled={busy} onClick={onDone}>Fechar</Button>
+    {writable && <Button type="submit" form={formId} variant={dirty ? 'primary' : 'secondary'} leadingIcon={<Save />} loading={busy} disabled={busy || !dirty}>{saved === null ? 'Criar conteúdo' : 'Salvar'}</Button>}
+  </div>;
 
   return <div className="content-modal">
-    <ContentPreview values={form} handle={context.handle} />
-    <div className="form-stack content-modal__main">
-    <form className="form-stack content-modal__form" onSubmit={onSubmit} noValidate>
-      {saved !== null && <p className="content-modal__status"><span className="content-card__badge">{STATUS_LABELS[saved.status]}</span></p>}
-      {note !== undefined && <p className="form-hint" role="note">{note}</p>}
-      <div className="form-field">
-        <label htmlFor={`${ids}-title`}>Título</label>
-        <TextInput
-          id={`${ids}-title`}
-          value={form.title}
+    {saved?.status === 'adjusting' && <div className="content-modal__adjustment" role="note">
+      <Pencil aria-hidden="true" />
+      <p><strong>O cliente pediu ajuste.</strong> O pedido está na conversa; reenvie para aprovação quando o conteúdo estiver pronto.</p>
+      <Button size="sm" variant="secondary" onClick={seeConversation}>Ver na conversa</Button>
+    </div>}
+    <div className="content-modal__body">
+      <ContentPreview values={form} handle={context.handle} />
+      <form id={formId} className="form-stack content-modal__form" onSubmit={onSubmit} noValidate>
+        {note !== undefined && <p className="form-hint" role="note">{note}</p>}
+        {textField('title', 'Título')}
+        <Select
+          label="Formato"
+          value={form.format}
+          options={FORMAT_OPTIONS}
           disabled={busy || !writable}
-          onChange={(event) => edit({ title: event.target.value }, 'title')}
-          aria-invalid={errors.title !== undefined}
-          aria-describedby={errors.title === undefined ? undefined : `${ids}-title-error`}
+          onChange={(value) => {
+            const format = FORMAT_OPTIONS.find((option) => option.value === value)?.value;
+            if (format !== undefined) edit({ format, ...(hasCover(format) ? {} : { coverAssetId: null }) }, 'media');
+          }}
         />
-        {errors.title !== undefined && <FieldMessage id={`${ids}-title-error`} role="alert">{errors.title}</FieldMessage>}
-      </div>
-      <Select
-        label="Formato"
-        value={form.format}
-        options={FORMAT_OPTIONS}
-        disabled={busy || !writable}
-        onChange={(value) => {
-          const format = FORMAT_OPTIONS.find((option) => option.value === value)?.value;
-          if (format !== undefined) edit({ format, ...(hasCover(format) ? {} : { coverAssetId: null }) }, 'media');
-        }}
-      />
-      <div className="content-modal__when">
-        <div className="form-field">
-          <label htmlFor={`${ids}-day`}>Data</label>
-          <TextInput
-            id={`${ids}-day`}
-            type="date"
-            value={form.publishOn}
-            disabled={busy || !writable}
-            onChange={(event) => edit({ publishOn: event.target.value }, 'publishOn')}
-            aria-invalid={errors.publishOn !== undefined}
-            aria-describedby={errors.publishOn === undefined ? undefined : `${ids}-day-error`}
-          />
-          {errors.publishOn !== undefined && <FieldMessage id={`${ids}-day-error`} role="alert">{errors.publishOn}</FieldMessage>}
+        <div className="content-modal__when">
+          {textField('publishOn', 'Data', 'date')}
+          {textField('publishAtTime', 'Hora', 'time')}
         </div>
-        <div className="form-field">
-          <label htmlFor={`${ids}-time`}>Hora</label>
-          <TextInput
-            id={`${ids}-time`}
-            type="time"
-            value={form.publishAtTime}
-            disabled={busy || !writable}
-            onChange={(event) => edit({ publishAtTime: event.target.value }, 'publishAtTime')}
-            aria-invalid={errors.publishAtTime !== undefined}
-            aria-describedby={errors.publishAtTime === undefined ? undefined : `${ids}-time-error`}
-          />
-          {errors.publishAtTime !== undefined && <FieldMessage id={`${ids}-time-error`} role="alert">{errors.publishAtTime}</FieldMessage>}
-        </div>
-      </div>
-      <FolderField
-        clientId={clientId}
-        value={form.folderId}
-        locked={locked}
-        disabled={busy || !writable}
-        canCreate={context.canEdit}
-        error={errors.folderId}
-        onChange={(folderId) => edit({ folderId, mediaAssetIds: [], coverAssetId: null }, 'folderId')}
-      />
-      {saved === null
-        ? <p className="form-hint">A mídia e a capa se escolhem da pasta; escolha-as agora ou depois de criar o conteúdo.</p>
-        : null}
-      <MediaField
-        clientId={clientId}
-        folderId={form.folderId}
-        format={form.format}
-        selected={form.mediaAssetIds}
-        disabled={busy || !writable}
-        error={errors.media}
-        onChange={(mediaAssetIds) => edit({ mediaAssetIds }, 'media')}
-      />
-      {hasCover(form.format) && <CoverField
-        clientId={clientId}
-        folderId={form.folderId}
-        value={form.coverAssetId}
-        disabled={busy || !writable}
-        error={errors.cover}
-        onChange={(coverAssetId) => edit({ coverAssetId }, 'cover')}
-      />}
-      <div className="form-field">
-        <label htmlFor={`${ids}-caption`}>Legenda</label>
-        <Textarea
-          id={`${ids}-caption`}
-          rows={6}
-          value={form.caption}
+        <FolderField
+          clientId={clientId}
+          value={form.folderId}
+          locked={locked}
           disabled={busy || !writable}
-          onChange={(event) => edit({ caption: event.target.value }, 'caption')}
-          aria-invalid={captionError !== undefined}
-          aria-describedby={`${ids}-caption-count${captionError === undefined ? '' : ` ${ids}-caption-error`}`}
+          canCreate={context.canEdit}
+          error={errors.folderId}
+          onChange={(folderId) => edit({ folderId, mediaAssetIds: [], coverAssetId: null }, 'folderId')}
         />
-        <p id={`${ids}-caption-count`} className="form-hint content-modal__counter">{captionCounter(form.caption)}</p>
-        {captionError !== undefined && <FieldMessage id={`${ids}-caption-error`} role="alert">{captionError}</FieldMessage>}
-      </div>
-      {approvalWarning && <p className="form-hint" role="status">
-        Este conteúdo está aprovado. Mudar a legenda, a mídia, a capa ou o formato o devolve para “Aguardando aprovação”.
-      </p>}
-      {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
-      <div className="form-actions">
-        {writable && <Button type="submit" loading={busy} disabled={busy || !dirty}>{saved === null ? 'Criar conteúdo' : 'Salvar'}</Button>}
-        <Button variant="ghost" disabled={busy} onClick={onDone}>Fechar</Button>
-      </div>
-    </form>
-    {saved !== null && !context.archived && <ContentActions
-      clientId={clientId}
-      content={saved}
-      dirty={dirty}
-      onBusyChange={setMoving}
-      onDone={onDone}
-    />}
+        {saved === null
+          ? <p className="form-hint">A mídia e a capa se escolhem da pasta; escolha-as agora ou depois de criar o conteúdo.</p>
+          : null}
+        <MediaField
+          clientId={clientId}
+          folderId={form.folderId}
+          format={form.format}
+          selected={form.mediaAssetIds}
+          disabled={busy || !writable}
+          error={errors.media}
+          onChange={(mediaAssetIds) => edit({ mediaAssetIds }, 'media')}
+        />
+        {hasCover(form.format) && <CoverField
+          clientId={clientId}
+          folderId={form.folderId}
+          value={form.coverAssetId}
+          disabled={busy || !writable}
+          error={errors.cover}
+          onChange={(coverAssetId) => edit({ coverAssetId }, 'cover')}
+        />}
+        <Field label="Legenda" hint={captionCounter(form.caption)} className="content-modal__caption">
+          {(control) => <>
+            <Textarea
+              {...control}
+              rows={6}
+              value={form.caption}
+              disabled={busy || !writable}
+              onChange={(event) => edit({ caption: event.target.value }, 'caption')}
+              aria-invalid={captionError !== undefined}
+              aria-describedby={captionError === undefined ? control['aria-describedby'] : `${control['aria-describedby']} ${control.id}-error`}
+            />
+            {captionError !== undefined && <FieldMessage id={`${control.id}-error`} role="alert">{captionError}</FieldMessage>}
+          </>}
+        </Field>
+        {approvalWarning && <p className="form-hint" role="status">
+          Este conteúdo está aprovado. Mudar a legenda, a mídia, a capa ou o formato o devolve para “Aguardando aprovação”.
+        </p>}
+        {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
+      </form>
+    </div>
     {/* Outside the form: the conversation has forms of its own, and a submit inside would also submit this one. */}
-    {saved !== null && <div className="content-modal__conversation">
+    {saved !== null && <div className="content-modal__conversation" ref={conversation} tabIndex={-1}>
       <Conversation
         scope={{ side: 'agency', agencyId: agency.agencyId, clientId }}
         subject={{ contentId: saved.id }}
@@ -322,32 +311,49 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
         onStale={refreshContents}
       />
     </div>}
-    </div>
+    <footer className="content-modal__footer">
+      {saved !== null && !context.archived
+        ? <ContentActions clientId={clientId} content={saved} dirty={dirty} onBusyChange={setMoving} onDone={onDone}>{formActions}</ContentActions>
+        : <div className="content-modal__footer-row">{formActions}</div>}
+    </footer>
   </div>;
+}
+
+/** What the content is and where it stands, in the two tags the calendar card also wears. */
+function ContentTags({ content }: { content: ContentDetail }) {
+  return <p className="content-modal__tags">
+    <FormatTag format={FORMAT_TONES[content.format]}>{FORMAT_LABELS[content.format]}</FormatTag>
+    <StatusTag status={STATUS_TAGS[content.status]}>{STATUS_LABELS[content.status]}</StatusTag>
+  </p>;
 }
 
 /**
  * The modal around the editor: the tabs and a close that waits for a write. Geral stays mounted while Atribuição is open, so what was typed
  * in the form is still there when the person comes back. Atribuição exists once there is a content to attribute (`assignment`).
  */
-function ContentDialog({ title, onClose, busy, assignment, children }: {
+function ContentDialog({ title, onClose, busy, summary, assignment, children }: {
   title: string;
   onClose: () => void;
   busy: boolean;
+  summary?: ReactNode;
   assignment?: ReactNode;
   children: ReactNode;
 }) {
   const [tab, setTab] = useState<'general' | 'assignment'>('general');
   const shown = assignment === undefined ? 'general' : tab;
   // Closing in the middle of a write would leave its success to close whatever is open by then.
-  return <Modal title={title} closeLabel="Fechar conteúdo" onClose={() => { if (!busy) onClose(); }}>
-    <div className="content-modal__tabs" role="tablist" aria-label="Seções do conteúdo">
-      <Button role="tab" aria-selected={shown === 'general'} variant={shown === 'general' ? 'secondary' : 'ghost'} onClick={() => setTab('general')}>Geral</Button>
-      <Button role="tab" aria-selected={shown === 'assignment'} disabled={assignment === undefined} variant={shown === 'assignment' ? 'secondary' : 'ghost'} onClick={() => setTab('assignment')}>Atribuição</Button>
-    </div>
-    <div role="tabpanel" aria-label="Geral" hidden={shown !== 'general'}>{children}</div>
-    {assignment !== undefined && shown === 'assignment' && <div role="tabpanel" aria-label="Atribuição">{assignment}</div>}
-  </Modal>;
+  return <Dialog title={title} closeLabel="Fechar conteúdo" size="lg" onClose={() => { if (!busy) onClose(); }}>
+    {summary}
+    <Tabs
+      label="Seções do conteúdo"
+      value={shown}
+      onChange={(value) => setTab(value === 'assignment' ? 'assignment' : 'general')}
+      items={[
+        { value: 'general', label: 'Geral', keepMounted: true, content: children },
+        { value: 'assignment', label: 'Atribuição', disabled: assignment === undefined, content: assignment }
+      ]}
+    />
+  </Dialog>;
 }
 
 /** `/agencia/:agenciaId/conteudos/:clienteId/:conteudoId`: one content, read when it is opened and edited in place. */
@@ -381,14 +387,14 @@ export function ContentModalRoute() {
     || (content.data !== undefined && data === undefined);
 
   const assignment = data === undefined || !context.ready ? undefined : <ContentAssignment clientId={context.clientId} content={data} archived={context.archived} />;
-  return <ContentDialog title={data?.title ?? 'Conteúdo'} onClose={close} busy={busy} assignment={assignment}>
+  return <ContentDialog title={data?.title ?? 'Conteúdo'} onClose={close} busy={busy} summary={data === undefined ? undefined : <ContentTags content={data} />} assignment={assignment}>
     {hidden
-      ? <div className="form-stack" role="alert">
+      ? <div className="form-stack content-modal__notice" role="alert">
         <p>Este conteúdo não existe mais ou você não tem acesso a ele.</p>
         <div className="form-actions"><Button variant="secondary" onClick={close}>Fechar</Button></div>
       </div>
       : content.isError
-        ? <div className="form-stack" role="alert">
+        ? <div className="form-stack content-modal__notice" role="alert">
           <p>Não foi possível carregar o conteúdo. Tente de novo.</p>
           <div className="form-actions">
             <Button onClick={() => { void content.refetch(); }}>Tentar de novo</Button>
@@ -413,7 +419,7 @@ export function ContentCreateRoute() {
       ? <div className="content-modal__loading" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>
       : context.canEdit
       ? <ContentEditor context={context} initial={null} initialDay={day.success ? day.data : todayInSaoPaulo()} onBusyChange={setBusy} onDone={close} />
-      : <div className="form-stack" role="alert">
+      : <div className="form-stack content-modal__notice" role="alert">
         <p>{context.archived ? 'Este cliente está arquivado: não recebe conteúdo novo.' : 'Você não tem permissão para criar conteúdos.'}</p>
         <div className="form-actions"><Button variant="secondary" onClick={close}>Fechar</Button></div>
       </div>}
