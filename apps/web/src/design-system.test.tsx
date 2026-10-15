@@ -28,7 +28,13 @@ type Graph = Awaited<ReturnType<typeof loadGraph>>;
 
 // The development graph is imported once for the whole file: resetting the modules and loading routes.tsx again for every test cost about 2.5 s each.
 let graph: Graph;
-beforeAll(async () => { graph = await loadGraph(); }, 60_000);
+beforeAll(async () => {
+  graph = await loadGraph();
+  // The first render of the page loads its lazy chunk and every component of the registry; paying that here keeps it out of the first test's one-second wait.
+  renderWith(graph, '/design-system', false);
+  await screen.findByRole('heading', { level: 1, name: 'Design system' }, { timeout: 30_000 });
+  cleanup();
+}, 90_000);
 
 const renderWith = ([{ AuthSessionProvider, createAuthSessionStore }, { ApiClientProvider, HttpClient }, { createQueryClient }, { ApplicationRoutes }]: Graph, path: string, isAuthenticated: boolean) => {
   const client = new HttpClient('http://127.0.0.1:3001', fetchImpl);
