@@ -5,10 +5,11 @@ import {
   AuthPasswordResetResponseSchema,
   ContextResolveResponseSchema
 } from '@ageniza/contracts';
-import { Button, FieldMessage, TextInput } from '@ageniza/ui';
+import { Button, Field, TextInput } from '@ageniza/ui';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { useAuthSessionStore } from './auth.js';
+import { AUTH_LINK_BUTTON_CLASS, AuthMessage, AuthPanel } from './auth-layout.js';
 import { contextDestination, contextTarget, rememberContext } from './context-destination.js';
 import { useDocumentTitle } from './document-title.js';
 import { validateForm } from './forms.js';
@@ -124,39 +125,33 @@ export function ResetPasswordPage() {
   };
 
   if (invalid) {
-    return <section className="form-panel" aria-labelledby="reset-title">
-      <h1 id="reset-title">Este link não é mais válido</h1>
-      <p>Links de redefinição valem por 30 minutos e só podem ser usados uma vez.</p>
-      <Link to="/senha/esquecida">Pedir um novo link</Link>
-    </section>;
+    return <AuthPanel
+      titleId="reset-title"
+      title="Este link não é mais válido"
+      lead="Links de redefinição valem por 30 minutos e só podem ser usados uma vez."
+    >
+      <Link className={AUTH_LINK_BUTTON_CLASS} to="/senha/esquecida">Pedir um novo link</Link>
+    </AuthPanel>;
   }
 
-  return <section className="form-panel" aria-labelledby="reset-title">
-    <h1 id="reset-title">Definir nova senha</h1>
-    <form className="form-stack" onSubmit={onSubmit} noValidate>
-      <div className="form-field">
-        <label htmlFor="reset-password">Nova senha</label>
-        <TextInput
-          id="reset-password"
+  return <AuthPanel titleId="reset-title" title="Definir nova senha">
+    <form className="auth-form" onSubmit={onSubmit} noValidate>
+      <Field label="Nova senha" id="reset-password" hint="Mínimo de 10 caracteres" error={error}>
+        {(control) => <TextInput
+          {...control}
           name="newPassword"
           type="password"
           autoComplete="new-password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          aria-invalid={error !== undefined}
-          aria-describedby={error === undefined ? 'reset-password-help' : 'reset-password-help reset-password-error'}
-        />
-        <p id="reset-password-help" className="form-hint">Mínimo de 10 caracteres</p>
-        {error !== undefined && <FieldMessage id="reset-password-error">{error}</FieldMessage>}
-      </div>
-      {resolveError !== undefined && <div role="alert">
-        <p>{resolveError}</p>
-        <Button onClick={() => { void runResolve(); }} loading={resolving}>Tentar de novo</Button>
+        />}
+      </Field>
+      {resolveError !== undefined && <div role="alert" className="auth-retry">
+        <AuthMessage tone="danger">{resolveError}</AuthMessage>
+        <Button variant="secondary" className="auth-submit" onClick={() => { void runResolve(); }} loading={resolving}>Tentar de novo</Button>
       </div>}
-      {formError !== undefined && <p role="alert">{formError}</p>}
-      <div className="form-actions">
-        <Button type="submit" loading={submitting}>Salvar</Button>
-      </div>
+      {formError !== undefined && <AuthMessage tone="danger" role="alert">{formError}</AuthMessage>}
+      <Button type="submit" className="auth-submit" loading={submitting}>Salvar</Button>
     </form>
-  </section>;
+  </AuthPanel>;
 }
