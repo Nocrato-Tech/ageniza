@@ -1,3 +1,4 @@
+import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -290,60 +291,75 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
                 {otherHome}
               </>}
           </header>}
-        <div className="contents__toolbar">
-          {vista !== 'folders' && <div className="contents__period" role="group" aria-label="Período">
-            <Button variant="secondary" aria-label={`${unitLabel === 'mês' ? 'Mês' : 'Semana'} anterior`} onClick={() => setPeriod(view, shiftAnchor(view, anchor, -1))}>
-              <span aria-hidden="true">‹</span>
-            </Button>
-            <h2 className="contents__period-title" aria-live="polite">{periodTitle(view, anchor)}</h2>
-            <Button variant="secondary" aria-label={`Próxim${view === 'week' ? 'a semana' : 'o mês'}`} onClick={() => setPeriod(view, shiftAnchor(view, anchor, 1))}>
-              <span aria-hidden="true">›</span>
-            </Button>
-            <Button variant="ghost" onClick={() => setPeriod(view, null)}>Hoje</Button>
+        <div className="contents__header">
+          {!pinned && <div className="contents__heading">
+            <h2 className="contents__title">Calendário Editorial</h2>
+            <p className="contents__subtitle">Planeje, agende e acompanhe todas as publicações.</p>
           </div>}
-          {vista !== 'folders' && <div className="contents__toggle" role="group" aria-label="Escala do calendário">
-            <Button variant={view === 'month' ? 'secondary' : 'ghost'} aria-pressed={view === 'month'} onClick={() => setPeriod('month', searchParams.get('data'))}>Mês</Button>
-            <Button variant={view === 'week' ? 'secondary' : 'ghost'} aria-pressed={view === 'week'} onClick={() => setPeriod('week', searchParams.get('data'))}>Semana</Button>
-          </div>}
-          <div className="contents__views" role="tablist" aria-label="Visão do cliente">
-            <Button role="tab" aria-selected={vista === 'calendar'} variant={vista === 'calendar' ? 'secondary' : 'ghost'} onClick={() => setVista('calendar')}>Calendário</Button>
-            <Button role="tab" aria-selected={vista === 'feed'} variant={vista === 'feed' ? 'secondary' : 'ghost'} onClick={() => setVista('feed')}>Feed</Button>
-            <Button role="tab" aria-selected={vista === 'folders'} variant={vista === 'folders' ? 'secondary' : 'ghost'} onClick={() => setVista('folders')}>Pastas</Button>
+          <div className="contents__actions">
+            <div className="contents__views" role="tablist" aria-label="Visão do cliente">
+              <Button role="tab" aria-selected={vista === 'calendar'} variant={vista === 'calendar' ? 'secondary' : 'ghost'} onClick={() => setVista('calendar')}>Calendário</Button>
+              <Button role="tab" aria-selected={vista === 'feed'} variant={vista === 'feed' ? 'secondary' : 'ghost'} onClick={() => setVista('feed')}>Feed</Button>
+              <Button role="tab" aria-selected={vista === 'folders'} variant={vista === 'folders' ? 'secondary' : 'ghost'} onClick={() => setVista('folders')}>Pastas</Button>
+            </div>
+            {canWriteScripts && <Button size="lg" leadingIcon={<Plus />} onClick={() => startContent(today)}>Nova publicação</Button>}
           </div>
-          {canWriteScripts && <Button onClick={() => startContent(today)}>Criar conteúdo</Button>}
         </div>
         {vista !== 'folders' && archived && <p className="contents__note">Cliente arquivado: o calendário é só leitura.</p>}
         {vista !== 'folders' && moveError !== null && <p className="contents__move-error" role="alert">{moveError}</p>}
         {vista !== 'folders' && move.isPending && <p className="list-refreshing" role="status">Movendo conteúdo…</p>}
         {vista === 'folders'
           ? <ContentFolders clientId={normalizedId} canWrite={clientData?.status === 'active'} />
-          : loaded === undefined
-          ? (vista === 'feed' ? <ContentFeedSkeleton /> : <div className="contents__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>)
-          : <>
-            {contents.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
-            {vista === 'feed'
-              ? <section aria-label="Prévia do feed"><ContentFeed contents={loaded.data.contents} today={today} handle={clientData?.instagramHandle ?? null} /></section>
+          : <div className="contents__panel">
+            <div className="contents__panel-head">
+              <div className="contents__period" role="group" aria-label="Período">
+                <h2 className="contents__period-title" aria-live="polite">{periodTitle(view, anchor)}</h2>
+                <Button variant="secondary" aria-label={`${unitLabel === 'mês' ? 'Mês' : 'Semana'} anterior`} onClick={() => setPeriod(view, shiftAnchor(view, anchor, -1))}>
+                  <span aria-hidden="true">‹</span>
+                </Button>
+                <Button variant="ghost" onClick={() => setPeriod(view, null)}>Hoje</Button>
+                <Button variant="secondary" aria-label={`Próxim${view === 'week' ? 'a semana' : 'o mês'}`} onClick={() => setPeriod(view, shiftAnchor(view, anchor, 1))}>
+                  <span aria-hidden="true">›</span>
+                </Button>
+              </div>
+              <div className="contents__toggle" role="group" aria-label="Escala do calendário">
+                <Button variant={view === 'month' ? 'secondary' : 'ghost'} aria-pressed={view === 'month'} onClick={() => setPeriod('month', searchParams.get('data'))}>Mês</Button>
+                <Button variant={view === 'week' ? 'secondary' : 'ghost'} aria-pressed={view === 'week'} onClick={() => setPeriod('week', searchParams.get('data'))}>Semana</Button>
+              </div>
+            </div>
+            {loaded === undefined
+              ? (vista === 'feed' ? <ContentFeedSkeleton /> : <div className="contents__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>)
               : <>
-                {loaded.data.contents.length === 0 && !contents.isPlaceholderData && <p className="contents__empty">Nenhum conteúdo planejado neste período.</p>}
-                <ContentCalendar
-                  clientId={normalizedId}
-                  view={view}
-                  anchor={anchor}
-                  today={today}
-                  days={daysOf(period)}
-                  contents={loaded.data.contents}
-                  canMove={canMove}
-                  movingId={move.isPending ? move.variables.content.id : null}
-                  onMove={(content, day) => move.mutate({ content, day })}
-                  dayExtras={scriptLayer.dayExtras}
-                />
+                {contents.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
+                {vista === 'feed'
+                  ? <section aria-label="Prévia do feed"><ContentFeed contents={loaded.data.contents} today={today} handle={clientData?.instagramHandle ?? null} /></section>
+                  : <>
+                    {loaded.data.contents.length === 0 && !contents.isPlaceholderData && <p className="contents__empty">Nenhum conteúdo planejado neste período.</p>}
+                    <ContentCalendar
+                      clientId={normalizedId}
+                      view={view}
+                      anchor={anchor}
+                      today={today}
+                      days={daysOf(period)}
+                      contents={loaded.data.contents}
+                      canMove={canMove}
+                      movingId={move.isPending ? move.variables.content.id : null}
+                      onMove={(content, day) => move.mutate({ content, day })}
+                      dayExtras={scriptLayer.dayExtras}
+                    />
+                  </>}
               </>}
-          </>}
+          </div>}
       </div>
       {vista === 'calendar' && <aside className="contents__feed" aria-label="Prévia do feed">
         {loaded === undefined
           ? <ContentFeedSkeleton />
-          : <ContentFeed contents={loaded.data.contents} today={today} handle={clientData?.instagramHandle ?? null} />}
+          : <ContentFeed
+            contents={loaded.data.contents}
+            today={today}
+            handle={clientData?.instagramHandle ?? null}
+            profile={clientData === undefined ? undefined : { name: clientData.name, photoUrl: clientData.photoUrl }}
+          />}
       </aside>}
     </div>}
     {scriptLayer.modal}
