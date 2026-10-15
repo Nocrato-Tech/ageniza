@@ -275,3 +275,33 @@ describe('ContextSelectPage (/contextos)', () => {
     await screen.findByText('Área da agência · Admin');
   });
 });
+
+describe('ContextSelectPage look (#639)', () => {
+  it('tells an agency from a client portal by the icon, not only by the second line', async () => {
+    renderContexts(async () => json(selectResponse));
+    await screen.findByText('Área da agência · Admin');
+
+    const iconOf = (name: RegExp): string => screen.getByRole('button', { name }).querySelector('.ui-choice-card__icon svg')?.getAttribute('class') ?? '';
+    expect(iconOf(/^Agência Um/)).toContain('lucide-briefcase');
+    expect(iconOf(/^(Sugerido )?Agência Dois/)).toContain('lucide-briefcase');
+    expect(iconOf(/^Cliente Um/)).toContain('lucide-store');
+  });
+
+  it('shows the failure with its icon inside the alert, next to the way out', async () => {
+    renderContexts(async () => json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500));
+
+    await screen.findByRole('button', { name: 'Tentar de novo' }, { timeout: 5000 });
+    const alert = screen.getByRole('alert');
+    expect(alert.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    expect(alert.textContent).toBe('Não foi possível carregar seus contextos.');
+  });
+
+  it('puts the logo in the header of the signed-in screens, as the link to the start', async () => {
+    renderContexts(async () => json(selectResponse));
+    await screen.findByText('Área da agência · Admin');
+
+    const link = screen.getByRole('link', { name: 'Ageniza' });
+    expect(link.getAttribute('href')).toBe('/');
+    expect(link.querySelector('img')?.getAttribute('src')).toBe('/brand/logo-para-fundo-escuro.svg');
+  });
+});

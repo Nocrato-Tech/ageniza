@@ -1,17 +1,19 @@
 import { createContext, useContext, useEffect, type ReactNode } from 'react';
 import { Link, Outlet, useLocation, useParams } from 'react-router-dom';
+import { Briefcase, CalendarDays, ChevronRight, Users, type LucideIcon } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 
 import { AgencyMeResponseSchema, type AgencyMeResponse } from '@ageniza/contracts';
 import { AccountMenu } from './account-menu.js';
 import { AgencySidebar, AgencySidebarSkeleton } from './agency-nav.js';
-import { Button, Skeleton } from '@ageniza/ui';
+import { Button, ButtonLink, EmptyState, Logo, Skeleton } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';
+import { StatusPanel } from './status-panel.js';
 import { NotFoundHomeContext, NotFoundPage } from './status-pages.js';
 
 /**
@@ -43,13 +45,9 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}
 /** The API is reachable but did not answer; the screen offers the one action it can: repeat. */
 function AgencyUnavailable({ onRetry }: { onRetry: () => void }) {
   useDocumentTitle('Não foi possível abrir a agência — Ageniza');
-  return <section className="page-status">
-    <div role="alert">
-      <h1>Não foi possível abrir a agência</h1>
-      <p>Tente de novo em instantes.</p>
-      <Button onClick={onRetry}>Tentar de novo</Button>
-    </div>
-  </section>;
+  return <StatusPanel as="section" alert titleId="agency-unavailable-title" title="Não foi possível abrir a agência" action={<Button size="lg" onClick={onRetry}>Tentar de novo</Button>}>
+    Tente de novo em instantes.
+  </StatusPanel>;
 }
 
 /**
@@ -60,7 +58,7 @@ function AgencyUnavailable({ onRetry }: { onRetry: () => void }) {
 function AgencyContextlessShell({ children }: { children: ReactNode }) {
   return <div className="app-shell">
     <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
-    <header className="agency-header"><AccountMenu /></header>
+    <header className="agency-header"><Link to="/contextos"><Logo variant="on-dark" height={30} /></Link><AccountMenu /></header>
     <div className="agency-layout">
       <main className="agency-content" id="main-content">{children}</main>
     </div>
@@ -130,26 +128,45 @@ export function AgencyPermissionRoute({ permission, children }: { permission: st
   return <>{children}</>;
 }
 
+interface Shortcut {
+  to: string;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+}
+
 export function AgencyHomePage() {
   const agency = useAgencyContext();
   const canSeeCollaborators = useCan('colaborador.visualizar');
   const canSeeClients = useCan('cliente.visualizar');
+  // The same condition as the menu: Conteúdos needs the roster behind its picker.
+  const canSeeContents = useCan('conteudo.visualizar') && canSeeClients;
   useDocumentTitle(`${agency.agencyName} — Ageniza`);
 
-  const shortcuts = [
-    ...(canSeeCollaborators ? [{ to: 'colaboradores', label: 'Colaboradores', description: 'Equipe, papéis e convites.' }] : []),
-    ...(canSeeClients ? [{ to: 'clientes', label: 'Clientes', description: 'Carteira, estudo de marca e conversas.' }] : [])
+  const shortcuts: Shortcut[] = [
+    ...(canSeeContents ? [{ to: 'conteudos', label: 'Conteúdos', description: 'Calendário do mês, aprovação e roteiros de stories.', icon: CalendarDays }] : []),
+    ...(canSeeClients ? [{ to: 'clientes', label: 'Clientes', description: 'Carteira, estudo de marca e conversas.', icon: Briefcase }] : []),
+    ...(canSeeCollaborators ? [{ to: 'colaboradores', label: 'Equipe', description: 'Colaboradores, papéis e convites.', icon: Users }] : [])
   ];
 
-  return <section aria-labelledby="agency-home-title">
+  return <section aria-labelledby="agency-home-title" className="agency-home">
     <h1 id="agency-home-title">{agency.agencyName}</h1>
     {shortcuts.length === 0
-      ? <p>Nenhum módulo disponível para o seu papel. Fale com quem administra a agência.</p>
+      ? <EmptyState
+          className="agency-home__empty"
+          title="Nenhum módulo disponível para o seu papel"
+          description="Fale com quem administra a agência para liberar o acesso. Se você participa de outra agência, troque de contexto."
+          action={<ButtonLink as={Link} to="/contextos" variant="secondary">Trocar de contexto</ButtonLink>}
+        />
       : <ul className="agency-shortcuts">
-          {shortcuts.map((shortcut) => <li key={shortcut.to}>
-            <Link className="agency-shortcut" to={shortcut.to}>
-              <span className="agency-shortcut__label">{shortcut.label}</span>
-              <span className="agency-shortcut__description">{shortcut.description}</span>
+          {shortcuts.map(({ to, label, description, icon: Icon }) => <li key={to}>
+            <Link className="agency-shortcut" to={to}>
+              <Icon className="agency-shortcut__icon" aria-hidden="true" />
+              <span className="agency-shortcut__text">
+                <span className="agency-shortcut__label">{label}</span>
+                <span className="agency-shortcut__description">{description}</span>
+              </span>
+              <ChevronRight className="agency-shortcut__chevron" aria-hidden="true" />
             </Link>
           </li>)}
         </ul>}

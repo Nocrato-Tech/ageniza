@@ -383,3 +383,82 @@ describe('agency shell landmarks (#193)', () => {
     expectSingleMain(container);
   });
 });
+
+describe('the shell without a context (#639)', () => {
+  it('opens the agency after "Tentar de novo" when the first answers failed, with one mascot and the alert off the landmark', async () => {
+    let healthy = false;
+    const { impl, calls } = makeFetch({ me: { [AGENCY_A]: () => healthy ? json(agencyMe(AGENCY_A, 'Agência Um', ['cliente.visualizar'])) : json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500) } });
+    const { container } = renderAgency(impl, `/agencia/${AGENCY_A}`);
+
+    const retry = await screen.findByRole('button', { name: 'Tentar de novo' }, { timeout: 5000 });
+    expect(container.querySelectorAll('main img.ui-mascot, main .status-panel img')).toHaveLength(1);
+    expect(container.querySelector('main')?.getAttribute('role')).toBeNull();
+    expect(container.querySelector('main .status-panel')?.getAttribute('role')).toBe('alert');
+    const before = calls.length;
+
+    healthy = true;
+    fireEvent.click(retry);
+    expect(await screen.findByRole('heading', { name: 'Agência Um', level: 1 })).toBeTruthy();
+    expect(calls.length).toBeGreaterThan(before);
+  });
+
+  it('keeps the logo as the way back to the context picker next to the account menu', async () => {
+    const { impl } = makeFetch();
+    const { container } = renderAgency(impl, '/agencia/nao-e-uuid');
+
+    await screen.findByRole('heading', { name: 'Página não encontrada' });
+    const logo = container.querySelector('header.agency-header a');
+    expect(logo?.getAttribute('href')).toBe('/contextos');
+    expect(logo?.querySelector('img')?.getAttribute('alt')).toBe('Ageniza');
+  });
+});
+
+describe('the agency home in the Pauta look (#639)', () => {
+  const shortcutsOf = (): Array<{ name: string; href: string | null }> =>
+    screen.queryAllByRole('link').filter((link) => link.classList.contains('agency-shortcut')).map((link) => ({
+      name: link.querySelector('.agency-shortcut__label')?.textContent ?? '',
+      href: link.getAttribute('href')
+    }));
+
+  const openHome = async (permissions: readonly string[]) => {
+    const { impl } = makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_A, 'Agência Um', permissions)) } });
+    const rendered = renderAgency(impl, `/agencia/${AGENCY_A}`);
+    await screen.findByRole('heading', { name: 'Agência Um', level: 1 });
+    return rendered;
+  };
+
+  it.each([
+    ['colaborador.visualizar', [{ name: 'Equipe', href: `/agencia/${AGENCY_A}/colaboradores` }]],
+    ['cliente.visualizar', [{ name: 'Clientes', href: `/agencia/${AGENCY_A}/clientes` }]],
+    // Contents without the roster behind its picker is not a screen (the menu says the same).
+    ['conteudo.visualizar', []]
+  ])('offers only what the single permission %s opens', async (permission, expected) => {
+    await openHome([permission]);
+    expect(shortcutsOf()).toEqual(expected);
+  });
+
+  it('offers the contents only with both the contents and the roster, in the order of the menu', async () => {
+    await openHome(['colaborador.visualizar', 'cliente.visualizar', 'conteudo.visualizar']);
+    expect(shortcutsOf()).toEqual([
+      { name: 'Conteúdos', href: `/agencia/${AGENCY_A}/conteudos` },
+      { name: 'Clientes', href: `/agencia/${AGENCY_A}/clientes` },
+      { name: 'Equipe', href: `/agencia/${AGENCY_A}/colaboradores` }
+    ]);
+  });
+
+  it('says what each module is for', async () => {
+    await openHome(['colaborador.visualizar', 'cliente.visualizar', 'conteudo.visualizar']);
+    expect(screen.getByText('Calendário do mês, aprovação e roteiros de stories.')).toBeTruthy();
+    expect(screen.getByText('Carteira, estudo de marca e conversas.')).toBeTruthy();
+    expect(screen.getByText('Colaboradores, papéis e convites.')).toBeTruthy();
+    // The icons add nothing to the name a screen reader reads.
+    expect(screen.getByRole('link', { name: 'Clientes Carteira, estudo de marca e conversas.' })).toBeTruthy();
+  });
+
+  it('gives a person with no module the way out instead of a mute screen', async () => {
+    await openHome([]);
+    expect(screen.getByRole('heading', { name: 'Nenhum módulo disponível para o seu papel', level: 2 })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Trocar de contexto' }).getAttribute('href')).toBe('/contextos');
+    expect(shortcutsOf()).toEqual([]);
+  });
+});

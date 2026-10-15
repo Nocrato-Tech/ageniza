@@ -356,3 +356,15 @@ describe('BadgeCard in the Pauta language (#638)', () => {
     expect(marker?.querySelector('svg')?.closest('[aria-hidden="true"]')).not.toBeNull();
   });
 });
+
+describe('ChoiceCard icon (#639)', () => {
+  it('draws the icon as decoration: it is not part of the name, and a card without one keeps the plain layout', () => {
+    render(<><ChoiceCard title="Agência A" description="Admin" icon={<svg data-testid="kind" />} /><ChoiceCard title="Agência B" description="Editor" /></>);
+
+    const withIcon = screen.getByRole('button', { name: 'Agência A Admin' });
+    const icon = withIcon.querySelector('.ui-choice-card__icon');
+    expect(icon?.getAttribute('aria-hidden')).toBe('true');
+    expect(icon?.querySelector('[data-testid="kind"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Agência B Editor' }).querySelector('.ui-choice-card__icon')).toBeNull();
+  });
+});

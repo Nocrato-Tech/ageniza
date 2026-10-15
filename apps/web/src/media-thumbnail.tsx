@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Image as ImageIcon, Video } from 'lucide-react';
 
 import { MediaDownloadUrlResponseSchema, type MediaCategory, type MediaDownloadUrlResponse } from '@ageniza/contracts';
 
@@ -9,7 +10,7 @@ import { useApiClient } from './http.js';
 import { signedUrlStaleTime } from './signed-url.js';
 import { useSeen } from './use-seen.js';
 
-const GLYPHS: Readonly<Record<MediaCategory, string>> = { image: '▣', video: '▶' };
+const GLYPHS: Readonly<Record<MediaCategory, ReactNode>> = { image: <ImageIcon />, video: <Video /> };
 
 /** The contract validates the URL; a response is untrusted input and only an http(s) address becomes an `src`. */
 export const isHttpUrl = (value: string): boolean => /^https?:\/\//i.test(value);

@@ -58,10 +58,10 @@ export const contrastOf = (theme: keyof typeof themes, fg: string, bg: string): 
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 };
 
-/** The declarations of every rule whose selector list names exactly `selector`, later rules winning. */
+/** The declarations of every rule whose selector list names exactly `selector`, later rules winning. Comments are ignored, so one above a rule never sticks to its first selector. */
 export const declarationsFor = (css: string, selector: string): Map<string, string> => {
   const found = new Map<string, string>();
-  for (const block of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+  for (const block of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     const selectors = block[1]!.split(',').map((part) => part.trim());
     if (!selectors.includes(selector)) continue;
     for (const declaration of block[2]!.matchAll(/([\w-]+):\s*([^;]+);/g)) found.set(declaration[1]!, declaration[2]!.trim());
