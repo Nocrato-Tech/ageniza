@@ -78,6 +78,8 @@ _Ver também os itens 15 a 17, que estão na faixa Geral._
 
 73. **Tooltip que vira Popover.** Quando um tooltip vira `Popover`, o elemento que recebe o foco continua descrito pelo cartão (`aria-describedby` com o id do cartão enquanto aberto, e sem ele depois do Esc), e o teste do vínculo não some na troca de role: troque `tooltip` por `dialog` na asserção, nunca a apague. Passar `aria-expanded` e `aria-controls` para outro elemento (o link de dentro do card) não substitui a descrição de quem tem o foco, e o leitor de tela só lê o cartão se ela existir (#668).
 
+74. **Clique duplo na mesma tarefa.** Guarda de clique duplo que lê o estado do TanStack Query (`isPending`) não cobre dois cliques na mesma tarefa: o estado só muda no render seguinte, e os dois cliques o veem falso. Para a garantia, a guarda é um `useRef` síncrono, posto antes do `mutate` e solto no `onSettled`. O teste dispara os dois cliques dentro de um só `act` (sem render entre eles) e afirma uma só chamada; o que o `isPending` sozinho deixa passar fica vermelho (#639, achado da Coruja no #675).
+
 ## Testes e mutação
 
 48. **Mutação que aplica migration.** Mutação com knex no mesmo processo usa um diretório por mutante e um controle sem mudança, por causa do cache de import do `.mjs` (#389).

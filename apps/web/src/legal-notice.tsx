@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { CircleAlert, Info } from 'lucide-react';
@@ -49,6 +50,14 @@ export function LegalNotice() {
     onSuccess: (response: LegalAcceptancesResponse) => { queryClient.setQueryData(LEGAL_KEY, response); }
   });
 
+  // `isPending` only changes after a render: two clicks in the same task both see it false. The ref is the synchronous guard.
+  const sending = useRef(false);
+  const send = (document: LegalDocumentKind): void => {
+    if (sending.current) return;
+    sending.current = true;
+    accept.mutate(document, { onSettled: () => { sending.current = false; } });
+  };
+
   const pending = status.data?.documents.filter((entry) => entry.pending) ?? [];
   if (dismissed.data || pending.length === 0) return null;
 
@@ -69,7 +78,7 @@ export function LegalNotice() {
             aria-label={copy.acceptLabel}
             loading={accept.isPending && accept.variables === document}
             aria-disabled={accept.isPending || undefined}
-            onClick={() => { if (!accept.isPending) accept.mutate(document); }}
+            onClick={() => { send(document); }}
           >Li e aceito</Button>
         </li>;
       })}

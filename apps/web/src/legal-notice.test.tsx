@@ -335,3 +335,34 @@ describe('legal notice look (#639)', () => {
     expect(alert.textContent).toBe('Não foi possível registrar o aceite. Tente de novo.');
   });
 });
+
+describe('legal notice acceptance in the same task (#639)', () => {
+  it('two clicks before any render send one POST: the guard is a ref, not the pending state', async () => {
+    let release: () => void = () => undefined;
+    const holdAccept = new Promise<void>((resolve) => { release = resolve; });
+    const { impl, posted } = makeFetch({ account: outdatedAccount(), holdAccept });
+    renderApp(impl, `/agencia/${AGENCY}`);
+
+    const accept = await screen.findByRole('button', { name: 'Li e aceito os Termos de Uso' });
+    act(() => { accept.click(); accept.click(); });
+    await waitFor(() => expect(posted).toHaveLength(1));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
+    expect(posted).toEqual([{ document: 'terms' }]);
+
+    release();
+    await waitFor(() => expect(within(notice()).queryByText('Atualizamos os Termos de Uso.')).toBeNull());
+  });
+
+  it('lets the same button try again after a failed accept', async () => {
+    const scenario: Scenario = { account: outdatedAccount(), failAccept: true };
+    const { impl, posted } = makeFetch(scenario);
+    renderApp(impl, `/agencia/${AGENCY}`);
+
+    const accept = await screen.findByRole('button', { name: 'Li e aceito os Termos de Uso' });
+    fireEvent.click(accept);
+    await screen.findByRole('alert');
+    scenario.failAccept = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Li e aceito os Termos de Uso' }));
+    await waitFor(() => expect(posted).toHaveLength(2));
+  });
+});
