@@ -353,8 +353,10 @@ describe('portal access tab (#140)', () => {
     expect(within(dialog).getByText('A pessoa recebe um link para criar a conta e entrar no portal deste cliente.')).toBeTruthy();
     expect(within(dialog).getByRole('textbox', { name: 'E-mail' })).toBeTruthy();
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'E-mail' }), { target: { value: 'nao-e-email' } });
+    within(dialog).getByRole('button', { name: 'Enviar convite' }).focus();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
     expect(await within(dialog).findByText('Informe um e-mail válido.')).toBeTruthy();
+    expect(document.activeElement).toBe(within(dialog).getByRole('textbox', { name: 'E-mail' }));
     expect(calls.some((call) => call.startsWith('POST /agencies') && call.includes('/invitations'))).toBe(false);
 
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'E-mail' }), { target: { value: 'carla@padaria.test' } });

@@ -215,6 +215,15 @@ describe('ResetPasswordPage (/senha/redefinir)', () => {
     expect(calls.reset).toBe(0);
   });
 
+  it('puts the focus on the password when it is refused, with no alert besides its description', () => {
+    const { impl } = makeFetch({ reset: () => json({ signedIn: true }) });
+    renderReset(impl);
+    submit('short');
+
+    expect(document.activeElement).toBe(screen.getByLabelText('Nova senha'));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('links the field error into the description', () => {
     const { impl } = makeFetch({ reset: () => json({ signedIn: true }) });
     renderReset(impl);

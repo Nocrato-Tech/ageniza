@@ -2,7 +2,7 @@ import { useId, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { AgencyRolesResponseSchema, CollaboratorSchema } from '@ageniza/contracts';
-import { Button, FieldMessage, Modal, Select } from '@ageniza/ui';
+import { Button, FieldMessage, Modal, Select, useFormErrors } from '@ageniza/ui';
 
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -30,6 +30,7 @@ export function ReactivateCollaboratorDialog({ membershipId, name, onClose }: {
 }) {
   const agency = useAgencyContext();
   const httpClient = useApiClient();
+  const { formRef, summary } = useFormErrors();
   const queryClient = useQueryClient();
   const formId = useId();
   const [roleId, setRoleId] = useState('');
@@ -91,7 +92,8 @@ export function ReactivateCollaboratorDialog({ membershipId, name, onClose }: {
       <Button type="submit" form={formId} disabled={roleId === ''} loading={reactivate.isPending}>Reativar</Button>
     </>}
   >
-    <form id={formId} className="form-stack" onSubmit={onSubmit} noValidate>
+    <form ref={formRef} id={formId} className="form-stack" onSubmit={onSubmit} noValidate>
+      {summary}
       <Select
         label="Papel"
         value={roleId}
