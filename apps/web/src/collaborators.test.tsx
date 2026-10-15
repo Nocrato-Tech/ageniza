@@ -1803,9 +1803,11 @@ describe('invite collaborator modal (#107)', () => {
 
     fireEvent.submit(form);
     expect(await within(dialog).findByText('Informe o e-mail.')).toBeTruthy();
+    expect(document.activeElement).toBe(within(dialog).getByRole('textbox', { name: 'E-mail' }));
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'E-mail' }), { target: { value: 'nova@exemplo.com' } });
     fireEvent.submit(form);
     expect(await within(dialog).findByText('Selecione um papel.')).toBeTruthy();
+    expect(document.activeElement).toBe(within(dialog).getByLabelText('Papel'));
     expect(calls.some((call) => call.startsWith('POST /agencies/'))).toBe(false);
   });
 
@@ -2611,6 +2613,7 @@ describe('removed filter and reactivation (#105)', () => {
 
     fireEvent.submit(form);
     expect(await within(dialog).findByText('Selecione um papel.')).toBeTruthy();
+    expect(document.activeElement).toBe(within(dialog).getByLabelText('Papel'));
     expect(bodies).toEqual([]);
     expect(calls.some((call) => call.startsWith('POST') && call.includes('reactivate'))).toBe(false);
   });

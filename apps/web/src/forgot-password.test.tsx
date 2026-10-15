@@ -66,6 +66,14 @@ describe('ForgotPasswordPage (/senha/esquecida)', () => {
     expect(calls).toBe(0);
   });
 
+  it('puts the focus on the e-mail field when it is refused, with no alert besides its description', () => {
+    renderForgot(async () => json({}));
+    submitWith('not-an-email');
+
+    expect(document.activeElement).toBe(screen.getByLabelText('E-mail'));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('confirms with one sentence and moves focus to the confirmation', async () => {
     const bodies: unknown[] = [];
     renderForgot(async (_input, init) => { bodies.push(JSON.parse(String(init?.body))); return json({}); });

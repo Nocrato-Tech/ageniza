@@ -5,7 +5,7 @@ import {
   AuthLoginResponseSchema,
   ContextResolveResponseSchema
 } from '@ageniza/contracts';
-import { Button, Field, TextInput } from '@ageniza/ui';
+import { Button, Field, TextInput, useFormErrors } from '@ageniza/ui';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { useAuthSession, useAuthSessionStore } from './auth.js';
@@ -33,6 +33,7 @@ const RESOLVE_FAILED = 'Não foi possível carregar seus contextos. Tente de nov
  */
 export function LoginPage() {
   const httpClient = useApiClient();
+  const { formRef, summary } = useFormErrors();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const authStore = useAuthSessionStore();
@@ -151,7 +152,8 @@ export function LoginPage() {
 
   return <AuthPanel titleId="login-title" title="Entrar" lead="A pauta da sua agência está te esperando.">
     {notice !== undefined && <AuthMessage tone="success" role="status">{notice}</AuthMessage>}
-    <form className="auth-form" onSubmit={onSubmit} noValidate>
+    <form ref={formRef} className="auth-form" onSubmit={onSubmit} noValidate>
+      {summary}
       <Field label="E-mail" id="login-email" error={errors.email}>
         {(control) => <TextInput
           {...control}

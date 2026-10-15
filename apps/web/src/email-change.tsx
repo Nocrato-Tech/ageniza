@@ -7,7 +7,7 @@ import {
   EmailChangeRequestResponseSchema,
   EmailChangeRequestSchema
 } from '@ageniza/contracts';
-import { Button, Field, Modal, TextInput } from '@ageniza/ui';
+import { Button, Field, Modal, TextInput, useFormErrors } from '@ageniza/ui';
 
 import { useOptionalAuthSessionStore } from './auth.js';
 import { AUTH_LINK_BUTTON_CLASS, AuthMessage, AuthPanel } from './auth-layout.js';
@@ -27,6 +27,7 @@ const CONFIRM_FAILED = 'Não foi possível confirmar a troca. Tente de novo.';
  */
 export function EmailChangeDialog({ onClose }: { onClose: () => void }) {
   const httpClient = useApiClient();
+  const { formRef, summary } = useFormErrors();
   const [newEmail, setNewEmail] = useState('');
   const [password, setPassword] = useState('');
   const [emailError, setEmailError] = useState<string | undefined>();
@@ -69,7 +70,8 @@ export function EmailChangeDialog({ onClose }: { onClose: () => void }) {
           <p>Até lá nada muda: você continua entrando com o e-mail atual.</p>
           <div className='form-actions'><Button onClick={onClose}>Fechar</Button></div>
         </div>
-      : <form className='form-stack' onSubmit={onSubmit} noValidate>
+      : <form ref={formRef} className='form-stack' onSubmit={onSubmit} noValidate>
+        {summary}
           <Field label='Novo e-mail' id='email-change-new' error={emailError}>
             {(control) => <TextInput
               {...control}

@@ -146,6 +146,18 @@ describe('asking for an e-mail change in the account menu (issue #80)', () => {
     expect(posts(calls, '/me/email-change')).toEqual([]);
   });
 
+  it('puts the focus on the first invalid field and gives one alert that names both', async () => {
+    const { impl } = makeFetch();
+    renderMenu(impl);
+    const dialog = await openDialog();
+
+    submit(dialog);
+
+    expect(document.activeElement).toBe(within(dialog).getByLabelText('Novo e-mail'));
+    expect(within(dialog).getAllByRole('alert')).toHaveLength(1);
+    expect(within(dialog).getByRole('alert').textContent).toBe('Corrija 2 campos: Novo e-mail, Senha atual.');
+  });
+
   it('sends exactly the address and the password, then says the request went out without touching the address', async () => {
     const { impl, calls } = makeFetch();
     renderMenu(impl);

@@ -5,7 +5,7 @@ import {
   AuthPasswordResetResponseSchema,
   ContextResolveResponseSchema
 } from '@ageniza/contracts';
-import { Button, Field, TextInput } from '@ageniza/ui';
+import { Button, Field, TextInput, useFormErrors } from '@ageniza/ui';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { useAuthSessionStore } from './auth.js';
@@ -28,6 +28,7 @@ const SIGN_IN_NOTICE = 'Senha redefinida. Entre com a nova senha.';
  */
 export function ResetPasswordPage() {
   const httpClient = useApiClient();
+  const { formRef, summary } = useFormErrors();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const authStore = useAuthSessionStore();
@@ -135,7 +136,8 @@ export function ResetPasswordPage() {
   }
 
   return <AuthPanel titleId="reset-title" title="Definir nova senha">
-    <form className="auth-form" onSubmit={onSubmit} noValidate>
+    <form ref={formRef} className="auth-form" onSubmit={onSubmit} noValidate>
+      {summary}
       <Field label="Nova senha" id="reset-password" hint="Mínimo de 10 caracteres" error={error}>
         {(control) => <TextInput
           {...control}
