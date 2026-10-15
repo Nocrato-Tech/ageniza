@@ -937,6 +937,19 @@ describe('the portal Conteúdos (#269)', () => {
       expect(next.textContent).toBe('');
     });
 
+    it('uses the pieces the portal shares: the headline of the page, the title of a block and the error block', async () => {
+      const world = makeWorld();
+      world.api.seed({ title: 'Para aprovar', publishOn: '2026-10-14', status: 'awaiting_approval' });
+      world.api.state.failAwaiting = () => contentsError(500, 'INTERNAL_ERROR');
+      renderPortal(world);
+      await ready();
+      expect(screen.getByRole('heading', { level: 1, name: 'Conteúdos' }).classList.contains('portal-headline')).toBe(true);
+      expect(screen.getByRole('heading', { level: 2, name: 'Outubro 2026' }).classList.contains('portal-contents__period-title')).toBe(true);
+      const block = await screen.findByRole('region', { name: 'O que precisa de você' }, { timeout: 5000 });
+      expect(within(block).getByRole('heading', { level: 2 }).classList.contains('portal-section__title')).toBe(true);
+      expect(within(block).getByRole('alert').classList.contains('portal-error')).toBe(true);
+    });
+
     it('says what is missing in an empty month, with the owl, and offers no way out in the month of today', async () => {
       renderPortal(makeWorld());
       await ready();
