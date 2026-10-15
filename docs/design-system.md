@@ -521,7 +521,7 @@ Desktop-first para operação, com o celular funcional: a navegação da agênci
 
 A navegação abre **recolhida** no calendário de um cliente (a rota `/agencia/:agenciaId/conteudos/:clienteId`), onde o mês precisa da largura, e **aberta** nas demais telas; a escolha explícita da pessoa vale até recarregar a página. Aberta, mostra o logo, o contexto ativo, os grupos (Trabalho: Início, Conteúdos, Clientes; Agência: Equipe) e a pessoa com Sair no pé; recolhida, o símbolo chapado e os ícones com o rótulo embaixo; na barra inferior, só os ícones com o rótulo (`label/sm`), sem o logo, o contexto e o Sair solto.
 
-**Breakpoints.** Uma media query não lê custom property, então os valores moram no CSS, em `rem`, e são três: `40rem` (celular largo: filtros e vazio empilham), `48rem` (a navegação vira barra inferior e o modal do conteúdo vira coluna) e `64rem` (o painel do feed ao lado do calendário). Uma tela nova reaproveita esses três; um quarto valor por tela é divergência a discutir, não a decidir localmente.
+**Breakpoints.** Uma media query não lê custom property, então os valores moram no CSS, em `rem`, e são três: `40rem` (celular largo: filtros e vazio empilham), `48rem` (a navegação vira barra inferior e o modal do conteúdo vira coluna) e `64rem` (um painel ao lado do principal: o feed junto ao calendário e a semana de exemplo das telas de entrada, que abaixo disso ficam em uma coluna só). Uma tela nova reaproveita esses três; um quarto valor por tela é divergência a discutir, não a decidir localmente.
 
 **Alvo de toque.** O botão `md` tem 44 px de altura e o `lg`, 52 px; o `sm` (32 px) é para linha densa de desktop. No celular, prefira `md` ou maior para o que se toca (é o "área clicável suficiente" da seção 20). Abas e itens de navegação já têm no mínimo 44 px.
 
@@ -540,7 +540,7 @@ Antes de aprovar um componente: contraste adequado; foco visível; estado disabl
 
 ### 20.1 Contraste — tabela final, aprovada em 2026-09-28
 
-Pares de texto sobre fundo em Light e Dark, contra WCAG AA (4.5:1 para texto normal, 3:1 para texto grande e componentes de UI), recalculados com os valores finais do CSS (fórmula de luminância relativa do WCAG 2.x, mistura do `color-mix` em sRGB). **Todos os pares em uso passam.** A primeira rodada (2026-09-28) corrigiu as quatro falhas que a migração inicial havia deixado (ver histórico abaixo), ajustando a luminosidade de dois primitives e introduzindo dois primitives novos, sem mudar a matiz de nenhum; a Pauta (#621) acrescentou os pares das tabelas seguintes, sem cor nova além de `violet/400` e `teal/700`.
+Pares de texto sobre fundo em Light e Dark, contra WCAG AA (4.5:1 para texto normal, 3:1 para texto grande e componentes de UI), recalculados com os valores finais do CSS (fórmula de luminância relativa do WCAG 2.x, mistura do `color-mix` em sRGB). **Todos os pares em uso passam.** A primeira rodada (2026-09-28) corrigiu as quatro falhas que a migração inicial havia deixado (ver histórico abaixo), ajustando a luminosidade de dois primitives e introduzindo dois primitives novos, sem mudar a matiz de nenhum; a Pauta (#621) acrescentou os pares das tabelas seguintes, sem cor nova além de `violet/400` e `teal/700`. O teste `apps/web/src/styles/tokens.test.ts` lê as tabelas desta seção e reprova quando uma razão citada diverge do que as folhas de estilo calculam: mudou um token, a tabela muda no mesmo PR.
 
 | Par | Light | Dark |
 |---|---|---|

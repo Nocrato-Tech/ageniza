@@ -232,3 +232,41 @@ describe('Pauta tokens', () => {
     }
   });
 });
+
+describe('contrast table of docs/design-system.md 20.1', () => {
+  const doc = readFileSync(join(STYLES, '..', '..', '..', '..', 'docs', 'design-system.md'), 'utf8').replace(/\r\n/g, '\n');
+  const section = doc.slice(doc.indexOf('### 20.1'), doc.indexOf('\n## 21.'));
+
+  const tokenName = (cell: string) => cell.replace(/`/g, '').replace(/\//g, '-');
+  const expand = (name: string): string[] => {
+    const group = /\{([^}]+)\}/.exec(name);
+    return group ? group[1]!.split(',').flatMap((option) => expand(name.replace(group[0], option))) : [name];
+  };
+
+  const rows = section
+    .split('\n')
+    .filter((line) => line.startsWith('| `'))
+    .map((line) => line.split('|').slice(1, -1).map((cell) => cell.trim()))
+    .flatMap(([pair, lightCell, darkCell]) => {
+      const match = /^`([^`]+)` sobre (.+)$/.exec(pair!);
+      if (!match) return [];
+      const backgrounds = [...match[2]!.matchAll(/`([^`]+)`/g)].flatMap((token) => expand(tokenName(token[1]!)));
+      return (['light', 'dark'] as const).map((theme) => {
+        const cell = (theme === 'light' ? lightCell : darkCell)!;
+        const stated = [...cell.matchAll(/(\d+\.\d+):1/g)].map((value) => Number(value[1]));
+        return { pair: pair!, theme, fg: tokenName(match[1]!), backgrounds, stated };
+      });
+    })
+    .filter((row) => row.stated.length > 0);
+
+  it('reads the pairs of every table', () => {
+    expect(rows).toHaveLength(64);
+  });
+
+  it.each(rows)('states for $pair in $theme the ratio the stylesheets give', ({ theme, fg, backgrounds, stated }) => {
+    expect(stated).toHaveLength(backgrounds.length);
+    backgrounds.forEach((background, index) => {
+      expect(contrast(theme, fg, background), `${fg} on ${background}`).toBeCloseTo(stated[index]!, 2);
+    });
+  });
+});
