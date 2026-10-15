@@ -19,6 +19,8 @@ export const FORMAT_LABELS: Readonly<Record<ContentFormat, string>> = {
   vsl: 'VSL'
 };
 
+export const PLATFORM_LABELS: Readonly<Record<ContentListItem['platform'], string>> = { instagram: 'Instagram' };
+
 /** The formats with a colour of their own are the carousel and the reels; every other one reads as the neutral "static". */
 export const FORMAT_TONES: Readonly<Record<ContentFormat, FormatTagFormat>> = { image: 'static', carousel: 'carousel', reels: 'reels', long_video: 'static', vsl: 'static' };
 

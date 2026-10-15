@@ -441,3 +441,92 @@ describe('Popover on hover', () => {
     expect(onOpenChange).not.toHaveBeenCalled();
   });
 });
+
+describe('Popover with a fixed strategy', () => {
+  const rectOf = (rect: { top: number; left: number; width: number; height: number }): DOMRect => ({ ...rect, right: rect.left + rect.width, bottom: rect.top + rect.height, x: rect.left, y: rect.top, toJSON: () => ({}) });
+
+  const measure = (): void => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.getAttribute('role') === 'dialog'
+        ? rectOf({ top: 0, left: 0, width: 300, height: 200 })
+        : rectOf({ top: 400, left: 850, width: 100, height: 60 });
+    });
+    Object.defineProperty(window, 'innerWidth', { value: 1000, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+  };
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('places the card on the screen, towards the side of its placement, inside the viewport', () => {
+    measure();
+    render(<Harness openOn="hover" strategy="fixed" placement="top-end" />);
+    enter(trigger(), 'mouse');
+    rest(300);
+
+    const panel = card()!;
+    expect(panel.className).toContain('ui-popover--fixed');
+    expect(panel.className).not.toContain('ui-popover--top-end');
+    expect(panel.style.visibility).toBe('');
+    // Above the anchor (400 - 8 gap - 200 tall), its end edge on the end edge of the anchor (850 + 100 - 300).
+    expect(panel.style.top).toBe('192px');
+    expect(panel.style.left).toBe('650px');
+  });
+
+  it('places the card again when its content makes it grow, and stops watching it when it closes', () => {
+    const observers: Array<{ callback: () => void; observed: Element[]; disconnected: boolean }> = [];
+    vi.stubGlobal('ResizeObserver', class {
+      private readonly record: { callback: () => void; observed: Element[]; disconnected: boolean };
+      public constructor(callback: () => void) { this.record = { callback, observed: [], disconnected: false }; observers.push(this.record); }
+      public observe(element: Element): void { this.record.observed.push(element); }
+      public disconnect(): void { this.record.disconnected = true; }
+    });
+    let height = 200;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.getAttribute('role') === 'dialog'
+        ? rectOf({ top: 0, left: 0, width: 300, height })
+        : rectOf({ top: 400, left: 850, width: 100, height: 60 });
+    });
+    Object.defineProperty(window, 'innerWidth', { value: 1000, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    render(<Harness openOn="hover" strategy="fixed" placement="top-end" />);
+    enter(trigger(), 'mouse');
+    rest(300);
+
+    expect(card()!.style.top).toBe('192px');
+    expect(observers).toHaveLength(1);
+    expect(observers[0]!.observed).toEqual([card()]);
+
+    height = 300;
+    act(() => { observers[0]!.callback(); });
+    expect(card()!.style.top).toBe('92px');
+
+    leave(trigger(), 'mouse');
+    rest(150);
+    expect(card()).toBeNull();
+    expect(observers[0]!.disconnected).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('closes when the page scrolls or resizes, and not when the card itself scrolls', () => {
+    measure();
+    render(<Harness openOn="click" strategy="fixed" />);
+    fireEvent.click(trigger());
+    fireEvent.scroll(screen.getByText('Legenda completa'));
+    expect(card()).not.toBeNull();
+
+    fireEvent.scroll(document);
+    expect(card()).toBeNull();
+
+    fireEvent.click(trigger());
+    expect(card()).not.toBeNull();
+    fireEvent(window, new Event('resize'));
+    expect(card()).toBeNull();
+  });
+
+  it('does not listen to the scroll of an absolute card, which moves with its anchor', () => {
+    render(<Harness />);
+    fireEvent.click(trigger());
+    fireEvent.scroll(document);
+    expect(card()).not.toBeNull();
+  });
+});
