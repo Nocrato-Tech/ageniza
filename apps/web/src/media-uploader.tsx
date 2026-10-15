@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { Check, CircleAlert, Image as ImageIcon, RotateCcw, Upload, Video } from 'lucide-react';
 
 import { Button, FieldMessage } from '@ageniza/ui';
 
@@ -16,19 +17,22 @@ const percent = (sent: number, total: number): number => (total === 0 ? 0 : Math
 
 /**
  * Direct upload into the open folder: the chosen file stays on screen through progress, failure and retry, and leaves only
- * when the upload is confirmed or the person picks another one.
+ * when the upload is confirmed or the person picks another one. The picker is the button; the native input behind it is
+ * only what the browser opens, so the folder's empty state can open it too (`inputRef`) and hide the button (`triggerHidden`).
  */
-export function MediaUploader({ clientId, folderId, onUploaded, sizeLabel }: {
+export function MediaUploader({ clientId, folderId, onUploaded, sizeLabel, heading, inputRef, triggerHidden = false }: {
   clientId: string;
   folderId: string;
   onUploaded: () => void;
   sizeLabel: (bytes: number) => string;
+  heading: ReactNode;
+  inputRef: RefObject<HTMLInputElement | null>;
+  triggerHidden?: boolean;
 }) {
   const agency = useAgencyContext();
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
   const inputId = useId();
-  const input = useRef<HTMLInputElement>(null);
   const controller = useRef<AbortController | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [sent, setSent] = useState(0);
@@ -47,7 +51,7 @@ export function MediaUploader({ clientId, folderId, onUploaded, sizeLabel }: {
       .then(() => {
         if (controller.current !== own) return;
         setFile(null);
-        if (input.current !== null) input.current.value = '';
+        if (inputRef.current !== null) inputRef.current.value = '';
         setPhase({ kind: 'done' });
         void queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'media-folder-assets', clientId, folderId] });
         onUploaded();
@@ -62,14 +66,20 @@ export function MediaUploader({ clientId, folderId, onUploaded, sizeLabel }: {
   const sending = phase.kind === 'sending';
   const progress = file === null ? 0 : percent(sent, file.size);
   return <div className="media-uploader">
-    <label htmlFor={inputId} className="media-uploader__label">Enviar mídia</label>
+    <div className="content-folders__heading">
+      {heading}
+      {!triggerHidden && <Button variant="secondary" leadingIcon={<Upload />} disabled={sending} onClick={() => inputRef.current?.click()}>Enviar mídia</Button>}
+    </div>
+    <label htmlFor={inputId} className="visually-hidden">Enviar mídia</label>
     <input
-      ref={input}
+      ref={inputRef}
       id={inputId}
-      className="media-uploader__input"
+      className="visually-hidden"
       type="file"
       accept="image/*,video/*"
       disabled={sending}
+      tabIndex={-1}
+      aria-hidden="true"
       onChange={(event) => {
         const chosen = event.target.files?.[0] ?? null;
         setFile(chosen);
@@ -78,19 +88,26 @@ export function MediaUploader({ clientId, folderId, onUploaded, sizeLabel }: {
       }}
     />
     {file !== null && <div className="media-uploader__file">
-      <p className="media-uploader__name">{file.name} · {sizeLabel(file.size)}</p>
-      {sending && <progress className="media-uploader__progress" max={100} value={progress} aria-label={`Enviando ${file.name}`}>{progress}%</progress>}
-      {sending && <p className="media-uploader__percent" aria-hidden="true">{progress}%</p>}
+      <span className="media-uploader__kind" aria-hidden="true">{file.type.startsWith('video/') ? <Video /> : <ImageIcon />}</span>
+      <div className="media-uploader__text">
+        <p className="media-uploader__name">{file.name} · {sizeLabel(file.size)}</p>
+        {sending && <div className="media-uploader__meter">
+          <progress className="media-uploader__progress" max={100} value={progress} aria-label={`Enviando ${file.name}`}>{progress}%</progress>
+          <p className="media-uploader__percent" aria-hidden="true">{progress}%</p>
+        </div>}
+      </div>
       <div className="media-uploader__actions">
         {sending
           ? <Button variant="secondary" onClick={() => { controller.current?.abort(); }}>Cancelar envio</Button>
           : phase.kind === 'failed' && FILE_IS_THE_PROBLEM.has(phase.failure)
             ? null
-            : <Button onClick={() => send(file)}>{phase.kind === 'failed' ? 'Tentar de novo' : 'Enviar'}</Button>}
+            : phase.kind === 'failed'
+              ? <Button variant="secondary" leadingIcon={<RotateCcw />} onClick={() => send(file)}>Tentar de novo</Button>
+              : <Button variant="secondary" leadingIcon={<Upload />} onClick={() => send(file)}>Enviar</Button>}
       </div>
     </div>}
-    {phase.kind === 'failed' && <FieldMessage role="alert">{UPLOAD_FAILURE_TEXT[phase.failure]}</FieldMessage>}
+    {phase.kind === 'failed' && <FieldMessage role="alert"><CircleAlert size={16} aria-hidden="true" />{UPLOAD_FAILURE_TEXT[phase.failure]}</FieldMessage>}
     {phase.kind === 'cancelled' && <p className="media-uploader__done" role="status">{UPLOAD_FAILURE_TEXT.cancelled}</p>}
-    {phase.kind === 'done' && <p className="media-uploader__done" role="status">Mídia enviada.</p>}
+    {phase.kind === 'done' && <p className="media-uploader__done" role="status"><Check size={16} aria-hidden="true" />Mídia enviada.</p>}
   </div>;
 }
