@@ -704,17 +704,16 @@ describe('portal Marca na Pauta (#689)', () => {
     const raw = readFileSync(join(__dirname, 'styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
     const marker = '/* --- Portal: Marca (#143, #689)';
     const from = raw.indexOf(marker);
-    // The block is the run of rules after its banner that belong to the screen: a block added later opens with other selectors.
-    const afterBanner = raw.slice(from).replace(/\/\*[\s\S]*?\*\//g, '').split('\n}\n');
-    const ownRules = afterBanner.slice(0, afterBanner.findIndex((rule) => !/^\s*\.portal-(brand|persona)/.test(rule)));
-    const block = ownRules.join('\n}\n');
+    // The block ends at the next banner or, for the last block before the utilities, at `.visually-hidden`.
+    const ends = [raw.indexOf('/* --- ', from + marker.length), raw.indexOf('.visually-hidden {', from)].filter((end) => end > from);
+    const block = raw.slice(from, Math.min(...ends)).replace(/\/\*[\s\S]*?\*\//g, '');
     const css = readStyles('globals.css');
 
     it('has its own block, made only of tokens, so it neither mints a value nor restyles a shared piece', () => {
       expect(from).toBeGreaterThan(0);
       expect(block).not.toMatch(/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/);
       expect(block).not.toMatch(/font(-size)?:\s*[\d.]+(px|rem)/);
-      const selectors = Array.from(block.matchAll(/^([^\s/*][^{]*)\{/gm)).map((match) => match[1]!.trim());
+      const selectors = Array.from(block.matchAll(/^([^\s/*}][^{}]*)\{/gm)).map((match) => match[1]!.trim());
       expect(selectors.length).toBeGreaterThan(5);
       expect(selectors.filter((selector) => /^\.portal-(section|headline|block|cover|row|meta|action|error|nav|shell)/.test(selector))).toEqual([]);
     });
