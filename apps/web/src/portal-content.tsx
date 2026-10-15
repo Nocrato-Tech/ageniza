@@ -147,6 +147,8 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
   const key = portalContentQueryKey(client.id, content.id);
   const [notice, setNotice] = useState<string | undefined>();
   const [actionError, setActionError] = useState<string | undefined>();
+  // Said outside the bar: the state it tells about takes the bar away, and the message must outlive it.
+  const [stateChanged, setStateChanged] = useState<string | undefined>();
   const [requestError, setRequestError] = useState<RequestError | undefined>();
   const [asking, setAsking] = useState(false);
   const [draft, setDraft] = useState('');
@@ -182,7 +184,8 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
     },
     onError: (error: unknown) => {
       setNotice(undefined);
-      setActionError(stale(error) ?? MESSAGES.approveFailed);
+      if (isCode(error, 'CONTENT_NOT_AWAITING_APPROVAL')) setStateChanged(MESSAGES.stateChanged);
+      else setActionError(stale(error) ?? MESSAGES.approveFailed);
       refresh();
     },
     onSettled: () => { sending.current = false; }
@@ -206,7 +209,7 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
       refresh();
     },
     onError: (error: unknown) => {
-      if (isCode(error, 'CONTENT_NOT_AWAITING_APPROVAL')) { setAsking(false); setActionError(MESSAGES.stateChanged); }
+      if (isCode(error, 'CONTENT_NOT_AWAITING_APPROVAL')) { setAsking(false); setStateChanged(MESSAGES.stateChanged); }
       else if (isCode(error, 'CONTENT_COMMENT_INVALID')) setRequestError({ message: MESSAGES.invalidCharacters, field: true });
       else setRequestError({ message: stale(error) ?? MESSAGES.requestFailed, field: false });
       refresh();
@@ -223,14 +226,15 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
   const awaiting = content.status === 'awaiting_approval';
   const stateNote = STATE_NOTES[content.status];
 
-  // The Aprovar the person pressed leaves with the bar: the confirmation takes the focus, so it is read and seen where the person is.
+  // The button the person pressed leaves with the bar: what the screen answers takes the focus, so it is read and seen where the person is.
   useEffect(() => {
-    if (notice !== undefined) noticeRef.current?.focus();
-  }, [notice]);
+    if (notice !== undefined || stateChanged !== undefined) noticeRef.current?.focus();
+  }, [notice, stateChanged]);
 
   return <>
-    {(notice !== undefined || stateNote !== undefined) && <div ref={noticeRef} className="portal-post__notes" tabIndex={-1}>
+    {(notice !== undefined || stateChanged !== undefined || stateNote !== undefined) && <div ref={noticeRef} className="portal-post__notes" tabIndex={-1}>
       {notice !== undefined && <LiveStatus>{notice}</LiveStatus>}
+      {stateChanged !== undefined && <FieldMessage role="alert">{stateChanged}</FieldMessage>}
       {stateNote !== undefined && <p className="portal-post__hint">{stateNote}</p>}
     </div>}
     <div className="portal-post__body">
@@ -267,8 +271,8 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
       <h2 id="portal-post-decision" className="visually-hidden">Sua decisão</h2>
       {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
       <div className="portal-post__actions">
-        <Button variant="secondary" size="lg" leadingIcon={<Pencil />} disabled={reloading || approve.isPending} onClick={() => { setRequestError(undefined); setAsking(true); }}>Pedir ajuste</Button>
-        <Button size="lg" leadingIcon={<Check />} loading={approve.isPending} disabled={reloading || requestChanges.isPending} onClick={() => { setActionError(undefined); setNotice(undefined); send(() => { approve.mutate(); }); }}>Aprovar</Button>
+        <Button variant="secondary" size="lg" leadingIcon={<Pencil />} disabled={reloading || approve.isPending} onClick={() => { setRequestError(undefined); setStateChanged(undefined); setAsking(true); }}>Pedir ajuste</Button>
+        <Button size="lg" leadingIcon={<Check />} loading={approve.isPending} disabled={reloading || requestChanges.isPending} onClick={() => { setActionError(undefined); setStateChanged(undefined); setNotice(undefined); send(() => { approve.mutate(); }); }}>Aprovar</Button>
       </div>
     </section>}
     {asking && <RequestChangesDialog

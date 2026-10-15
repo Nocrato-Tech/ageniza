@@ -392,6 +392,10 @@ describe('the post of the portal (#270)', () => {
       expect(await screen.findByText('A situação deste conteúdo mudou enquanto você o via. Mostramos a situação atual.')).toBeTruthy();
       expect(await screen.findByText('Foi pedido um ajuste. A agência vai revisar e enviar de novo para a sua aprovação.')).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull();
+      // The reading is done and the bar is gone: the message outlives it, and the focus is where it is said.
+      expect(screen.getByText('A situação deste conteúdo mudou enquanto você o via. Mostramos a situação atual.')).toBeTruthy();
+      await waitFor(() => { expect(document.activeElement).toBe(document.querySelector('.portal-post__notes')); });
+      expect(document.querySelector('.portal-post__notes')?.contains(screen.getByText('A situação deste conteúdo mudou enquanto você o via. Mostramos a situação atual.'))).toBe(true);
     });
 
     it('turns a content cancelled meanwhile into "não encontrado"', async () => {
@@ -491,6 +495,10 @@ describe('the post of the portal (#270)', () => {
       expect(await screen.findByText('A situação deste conteúdo mudou enquanto você o via. Mostramos a situação atual.')).toBeTruthy();
       expect(screen.queryByLabelText('O que precisa mudar?')).toBeNull();
       expect(await screen.findByText('Este conteúdo está aprovado. A agência cuida da publicação.')).toBeTruthy();
+      // The reading is done and the bar is gone: the message outlives it, and the focus is where it is said.
+      expect(screen.getByText('A situação deste conteúdo mudou enquanto você o via. Mostramos a situação atual.')).toBeTruthy();
+      await waitFor(() => { expect(document.activeElement).toBe(document.querySelector('.portal-post__notes')); });
+      expect(document.querySelector('.portal-post__notes')?.contains(screen.getByText('A situação deste conteúdo mudou enquanto você o via. Mostramos a situação atual.'))).toBe(true);
     });
 
     it('says the text was not accepted when the server refuses the comment', async () => {

@@ -4984,6 +4984,12 @@ html:has(.portal-shell) {
   margin: 0;
 }
 
+/* The confirmation and the message about a changed state read in the body size of the screen, not in the 16 px of their components. */
+.portal-post__notes .ui-live-status,
+.portal-post__notes .ui-field-message {
+  font: var(--body-md);
+}
+
 .portal-post__body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
