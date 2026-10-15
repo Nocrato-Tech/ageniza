@@ -518,26 +518,26 @@ Barra inferior com quatro itens, o padrão que um dono de negócio já sabe usar
 │  Olá, Maria                                │
 │                                            │
 │  ┌──────────────────────────────────────┐  │
-│  │ 2 conteúdos esperando sua aprovação  │  │
-│  │                              [ ver ] │  │
+│  │ 2 posts esperando sua aprovação      │  │
+│  │              [ Revisar os 2 posts ]  │  │
 │  └──────────────────────────────────────┘  │
 │                                            │
 │  Roteiro de hoje                           │
 │  ┌──────────────────────────────────────┐  │
 │  │ Cena 1 — texto do roteiro            │  │
 │  │ Orientação: …                        │  │
-│  │              [ Marcar como gravado ] │  │
+│  │                       [ Já gravei ]  │  │
 │  └──────────────────────────────────────┘  │
 ```
 
 A próxima ação é **uma**, e a pendência de aprovação vem antes de tudo:
 
-- **Com conteúdos esperando a aprovação do cliente** (o número é o `home.contentsAwaitingApproval` da API): o cartão é "N conteúdos esperando sua aprovação" (singular com 1), com "ver", e leva a Conteúdos (`/portal/:clienteId/conteudos`).
+- **Com conteúdos esperando a aprovação do cliente** (o número é o `home.contentsAwaitingApproval` da API): o título é "N posts esperando sua aprovação" (singular com 1), com as duas capas mais próximas e o botão "Revisar os N posts" ("Revisar o post" com 1), que leva a Conteúdos (`/portal/:clienteId/conteudos`).
 - **Sem pendência**, o cartão volta à próxima ação de antes: "A agência respondeu N sugestões suas", que leva à Marca; senão, "Conheça o estudo da sua marca".
 
-Abaixo do cartão, o bloco **Roteiro de hoje** traz as cenas em ordem (texto e "Orientação: …") dos roteiros **enviados** ou **gravados** do dia de São Paulo. Roteiro em rascunho não aparece para o cliente. Sem roteiro hoje, o bloco não existe.
+Abaixo, o bloco **Roteiro de hoje** traz as cenas em ordem (texto e "Orientação: …") dos roteiros **enviados** ou **gravados** do dia de São Paulo. Roteiro em rascunho não aparece para o cliente. Sem roteiro hoje, o bloco não existe.
 
-- **Enviado:** botão "Marcar como gravado". Um clique; o botão espera a resposta. Com mais de um roteiro no dia, cada um tem o seu título, e o botão leva o número.
+- **Enviado:** botão "Já gravei". Um clique; o botão espera a resposta. Com mais de um roteiro no dia, cada um tem o seu título, e o botão leva o número.
 - **Gravado:** "Gravado por {nome} em dd/mm", sem botão.
 - **Erro ao carregar o bloco:** "Não foi possível carregar o roteiro de hoje.", com "Tentar de novo". O resto do Início continua na tela.
 

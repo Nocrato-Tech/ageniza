@@ -3162,6 +3162,13 @@ a.client-general__block:focus-visible {
   color: var(--text-muted);
 }
 
+.account-menu__caret {
+  width: 1rem;
+  height: 1rem;
+  margin-left: var(--space-1);
+  vertical-align: middle;
+}
+
 @media (min-width: 48rem) {
   .agency-sidebar[data-collapsed='true'] {
     align-items: center;
@@ -4091,6 +4098,11 @@ main > .shell-notice {
   background: var(--bg-canvas);
 }
 
+/* The focused control scrolls clear of the sticky bar: below it on a phone, under the tabs on a wide screen (WCAG 2.4.11). */
+html:has(.portal-shell) {
+  scroll-padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+}
+
 /* A flex item with auto side margins shrinks to its content: the width is restated. */
 .portal-shell > .portal-content {
   width: 100%;
@@ -4586,6 +4598,11 @@ main > .shell-notice {
 }
 
 @media (min-width: 48rem) {
+  html:has(.portal-shell) {
+    scroll-padding-top: 5rem;
+    scroll-padding-bottom: 0;
+  }
+
   .portal-shell > .portal-header {
     padding: var(--space-4) var(--space-8);
   }

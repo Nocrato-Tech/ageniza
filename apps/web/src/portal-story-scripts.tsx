@@ -58,7 +58,7 @@ function Script({ script, number, several, sending, onRecord }: {
 
 /**
  * The story script of today of the Início (`specs/conteudo.md` section 7): the scenes the agency sent for today's day in São Paulo, and
- * "Marcar como gravado" on the ones not yet recorded. Without a script for today the block is not there at all.
+ * "Já gravei" on the ones not yet recorded. Without a script for today the block is not there at all.
  */
 export function PortalTodayScripts({ clientId }: { clientId: string }) {
   const httpClient = useApiClient();

@@ -283,6 +283,22 @@ describe('client portal shell (#141)', () => {
     expect(container.querySelector('.portal-skeleton')).toBeTruthy();
   });
 
+  it('draws Relatórios with the owl and what is missing, not as a bare paragraph', async () => {
+    const { container } = renderPortal(makeFetch().impl);
+    await screen.findByRole('heading', { name: 'Olá, Maria' });
+    clickTab('Relatórios');
+    expect(await screen.findByRole('heading', { level: 2, name: 'Ainda não há resultados para mostrar' })).toBeTruthy();
+    expect(container.querySelectorAll('.portal-skeleton img.ui-mascot')).toHaveLength(1);
+  });
+
+  it('keeps the focused control clear of the sticky bar: room below it on a phone, under the tabs on a wide screen', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
+    const phone = css.slice(css.indexOf('\nhtml:has(.portal-shell) {'));
+    expect(phone.slice(0, phone.indexOf('}'))).toMatch(/scroll-padding-bottom:\s*calc\(5\.5rem \+ env\(safe-area-inset-bottom\)\);/);
+    const wide = css.slice(css.indexOf('@media (min-width: 48rem) {\n  html:has(.portal-shell) {'));
+    expect(wide.slice(0, wide.indexOf('}'))).toMatch(/scroll-padding-top:\s*5rem;/);
+  });
+
   it('sets the tab title of each of the four areas', async () => {
     const { impl } = makeFetch();
     renderPortal(impl);
@@ -637,6 +653,19 @@ describe('the Início: approvals and the script of today (#271)', () => {
       expect(contents.calls.filter((call) => call.includes('awaiting-approval'))).toEqual([`GET /clients/${CLIENT_ID}/contents/awaiting-approval?pageSize=2`]);
     });
 
+    it('holds the place of the covers with a skeleton nobody reads while they load', async () => {
+      const contents = createPortalContentsApi(CLIENT_ID);
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      const handle = contents.handle;
+      contents.handle = (url, method) => (url.pathname.endsWith('/awaiting-approval') ? held.then(() => handle(url, method) as Response) : handle(url, method));
+      const { container } = renderPortal(makeFetch({ portal: () => withHome({ contentsAwaitingApproval: 2 }), contents }).impl);
+      await screen.findByRole('heading', { name: '2 posts esperando sua aprovação' });
+      expect(container.querySelector('.portal-covers')?.getAttribute('aria-hidden')).toBe('true');
+      release();
+      await waitFor(() => expect(container.querySelector('.portal-covers[aria-hidden]')).toBeNull());
+    });
+
     it('keeps the headline and the action when the covers cannot be read, and offers to try again', async () => {
       const contents = createPortalContentsApi(CLIENT_ID);
       contents.state.failAwaiting = () => contentsError(500, 'INTERNAL_ERROR');
@@ -773,6 +802,16 @@ describe('the Início: approvals and the script of today (#271)', () => {
       expect((window as unknown as { __hacked?: number }).__hacked).toBeUndefined();
       expect(within(block()).getByRole('heading', { name: 'Roteiro de hoje', level: 2 })).toBeTruthy();
       expect(container.textContent).not.toMatch(/thread|status|arquivad|onboarding|persona|rascunho|draft/i);
+    });
+
+    it('offers "Já gravei" as a secondary action, so the only filled indigo of the screen is the review', async () => {
+      const api = scriptsApi();
+      api.seed({ scriptOn: TODAY });
+      renderPortal(makeFetch({ scripts: api, portal: () => withHome({ contentsAwaitingApproval: 2 }) }).impl);
+      const button = await screen.findByRole('button', { name: 'Já gravei' });
+      expect(button.className).toContain('ui-button--secondary');
+      expect(button.className).not.toContain('ui-button--primary');
+      expect(document.querySelectorAll('.ui-button--primary')).toHaveLength(1);
     });
 
     it('marks it recorded with one click on that script, shows who and the day in São Paulo, and no button after', async () => {

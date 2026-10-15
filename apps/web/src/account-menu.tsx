@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ChevronsUpDown, LogOut } from 'lucide-react';
+import { ChevronDown, ChevronsUpDown, LogOut } from 'lucide-react';
 
 import {
   AuthLogoutAllResponseSchema,
@@ -147,7 +147,7 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
               <span className='account-menu__name'>{user.name}</span>
               <ChevronsUpDown className='account-menu__chevron' aria-hidden='true' />
             </>
-          : <><span>{user.name}</span><span aria-hidden='true'>{'\u2304'}</span></>}
+          : <><span>{user.name}</span><ChevronDown className='account-menu__caret' aria-hidden='true' /></>}
       >
         {panel === 'root' ? <>
           <div className='account-menu__identity' role='group' aria-label='Conta'>
