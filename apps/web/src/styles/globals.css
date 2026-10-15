@@ -4186,7 +4186,7 @@ a.client-general__block:hover {
 .content-calendar__days {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  min-width: 54rem;
+  min-width: 42rem;
   margin: 0;
   padding: 0;
   list-style: none;

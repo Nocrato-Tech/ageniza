@@ -1934,8 +1934,8 @@ describe('the header and the grid of the calendar', () => {
       expect(body('.contents__panel')).toMatch(/overflow:\s*hidden;/);
       expect(body('.content-calendar')).toMatch(/overflow-x:\s*auto;/);
       expect(body('.content-calendar')).toMatch(/min-width:\s*0;/);
-      expect(body('.content-calendar')).not.toMatch(/min-width:\s*54rem/);
-      expect(body('.content-calendar__days')).toMatch(/min-width:\s*54rem;/);
+      expect(body('.content-calendar')).not.toMatch(/min-width:\s*42rem/);
+      expect(body('.content-calendar__days')).toMatch(/min-width:\s*42rem;/);
     });
 
     it('tints the card and its title by format with the format tokens, and keeps the late edge red', () => {
