@@ -89,15 +89,6 @@ const invitationFor = async (
   return { token: token.token };
 };
 
-const requestResetToken = async (email: string): Promise<string> => {
-  await app.app.inject({ method: 'POST', url: '/auth/password/forgot', headers: origin, payload: { email } });
-  await app.emailService.drain();
-  const message = sender.sent.filter((sent) => sent.to === email).at(-1)?.text ?? '';
-  const match = /senha\/redefinir\?token=([^\s"'&]+)/.exec(message);
-  if (!match?.[1]) throw new Error('Reset token was not found in the captured email.');
-  return decodeURIComponent(match[1]);
-};
-
 describe('inviteToken addressed to another e-mail (#339)', () => {
   it('does not attach an invite continuation for another e-mail to the reset message', async () => {
     const account = await makeUser('forgot-invite-other');
