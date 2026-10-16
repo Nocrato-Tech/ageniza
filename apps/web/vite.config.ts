@@ -1,10 +1,17 @@
 /// <reference types="vitest/config" />
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-export default defineConfig({
+export default defineConfig(({ command, mode }) => ({
   envDir: '../..',
   plugins: [react()],
+  // The dev server reads the design system from its source, so an edit in packages/ui shows up without a rebuild.
+  // The build and the tests keep the compiled package, which is what ships.
+  resolve:
+    command === 'serve' && mode === 'development'
+      ? { alias: { '@ageniza/ui': fileURLToPath(new URL('../../packages/ui/src/index.tsx', import.meta.url)) } }
+      : {},
   build: {
     rollupOptions: {
       output: {
@@ -22,4 +29,4 @@ export default defineConfig({
     // The design-system page reads the token stylesheets as text (`?raw`); vitest would otherwise stub every CSS file as empty.
     css: { include: [/\.css\?raw$/] }
   }
-});
+}));
