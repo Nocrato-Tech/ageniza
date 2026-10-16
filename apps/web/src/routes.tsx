@@ -183,6 +183,6 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
     </Route>
     <Route path="*" element={session.isAuthenticated
       ? <ProtectedLayout session={session}><NotFoundPage as="section" home="/contextos" /></ProtectedLayout>
-      : <NotFoundPage />} />
+      : <NotFoundPage home="/entrar" />} />
   </Routes>;
 }

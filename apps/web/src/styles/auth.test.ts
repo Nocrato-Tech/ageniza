@@ -12,7 +12,7 @@ const authRules = [...css.matchAll(/([^{}]*)\{([^{}]*)\}/g)]
 
 describe('the entrada stylesheet', () => {
   it('finds the rules it checks', () => {
-    expect(authRules.length).toBeGreaterThan(40);
+    expect(authRules.length).toBeGreaterThan(30);
   });
 
   it('takes colours, spacing and radius from tokens only', () => {
@@ -38,13 +38,25 @@ describe('the entrada stylesheet', () => {
     expect([...steps].sort()).toEqual(['var(--body-md)', 'var(--caption)', 'var(--heading-xl)']);
   });
 
-  it('shows the example week only from 64rem up', () => {
-    expect(rule('.auth__showcase').get('display')).toBe('flex');
-    const base = css.match(/\.auth__showcase \{\s*display: none;\s*\}/);
+  it('shows the brand panel only from 64rem up, flush left, with the mascot centred in it', () => {
+    const base = css.match(/\.auth__visual \{\s*display: none;\s*\}/);
     expect(base).not.toBeNull();
-    const wide = css.match(/@media \(min-width: 64rem\) \{[^@]*?\.auth__showcase \{\s*display: flex;/);
+    const wide = css.match(/@media \(min-width: 64rem\) \{[^@]*?\.auth__visual \{\s*grid-column: 1;/);
     expect(wide).not.toBeNull();
     expect(css.indexOf(base![0])).toBeLessThan(css.indexOf(wide![0]));
+    const visual = rule('.auth__visual');
+    expect(visual.get('display')).toBe('flex');
+    expect(visual.get('align-items')).toBe('center');
+    expect(visual.get('justify-content')).toBe('center');
+    expect(visual.get('grid-column')).toBe('1');
+    expect(rule('.auth__column').get('grid-column')).toBe('2');
+    // Flush with the edge of the screen: no margin or border pushes the panel away from it.
+    expect(visual.has('margin')).toBe(false);
+    expect(visual.has('border-left')).toBe(false);
+  });
+
+  it('centres the form in its column on a wide screen', () => {
+    expect(css).toMatch(/@media \(min-width: 64rem\) \{[^@]*?\.auth__main \{\s*align-items: center;/);
   });
 
   it('paints a problem in the danger text colour and a confirmation icon in the ready state colour', () => {
@@ -56,10 +68,11 @@ describe('the entrada stylesheet', () => {
     expect(rule('.auth-field-link__link').get('min-height')).toBe('1.5rem');
   });
 
-  it('keeps the solid indigo for today and the actions only', () => {
-    const solid = authRules.filter(({ body }) => /var\(--action-primary-bg\)/.test(body)).map(({ selector }) => selector).sort();
+  it('keeps the solid indigo for the actions only', () => {
+    // A tint (the brand panel) is a `color-mix` of it, not the solid fill.
+    const solid = authRules.filter(({ body }) => /(?<!color-mix\(in srgb, )var\(--action-primary-bg\)/.test(body)).map(({ selector }) => selector).sort();
 
-    expect(solid).toEqual(['.auth-check input', '.auth-day__today']);
+    expect(solid).toEqual(['.auth-check input']);
   });
 });
 
@@ -70,28 +83,11 @@ describe('contrast of the entrada pairs in the light theme', () => {
     ['the invitation note on the page', rule('.auth-note').get('color')!, 'var(--bg-canvas)'],
     ['the legal links on the page', rule('.auth__legal a').get('color')!, 'var(--bg-canvas)'],
     ['the lead on the page', rule('.auth-panel__head p').get('color')!, 'var(--bg-canvas)'],
+    ['the panel title on the brand tint', 'var(--text-primary)', rule('.auth__visual').get('background')!],
+    ['the panel lead on the brand tint', rule('.auth-visual__lead').get('color')!, rule('.auth__visual').get('background')!],
     ['the invitation labels on their panel', rule('.auth-details dt').get('color')!, rule('.auth-details').get('background')!],
-    ['the example lead on its panel', rule('.auth-showcase__lead').get('color')!, rule('.auth__showcase').get('background')!],
-    ['the example header on its card', rule('.auth-week__head').get('color')!, rule('.auth-week').get('background')!],
-    ['the example day label on its card', rule('.auth-day__label').get('color')!, rule('.auth-week').get('background')!],
-    ['the example note on today', rule('.auth-day__note').get('color')!, rule('.auth-day--today').get('background')!],
-    ['today mark on its fill', rule('.auth-day__today').get('color')!, rule('.auth-day__today').get('background')!],
-    ['the reels title on its card', rule('.auth-post--reels').get('color')!, rule('.auth-post--reels').get('background')!],
-    ['the carousel title on its card', rule('.auth-post--carousel').get('color')!, rule('.auth-post--carousel').get('background')!],
-    ['the reels tag on its fill', rule('.auth-tag--reels').get('color')!, rule('.auth-tag--reels').get('background')!],
-    ['the carousel tag on its fill', rule('.auth-tag--carousel').get('color')!, rule('.auth-tag--carousel').get('background')!],
-    ['the state label on a reels card', rule('.auth-state').get('color')!, rule('.auth-post--reels').get('background')!],
-    ['the state label on a carousel card', rule('.auth-state').get('color')!, rule('.auth-post--carousel').get('background')!]
   ])('%s is AA', (_name, fg, bg) => {
     expect(contrastOf('light', fg, bg)).toBeGreaterThanOrEqual(4.5);
-  });
-
-  it.each([
-    ['late', '.auth-state__icon--late', 'var(--bg-canvas)'],
-    ['adjust', '.auth-state__icon--adjust', 'var(--format-carousel-bg)'],
-    ['waiting', '.auth-state__icon--waiting', 'var(--format-reels-bg)']
-  ])('the %s state icon is 3:1 on its card (non-text)', (_name, selector, bg) => {
-    expect(contrastOf('light', rule(selector).get('color')!, bg)).toBeGreaterThanOrEqual(3);
   });
 
   it('keeps the confirmation icon 3:1 on the page', () => {

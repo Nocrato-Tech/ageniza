@@ -65,7 +65,7 @@ describe('status pages (serious mascot)', () => {
     expect(screen.getByRole('heading', { name: 'Página não encontrada', level: 1 })).toBeTruthy();
     expect(screen.getByText('Este endereço não corresponde a uma página do Ageniza.')).toBeTruthy();
     const exit = screen.getByRole('link', { name: 'Voltar ao início' });
-    expect(exit.getAttribute('href')).toBe('/');
+    expect(exit.getAttribute('href')).toBe('/entrar');
     expectPrimaryButtonLook(exit);
     expectSeriousMascotOnce();
     expect(document.querySelectorAll('main')).toHaveLength(1);

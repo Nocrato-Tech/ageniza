@@ -10,14 +10,18 @@ export const AuthUserSchema = z.object({
   email: AuthEmailSchema
 }).strict();
 
+/** A password being created (invitation, reset): the 10-character rule lives here, not on sign-in. */
 export const AuthPasswordSchema = z.string().min(10).max(128);
+
+/** A password being presented at sign-in: any non-empty value reaches the server, which answers 401 for a wrong one. */
+export const AuthLoginPasswordSchema = z.string().min(1).max(128);
 
 /** Optional invitation continuation; the token is opaque and is never echoed in a response. */
 export const AuthInvitationTokenSchema = z.string().min(1).max(2_048);
 
 export const AuthLoginRequestSchema = z.object({
   email: AuthEmailSchema,
-  password: AuthPasswordSchema,
+  password: AuthLoginPasswordSchema,
   inviteToken: AuthInvitationTokenSchema.optional()
 }).strict();
 

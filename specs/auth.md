@@ -186,6 +186,59 @@ Um token de reset inválido, usado ou expirado devolve `400 INVALID_LINK`, sem s
 
 Desde 2026-09-29 (issue #175) a rota assinava a pessoa de volta e respondia `signedIn`, com os motivos `NO_CONTEXT_ACCESS` e `SIGN_IN_REQUIRED` (correção da revisão de segurança do PR #176). A decisão de 2026-10-16 (issue #699) tirou tudo isso: foi **mudança de contrato numa rota implantada**, o `200` com corpo voltou a `204`, e os testes de integração mudaram junto.
 
+### Persistência
+
+Nenhuma migration.
+
+### RLS
+
+Nenhuma policy nova. A contagem de contextos usa o caminho que `listValidContexts` já percorre.
+
+## 7. Frontend
+
+Sete telas. Os esboços são wireframe: **o que existe e onde**, para o designer desenhar. Nada de cor, tipografia ou espaçamento.
+
+As rotas do navegador são em português; as da API continuam em inglês.
+
+### Entrar — `/entrar`
+
+```
+┌──────────────────────────────────┐
+│           Ageniza                │
+│                                  │
+│  E-mail    [____________]        │
+│  Senha     [____________]        │
+│                                  │
+│           [ Entrar ]             │
+│                                  │
+│  Esqueci minha senha             │
+└──────────────────────────────────┘
+```
+
+**O que faz com os dados:** `POST /auth/login` → em caso de sucesso, `GET /me/contexts/resolve` → `enter` vai para o contexto, `select` vai para `/contextos`, `none` vai para acesso encerrado.
+
+**Erros:** credencial inválida e e-mail inexistente mostram a **mesma** mensagem. Limite de tentativas atingido diz para tentar mais tarde. Nenhum dos dois limpa o campo de e-mail.
+
+**Validação na tela:** e-mail em formato inválido: "Informe um e-mail válido."; senha vazia: "Informe a sua senha." A tela **não confere o tamanho da senha** (a regra de 10 caracteres é de quem cria uma senha, no convite e na redefinição): qualquer senha preenchida vai ao servidor, que responde "E-mail ou senha incorretos." Cada mensagem fica no seu campo e o foco vai ao primeiro campo inválido; **não há o resumo "Corrija N campos"** neste formulário, exceção à regra comum registrada em 2026-10-16.
+
+**Layout:** da largura de 64rem para cima, a tela é de duas colunas: à esquerda o painel de marca (o mascote amigável centralizado sobre a cor da marca, encostado nas bordas da tela) e à direita o formulário, afastado da borda e em largura de formulário. Abaixo disso o painel some e o formulário ocupa a tela. O mesmo molde vale para esqueci a senha, redefinir, convite e confirmação de e-mail (2026-10-16).
+
+**Sem cadastro:** não há "criar conta". Quem chega sem convite não tem o que fazer aqui, e a tela diz isso em uma linha em vez de oferecer um caminho que não existe.
+
+### Esqueci a senha — `/senha/esquecida`
+
+```
+┌──────────────────────────────────┐
+│  Recuperar acesso                │
+│                                  │
+│  E-mail    [____________]        │
+│                                  │
+│        [ Enviar link ]           │
+│                                  │
+│  Voltar para entrar              │
+└──────────────────────────────────┘
+```
+
 **O que faz:** `POST /auth/password/forgot`. A confirmação é **sempre a mesma**, exista o e-mail ou não: "se existir uma conta com esse endereço, o link chegou".
 
 ### Redefinir senha — `/senha/redefinir?token=…`
