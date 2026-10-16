@@ -12,7 +12,7 @@ const authRules = [...css.matchAll(/([^{}]*)\{([^{}]*)\}/g)]
 
 describe('the entrada stylesheet', () => {
   it('finds the rules it checks', () => {
-    expect(authRules.length).toBeGreaterThan(30);
+    expect(authRules.length).toBeGreaterThan(35);
   });
 
   it('takes colours, spacing and radius from tokens only', () => {
@@ -83,7 +83,7 @@ describe('contrast of the entrada pairs in the light theme', () => {
     ['the invitation note on the page', rule('.auth-note').get('color')!, 'var(--bg-canvas)'],
     ['the legal links on the page', rule('.auth__legal a').get('color')!, 'var(--bg-canvas)'],
     ['the lead on the page', rule('.auth-panel__head p').get('color')!, 'var(--bg-canvas)'],
-    ['the panel title on the brand tint', 'var(--text-primary)', rule('.auth__visual').get('background')!],
+    ['the panel title on the brand tint', rule('.auth-visual__title').get('color')!, rule('.auth__visual').get('background')!],
     ['the panel lead on the brand tint', rule('.auth-visual__lead').get('color')!, rule('.auth__visual').get('background')!],
     ['the invitation labels on their panel', rule('.auth-details dt').get('color')!, rule('.auth-details').get('background')!],
   ])('%s is AA', (_name, fg, bg) => {
