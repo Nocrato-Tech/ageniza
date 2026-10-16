@@ -419,3 +419,43 @@ describe('DatePicker closing', () => {
     expect(panel()).toBeNull();
   });
 });
+
+describe('DatePicker listeners', () => {
+  it('removes what it listened to on the page when it unmounts with the calendar open, and a later scroll, resize or press does nothing', () => {
+    const onChange = vi.fn();
+    const failures = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const windowAdded = vi.spyOn(window, 'addEventListener');
+    const windowRemoved = vi.spyOn(window, 'removeEventListener');
+    const documentAdded = vi.spyOn(document, 'addEventListener');
+    const documentRemoved = vi.spyOn(document, 'removeEventListener');
+    const { unmount } = render(<DatePicker today={TODAY} value="2026-10-20" onChange={onChange} />);
+    fireEvent.click(toggle());
+
+    const handlerOf = (spy: typeof windowAdded, type: string): unknown => spy.mock.calls.find((call) => call[0] === type)?.[1];
+    const scroll = handlerOf(windowAdded, 'scroll');
+    const resize = handlerOf(windowAdded, 'resize');
+    const press = handlerOf(documentAdded, 'pointerdown');
+    expect([typeof scroll, typeof resize, typeof press]).toEqual(['function', 'function', 'function']);
+    unmount();
+
+    expect(windowRemoved).toHaveBeenCalledWith('scroll', scroll, true);
+    expect(windowRemoved).toHaveBeenCalledWith('resize', resize);
+    expect(documentRemoved).toHaveBeenCalledWith('pointerdown', press);
+    fireEvent.scroll(window);
+    fireEvent(window, new Event('resize'));
+    fireEvent.pointerDown(document.body);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(failures).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it('listens to nothing on the page while the calendar is closed', () => {
+    const windowAdded = vi.spyOn(window, 'addEventListener');
+    const documentAdded = vi.spyOn(document, 'addEventListener');
+    render(<DatePicker today={TODAY} value="2026-10-20" onChange={() => undefined} />);
+
+    expect(windowAdded.mock.calls.filter((call) => call[0] === 'scroll' || call[0] === 'resize')).toEqual([]);
+    expect(documentAdded.mock.calls.filter((call) => call[0] === 'pointerdown')).toEqual([]);
+    vi.restoreAllMocks();
+  });
+});
