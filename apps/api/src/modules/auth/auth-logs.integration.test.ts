@@ -54,7 +54,7 @@ const assertNoSecretsLogged = (logText: string, secrets: { readonly password: st
 };
 
 /** A `collaborator_invite` addressed to `email`, same shape as `auth.integration.test.ts`'s own
- * helper -- needed here to exercise the `password/reset` `inviteToken` continuation branch. */
+ * helper -- needed here to exercise the login that continues an invitation after a reset. */
 const insertCollaboratorInvitation = async (input: { readonly agencyId: string; readonly email: string }): Promise<{ readonly token: string }> => {
   const roleRows = await queryAsOwner<{ id: string }>("select id from public.roles where key = 'production' and agency_id is null limit 1");
   const roleId = roleRows[0]?.id;
