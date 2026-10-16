@@ -415,8 +415,13 @@ describe('Marcar como publicado e Desfazer publicação', () => {
     await settled(calls);
     clickMove('Marcar como publicado');
     const day = within(dialog()).getByLabelText('Dia real da publicação') as HTMLInputElement;
-    expect(day.value).toBe('2026-10-11');
-    expect(day.max).toBe('2026-10-11');
+    expect(day.value).toBe('11/10/2026');
+    // The calendar offers no day after today (the 12th at 01:30Z is still the 11th in São Paulo): the 11th is the last one.
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Abrir calendário' }));
+    const calendar = document.querySelector<HTMLElement>('.ui-date-picker__panel')!;
+    expect(calendar.querySelector<HTMLButtonElement>('button[data-day="2026-10-12"]')!.disabled).toBe(true);
+    expect(calendar.querySelector<HTMLButtonElement>('button[data-day="2026-10-11"]')!.disabled).toBe(false);
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
     clickMove('Confirmar publicação');
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -424,11 +429,50 @@ describe('Marcar como publicado e Desfazer publicação', () => {
     expect(status(contents, row.id)).toBe('published');
   });
 
+  it('opens the calendar on today in São Paulo when the day was cleared, and "Hoje" picks it', async () => {
+    const { calls } = await openContent(stored({ status: 'approved' }), { permissions: PUBLISHER });
+    await settled(calls);
+    clickMove('Marcar como publicado');
+    fireEvent.change(within(dialog()).getByLabelText('Dia real da publicação'), { target: { value: '' } });
+
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Abrir calendário' }));
+    expect((document.activeElement as HTMLElement).dataset.day).toBe('2026-10-11');
+    expect(document.querySelector('.ui-date-picker__panel button[data-day="2026-10-11"]')!.getAttribute('aria-current')).toBe('date');
+    fireEvent.click(within(document.querySelector<HTMLElement>('.ui-date-picker__panel')!).getByRole('button', { name: 'Hoje' }));
+    expect((within(dialog()).getByLabelText('Dia real da publicação') as HTMLInputElement).value).toBe('11/10/2026');
+  });
+
+  it('marks the day invalid and describes it by the sentence that says why', async () => {
+    const { calls } = await openContent(stored({ status: 'approved' }), { permissions: PUBLISHER });
+    await settled(calls);
+    clickMove('Marcar como publicado');
+    const field = within(dialog()).getByLabelText('Dia real da publicação');
+    expect(field.getAttribute('aria-invalid')).toBeNull();
+    fireEvent.change(field, { target: { value: '12/10/2026' } });
+    clickMove('Confirmar publicação');
+
+    const message = await within(dialog()).findByText('Informe o dia real da publicação, que não pode ser futuro.');
+    expect(field.getAttribute('aria-invalid')).toBe('true');
+    expect(field.getAttribute('aria-describedby')!.split(' ')).toContain(message.id);
+  });
+
+  it('sends an earlier day picked on the calendar, as YYYY-MM-DD', async () => {
+    const { calls } = await openContent(stored({ status: 'approved' }), { permissions: PUBLISHER });
+    await settled(calls);
+    clickMove('Marcar como publicado');
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Abrir calendário' }));
+    fireEvent.click(document.querySelector<HTMLButtonElement>('.ui-date-picker__panel button[data-day="2026-10-08"]')!);
+    expect((within(dialog()).getByLabelText('Dia real da publicação') as HTMLInputElement).value).toBe('08/10/2026');
+    clickMove('Confirmar publicação');
+    await waitFor(() => expect(moves(calls)).toHaveLength(1));
+    expect(moves(calls)[0]!.body).toEqual({ publishedOn: '2026-10-08' });
+  });
+
   it('sends an earlier day as it was chosen', async () => {
     const { calls } = await openContent(stored({ status: 'approved' }), { permissions: PUBLISHER });
     await settled(calls);
     clickMove('Marcar como publicado');
-    fireEvent.change(within(dialog()).getByLabelText('Dia real da publicação'), { target: { value: '2026-10-09' } });
+    fireEvent.change(within(dialog()).getByLabelText('Dia real da publicação'), { target: { value: '09/10/2026' } });
     clickMove('Confirmar publicação');
     await waitFor(() => expect(moves(calls)).toHaveLength(1));
     expect(moves(calls)[0]!.body).toEqual({ publishedOn: '2026-10-09' });
@@ -507,14 +551,22 @@ describe('Cancelar conteúdo e Reagendar', () => {
     await settled(calls);
     clickMove('Reagendar');
     const day = within(dialog()).getByLabelText('Novo dia da publicação') as HTMLInputElement;
-    expect(day.value).toBe('2026-10-20');
-    fireEvent.change(day, { target: { value: '2026-10-28' } });
+    expect(day.value).toBe('20/10/2026');
+    fireEvent.change(day, { target: { value: '28/10/2026' } });
     clickMove('Confirmar novo dia');
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(moves(calls)).toEqual([{ method: 'POST', path: `${contentPath(row.id)}/reschedule`, body: { publishOn: '2026-10-28' } }]);
     expect(status(contents, row.id)).toBe('in_production');
     expect(contents.find((content) => content.id === row.id)!.publishOn).toBe('2026-10-28');
+  });
+
+  it('shows the day the content had, whichever it is', async () => {
+    const { calls } = await openContent(stored({ status: 'cancelled', publishOn: '2026-10-27' }), { permissions: only(OPERATE) });
+    await settled(calls);
+    clickMove('Reagendar');
+
+    expect((within(dialog()).getByLabelText('Novo dia da publicação') as HTMLInputElement).value).toBe('27/10/2026');
   });
 
   it('sends nothing without a day to reschedule, and says why', async () => {

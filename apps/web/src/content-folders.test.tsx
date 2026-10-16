@@ -37,29 +37,36 @@ const IMAGES = idOf('f', 2);
 const WORK = idOf('f', 6);
 /** What the area needs to open (Conteúdos and the client's record), and nothing to write. */
 const READ_ONLY = ['conteudo.visualizar', 'cliente.visualizar'];
-const calendarUrl = `/agencia/11111111-1111-4111-8111-111111111111/conteudos/${padaria.id}`;
+const AGENCY = '11111111-1111-4111-8111-111111111111';
+const calendarUrl = `/agencia/${AGENCY}/conteudos/${padaria.id}`;
+const contentsTabUrl = `/agencia/${AGENCY}/clientes/${padaria.id}/conteudos`;
+const mediaUrl = `/agencia/${AGENCY}/clientes/${padaria.id}/midias`;
 
 const open = (world: World, entry?: Parameters<typeof renderFolders>[1]) => renderFolders(makeFetch(world), entry);
 const heading = (name: string) => screen.findByRole('heading', { name, level: 3 });
 const mediaCalls = (world: World): string[] => world.calls.filter((call) => /\/assets(\?|$)/.test(call));
 
-describe('the Pastas view: navigation and the address', () => {
-  it('opens from the tab, lists the default and own folders of the first level and none of the calendar', async () => {
+describe('the Mídias tab: navigation and the address', () => {
+  it('opens from the tab after Conteúdos, lists the default and own folders of the first level and none of the calendar', async () => {
     const world = makeWorld();
-    const { probe } = open(world, calendarUrl);
+    const { probe } = open(world, contentsTabUrl);
 
-    fireEvent.click(await screen.findByRole('tab', { name: 'Pastas' }));
+    const tabs = within(await screen.findByRole('navigation', { name: 'Seções do cliente' }));
+    expect(tabs.getAllByRole('link').map((link) => link.textContent).slice(0, 3)).toEqual(['Geral', 'Conteúdos', 'Mídias']);
+    fireEvent.click(tabs.getByRole('link', { name: 'Mídias' }));
     await heading('Pastas');
 
-    expect(probe.search).toBe('?vista=pastas');
-    expect(screen.getByRole('tab', { name: 'Pastas' }).getAttribute('aria-selected')).toBe('true');
-    expect(screen.getByRole('tab', { name: 'Calendário' }).getAttribute('aria-selected')).toBe('false');
+    expect(probe.pathname).toBe(mediaUrl);
+    expect(probe.search).toBe('');
+    expect(tabs.getByRole('link', { name: 'Mídias' }).getAttribute('aria-current')).toBe('page');
+    expect(tabs.getByRole('link', { name: 'Conteúdos' }).getAttribute('aria-current')).toBeNull();
     for (const name of ['Vídeos Padrão', 'Imagens Padrão', 'Carrosséis Padrão', 'Ensaio fotográfico Padrão', 'Campanha de Natal']) {
       expect(screen.getByRole('link', { name })).toBeTruthy();
     }
     expect(screen.queryByRole('link', { name: 'Gravação de outubro' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Hoje' })).toBeNull();
     expect(screen.queryByRole('group', { name: 'Escala do calendário' })).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Escala do calendário' })).toBeNull();
   });
 
   it('opens a first-level folder: it is in the address, with its work folders and media', async () => {
@@ -69,8 +76,9 @@ describe('the Pastas view: navigation and the address', () => {
     fireEvent.click(await screen.findByRole('link', { name: 'Vídeos Padrão' }));
     await heading('Vídeos');
 
+    expect(probe.pathname).toBe(mediaUrl);
     expect(new URLSearchParams(probe.search).get('pasta')).toBe(VIDEOS);
-    expect(new URLSearchParams(probe.search).get('vista')).toBe('pastas');
+    expect(new URLSearchParams(probe.search).has('vista')).toBe(false);
     expect(screen.getByRole('heading', { name: 'Pastas de trabalho', level: 4 })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Gravação de outubro' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Nova pasta de trabalho' })).toBeTruthy();
@@ -104,7 +112,8 @@ describe('the Pastas view: navigation and the address', () => {
 
     fireEvent.click(screen.getByRole('link', { name: 'Pastas' }));
     await screen.findByRole('link', { name: 'Imagens Padrão' });
-    expect(probe.search).toBe('?vista=pastas');
+    expect(probe.pathname).toBe(mediaUrl);
+    expect(probe.search).toBe('');
   });
 
   it('lands on the same folder after a reload, with no click', async () => {
@@ -131,12 +140,13 @@ describe('the Pastas view: navigation and the address', () => {
     expect(mediaCalls(world)).toEqual([]);
     fireEvent.click(screen.getByRole('link', { name: 'Voltar às pastas' }));
     await screen.findByRole('link', { name: 'Imagens Padrão' });
-    expect(probe.search).toBe('?vista=pastas');
+    expect(probe.pathname).toBe(mediaUrl);
+    expect(probe.search).toBe('');
   });
 
   it('carries the navigation state of the roster on every link of the view', async () => {
     const state = { clientListUrl: '/agencia/x/clientes?page=2' };
-    const { probe } = open(makeWorld(), { pathname: `/agencia/11111111-1111-4111-8111-111111111111/conteudos/${padaria.id}`, search: '?vista=pastas', state });
+    const { probe } = open(makeWorld(), { pathname: mediaUrl, search: '', state });
 
     fireEvent.click(await screen.findByRole('link', { name: 'Vídeos Padrão' }));
     await heading('Vídeos');
@@ -154,60 +164,119 @@ describe('the Pastas view: navigation and the address', () => {
 
   it('carries the navigation state through "Voltar às pastas" as well', async () => {
     const state = { clientListUrl: '/agencia/x/clientes?page=2' };
-    const { probe } = open(makeWorld(), { pathname: calendarUrl, search: `?vista=pastas&pasta=${idOf('9', 1)}`, state });
+    const { probe } = open(makeWorld(), { pathname: mediaUrl, search: `?pasta=${idOf('9', 1)}`, state });
 
     fireEvent.click(await screen.findByRole('link', { name: 'Voltar às pastas' }));
     await screen.findByRole('link', { name: 'Imagens Padrão' });
     expect(probe.state).toEqual(state);
   });
 
-  it('leaves the folder out of the address when the person goes back to the calendar', async () => {
+  it('leaves the folder out of the address when the person goes to the Conteúdos tab', async () => {
     const { probe } = open(makeWorld(), foldersUrl(`&pasta=${VIDEOS}&subpasta=${WORK}&pagina=2`));
     await heading('Gravação de outubro');
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Calendário' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Seções do cliente' })).getByRole('link', { name: 'Conteúdos' }));
     await screen.findByRole('group', { name: 'Período' });
+    expect(probe.pathname).toBe(contentsTabUrl);
     expect(probe.search).toBe('');
   });
-});
 
-describe('the Pastas view inside the Conteúdos tab of the client (#272)', () => {
-  const tabUrl = `/agencia/11111111-1111-4111-8111-111111111111/clientes/${padaria.id}/conteudos`;
-
-  it('lists the folders of that client on the address of the tab, and keeps the folder in the address of the tab', async () => {
+  it('lists the folders of that client on the address of the tab, with no strip of clients around it', async () => {
     const world = makeWorld({ assets: [assetFixture(1, VIDEOS)] });
-    const { probe } = open(world, `${tabUrl}?vista=pastas`);
+    open(world, mediaUrl);
 
     await heading('Pastas');
     expect(screen.getByRole('link', { name: 'Vídeos Padrão' })).toBeTruthy();
     expect(screen.queryByRole('navigation', { name: 'Clientes' })).toBeNull();
     expect(world.calls.some((call) => /\/media-folders(\?|$)/.test(call) && call.includes(`/clients/${padaria.id}/`))).toBe(true);
-
-    fireEvent.click(screen.getByRole('link', { name: 'Vídeos Padrão' }));
-    await heading('Vídeos');
-    expect(probe.pathname).toBe(tabUrl);
-    expect(new URLSearchParams(probe.search).get('pasta')).toBe(VIDEOS);
-    expect(new URLSearchParams(probe.search).get('vista')).toBe('pastas');
   });
 });
 
-describe('the Pastas view: the calendar behind it', () => {
-  it('does not show a calendar error over the folders when the person comes back to them', async () => {
-    const world = makeWorld({
-      override: (_method, path) => (/\/contents$/.test(path) ? apiError(400, 'VALIDATION_ERROR', 'Request validation failed') : undefined)
-    });
-    const { probe } = open(world, foldersUrl(`&pasta=${VIDEOS}`));
-    await heading('Vídeos');
+describe('the old Pastas address of the Conteúdos page', () => {
+  const state = { clientListUrl: '/agencia/x/clientes?page=2' };
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Calendário' }));
-    expect(await screen.findByText('Não foi possível carregar os conteúdos. Tente de novo.')).toBeTruthy();
-    act(() => { probe.navigate(foldersUrl(`&pasta=${VIDEOS}`)); });
+  it.each([
+    ['the screen of Conteúdos', calendarUrl],
+    ['the Conteúdos tab of the client', contentsTabUrl]
+  ])('goes from %s to the Mídias tab with the folder it had open, and the state of the roster', async (_home, pathname) => {
+    const world = makeWorld();
+    const { probe } = open(world, { pathname, search: `?vista=pastas&pasta=${VIDEOS}&subpasta=${WORK}&pagina=2&data=2026-11-01&visao=semana`, state });
 
-    await heading('Vídeos');
-    expect(screen.queryByText('Não foi possível carregar os conteúdos. Tente de novo.')).toBeNull();
-    expect(screen.queryByText('Página não encontrada')).toBeNull();
+    await heading('Gravação de outubro');
+
+    expect(probe.pathname).toBe(mediaUrl);
+    expect(probe.search).toBe(`?pasta=${VIDEOS}&subpasta=${WORK}&pagina=2`);
+    expect(probe.state).toEqual(state);
+    // The calendar is never asked for on the way: the redirect happens before it.
+    expect(world.calls.filter((call) => /\/contents\?/.test(call))).toEqual([]);
   });
 
+  it('goes to the root of the folders when the old address had no folder open', async () => {
+    const { probe } = open(makeWorld(), `${calendarUrl}?vista=pastas`);
+
+    await heading('Pastas');
+    expect(probe.pathname).toBe(mediaUrl);
+    expect(probe.search).toBe('');
+  });
+
+  it('replaces the old address, so the back button goes to the page before it and not through it', async () => {
+    const { probe } = open(makeWorld(), calendarUrl);
+    await screen.findByRole('group', { name: 'Período' });
+
+    act(() => { probe.navigate(`${calendarUrl}?vista=pastas`); });
+    await heading('Pastas');
+    act(() => { probe.navigate(-1); });
+
+    await screen.findByRole('group', { name: 'Período' });
+    expect(probe.pathname).toBe(calendarUrl);
+  });
+
+  it('leaves a client that is not an id to the not-found of the screen, with nowhere to redirect', async () => {
+    const { probe } = open(makeWorld(), `/agencia/${AGENCY}/conteudos/nao-e-um-id?vista=pastas`);
+
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
+    expect(probe.pathname).toBe(`/agencia/${AGENCY}/conteudos/nao-e-um-id`);
+  });
+
+  it('opens the calendar for the old feed address, which has no view of its own any more', async () => {
+    open(makeWorld(), `${calendarUrl}?vista=feed`);
+
+    await screen.findByRole('group', { name: 'Período' });
+    expect(screen.queryByRole('tab', { name: 'Feed' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Pastas' })).toBeNull();
+    expect(screen.queryByRole('radio', { name: 'Pastas' })).toBeNull();
+  });
+});
+
+describe('the Mídias tab: who sees it', () => {
+  it('does not exist for whoever cannot see Conteúdo: no tab, and the address is the ordinary not-found, with no folder read', async () => {
+    const world = makeWorld({ permissions: ['cliente.visualizar'] });
+    open(world, mediaUrl);
+
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
+    expect(world.calls.filter((call) => /\/media-folders/.test(call))).toEqual([]);
+    expect(screen.queryByRole('link', { name: 'Mídias' })).toBeNull();
+  });
+
+  it('hides the tab, and keeps Geral, from whoever cannot see Conteúdo', async () => {
+    open(makeWorld({ permissions: ['cliente.visualizar'] }), `/agencia/${AGENCY}/clientes/${padaria.id}/geral`);
+
+    const tabs = within(await screen.findByRole('navigation', { name: 'Seções do cliente' }));
+    expect(tabs.getByRole('link', { name: 'Geral' })).toBeTruthy();
+    expect(tabs.queryByRole('link', { name: 'Conteúdos' })).toBeNull();
+    expect(tabs.queryByRole('link', { name: 'Mídias' })).toBeNull();
+  });
+
+  it('shows the tab to whoever can only read, with the folders and no write', async () => {
+    open(makeWorld({ permissions: READ_ONLY }), `/agencia/${AGENCY}/clientes/${padaria.id}/geral`);
+
+    fireEvent.click(within(await screen.findByRole('navigation', { name: 'Seções do cliente' })).getByRole('link', { name: 'Mídias' }));
+    expect(await screen.findByRole('link', { name: 'Vídeos Padrão' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /nova pasta/i })).toBeNull();
+  });
+});
+
+describe('the Mídias tab: the calendar is not part of it', () => {
   it('does not ask the calendar at all when it opens on the folders', async () => {
     const world = makeWorld();
     open(world, foldersUrl());
@@ -223,16 +292,11 @@ describe('the Pastas view: the calendar behind it', () => {
     expect(screen.queryByText('Cliente arquivado: o calendário é só leitura.')).toBeNull();
   });
 
-  it('does not turn the not-found of the calendar into the not-found of the folders', async () => {
+  it('keeps the folders when the calendar of the same client answers with an error', async () => {
     const world = makeWorld({
       override: (_method, path) => (/\/contents$/.test(path) ? apiError(404, 'NOT_FOUND', 'Client not found.') : undefined)
     });
-    const { probe } = open(world, foldersUrl(`&pasta=${VIDEOS}`));
-    await heading('Vídeos');
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Calendário' }));
-    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
-    act(() => { probe.navigate(foldersUrl(`&pasta=${VIDEOS}`)); });
+    open(world, foldersUrl(`&pasta=${VIDEOS}`));
 
     await heading('Vídeos');
     expect(screen.queryByRole('heading', { name: 'Página não encontrada' })).toBeNull();
@@ -358,15 +422,16 @@ describe('the Pastas view: who writes', () => {
     expect(await screen.findByRole('button', { name: /^Remover Imagem/ })).toBeTruthy();
   });
 
-  it('offers no write on an archived client, and none while the client is still unknown', async () => {
+  it('offers no write on an archived client, and shows no folder while the client is still unknown', async () => {
     const held = deferred<void>();
     const world = makeWorld({ clientStatus: 'archived', clientGate: held.promise, assets: [assetFixture(1, VIDEOS)] });
     open(world, foldersUrl(`&pasta=${VIDEOS}`));
 
-    expect(await screen.findByRole('list', { name: 'Mídias da pasta' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /^Remover/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /nova pasta/i })).toBeNull();
+    await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).not.toBeNull());
+    expect(screen.queryByRole('list', { name: 'Mídias da pasta' })).toBeNull();
+    expect(world.calls.filter((call) => /\/media-folders/.test(call))).toEqual([]);
     held.resolve();
+    expect(await screen.findByRole('list', { name: 'Mídias da pasta' })).toBeTruthy();
     await screen.findByRole('heading', { name: 'Padaria Central' });
     expect(screen.queryByRole('button', { name: /^Remover/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /nova pasta/i })).toBeNull();
@@ -805,15 +870,15 @@ describe('the media of a folder', () => {
 });
 
 describe('the calendar is not asked while the folders are open', () => {
-  it('asks the contents of the period only on the calendar and the feed', async () => {
+  it('asks the contents of the period only on the calendar, and not again on the Mídias tab', async () => {
     const world = makeWorld({
       override: (_method, path) => (/\/contents$/.test(path) ? json({ data: { contents: [], storyScripts: [] }, meta: { from: '2026-10-01', to: '2026-10-31', count: 0 } }) : undefined)
     });
-    open(world, calendarUrl);
+    open(world, contentsTabUrl);
     await screen.findByRole('group', { name: 'Período' });
     expect(world.calls.filter((call) => /\/contents\?/.test(call))).toHaveLength(1);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Pastas' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Seções do cliente' })).getByRole('link', { name: 'Mídias' }));
     await heading('Pastas');
     expect(world.calls.filter((call) => /\/contents\?/.test(call))).toHaveLength(1);
   });
