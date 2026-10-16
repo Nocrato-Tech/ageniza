@@ -9,7 +9,7 @@
     "!dist/**/test-support/**"
   ],
   "scripts": {
-    "dev": "tsx --env-file=../../.env --env-file=../../.local/storage.env watch src/index.ts",
+    "dev": "tsx watch --env-file=../../.env --env-file=../../.local/storage.env src/index.ts",
     "cli:agency": "node dist/cli/agency.js",
     "cli:email-change": "node dist/cli/email-change.js",
     "api:docs": "tsx src/cli/api-docs.ts",
