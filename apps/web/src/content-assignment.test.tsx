@@ -101,6 +101,40 @@ const MISSING_ONE = 'Falta aprovar 1 subtarefa.';
 const submitButton = (row: Stored): HTMLButtonElement => within(dialogOf(row)).getByRole('button', { name: SUBMIT }) as HTMLButtonElement;
 const goTo = (row: Stored, tab: 'Geral' | 'Atribuição'): void => { fireEvent.click(within(dialogOf(row)).getByRole('tab', { name: tab })); };
 
+describe('the due day of a new subtask is a day field with a calendar (#703)', () => {
+  const openForm = async () => {
+    const row = complete();
+    const { scenario } = assignmentWorld({ permissions: OPERATOR, self: ANA.membershipId, tasks: [] });
+    await openContent(row, scenario([row]));
+    await waitFor(() => expect((within(dialogOf(row)).getByRole('tab', { name: 'Atribuição' }) as HTMLButtonElement).disabled).toBe(false));
+    goTo(row, 'Atribuição');
+    click(row, 'Nova subtarefa');
+    await waitFor(() => expect((within(dialogOf(row)).getByLabelText('Responsável pela subtarefa') as HTMLSelectElement).options.length).toBeGreaterThan(1));
+    return row;
+  };
+  const dueField = (row: Stored): HTMLInputElement => within(dialogOf(row)).getByLabelText('Prazo da subtarefa') as HTMLInputElement;
+
+  it('shows the day as it was typed, as dd/mm/aaaa', async () => {
+    const row = await openForm();
+
+    fireEvent.change(dueField(row), { target: { value: '23102026' } });
+
+    expect(dueField(row).value).toBe('23/10/2026');
+    expect(dueField(row).type).toBe('text');
+  });
+
+  it('takes the day picked on the calendar, and opens it on today when nothing was typed', async () => {
+    const row = await openForm();
+
+    fireEvent.click(within(dialogOf(row)).getByRole('button', { name: 'Abrir calendário' }));
+    const calendar = document.querySelector<HTMLElement>('.ui-date-picker__panel')!;
+    expect((document.activeElement as HTMLElement).dataset.day).toBe('2026-10-11');
+    fireEvent.click(calendar.querySelector<HTMLButtonElement>('button[data-day="2026-10-24"]')!);
+
+    expect(dueField(row).value).toBe('24/10/2026');
+  });
+});
+
 describe('the Geral tab follows what the Atribuição tab wrote', () => {
   const open = async (options: AssignmentOptions) => {
     const row = complete();
@@ -554,7 +588,7 @@ describe('a new subtask', () => {
     expect(await within(dialogOf(row)).findByText('Outra alteração aconteceu ao mesmo tempo. Tente de novo.')).toBeTruthy();
     expect((within(dialogOf(row)).getByLabelText('Título da subtarefa') as HTMLInputElement).value).toBe('Gravar');
     expect((within(dialogOf(row)).getByLabelText('Responsável pela subtarefa') as HTMLSelectElement).value).toBe(BRUNO.membershipId);
-    expect((within(dialogOf(row)).getByLabelText('Prazo da subtarefa') as HTMLInputElement).value).toBe('2026-10-18');
+    expect((within(dialogOf(row)).getByLabelText('Prazo da subtarefa') as HTMLInputElement).value).toBe('18/10/2026');
     expect((within(dialogOf(row)).getByLabelText('Descrição da subtarefa (opcional)') as HTMLTextAreaElement).value).toBe('Em 4K');
     await settled();
     expect(screen.queryByRole('dialog')).not.toBeNull();
@@ -664,7 +698,7 @@ describe('editing a subtask that exists', () => {
     expect(titleBox(row, 'Segunda').value).toBe('Segunda');
     expect(personBox(row, 'Segunda').value).toBe(BRUNO.membershipId);
     expect(Array.from(personBox(row, 'Segunda').options).map((option) => option.textContent)).toEqual(['Escolha uma pessoa', 'Ana Souza', 'Bruno Lima', 'Carla Dias']);
-    expect(dueBox(row, 'Segunda').value).toBe('2026-10-22');
+    expect(dueBox(row, 'Segunda').value).toBe('22/10/2026');
     expect(save(row, 'Segunda').disabled).toBe(true);
     fireEvent.change(titleBox(row, 'Segunda'), { target: { value: 'Segunda parte' } });
     expect(save(row, 'Segunda').disabled).toBe(false);
@@ -689,7 +723,7 @@ describe('editing a subtask that exists', () => {
     const { calls, world } = await openEdit(row, 'Segunda', { tasks });
     fireEvent.change(titleBox(row, 'Segunda'), { target: { value: '  Segunda parte  ' } });
     fireEvent.change(personBox(row, 'Segunda'), { target: { value: CARLA.membershipId } });
-    fireEvent.change(dueBox(row, 'Segunda'), { target: { value: '2026-10-25' } });
+    fireEvent.change(dueBox(row, 'Segunda'), { target: { value: '25/10/2026' } });
     fireEvent.click(save(row, 'Segunda'));
 
     await waitFor(() => expect(taskItem(row, 'Segunda parte').textContent).toContain('Responsável: Carla Dias · Prazo: 25/10/2026 · Entregue'));
@@ -734,18 +768,33 @@ describe('editing a subtask that exists', () => {
     expect(writes(calls)).toEqual([]);
   });
 
+  it('freezes the due day while the edit is on its way', async () => {
+    const row = complete();
+    const { world } = await openEdit(row, 'Primeira');
+    let release!: () => void;
+    world.hold = { match: /\/tasks\/[^/]+$/, promise: new Promise<void>((resolve) => { release = resolve; }) };
+    fireEvent.change(titleBox(row, 'Primeira'), { target: { value: 'Primeira revisada' } });
+    expect(dueBox(row, 'Primeira').disabled).toBe(false);
+
+    fireEvent.click(save(row, 'Primeira'));
+
+    await waitFor(() => expect(dueBox(row, 'Primeira').disabled).toBe(true));
+    release();
+    await waitFor(() => expect(taskItem(row, 'Primeira revisada')).toBeTruthy());
+  });
+
   it('keeps what was typed and the modal when the API refuses, in its own words, and saves on the next try', async () => {
     const row = complete();
     const { calls, world } = await openEdit(row, 'Primeira');
     world.failNext = { match: /\/tasks\/[^/]+$/, response: () => failure(409, 'TRY_AGAIN') };
     fireEvent.change(titleBox(row, 'Primeira'), { target: { value: 'Primeira revisada' } });
     fireEvent.change(personBox(row, 'Primeira'), { target: { value: BRUNO.membershipId } });
-    fireEvent.change(dueBox(row, 'Primeira'), { target: { value: '2026-10-28' } });
+    fireEvent.change(dueBox(row, 'Primeira'), { target: { value: '28/10/2026' } });
     fireEvent.click(save(row, 'Primeira'));
     expect(await within(dialogOf(row)).findByText('Outra alteração aconteceu ao mesmo tempo. Tente de novo.')).toBeTruthy();
     expect(titleBox(row, 'Primeira').value).toBe('Primeira revisada');
     expect(personBox(row, 'Primeira').value).toBe(BRUNO.membershipId);
-    expect(dueBox(row, 'Primeira').value).toBe('2026-10-28');
+    expect(dueBox(row, 'Primeira').value).toBe('28/10/2026');
     await settled();
     expect(screen.queryByRole('dialog')).not.toBeNull();
 
