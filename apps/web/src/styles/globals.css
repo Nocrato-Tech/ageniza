@@ -5563,8 +5563,8 @@ html:has(.portal-post__bar) {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-4);
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-6) var(--space-4);
 }
 
 .contents__period {
@@ -5642,7 +5642,7 @@ html:has(.portal-post__bar) {
 }
 
 .content-calendar__weekdays li {
-  padding: var(--space-2);
+  padding: var(--space-3) var(--space-4);
 }
 
 /* `minmax(0, 1fr)` lets a card shrink to the day: tags that do not fit wrap inside it instead of widening the column. */
@@ -5651,10 +5651,10 @@ html:has(.portal-post__bar) {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-content: start;
-  gap: var(--space-2);
+  gap: var(--space-3);
   min-width: 0;
-  min-height: 8.25rem;
-  padding: var(--space-2) var(--space-1);
+  min-height: 10rem;
+  padding: var(--space-3) var(--space-2);
   border-top: 1px solid var(--border-subtle);
   border-right: 1px solid var(--border-subtle);
   background: transparent;
@@ -5665,7 +5665,7 @@ html:has(.portal-post__bar) {
 }
 
 .content-calendar[data-view='week'] .content-day {
-  min-height: 16rem;
+  min-height: 18rem;
 }
 
 .content-day--outside {
@@ -5679,7 +5679,7 @@ html:has(.portal-post__bar) {
 
 .content-day__number {
   margin: 0;
-  padding: 0 var(--space-1);
+  padding: 0 var(--space-2);
   font: var(--label-md);
   font-variant-numeric: tabular-nums;
 }
@@ -5714,7 +5714,7 @@ html:has(.portal-post__bar) {
 .content-day__items {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-2);
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -5724,7 +5724,7 @@ html:has(.portal-post__bar) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
 }
 
 /* The "+" is one small control in the corner of the day: seen on hover or focus, always where there is no hover. */
@@ -5734,10 +5734,10 @@ html:has(.portal-post__bar) {
 
 .content-day__tools .ui-menu__trigger {
   position: absolute;
-  top: var(--space-1);
-  right: var(--space-1);
-  min-width: 1.5rem;
-  min-height: 1.5rem;
+  top: var(--space-2);
+  right: var(--space-2);
+  min-width: 2rem;
+  min-height: 2rem;
   padding: 0;
   border: 0;
   background: transparent;
@@ -5765,7 +5765,7 @@ html:has(.portal-post__bar) {
 }
 
 .content-day__tools .ui-menu__content {
-  top: 2rem;
+  top: 2.5rem;
   right: auto;
   left: var(--space-2);
   min-width: 11rem;
@@ -5777,27 +5777,30 @@ html:has(.portal-post__bar) {
   left: auto;
 }
 
+/* The story script of a day is a row of its own, the width of the day and 44px tall: a capsule of 20px was a target nobody could press. */
 .content-day__scripts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
+  display: grid;
+  flex: 1 1 100%;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .content-day__script {
-  display: inline-flex;
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1);
-  max-width: 100%;
-  padding: 0 var(--space-2);
+  gap: var(--space-1) var(--space-2);
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   background: var(--bg-canvas);
   color: var(--text-secondary);
-  font: var(--caption);
+  font: var(--label-sm);
   text-align: left;
   cursor: pointer;
 }
@@ -5967,7 +5970,7 @@ html:has(.portal-post__bar) {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
-  padding: var(--space-2);
+  padding: var(--space-3) var(--space-2);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
