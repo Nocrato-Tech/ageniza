@@ -18,7 +18,9 @@ describe('authentication contracts', () => {
       email: 'person@example.test',
       password: '1234567890'
     });
-    expect(() => AuthLoginRequestSchema.parse({ email: 'person@example.test', password: 'short' })).toThrow();
+    // Signing in presents a password, it does not create one: a short wrong password is a 401 for the server to give.
+    expect(AuthLoginRequestSchema.parse({ email: 'person@example.test', password: 'short' }).password).toBe('short');
+    expect(() => AuthLoginRequestSchema.parse({ email: 'person@example.test', password: '' })).toThrow();
     expect(() => AuthLoginRequestSchema.parse({ email: 'person@example.test', password: 'x'.repeat(129) })).toThrow();
   });
 

@@ -105,6 +105,8 @@ describe('invitation contracts', () => {
     expect(() => InvitationAcceptNewAccountRequestSchema.parse(named('a'.repeat(121)))).toThrow();
     expect(() => InvitationAcceptNewAccountRequestSchema.parse(named('a'.repeat(256)))).toThrow();
     expect(() => InvitationAcceptNewAccountRequestSchema.parse({ name: 'Person', password: '1234567890', acceptTerms: false })).toThrow();
+    // Creating the password keeps the 10-character rule that sign-in no longer has.
+    expect(() => InvitationAcceptNewAccountRequestSchema.parse({ name: 'Person', password: '123456789', acceptTerms: true })).toThrow();
     expect(() => InvitationAcceptNewAccountRequestSchema.parse({ name: 'Person', email: 'other@example.test', password: '1234567890', acceptTerms: true })).toThrow();
     expect(InvitationAcceptNewAccountResponseSchema.parse({ status: 'accepted', context })).toEqual({ status: 'accepted', context });
     expect(InvitationAcceptRequestSchema.parse(undefined)).toBeUndefined();

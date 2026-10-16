@@ -134,6 +134,21 @@ describe('auth rate limiting (#12)', () => {
     expect(fourth.body).toBe(third.body);
   });
 
+  it('#700 a login with a password shorter than 10 characters counts toward the same IP+email limit', async () => {
+    const app = await openApp();
+    const email = uniqueTestEmail('rl-login-short');
+    const ip = '203.0.113.60';
+    const short = (): ReturnType<typeof login> => app.app.inject({
+      method: 'POST', url: '/auth/login', headers: origin, payload: { email, password: 'curta' }, remoteAddress: ip
+    });
+
+    expect((await short()).statusCode).toBe(401);
+    expect((await short()).statusCode).toBe(401);
+    const blocked = await short();
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.json()).toMatchObject(rateLimitedBody);
+  });
+
   it('#12 (M5) the login route mirrors the forgot route: different emails not blocked until per-IP', async () => {
     const app = await openApp();
     const ip = '203.0.113.32';
