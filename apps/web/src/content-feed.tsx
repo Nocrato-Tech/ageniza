@@ -83,20 +83,24 @@ const countOf = (items: readonly ContentListItem[], status: ContentStatus): numb
  * posts nine to a page, newest first. A tile is the cover, or the shape of the format when there is none, with the state
  * of the post and a mark on what is still planned; what it says in words is for who does not see the picture. A page
  * that is not full ends in empty slots. `profile` adds the avatar and the counters above the grid. Every text from the
- * server is a React text child. The page belongs to the period: the caller gives a new `key` when the period or the
- * client changes, so the next one starts on its first page.
+ * server is a React text child. The page belongs to the `scope` it was chosen in (the client and the period on
+ * screen): another scope starts on its first page, without remounting the tiles, which would read their covers again.
  */
-export function ContentFeed({ contents, today, handle, profile }: {
+export function ContentFeed({ contents, today, handle, profile, scope }: {
   contents: readonly ContentListItem[];
   today: string;
   handle: string | null;
   profile?: ContentFeedProfile;
+  scope: string;
 }) {
-  const [requested, setPage] = useState(1);
+  const [chosen, choose] = useState({ scope, page: 1 });
+  // Another scope forgets the page at once, so coming back to a period never finds the page it was left on.
+  if (chosen.scope !== scope) choose({ scope, page: 1 });
+  const setPage = (next: number): void => choose({ scope, page: next });
   const items = feedItems(contents);
   const ready = countOf(items, 'approved');
   const pages = Math.max(1, Math.ceil(items.length / FEED_PAGE_SIZE));
-  const page = Math.min(requested, pages);
+  const page = Math.min(chosen.page, pages);
   const first = (page - 1) * FEED_PAGE_SIZE;
   const shown = items.slice(first, first + FEED_PAGE_SIZE);
   const atStart = page === 1;
@@ -135,7 +139,7 @@ export function ContentFeed({ contents, today, handle, profile }: {
           <nav className="content-feed__pager" aria-label="Páginas do feed">
             {/* `aria-disabled`, not `disabled`: the button that was just pressed keeps the keyboard focus when it reaches an end. */}
             <IconButton label="Página anterior" icon={<ChevronLeft />} aria-disabled={atStart || undefined} onClick={() => { if (!atStart) setPage(page - 1); }} />
-            <p className="content-feed__range" role="status">{shown.length === 1 ? first + 1 : `${first + 1}–${first + shown.length}`} de {items.length}</p>
+            <p className="content-feed__range" aria-live="polite">{shown.length === 1 ? first + 1 : `${first + 1}–${first + shown.length}`} de {items.length}</p>
             <IconButton label="Próxima página" icon={<ChevronRight />} aria-disabled={atEnd || undefined} onClick={() => { if (!atEnd) setPage(page + 1); }} />
           </nav>
         </>}

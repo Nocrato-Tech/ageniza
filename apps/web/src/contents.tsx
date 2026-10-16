@@ -332,7 +332,7 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
         {loaded === undefined
           ? <ContentFeedSkeleton />
           : <ContentFeed
-            key={`${normalizedId}|${period.from}|${period.to}`}
+            scope={`${normalizedId}|${period.from}|${period.to}`}
             contents={loaded.data.contents}
             today={today}
             handle={clientData?.instagramHandle ?? null}

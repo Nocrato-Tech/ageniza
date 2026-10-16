@@ -544,7 +544,7 @@ describe('the profile preview (state of each post and counters)', () => {
 
 describe('the feed drawn as a phone, nine posts to a page', () => {
   const posts = (count: number) => Array.from({ length: count }, (_value, index) => contentFixture({ title: `Post ${index + 1}`, publishOn: `2026-10-${String(index + 1).padStart(2, '0')}` }));
-  const pageOf = (): string => within(feedRegion()).getByRole('status').textContent ?? '';
+  const pageOf = (): string => feedRegion().querySelector('.content-feed__range')?.textContent ?? '';
   const slots = (): number => feedRegion().querySelectorAll('.content-feed__slot').length;
   const pagerButton = (name: 'Página anterior' | 'Próxima página'): HTMLButtonElement => within(feedRegion()).getByRole('button', { name }) as HTMLButtonElement;
 
@@ -608,7 +608,7 @@ describe('the feed drawn as a phone, nine posts to a page', () => {
 
     expect(slots()).toBe(9);
     expect(within(feedRegion()).queryByRole('button', { name: 'Próxima página' })).toBeNull();
-    expect(within(feedRegion()).queryByRole('status')).toBeNull();
+    expect(feedRegion().querySelector('.content-feed__range')).toBeNull();
   });
 
   it('draws the icon of "nothing on this day" in each slot and keeps it out of the reading order', async () => {
@@ -690,7 +690,7 @@ describe('the feed drawn as a phone, nine posts to a page', () => {
 
 describe('the page of the phone follows the posts that change under it', () => {
   const posts = (count: number) => Array.from({ length: count }, (_value, index) => contentFixture({ title: `Post ${index + 1}`, publishOn: `2026-10-${String(index + 1).padStart(2, '0')}` }));
-  const pageOf = (): string => within(feedRegion()).getByRole('status').textContent ?? '';
+  const pageOf = (): string => feedRegion().querySelector('.content-feed__range')?.textContent ?? '';
   const next = (): HTMLElement => within(feedRegion()).getByRole('button', { name: 'Próxima página' });
   const refetch = (queryClient: ReturnType<typeof createQueryClient>) => act(async () => { await queryClient.invalidateQueries({ queryKey: ['agency', AGENCY_A, 'contents', padaria.id] }); });
 
@@ -730,6 +730,10 @@ describe('the page of the phone follows the posts that change under it', () => {
     await ready();
 
     expect(within(feedRegion()).getByRole('navigation', { name: 'Páginas do feed' })).toBeTruthy();
+    // The range is read out when the page changes, without being a second "status" next to the one that says the page is updating.
+    const range = feedRegion().querySelector('.content-feed__range')!;
+    expect(range.getAttribute('aria-live')).toBe('polite');
+    expect(range.getAttribute('role')).toBeNull();
   });
 
   it('starts on the first page for a client whose posts are already cached, in the same month', async () => {
