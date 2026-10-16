@@ -1014,6 +1014,44 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
     expect(sessionRows.rowCount).toBe(0);
   });
 
+  it('B10 an unexpected failure part-way through a reset still revokes every session of the account, and tells the client nothing', async () => {
+    const sender = createFakeEmailSender();
+    const app = await openApp({ sender });
+    const user = await makeUser(app, 'reset-b10');
+    const bystander = await makeUser(app, 'reset-b10-bystander');
+    const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
+    const secondLogin = await app.app.inject({
+      method: 'POST', url: '/auth/login', headers: { ...origin, 'user-agent': 'device-b' }, payload: loginPayload(user)
+    });
+    const bystanderLogin = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(bystander) });
+    expect((await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id])).rowCount).toBe(2);
+    const token = await requestResetToken(app, sender, user.email);
+    const resetSpy = vi.spyOn(app.auth.api, 'resetPassword').mockRejectedValueOnce(new Error('simulated mid-way failure'));
+
+    try {
+      const reset = await app.app.inject({
+        method: 'POST', url: '/auth/password/reset', headers: origin,
+        payload: { token, newPassword: 'a password that may or may not be saved' }
+      });
+
+      expect(resetSpy).toHaveBeenCalledTimes(1);
+      expect(reset.statusCode).toBe(500);
+      expect(reset.json()).toMatchObject({ error: { code: 'INTERNAL_ERROR' } });
+      expect(reset.body).not.toContain('simulated mid-way failure');
+      expect(reset.headers['set-cookie']).toBeUndefined();
+    } finally {
+      resetSpy.mockRestore();
+    }
+
+    for (const cookies of [login.cookies, secondLogin.cookies]) {
+      const check = await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie: sessionCookieHeader(cookies) } });
+      expect(check.statusCode).toBe(401);
+    }
+    expect((await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id])).rowCount).toBe(0);
+    const bystanderCheck = await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie: sessionCookieHeader(bystanderLogin.cookies) } });
+    expect(bystanderCheck.statusCode).toBe(200);
+  });
+
   it('refuses an inviteToken in the body: the invitation continues through the login, and nothing changes', async () => {
     const sender = createFakeEmailSender();
     const app = await openApp({ sender });
