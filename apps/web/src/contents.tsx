@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -13,7 +13,7 @@ import {
   type ContentListItem,
   type UpdateContentRequest
 } from '@ageniza/contracts';
-import { Avatar, Button, ClientStrip, Skeleton } from '@ageniza/ui';
+import { Avatar, Button, ClientStrip, IconButton, Segmented, Skeleton } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -296,18 +296,16 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
           <div className="contents__panel-head">
             <div className="contents__period" role="group" aria-label="Período">
               <h2 className="contents__period-title" aria-live="polite">{periodTitle(view, anchor)}</h2>
-              <Button variant="secondary" aria-label={`${unitLabel === 'mês' ? 'Mês' : 'Semana'} anterior`} onClick={() => setPeriod(view, shiftAnchor(view, anchor, -1))}>
-                <span aria-hidden="true">‹</span>
-              </Button>
+              <IconButton variant="secondary" icon={<ChevronLeft />} label={`${unitLabel === 'mês' ? 'Mês' : 'Semana'} anterior`} onClick={() => setPeriod(view, shiftAnchor(view, anchor, -1))} />
               <Button variant="ghost" onClick={() => setPeriod(view, null)}>Hoje</Button>
-              <Button variant="secondary" aria-label={`Próxim${view === 'week' ? 'a semana' : 'o mês'}`} onClick={() => setPeriod(view, shiftAnchor(view, anchor, 1))}>
-                <span aria-hidden="true">›</span>
-              </Button>
+              <IconButton variant="secondary" icon={<ChevronRight />} label={`Próxim${view === 'week' ? 'a semana' : 'o mês'}`} onClick={() => setPeriod(view, shiftAnchor(view, anchor, 1))} />
             </div>
-            <div className="contents__toggle" role="group" aria-label="Escala do calendário">
-              <Button variant={view === 'month' ? 'secondary' : 'ghost'} aria-pressed={view === 'month'} onClick={() => setPeriod('month', searchParams.get('data'))}>Mês</Button>
-              <Button variant={view === 'week' ? 'secondary' : 'ghost'} aria-pressed={view === 'week'} onClick={() => setPeriod('week', searchParams.get('data'))}>Semana</Button>
-            </div>
+            <Segmented<CalendarView>
+              label="Escala do calendário"
+              value={view}
+              onChange={(next) => setPeriod(next, searchParams.get('data'))}
+              options={[{ value: 'month', label: 'Mês' }, { value: 'week', label: 'Semana' }]}
+            />
           </div>
           {loaded === undefined
             ? <div className="contents__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>

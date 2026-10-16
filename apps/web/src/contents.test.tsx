@@ -819,15 +819,15 @@ describe('the period controls and the URL', () => {
     const { impl, calls } = makeFetch();
     const { probe } = render_(impl, contentsUrl(padaria.id));
     await screen.findByRole('heading', { name: 'Outubro 2026' });
-    expect(screen.getByRole('button', { name: 'Mês' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('button', { name: 'Semana' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('radio', { name: 'Mês' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('radio', { name: 'Semana' }).getAttribute('aria-checked')).toBe('false');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Semana' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Semana' }));
     expect(await screen.findByRole('heading', { name: '5 a 11 de outubro de 2026' })).toBeTruthy();
     expect(probe.search).toBe('?visao=semana');
     await waitFor(() => expect(calls).toContain(periodCall(padaria.id, '2026-10-05', '2026-10-11')));
     expect(document.querySelectorAll('.content-day')).toHaveLength(7);
-    expect(screen.getByRole('button', { name: 'Semana' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('radio', { name: 'Semana' }).getAttribute('aria-checked')).toBe('true');
 
     fireEvent.click(screen.getByRole('button', { name: 'Próxima semana' }));
     expect(await screen.findByRole('heading', { name: '12 a 18 de outubro de 2026' })).toBeTruthy();
@@ -839,10 +839,47 @@ describe('the period controls and the URL', () => {
     expect(await screen.findByRole('heading', { name: '28 de setembro a 4 de outubro de 2026' })).toBeTruthy();
     await waitFor(() => expect(calls).toContain(periodCall(padaria.id, '2026-09-28', '2026-10-04')));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Mês' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Mês' }));
     // The anchor was Sunday the 4th: the month that holds it is October, and the day stays in the URL.
     expect(await screen.findByRole('heading', { name: 'Outubro 2026' })).toBeTruthy();
     expect(probe.search).toBe('?data=2026-10-04');
+  });
+
+  it('chooses the scale as a group of two options with the arrow keys, one tab stop, and no longer as two buttons', async () => {
+    const { impl } = makeFetch();
+    const { probe } = render_(impl, contentsUrl(padaria.id));
+    await screen.findByRole('heading', { name: 'Outubro 2026' });
+
+    const group = screen.getByRole('radiogroup', { name: 'Escala do calendário' });
+    expect(within(group).getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['Mês', 'Semana']);
+    expect(screen.queryByRole('button', { name: 'Semana' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Escala do calendário' })).toBeNull();
+    const month = within(group).getByRole('radio', { name: 'Mês' });
+    const week = within(group).getByRole('radio', { name: 'Semana' });
+    expect([month.getAttribute('tabindex'), week.getAttribute('tabindex')]).toEqual(['0', '-1']);
+
+    month.focus();
+    fireEvent.keyDown(month, { key: 'ArrowRight' });
+
+    expect(await screen.findByRole('heading', { name: '5 a 11 de outubro de 2026' })).toBeTruthy();
+    expect(probe.search).toBe('?visao=semana');
+    expect(document.activeElement).toBe(week);
+    expect([month.getAttribute('tabindex'), week.getAttribute('tabindex')]).toEqual(['-1', '0']);
+  });
+
+  it('moves the period with icon buttons that keep their names, and draws no character in place of an icon', async () => {
+    const { impl } = makeFetch();
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByRole('heading', { name: 'Outubro 2026' });
+
+    const period = within(screen.getByRole('group', { name: 'Período' }));
+    for (const name of ['Mês anterior', 'Próximo mês']) {
+      const button = period.getByRole('button', { name });
+      expect(button.classList.contains('ui-icon-button'), name).toBe(true);
+      expect(button.textContent, name).toBe('');
+      expect(button.querySelector('svg')?.getAttribute('aria-hidden'), name).toBe('true');
+    }
+    expect(period.getByRole('button', { name: 'Hoje' }).textContent).toBe('Hoje');
   });
 
   it('reads the view and the day from the URL, so a reload lands on the same period', async () => {
@@ -1866,7 +1903,7 @@ describe('the Conteúdos tab of the client (#272)', () => {
     const { probe } = render_(impl, tabUrl());
     await screen.findByText('Treino da semana');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Semana' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Semana' }));
     await waitFor(() => expect(probe.search).toBe('?visao=semana'));
     expect(probe.pathname).toBe(tabUrl());
     await waitFor(() => expect(periodCalls(calls).some((call) => call.includes('from=2026-10-05&to=2026-10-11'))).toBe(true));

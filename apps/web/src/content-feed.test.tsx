@@ -290,7 +290,7 @@ describe('the feed beside the calendar', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Hoje' }));
     await waitFor(() => expect(tileTexts()).toHaveLength(3));
-    fireEvent.click(screen.getByRole('button', { name: 'Semana' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Semana' }));
     await waitFor(() => expect(tileTexts()).toEqual(['Desta semana · Imagem · 09/10']));
   });
 

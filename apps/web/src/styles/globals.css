@@ -5536,9 +5536,7 @@ html:has(.portal-post__bar) {
 }
 
 .contents__actions,
-.contents__period,
-.contents__toggle,
-.contents__views {
+.contents__period {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -5547,21 +5545,6 @@ html:has(.portal-post__bar) {
 
 .contents__actions {
   gap: var(--space-3);
-}
-
-.contents__views,
-.contents__toggle {
-  gap: var(--space-1);
-  padding: var(--space-1);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--bg-canvas);
-}
-
-.contents__views .ui-button,
-.contents__toggle .ui-button {
-  min-height: 2.25rem;
-  border-radius: var(--radius-md);
 }
 
 /* The grid scrolls inside the panel: the track must be able to shrink below the grid's own width. */
