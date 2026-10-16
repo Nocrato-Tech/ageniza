@@ -674,7 +674,7 @@ describe('account e-mail change by request (issue #80)', () => {
         method: 'POST', url: '/auth/password/reset', headers: origin, remoteAddress: freshClientAddress(),
         payload: { token: decodeURIComponent(token ?? ''), newPassword }
       });
-      expect(reset.statusCode, reset.body).toBe(200);
+      expect(reset.statusCode, reset.body).toBe(204);
     };
 
     /** A credential changed by a path that never calls the reset's hook, which only the second barrier can catch. */

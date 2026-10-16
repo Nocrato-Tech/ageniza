@@ -309,7 +309,7 @@ describe('invitation HTTP module', () => {
     });
   });
 
-  it('keeps a valid client invitation through forgot/reset and signs the account in', async () => {
+  it('keeps a valid client invitation through forgot/reset, and the login that follows accepts it', async () => {
     const adminLogin = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email: admin.email, password: admin.password } });
     const adminCookie = sessionCookieHeader(adminLogin.cookies);
     const created = await app.app.inject({
@@ -339,15 +339,22 @@ describe('invitation HTTP module', () => {
       method: 'POST',
       url: '/auth/password/reset',
       headers: origin,
-      payload: { token: decodeURIComponent(resetToken!), newPassword: 'a different secure password', inviteToken }
+      payload: { token: decodeURIComponent(resetToken!), newPassword: 'a different secure password' }
     });
-    expect(reset.statusCode).toBe(200);
-    expect(reset.json()).toEqual({ signedIn: true });
+    expect(reset.statusCode).toBe(204);
+    expect(reset.cookies).toEqual([]);
 
+    const login = await app.app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      headers: origin,
+      payload: { email: invitee.email, password: 'a different secure password', inviteToken }
+    });
+    expect(login.statusCode).toBe(200);
     const accepted = await app.app.inject({
       method: 'POST',
       url: `/invitations/${inviteToken}/accept`,
-      headers: { ...origin, cookie: sessionCookieHeader(reset.cookies) }
+      headers: { ...origin, cookie: sessionCookieHeader(login.cookies) }
     });
     expect(accepted.statusCode).toBe(200);
     expect(accepted.json()).toMatchObject({ status: 'accepted', context: { agencyId, clientId } });
@@ -1924,12 +1931,17 @@ describe('invitation HTTP module', () => {
     const nextPassword = 'a secure logging reset password';
     const reset = await logApp.app.inject({
       method: 'POST', url: '/auth/password/reset', headers: origin,
-      payload: { token: decodeURIComponent(resetToken!), newPassword: nextPassword, inviteToken: clientToken }
+      payload: { token: decodeURIComponent(resetToken!), newPassword: nextPassword }
     });
-    expect(reset.statusCode).toBe(200);
+    expect(reset.statusCode).toBe(204);
+    const nextLogin = await logApp.app.inject({
+      method: 'POST', url: '/auth/login', headers: origin,
+      payload: { email: logInvitee.email, password: nextPassword, inviteToken: clientToken }
+    });
+    expect(nextLogin.statusCode).toBe(200);
     const accept = await logApp.app.inject({
       method: 'POST', url: `/invitations/${clientToken}/accept`,
-      headers: { ...origin, cookie: sessionCookieHeader(reset.cookies) }
+      headers: { ...origin, cookie: sessionCookieHeader(nextLogin.cookies) }
     });
     expect(accept.statusCode).toBe(200);
 

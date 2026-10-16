@@ -28,7 +28,6 @@ import {
   AuthPasswordForgotRequestSchema,
   AuthPasswordForgotResponseSchema,
   AuthPasswordResetRequestSchema,
-  AuthPasswordResetResponseSchema,
   AuthSessionResponseSchema,
   BrandStudyResponseSchema,
   BrandStudySectionSchema,
@@ -690,23 +689,13 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     path: '/auth/password/reset',
     operationId: 'postAuthPasswordReset',
     module: 'auth',
-    summary: 'Redefine a senha e tenta autenticar de volta',
-    description: [
-      'A senha é sempre trocada e todas as sessões antigas encerradas. Com contexto confirmado,',
-      'a resposta é `signedIn: true`; com zero contextos confirmados, `signedIn: false` e',
-      '`reason: NO_CONTEXT_ACCESS`; se a sessão não puder ser criada por outro motivo,',
-      '`signedIn: false` e `reason: SIGN_IN_REQUIRED`.'
-    ].join('\n'),
+    summary: 'Redefine a senha',
+    description: 'Troca a senha e encerra todas as sessões da conta. Não cria sessão: a pessoa entra de novo com a senha nova.',
     access: 'Público',
     permission: null,
     body: AuthPasswordResetRequestSchema,
     requestExample: { token: '<token-do-exemplo>', newPassword: '<nova-senha-do-exemplo>' },
-    responses: [{
-      status: 200,
-      description: 'Senha redefinida; a sessão depende do resultado.',
-      schema: AuthPasswordResetResponseSchema,
-      example: { signedIn: true }
-    }],
+    responses: [{ status: 204, description: 'Senha redefinida; nenhuma sessão é criada.' }],
     errors: [
       COMMON_ERRORS.csrf,
       COMMON_ERRORS.internal,
