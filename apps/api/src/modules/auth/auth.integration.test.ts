@@ -855,6 +855,9 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
     const sender = createFakeEmailSender();
     const app = await openApp({ sender });
     const user = await makeUser(app, 'reset-ok');
+    const bystander = await makeUser(app, 'reset-bystander');
+    const bystanderLogin = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(bystander) });
+    const bystanderCookie = sessionCookieHeader(bystanderLogin.cookies);
 
     // More than one prior session, as if the same person were logged in on two devices.
     const firstLogin = await app.app.inject({
@@ -888,6 +891,10 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
     // No session survives: not the old ones, and the reset did not create a new one.
     const sessionRowsAfter = await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id]);
     expect(sessionRowsAfter.rowCount).toBe(0);
+
+    // Only the account that reset loses its sessions.
+    const bystanderCheck = await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie: bystanderCookie } });
+    expect(bystanderCheck.statusCode).toBe(200);
 
     const loginWithOldPassword = await app.app.inject({
       method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user)
