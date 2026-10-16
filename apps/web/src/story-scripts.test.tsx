@@ -769,16 +769,6 @@ describe('the list of scripts of the period (#635)', () => {
     expect(listRows()).toHaveLength(1);
   });
 
-  it('is not shown on the feed view, which has no calendar to complete', async () => {
-    const { impl } = makeFetch({ scripts: [scriptOf(padaria.id)] });
-    render_(impl);
-    await calendarReady();
-    expect(document.querySelector('.story-list')).not.toBeNull();
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Feed' }));
-    await waitFor(() => expect(document.querySelector('.content-calendar')).toBeNull());
-    expect(document.querySelector('.story-list')).toBeNull();
-  });
 });
 
 describe('the three states of a script (#635)', () => {

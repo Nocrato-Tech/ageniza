@@ -11,6 +11,7 @@ import { CircleAlert, CircleCheck } from 'lucide-react';
 import { Button, ButtonLink, LiveStatus, Logo } from '@ageniza/ui';
 import { ClientBrandStudyTab } from './brand-study.js';
 import { ClientDetailPage, ClientGeneralTab, ClientSkeletonTab } from './client-detail.js';
+import { ClientMediaTab } from './client-media.js';
 import { ClientsPage } from './clients.js';
 import { CollaboratorsPage } from './collaborators.js';
 import { ContentCreateRoute, ContentModalRoute } from './content-modal.js';
@@ -152,6 +153,8 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
             <Route path="novo" element={<ContentCreateRoute />} />
             <Route path=":conteudoId" element={<ContentModalRoute />} />
           </Route>
+          {/* The media library of the client; the permission gate is in ClientDetailPage, like the Conteúdos tab's. */}
+          <Route path="midias" element={<ClientMediaTab />} />
           <Route path="tarefas" element={<ClientSkeletonTab title="Tarefas" description="Aqui vão ficar as tarefas deste cliente, com prazos e responsáveis." />} />
           <Route path="estudo-de-marca" element={<ClientBrandStudyTab />} />
           <Route path="relatorios" element={<ClientSkeletonTab title="Relatórios" description="Aqui vai ficar o relatório deste cliente, com os resultados do trabalho." />} />

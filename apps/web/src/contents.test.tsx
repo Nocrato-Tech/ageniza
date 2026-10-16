@@ -878,18 +878,21 @@ describe('the period controls and the URL', () => {
 });
 
 describe('the places left for the next parts', () => {
-  it('has Calendário selected, the feed open at its side and the Pastas tab open', async () => {
+  it('has the calendar with the feed at its side and no selector of views: the feed is the phone, and the folders are the Mídias tab', async () => {
     const { impl } = makeFetch();
     render_(impl, contentsUrl(padaria.id));
     await screen.findByRole('heading', { name: 'Outubro 2026' });
+    await calendarReady();
 
-    expect(screen.getByRole('tab', { name: 'Calendário' }).getAttribute('aria-selected')).toBe('true');
-    expect(screen.getByRole('tab', { name: 'Feed' }).getAttribute('aria-selected')).toBe('false');
-    expect((screen.getByRole('tab', { name: 'Feed' }) as HTMLButtonElement).disabled).toBe(false);
-    const pastas = screen.getByRole('tab', { name: 'Pastas' }) as HTMLButtonElement;
-    expect(pastas.disabled).toBe(false);
-    expect(pastas.getAttribute('aria-selected')).toBe('false');
+    for (const name of ['Calendário', 'Feed', 'Pastas']) {
+      expect(screen.queryByRole('tab', { name }), `tab ${name}`).toBeNull();
+      expect(screen.queryByRole('radio', { name }), `radio ${name}`).toBeNull();
+      expect(screen.queryByRole('button', { name }), `button ${name}`).toBeNull();
+    }
+    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Visão do cliente' })).toBeNull();
     expect(screen.getByRole('complementary', { name: 'Prévia do feed' })).toBeTruthy();
+    expect(document.querySelector('.content-calendar')).not.toBeNull();
   });
 });
 
@@ -1858,17 +1861,11 @@ describe('the Conteúdos tab of the client (#272)', () => {
     expect(document.querySelector('.contents__skeleton')).toBeNull();
   });
 
-  it('keeps the client of the address fixed while the views change: feed, week and back', async () => {
+  it('keeps the client of the address fixed while the scale changes: week and back', async () => {
     const { impl, calls } = makeFetch({ contents: { [padaria.id]: [treino()] } });
     const { probe } = render_(impl, tabUrl());
     await screen.findByText('Treino da semana');
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Feed' }));
-    await waitFor(() => expect(probe.search).toBe('?vista=feed'));
-    expect(probe.pathname).toBe(tabUrl());
-    expect(await screen.findByRole('region', { name: 'Prévia do feed' })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Calendário' }));
     fireEvent.click(screen.getByRole('button', { name: 'Semana' }));
     await waitFor(() => expect(probe.search).toBe('?visao=semana'));
     expect(probe.pathname).toBe(tabUrl());

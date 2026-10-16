@@ -474,64 +474,27 @@ describe('the cover of a tile', () => {
   });
 });
 
-describe('the Feed tab', () => {
-  const rows = () => [
-    contentFixture({ title: 'De outubro', publishOn: '2026-10-07' }),
-    contentFixture({ title: 'De novembro', publishOn: '2026-11-10' })
-  ];
-
-  it('swaps the calendar for the grid of the same period, writes the view to the URL and keeps the navigation', async () => {
-    const { impl } = makeFetch({ contents: { [padaria.id]: rows() } });
+describe('the feed is the phone beside the calendar, not a view of the page', () => {
+  it('has one feed on the screen, at the side of the calendar, and no tab to swap them', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'De outubro', publishOn: '2026-10-07' })] } });
     renderScreen(impl, url(padaria.id));
     await ready();
-    expect(screen.getByRole('tab', { name: 'Calendário' }).getAttribute('aria-selected')).toBe('true');
-    expect(screen.getByRole('complementary', { name: 'Prévia do feed' })).toBeTruthy();
-    expect(document.querySelector('.content-calendar')).not.toBeNull();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Feed' }));
-    await waitFor(() => expect(probe.search).toBe('?vista=feed'));
-    expect(screen.getByRole('tab', { name: 'Feed' }).getAttribute('aria-selected')).toBe('true');
-    expect(screen.getByRole('tab', { name: 'Calendário' }).getAttribute('aria-selected')).toBe('false');
-    // One feed on the screen, in the place of the calendar: no second one at the side.
-    expect(screen.queryByRole('complementary', { name: 'Prévia do feed' })).toBeNull();
-    expect(screen.getByRole('region', { name: 'Prévia do feed' })).toBeTruthy();
-    expect(document.querySelector('.content-calendar')).toBeNull();
+    expect(screen.getAllByRole('complementary', { name: 'Prévia do feed' })).toHaveLength(1);
+    expect(screen.queryByRole('region', { name: 'Prévia do feed' })).toBeNull();
+    expect(document.querySelector('.content-calendar')).not.toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Feed' })).toBeNull();
+    expect(screen.queryByRole('radio', { name: 'Feed' })).toBeNull();
+  });
+
+  it('opens the calendar with the feed beside it for the old feed address, and writes nothing to the URL', async () => {
+    renderScreen(makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'De outubro', publishOn: '2026-10-07' })] } }).impl, url(padaria.id, '?vista=feed'));
+    await ready();
+
+    expect(document.querySelector('.content-calendar')).not.toBeNull();
+    expect(screen.getAllByRole('complementary', { name: 'Prévia do feed' })).toHaveLength(1);
     expect(tileTexts()).toEqual(['De outubro · Imagem · 07/10']);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }));
-    await waitFor(() => expect(tileTexts()).toEqual(['De novembro · Imagem · 10/11']));
-    expect(probe.search).toBe('?vista=feed&data=2026-11-01');
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Calendário' }));
-    await waitFor(() => expect(probe.search).toBe('?data=2026-11-01'));
-    expect(document.querySelector('.content-calendar')).not.toBeNull();
-    expect(screen.getByRole('complementary', { name: 'Prévia do feed' })).toBeTruthy();
-  });
-
-  it('opens on the feed from the URL, and on the calendar for a view that does not exist', async () => {
-    const first = renderScreen(makeFetch({ contents: { [padaria.id]: rows() } }).impl, url(padaria.id, '?vista=feed'));
-    await ready();
-    expect(screen.getByRole('tab', { name: 'Feed' }).getAttribute('aria-selected')).toBe('true');
-    expect(document.querySelector('.content-calendar')).toBeNull();
-    first.unmount();
-
-    renderScreen(makeFetch({ contents: { [padaria.id]: rows() } }).impl, url(padaria.id, '?vista=inexistente'));
-    await ready();
-    expect(screen.getByRole('tab', { name: 'Calendário' }).getAttribute('aria-selected')).toBe('true');
-    expect(document.querySelector('.content-calendar')).not.toBeNull();
-  });
-
-  it('shows the empty grid and the skeleton in the feed view too, with Pastas open beside it', async () => {
-    const held = deferred<Response>();
-    const loading = renderScreen(makeFetch({ period: () => held.promise }).impl, url(padaria.id, '?vista=feed'));
-    await waitFor(() => expect(document.querySelectorAll('.content-feed__skeleton')).toHaveLength(9));
-    loading.unmount();
-
-    renderScreen(makeFetch().impl, url(padaria.id, '?vista=feed'));
-    expect(await screen.findByText('Planeje o primeiro post')).toBeTruthy();
-    const pastas = screen.getByRole('tab', { name: 'Pastas' }) as HTMLButtonElement;
-    expect(pastas.disabled).toBe(false);
-    expect(pastas.getAttribute('aria-selected')).toBe('false');
+    expect(probe.search).toBe('?vista=feed');
   });
 });
 

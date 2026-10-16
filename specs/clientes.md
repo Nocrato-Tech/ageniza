@@ -337,7 +337,7 @@ Nenhuma policy de outro módulo é alterada.
 |---|---|---|---|
 | Carteira | `/agencia/:agenciaId/clientes` | grade de crachás de clientes para triagem | `cliente.visualizar` |
 | Cadastrar | modal sobre a carteira | só o nome | `cliente.cadastrar` |
-| Detalhe | `/agencia/:agenciaId/clientes/:clienteId/<aba>` | cabeçalho e seis abas; a aba Conteúdos só aparece, e o endereço dela só abre, com `conteudo.visualizar` | `cliente.visualizar` |
+| Detalhe | `/agencia/:agenciaId/clientes/:clienteId/<aba>` | cabeçalho e sete abas; as abas Conteúdos e Mídias só aparecem, e o endereço delas só abre, com `conteudo.visualizar` | `cliente.visualizar` |
 | Editar cadastro | modal sobre o detalhe | todos os campos do cadastro | `cliente.operar` |
 | Portal — Início | `/portal/:clienteId` | saudação e próxima ação | vínculo de cliente |
 | Portal — Marca | `/portal/:clienteId/marca` | estudo em leitura e conversas | vínculo de cliente |
@@ -419,7 +419,7 @@ Só o nome, porque só ele é obrigatório: o cadastro começa numa ligação, e
 │ (foto)  Padaria Central     Ativo · [encerra em 30/10]        │
 │         @padariacentral                  [ Editar ]  [ ⋯ ]    │
 ├──────────────────────────────────────────────────────────────┤
-│ Geral │ Conteúdos │ Tarefas │ Estudo de marca │ Relatórios │ Acessos │
+│ Geral │ Conteúdos │ Mídias │ Tarefas │ Estudo de marca │ Relatórios │ Acessos │
 ├──────────────────────────────────────────────────────────────┤
 │                                                              │
 │                      (conteúdo da aba)                       │
@@ -490,7 +490,11 @@ Só para `cliente.convidar_usuario`. O mesmo desenho da seção de convites de C
 
 ### Aba Conteúdos
 
-A mesma visão de Conteúdos daquele cliente (calendário, feed e Pastas, com o modal do conteúdo em endereços da própria aba), com o cliente fixo (`specs/conteudo.md` seção 7). Só com `conteudo.visualizar`: sem a permissão a aba não aparece, e o endereço digitado cai no mesmo "não encontrado" da página inteira, sem o cabeçalho do cliente.
+A mesma visão de Conteúdos daquele cliente (o calendário e, ao lado, o celular com o feed, com o modal do conteúdo em endereços da própria aba), com o cliente fixo (`specs/conteudo.md` seção 7). Só com `conteudo.visualizar`: sem a permissão a aba não aparece, e o endereço digitado cai no mesmo "não encontrado" da página inteira, sem o cabeçalho do cliente.
+
+### Aba Mídias
+
+A biblioteca de mídia do cliente, logo depois de Conteúdos (decisão de 2026-10-16, `2026-10-16-pastas-viram-a-aba-midias-do-cliente-e-o-feed-deixa-de-ser-vista`): as pastas padrão e próprias, as pastas de trabalho dentro delas (dois níveis, nunca três) e as mídias da pasta aberta, com o envio direto. A pasta aberta fica no endereço (`pasta`, `subpasta`, `pagina`) e o endereço antigo `?vista=pastas` da tela de Conteúdos leva para cá. Mesmas permissões das pastas de `specs/conteudo.md` (seção 2): ver com `conteudo.visualizar`, e criar pasta, enviar e remover mídia com `conteudo.operar` num cliente ativo; sem `conteudo.visualizar` a aba não aparece e o endereço cai no mesmo "não encontrado" da página inteira. Cliente arquivado é só leitura.
 
 ### Abas Tarefas e Relatórios
 

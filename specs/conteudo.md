@@ -31,7 +31,7 @@ Conteúdo é onde a agência planeja, produz e aprova os posts de cada cliente, 
 
 > Owner tem acesso total por posse. Visibilidade de menu é UX; a autorização é validada no backend e no banco em toda operação.
 
-- **Vendas e Financeiro não veem Conteúdo**, nem o que Clientes mostra derivado dele: a aba Conteúdos do detalhe do cliente, os indicadores do card e a ordem da carteira por atraso. Para eles, a carteira mantém a ordem atual.
+- **Vendas e Financeiro não veem Conteúdo**, nem o que Clientes mostra derivado dele: as abas Conteúdos e Mídias do detalhe do cliente, os indicadores do card e a ordem da carteira por atraso. Para eles, a carteira mantém a ordem atual.
 - **Subtarefa** é aprovada pelo **responsável do conteúdo**; quem tem `conteudo.aprovar_pela_agencia` substitui. É autorização dependente do valor (seção 9).
 - Quem tem `conteudo.visualizar` vê o conteúdo de **todos** os clientes da agência, como em Clientes.
 
@@ -250,9 +250,10 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 | tela | rota | o que mostra | quem acessa |
 |---|---|---|---|
 | Conteúdos | `/agencia/:agenciaId/conteudos` | seletor de clientes em stories | `conteudo.visualizar` |
-| Conteúdos do cliente | `/agencia/:agenciaId/conteudos/:clienteId` | calendário, feed 3×3 e Pastas | `conteudo.visualizar` |
+| Conteúdos do cliente | `/agencia/:agenciaId/conteudos/:clienteId` | calendário e, ao lado, o celular com o feed 3×3 | `conteudo.visualizar` |
 | Modal do conteúdo | `/agencia/:agenciaId/conteudos/:clienteId/:conteudoId` | abas Geral e Atribuição | `conteudo.visualizar` |
 | Aba Conteúdos do cliente | `/agencia/:agenciaId/clientes/:clienteId/conteudos` | a mesma visão do cliente | `conteudo.visualizar` |
+| Aba Mídias do cliente | `/agencia/:agenciaId/clientes/:clienteId/midias` | as pastas e as mídias do cliente, com o envio; o endereço antigo `…/conteudos/:clienteId?vista=pastas` leva para cá | `conteudo.visualizar` (escrever: `conteudo.operar`) |
 | Portal — Conteúdos | `/portal/:clienteId/conteudos` | o que precisa de você, calendário, feed | pessoa do portal |
 | Portal — post | `/portal/:clienteId/conteudos/:conteudoId` | post em tela cheia, Aprovar, Pedir ajuste, conversa | pessoa do portal |
 | Portal — Início | `/portal/:clienteId` | "N posts esperando sua aprovação", o roteiro de hoje e "Nesta semana" | pessoa do portal |
@@ -267,8 +268,8 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 │ Padaria Ótica  Café   Moda   Pet       anel = algo pedindo ação   │
 ├──────────────────────────────────────┬────────────────────────────┤
 │ ‹ Outubro 2026 ›   [Mês|Semana]      │  @padariacentral           │
-│ [+ Criar conteúdo] [Calendário|Feed| │ ┌──┬──┬──┐                 │
-│                     Pastas]          │ │  │  │  │  feed 3×3       │
+│ [+ Criar conteúdo]                   │ ┌──┬──┬──┐                 │
+│                                      │ │  │  │  │  feed 3×3       │
 │ seg  ter  qua  qui  sex  sáb  dom    │ ├──┼──┼──┤  mais recente   │
 │      ┌─────┐       ┌─────┐           │ │  │  │  │  primeiro;      │
 │      │capa │       │capa │  +        │ ├──┼──┼──┤  futuros com    │
@@ -285,8 +286,8 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 | Calendário | mês, com opção de semana; criar pelo botão ou pelo **+** do dia (Conteúdo ou Roteiro de stories); arrastar o card para outra data |
 | Card | capa, título, formato, data e hora, status, alerta de prazo ou atraso, percentual das subtarefas |
 | Detalhe ao passar o mouse | começo da legenda, responsável, resumo das subtarefas, última mensagem da conversa |
-| Feed | grade 3×3 dos conteúdos de feed não cancelados, sincronizada com o período; vídeo longo e VSL só no calendário |
-| Pastas | biblioteca do cliente; subir mídia antes de existir o post (ensaio fotográfico) |
+| Feed | o celular ao lado do calendário, com a grade 3×3 dos conteúdos de feed não cancelados, sincronizada com o período; vídeo longo e VSL só no calendário. Não é uma vista que troca o calendário (decisão de 2026-10-16) |
+| Mídias | a biblioteca do cliente fica na aba Mídias do detalhe do cliente (`specs/clientes.md`, seção 7); subir mídia antes de existir o post (ensaio fotográfico) |
 
 ### Esboço — modal do conteúdo
 
@@ -342,7 +343,7 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 | Admin, Owner | tudo |
 | Gestor de conta | tudo |
 | Produção | opera e publica; sem Aprovar pela agência, sem Cancelar |
-| Vendas, Financeiro | o item Conteúdos e a aba Conteúdos não existem; carteira sem indicadores de conteúdo |
+| Vendas, Financeiro | o item Conteúdos e as abas Conteúdos e Mídias não existem; carteira sem indicadores de conteúdo |
 | Pessoa do portal | aprova, pede ajuste, comenta a partir de aguardando aprovação, marca roteiro como gravado |
 
 ### Estados da tela
