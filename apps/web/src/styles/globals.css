@@ -2266,7 +2266,8 @@ a.client-general__block:focus-visible {
 
 /*
  * Entrada (#629): sign-in, recovery, invitation and e-mail confirmation. One column with the logo on top and the
- * legal links at the bottom; a wide screen adds the example week beside it. Three text sizes on every screen:
+ * legal links at the bottom; a wide screen adds the brand panel (the friendly mascot, centred, on the brand tint) beside it,
+ * flush with the left edge, and centres the form in its column (#700). Three text sizes on every screen:
  * heading/xl, body/md and caption.
  */
 .auth {
@@ -2308,7 +2309,7 @@ a.client-general__block:focus-visible {
   color: var(--text-muted);
 }
 
-.auth__showcase {
+.auth__visual {
   display: none;
 }
 
@@ -2456,21 +2457,40 @@ a.client-general__block:focus-visible {
 
 @media (min-width: 64rem) {
   .auth {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
-  .auth__showcase {
+  /* The brand panel on the left, flush with the edges of the screen; the form column keeps the page background on the right. */
+  .auth__visual {
+    grid-column: 1;
+    grid-row: 1;
     display: flex;
     flex-direction: column;
+    align-items: center;
     justify-content: center;
     gap: var(--space-6);
     padding: var(--space-12);
-    background: var(--bg-surface);
-    border-left: 1px solid var(--border-default);
+    background: color-mix(in srgb, var(--action-primary-bg) 14%, var(--bg-surface));
+    text-align: center;
+  }
+
+  .auth__column {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  /* The form sits in the middle of its column, away from the edge and at a comfortable width. */
+  .auth__main {
+    align-items: center;
   }
 }
 
-.auth-showcase__title {
+.auth__visual .ui-mascot {
+  max-width: 100%;
+  height: auto;
+}
+
+.auth-visual__title {
   margin: 0;
   max-width: 16ch;
   font: var(--heading-xl);
@@ -2478,136 +2498,11 @@ a.client-general__block:focus-visible {
   text-wrap: balance;
 }
 
-.auth-showcase__lead {
+.auth-visual__lead {
   margin: 0;
-  max-width: 46ch;
+  max-width: 36ch;
   color: var(--text-secondary);
   font: var(--body-md);
-}
-
-.auth-week {
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  background: var(--bg-canvas);
-  overflow: hidden;
-}
-
-.auth-week__head {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  color: var(--text-muted);
-  font: var(--caption);
-}
-
-.auth-week__head span:first-child {
-  color: var(--text-primary);
-}
-
-.auth-week__grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  border-top: 1px solid var(--border-default);
-}
-
-.auth-day {
-  display: grid;
-  align-content: start;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border-left: 1px solid var(--border-default);
-  min-width: 0;
-  font: var(--caption);
-}
-
-.auth-day:first-child {
-  border-left: 0;
-}
-
-.auth-day--today {
-  background: var(--calendar-today-bg);
-}
-
-.auth-day__label {
-  color: var(--text-muted);
-}
-
-/* Today is one of the three places the solid indigo is allowed (docs/design-system.md, Pauta). */
-.auth-day__today {
-  padding: 0 var(--space-1);
-  border-radius: var(--radius-sm);
-  background: var(--action-primary-bg);
-  color: var(--action-primary-fg);
-}
-
-.auth-day__note {
-  color: var(--text-secondary);
-}
-
-.auth-post {
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-}
-
-.auth-post--reels {
-  background: var(--format-reels-bg);
-  color: var(--format-reels-fg);
-}
-
-.auth-post--carousel {
-  background: var(--format-carousel-bg);
-  color: var(--format-carousel-fg);
-}
-
-.auth-post__tags {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.auth-tag {
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-sm);
-}
-
-.auth-tag--reels {
-  background: var(--format-reels-tag-bg);
-  color: var(--format-reels-tag-fg);
-}
-
-.auth-tag--carousel {
-  background: var(--format-carousel-tag-bg);
-  color: var(--format-carousel-tag-fg);
-}
-
-.auth-state {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-.auth-state__icon {
-  width: 0.75rem;
-  height: 0.75rem;
-}
-
-.auth-state__icon--late {
-  color: var(--status-late-fg);
-}
-
-.auth-state__icon--adjust {
-  color: var(--status-adjust-fg);
-}
-
-.auth-state__icon--waiting {
-  color: var(--status-waiting-fg);
 }
 
 .form-stack {

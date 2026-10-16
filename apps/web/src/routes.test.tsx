@@ -93,7 +93,7 @@ describe('route boundaries', () => {
     expect(screen.getByRole('heading', { name: 'Página não encontrada', level: 1 })).toBeTruthy();
     expect(screen.getByText('Este endereço não corresponde a uma página do Ageniza.')).toBeTruthy();
     expect(document.title).toBe('Página não encontrada — Ageniza');
-    expect(screen.getByRole('link', { name: 'Voltar ao início' }).getAttribute('href')).toBe('/');
+    expect(screen.getByRole('link', { name: 'Voltar ao início' }).getAttribute('href')).toBe('/entrar');
     cleanup();
 
     renderRoute('/app', false);
@@ -136,6 +136,13 @@ describe('route boundaries', () => {
       </AuthSessionProvider>
     );
     expect(screen.getByText('Carregando…')).toBeTruthy();
+  });
+
+  it('sends a visitor without a session from the global not-found to the login, not to the public page', async () => {
+    const { probe } = renderRoute('/rota-inexistente', false);
+    fireEvent.click(screen.getByRole('link', { name: 'Voltar ao início' }));
+    expect(probe.pathname).toBe('/entrar');
+    expect(await screen.findByRole('heading', { name: 'Entrar', level: 1 })).toBeTruthy();
   });
 
   it('sends a signed-in person from the global not-found to the context chooser', () => {

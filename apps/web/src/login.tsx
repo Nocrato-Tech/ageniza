@@ -33,7 +33,8 @@ const RESOLVE_FAILED = 'Não foi possível carregar seus contextos. Tente de nov
  */
 export function LoginPage() {
   const httpClient = useApiClient();
-  const { formRef, summary } = useFormErrors();
+  // No error summary here: the login has two fields, and the focus on the first invalid one is enough (decision 2026-10-16).
+  const { formRef } = useFormErrors();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const authStore = useAuthSessionStore();
@@ -111,9 +112,10 @@ export function LoginPage() {
       ...(inviteToken === undefined ? {} : { inviteToken })
     });
     if (!validation.success) {
+      // The password rule at sign-in is "not empty": its length is the rule of creating one, and a wrong one is the server's 401.
       setErrors({
         email: validation.errors.email === undefined ? undefined : 'Informe um e-mail válido.',
-        password: validation.errors.password === undefined ? undefined : 'A senha tem no mínimo 10 caracteres.'
+        password: validation.errors.password === undefined ? undefined : 'Informe a sua senha.'
       });
       return;
     }
@@ -153,7 +155,6 @@ export function LoginPage() {
   return <AuthPanel titleId="login-title" title="Entrar" lead="A pauta da sua agência está te esperando.">
     {notice !== undefined && <AuthMessage tone="success" role="status">{notice}</AuthMessage>}
     <form ref={formRef} className="auth-form" onSubmit={onSubmit} noValidate>
-      {summary}
       <Field label="E-mail" id="login-email" error={errors.email}>
         {(control) => <TextInput
           {...control}

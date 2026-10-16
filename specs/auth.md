@@ -222,6 +222,10 @@ As rotas do navegador são em português; as da API continuam em inglês.
 
 **Erros:** credencial inválida e e-mail inexistente mostram a **mesma** mensagem. Limite de tentativas atingido diz para tentar mais tarde. Nenhum dos dois limpa o campo de e-mail.
 
+**Validação na tela:** e-mail em formato inválido: "Informe um e-mail válido."; senha vazia: "Informe a sua senha." A tela **não confere o tamanho da senha** (a regra de 10 caracteres é de quem cria uma senha, no convite e na redefinição): qualquer senha preenchida vai ao servidor, que responde "E-mail ou senha incorretos." Cada mensagem fica no seu campo e o foco vai ao primeiro campo inválido; **não há o resumo "Corrija N campos"** neste formulário, exceção à regra comum registrada em 2026-10-16.
+
+**Layout:** da largura de 64rem para cima, a tela é de duas colunas: à esquerda o painel de marca (o mascote amigável centralizado sobre a cor da marca, encostado nas bordas da tela) e à direita o formulário, afastado da borda e em largura de formulário. Abaixo disso o painel some e o formulário ocupa a tela. O mesmo molde vale para esqueci a senha, redefinir, convite e confirmação de e-mail (2026-10-16).
+
 **Sem cadastro:** não há "criar conta". Quem chega sem convite não tem o que fazer aqui, e a tela diz isso em uma linha em vez de oferecer um caminho que não existe.
 
 ### Esqueci a senha — `/senha/esquecida`
