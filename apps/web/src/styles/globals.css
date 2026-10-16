@@ -1815,9 +1815,180 @@ a.client-general__block:focus-visible {
   overflow-y: auto;
 }
 
+/* DatePicker: the day typed as dd/mm/aaaa, or picked on a calendar with 44px cells. The card is placed on the screen by the
+   component (`--ui-date-top`, `--ui-date-left`), so no scrolling or clipping ancestor cuts it; it stays out of sight until it is. */
+.ui-date-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.ui-date-picker__field {
+  position: relative;
+  display: flex;
+}
+
+.ui-date-picker__input {
+  padding-right: var(--space-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-date-picker__toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ui-date-picker__toggle:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.ui-date-picker__toggle:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+.ui-date-picker__toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ui-date-picker__hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.ui-date-picker__panel {
+  position: fixed;
+  top: var(--ui-date-top, 0);
+  left: var(--ui-date-left, 0);
+  z-index: 30;
+  display: grid;
+  gap: var(--space-3);
+  width: min(21.5rem, calc(100vw - var(--space-8)));
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-floating);
+  color: var(--text-primary);
+  visibility: hidden;
+  animation: ui-float-in var(--motion-fast) var(--motion-easing-standard);
+}
+
+.ui-date-picker__panel[style] {
+  visibility: visible;
+}
+
+.ui-date-picker__panel:focus {
+  outline: none;
+}
+
+.ui-date-picker__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ui-date-picker__title {
+  margin: 0;
+  font: var(--heading-md);
+  text-align: center;
+}
+
+.ui-date-picker__grid {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 var(--space-1);
+  table-layout: fixed;
+}
+
+.ui-date-picker__grid th {
+  padding-bottom: var(--space-1);
+  color: var(--text-muted);
+  font: var(--label-sm);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ui-date-picker__grid abbr {
+  text-decoration: none;
+}
+
+.ui-date-picker__grid td {
+  padding: 0;
+}
+
+.ui-date-picker__day {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--body-md);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.ui-date-picker__day--outside {
+  color: var(--text-muted);
+}
+
+.ui-date-picker__day:hover:not(:disabled) {
+  border-color: var(--border-default);
+  background: var(--bg-hover);
+}
+
+.ui-date-picker__day:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* Today is the one filled index (indigo is the action, today and the viewer's turn); the chosen day is filled in ink, never in indigo. */
+.ui-date-picker__day[aria-current='date'] {
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+}
+
+.ui-date-picker__grid td[aria-selected='true'] .ui-date-picker__day {
+  border-color: var(--text-primary);
+  background: var(--text-primary);
+  color: var(--bg-surface);
+}
+
+.ui-date-picker__day:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.ui-date-picker__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ui-modal[open],
-  .ui-popover {
+  .ui-popover,
+  .ui-date-picker__panel {
     animation: none;
   }
 }
