@@ -151,6 +151,32 @@ describe('POST /auth/login (#1, #2, #3)', () => {
     expect(wrongPassword.json()).toMatchObject({ error: { code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas.' } });
   });
 
+  it('#700 answers a wrong password shorter than 10 characters with the same 401 INVALID_CREDENTIALS, not a 400 (the 10-character rule is for creating a password)', async () => {
+    const app = await openApp();
+    const user = await makeUser(app, 'login-short-wrong-password');
+    const sharedRequestId = 'auth-test-700-shared-request-id';
+
+    const shortWrong = await app.app.inject({
+      method: 'POST', url: '/auth/login', headers: { ...origin, 'x-request-id': sharedRequestId },
+      payload: { email: user.email, password: 'curta' }
+    });
+    const longWrong = await app.app.inject({
+      method: 'POST', url: '/auth/login', headers: { ...origin, 'x-request-id': sharedRequestId },
+      payload: { email: user.email, password: 'definitely the wrong password' }
+    });
+    const empty = await app.app.inject({
+      method: 'POST', url: '/auth/login', headers: origin,
+      payload: { email: user.email, password: '' }
+    });
+
+    expect(shortWrong.statusCode).toBe(401);
+    expect(shortWrong.json()).toMatchObject({ error: { code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas.' } });
+    expect(shortWrong.body).toBe(longWrong.body);
+    expect(shortWrong.cookies).toHaveLength(0);
+    // An empty password is still not a credential: the contract refuses it before the server checks anything.
+    expect(empty.statusCode).toBe(400);
+  });
+
   it('#3 finds the user when the login email has uppercase letters and surrounding spaces', async () => {
     const app = await openApp();
     const user = await makeUser(app, 'login-normalize');
