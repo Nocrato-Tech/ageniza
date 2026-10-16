@@ -132,7 +132,11 @@ curl -s http://127.0.0.1:8025/api/v1/message/<ID>
 pnpm dev
 ```
 
-Sobe API, web e worker em modo de desenvolvimento, na máquina. A alternativa é rodar tudo em contêiner:
+Sobe API, web e worker em modo de desenvolvimento, na máquina. Antes de subir, o turbo compila os pacotes internos (`packages/*`) de que cada app depende, então um clone com `dist` antigo ou ausente sobe sem passo manual. Durante o `dev`, o Vite lê o `@ageniza/ui` direto da fonte (`packages/ui/src`): uma edição ali aparece no web na hora. Os outros pacotes (`contracts`, `config`, `core`, `database`, `email`) seguem compilados: depois de editar um deles, rode `pnpm turbo run build --filter=./packages/*` e reinicie o `pnpm dev`. O build de produção e os testes continuam usando o pacote compilado.
+
+As portas e o banco vêm do `.env`, porque o turbo não repassa variáveis do shell para as tarefas. Para subir ao lado de outra instância, mude no `.env` `PORT`, `WORKER_HEALTH_PORT`, `API_CORS_ORIGINS`, `VITE_API_BASE_URL` e as URLs do banco, e passe a porta do Vite: `pnpm dev -- --port 5273 --host 127.0.0.1 --strictPort`.
+
+A alternativa é rodar tudo em contêiner:
 
 ```sh
 pnpm docker:up     # sobe banco, migra, constrói as imagens e espera a saúde
