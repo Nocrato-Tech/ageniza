@@ -95,7 +95,7 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 
 1. Senha errada e e-mail inexistente devolvem **a mesma** resposta.
 2. `POST /auth/password/forgot` responde igual para e-mail existente e inexistente.
-3. Credencial correta com **zero contextos** não cria sessão — **salvo** quando o login carrega `inviteToken` de um convite válido para o mesmo e-mail (regra 3a, 2026-09-29, pendente de validação). A mesma exceção vale para `POST /auth/password/reset`: a senha é sempre trocada, mas a sessão só é criada se, depois de contar os contextos, houver pelo menos um, ou se um `inviteToken` válido para o mesmo e-mail cobrir o caso de zero (regra 8a, 2026-09-29).
+3. Credencial correta com **zero contextos** não cria sessão — **salvo** quando o login carrega `inviteToken` de um convite válido para o mesmo e-mail (regra 3a, 2026-09-29, pendente de validação). O reset de senha não cria sessão, então a exceção não se aplica a ele (regra 8a, 2026-10-16).
 3a. Com `inviteToken` válido, a sessão criada continua **sem contexto** até o convite ser aceito por `POST /invitations/:token/accept`; chamar `resolve` antes do aceite encerra essa sessão como qualquer outra sem contexto (regra 3).
 4. Token de convite consumido, expirado ou revogado devolve **o mesmo** `INVALID_LINK`, sem dizer qual dos três.
 5. A tela nunca exibe o e-mail do convite antes de o token ser validado pela API.
@@ -104,7 +104,7 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 7a. Depois do cadastro, o aceite é **por documento e por versão** (2026-10-07, pendente de validação): aceitar a Privacidade nunca marca os Termos, e o contrário também. A versão gravada é sempre a **em vigor no servidor** — nunca uma que o cliente envie —, repetir o aceite não grava de novo e aceitar uma versão que a conta já superou não grava nada. A conta fica vinculada à última versão aceita de cada documento, e isso é consultável.
 7b. Uma versão mais nova que a aceita **não bloqueia nada**: nem o login, nem rota, nem tela. O único efeito é o aviso da seção 7.
 8. Redefinir senha encerra **todas** as sessões.
-8a. Redefinir senha **sempre autentica** quem redefiniu, pelo mesmo mecanismo do login — **salvo** quando a conta tem zero contextos e não há `inviteToken` válido para o mesmo e-mail: nesse caso a senha é trocada, mas nenhuma sessão é criada, e a resposta diz o motivo (`signedIn: false, reason: 'NO_CONTEXT_ACCESS'`), para a tela levar a `/sem-acesso` (2026-09-29, substitui o comportamento anterior de `204` sem sessão fora do fluxo de convite). Contagem de contextos e sessão nova nessa ordem: primeiro conta, só então assina — assim uma conta confirmada em zero contextos nunca chega a ter sessão para revogar. Fora do caso confirmado de zero, qualquer outra falha em criar a sessão pós-reset — a conta não ser encontrada, a contagem falhar, ou o `signInEmail` falhar (inclusive dois links de reset válidos da mesma conta disputando a senha) — usa um motivo diferente, `signedIn: false, reason: 'SIGN_IN_REQUIRED'`, para a tela levar a `/entrar` em vez de `/sem-acesso`: `NO_CONTEXT_ACCESS` só quando o zero foi de fato confirmado (achado da revisão de segurança do PR #176, 2026-09-29).
+8a. Redefinir senha **não cria sessão**: troca a senha, encerra todas as sessões (regra 8) e a rota responde `204` sem corpo e sem cookie, tenha a conta contexto ou não. A tela leva a `/entrar` com o aviso "Senha alterada. Entre com a nova senha.", e a pessoa entra digitando a senha nova. Reset vindo de um convite (`invite` no link do e-mail) segue o mesmo caminho, e é o **login** que carrega o convite (`inviteToken`, regra 3a); a rota de reset não recebe `inviteToken` (2026-10-16, substitui a decisão de 2026-09-29 "o reset de senha sempre autentica", com a correção do PR #176; os motivos `NO_CONTEXT_ACCESS` e `SIGN_IN_REQUIRED` do reset deixam de existir, e `NO_CONTEXT_ACCESS` fica só no login).
 9. Trocar de contexto grava a preferência e **não** recria a sessão.
 10. `401` em qualquer requisição leva ao login preservando o destino, e nunca deixa dado antigo na tela.
 11. Quem tem sessão válida e abre uma tela deste módulo é levado ao seu contexto, em vez de logar de novo — **exceto** as telas que precisam abrir para qualquer sessão: `/convite/:token` (quem já está logado aceita o convite pelo fluxo da §7, Convite), `/senha/redefinir` e `/email/confirmar` (o link chega por e-mail e pode ser de outra conta, inclusive para quem já tem sessão) e `/termos` e `/privacidade` (páginas públicas de conteúdo). As demais telas do módulo (`/entrar`, `/sem-acesso`, `/senha/esquecida`) continuam redirecionando ao contexto ativo, e cada exceção tem teste próprio de que a tela abre com sessão válida sem redirecionar (issue #342, 2026-10-07, pendente de validação).
@@ -127,7 +127,7 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 | `POST` | `/auth/logout-all` | 204 |
 | `GET` | `/auth/session` | `{ user, session: { expiresAt } }` |
 | `POST` | `/auth/password/forgot` | 202, sempre |
-| `POST` | `/auth/password/reset` | `200 { signedIn: true }` ou `200 { signedIn: false, reason }` (`'NO_CONTEXT_ACCESS'` ou `'SIGN_IN_REQUIRED'`), com `inviteToken` opcional (regra 8a) |
+| `POST` | `/auth/password/reset` | 204, sem corpo e sem cookie (regra 8a) |
 | `GET` | `/invitations/:token` | preview com `accountExists` |
 | `POST` | `/invitations/:token/accept` | `{ status, context }` |
 | `POST` | `/invitations/:token/accept-new-account` | `{ status, context }` + cookie |
@@ -175,19 +175,16 @@ O cadastro (`accept-new-account`) não muda: continua gravando as duas versões 
 
 **Limitações aceitas.** Recusar um pedido não avisa a pessoa (a operação fala com ela fora do produto). A operação descobre os pedidos rodando `list`; não há notificação. Quem perdeu o acesso ao e-mail antigo **e** à senha continua sem caminho: recuperação de conta fica fora do MVP. O teto de pedidos é em memória, como o dos demais limites de autenticação.
 
-### Implementado (issue #175)
+### Implementado (issues #175 e #699)
 
-**`POST /auth/password/reset` sempre autentica** (regra 8a), pelo mesmo mecanismo de `signInEmail` que já existia no ramo com convite:
+**`POST /auth/password/reset` não cria sessão** (regra 8a):
 
 1. A senha é redefinida (o que já encerra **todas** as sessões antigas, regra 8).
-2. Sem `inviteToken` válido: conta os contextos **antes** de assinar. Com zero confirmado, não tenta assinar — responde direto `200 { signedIn: false, reason: 'NO_CONTEXT_ACCESS' }`, sem cookie. Com pelo menos um, assina de volta com a senha nova; se a assinatura der certo, mantém a sessão e responde `200 { signedIn: true }` com cookie; se a assinatura falhar mesmo com contexto confirmado (falha transitória, ou dois links de reset válidos da mesma conta em paralelo), responde `200 { signedIn: false, reason: 'SIGN_IN_REQUIRED' }` — nunca `NO_CONTEXT_ACCESS`, que fica reservado ao zero confirmado.
-3. Com `inviteToken` válido para o mesmo e-mail: comportamento inalterado desde a issue #68/#76 — assina de volta incondicionalmente, sessão sem contexto até o aceite, `200 { signedIn: true }`; se essa assinatura falhar, `200 { signedIn: false, reason: 'SIGN_IN_REQUIRED' }` (nunca `NO_CONTEXT_ACCESS`, já que um `inviteToken` válido prova que a conta não está no caso de zero).
+2. A rota responde `204`, sem corpo e sem cookie. Não conta contextos nem assina de volta: o corpo do pedido é só `{ token, newPassword }`, e um `inviteToken` ali é recusado como qualquer campo desconhecido.
 
-Um token de reset inválido, usado ou expirado continua devolvendo o mesmo `400 INVALID_LINK` de sempre, sem sessão — não é afetado por esta mudança.
+Um token de reset inválido, usado ou expirado devolve `400 INVALID_LINK`, sem sessão.
 
-**`SIGN_IN_REQUIRED` (2026-09-29, achado da revisão de segurança do PR #176).** A primeira versão desta rota devolvia `NO_CONTEXT_ACCESS` para qualquer falha em criar a sessão pós-reset, inclusive para quem tem contexto — a revisão reproduziu isso com uma falha transitória na contagem e com dois tokens de reset válidos da mesma conta em paralelo. `NO_CONTEXT_ACCESS` passa a significar exclusivamente "contagem confirmou zero"; qualquer outra causa (conta não identificável, contagem falhando, `signInEmail` falhando) usa `SIGN_IN_REQUIRED`, e a tela leva a `/entrar` em vez de `/sem-acesso`. A senha muda nos dois casos.
-
-Foi **mudança de contrato numa rota implantada**: o `204` anterior (fora do ramo de convite) vira `200` com corpo; os testes de integração mudaram junto.
+Desde 2026-09-29 (issue #175) a rota assinava a pessoa de volta e respondia `signedIn`, com os motivos `NO_CONTEXT_ACCESS` e `SIGN_IN_REQUIRED` (correção da revisão de segurança do PR #176). A decisão de 2026-10-16 (issue #699) tirou tudo isso: foi **mudança de contrato numa rota implantada**, o `200` com corpo voltou a `204`, e os testes de integração mudaram junto.
 
 ### Persistência
 
@@ -257,7 +254,7 @@ As rotas do navegador são em português; as da API continuam em inglês.
 └──────────────────────────────────┘
 ```
 
-**O que faz:** `POST /auth/password/reset` com o token da URL e, quando presente, o parâmetro `invite` da própria URL (`/senha/redefinir?token=…&invite=…`). Ao terminar, a pessoa **já está autenticada** (regra 8a) na maioria dos casos. `signedIn: true` segue direto para o aceite do convite quando houver um, ou para o `resolve`. `signedIn: false` tem dois motivos, com destinos diferentes: `NO_CONTEXT_ACCESS` vai direto para `/sem-acesso`, sem passar por `resolve` — a senha já foi trocada, mas a conta confirmadamente não tem contexto; `SIGN_IN_REQUIRED` vai para `/entrar` com uma mensagem de que a senha foi redefinida e é preciso entrar com ela — a senha também já foi trocada, mas a sessão não pôde ser criada por um motivo que não prova ausência de contexto (2026-09-29, achado da revisão de segurança do PR #176).
+**O que faz:** `POST /auth/password/reset` com o token da URL. O parâmetro `invite` da própria URL (`/senha/redefinir?token=…&invite=…`) não vai no pedido: acompanha a pessoa até o login. Ao terminar, a pessoa **não está autenticada** (regra 8a) e vai para `/entrar` com o aviso "Senha alterada. Entre com a nova senha." (sem texto de erro, anunciado com educação). A sessão que o navegador ainda guardava é descartada antes de navegar, senão a regra 11 levaria a pessoa de `/entrar` ao contexto e o aviso se perderia. Com `invite`, o login que se segue leva o convite adiante (regra 3a), e `NO_CONTEXT_ACCESS` só aparece, como sempre, no login de quem não tem nenhum contexto e nenhum convite válido (2026-10-16).
 
 **Link inválido** é estado desta tela: token usado ou expirado mostra que o link não vale mais e oferece pedir outro, sem dizer qual dos dois casos ocorreu.
 

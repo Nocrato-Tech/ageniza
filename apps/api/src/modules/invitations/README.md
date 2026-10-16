@@ -36,7 +36,7 @@ Administrative invitation rows and their audit event are committed before synchr
 delivery. A delivery failure therefore returns `502 EMAIL_DELIVERY_FAILED` while leaving the
 invitation valid for a later resend.
 
-The auth password recovery routes accept an optional `inviteToken`. It is appended to the reset
-link only when the token is valid for the requested e-mail; a valid continuation signs the user in
-after reset so the invitation can be accepted without a second login. Invalid optional tokens keep
-the ordinary non-enumerating forgot/reset responses.
+`POST /auth/password/forgot` accepts an optional `inviteToken`. It is appended to the reset link only
+when the token is valid for the requested e-mail; an invalid optional token keeps the ordinary
+non-enumerating forgot response. The reset itself takes no invitation and creates no session: the
+invitation continues through the `inviteToken` of the login that follows it.

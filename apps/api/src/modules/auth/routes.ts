@@ -6,7 +6,6 @@ import {
   AuthPasswordForgotRequestSchema,
   AuthPasswordForgotResponseSchema,
   AuthPasswordResetRequestSchema,
-  AuthPasswordResetResponseSchema,
   AuthSessionResponseSchema
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
@@ -88,8 +87,8 @@ const forgotDocs = {
 } satisfies DocumentedRouteConfig;
 const resetDocs = {
   permission: null,
-  responseStatus: 200,
-  schemas: { body: AuthPasswordResetRequestSchema, response: AuthPasswordResetResponseSchema }
+  responseStatus: 204,
+  schemas: { body: AuthPasswordResetRequestSchema }
 } satisfies DocumentedRouteConfig;
 
 const requireAuthenticatedUserId = (request: FastifyRequest): string => {
@@ -240,7 +239,6 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     // purely so a B10 recovery below has a user id to act on; a lookup failure never blocks the
     // reset itself.
     const userIdForRecovery = await identifyUserIdForResetToken(dependencies.auth, body.token);
-    const resetInviteContinuation = await resolveResetInviteContinuation(dependencies, body.inviteToken, userIdForRecovery);
 
     try {
       await runWithAuditRequestId(request.id, () => dependencies.auth.api.resetPassword({
@@ -266,121 +264,10 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
       throw toPublicAuthError(error, { statusCode: 400, code: 'INVALID_LINK', message: 'Este link não é mais válido.' });
     }
 
-    // A reset always authenticates (issue #175, 2026-09-29 decision "O reset de senha sempre
-    // autentica, exceto sem nenhum contexto"), reusing the same mechanism as the invite-login
-    // branch above: sign in with the new password, then decide whether the session survives.
-    //
-    // `signedIn: false` carries two distinct reasons (2026-09-29 security review of PR #176,
-    // achado 1): `NO_CONTEXT_ACCESS` only when the context count is confirmed to be **zero**;
-    // anything else that stops a session from being created — the user vanishing between the
-    // lookup and now, the context count failing, or `signInEmail` itself failing (including the
-    // race of two valid reset tokens for the same account) — is `SIGN_IN_REQUIRED` instead, so the
-    // client never tells someone who *does* have access that their account has none.
-    const signInFailedResponse = () => reply.status(200).send(
-      routeResponse(resetDocs, request, { signedIn: false, reason: 'SIGN_IN_REQUIRED' })
-    );
-
-    if (resetInviteContinuation !== undefined) {
-      // With a valid invite continuation the session is kept unconditionally, same as before
-      // (regra 3a): it stays contextless until `POST /invitations/:token/accept` runs. A valid
-      // continuation already proves this is not the zero-context case, so a sign-in failure here
-      // is always `SIGN_IN_REQUIRED`, never `NO_CONTEXT_ACCESS`.
-      const signedIn = await signInAfterReset(dependencies, request, resetInviteContinuation.userId, body.newPassword);
-      if (signedIn !== undefined) {
-        applyAuthCookies(reply, signedIn.headers);
-        return reply.status(200).send(routeResponse(resetDocs, request, { signedIn: true }));
-      }
-      return signInFailedResponse();
-    }
-
-    if (userIdForRecovery === undefined) {
-      // Extremely rare: the reset itself succeeded (the token was valid), but this route's own,
-      // separate, non-destructive lookup of the same verification row failed. The account cannot
-      // be identified at all, so nothing more can be attempted; log it (achado 1) and respond.
-      request.log.error({
-        operation: 'auth.password_reset_sign_in',
-        status: 'failed',
-        error: { name: 'UnresolvedUser', code: 'PASSWORD_RESET_SIGN_IN_USER_UNKNOWN' }
-      }, 'Password reset succeeded but the affected user could not be identified for sign-in');
-      return signInFailedResponse();
-    }
-
-    // Counted **before** signing in (2026-09-29 security review, achado 2): this is what lets a
-    // confirmed zero-context account never have a session created and revoked at all -- it simply
-    // never gets one -- and what keeps a count failure from leaving an orphaned session behind
-    // (the old order could sign in, then fail to count, and leave a live session nobody revoked).
-    let contextCount: number;
-    try {
-      contextCount = await dependencies.countValidContexts(userIdForRecovery);
-    } catch (error) {
-      request.log.error({
-        operation: 'auth.password_reset_context_count',
-        status: 'failed',
-        error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'PASSWORD_RESET_CONTEXT_COUNT_FAILED' }
-      }, 'Failed to count contexts after a successful password reset; no session was created');
-      return signInFailedResponse();
-    }
-
-    // Same rule as `POST /auth/login` (2026-09-24 decision): a correct credential resolving to
-    // zero contexts never gets a session. This is the only path that may respond
-    // `NO_CONTEXT_ACCESS` -- everywhere else in this route that stops short of a session is
-    // `SIGN_IN_REQUIRED`.
-    if (contextCount === 0) {
-      return reply.status(200).send(
-        routeResponse(resetDocs, request, { signedIn: false, reason: 'NO_CONTEXT_ACCESS' })
-      );
-    }
-
-    const signedIn = await signInAfterReset(dependencies, request, userIdForRecovery, body.newPassword);
-    if (signedIn !== undefined) {
-      applyAuthCookies(reply, signedIn.headers);
-      return reply.status(200).send(routeResponse(resetDocs, request, { signedIn: true }));
-    }
-    return signInFailedResponse();
+    // No session is created: the reset ended every one, and the person signs in again with the new
+    // password (2026-10-16 decision), so the invitation continues through the login, not here.
+    return reply.status(204).send();
   });
-};
-
-/**
- * Signs a user back in right after a successful password reset — the mechanism both branches of
- * `POST /auth/password/reset` share (issue #175). Returns `undefined` on any failure (a user that
- * can no longer be found, or `signInEmail` itself failing — including the race of two valid reset
- * tokens for the same account, where the current hash no longer matches this call's `newPassword`
- * by the time it runs), so callers fall back to a `SIGN_IN_REQUIRED` response instead of turning an
- * already-successful reset into a public error. Every failure is logged here, structured and
- * without the password, the reset token, or the e-mail (2026-09-29 security review of PR #176,
- * achado 1: this catch was previously silent).
- */
-const signInAfterReset = async (
-  dependencies: AuthModuleDependencies,
-  request: FastifyRequest,
-  userId: string,
-  newPassword: string
-): Promise<{ readonly headers: Headers; readonly response: { readonly token: string } } | undefined> => {
-  try {
-    const context = await dependencies.auth.$context;
-    const user = await context.internalAdapter.findUserById(userId);
-    if (user === null || user === undefined) {
-      request.log.error({
-        operation: 'auth.password_reset_sign_in',
-        status: 'failed',
-        error: { name: 'UnresolvedUser', code: 'PASSWORD_RESET_SIGN_IN_USER_NOT_FOUND' }
-      }, 'Password reset succeeded but the account could not be found for sign-in');
-      return undefined;
-    }
-    const { headers, response } = await dependencies.auth.api.signInEmail({
-      body: { email: user.email, password: newPassword },
-      headers: toAuthHeaders(request),
-      returnHeaders: true
-    });
-    return { headers, response };
-  } catch (error) {
-    request.log.error({
-      operation: 'auth.password_reset_sign_in',
-      status: 'failed',
-      error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'PASSWORD_RESET_SIGN_IN_FAILED' }
-    }, 'Failed to sign the account back in after a successful password reset');
-    return undefined;
-  }
 };
 
 /**
@@ -389,7 +276,7 @@ const signInAfterReset = async (
  * "credencial correta sem nenhum contexto não cria sessão"): an account removed from every agency
  * and re-invited has zero contexts until it accepts, and accepting needs a session. Reuses the
  * same `app_private.invitation_by_token_hash` validity check (`invitationTokenLookup`, also used
- * by `password/forgot` and `password/reset` above) the invitations module itself relies on — never
+ * by `password/forgot` above) the invitations module itself relies on — never
  * re-implemented here: not used, not revoked, not expired, agency active, and client active when
  * the invite is one. An invalid, mismatched-email, or absent token is indistinguishable from one
  * another (B1): none of them ever changes the response the caller sees.
@@ -402,30 +289,6 @@ const grantsZeroContextAccessViaInvite = async (
   if (inviteToken === undefined || dependencies.invitationTokenLookup === undefined) return false;
   const invitation = await dependencies.invitationTokenLookup(inviteToken).catch(() => undefined);
   return invitation?.valid === true && invitation.email === email;
-};
-
-/**
- * A reset continuation is enabled only when the invite is still valid and its e-mail belongs to
- * the user identified by Better Auth's verification row. Invalid/mismatched optional tokens are
- * intentionally ignored, preserving the ordinary reset response (`signedIn` decided by context
- * count, same as no `inviteToken` at all) and avoiding enumeration.
- */
-const resolveResetInviteContinuation = async (
-  dependencies: AuthModuleDependencies,
-  inviteToken: string | undefined,
-  userId: string | undefined
-): Promise<{ userId: string } | undefined> => {
-  if (inviteToken === undefined || userId === undefined || dependencies.invitationTokenLookup === undefined) return undefined;
-  const invitation = await dependencies.invitationTokenLookup(inviteToken).catch(() => undefined);
-  if (invitation?.valid !== true || invitation.email === undefined) return undefined;
-
-  try {
-    const context = await dependencies.auth.$context;
-    const user = await context.internalAdapter.findUserById(userId);
-    return user?.email === invitation.email ? { userId } : undefined;
-  } catch {
-    return undefined;
-  }
 };
 
 /**
