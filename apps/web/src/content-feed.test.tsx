@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -257,17 +257,6 @@ describe('the feed beside the calendar', () => {
     expect(plannedOf('Mais adiante')).toBe(true);
   });
 
-  it('keeps every post of the period in the grid, with no limit of nine', async () => {
-    const rows = Array.from({ length: 14 }, (_value, index) => contentFixture({ title: `Post ${index + 1}`, publishOn: `2026-10-${String(index + 1).padStart(2, '0')}` }));
-    const { impl } = makeFetch({ contents: { [padaria.id]: rows } });
-    renderScreen(impl, url(padaria.id));
-    await ready();
-
-    expect(tileTexts()).toHaveLength(14);
-    expect(tileTexts()[0]).toBe('Post 14 · Imagem · 14/10');
-    expect(tileTexts()[13]).toBe('Post 1 · Imagem · 01/10');
-  });
-
   it('follows the period: the month and the week change the grid, and the days asked for are the calendar\'s', async () => {
     const { impl, calls } = makeFetch({
       contents: {
@@ -305,7 +294,7 @@ describe('the feed beside the calendar', () => {
     const empty = makeFetch();
     const first = renderScreen(empty.impl, url(padaria.id));
     expect(await screen.findByText('Planeje o primeiro post')).toBeTruthy();
-    expect(document.querySelectorAll('.content-feed__tile--empty')).toHaveLength(9);
+    expect(document.querySelectorAll('.content-feed__slot')).toHaveLength(9);
     first.unmount();
 
     // A period with only what the feed leaves out is empty for the feed, though not for the calendar.
@@ -319,6 +308,8 @@ describe('the feed beside the calendar', () => {
     renderScreen(filled.impl, url(padaria.id));
     await ready();
     expect(screen.queryByText('Planeje o primeiro post')).toBeNull();
+    // One post fills one slot of the nine: the other eight are the frames of "nothing on this day", and none is a tile of the feed.
+    expect(document.querySelectorAll('.content-feed__slot')).toHaveLength(8);
     expect(document.querySelectorAll('.content-feed__tile--empty')).toHaveLength(0);
   });
 
@@ -548,5 +539,210 @@ describe('the profile preview (state of each post and counters)', () => {
     const counters = feedRegion().querySelector<HTMLElement>('.content-feed__counters')!;
     expect(within(counters).getByText('pronto').nextElementSibling?.textContent).toBe('1');
     expect(within(counters).queryByText('prontos')).toBeNull();
+  });
+});
+
+describe('the feed drawn as a phone, nine posts to a page', () => {
+  const posts = (count: number) => Array.from({ length: count }, (_value, index) => contentFixture({ title: `Post ${index + 1}`, publishOn: `2026-10-${String(index + 1).padStart(2, '0')}` }));
+  const pageOf = (): string => within(feedRegion()).getByRole('status').textContent ?? '';
+  const slots = (): number => feedRegion().querySelectorAll('.content-feed__slot').length;
+  const pagerButton = (name: 'Página anterior' | 'Próxima página'): HTMLButtonElement => within(feedRegion()).getByRole('button', { name }) as HTMLButtonElement;
+
+  it('is drawn on a device: a bezel, the camera island and the home bar, with the profile on its screen', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: posts(2) } });
+    renderScreen(impl, url(padaria.id));
+    await ready();
+
+    const phone = feedRegion().querySelector('.content-phone')!;
+    expect(phone).not.toBeNull();
+    expect(phone.querySelector('.content-phone__screen .content-feed__profile')).not.toBeNull();
+    expect(phone.querySelector('.content-phone__island')?.getAttribute('aria-hidden')).toBe('true');
+    expect(phone.querySelector('.content-phone__home')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('shows nine posts a page, the latest first, and says which ones in the pager', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: posts(14) } });
+    renderScreen(impl, url(padaria.id));
+    await ready();
+
+    expect(tileTexts()).toEqual(Array.from({ length: 9 }, (_value, index) => `Post ${14 - index} · Imagem · ${String(14 - index).padStart(2, '0')}/10`));
+    expect(pageOf()).toBe('1–9 de 14');
+    expect(slots()).toBe(0);
+  });
+
+  it('goes to the next page and back, ends the last page in empty slots and keeps the counters of the whole period', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: posts(14) } });
+    renderScreen(impl, url(padaria.id));
+    await ready();
+
+    fireEvent.click(pagerButton('Próxima página'));
+    expect(tileTexts()).toEqual(Array.from({ length: 5 }, (_value, index) => `Post ${5 - index} · Imagem · 0${5 - index}/10`));
+    expect(pageOf()).toBe('10–14 de 14');
+    expect(slots()).toBe(4);
+    const counters = feedRegion().querySelector<HTMLElement>('.content-feed__counters')!;
+    expect(within(counters).getByText('no período').nextElementSibling?.textContent).toBe('14');
+
+    fireEvent.click(pagerButton('Página anterior'));
+    expect(pageOf()).toBe('1–9 de 14');
+    expect(tileTexts()[0]).toBe('Post 14 · Imagem · 14/10');
+  });
+
+  it('is one full page with exactly nine, and a page with a single post says so without a range', async () => {
+    const nine = renderScreen(makeFetch({ contents: { [padaria.id]: posts(9) } }).impl, url(padaria.id));
+    await ready();
+    expect(pageOf()).toBe('1–9 de 9');
+    expect(slots()).toBe(0);
+    expect(pagerButton('Próxima página').getAttribute('aria-disabled')).toBe('true');
+    expect(pagerButton('Página anterior').getAttribute('aria-disabled')).toBe('true');
+    nine.unmount();
+
+    renderScreen(makeFetch({ contents: { [padaria.id]: posts(1) } }).impl, url(padaria.id));
+    await ready();
+    expect(pageOf()).toBe('1 de 1');
+    expect(slots()).toBe(8);
+  });
+
+  it('fills the empty feed with nine slots, says what to do and offers no pager', async () => {
+    renderScreen(makeFetch().impl, url(padaria.id));
+    expect(await screen.findByText('Planeje o primeiro post')).toBeTruthy();
+
+    expect(slots()).toBe(9);
+    expect(within(feedRegion()).queryByRole('button', { name: 'Próxima página' })).toBeNull();
+    expect(within(feedRegion()).queryByRole('status')).toBeNull();
+  });
+
+  it('draws the icon of "nothing on this day" in each slot and keeps it out of the reading order', async () => {
+    renderScreen(makeFetch({ contents: { [padaria.id]: posts(2) } }).impl, url(padaria.id));
+    await ready();
+
+    const filled = [...feedRegion().querySelectorAll('.content-feed__slot')];
+    expect(filled).toHaveLength(7);
+    for (const slot of filled) {
+      expect(slot.getAttribute('aria-hidden')).toBe('true');
+      expect(slot.getAttribute('title')).toBe('Nada neste dia');
+      expect(slot.querySelector('svg.lucide-calendar-x')).not.toBeNull();
+    }
+    expect(within(feedRegion()).getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('keeps the page buttons 44px high and the pressed one focused when it reaches an end', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: posts(12) } });
+    renderScreen(impl, url(padaria.id));
+    await ready();
+
+    const next = pagerButton('Próxima página');
+    next.focus();
+    fireEvent.click(next);
+
+    expect(pageOf()).toBe('10–12 de 12');
+    expect(next.getAttribute('aria-disabled')).toBe('true');
+    expect(next.disabled).toBe(false);
+    expect(document.activeElement).toBe(next);
+    expect(next.classList.contains('ui-button--md')).toBe(true);
+  });
+
+  it('does nothing when a button that is at its end is pressed', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: posts(12) } });
+    renderScreen(impl, url(padaria.id));
+    await ready();
+
+    fireEvent.click(pagerButton('Página anterior'));
+    expect(pageOf()).toBe('1–9 de 12');
+    fireEvent.click(pagerButton('Próxima página'));
+    fireEvent.click(pagerButton('Próxima página'));
+    expect(pageOf()).toBe('10–12 de 12');
+  });
+
+  it('starts on the first page again when the period changes', async () => {
+    const rows = [...posts(12), contentFixture({ title: 'De novembro', publishOn: '2026-11-10' })];
+    const { impl } = makeFetch({ contents: { [padaria.id]: rows } });
+    renderScreen(impl, url(padaria.id));
+    await ready();
+    fireEvent.click(pagerButton('Próxima página'));
+    expect(pageOf()).toBe('10–12 de 12');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }));
+    await waitFor(() => expect(tileTexts()).toEqual(['De novembro · Imagem · 10/11']));
+    expect(pageOf()).toBe('1 de 1');
+    fireEvent.click(screen.getByRole('button', { name: 'Mês anterior' }));
+    await waitFor(() => expect(tileTexts()).toHaveLength(9));
+    expect(pageOf()).toBe('1–9 de 12');
+  });
+
+  it('starts on the first page again for another client', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: posts(12), [confeitaria.id]: posts(11) } });
+    renderScreen(impl, url(padaria.id));
+    await ready();
+    fireEvent.click(pagerButton('Próxima página'));
+    expect(pageOf()).toBe('10–12 de 12');
+
+    fireEvent.click(await screen.findByRole('link', { name: 'Confeitaria Doce' }));
+    await waitFor(() => expect(pageOf()).toBe('1–9 de 11'));
+  });
+
+  it('draws the skeleton on the same device', async () => {
+    renderScreen(makeFetch({ period: () => deferred<Response>().promise }).impl, url(padaria.id));
+
+    await waitFor(() => expect(document.querySelectorAll('.content-feed__skeleton')).toHaveLength(9));
+    expect(document.querySelector('.content-phone .content-feed__grid[aria-hidden="true"]')).not.toBeNull();
+  });
+});
+
+describe('the page of the phone follows the posts that change under it', () => {
+  const posts = (count: number) => Array.from({ length: count }, (_value, index) => contentFixture({ title: `Post ${index + 1}`, publishOn: `2026-10-${String(index + 1).padStart(2, '0')}` }));
+  const pageOf = (): string => within(feedRegion()).getByRole('status').textContent ?? '';
+  const next = (): HTMLElement => within(feedRegion()).getByRole('button', { name: 'Próxima página' });
+  const refetch = (queryClient: ReturnType<typeof createQueryClient>) => act(async () => { await queryClient.invalidateQueries({ queryKey: ['agency', AGENCY_A, 'contents', padaria.id] }); });
+
+  it('goes back to the last page that still exists when the posts of the period drop under it', async () => {
+    const contents: Record<string, ContentListItem[]> = { [padaria.id]: posts(10) };
+    const queryClient = createQueryClient();
+    renderScreen(makeFetch({ contents }).impl, url(padaria.id), queryClient);
+    await ready();
+    fireEvent.click(next());
+    expect(pageOf()).toBe('10 de 10');
+
+    contents[padaria.id] = posts(9);
+    await refetch(queryClient);
+
+    await waitFor(() => expect(pageOf()).toBe('1–9 de 9'));
+    expect(tileTexts()).toHaveLength(9);
+  });
+
+  it('does not remember a press of "Próxima página" made on the last page, so a longer period does not jump ahead', async () => {
+    const contents: Record<string, ContentListItem[]> = { [padaria.id]: posts(12) };
+    const queryClient = createQueryClient();
+    renderScreen(makeFetch({ contents }).impl, url(padaria.id), queryClient);
+    await ready();
+    fireEvent.click(next());
+    fireEvent.click(next());
+    fireEvent.click(next());
+    expect(pageOf()).toBe('10–12 de 12');
+
+    contents[padaria.id] = posts(30);
+    await refetch(queryClient);
+
+    await waitFor(() => expect(pageOf()).toBe('10–18 de 30'));
+  });
+
+  it('names the pager for assistive technology', async () => {
+    renderScreen(makeFetch({ contents: { [padaria.id]: posts(12) } }).impl, url(padaria.id));
+    await ready();
+
+    expect(within(feedRegion()).getByRole('navigation', { name: 'Páginas do feed' })).toBeTruthy();
+  });
+
+  it('starts on the first page for a client whose posts are already cached, in the same month', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: posts(12), [confeitaria.id]: posts(11) } });
+    renderScreen(impl, url(confeitaria.id));
+    await ready();
+    fireEvent.click(await screen.findByRole('link', { name: 'Padaria Central' }));
+    await waitFor(() => expect(pageOf()).toBe('1–9 de 12'));
+    fireEvent.click(next());
+    expect(pageOf()).toBe('10–12 de 12');
+
+    fireEvent.click(await screen.findByRole('link', { name: 'Confeitaria Doce' }));
+
+    await waitFor(() => expect(pageOf()).toBe('1–9 de 11'));
   });
 });

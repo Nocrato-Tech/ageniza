@@ -5587,32 +5587,25 @@ html:has(.portal-post__bar) {
   color: var(--text-secondary);
 }
 
+/* The aside holds the phone and nothing else: the device is the frame, so the aside has none of its own. */
 .contents__feed {
   display: grid;
+  justify-items: center;
   align-content: start;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-canvas);
-  color: var(--text-secondary);
-}
-
-.contents__feed > .content-feed {
-  overflow: hidden;
-  padding-bottom: var(--space-3);
-  border-radius: var(--radius-lg);
-  background: var(--bg-surface);
-}
-
-.contents__feed p {
-  margin: 0;
+  min-width: 0;
 }
 
 @media (min-width: 64rem) {
   .contents__workspace {
-    grid-template-columns: minmax(0, 1fr) 18.75rem;
+    grid-template-columns: minmax(0, 1fr) 22rem;
+    gap: var(--space-8);
     align-items: start;
+  }
+
+  /* The phone stays in view while the month scrolls, like the screen of a device held beside the calendar. */
+  .contents__feed {
+    position: sticky;
+    top: var(--space-6);
   }
 }
 
@@ -6340,6 +6333,109 @@ html:has(.portal-post__bar) {
   margin: 0;
   color: var(--text-secondary);
   text-align: center;
+}
+
+/* The phone the agency's feed is drawn on: an ink bezel, the camera island and the home bar around a screen with room.
+   Everything here is scoped to the phone: the portal draws its own feed with the same tile classes. */
+.content-phone {
+  width: min(100%, 22rem);
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: calc(var(--radius-xl) * 2);
+  background: var(--color-ink-900);
+}
+
+.content-phone__screen {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  min-height: 42rem;
+  padding: var(--space-12) var(--space-4) var(--space-8);
+  border-radius: calc(var(--radius-xl) * 2 - var(--space-2));
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.content-phone__island {
+  position: absolute;
+  top: var(--space-3);
+  left: 50%;
+  width: 5.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-full);
+  background: var(--color-ink-900);
+  transform: translateX(-50%);
+}
+
+.content-phone__home {
+  position: absolute;
+  bottom: var(--space-3);
+  left: 50%;
+  width: 7rem;
+  height: 0.25rem;
+  border-radius: var(--radius-full);
+  background: var(--border-control);
+  transform: translateX(-50%);
+}
+
+.content-phone .content-feed {
+  gap: var(--space-4);
+}
+
+.content-phone .content-feed__handle {
+  padding: 0;
+  font: var(--label-md);
+}
+
+.content-phone .content-feed__profile {
+  gap: var(--space-4);
+  padding: 0;
+}
+
+.content-phone .content-feed__grid {
+  gap: var(--space-1);
+}
+
+.content-phone .content-feed__tile,
+.content-feed__slot {
+  border-radius: var(--radius-sm);
+}
+
+/* A slot with nothing in it keeps the grid whole: a dashed frame and the icon that says there is nothing on that day. */
+.content-feed__slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  border: 1px dashed var(--border-default);
+  background: var(--bg-canvas);
+  color: var(--text-muted);
+}
+
+.content-feed__slot svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  stroke-width: 1.75;
+}
+
+.content-feed__pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.content-feed__range {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.content-feed__pager .ui-button[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .content-folders,

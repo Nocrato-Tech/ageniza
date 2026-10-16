@@ -286,7 +286,7 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 | Calendário | mês, com opção de semana; criar pelo botão ou pelo **+** do dia (Conteúdo ou Roteiro de stories); arrastar o card para outra data |
 | Card | capa, título, formato, data e hora, status, alerta de prazo ou atraso, percentual das subtarefas |
 | Detalhe ao passar o mouse | começo da legenda, responsável, resumo das subtarefas, última mensagem da conversa |
-| Feed | o celular ao lado do calendário, com a grade 3×3 dos conteúdos de feed não cancelados, sincronizada com o período; vídeo longo e VSL só no calendário. Não é uma vista que troca o calendário (decisão de 2026-10-16) |
+| Feed | o celular ao lado do calendário, desenhado como um aparelho, com a grade 3×3 dos conteúdos de feed não cancelados, sincronizada com o período e **nove por página**: mais recente primeiro, "1–9 de N" e as setas Página anterior e Próxima página no pé; a página que não enche termina em quadros "nada neste dia" (moldura tracejada com ícone), nunca em espaço em branco; mudar de período ou de cliente volta à primeira página; vídeo longo e VSL só no calendário. Não é uma vista que troca o calendário (decisões de 2026-10-16) |
 | Mídias | a biblioteca do cliente fica na aba Mídias do detalhe do cliente (`specs/clientes.md`, seção 7); subir mídia antes de existir o post (ensaio fotográfico) |
 
 ### Esboço — modal do conteúdo
@@ -348,7 +348,7 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 
 ### Estados da tela
 
-- **Vazio:** calendário vazio com Criar para quem opera; feed com a grade marcada "planeje o primeiro post"; no portal, "Nenhum conteúdo planejado para este mês" (com "Ir para este mês" quando o mês aberto não é o de hoje), o filtro sem resultado com "Limpar o filtro" e o feed sem post dos formatos do feed com "Ver a lista".
+- **Vazio:** calendário vazio com Criar para quem opera; feed com os nove quadros "nada neste dia" e "planeje o primeiro post"; no portal, "Nenhum conteúdo planejado para este mês" (com "Ir para este mês" quando o mês aberto não é o de hoje), o filtro sem resultado com "Limpar o filtro" e o feed sem post dos formatos do feed com "Ver a lista".
 - **Carregando:** skeleton na primeira carga; revalidação não muda a tela.
 - **Erro:** mensagem com Tentar de novo.
 - **Sem permissão:** o item não aparece no menu, e a URL digitada cai no mesmo "não encontrado".
