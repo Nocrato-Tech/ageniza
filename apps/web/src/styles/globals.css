@@ -2493,6 +2493,7 @@ a.client-general__block:focus-visible {
 .auth-visual__title {
   margin: 0;
   max-width: 16ch;
+  color: var(--text-primary);
   font: var(--heading-xl);
   letter-spacing: -0.02em;
   text-wrap: balance;
