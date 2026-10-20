@@ -49,6 +49,7 @@ Encontre o documento certo pela tarefa. Cada linha diz **que pergunta o document
 
 ## Revisar código e abrir PR
 
+- [Revisão de código](code-review.md) — o formato de um achado, a severidade e quando uma revisão termina. **Leia quando:** for revisar um PR ou responder a uma revisão.
 - [Checklist do implementador](implementation-checklist.md) — o que conferir antes de abrir ou atualizar um PR, incluindo as mutações que provam cada aceite. **Leia quando:** for abrir ou atualizar um PR.
 - [Integração contínua](ci/README.md) — o que o workflow de CI roda e como reproduzir localmente. **Leia quando:** o CI falhar ou for preciso rodar os mesmos portões na máquina.
 
