@@ -44,7 +44,7 @@ interface Call { readonly path: string; readonly method: string; readonly body: 
 
 interface Scenario {
   /** What the request route answers; the real route validates the body with the contract first. */
-  request?: (body: { newEmail: string; currentPassword: string }) => Response;
+  request?: (body: { newEmail: string; currentPassword?: string | undefined }) => Response;
   /** Tokens the link route accepts, once each. */
   validTokens?: Set<string>;
   confirmFails?: Response;

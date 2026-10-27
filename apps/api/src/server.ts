@@ -173,7 +173,8 @@ export const startApi = async (): Promise<void> => {
       invitationTokenLookup,
       database,
       emailService,
-      legalVersions: { terms: config.authTermsVersion, privacy: config.authPrivacyVersion }
+      legalVersions: { terms: config.authTermsVersion, privacy: config.authPrivacyVersion },
+      ...(config.google === undefined ? {} : { google: { appPublicUrl: config.appPublicUrl } })
     },
     invitations: invitationDependencies,
     contexts: contextDependencies,

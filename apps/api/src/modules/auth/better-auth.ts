@@ -8,11 +8,12 @@ import { captureUnexpectedError, type CoreLogger } from '@ageniza/core';
 import { currentAuditRequestId, currentPasswordResetInviteToken } from './audit-context.js';
 import { recordAuthAuditEventSafely, type AuthAuditRecorder } from './audit.js';
 import type { EmailService } from './email-service.js';
+import { createGoogleUserInfo } from './google.js';
 import { AUTH_SESSION_MAX_AGE_MS } from './policy.js';
 
 export interface CreateAuthDependencies {
   readonly pool: Pool;
-  readonly config: Pick<ApiConfig, 'authSecret' | 'appPublicUrl' | 'environment'>;
+  readonly config: Pick<ApiConfig, 'authSecret' | 'appPublicUrl' | 'environment' | 'google'>;
   readonly sender: EmailService;
   readonly logger: CoreLogger;
   readonly auditRecorder: AuthAuditRecorder;
@@ -59,7 +60,42 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
       updateAge: 60 * 60 * 24,
       cookieCache: { enabled: false }
     },
+    user: {
+      // The day the credential of the account was replaced without the person (Google taking an account over): a
+      // session created before it is refused by the guard (issue #719's mechanism). Read-only here; the database writes it.
+      additionalFields: { passwordChangedAt: { type: 'date', required: false, input: false } }
+    },
+    ...(dependencies.config.google === undefined ? {} : {
+      socialProviders: {
+        google: {
+          clientId: dependencies.config.google.clientId,
+          clientSecret: dependencies.config.google.clientSecret,
+          redirectURI: dependencies.config.google.callbackUrl,
+          // Only openid, email and profile (decision 2026-10-26, item 7): no scope Google already granted to the client is added.
+          includeGrantedScopes: false,
+          getUserInfo: createGoogleUserInfo({ clientId: dependencies.config.google.clientId, pool: dependencies.pool, logger: dependencies.logger })
+        }
+      }
+    }),
+    account: {
+      // The only provider is Google, and it links to a confirmed account only when it says the address is verified
+      // (Better Auth's `requireLocalEmailVerified` stays on); no provider is trusted without that.
+      accountLinking: { enabled: true, trustedProviders: [] },
+      // A later sign-in changes nothing in the account row, and the first one stores no token either (the hook below).
+      updateAccountOnSignIn: false
+    },
     databaseHooks: {
+      account: {
+        create: {
+          before: async (account) => {
+            if (account.providerId !== 'credential' && account.providerId !== 'google') return false;
+            // The product never calls Google again after the sign-in, so nothing of the grant is kept (decision, item 7).
+            return {
+              data: { ...account, accessToken: null, refreshToken: null, idToken: null, accessTokenExpiresAt: null, refreshTokenExpiresAt: null }
+            };
+          }
+        }
+      },
       session: {
         update: {
           // B8: the absolute session lifetime must not depend solely on `session-guard.ts`

@@ -106,6 +106,16 @@ export interface ApiConfig extends ServerConfig {
   containerLocal: boolean;
   /** Public contact the read-only agency is pointed to (`SUPPORT_CONTACT_EMAIL`); not a secret. Undefined: no contact. */
   supportContactEmail?: string;
+  /**
+   * Google OAuth (issue #707). Undefined turns "Entrar com o Google" off: the routes answer 404 and the web hides the
+   * button. `clientSecret` is server-only and never leaves the API; `callbackUrl` is the address registered with Google.
+   */
+  google?: GoogleOAuthConfig;
+}
+export interface GoogleOAuthConfig {
+  readonly clientId: string;
+  readonly clientSecret: string;
+  readonly callbackUrl: string;
 }
 /** Object storage the worker talks to directly (issue #24): download the confirmed original,
  * upload the generated thumbnail/preview. Unlike `StorageConfig`, the worker never presigns a
@@ -152,6 +162,11 @@ type ServerEnvironment = Record<string, string | undefined>;
 const optionalUrl = (message: string) => z.preprocess(
   (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
   z.string().trim().url(message).optional()
+);
+
+const optionalText = () => z.preprocess(
+  (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+  z.string().trim().max(512).optional()
 );
 
 const sharedServerSchema = z.object({
@@ -257,6 +272,9 @@ const apiSchema = sharedServerSchema.extend({
   API_CORS_ORIGINS: z.string().default('http://127.0.0.1:5173').transform(commaSeparatedValues),
   API_BODY_LIMIT_BYTES: z.coerce.number().int().min(1_024).max(50 * 1024 * 1024).default(1_048_576),
   API_TRUSTED_PROXY_CIDRS: z.string().default('').transform(commaSeparatedValues),
+  GOOGLE_CLIENT_ID: optionalText(),
+  GOOGLE_CLIENT_SECRET: optionalText(),
+  GOOGLE_CALLBACK_URL: optionalUrl('must be a valid URL; supplied values are redacted'),
   SUPPORT_CONTACT_EMAIL: z.preprocess(
     (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
     z.string().trim().max(320).email('must be a valid e-mail address').optional()
@@ -427,6 +445,26 @@ const validateIdentityStorageEnvironment = (
   return allPresent;
 };
 
+/**
+ * Google sign-in is all or nothing: without the id and the secret it is off, with only one of them the API refuses to
+ * start (a half-set value would otherwise switch the button off with no explanation). The callback is the address the
+ * browser reaches the API on, which the web container serves under `/api`; `GOOGLE_CALLBACK_URL` replaces it where the
+ * API is on its own origin, as in the local stack.
+ */
+const loadGoogleConfig = (
+  environment: ServerConfig['environment'],
+  values: { APP_PUBLIC_URL: string; GOOGLE_CLIENT_ID?: string | undefined; GOOGLE_CLIENT_SECRET?: string | undefined; GOOGLE_CALLBACK_URL?: string | undefined }
+): GoogleOAuthConfig | undefined => {
+  const { GOOGLE_CLIENT_ID: clientId, GOOGLE_CLIENT_SECRET: clientSecret } = values;
+  if ((clientId === undefined) !== (clientSecret === undefined)) {
+    throw new ConfigValidationError('API', [{ path: 'GOOGLE_CLIENT_ID', message: 'must be set together with GOOGLE_CLIENT_SECRET; supplied values are redacted' }]);
+  }
+  if (clientId === undefined || clientSecret === undefined) return undefined;
+  const callbackUrl = values.GOOGLE_CALLBACK_URL ?? `${values.APP_PUBLIC_URL}/api/auth/callback/google`;
+  assertRuntimeUrlSafety(environment, 'GOOGLE_CALLBACK_URL', callbackUrl, { requireHttpsInProduction: true });
+  return { clientId, clientSecret, callbackUrl };
+};
+
 /** Loads server-only API settings. Never import this module from browser code. */
 export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
   const result = apiSchema.safeParse(env);
@@ -467,6 +505,8 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
   if (result.data.API_TRUSTED_PROXY_CIDRS.some((value) => !isIpOrCidr(value))) {
     throw new ConfigValidationError('API', [{ path: 'API_TRUSTED_PROXY_CIDRS', message: 'must contain only valid IP addresses or CIDR networks; supplied values are redacted' }]);
   }
+
+  const google = loadGoogleConfig(serverConfig.environment, result.data);
 
   // Object storage (issue #21): the four secrets/identifiers are required together, exactly like
   // SMTP_URL/EMAIL_FROM above, and required in production because direct-to-bucket upload is core
@@ -516,6 +556,7 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
     trustedProxyCidrs: result.data.API_TRUSTED_PROXY_CIDRS,
     containerLocal: result.data.APP_CONTAINER_LOCAL === 'true',
     ...(result.data.SUPPORT_CONTACT_EMAIL === undefined ? {} : { supportContactEmail: result.data.SUPPORT_CONTACT_EMAIL }),
+    ...(google === undefined ? {} : { google }),
     storage: allStoragePresent ? {
       endpoint: result.data.R2_ENDPOINT!,
       publicEndpoint: result.data.R2_PUBLIC_ENDPOINT ?? result.data.R2_ENDPOINT!,

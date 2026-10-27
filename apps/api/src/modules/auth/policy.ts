@@ -37,6 +37,10 @@ export const AUTH_RATE_LIMITS = {
   verifyEmail: {
     ip: { max: 100, windowMs: FIFTEEN_MINUTES_MS }
   },
+  // Starting a Google sign-in and coming back from it are navigations of one person, a few per attempt.
+  google: {
+    ip: { max: 60, windowMs: FIFTEEN_MINUTES_MS }
+  },
   invitation: {
     authenticatedIp: { max: 30, windowMs: FIFTEEN_MINUTES_MS },
     publicIp: { max: 20, windowMs: FIFTEEN_MINUTES_MS }

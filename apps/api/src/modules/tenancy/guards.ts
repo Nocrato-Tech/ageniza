@@ -36,12 +36,14 @@ interface AgencyAccessRow {
   readonly is_owner: boolean;
   readonly role_key: string | null;
   readonly permissions: readonly string[] | null;
+  readonly terms_blocked: boolean;
 }
 
 interface ClientAccessRow {
   readonly client_id: string;
   readonly agency_id: string;
   readonly client_membership_id: string;
+  readonly terms_blocked: boolean;
 }
 
 interface RawRows<TResult> {
@@ -72,6 +74,18 @@ const forbidden = (): HttpError => new HttpError({
   statusCode: 403,
   code: 'FORBIDDEN',
   message: 'You do not have permission to perform this action.'
+});
+
+/**
+ * The account has Google and has not accepted the Terms and the Privacy Policy, or Google took the account over and revoked the
+ * acceptance (decision 2026-10-26, items 2 and 4; issue #707). Without the acceptance there is no context, so no agency or
+ * portal route answers: the person keeps only what is needed to accept (`/me/legal-acceptances`, the session, sign-out and the
+ * profile), none of which goes through these guards.
+ */
+const termsNotAccepted = (): HttpError => new HttpError({
+  statusCode: 403,
+  code: 'TERMS_NOT_ACCEPTED',
+  message: 'Aceite os Termos de Uso e a Política de Privacidade para continuar.'
 });
 
 const invalidAgencyId = (): HttpError => new HttpError({
@@ -118,7 +132,8 @@ export const createRequireAgencyAccess = (dependencies: TenancyGuardDependencies
           coalesce(
             (select array_agg(held.key order by held.key) from app_private.agency_permission_keys(agency.id) as held(key)),
             array[]::text[]
-          ) as permissions
+          ) as permissions,
+          app_private.legal_acceptance_blocks_access(app_private.current_user_id()) as terms_blocked
         from public.agencies as agency
         left join public.agency_memberships as membership
           on membership.agency_id = agency.id
@@ -138,6 +153,7 @@ export const createRequireAgencyAccess = (dependencies: TenancyGuardDependencies
 
     // A missing row intentionally covers nonexistent, suspended, and inaccessible agencies.
     if (row === undefined) throw notFound();
+    if (row.terms_blocked === true) throw termsNotAccepted();
     request.tenant = {
       agencyId,
       isOwner: row.is_owner === true,
@@ -204,7 +220,8 @@ export const createRequireClientAccess = (dependencies: TenancyGuardDependencies
         select
           client.id as client_id,
           client.agency_id as agency_id,
-          membership.id as client_membership_id
+          membership.id as client_membership_id,
+          app_private.legal_acceptance_blocks_access(app_private.current_user_id()) as terms_blocked
         from public.client_memberships as membership
         join public.clients as client on client.id = membership.client_id
         join public.agencies as agency on agency.id = client.agency_id
@@ -220,6 +237,7 @@ export const createRequireClientAccess = (dependencies: TenancyGuardDependencies
     // A missing row intentionally covers a nonexistent client, an archived client, a suspended
     // agency, and a caller without an active client membership -- never revealing which.
     if (row === undefined) throw clientNotFound();
+    if (row.terms_blocked === true) throw termsNotAccepted();
     request.clientContext = {
       clientId: row.client_id,
       agencyId: row.agency_id,

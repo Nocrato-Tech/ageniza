@@ -8,12 +8,14 @@ import {
   type ApiModule,
   type DocumentedRoute
 } from './catalog.js';
+import { routeErrors } from './document.js';
 
 const jsonBlock = (value: unknown): string => `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``;
 
 const errorList = (route: DocumentedRoute): string => {
-  if (route.errors.length === 0) return 'Nenhum.';
-  return [...route.errors]
+  const errors = routeErrors(route);
+  if (errors.length === 0) return 'Nenhum.';
+  return [...errors]
     .sort((a, b) => a.status - b.status || a.code.localeCompare(b.code))
     .map((error) => `\`${error.status} ${error.code}\``)
     .join(' · ');

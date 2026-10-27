@@ -160,6 +160,10 @@ const fetchLastUsedKey = async (transaction: ContextTransaction): Promise<string
  * exactly.
  */
 export const listValidContexts = async (transaction: ContextTransaction): Promise<ListValidContextsResult> => {
+  // A Google account that has not accepted the Terms and the Privacy Policy has no context until it does (issue #707).
+  const blocked = await raw<RawRows<{ blocked: boolean }>>(transaction, 'select app_private.legal_acceptance_blocks_access(app_private.current_user_id()) as blocked', []);
+  if (blocked.rows[0]?.blocked === true) return { contexts: [], lastUsedContext: null };
+
   // The account that enters takes the accesses given to its verified address before its contexts are read (decision
   // 2026-10-26, item 3). It is done here, where every login, resolve and list passes, and not in the sign-in route.
   await raw(transaction, 'select app_private.link_client_portal_accesses()', []);

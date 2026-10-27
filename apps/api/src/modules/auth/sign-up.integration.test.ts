@@ -424,6 +424,10 @@ describe('POST /auth/email/verify asks for the password (finding A1 of the revie
     expect(newLogin.cookies.length).toBeGreaterThan(0);
     expect(reset.cookies.length).toBe(0);
 
+    // The name whoever signed up typed does not survive, and the one in its place is not empty: the sign-in response requires a name.
+    expect((await queryAsOwner<{ name: string }>('select name from auth."user" where id = $1', [user?.id]))[0]?.name).toBe(email.split('@')[0]);
+    expect(newLogin.json()).toMatchObject({ user: { name: email.split('@')[0] } });
+
     // The acceptance recorded by whoever signed up is revoked, and the owner of the mailbox accepts again.
     const revoked = await queryAsOwner<{ revoked: boolean }>('select revoked_at is not null as revoked from public.legal_acceptances where user_id = $1', [user?.id]);
     expect(revoked.map((row) => row.revoked)).toEqual([true, true]);

@@ -318,7 +318,17 @@ describe('worker runtime', () => {
     expect(archive?.runOnStart).toBe(true);
     expect(registered.filter((definition) => definition.name === 'clients.archive-due')).toHaveLength(1);
     // Video processing needs storage and is absent from this config; the archive does not need it.
-    expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due']);
+    expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due', 'accounts.purge-unconfirmed']);
+  });
+
+  it('registers the purge of the unconfirmed accounts, daily at 04:10, whether or not object storage is configured', () => {
+    const queue = createTestQueue();
+    createTestRuntime({ queue });
+    const registered = vi.mocked(queue.register).mock.calls.map(([definition]) => definition);
+    const purge = registered.find((definition) => definition.name === 'accounts.purge-unconfirmed');
+    expect(purge?.schedule).toEqual({ cron: '10 4 * * *', timeZone: 'America/Sao_Paulo' });
+    expect(purge?.runOnStart).toBe(true);
+    expect(registered.filter((definition) => definition.name === 'accounts.purge-unconfirmed')).toHaveLength(1);
   });
 
   it('registers the purge of the removed media, daily, together with the video processing, only when object storage is configured', () => {
@@ -328,7 +338,7 @@ describe('worker runtime', () => {
       config: { ...config, storage: { endpoint: 'http://127.0.0.1:9000', region: 'auto', accessKeyId: 'key', secretAccessKey: 'secret', bucket: 'bucket', forcePathStyle: true } }
     });
     const registered = vi.mocked(withStorage.register).mock.calls.map(([definition]) => definition);
-    expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due', 'media.process-video', 'media.purge-removed']);
+    expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due', 'accounts.purge-unconfirmed', 'media.process-video', 'media.purge-removed']);
     const purge = registered.find((definition) => definition.name === 'media.purge-removed');
     expect(purge?.schedule).toEqual({ cron: '40 3 * * *', timeZone: 'America/Sao_Paulo' });
     expect(purge?.runOnStart).toBe(true);
@@ -347,7 +357,7 @@ describe('worker runtime', () => {
     const email = registered.find((definition) => definition.name === 'notifications.send-client-content-emails');
     expect(email?.schedule).toEqual({ cron: '* * * * *', timeZone: 'America/Sao_Paulo' });
     expect(email?.runOnStart).toBe(true);
-    expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due', 'notifications.send-client-content-emails']);
+    expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due', 'accounts.purge-unconfirmed', 'notifications.send-client-content-emails']);
   });
 
   it.each([
@@ -360,7 +370,7 @@ describe('worker runtime', () => {
     destination.on('data', (chunk: Buffer) => output.push(chunk.toString()));
     createTestRuntime({ queue, logger: createLogger({}, destination), ...(emailSender === undefined ? {} : { emailSender }), config: { ...config, ...extraConfig } });
 
-    expect(vi.mocked(queue.register).mock.calls.map(([definition]) => definition.name)).toEqual(['clients.archive-due']);
+    expect(vi.mocked(queue.register).mock.calls.map(([definition]) => definition.name)).toEqual(['clients.archive-due', 'accounts.purge-unconfirmed']);
     expect(output.join('')).toContain('the e-mails to the clients will not be sent');
   });
 

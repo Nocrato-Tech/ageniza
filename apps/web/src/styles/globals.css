@@ -2392,6 +2392,11 @@ a.client-general__block:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.portal-access__name--pending {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
 .portal-access__email {
   color: var(--text-secondary);
   font: var(--body-md);
@@ -2429,12 +2434,6 @@ a.client-general__block:focus-visible {
 
 .portal-access__error p {
   margin: 0;
-}
-
-.portal-access__error-line {
-  margin: 0;
-  color: var(--text-danger);
-  font: var(--body-md);
 }
 
 .portal-access__removed,

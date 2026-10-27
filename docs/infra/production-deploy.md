@@ -106,6 +106,16 @@ PostgreSQL 17 runs on the VPS as the internal `postgres` container ([ADR 0011](.
 - **Backups are not optional:** set up the [backup and restore runbook](backup-restore.md) (encrypted daily dumps to R2, with a rehearsed restore) before production holds real data.
 - `BETTER_AUTH_SECRET` signs and encrypts Better Auth sessions and tokens (issue #31); it must be at least 32 characters and is never logged. Generate one with `openssl rand -base64 48` and store only in `/etc/ageniza/runtime.env`. `APP_PUBLIC_URL` is the trusted browser origin (`https://<domain>`, no path) used for cookies, CSRF/origin checks, and reset-password links; it must be HTTPS in production. Both are required for the API to start.
 
+### Sign in with Google (optional)
+
+Google sign-in (issue #707) is **off** until `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set in `/etc/ageniza/runtime.env`; with both empty or absent, `GET /auth/providers` answers `{ "google": false }`, the Google routes answer 404 and the web build shows no button. Setting only one of the two makes the API refuse to start. To turn it on:
+
+1. In the Google Cloud Console create an OAuth client of type "Web application" and an OAuth consent screen with the scopes `openid`, `email` and `profile` only.
+2. Authorize the redirect URI `https://<domain>/api/auth/callback/google`: it is `APP_PUBLIC_URL` plus `/api/auth/callback/google`, because the web container proxies `/api` to the API. Use `GOOGLE_CALLBACK_URL` only for a callback that is not that one (it must be HTTPS in production and the same as the one authorized at Google).
+3. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `runtime.env` (mode 600, like the other secrets). The secret is never sent to the browser, never logged, and not part of any image or build argument.
+
+Rotate the secret by creating a new one at Google, updating `runtime.env` and redeploying; turning Google off again does not touch the accounts that already signed in with it (they keep the second way in only while Google is on, and can still use "Esqueci a senha" to get a password).
+
 ### 3. Transactional email
 
 Invitations, email verification, and password resets need SMTP before the authentication work (issue #20) ships. Any provider with SMTP works; the application has no provider SDK.

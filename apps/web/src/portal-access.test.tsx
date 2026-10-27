@@ -42,7 +42,7 @@ const agencyMe = (permissions: readonly string[], readOnly = false) => ({
 });
 
 const ADMIN_PERMISSIONS = ['cliente.visualizar', 'cliente.operar', 'cliente.cadastrar', 'cliente.arquivar', 'cliente.convidar_usuario', 'cliente.remover_usuario', 'convite.reenviar', 'convite.cancelar'];
-const INVITE_ONLY_PERMISSIONS = ['cliente.visualizar', 'cliente.convidar_usuario'];
+const GATE_ONLY_PERMISSIONS = ['cliente.visualizar', 'cliente.convidar_usuario'];
 
 const padaria = {
   id: CLIENT_ID,
@@ -87,6 +87,14 @@ const joao: MemberFixture = {
   status: 'active',
   entered: true,
   since: '2026-09-10T12:00:00.000Z'
+};
+const ines: MemberFixture = {
+  accessId: 'a1a1a1a1-1111-4111-8111-111111111111',
+  name: null,
+  email: 'ines@padaria.test',
+  status: 'active',
+  entered: false,
+  since: '2026-09-12T12:00:00.000Z'
 };
 const pedro: MemberFixture = {
   accessId: 'bbbb2222-2222-4222-8222-222222222222',
@@ -134,15 +142,14 @@ interface Scenario {
   readonly members?: (status: string | null, page: number) => Response | Promise<Response>;
   readonly clientInvitations?: (page: number) => Response | Promise<Response>;
   readonly memberStatus?: (accessId: string, action: string) => Response | Promise<Response>;
-  readonly invite?: (body: unknown) => Response | Promise<Response>;
-  readonly resend?: (invitationId: string) => Response | Promise<Response>;
+  readonly add?: (body: unknown) => Response | Promise<Response>;
   readonly cancel?: (invitationId: string) => Response | Promise<Response>;
   readonly clients?: () => Response | Promise<Response>;
   /** The trial of the agency ended (issue #714). */
   readonly readOnly?: boolean;
 }
 
-/** Behaves like the real API: the #132 access routes plus the invitation routes that already exist. */
+/** Behaves like the real API (#711): the access routes by access id, plus what is left of the portal invitations (list and cancel). */
 const makeFetch = (scenario: Scenario = {}) => {
   const calls: string[] = [];
   const permissions = scenario.permissions ?? ADMIN_PERMISSIONS;
@@ -157,6 +164,10 @@ const makeFetch = (scenario: Scenario = {}) => {
     const clients = /\/agencies\/([^/]+)\/clients$/.exec(path);
     if (clients !== null) return scenario.clients?.() ?? json(pageOf([]));
     const members = /\/agencies\/([^/]+)\/clients\/([^/]+)\/members$/.exec(path);
+    if (members !== null && method === 'POST') {
+      if (scenario.add === undefined) throw new Error(`unexpected POST ${url}`);
+      return scenario.add(JSON.parse(String(init?.body)));
+    }
     if (members !== null) {
       if (scenario.members === undefined) return json(pageOf([]));
       return scenario.members(url.searchParams.get('status'), Number(url.searchParams.get('page') ?? '1'));
@@ -168,17 +179,10 @@ const makeFetch = (scenario: Scenario = {}) => {
     }
     const clientInvitations = /\/agencies\/([^/]+)\/clients\/([^/]+)\/invitations$/.exec(path);
     if (clientInvitations !== null) {
-      if (method === 'POST') {
-        if (scenario.invite === undefined) throw new Error(`unexpected POST ${url}`);
-        return scenario.invite(JSON.parse(String(init?.body)));
-      }
+      if (method === 'POST') throw new Error(`the route that creates a portal invitation no longer exists: ${method} ${url}`);
       return scenario.clientInvitations?.(Number(url.searchParams.get('page') ?? '1')) ?? json(pageOf([]));
     }
-    const resend = /\/agencies\/([^/]+)\/invitations\/([^/]+)\/resend$/.exec(path);
-    if (resend !== null && method === 'POST') {
-      if (scenario.resend === undefined) throw new Error(`unexpected POST ${url}`);
-      return scenario.resend(resend[2]!);
-    }
+    if (/\/agencies\/([^/]+)\/invitations\/([^/]+)\/resend$/.test(path)) throw new Error(`a portal invitation is never resent: ${method} ${url}`);
     const cancel = /\/agencies\/([^/]+)\/invitations\/([^/]+)$/.exec(path);
     if (cancel !== null && method === 'DELETE') {
       if (scenario.cancel === undefined) throw new Error(`unexpected DELETE ${url}`);
@@ -237,11 +241,11 @@ const renderAccess = (impl: typeof fetch, entry: Entry = accessUrl) => {
   return { container: rendered.container, probe, queryClient };
 };
 
-const openInviteDialog = async (): Promise<HTMLElement> => {
+const openAddDialog = async (): Promise<HTMLElement> => {
   const header = screen.getByRole('heading', { name: 'Pessoas com acesso ao portal' }).closest('.portal-access__header');
   if (header === null) throw new Error('The access header was not rendered.');
-  fireEvent.click(within(header as HTMLElement).getByRole('button', { name: 'Convidar' }));
-  return await screen.findByRole('dialog', { name: 'Convidar para o portal' });
+  fireEvent.click(within(header as HTMLElement).getByRole('button', { name: 'Adicionar pessoa' }));
+  return await screen.findByRole('dialog', { name: 'Adicionar pessoa' });
 };
 
 const confirmDialogOf = async (text: string): Promise<HTMLElement> => {
@@ -339,102 +343,176 @@ describe('portal access tab (#140)', () => {
     expect(back().getAttribute('href')).toBe(rosterUrl);
   });
 
-  it('invites with only the e-mail, keeping the failure on the field and updating the roster badge', async () => {
-    let pending = 0;
+  it('adds a person with only the e-mail, validates it first, closes on success and refreshes the list and the General counter', async () => {
+    let detailData = padaria;
+    let active: MemberFixture[] = [];
+    const added: unknown[] = [];
     const { impl, calls } = makeFetch({
-      clients: () => json(pageOf([listItemOf(padaria, pending)])),
-      members: () => json(pageOf([])),
-      invite: () => {
-        pending = 1;
-        return json({ invitationId: carla.invitationId, expiresAt: new Date(Date.now() + 7 * DAY_MS).toISOString() }, 201);
-      },
-      clientInvitations: () => json(pageOf([carla]))
+      client: () => json(detailData),
+      members: (status) => json(pageOf(status === 'removed' ? [] : active)),
+      add: (body) => {
+        added.push(body);
+        active = [{ ...ines, email: 'ines@padaria.test' }];
+        detailData = { ...detailData, summary: { ...detailData.summary, activePortalMembers: 1 } };
+        return json(ines, 201);
+      }
     });
-    const { probe } = renderAccess(impl, `/agencia/${AGENCY_A}/clientes`);
-    await screen.findByText('Padaria Central');
-    fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
-    await screen.findByRole('link', { name: 'Acessos' });
-    fireEvent.click(screen.getByRole('link', { name: 'Acessos' }));
+    renderAccess(impl);
     await screen.findByText('Ninguém deste cliente acessa o portal ainda');
 
-    const dialog = await openInviteDialog();
-    expect(within(dialog).getByText('A pessoa recebe um link para criar a conta e entrar no portal deste cliente.')).toBeTruthy();
-    expect(within(dialog).getByRole('textbox', { name: 'E-mail' })).toBeTruthy();
+    const dialog = await openAddDialog();
+    expect(within(dialog).getByText('A pessoa passa a ter acesso ao portal deste cliente na hora e recebe um e-mail de boas-vindas.')).toBeTruthy();
+    expect(within(dialog).getAllByRole('textbox')).toHaveLength(1);
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'E-mail' }), { target: { value: 'nao-e-email' } });
-    within(dialog).getByRole('button', { name: 'Enviar convite' }).focus();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+    within(dialog).getByRole('button', { name: 'Adicionar' }).focus();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Adicionar' }));
     expect(await within(dialog).findByText('Informe um e-mail válido.')).toBeTruthy();
     expect(document.activeElement).toBe(within(dialog).getByRole('textbox', { name: 'E-mail' }));
-    expect(calls.some((call) => call.startsWith('POST /agencies') && call.includes('/invitations'))).toBe(false);
+    expect(added).toEqual([]);
 
-    fireEvent.change(within(dialog).getByRole('textbox', { name: 'E-mail' }), { target: { value: 'carla@padaria.test' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
-    expect(await within(dialog).findByText('Convite enviado para carla@padaria.test. O link vale por 7 dias.')).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar' }));
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'E-mail' }), { target: { value: '  Ines@Padaria.test ' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Adicionar' }));
 
-    // The invitation list shows the new invite; the roster badge follows the invalidated list.
-    await screen.findByText('carla@padaria.test');
-    fireEvent.click(screen.getByRole('link', { name: 'Voltar para Clientes' }));
-    expect(await screen.findByText('convite pendente')).toBeTruthy();
-    expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes`);
+    // The body carries the address and nothing else, and the modal closes on success.
+    await waitFor(() => expect(added).toEqual([{ email: 'ines@padaria.test' }]));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByText('ines@padaria.test agora tem acesso ao portal deste cliente.')).toBeTruthy();
+    expect(await screen.findByText('ainda não entrou')).toBeTruthy();
+    expect(calls.some((call) => call.startsWith(`POST /agencies/${AGENCY_A}/clients/${CLIENT_ID}/members`))).toBe(true);
+    expect(calls.some((call) => call.includes('/invitations') && call.startsWith('POST'))).toBe(false);
+
+    fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
+    expect(await screen.findByText('1 pessoa com acesso')).toBeTruthy();
   });
 
-  it('maps every server refusal of an invitation to its own message', async () => {
-    const inviteErrors: Array<{ name: string; response: () => Response; expected: string }> = [
+  it('maps every server refusal of an addition to its own message and keeps the typed e-mail', async () => {
+    const refusals: Array<{ response: () => Response; expected: string }> = [
       {
-        name: 'maria@padaria.test',
-        response: () => json({ error: { code: 'MEMBERSHIP_EXISTS', message: 'private diagnostic' } }, 409),
-        // handled below as field error
+        response: () => json({ error: { code: 'ACCESS_EXISTS', message: 'private diagnostic' } }, 409),
         expected: 'Esta pessoa já tem acesso ao portal deste cliente.'
       },
       {
-        name: 'arquivado@padaria.test',
         response: () => json({ error: { code: 'CLIENT_ARCHIVED', message: 'private diagnostic' } }, 409),
-        expected: 'Cliente arquivado: não é possível convidar para o portal.'
+        expected: 'Cliente arquivado: não é possível adicionar pessoas ao portal.'
       },
       {
-        name: 'sem-permissao@padaria.test',
         response: () => json({ error: { code: 'FORBIDDEN', message: 'private diagnostic' } }, 403),
-        expected: 'Você não tem permissão para convidar para este cliente.'
+        expected: 'Você não tem permissão para adicionar pessoas a este cliente.'
       },
       {
-        name: 'nome@padaria.test',
+        response: () => json({ error: { code: 'AGENCY_READ_ONLY', message: 'private diagnostic' } }, 409),
+        expected: 'O plano desta agência precisa ser renovado para usar esta opção.'
+      },
+      {
+        response: () => json({ error: { code: 'DAILY_EMAIL_LIMIT', message: 'private diagnostic' } }, 429),
+        expected: 'Limite diário de e-mails da agência atingido. Tente amanhã.'
+      },
+      {
+        response: () => json({ error: { code: 'EMAIL_DELIVERY_FAILED', message: 'private diagnostic' } }, 502),
+        expected: 'O acesso foi dado, mas o e-mail de boas-vindas não foi entregue. Para mandar de novo, remova o acesso e adicione o e-mail outra vez.'
+      },
+      {
         response: () => json({ error: { code: 'VALIDATION_ERROR', message: 'private diagnostic', details: { issues: [{ path: 'email', code: 'custom' }] } } }, 400),
         expected: 'Informe um e-mail válido.'
       },
       {
-        name: 'outro@padaria.test',
         response: () => json({ error: { code: 'VALIDATION_ERROR', message: 'private diagnostic', details: { issues: [] } } }, 400),
-        expected: 'Revise os dados do convite.'
+        expected: 'Revise os dados.'
+      },
+      {
+        response: () => json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, 500),
+        expected: 'Não foi possível adicionar a pessoa. Tente de novo.'
       }
     ];
-    for (const item of inviteErrors) {
+    for (const item of refusals) {
       const { impl } = makeFetch({
-        members: (status) => (status === 'removed' ? json(pageOf([])) : json(pageOf([maria]))),
-        invite: item.response
+        members: (status) => json(pageOf(status === 'removed' ? [] : [maria])),
+        add: item.response
       });
       renderAccess(impl);
       await screen.findByText('Maria Souza');
-      const dialog = await openInviteDialog();
-      fireEvent.change(within(dialog).getByRole('textbox', { name: 'E-mail' }), { target: { value: item.name } });
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+      const dialog = await openAddDialog();
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'E-mail' }), { target: { value: 'novo@padaria.test' } });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Adicionar' }));
       expect(await within(dialog).findByText(item.expected)).toBeTruthy();
       expect(dialog.textContent).not.toContain('private diagnostic');
+      // The refusal is not a reason to type it all again, and the modal stays open.
+      expect((within(dialog).getByRole('textbox', { name: 'E-mail' }) as HTMLInputElement).value).toBe('novo@padaria.test');
+      expect(screen.getByRole('dialog', { name: 'Adicionar pessoa' })).toBeTruthy();
       cleanup();
     }
   });
 
-  it('resends and cancels an invitation, updating the deadline and the roster badge', async () => {
+  it('refetches the list after the e-mail failed, because the access was kept', async () => {
+    let active: MemberFixture[] = [];
+    const { impl } = makeFetch({
+      members: (status) => json(pageOf(status === 'removed' ? [] : active)),
+      add: () => {
+        active = [ines];
+        return json({ error: { code: 'EMAIL_DELIVERY_FAILED', message: 'private diagnostic' } }, 502);
+      }
+    });
+    renderAccess(impl);
+    await screen.findByText('Ninguém deste cliente acessa o portal ainda');
+    const dialog = await openAddDialog();
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'E-mail' }), { target: { value: 'ines@padaria.test' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Adicionar' }));
+
+    expect(await within(dialog).findByText(/O acesso foi dado/)).toBeTruthy();
+    expect(await screen.findByText('ines@padaria.test', { selector: '.portal-access__email' })).toBeTruthy();
+  });
+
+  it('never says whether an address has an account: the confirmation is the same whatever the server answers about it', async () => {
+    const answers = [json({ ...maria, email: 'qualquer@padaria.test' }, 201), json({ ...ines, email: 'qualquer@padaria.test' }, 201)];
+    const texts: string[] = [];
+    for (const answer of answers) {
+      const { impl } = makeFetch({ members: (status) => json(pageOf(status === 'removed' ? [] : [joao])), add: () => answer });
+      const { container } = renderAccess(impl);
+      await screen.findByText('João Lima');
+      const dialog = await openAddDialog();
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'E-mail' }), { target: { value: 'qualquer@padaria.test' } });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Adicionar' }));
+      const status = await screen.findByText(/agora tem acesso ao portal/);
+      texts.push(status.textContent ?? '');
+      expect(container.textContent).not.toContain('Maria Souza');
+      expect(container.textContent?.toLowerCase()).not.toContain('conta');
+      cleanup();
+    }
+    expect(texts[0]).toBe(texts[1]);
+  });
+
+  it('shows the name once the person entered and "ainda não entrou" before, in both lists', async () => {
+    const { impl } = makeFetch({
+      members: (status) => json(pageOf(status === 'removed' ? [{ ...ines, accessId: 'a2a2a2a2-2222-4222-8222-222222222222', email: 'bia@padaria.test', status: 'removed' }, pedro] : [maria, ines])),
+      clientInvitations: () => json(pageOf([]))
+    });
+    const { container } = renderAccess(impl);
+
+    await screen.findByText('Maria Souza');
+    const rowOf = (email: string): HTMLElement => {
+      const row = screen.getByText(email, { selector: '.portal-access__email' }).closest('li');
+      if (row === null) throw new Error('The person row was not rendered.');
+      return row;
+    };
+    expect(within(rowOf('maria@padaria.test')).queryByText('ainda não entrou')).toBeNull();
+    expect(within(rowOf('ines@padaria.test')).getByText('ainda não entrou')).toBeTruthy();
+    expect(within(rowOf('ines@padaria.test')).queryByText('Maria Souza')).toBeNull();
+    expect(within(rowOf('ines@padaria.test')).getByText('desde 12/09')).toBeTruthy();
+    expect(rowOf('ines@padaria.test').querySelector('.ui-avatar')?.textContent).toBe('I');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Removidas (2)' }));
+    expect(within(rowOf('bia@padaria.test')).getByText('ainda não entrou')).toBeTruthy();
+    expect(within(rowOf('pedro@padaria.test')).getByText('Pedro Alves')).toBeTruthy();
+    expect(container.textContent?.toLowerCase()).not.toContain('conta');
+  });
+
+  it('cancels an old invitation, the section goes away with the last one and the roster badge follows', async () => {
     let invitations = [carla];
     let pending = 1;
     const { impl, calls } = makeFetch({
       clients: () => json(pageOf([listItemOf(padaria, pending)])),
       members: (status) => (status === 'removed' ? json(pageOf([])) : json(pageOf([maria]))),
       clientInvitations: () => json(pageOf(invitations)),
-      resend: () => {
-        invitations = [{ ...carla, expiresAt: new Date(Date.now() + 14 * DAY_MS).toISOString() }];
-        return json({ invitationId: carla.invitationId, expiresAt: invitations[0]!.expiresAt, invitationUrl: null });
-      },
       cancel: () => { invitations = []; pending = 0; return noContent(); }
     });
     const { probe } = renderAccess(impl, `/agencia/${AGENCY_A}/clientes`);
@@ -444,11 +522,8 @@ describe('portal access tab (#140)', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Acessos' }));
     await screen.findByText('expira em 7 dias');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reenviar convite de carla@padaria.test' }));
-    expect(await screen.findByText('Convite reenviado para carla@padaria.test. O link anterior deixou de valer.')).toBeTruthy();
-    // The invalidated list shows the renewed deadline, not the old one.
-    expect(await screen.findByText('expira em 14 dias')).toBeTruthy();
-    await waitFor(() => expect(calls.some((call) => call.startsWith(`POST /agencies/${AGENCY_A}/invitations/`))).toBe(true));
+    // A portal invitation is never resent (decision 2026-10-27): only Cancelar is left on the row.
+    expect(screen.queryByRole('button', { name: /Reenviar/ })).toBeNull();
 
     // The roster badge is on the screen before the cancellation, and the cancel invalidates it.
     fireEvent.click(screen.getByRole('link', { name: 'Voltar para Clientes' }));
@@ -459,7 +534,7 @@ describe('portal access tab (#140)', () => {
     await screen.findByText('carla@padaria.test');
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar convite de carla@padaria.test' }));
-    const confirm = await confirmDialogOf('O link enviado para carla@padaria.test deixa de valer imediatamente. Para dar acesso de novo, será preciso convidar a pessoa outra vez.');
+    const confirm = await confirmDialogOf('O link enviado para carla@padaria.test deixa de valer imediatamente. Para dar acesso de novo, use Adicionar pessoa.');
     fireEvent.click(within(confirm).getByRole('button', { name: 'Cancelar convite' }));
 
     await waitFor(() => expect(calls.some((call) => call.startsWith('DELETE /agencies'))).toBe(true));
@@ -485,31 +560,12 @@ describe('portal access tab (#140)', () => {
     await screen.findByText('rita@padaria.test');
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar convite de rita@padaria.test' }));
-    const confirm = await confirmDialogOf('O link enviado para rita@padaria.test deixa de valer imediatamente. Para dar acesso de novo, será preciso convidar a pessoa outra vez.');
+    const confirm = await confirmDialogOf('O link enviado para rita@padaria.test deixa de valer imediatamente. Para dar acesso de novo, use Adicionar pessoa.');
     fireEvent.click(within(confirm).getByRole('button', { name: 'Cancelar convite' }));
 
     await waitFor(() => expect(cancelled).toEqual([rita.invitationId]));
     expect(await screen.findByText('carla@padaria.test')).toBeTruthy();
     expect(screen.queryByText('rita@padaria.test')).toBeNull();
-  });
-
-  it('resends the invitation that was clicked, not the first one', async () => {
-    const resent: string[] = [];
-    const { impl } = makeFetch({
-      members: (status) => (status === 'removed' ? json(pageOf([])) : json(pageOf([maria]))),
-      clientInvitations: () => json(pageOf([carla, rita])),
-      resend: (invitationId) => {
-        resent.push(invitationId);
-        return json({ invitationId, expiresAt: new Date(Date.now() + 14 * DAY_MS).toISOString(), invitationUrl: null });
-      }
-    });
-    renderAccess(impl);
-    await screen.findByText('rita@padaria.test');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Reenviar convite de rita@padaria.test' }));
-    await waitFor(() => expect(resent).toEqual([rita.invitationId]));
-    expect(await screen.findByText('Convite reenviado para rita@padaria.test. O link anterior deixou de valer.')).toBeTruthy();
-    expect(resent).not.toContain(carla.invitationId);
   });
 
   it('removes the person that was clicked, moves her into Removidas and updates the General counter', async () => {
@@ -588,6 +644,23 @@ describe('portal access tab (#140)', () => {
     expect(await screen.findByText('2 pessoas com acesso')).toBeTruthy();
   });
 
+  it.each([
+    { code: 'AGENCY_READ_ONLY', expected: 'O plano desta agência precisa ser renovado para usar esta opção.' },
+    { code: 'CLIENT_ARCHIVED', expected: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' },
+    { code: 'FORBIDDEN', expected: 'Você não tem permissão para alterar o acesso deste cliente.' }
+  ])('tells a refused reactivation apart: $code', async ({ code, expected }) => {
+    const { impl } = makeFetch({
+      members: (status) => json(pageOf(status === 'removed' ? [pedro] : [maria])),
+      memberStatus: () => json({ error: { code, message: 'private diagnostic' } }, code === 'FORBIDDEN' ? 403 : 409)
+    });
+    const { container } = renderAccess(impl);
+    await screen.findByText('Maria Souza');
+    fireEvent.click(screen.getByRole('button', { name: 'Removidas (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar o acesso de Pedro Alves' }));
+    expect((await screen.findByRole('alert')).textContent).toBe(expected);
+    expect(container.textContent).not.toContain('private diagnostic');
+  });
+
   it('offers no action at all on an archived client, and keeps the lists readable', async () => {
     const { impl } = makeFetch({
       client: () => json({ ...padaria, status: 'archived', archivedAt: '2026-10-04T12:00:00.000Z' }),
@@ -600,7 +673,7 @@ describe('portal access tab (#140)', () => {
     expect(screen.getByText('Cliente arquivado em 04/10')).toBeTruthy();
     await screen.findByText('Maria Souza');
     expect(screen.getByText('carla@padaria.test')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Convidar' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Adicionar pessoa' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Remover o acesso de/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Reenviar convite/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Cancelar convite/ })).toBeNull();
@@ -610,7 +683,7 @@ describe('portal access tab (#140)', () => {
     expect(screen.queryByRole('button', { name: /Reativar o acesso de/ })).toBeNull();
   });
 
-  it('draws the distinct empty states: no people with Convidar, no invitations, no removed list', async () => {
+  it('draws the distinct empty states: no people with Adicionar pessoa, no invitations, no removed list', async () => {
     const { impl } = makeFetch({
       members: () => json(pageOf([])),
       clientInvitations: () => json(pageOf([]))
@@ -618,33 +691,47 @@ describe('portal access tab (#140)', () => {
     renderAccess(impl);
 
     await screen.findByText('Ninguém deste cliente acessa o portal ainda');
-    expect(screen.getAllByRole('button', { name: 'Convidar' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: 'Adicionar pessoa' }).length).toBeGreaterThan(0);
     expect(screen.queryByRole('heading', { name: 'Convites aguardando aceite' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Removidas/ })).toBeNull();
   });
 
   it.each([
-    { label: 'convite.reenviar', cansee: [/Reenviar convite/], cannotsee: [/Cancelar convite/, /Remover o acesso de/] },
-    { label: 'convite.cancelar', cansee: [/Cancelar convite/], cannotsee: [/Reenviar convite/, /Remover o acesso de/] },
-    { label: 'cliente.remover_usuario', cansee: [/Remover o acesso de/], cannotsee: [/Reenviar convite/, /Cancelar convite/] }
+    { label: 'convite.cancelar', cansee: [/Cancelar convite/], cannotsee: [/Remover o acesso de/] },
+    { label: 'cliente.remover_usuario', cansee: [/Remover o acesso de/], cannotsee: [/Cancelar convite/] }
   ])('shows exactly the action $label grants, one permission at a time', async ({ label, cansee, cannotsee }) => {
     const { impl } = makeFetch({
-      permissions: [...INVITE_ONLY_PERMISSIONS, label],
+      permissions: [...GATE_ONLY_PERMISSIONS, label],
       members: (status) => (status === 'removed' ? json(pageOf([pedro])) : json(pageOf([maria]))),
       clientInvitations: () => json(pageOf([carla]))
     });
     renderAccess(impl);
 
     await screen.findByText('Maria Souza');
-    expect(screen.getByRole('button', { name: 'Convidar' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Adicionar pessoa' })).toBeTruthy();
     for (const pattern of cansee) expect(screen.queryByRole('button', { name: pattern })).toBeTruthy();
     for (const pattern of cannotsee) expect(screen.queryByRole('button', { name: pattern })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Reenviar/ })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Removidas (1)' }));
     // Reading the removed list stays; only the reactivation needs `cliente.remover_usuario`.
     expect(screen.getByText('Pedro Alves')).toBeTruthy();
     const reactivate = screen.queryByRole('button', { name: /Reativar o acesso de/ });
     if (label === 'cliente.remover_usuario') expect(reactivate).toBeTruthy();
     else expect(reactivate).toBeNull();
+  });
+
+  it('keeps adding apart from removing: the role that only reads and adds can remove and reactivate nothing', async () => {
+    const { impl } = makeFetch({
+      permissions: GATE_ONLY_PERMISSIONS,
+      members: (status) => json(pageOf(status === 'removed' ? [pedro] : [maria])),
+      clientInvitations: () => json(pageOf([]))
+    });
+    renderAccess(impl);
+    await screen.findByText('Maria Souza');
+    expect(screen.getByRole('button', { name: 'Adicionar pessoa' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Remover o acesso de/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Removidas (1)' }));
+    expect(screen.queryByRole('button', { name: /Reativar o acesso de/ })).toBeNull();
   });
 
   it('answers a hidden tab with the ordinary not-found, never a blank panel', async () => {
@@ -693,14 +780,14 @@ describe('portal access tab (#140)', () => {
 
 describe('portal access in the Pauta (#637)', () => {
   const primaryInvites = (): HTMLElement[] =>
-    screen.getAllByRole('button', { name: 'Convidar' }).filter((button) => button.classList.contains('ui-button--primary'));
+    screen.getAllByRole('button', { name: 'Adicionar pessoa' }).filter((button) => button.classList.contains('ui-button--primary'));
 
-  it('keeps one primary action: Convidar in the empty state with the owl while nobody has access, in the header otherwise', async () => {
+  it('keeps one primary action: Adicionar pessoa in the empty state with the owl while nobody has access, in the header otherwise', async () => {
     const empty = makeFetch({ members: () => json(pageOf([])), clientInvitations: () => json(pageOf([])) });
     renderAccess(empty.impl);
     await screen.findByText('Ninguém deste cliente acessa o portal ainda');
 
-    expect(screen.getAllByRole('button', { name: 'Convidar' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Adicionar pessoa' })).toHaveLength(2);
     expect(primaryInvites()).toHaveLength(1);
     expect(primaryInvites()[0]!.closest('.ui-empty-state')).not.toBeNull();
     expect(document.querySelector('.ui-empty-state--mascot img')).not.toBeNull();
@@ -726,8 +813,8 @@ describe('portal access in the Pauta (#637)', () => {
 
     expect(document.querySelector('.ui-empty-state--mascot')).toBeNull();
     expect(document.querySelector('.ui-empty-state img')).toBeNull();
-    expect(screen.queryByText('A pessoa recebe um link para criar a conta e entrar no portal deste cliente.')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Convidar' })).toBeNull();
+    expect(screen.queryByText('A pessoa passa a ter acesso ao portal deste cliente na hora e recebe um e-mail de boas-vindas.')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Adicionar pessoa' })).toBeNull();
   });
 
   it('names each person with an avatar, and tells the expiry of an invitation in a pill with an icon', async () => {
@@ -749,32 +836,40 @@ describe('portal access of a read-only agency (issue #714, decision 2026-10-27)'
   const REASON = 'O plano precisa ser renovado para usar esta opção.';
   const describedBy = (button: HTMLElement) => (button.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent).join(' ');
 
-  it('keeps Convidar and Reenviar disabled with the reason, and removing an access and cancelling an invitation enabled', async () => {
-    const removedIds: string[] = [];
+  it('keeps Adicionar pessoa and Reativar disabled with the reason, and removing an access and cancelling an invitation enabled', async () => {
+    const changed: string[] = [];
+    const added: unknown[] = [];
     const { impl, calls } = makeFetch({
       readOnly: true,
-      members: (status) => json(pageOf(status === 'removed' ? [] : [maria, joao])),
+      members: (status) => json(pageOf(status === 'removed' ? [pedro] : [maria, joao])),
       clientInvitations: () => json(pageOf([carla])),
-      memberStatus: (membershipId, action) => { removedIds.push(`${action}:${membershipId}`); return json({ ...joao, status: 'removed' }); },
+      memberStatus: (accessId, action) => { changed.push(`${action}:${accessId}`); return json({ ...joao, status: 'removed' }); },
+      add: (body) => { added.push(body); return json(joao, 201); },
       cancel: () => noContent()
     });
     renderAccess(impl);
     await screen.findByText('João Lima');
 
-    for (const name of ['Convidar', 'Reenviar convite de carla@padaria.test']) {
-      const button = screen.getByRole('button', { name });
-      expect(button.getAttribute('aria-disabled')).toBe('true');
-      expect(describedBy(button)).toBe(REASON);
-      fireEvent.click(button);
-    }
+    const add = screen.getByRole('button', { name: 'Adicionar pessoa' });
+    expect(add.getAttribute('aria-disabled')).toBe('true');
+    expect(describedBy(add)).toBe(REASON);
+    fireEvent.click(add);
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(calls.some((call) => call.includes('/resend'))).toBe(false);
+    expect(added).toEqual([]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Removidas (1)' }));
+    const reactivate = screen.getByRole('button', { name: 'Reativar o acesso de Pedro Alves' });
+    expect(reactivate.getAttribute('aria-disabled')).toBe('true');
+    expect(describedBy(reactivate)).toBe(REASON);
+    fireEvent.click(reactivate);
+    expect(changed).toEqual([]);
+    expect(calls.some((call) => call.includes('/reactivate'))).toBe(false);
 
     const remove = screen.getByRole('button', { name: 'Remover o acesso de João Lima' });
     expect(remove.getAttribute('aria-disabled')).toBeNull();
     fireEvent.click(remove);
     fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remover acesso' }));
-    await waitFor(() => expect(removedIds).toEqual([`remove:${joao.accessId}`]));
+    await waitFor(() => expect(changed).toEqual([`remove:${joao.accessId}`]));
 
     const cancel = screen.getByRole('button', { name: 'Cancelar convite de carla@padaria.test' });
     expect(cancel.getAttribute('aria-disabled')).toBeNull();

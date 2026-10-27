@@ -25,6 +25,7 @@ import { mediaVideoProcessingJob } from './media-video-job.js';
 import { createMediaProcessingStorageClient } from './media-storage.js';
 import { createNotificationQueue } from './notification-queue.js';
 import { createDurableQueue, type DurableQueue } from './queue.js';
+import { unconfirmedAccountPurgeJob } from './unconfirmed-account-purge-job.js';
 
 type WorkerSignal = 'SIGINT' | 'SIGTERM';
 type ReadinessCheck = () => Promise<void>;
@@ -100,6 +101,8 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
   // The daily closing of ended contracts (issue #133) needs only the database, so it is registered
   // whenever the queue exists; smoke mode has no queue and no database.
   if (queue !== undefined) queue.register(archiveDueClientsJob({ database }));
+  // The retention of the accounts never confirmed (issue #724) needs only the database too.
+  if (queue !== undefined) queue.register(unconfirmedAccountPurgeJob({ database }));
   // Video processing (issue #24): registered whenever object storage is configured, exactly like
   // the API only mounts its media routes when `config.storage` is present. Registration must
   // happen before `queue.start()` (enforced by `queue.register` itself).

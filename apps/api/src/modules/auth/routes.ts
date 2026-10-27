@@ -32,6 +32,8 @@ import {
   hashEmailConfirmationToken,
   issueEmailConfirmation
 } from './email-verification.js';
+import { registerGoogleRoutes } from './google-routes.js';
+import { perIpRateLimit } from './per-ip-rate-limit.js';
 import { AUTH_RATE_LIMITS } from './policy.js';
 import { createRequireSession } from './session-guard.js';
 import { noStore } from '../../plugins/infra/no-store.js';
@@ -51,32 +53,9 @@ export interface AuthModuleDependencies {
   readonly emailService: EmailService;
   /** The versions in force, recorded at sign-up exactly like the invitation's new account. */
   readonly legalVersions: { readonly terms: string; readonly privacy: string };
+  /** Present only when Google sign-in is configured (issue #707); without it the Google routes answer 404. */
+  readonly google?: { readonly appPublicUrl: string };
 }
-
-/** No informative headers on any auth 429 (B6): a client must not be able to tell, from the
- * response shape alone, whether a per-IP limit or an in-memory dimension tripped. */
-const noRateLimitHeaders = {
-  addHeaders: {
-    'x-ratelimit-limit': false,
-    'x-ratelimit-remaining': false,
-    'x-ratelimit-reset': false,
-    'retry-after': false
-  },
-  addHeadersOnExceeding: {
-    'x-ratelimit-limit': false,
-    'x-ratelimit-remaining': false,
-    'x-ratelimit-reset': false
-  }
-} as const;
-
-const perIpRateLimit = (limit: { readonly max: number; readonly windowMs: number }, docs: DocumentedRouteConfig) => ({
-  config: {
-    rateLimit: { max: limit.max, timeWindow: limit.windowMs, ...noRateLimitHeaders },
-    permission: docs.permission,
-    responseStatus: docs.responseStatus,
-    schemas: docs.schemas
-  }
-});
 
 // Declared once per route: the same object is the documentation metadata and the source of the
 // schemas the handler validates with.
@@ -148,6 +127,8 @@ const verificationFailedError = {
  */
 export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
+
+  registerGoogleRoutes(app, { auth: dependencies.auth, ...(dependencies.google === undefined ? {} : { google: dependencies.google }) });
 
   /** Issues and sends a new link when the address has an account waiting; nothing otherwise. */
   const sendConfirmationIfPending = async (email: string): Promise<void> => {

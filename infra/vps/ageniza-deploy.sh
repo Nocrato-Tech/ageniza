@@ -109,6 +109,8 @@ validate_runtime_env() {
       IDENTITY_STORAGE_FORCE_PATH_STYLE) [[ "$value" == true || "$value" == false ]] || die 'IDENTITY_STORAGE_FORCE_PATH_STYLE must be true or false' ;;
       IDENTITY_DOWNLOAD_URL_EXPIRY_SECONDS|IDENTITY_MAX_IMAGE_BYTES) [[ "$value" =~ ^[0-9]+$ ]] || die "$key must be a positive integer" ;;
       SENTRY_DSN) ;;
+      # Sign in with Google (issue #707): optional; the API refuses to start with only one of the two, and empty is off.
+      GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|GOOGLE_CALLBACK_URL) ;;
       # Public trial-notice contact (#725): optional, not a secret; the config loader validates the e-mail.
       SUPPORT_CONTACT_EMAIL) ;;
       *) die "$RUNTIME_ENV contains a key that is not allowed: $key" ;;
