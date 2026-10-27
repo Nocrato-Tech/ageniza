@@ -25,12 +25,18 @@ import {
   AgencyPathParamsSchema,
   AgencyRolesQuerySchema,
   AgencyRolesResponseSchema,
+  AuthEmailVerificationResendRequestSchema,
+  AuthEmailVerificationResendResponseSchema,
+  AuthEmailVerifyRequestSchema,
+  AuthEmailVerifyResponseSchema,
   AuthLoginRequestSchema,
   AuthLoginResponseSchema,
   AuthPasswordForgotRequestSchema,
   AuthPasswordForgotResponseSchema,
   AuthPasswordResetRequestSchema,
   AuthSessionResponseSchema,
+  AuthSignUpRequestSchema,
+  AuthSignUpResponseSchema,
   BrandStudyResponseSchema,
   BrandStudySectionSchema,
   BrandStudySectionUpdateRequestSchema,
@@ -218,7 +224,7 @@ export const API_DOCUMENT_INFO = {
 
 export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   system: 'Saúde e prontidão do processo.',
-  auth: 'Login, sessão, logout e recuperação de senha.',
+  auth: 'Cadastro e confirmação do e-mail, login, sessão, logout e recuperação de senha.',
   invitations: 'Convite de colaborador e de pessoa do portal, aceite e administração dos pendentes.',
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
@@ -592,8 +598,9 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     module: 'auth',
     summary: 'Autentica com e-mail e senha',
     description: [
-      'Credencial correta sem nenhum contexto não cria sessão e responde 403 `NO_CONTEXT_ACCESS`,',
-      'salvo quando o corpo traz um `inviteToken` válido para o mesmo e-mail.'
+      'Conta com e-mail confirmado ganha sessão mesmo sem nenhum contexto (o `resolve` responde `none`).',
+      'Conta não confirmada responde o mesmo 401 `INVALID_CREDENTIALS`, com a senha certa ou não, e não cria sessão;',
+      'e não tem efeito colateral. `inviteToken` é aceito e não muda a resposta.'
     ].join('\n'),
     access: 'Público',
     permission: null,
@@ -610,7 +617,77 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       COMMON_ERRORS.internal,
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'INVALID_CREDENTIALS' },
-      { status: 403, code: 'NO_CONTEXT_ACCESS' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/auth/sign-up',
+    operationId: 'postAuthSignUp',
+    module: 'auth',
+    summary: 'Cria uma conta com e-mail e senha',
+    description: [
+      'A conta nasce com o e-mail não confirmado, grava o aceite das versões em vigor de Termos e Privacidade',
+      'e recebe um link de confirmação de 24 h. Não cria sessão. Um e-mail que já tem conta, confirmada ou não,',
+      'recebe a mesma resposta, e o endereço recebe um aviso sem link.'
+    ].join('\n'),
+    access: 'Público',
+    permission: null,
+    body: AuthSignUpRequestSchema,
+    requestExample: { name: 'Pessoa Nova', email: 'nova@exemplo.test', password: '<senha-do-exemplo>', acceptTerms: true },
+    responses: [{ status: 202, description: 'Pedido aceito; o link segue por e-mail.', schema: AuthSignUpResponseSchema, example: {} }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/auth/email/verification/resend',
+    operationId: 'postAuthEmailVerificationResend',
+    module: 'auth',
+    summary: 'Reenvia o link de confirmação do e-mail',
+    description: 'Invalida o link anterior. Responde igual exista ou não uma conta não confirmada com o e-mail.',
+    access: 'Público',
+    permission: null,
+    body: AuthEmailVerificationResendRequestSchema,
+    requestExample: { email: 'nova@exemplo.test' },
+    responses: [{ status: 202, description: 'Pedido aceito.', schema: AuthEmailVerificationResendResponseSchema, example: {} }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/auth/email/verify',
+    operationId: 'postAuthEmailVerify',
+    module: 'auth',
+    summary: 'Confirma o e-mail com o link e a senha da conta',
+    description: [
+      'O link sozinho não confirma: pede a senha da conta. Link válido com a senha certa confirma o e-mail,',
+      'gasta o link e cria a sessão. Link inválido, usado ou vencido e senha errada respondem o mesmo',
+      '400 `INVALID_LINK_OR_PASSWORD`, sem mudar nada; as tentativas contam nos limites do login.'
+    ].join('\n'),
+    access: 'Pública, pelo token do link e a senha',
+    permission: null,
+    body: AuthEmailVerifyRequestSchema,
+    requestExample: { token: '<token-do-link>', password: '<senha-do-exemplo>' },
+    responses: [{
+      status: 200,
+      description: 'E-mail confirmado; o cookie httpOnly da sessão vem na resposta.',
+      schema: AuthEmailVerifyResponseSchema,
+      example: { user: { id: userId, name: 'Pessoa Nova', email: 'nova@exemplo.test' } }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'INVALID_LINK_OR_PASSWORD' },
       { status: 429, code: 'RATE_LIMITED' }
     ]
   },
@@ -865,7 +942,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'acceptInvitationNewAccount',
     module: 'invitations',
     summary: 'Cria a conta e aceita o convite',
-    description: 'A conta nasce com o e-mail do convite, ainda não confirmado; a sessão já vem no cookie da resposta e o contexto do convite vale na hora.',
+    description: 'A conta nasce com o e-mail do convite, ainda não confirmado; a sessão já vem no cookie da resposta e o contexto do convite vale na hora. O link de confirmação vai por e-mail e pede a senha escolhida aqui; até confirmar, o login por senha responde 401 e a sessão vale enquanto a conta tiver o vínculo que o convite deu.',
     access: 'Token do convite',
     permission: null,
     params: PublicInvitationTokenPathParamsSchema,
@@ -937,7 +1014,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     module: 'contexts',
     summary: 'Resolve em qual contexto entrar',
     description: [
-      '`none` encerra a sessão quando não há contexto algum; `enter` traz o contexto único (ou o',
+      '`none` quando não há contexto algum (a sessão continua e a pessoa vai a `/comecar`); `enter` traz o contexto único (ou o',
       'último usado); `select` traz a lista para escolher e `canCreateAgency` (se a conta pode criar uma agência em teste). Um `preferred` inválido é ignorado em',
       'silêncio, nunca vira 400.'
     ].join('\n'),

@@ -84,7 +84,7 @@ const insertBareUser = async (label: string, name = 'Portal Person'): Promise<st
   const id = randomUUID();
   createdUserIds.push(id);
   await app.pool.query(
-    'insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, false)',
+    'insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, true)',
     [id, name, `${label}.${randomUUID().slice(0, 8)}@list-integration.test`]
   );
   return id;

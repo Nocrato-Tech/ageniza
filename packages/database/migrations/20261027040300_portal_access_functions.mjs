@@ -755,7 +755,7 @@ AS $function$
         values
           (p_user_id, 'terms', p_terms_version),
           (p_user_id, 'privacy', p_privacy_version)
-        on conflict (user_id, document, version) do nothing;
+        on conflict (user_id, document, version) where revoked_at is null do nothing;
       end if;
 
       insert into audit.events (action, actor_user_id, agency_id, target_type, target_id)

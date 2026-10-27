@@ -29,14 +29,33 @@ const sessionCookieHeader = (cookies: readonly { name: string; value: string }[]
 let portalAgencyId: string;
 let portalClientId: string;
 
-/** A person who can sign in (a portal link elsewhere gives them a context), verified or not. */
+/**
+ * A person with a session (a portal link elsewhere gives them a context), verified or not. The password login
+ * refuses an unconfirmed account (#706), so the only unconfirmed account that holds a session is the one an
+ * invitation created: it signs in confirmed, and then becomes unconfirmed with the accepted portal invitation
+ * that `app_private.unconfirmed_account_may_hold_session` asks for.
+ */
 const signedIn = async (verified: boolean): Promise<{ user: TestUserFixture; cookie: string }> => {
   const user = await insertTestUser(app.pool, app.auth, { emailLabel: 'trial' });
   createdUserIds.push(user.id);
-  await owner.knex('auth.user').where({ id: user.id }).update({ emailVerified: verified });
   await owner.knex('client_memberships').insert({ client_id: portalClientId, user_id: user.id });
   const response = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email: user.email, password: user.password } });
   expect(response.statusCode).toBe(200);
+  if (!verified) {
+    const invitationId = randomUUID();
+    await owner.knex('invitations').insert({
+      id: invitationId,
+      agency_id: portalAgencyId,
+      purpose: 'client_invite',
+      email: user.email,
+      client_id: portalClientId,
+      token_hash: `trial-${invitationId}`,
+      expires_at: new Date(Date.now() + 86_400_000),
+      used_at: new Date(),
+      accepted_by_user_id: user.id
+    });
+    await owner.knex('auth.user').where({ id: user.id }).update({ emailVerified: false });
+  }
   return { user, cookie: sessionCookieHeader(response.cookies) };
 };
 

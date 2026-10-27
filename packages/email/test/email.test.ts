@@ -15,6 +15,7 @@ import {
   invitationEmail,
   maskEmailAddress,
   passwordResetEmail,
+  signUpWithExistingAccountEmail,
   type EmailTransport
 } from '../src/index.js';
 
@@ -47,6 +48,18 @@ describe('transactional email templates', () => {
     expect(invitation.text).toContain('60 minutos');
     expect(emailVerificationEmail({ actionUrl, expiresInMinutes: 30 }).subject).toContain('Confirme');
     expect(passwordResetEmail({ actionUrl, expiresInMinutes: 15 }).subject).toContain('Redefina');
+  });
+
+  it('tells, in the sign-up confirmation, whoever did not create the account how to keep the address (finding A1 of #720)', () => {
+    const verification = emailVerificationEmail({ actionUrl, expiresInMinutes: 24 * 60 });
+    expect(verification.text).toContain(actionUrl);
+    expect(verification.text).toContain(
+      "Se não foi você que criou esta conta, ignore este e-mail. Para usar este endereço, escolha 'Esqueci a senha' na tela de entrada."
+    );
+    const existing = signUpWithExistingAccountEmail();
+    expect(existing.text).toContain("'Esqueci a senha'");
+    expect(existing.text).not.toMatch(/https?:/);
+    expect(existing.html).not.toContain('href="');
   });
 
   it('renders the e-mail change messages: two notices without a link and one confirmation with it', () => {
