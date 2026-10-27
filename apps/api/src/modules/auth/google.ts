@@ -48,16 +48,18 @@ export const createGoogleUserInfo = (dependencies: GoogleUserInfoDependencies) =
     const { sub, email, name } = claims;
     if (typeof sub !== 'string' || sub === '' || typeof email !== 'string' || email === '') return refuse('claims_incomplete');
 
+    // The name of the Google profile, or the part of the address before the @ when it has none (same rule as a new account).
+    const displayName = typeof name === 'string' && name.trim() !== '' ? name.trim().slice(0, MAX_NAME_LENGTH) : email.split('@')[0] ?? email;
     const result = await dependencies.pool.query<{ admitted: boolean }>(
-      'select app_private.google_sign_in_admission($1::text, $2::text) as admitted',
-      [sub, email]
+      'select app_private.google_sign_in_admission($1::text, $2::text, $3::text) as admitted',
+      [sub, email, displayName]
     );
     if (result.rows[0]?.admitted !== true) return refuse('not_admitted');
 
     return {
       user: {
         // The profile photo is the product's own (identity storage); Google's picture is not stored.
-        name: typeof name === 'string' && name.trim() !== '' ? name.trim().slice(0, MAX_NAME_LENGTH) : email.split('@')[0] ?? email,
+        name: displayName,
         email,
         emailVerified: true
       },
