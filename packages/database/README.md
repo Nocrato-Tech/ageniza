@@ -27,7 +27,7 @@ A table that genuinely holds no tenant data is allowed through only by adding it
 
 ## Migrations
 
-Migrations live in [`migrations`](migrations) as forward-only Knex `.mjs` files named `<8+ digit version>_<name>.mjs`, with explicit SQL in `knex.raw`. Never edit an applied migration; CI rejects edits, deletions, and renames. `down` throws on purpose.
+Migrations live in [`migrations`](migrations) as forward-only Knex `.mjs` files named `<8+ digit version>_<name>.mjs`, with explicit SQL in `knex.raw`. Never edit an applied migration; CI rejects edits, deletions, and renames. A new migration's version must be greater than the newest one on the base branch: the prefix follows merge order, so rename (`git mv`) a late one before it merges. `down` throws on purpose.
 
 ```sh
 pnpm db:start     # local PostgreSQL 17 on 127.0.0.1:54322
