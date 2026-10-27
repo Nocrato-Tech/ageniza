@@ -43,9 +43,9 @@ import {
   ClientDetailResponseSchema,
   ClientInvitationListQuerySchema,
   ClientInvitationListResponseSchema,
-  ClientInvitationRequestSchema,
   ClientListQuerySchema,
   ClientListResponseSchema,
+  ClientMemberAddRequestSchema,
   ClientMemberListQuerySchema,
   ClientMemberListResponseSchema,
   ClientMemberSchema,
@@ -97,7 +97,6 @@ import {
   InvitationAcceptNewAccountResponseSchema,
   InvitationAcceptRequestSchema,
   InvitationAcceptResponseSchema,
-  InvitationCreatedResponseSchema,
   InvitationPreviewResponseSchema,
   InvitationResentResponseSchema,
   LegalAcceptancesResponseSchema,
@@ -530,13 +529,18 @@ const brandStudyExample = {
   personas: [personaExample]
 } as const;
 
+const accessId = '66666666-6666-4666-8666-666666666666';
+
 const clientMemberExample = {
-  membershipId,
+  accessId,
   name: 'Maria Souza',
   email: 'maria@padariacentral.exemplo.test',
   status: 'active',
+  entered: true,
   since: '2026-09-02T12:00:00.000Z'
 } as const;
+
+const clientMemberNotEnteredExample = { ...clientMemberExample, name: null, entered: false } as const;
 
 const portalBrandStudyExample = {
   filled: 3,
@@ -864,45 +868,11 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
   },
   {
     method: 'post',
-    path: '/agencies/:agencyId/clients/:clientId/invitations',
-    operationId: 'createClientInvitation',
-    module: 'invitations',
-    summary: 'Convida uma pessoa para o portal de um cliente',
-    description: [
-      'Cria o convite de portal, que é independente do vínculo de colaborador. Cliente arquivado responde',
-      '409 `CLIENT_ARCHIVED`: o convite nasceria morto, porque arquivar revoga os pendentes e o aceite recusa.'
-    ].join('\n'),
-    access: 'Sessão + vínculo com a agência',
-    permission: 'cliente.convidar_usuario',
-    params: AgencyClientPathParamsSchema,
-    body: ClientInvitationRequestSchema,
-    requestExample: { email: 'pessoa@exemplo.test' },
-    responses: [{
-      status: 201,
-      description: 'Convite criado e enviado.',
-      schema: InvitationCreatedResponseSchema,
-      example: { invitationId, expiresAt: '2026-10-02T12:00:00.000Z' }
-    }],
-    errors: [
-      COMMON_ERRORS.csrf,
-      COMMON_ERRORS.internal,
-      { status: 400, code: 'VALIDATION_ERROR' },
-      { status: 401, code: 'UNAUTHENTICATED' },
-      { status: 403, code: 'FORBIDDEN' },
-      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
-      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode receber convites.' },
-      { status: 409, code: 'MEMBERSHIP_EXISTS' },
-      { status: 409, code: 'TRY_AGAIN' },
-      { status: 502, code: 'EMAIL_DELIVERY_FAILED' }
-    ]
-  },
-  {
-    method: 'post',
     path: '/agencies/:agencyId/invitations/:invitationId/resend',
     operationId: 'resendInvitation',
     module: 'invitations',
     summary: 'Reenvia um convite pendente',
-    description: 'Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. Num convite de colaborador, a resposta traz uma única vez o link novo para copiar (`invitationUrl`, `Cache-Control: no-store`) a quem também tem `colaborador.convidar`; sem ela, ou num convite de portal, `null`. O reenvio gera de novo os dois tokens do convite de colaborador (o do e-mail e o copiável) e invalida os anteriores. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). O reenvio de convite de portal de um cliente que acabou de ser arquivado responde 409 `CLIENT_ARCHIVED` e o convite segue como estava.',
+    description: 'Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. A resposta traz uma única vez o link novo para copiar (`invitationUrl`, `Cache-Control: no-store`) a quem também tem `colaborador.convidar`; sem ela, `null`. O reenvio gera de novo os dois tokens do convite de colaborador (o do e-mail e o copiável) e invalida os anteriores. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). O convite de portal não é mais criado nem renovado (decisão de 2026-10-26): os que ainda estão pendentes valem até vencer, e reenviar um deles responde 409 `PORTAL_INVITATION_DISCONTINUED`; a pessoa entra pela aba Acessos, em "Adicionar pessoa".',
     access: 'Sessão + vínculo com a agência',
     permission: 'convite.reenviar',
     params: AgencyInvitationPathParamsSchema,
@@ -919,7 +889,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Invitation not found.' },
       { status: 409, code: 'INVITATION_NOT_PENDING' },
-      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode receber convites.' },
+      { status: 409, code: 'PORTAL_INVITATION_DISCONTINUED' },
       { status: 409, code: 'TRY_AGAIN' },
       { status: 502, code: 'EMAIL_DELIVERY_FAILED' }
     ]
@@ -2770,8 +2740,11 @@ path: '/agencies/:agencyId/roles',
     module: 'clients',
     summary: 'Lista as pessoas com acesso ao portal de um cliente',
     description: [
-      'Vinte por página, por nome, sem diferenciar maiúsculas nem acento. `status` é `active` (padrão) ou',
-      '`removed`. Nome e e-mail saem do vínculo da pessoa com o cliente. Cliente arquivado continua legível;',
+      'Vinte por página, por nome (o e-mail, enquanto a pessoa não entrou), sem diferenciar maiúsculas nem acento.',
+      '`status` é `active` (padrão) ou `removed`. Cada pessoa é um acesso dado a um e-mail, com conta ou sem ela:',
+      '`accessId` é o id que as rotas de Remover e Reativar usam, `email` é o endereço como foi gravado e `entered` é',
+      '`false` ("ainda não entrou") até uma conta com aquele e-mail verificado entrar. `name` é o da conta e só vem',
+      'depois disso. A lista nunca diz se um e-mail tem conta no Ageniza. Cliente arquivado continua legível;',
       'cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
@@ -2783,7 +2756,7 @@ path: '/agencies/:agencyId/roles',
       status: 200,
       description: 'Página de pessoas do portal.',
       schema: ClientMemberListResponseSchema,
-      example: { data: [clientMemberExample], meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 } }
+      example: { data: [clientMemberExample, clientMemberNotEnteredExample], meta: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 } }
     }],
     errors: [
       COMMON_ERRORS.internal,
@@ -2795,24 +2768,67 @@ path: '/agencies/:agencyId/roles',
   },
   {
     method: 'post',
-    path: '/agencies/:agencyId/clients/:clientId/members/:membershipId/remove',
+    path: '/agencies/:agencyId/clients/:clientId/members',
+    operationId: 'addClientMember',
+    module: 'clients',
+    summary: 'Adiciona uma pessoa ao portal do cliente',
+    description: [
+      'Só o e-mail. O acesso vale na hora, sem conta e sem aceite, e a pessoa recebe um e-mail de boas-vindas com',
+      '"Entrar no portal". Ter um endereço com conta no Ageniza não muda nada aqui: o acesso passa à conta no login,',
+      'quando uma conta com aquele e-mail verificado entra, e nunca nesta rota. Adicionar de novo um e-mail removido',
+      'reativa a mesma linha (a geração dos links de aprovação continua onde a remoção a deixou). Se a conta que',
+      'tinha aquele endereço já trocou de e-mail, ela perde o acesso e as sessões dela são encerradas. Um endereço que',
+      'já tem acesso ativo responde 409 `ACCESS_EXISTS`. O e-mail de boas-vindas conta no limite diário de e-mails da agência,',
+      'junto com os convites: passado o limite, 429 `DAILY_EMAIL_LIMIT` e nada é gravado. Agência em somente leitura responde',
+      '409 `AGENCY_READ_ONLY`. Cliente arquivado responde 409; cliente de outra agência ou inexistente, 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.convidar_usuario',
+    params: AgencyClientPathParamsSchema,
+    body: ClientMemberAddRequestSchema,
+    requestExample: { email: 'maria@padariacentral.exemplo.test' },
+    responses: [{
+      status: 201,
+      description: 'Acesso dado e e-mail enviado.',
+      schema: ClientMemberSchema,
+      example: clientMemberNotEnteredExample
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'ACCESS_EXISTS', message: 'Este endereço já tem acesso ao portal deste cliente.' },
+      { status: 409, code: 'AGENCY_READ_ONLY' },
+      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' },
+      { status: 409, code: 'TRY_AGAIN' },
+      { status: 429, code: 'DAILY_EMAIL_LIMIT' },
+      { status: 502, code: 'EMAIL_DELIVERY_FAILED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/members/:accessId/remove',
     operationId: 'removeClientMember',
     module: 'clients',
     summary: 'Remove uma pessoa do portal do cliente',
     description: [
       'A pessoa perde o acesso ao portal deste cliente na requisição seguinte; as demais pessoas do cliente',
-      'e os vínculos dela com outros clientes não mudam. Todas as sessões dela são encerradas na mesma',
-      'transação (a sessão é global): o cookie antigo recebe 401, e quem remove não perde a própria sessão.',
-      'O vínculo é preservado como `removed` e pode ser reativado, o que não cria sessão.',
-      'Remover quem já está removido não escreve nada, não encerra sessão e responde o vínculo como está. Cliente arquivado',
-      'responde 409; vínculo de outro cliente ou id inválido, 404.'
+      'e os acessos dela a outros clientes não mudam. Quando há conta vinculada, todas as sessões dela são encerradas',
+      'na mesma transação (a sessão é global): o cookie antigo recebe 401, e quem remove não perde a própria sessão.',
+      'A remoção avança a geração do acesso, o que mata os links de aprovação dele. O acesso é preservado como',
+      '`removed` e pode ser reativado, o que não cria sessão nem ressuscita link antigo.',
+      'Remover quem já está removido não escreve nada, não encerra sessão e responde o acesso como está. Cliente arquivado',
+      'responde 409; acesso de outro cliente ou id inválido, 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.remover_usuario',
     params: AgencyClientMemberPathParamsSchema,
     responses: [{
       status: 200,
-      description: 'Vínculo removido.',
+      description: 'Acesso removido.',
       schema: ClientMemberSchema,
       example: { ...clientMemberExample, status: 'removed' }
     }],
@@ -2828,19 +2844,20 @@ path: '/agencies/:agencyId/roles',
   },
   {
     method: 'post',
-    path: '/agencies/:agencyId/clients/:clientId/members/:membershipId/reactivate',
+    path: '/agencies/:agencyId/clients/:clientId/members/:accessId/reactivate',
     operationId: 'reactivateClientMember',
     module: 'clients',
     summary: 'Reativa uma pessoa do portal do cliente',
     description: [
-      'A pessoa volta a entrar no portal na requisição seguinte, sem convite novo. Reativar quem já está',
-      'ativo não escreve nada e responde o vínculo como está. Cliente arquivado responde 409; vínculo de',
-      'outro cliente ou id inválido, 404.'
+      'A pessoa volta a entrar no portal na requisição seguinte, sem convite novo, e a geração do acesso fica',
+      'como a remoção a deixou. Reativar quem já está ativo não escreve nada e responde o acesso como está.',
+      'Agência em somente leitura responde 409 `AGENCY_READ_ONLY`, ao contrário de Remover, que continua livre.',
+      'Cliente arquivado responde 409; acesso de outro cliente ou id inválido, 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.remover_usuario',
     params: AgencyClientMemberPathParamsSchema,
-    responses: [{ status: 200, description: 'Vínculo reativado.', schema: ClientMemberSchema, example: clientMemberExample }],
+    responses: [{ status: 200, description: 'Acesso reativado.', schema: ClientMemberSchema, example: clientMemberExample }],
     errors: [
       COMMON_ERRORS.csrf,
       COMMON_ERRORS.internal,
@@ -2848,6 +2865,7 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Member not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' },
+      { status: 409, code: 'AGENCY_READ_ONLY' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
   },

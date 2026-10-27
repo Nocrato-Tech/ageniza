@@ -30,7 +30,7 @@ const item = (overrides: Partial<ClaimedNotification> = {}): ClaimedNotification
     clientId: CLIENT_A,
     clientName: 'Padaria Sol',
     agencyName: 'Agência Aurora',
-    recipientUserId: PERSON_1,
+    recipientPortalAccessId: PERSON_1,
     recipientEmail: 'ana@padaria.test',
     contentId: `00000000-0000-4000-8000-c${String(counter).padStart(11, '0')}`,
     contentTitle: `Post ${counter}`,
@@ -137,7 +137,7 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
 
   it('sends ONE e-mail per person, client and type, with every content of the group, and stamps exactly what it sent', async () => {
     const group = [item(), item(), item()];
-    const otherPerson = [item({ recipientUserId: PERSON_2, recipientEmail: 'bia@padaria.test' })];
+    const otherPerson = [item({ recipientPortalAccessId: PERSON_2, recipientEmail: 'bia@padaria.test' })];
     const otherClient = [item({ clientId: CLIENT_B, clientName: 'Loja Lua' })];
     const published = [item({ notificationType: 'content_published' })];
     const { queue, sent } = fakeQueue([[...group, ...otherPerson, ...otherClient, ...published]]);
@@ -157,6 +157,21 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
     expect(byRecipientAndTemplate('ana@padaria.test', 'contents-published')).toHaveLength(1);
     expect(byRecipientAndTemplate('ana@padaria.test', 'contents-published')[0]!.subject).toBe('um conteúdo publicado: Padaria Sol');
     expect([...sent].sort()).toEqual([...group, ...otherPerson, ...otherClient, ...published].map((claimed) => claimed.itemId).sort());
+  });
+
+  it('sends ONE e-mail to a mailbox that two accesses of the client resolve to, with the content once, and stamps both items', async () => {
+    const shared = item({ recipientPortalAccessId: PERSON_1, recipientEmail: 'ana@padaria.test' });
+    const twin = item({ recipientPortalAccessId: PERSON_2, recipientEmail: 'ana@padaria.test', contentId: shared.contentId, contentTitle: shared.contentTitle });
+    const { queue, sent } = fakeQueue([[shared, twin]]);
+    const { sender, emails } = senderThatRecords();
+
+    await run(queue, sender);
+
+    expect(emails).toHaveLength(1);
+    expect(emails[0]!.to).toBe('ana@padaria.test');
+    expect(emails[0]!.subject).toBe('um conteúdo para você aprovar: Padaria Sol');
+    expect(emails[0]!.text.split(shared.contentTitle)).toHaveLength(2);
+    expect([...sent].sort()).toEqual([shared.itemId, twin.itemId].sort());
   });
 
   it('points each e-mail to the portal of its own client, with nothing of the person in the link', async () => {
@@ -236,8 +251,8 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
   });
 
   it('goes on to the next group after a failure, and a group that failed is not sent again in the same run', async () => {
-    const first = [item({ recipientUserId: PERSON_1 })];
-    const second = [item({ recipientUserId: PERSON_2, recipientEmail: 'bia@padaria.test' })];
+    const first = [item({ recipientPortalAccessId: PERSON_1 })];
+    const second = [item({ recipientPortalAccessId: PERSON_2, recipientEmail: 'bia@padaria.test' })];
     const { queue, released, sent } = fakeQueue([[...first, ...second]]);
     const { sender, emails } = senderThatRecords([new Error('socket hang up')]);
 
@@ -280,7 +295,7 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
   });
 
   it('claims again until nothing is left, at most six times, ten groups at a time', async () => {
-    const batches = Array.from({ length: 8 }, (_unused, index) => [item({ recipientUserId: `00000000-0000-4000-8000-0000000001${String(index).padStart(2, '0')}`, recipientEmail: `p${index}@padaria.test` })]);
+    const batches = Array.from({ length: 8 }, (_unused, index) => [item({ recipientPortalAccessId: `00000000-0000-4000-8000-0000000001${String(index).padStart(2, '0')}`, recipientEmail: `p${index}@padaria.test` })]);
     const { queue, calls } = fakeQueue(batches);
     const { sender, emails } = senderThatRecords();
 
@@ -291,7 +306,7 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
   });
 
   it('stops claiming after four minutes of a run, so its last group is rechecked well inside the lease', async () => {
-    const batches = [[item()], [item({ recipientUserId: PERSON_2, recipientEmail: 'bia@padaria.test' })]];
+    const batches = [[item()], [item({ recipientPortalAccessId: PERSON_2, recipientEmail: 'bia@padaria.test' })]];
     const { queue, calls } = fakeQueue(batches);
     const { sender, emails } = senderThatRecords();
     const clock = [0, 1_000, 4 * 60 * 1000 + 1];
@@ -316,8 +331,8 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
 
   it('releases the groups it had claimed and did not reach when the worker stops in the middle', async () => {
     const controller = new AbortController();
-    const first = [item({ recipientUserId: PERSON_1 })];
-    const second = [item({ recipientUserId: PERSON_2, recipientEmail: 'bia@padaria.test' })];
+    const first = [item({ recipientPortalAccessId: PERSON_1 })];
+    const second = [item({ recipientPortalAccessId: PERSON_2, recipientEmail: 'bia@padaria.test' })];
     const { queue, released, sent } = fakeQueue([[...first, ...second]]);
     const { sender } = senderThatRecords();
     const stopping = { send: async (email: OutgoingEmail) => { await sender.send(email); controller.abort(); } };
