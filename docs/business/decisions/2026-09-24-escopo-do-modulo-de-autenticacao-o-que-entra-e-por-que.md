@@ -14,5 +14,5 @@ Sobre as três levantadas:
 
 **Consequência.** Nenhuma das três exige backend novo agora. Se a troca de e-mail entrar, ela traz rota, token, e-mail transacional e **aviso ao endereço antigo** — sem esse aviso, quem rouba uma sessão troca o e-mail e a pessoa perde a conta em silêncio.
 
-**Origem.** Decidido em sessão (entrevista do módulo de autenticação).
+**Origem.** Decidido em sessão (entrevista do módulo de autenticação). **Substituída em parte em 2026-10-26**, quanto ao cadastro público, à verificação de e-mail "já satisfeita pelo convite", à criação de agência e ao login social: há cadastro público com confirmação do e-mail, e a conta criada pelo aceite do convite nasce com o e-mail não confirmado, porque o link do convite pode ser copiado; a agência nasce também pelo produto; e existe "Entrar com o Google" (ver as entradas de 2026-10-26 sobre o cadastro público, o link copiável, a agência em trial e o Google). O segundo fator fora, a troca de senha por quem está logado fora e o restante do escopo continuam valendo.
 

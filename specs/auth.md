@@ -17,13 +17,12 @@ Deixar alguém entrar no produto, provar quem é, escolher em qual dos seus cont
 
 ### Não resolve
 
-- **Cadastro público.** Não existe e não vai existir: conta nasce de convite (`disableSignUp: true` no Better Auth).
-- **Verificação de e-mail.** Já está satisfeita — a conta nasce `emailVerified = true` porque o convite chegou naquele endereço.
+- ~~**Cadastro público.**~~ e ~~**Verificação de e-mail.**~~ Entram pela seção 13, decidida em 2026-10-26: a conta passa a nascer também por cadastro, com confirmação do e-mail.
 - **Troca de senha por quem está logado.** Fora do MVP; a recuperação por link cobre quem perdeu o acesso.
 - **Troca de e-mail da conta pela própria pessoa.** A pessoa não troca sozinha: ela pede, e a operação aprova (regras 12 a 18 da seção 5).
 - **Vínculo entre identidades.** Dois e-mails são duas contas, e elas não se conhecem.
-- **Criação de agência.** É comando interno da operação, não fluxo de produto.
-- **Login social e segundo fator.** Nunca entraram em pauta.
+- ~~**Criação de agência.**~~ Passa a ser fluxo de produto, em trial (seção 13, 2026-10-26). O comando interno continua existindo.
+- ~~**Login social.**~~ O Google entra pela seção 13 (2026-10-26). **Segundo fator** continua fora.
 
 ## 2. Atores e autorização
 
@@ -223,7 +222,7 @@ As rotas do navegador são em português; as da API continuam em inglês.
 
 **Layout:** da largura de 64rem para cima, a tela é de duas colunas: à esquerda o painel de marca (o mascote amigável centralizado sobre a cor da marca, encostado nas bordas da tela) e à direita o formulário, afastado da borda e em largura de formulário. Abaixo disso o painel some e o formulário ocupa a tela. O mesmo molde vale para esqueci a senha, redefinir, convite e confirmação de e-mail (2026-10-16).
 
-**Sem cadastro:** não há "criar conta". Quem chega sem convite não tem o que fazer aqui, e a tela diz isso em uma linha em vez de oferecer um caminho que não existe.
+**Sem cadastro:** não há "criar conta". Quem chega sem convite não tem o que fazer aqui, e a tela diz isso em uma linha em vez de oferecer um caminho que não existe. *Substituído pela seção 13 (2026-10-26): a tela ganha "Entrar com o Google" e "Criar conta".*
 
 ### Esqueci a senha — `/senha/esquecida`
 
@@ -470,3 +469,37 @@ A [#54](https://github.com/Nocrato-Tech/ageniza/issues/54), que registrava a dí
 Duas tasks não esperam design: **#68**, a única de API do épico, e **#71**, que é comportamento do cliente HTTP e do roteador. **#74**, as minutas, também não depende de tela.
 
 As outras nove são `aguardando-design`: nascem escritas a partir do esboço da seção 7, e o código espera a entrega do designer. Sendo onze tasks de web contra uma de API, **o designer é o gargalo real deste módulo** — o backend já existe.
+
+## 13. Entrada aberta (2026-10-26)
+
+Decidida em sessão pelo dono do produto. As regras de segurança derivadas pelo maestro estão **pendentes de validação**, e várias vieram da revisão do PR #720. Épico [#718](https://github.com/Nocrato-Tech/ageniza/issues/718), tasks #706 a #717. Cada decisão tem o seu arquivo, e esta seção junta o que muda neste módulo. Onde ela contradiz as seções 1 a 12, vale esta seção. As seções antigas são reescritas quando cada parte for implementada.
+
+| decisão | o que muda aqui |
+|---|---|
+| [Cadastro público com e-mail e senha](../docs/business/decisions/2026-10-26-estrutural-cadastro-publico-com-e-mail-e-senha-e-confirmacao.md) | `/criar-conta`; confirmação do e-mail por link de 24 h **com a senha da conta**; o login de conta não confirmada diz "confirme o seu e-mail" só com a senha certa; a redefinição de senha de conta não confirmada assume a conta; cadastro num e-mail que já tem conta manda só o aviso; conta confirmada sem contexto cria sessão (a regra 3 muda) |
+| [Entrar com o Google](../docs/business/decisions/2026-10-26-estrutural-entrar-com-google-e-a-conta-que-o-google-assume.md) | botão nas telas de entrada; só vale e-mail verificado pelo Google; a conta Google é identificada pelo `sub`; `accountLinking` só para o Google; o Google assume a conta de e-mail não confirmado e mata senha, sessões, redefinições, confirmações, trocas de e-mail pendentes e o aceite de Termos (que ganha `revoked_at` em `legal_acceptances`); conta só com Google reautentica pelo Google onde hoje se pede a senha |
+| [Agência nasce pelo produto, em trial](../docs/business/decisions/2026-10-26-estrutural-a-agencia-nasce-pelo-produto-em-trial-de-14-dias.md) | "Criar agência" na tela sem contexto e no seletor de contexto, só para e-mail verificado; 14 dias, 3 clientes, 3 colaboradores, 2 GB; somente leitura ao fim, com as ações que reduzem acesso liberadas; uma agência em trial por e-mail normalizado; limite diário de e-mails; upgrade por comando interno |
+| [Link do convite de colaborador copiável](../docs/business/decisions/2026-10-26-estrutural-o-link-do-convite-de-colaborador-pode-ser-copiado.md) | criar e reenviar devolvem o link uma vez, com `no-store`; `accept-new-account` deixa de marcar o e-mail como verificado e envia a confirmação; essa conta tem sessão antes de confirmar, como exceção explícita (a regra 6 não muda) |
+| [Acesso ao portal por e-mail](../docs/business/decisions/2026-10-26-estrutural-o-acesso-ao-portal-e-por-e-mail-e-a-conta-e-opcional.md) | o acesso passa à conta **no login**, quando uma conta com aquele e-mail verificado entra, e nunca em "Adicionar pessoa" |
+
+### Telas novas ou alteradas
+
+- **`/criar-conta`**: nome, e-mail, senha, aceite único de Termos e Privacidade, "Criar conta" e "Entrar com o Google". Depois de enviar, a tela é sempre a mesma: "enviamos um link para o seu e-mail", com reenvio.
+- **`/email/verificar?token=…`**: tira o token da barra de endereço ao abrir, como `/email/confirmar`, e pede **a senha da conta** e um clique. Token válido e senha certa verificam o e-mail e criam a sessão da conta confirmada, trocando a que houvesse no navegador. Senha errada responde como credencial inválida e não consome o token. Abre com qualquer sessão, como exceção nova da regra 11.
+- **`/entrar`**: ganha "Entrar com o Google" e "Criar conta". A conta não confirmada criada pelo aceite de convite entra nos contextos que tem e vê o aviso "confirme o seu e-mail", com reenvio.
+- **`/comecar`**, para conta confirmada sem contexto, toma o lugar de `/sem-acesso` nesse caso. Oferece "Criar agência", pedindo só o nome, e explica que convites e acessos ao portal aparecem aqui quando chegarem.
+- **Seletor de contexto e `/contextos`**: item fixo "Criar agência", escondido quando a pessoa já tem uma agência em trial e quando o e-mail não está confirmado.
+- **Primeiro login pelo Google sem conta, ou depois de o Google assumir a conta**: aceite de Termos e Privacidade antes do primeiro uso.
+
+### O que muda nas regras invioláveis
+
+- **Regra 3**: a conta com e-mail verificado e sem contexto cria sessão. A conta não confirmada criada pelo aceite de convite tem sessão antes de confirmar, como exceção explícita; sem contexto, ela volta à regra 3.
+- **Regras 7, 7a e 7b**: o aceite gravado antes de o dono do e-mail assumir a conta é revogado (`revoked_at`; o registro fica), e o aceite é pedido de novo antes do primeiro uso. Na regra 7a, "repetir o aceite não grava de novo" passa a valer só entre os aceites não revogados: depois da revogação, aceitar a mesma versão grava uma linha nova. A falta de aceite bloqueia em dois casos, e só neles: a conta assumida, e a conta nova pelo Google antes do primeiro aceite. Nos dois, sem o aceite não há contexto.
+- **Regra 8**: redefinir a senha de uma conta não confirmada também marca o e-mail como verificado e invalida as confirmações pendentes. As sessões continuam encerradas, agora pela data da troca.
+- **Regra 11**: `/email/verificar` entra na lista das telas que abrem com qualquer sessão.
+- **Regra 12**: a conta só com Google pede a troca de e-mail com a reautenticação recente pelo Google, no lugar da senha atual.
+- **Regra 18**: a impressão de credencial do pedido usa o `sub` da conta Google quando não há senha, e o Google assumir a conta encerra os pedidos abertos, como a redefinição.
+
+### O que fica igual
+
+As regras invioláveis 1, 2, 3a, 4 a 6, 8a, 9, 10 e 13 a 17. A regra 8a vale também para a redefinição que assume uma conta não confirmada: ela não cria sessão, e a pessoa entra com a senha nova; a resposta igual para e-mail existente e inexistente, agora também no cadastro e no reenvio da confirmação; o convite de uso único, com só o hash no banco; o teto de sessão.

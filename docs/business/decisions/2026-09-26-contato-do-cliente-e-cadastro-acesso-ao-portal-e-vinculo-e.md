@@ -13,5 +13,5 @@ Um cliente pode ter **várias pessoas no portal, todas com o mesmo acesso**. Pap
 
 **Consequência.** Nenhuma regra nova de banco para limitar o vínculo. O dado de contato nunca é derivado da conta global de quem aceitou — se fosse, a pessoa o editaria no próprio perfil e a agência perderia o controle do cadastro. Quando o dono quiser passar a aprovação a outra pessoa, a resposta é convidá-la.
 
-**Origem.** Decidido em sessão (entrevista do módulo de clientes).
+**Origem.** Decidido em sessão (entrevista do módulo de clientes). **Substituída em parte em 2026-10-26**, quanto ao acesso ao portal ser um convite que vira vínculo quando aceito: o acesso passa a ser dado a um e-mail, na hora e sem conta, e passa à conta quando ela entra com aquele e-mail verificado (ver a entrada de 2026-10-26 sobre o acesso ao portal por e-mail). O contato como cadastro da agência, nunca derivado da conta, e as várias pessoas com o mesmo acesso continuam valendo.
 
