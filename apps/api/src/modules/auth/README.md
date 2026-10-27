@@ -42,8 +42,9 @@ an invitation carries it) but no longer changes the outcome.
 sign-in of an account whose `emailVerified` is false, after the password is checked. The route answers
 it with the same `401 INVALID_CREDENTIALS` as a wrong password, byte for byte, with no cookie and no
 session row: whoever signs up with someone else's address chose the password, so a distinct answer
-would tell whether the address already had an account (security review of PR #722). The right
-password also reissues the link in the background, within the resend limits. `routes.ts` checks
+would tell whether the address already had an account (security review of PR #722). It has no side
+effect either: a link reissued from here spent the public resend's counter, whose `429` told the same
+thing (second review of PR #722); the screen offers the resend instead. `routes.ts` checks
 `emailVerified` again on the response, and `session-guard.ts` revokes any session an unconfirmed
 account holds. If the sign-in after a consumed link fails (the password changed in between),
 `/auth/email/verify` answers `400 INVALID_LINK_OR_PASSWORD`, never 500; consuming the link locks the
