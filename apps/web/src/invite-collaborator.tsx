@@ -11,6 +11,7 @@ import { Button, Field, FieldMessage, LiveStatus, Modal, Select, TextInput, useF
 
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
+import { CopyInvitationLinkButton } from './copy-invitation-link.js';
 import { HttpClientError, useApiClient } from './http.js';
 
 const EMAIL_REQUIRED = 'Informe o e-mail.';
@@ -40,6 +41,8 @@ interface SentInvite {
   readonly days: number;
   /** The e-mail already had a pending invitation, which this creation revoked (issue #32). */
   readonly superseded: boolean;
+  /** The link that went to the e-mail, kept only here and gone when the modal closes (issue #715). */
+  readonly invitationUrl: string;
 }
 
 /** Validation issues carry the field path the API refused; only that field is marked. */
@@ -109,15 +112,18 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
     setFormError(SEND_FAILED);
   };
 
+  // The link goes straight into this modal's state and is stripped from what the mutation returns,
+  // so the mutation cache never holds it.
   const send = useMutation({
-    mutationFn: ({ email: target, roleId: targetRole }: { email: string; roleId: string }) => httpClient.request({
-      path: apiPath('/agencies/:agenciaId/invitations/collaborators', { agenciaId: agency.agencyId }),
-      method: 'POST',
-      body: { email: target, roleId: targetRole },
-      response: CollaboratorInvitationCreatedResponseSchema
-    }),
-    onSuccess: (created, input) => {
-      setSent({ email: input.email, days: inviteLinkDays(created.expiresAt), superseded: created.supersededInvitationId !== null });
+    mutationFn: async ({ email: target, roleId: targetRole }: { email: string; roleId: string }) => {
+      const { invitationUrl, ...created } = await httpClient.request({
+        path: apiPath('/agencies/:agenciaId/invitations/collaborators', { agenciaId: agency.agencyId }),
+        method: 'POST',
+        body: { email: target, roleId: targetRole },
+        response: CollaboratorInvitationCreatedResponseSchema
+      });
+      setSent({ email: target, days: inviteLinkDays(created.expiresAt), superseded: created.supersededInvitationId !== null, invitationUrl });
+      return created;
     },
     onError: (error: unknown) => { applyError(error); },
     // The API commits the invitation before it sends the e-mail: a 502 leaves a real invitation
@@ -141,6 +147,7 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
       <div className="form-stack">
         <LiveStatus>Convite enviado para {sent.email}. O link vale por {sent.days} dias.</LiveStatus>
         {sent.superseded && <p className="form-hint">{SUPERSEDED_NOTE}</p>}
+        <CopyInvitationLinkButton url={sent.invitationUrl} />
       </div>
     </Modal>;
   }

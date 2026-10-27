@@ -348,7 +348,7 @@ Um filtro de status na própria lista, visível só para quem pode ver removidos
 
 Dois campos, porque o convite carrega dois dados. **`Admin` só aparece na lista de papéis para o Owner** — e se alguém montar a requisição na mão, as duas barreiras recusam. A lista de papéis vem da rota `roles` (seção 6).
 
-**Copiar link** (2026-10-26, [decisão](../docs/business/decisions/2026-10-26-estrutural-o-link-do-convite-de-colaborador-pode-ser-copiado.md)): depois de **Enviar convite**, o modal mostra o botão **Copiar link**, com o mesmo link de uso único que foi ao e-mail. O link vem uma vez, na resposta da criação. Fechado o modal, ele não volta: reenviar gera outro e invalida o anterior. O link nunca aparece na lista de convites.
+**Copiar link** (2026-10-26, [decisão](../docs/business/decisions/2026-10-26-estrutural-o-link-do-convite-de-colaborador-pode-ser-copiado.md)): depois de **Enviar convite**, o modal mostra o botão **Copiar link**, com o mesmo link de uso único que foi ao e-mail. O link vem uma vez, na resposta da criação, e o **reenvio** devolve o link novo, também uma vez, invalidando o anterior. As duas respostas saem com `Cache-Control: no-store` e nunca vão a log. Fechada a tela, o link não volta. O link nunca aparece na lista de convites. Criar e reenviar contam no limite diário de e-mails da agência, mais baixo no trial. A conta criada pelo aceite nasce com o e-mail não confirmado, entra no contexto do convite na hora e confirma o e-mail com a própria senha.
 
 Convidar um e-mail que já tem convite pendente **substitui** o anterior: a criação o revoga na mesma transação, e a tela avisa "O convite anterior para este e-mail deixou de valer." quando a resposta traz `supersededInvitationId` (seção 6).
 

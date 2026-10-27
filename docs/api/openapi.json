@@ -404,12 +404,17 @@
               "null"
             ],
             "format": "uuid"
+          },
+          "invitationUrl": {
+            "type": "string",
+            "format": "uri"
           }
         },
         "required": [
           "invitationId",
           "expiresAt",
-          "supersededInvitationId"
+          "supersededInvitationId",
+          "invitationUrl"
         ],
         "additionalProperties": false
       },
@@ -443,6 +448,32 @@
         },
         "required": [
           "email"
+        ],
+        "additionalProperties": false
+      },
+      "resendInvitationResponse": {
+        "type": "object",
+        "properties": {
+          "invitationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "invitationUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          }
+        },
+        "required": [
+          "invitationId",
+          "expiresAt",
+          "invitationUrl"
         ],
         "additionalProperties": false
       },
@@ -6999,7 +7030,7 @@
       "post": {
         "operationId": "createCollaboratorInvitation",
         "summary": "Convida uma pessoa para a agência",
-        "description": "O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail e o token só existe nele. Convidar com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). A resposta informa o convite pendente que esta criação revogou, quando havia um.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.convidar`.",
+        "description": "O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail. Convidar com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). A resposta informa o convite pendente que esta criação revogou, quando havia um, e traz uma única vez o link que foi ao e-mail (`invitationUrl`, `Cache-Control: no-store`): nenhuma outra rota o devolve, e reenviar gera outro link e invalida este.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.convidar`.",
         "tags": [
           "invitations"
         ],
@@ -7040,7 +7071,8 @@
                 "example": {
                   "invitationId": "33333333-3333-4333-8333-333333333333",
                   "expiresAt": "2026-10-02T12:00:00.000Z",
-                  "supersededInvitationId": null
+                  "supersededInvitationId": null,
+                  "invitationUrl": "https://app.ageniza.test/convite/<token-do-exemplo>"
                 }
               }
             }
@@ -7551,7 +7583,7 @@
       "post": {
         "operationId": "resendInvitation",
         "summary": "Reenvia um convite pendente",
-        "description": "Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). O reenvio de convite de portal de um cliente que acabou de ser arquivado responde 409 `CLIENT_ARCHIVED` e o convite segue como estava.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `convite.reenviar`.",
+        "description": "Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. Num convite de colaborador, a resposta traz uma única vez o link novo (`invitationUrl`, `Cache-Control: no-store`) a quem também tem `colaborador.convidar`; sem ela, ou num convite de portal, `null`. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). O reenvio de convite de portal de um cliente que acabou de ser arquivado responde 409 `CLIENT_ARCHIVED` e o convite segue como estava.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `convite.reenviar`.",
         "tags": [
           "invitations"
         ],
@@ -7582,11 +7614,12 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/invitationCreatedResponse"
+                  "$ref": "#/components/schemas/resendInvitationResponse"
                 },
                 "example": {
                   "invitationId": "33333333-3333-4333-8333-333333333333",
-                  "expiresAt": "2026-10-02T12:00:00.000Z"
+                  "expiresAt": "2026-10-02T12:00:00.000Z",
+                  "invitationUrl": "https://app.exemplo.test/convite/token-do-exemplo"
                 }
               }
             }
@@ -7925,7 +7958,7 @@
       "post": {
         "operationId": "acceptInvitationNewAccount",
         "summary": "Cria a conta e aceita o convite",
-        "description": "A conta nasce com o e-mail do convite, verificado, e a sessão já vem no cookie da resposta.\n\nAcesso: Token do convite.",
+        "description": "A conta nasce com o e-mail do convite, ainda não confirmado; a sessão já vem no cookie da resposta e o contexto do convite vale na hora.\n\nAcesso: Token do convite.",
         "tags": [
           "invitations"
         ],
