@@ -27,4 +27,4 @@ Quem tem o e-mail na mão aprova: o risco aceito é o mesmo do e-mail da pessoa,
 
 **Origem.** Pedido do dono do produto em sessão, 2026-10-26 ("O lote do e-mail"). Os itens 1 e 2 e a ideia geral são do dono. A conferência a cada uso e a geração (item 2), e os itens 3 a 9, foram derivados pelo maestro, a conferência, a geração, o fragmento, o cookie, o `no-store` e a URL assinada curta a partir da revisão do PR #720.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-10-27.

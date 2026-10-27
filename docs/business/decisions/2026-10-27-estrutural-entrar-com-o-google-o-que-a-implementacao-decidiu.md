@@ -21,4 +21,4 @@
 
 **Origem.** Decisões tomadas pelo implementador da issue #707 ao aplicar a decisão de 2026-10-26, com o maestro como intermediário do dono.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-10-27.

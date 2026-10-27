@@ -26,4 +26,4 @@
 
 **Origem.** Pedido do dono do produto em sessão, 2026-10-26. A existência do login com Google é do dono. Os itens 1 a 7 são as regras de segurança derivadas pelo maestro, e a lista do item 4, o `accountLinking` do item 3 e o item 5 vieram da revisão do PR #720.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-10-27.
