@@ -94,7 +94,7 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 
 1. Senha errada e e-mail inexistente devolvem **a mesma** resposta.
 2. `POST /auth/password/forgot` responde igual para e-mail existente e inexistente.
-3. Credencial correta com **zero contextos** não cria sessão — **salvo** quando o login carrega `inviteToken` de um convite válido para o mesmo e-mail (regra 3a, 2026-09-29, pendente de validação). O reset de senha não cria sessão, então a exceção não se aplica a ele (regra 8a, 2026-10-16).
+3. ~~Credencial correta com **zero contextos** não cria sessão~~ — **substituída em 2026-10-26 (§13, implementada na #706):** a conta com e-mail confirmado e sem contexto cria sessão e cai em `/comecar`; `resolve` com `none` mantém a sessão. A conta **não confirmada** não cria sessão, com a senha certa ou não: o login responde `403 EMAIL_NOT_VERIFIED` só depois de conferir a senha, e senha errada continua igual a e-mail inexistente (regra 1). `NO_CONTEXT_ACCESS` deixou de existir.
 3a. Com `inviteToken` válido, a sessão criada continua **sem contexto** até o convite ser aceito por `POST /invitations/:token/accept`; chamar `resolve` antes do aceite encerra essa sessão como qualquer outra sem contexto (regra 3).
 4. Token de convite consumido, expirado ou revogado devolve **o mesmo** `INVALID_LINK`, sem dizer qual dos três.
 5. A tela nunca exibe o e-mail do convite antes de o token ser validado pela API.
@@ -106,7 +106,7 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 8a. Redefinir senha **não cria sessão**: troca a senha, encerra todas as sessões (regra 8) e a rota responde `204` sem corpo e sem cookie, tenha a conta contexto ou não. A tela leva a `/entrar` com o aviso "Senha alterada. Entre com a nova senha.", e a pessoa entra digitando a senha nova. Reset vindo de um convite (`invite` no link do e-mail) segue o mesmo caminho, e é o **login** que carrega o convite (`inviteToken`, regra 3a); a rota de reset não recebe `inviteToken` (2026-10-16, substitui a decisão de 2026-09-29 "o reset de senha sempre autentica", com a correção do PR #176; os motivos `NO_CONTEXT_ACCESS` e `SIGN_IN_REQUIRED` do reset deixam de existir, e `NO_CONTEXT_ACCESS` fica só no login).
 9. Trocar de contexto grava a preferência e **não** recria a sessão.
 10. `401` em qualquer requisição leva ao login preservando o destino, e nunca deixa dado antigo na tela.
-11. Quem tem sessão válida e abre uma tela deste módulo é levado ao seu contexto, em vez de logar de novo — **exceto** as telas que precisam abrir para qualquer sessão: `/convite/:token` (quem já está logado aceita o convite pelo fluxo da §7, Convite), `/senha/redefinir` e `/email/confirmar` (o link chega por e-mail e pode ser de outra conta, inclusive para quem já tem sessão) e `/termos` e `/privacidade` (páginas públicas de conteúdo). As demais telas do módulo (`/entrar`, `/sem-acesso`, `/senha/esquecida`) continuam redirecionando ao contexto ativo, e cada exceção tem teste próprio de que a tela abre com sessão válida sem redirecionar (issue #342, 2026-10-07, pendente de validação).
+11. Quem tem sessão válida e abre uma tela deste módulo é levado ao seu contexto, em vez de logar de novo — **exceto** as telas que precisam abrir para qualquer sessão: `/convite/:token` (quem já está logado aceita o convite pelo fluxo da §7, Convite), `/senha/redefinir`, `/email/confirmar` e `/email/verificar` (o link chega por e-mail e pode ser de outra conta, inclusive para quem já tem sessão) e `/termos` e `/privacidade` (páginas públicas de conteúdo). As demais telas do módulo (`/entrar`, `/sem-acesso`, `/senha/esquecida`) continuam redirecionando ao contexto ativo, e cada exceção tem teste próprio de que a tela abre com sessão válida sem redirecionar (issue #342, 2026-10-07, pendente de validação).
 12. A pessoa **não troca o próprio e-mail**: ela pede, pelo menu de conta, informando o e-mail novo e a **senha atual**, e a **operação** aprova pelo CLI (`cli:email-change`), porque a conta é global e o pedido não pertence a nenhuma agência (2026-10-07, pendente de validação). Senha errada não cria pedido. Há **um pedido aberto por conta**; um novo substitui o anterior. O endereço **atual** recebe o aviso "pediram a troca do e-mail desta conta; se não foi você, troque a senha".
 13. Aprovado o pedido, um link de **uso único**, válido por 48 horas, vai ao e-mail **novo**. Pedido não aprovado nunca troca nada.
 14. Confirmar o link troca o e-mail (marcando-o como verificado), **encerra todas as sessões** da conta e os links de redefinição de senha pendentes, e avisa o endereço **antigo**. Link usado, vencido, substituído ou recusado, e e-mail que outra conta passou a usar, respondem o mesmo `INVALID_LINK`.
@@ -121,7 +121,10 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 
 | método | rota | devolve |
 |---|---|---|
-| `POST` | `/auth/login` | `{ user }` + cookie. Aceita `inviteToken` opcional (regra 3a) |
+| `POST` | `/auth/login` | `{ user }` + cookie. Aceita `inviteToken` opcional (regra 3a). Conta não confirmada com a senha certa: `403 EMAIL_NOT_VERIFIED` |
+| `POST` | `/auth/sign-up` | corpo `{ name, email, password, acceptTerms: true }`; `202 {}`, sempre, sem cookie |
+| `POST` | `/auth/email/verification/resend` | corpo `{ email }`; `202 {}`, sempre |
+| `POST` | `/auth/email/verify` | corpo `{ token, password }`; `{ user }` + cookie, ou `400 INVALID_LINK_OR_PASSWORD` |
 | `POST` | `/auth/logout` | 204 |
 | `POST` | `/auth/logout-all` | 204 |
 | `GET` | `/auth/session` | `{ user, session: { expiresAt } }` |
@@ -147,7 +150,7 @@ Limites de tentativa já aplicados por IP, por IP+e-mail e por e-mail global (`p
 1. `POST /auth/login` — autentica, conta os contextos e, quando não houver nenhum, **não cria sessão** e devolve um código próprio (`403 NO_CONTEXT_ACCESS`) — **exceto** com `inviteToken` válido para o mesmo e-mail (regra 3a, 2026-09-29).
 2. `GET /me/contexts/resolve` — `decision: 'none'` encerra a sessão, em vez de devolver uma aplicação vazia.
 
-Foi **mudança de contrato numa rota implantada**: os testes de integração de login mudaram junto.
+Foi **mudança de contrato numa rota implantada**: os testes de integração de login mudaram junto. **Desfeito na #706** (regra 3, §13): os dois pontos deixaram de encerrar a sessão da conta confirmada.
 
 ### Implementado (issue #81)
 
@@ -185,13 +188,27 @@ Um token de reset inválido, usado ou expirado devolve `400 INVALID_LINK`, sem s
 
 Desde 2026-09-29 (issue #175) a rota assinava a pessoa de volta e respondia `signedIn`, com os motivos `NO_CONTEXT_ACCESS` e `SIGN_IN_REQUIRED` (correção da revisão de segurança do PR #176). A decisão de 2026-10-16 (issue #699) tirou tudo isso: foi **mudança de contrato numa rota implantada**, o `200` com corpo voltou a `204`, e os testes de integração mudaram junto.
 
+### Implementado (issues #706 e #713)
+
+**Cadastro público e confirmação do e-mail** (§13, com o achado A1 da revisão do PR #720 e a revisão de segurança do PR #721):
+
+1. `POST /auth/sign-up` cria a conta com `emailVerified = false`, a credencial e os dois aceites (Termos e Privacidade, nas versões em vigor), e emite o link de confirmação. Não cria sessão. O `disableSignUp` do Better Auth continua ligado: a rota é nossa. A senha é transformada em hash nos dois caminhos e os e-mails saem em segundo plano, então e-mail novo, conta confirmada e conta não confirmada recebem a mesma resposta no mesmo tempo. O e-mail que já tem conta, confirmada ou não, recebe só um aviso **sem link**, apontando para "Esqueci a senha".
+2. **O link é nosso, com estado**: o `emailVerification` do Better Auth é um JWT sem estado que leva o e-mail, não é de uso único, sobrevive ao reenvio e confirma sem senha, e não é usado. O token tem 32 bytes aleatórios e não carrega nada; o banco guarda só o SHA-256 em `public.email_confirmations` (`user_id`, `expires_at` de 24 h, `consumed_at`), que `ageniza_app` não lê nem escreve: tudo passa por `app_private.issue_email_confirmation`, `email_confirmation_by_token_hash` e `consume_email_confirmation`. Emitir um link novo apaga os não consumidos da conta. No código, `issueEmailConfirmation(executor, userId)` (`apps/api/src/modules/auth/email-verification.ts`) emite e devolve o token para `emailService.sendEmailVerification`; é o que o aceite de convite da #721 chama.
+3. `POST /auth/email/verify` pede o token **e a senha da conta**. Conta as tentativas nos contadores do login (senha errada aqui gasta as mesmas tentativas de `/entrar`). Link inválido, vencido, usado e senha errada dão a mesma resposta, `400 INVALID_LINK_OR_PASSWORD`, sem mudar nada; a senha é conferida também contra um hash fictício quando o link não vale, para o tempo não denunciar o link. Com link e senha certos, a função consome o link só se a credencial ainda for a conferida (uma redefinição no meio faz falhar), marca o e-mail como confirmado, apaga os outros links e a rota cria a sessão.
+4. `POST /auth/email/verification/resend` emite um link novo só para conta não confirmada, e responde `202 {}` para qualquer endereço.
+5. **A redefinição assume a conta não confirmada**: o `onPasswordReset` chama `app_private.confirm_email_by_password_reset(user_id)`, que apaga os links pendentes da conta, marca o e-mail como confirmado e revoga (`revoked_at`) os aceites gravados por quem cadastrou. A redefinição continua sem criar sessão (regra 8a).
+6. A guarda de sessão recusa e revoga a sessão de conta não confirmada, como segunda barreira ao `requireEmailVerification` do Better Auth.
+7. Limites (`policy.ts`): cadastro e reenvio, 30 por 15 min por IP, 3 por 15 min no par IP+e-mail e 10 por hora por e-mail; confirmação, 100 por 15 min por IP, além dos contadores do login.
+
+**Limitações e pontos em aberto.** A falta de aceite depois da revogação ainda **não bloqueia** contexto: hoje só o aviso de documento pendente aparece (a conta assumida não tem contexto até criar agência ou aceitar convite, então o bloqueio cabe à criação de agência, #709). O botão do Google não existe ainda (#710+). "Criar agência" em `/comecar` aparece desabilitado até a #709.
+
 ### Persistência
 
-Nenhuma migration.
+Migrations `20261027010000` (`legal_acceptances.revoked_at`, a unicidade por versão passa a valer só entre os não revogados, e `confirm_email_by_password_reset`) e `20261027010100` (`email_confirmations` e as suas funções).
 
 ### RLS
 
-Nenhuma policy nova. A contagem de contextos usa o caminho que `listValidContexts` já percorre.
+Nenhuma policy nova. `email_confirmations` tem RLS ligada e forçada, sem policy e sem privilégio para `ageniza_app`: só as funções `security definer` a alcançam.
 
 ## 7. Frontend
 
