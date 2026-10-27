@@ -477,6 +477,11 @@ describe('invitation HTTP module', () => {
   describe.each(['agency_activation', 'collaborator_invite', 'client_invite'] as const)(
     '#706: the session of an unconfirmed account that accepted a %s invitation',
     (purpose) => {
+      // An app of its own: seven acceptances here would spend the shared app's per-IP budget of the whole file.
+      let own: TestApp;
+      beforeAll(async () => { own = await buildTestApp({ sender: createFakeEmailSender() }); });
+      afterAll(async () => { await own.close(); });
+
       /** An agency and a client of their own, so that suspending or archiving them touches no other test. */
       const acceptedSession = async () => {
         const ownAgencyId = await createAgency(`Unconfirmed session ${purpose}`, null);
@@ -491,7 +496,7 @@ describe('invitation HTTP module', () => {
           roleId: purpose === 'collaborator_invite' ? productionRoleId : null,
           clientId: purpose === 'client_invite' ? ownClientId : null
         });
-        const response = await app.app.inject({
+        const response = await own.app.inject({
           method: 'POST',
           url: `/invitations/${invitation.token}/accept-new-account`,
           headers: origin,
@@ -501,12 +506,12 @@ describe('invitation HTTP module', () => {
         const created = await owner.knex('auth.user').where({ email }).first('id');
         createdUserIds.push(created.id as string);
         const cookie = sessionCookieHeader(response.cookies);
-        expect((await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie } })).statusCode).toBe(200);
+        expect((await own.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie } })).statusCode).toBe(200);
         return { userId: created.id as string, agencyId: ownAgencyId, clientId: ownClientId, cookie };
       };
 
       const refused = async (session: { userId: string; cookie: string }): Promise<void> => {
-        expect((await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie: session.cookie } })).statusCode).toBe(401);
+        expect((await own.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie: session.cookie } })).statusCode).toBe(401);
         expect(await owner.knex('auth.session').where({ userId: session.userId }).select('id')).toEqual([]);
       };
 
