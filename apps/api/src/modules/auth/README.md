@@ -80,6 +80,18 @@ unconfirmed account takes it over: `onPasswordReset` calls
 `app_private.confirm_email_by_password_reset`, which voids the links, confirms the e-mail and revokes
 the legal acceptances recorded at sign-up.
 
+**A password change stamps `passwordChangedAt` (issue #719, decision 2026-10-27).** Migration
+`20261027120000` puts a `BEFORE UPDATE OF password` trigger on `auth.account` (credential rows) that sets
+`auth."user"."passwordChangedAt"` to the database clock in the statement that replaced the hash, so the reset
+and any later writer are covered; `confirm_email_by_password_reset` (the takeover by the reset) stamps it too.
+`session-guard.ts` refuses, and deletes, a session whose `createdAt` is at or before that date. The date alone
+does not close the race: a login that checked the old hash creates its session after the reset committed, with a
+`createdAt` later than the date. So `/auth/login` and `/auth/email/verify` read the credential again after
+`signInEmail` created the session and end it when the hash is no longer the one they checked (or the read fails);
+a hash that still matches means the reset's deletion of sessions has not run yet and takes the session too. The
+session clock is the API's and the date is the database's, one host (ADR 0011); a skew only refuses sessions
+created right after a reset, never accepts an old one.
+
 **`password/reset` creates no session (issue #699, 2026-10-16 decision "Redefinir a senha não entra
 direto: volta ao login").** The reset ends every previous session (`revokeSessionsOnPasswordReset`)
 and answers `204`, no body and no cookie, whether or not the account has a context: it never signs

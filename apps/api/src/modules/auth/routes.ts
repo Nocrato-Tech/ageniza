@@ -25,6 +25,7 @@ import { recordAuthAuditEventSafely, type AuthAuditRecorder } from './audit.js';
 import type { InMemoryAuthLimiter } from './auth-limiter.js';
 import { unconfirmedAccountMayHoldSession, type AuthInstance } from './better-auth.js';
 import { applyAuthCookies, toAuthHeaders, toPublicAuthError } from './bridge.js';
+import { credentialIsStill } from './credential-recheck.js';
 import type { EmailService } from './email-service.js';
 import {
   consumeEmailVerification,
@@ -172,6 +173,14 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
       throw toPublicAuthError(error, invalidCredentials);
     }
 
+    // A reset that landed after the hash was read has already deleted the sessions, so the one just created would outlive
+    // it (issue #719). A hash that is still the one checked means the reset's deletion has yet to run and takes this
+    // session too; anything else, a failed read included, ends it here.
+    if (!await credentialIsStill(() => loginCredentialOf(dependencies.database, body.email).then((current) => current?.passwordHash), credential?.passwordHash)) {
+      await revokeJustCreatedSession(dependencies.auth, response.token, request);
+      throw new HttpError(invalidCredentials);
+    }
+
     // A confirmed account gets its session even with zero contexts and lands on `/comecar`
     // (2026-10-26 decision, which changes rule 3). The check above already refused an unconfirmed one;
     // the rule is held here too, so a change of the account in between cannot hand one a cookie.
@@ -268,7 +277,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     }
 
     let headers: Headers;
-    let response: { readonly user: { readonly id: string; readonly name: string; readonly email: string } };
+    let response: { readonly token: string; readonly user: { readonly id: string; readonly name: string; readonly email: string } };
     try {
       ({ headers, response } = await dependencies.auth.api.signInEmail({
         body: { email: pending.email, password: body.password },
@@ -278,6 +287,11 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     } catch {
       // The e-mail is confirmed, but the password changed in between (a reset that landed after the
       // link was consumed): the person signs in at `/entrar` with the new one. Never a 500.
+      throw new HttpError(verificationFailedError);
+    }
+    // The same window as the login's (issue #719).
+    if (!await credentialIsStill(() => credentialHashOf(dependencies.database, pending.userId), credential)) {
+      await revokeJustCreatedSession(dependencies.auth, response.token, request);
       throw new HttpError(verificationFailedError);
     }
     applyAuthCookies(reply, headers);

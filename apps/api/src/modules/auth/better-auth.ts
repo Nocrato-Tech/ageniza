@@ -61,8 +61,8 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
       cookieCache: { enabled: false }
     },
     user: {
-      // The day the credential of the account was replaced without the person (Google taking an account over): a
-      // session created before it is refused by the guard (issue #719's mechanism). Read-only here; the database writes it.
+      // The day the credential of the account was last replaced (a reset, Google taking an account over): a session
+      // created at or before it is refused by the guard (issue #719). Read-only here; the database writes it.
       additionalFields: { passwordChangedAt: { type: 'date', required: false, input: false } }
     },
     ...(dependencies.config.google === undefined ? {} : {
