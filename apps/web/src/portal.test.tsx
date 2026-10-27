@@ -245,6 +245,17 @@ describe('client portal shell (#141)', () => {
     expect(within(menu).getByText('Padaria Central')).toBeTruthy();
   });
 
+  it('says the portal is read-only when the trial of the agency ended, and nothing otherwise (issue #714)', async () => {
+    renderPortal(makeFetch({ portal: () => json(portalClient({ agencyReadOnly: true })) }).impl);
+    const notice = await screen.findByRole('region', { name: 'Portal somente leitura' });
+    expect(notice.textContent).toContain('O plano de Agência Um precisa ser renovado para aprovar, pedir ajustes e comentar.');
+    cleanup();
+
+    renderPortal(makeFetch({ portal: () => json(portalClient()) }).impl);
+    await screen.findByRole('heading', { name: 'Olá, Maria' });
+    expect(screen.queryByRole('region', { name: 'Portal somente leitura' })).toBeNull();
+  });
+
   it('offers one next action, which changes with the agency answers and leads to the brand study', async () => {
     const none = makeFetch({ portal: () => json(portalClient()) });
     const first = renderPortal(none.impl);

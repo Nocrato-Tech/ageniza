@@ -13,6 +13,7 @@ import { apiPath } from './api-path.js';
 import { Conversation } from './conversation.js';
 import { useDocumentTitle } from './document-title.js';
 import { useApiClient } from './http.js';
+import { PLAN_RENEWAL_REASON } from './plan-notice.js';
 import { portalClientQueryKey, usePortalClient } from './portal.js';
 
 /**
@@ -92,6 +93,7 @@ function PersonaCard({ persona, onWritten, onStale }: { persona: PortalPersona; 
       subjectLabel={persona.name}
       canWrite
       readOnly={false}
+      planBlockedReason={client.agencyReadOnly ? PLAN_RENEWAL_REASON : undefined}
       headingLevel={4}
       onWritten={onWritten}
       onStale={onStale}
@@ -167,6 +169,7 @@ export function PortalBrandPage() {
           subjectLabel={section.label}
           canWrite
           readOnly={false}
+          planBlockedReason={client.agencyReadOnly ? PLAN_RENEWAL_REASON : undefined}
           headingLevel={3}
           onWritten={onWritten}
           onStale={onStale}

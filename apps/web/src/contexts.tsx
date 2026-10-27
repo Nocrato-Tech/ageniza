@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -7,12 +7,13 @@ import {
   PutLastContextResponseSchema,
   type Context
 } from '@ageniza/contracts';
-import { Briefcase, CircleAlert, LogOut, Store } from 'lucide-react';
+import { Briefcase, CircleAlert, LogOut, Plus, Store } from 'lucide-react';
 import { Button, ChoiceCard, LiveStatus, Skeleton } from '@ageniza/ui';
 
 import { useAuthSessionStore } from './auth.js';
 import { contextDestination, contextTarget, rememberContext } from './context-destination.js';
 import { contextDescription, contextKey, contextTitle } from './context-labels.js';
+import { CREATE_AGENCY_LABEL, CreateAgencyDialog } from './create-agency.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 
@@ -46,6 +47,8 @@ export function ContextSelectPage() {
       response: ContextResolveResponseSchema
     })
   });
+
+  const [createOpen, setCreateOpen] = useState(false);
 
   const choose = useMutation({
     mutationFn: (context: Context) => httpClient.request({
@@ -155,7 +158,17 @@ export function ContextSelectPage() {
           />
         </li>;
       })}
+      {resolve.data.canCreateAgency && <li>
+        <ChoiceCard
+          title={CREATE_AGENCY_LABEL}
+          description="Comece com 14 dias de teste, sendo a dona ou o dono da agência."
+          icon={<Plus />}
+          disabled={choose.isPending}
+          onClick={() => { setCreateOpen(true); }}
+        />
+      </li>}
     </ul>
+    {createOpen && <CreateAgencyDialog onClose={() => { setCreateOpen(false); }} />}
     <Button variant="ghost" leadingIcon={<LogOut />} onClick={() => signOut.mutate()} disabled={signOut.isPending}>Sair</Button>
   </section>;
 }
