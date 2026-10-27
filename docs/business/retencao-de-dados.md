@@ -9,4 +9,4 @@ Quanto tempo o Ageniza guarda cada dado que existe só por conveniência ou por 
 
 Registro de auditoria: o expurgo da conta grava o id da conta apagada e nada mais (nunca o e-mail nem o nome).
 
-**Nome da conta assumida.** Quando o dono do e-mail assume uma conta não confirmada pela redefinição de senha, o nome que quem a criou digitou é apagado, e o dono o informa no primeiro acesso (mesma decisão).
+**Nome da conta assumida.** Quando o dono do e-mail assume uma conta não confirmada pela redefinição de senha, o nome que quem a criou digitou é substituído pela parte do e-mail antes do `@`, que o dono edita no perfil (mesma decisão).
