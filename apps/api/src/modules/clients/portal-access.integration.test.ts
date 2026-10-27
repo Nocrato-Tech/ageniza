@@ -290,6 +290,73 @@ describe('CLIENTS portal access by e-mail (#711)', () => {
     });
   });
 
+  describe('the plan of the agency (#725)', () => {
+    const expire = (): Promise<number> => owner.knex('agencies').where({ id: agencyA }).update({
+      plan: 'trial', trial_ends_at: owner.knex.raw("now() - interval '1 minute'"), trial_owner_email_key: owner.knex.raw('coalesce(trial_owner_email_key, id::text)')
+    });
+    const renew = (): Promise<number> => owner.knex('agencies').where({ id: agencyA }).update({ plan: 'isenta', trial_ends_at: null, trial_owner_email_key: null, daily_email_limit: null });
+
+    it('answers 409 AGENCY_READ_ONLY to Adicionar pessoa and Reativar, and lets Remover through, sending no e-mail', async () => {
+      const email = freshEmail('somente-leitura');
+      const added = (await call('POST', membersUrl(agencyA, clientA1), cookies.admin, { email })).json();
+      expect(await welcomes(email)).toHaveLength(1);
+      await expire();
+      try {
+        const refusedAdd = await call('POST', membersUrl(agencyA, clientA1), cookies.admin, { email: freshEmail('nova') });
+        expect(refusedAdd.statusCode).toBe(409);
+        expect(refusedAdd.json().error.code).toBe('AGENCY_READ_ONLY');
+
+        // Remover narrows access and stays open, and ends the sessions as ever.
+        const removed = await call('POST', `${membersUrl(agencyA, clientA1)}/${added.accessId}/remove`, cookies.admin);
+        expect(removed.statusCode).toBe(200);
+        expect(removed.json()).toMatchObject({ status: 'removed' });
+        expect(await accessOf(clientA1, email)).toMatchObject({ status: 'removed', generation: 2 });
+
+        const refusedBack = await call('POST', `${membersUrl(agencyA, clientA1)}/${added.accessId}/reactivate`, cookies.admin);
+        expect(refusedBack.statusCode).toBe(409);
+        expect(refusedBack.json().error.code).toBe('AGENCY_READ_ONLY');
+        const refusedReAdd = await call('POST', membersUrl(agencyA, clientA1), cookies.admin, { email });
+        expect(refusedReAdd.statusCode).toBe(409);
+        expect(await accessOf(clientA1, email)).toMatchObject({ status: 'removed' });
+        // The list is readable.
+        expect((await call('GET', membersUrl(agencyA, clientA1), cookies.admin)).statusCode).toBe(200);
+      } finally {
+        await renew();
+      }
+      expect(await welcomes(email)).toHaveLength(1);
+    });
+
+    it('answers 429 DAILY_EMAIL_LIMIT past the limit of the agency, writing nothing and sending nothing, and a removal spends nothing', async () => {
+      const spent = await owner.knex('audit.events').where({ agency_id: agencyA }).whereIn('action', ['client_member.added', 'client_member.readded'])
+        .whereRaw("app_private.sao_paulo_date(occurred_at) = app_private.sao_paulo_date(now())").count<{ count: string }[]>('id as count');
+      const invitationsToday = await owner.knex('invitations').where({ agency_id: agencyA }).whereIn('purpose', ['collaborator_invite', 'client_invite'])
+        .whereRaw("app_private.sao_paulo_date(created_at) = app_private.sao_paulo_date(now())").count<{ count: string }[]>('id as count');
+      const used = Number(spent[0]!.count) + Number(invitationsToday[0]!.count);
+      await owner.knex('agencies').where({ id: agencyA }).update({ daily_email_limit: used + 1 });
+      try {
+        const first = freshEmail('ultimo-lugar');
+        const second = freshEmail('sem-lugar');
+        const added = await call('POST', membersUrl(agencyA, clientA1), cookies.admin, { email: first });
+        expect(added.statusCode).toBe(201);
+
+        const refused = await call('POST', membersUrl(agencyA, clientA1), cookies.admin, { email: second });
+        expect(refused.statusCode).toBe(429);
+        expect(refused.json().error.code).toBe('DAILY_EMAIL_LIMIT');
+        expect(await accessOf(clientA1, second)).toBeUndefined();
+        expect(await welcomes(second)).toHaveLength(0);
+
+        // Removing spends nothing and is open; adding the address back is a new e-mail and is refused at the limit.
+        expect((await call('POST', `${membersUrl(agencyA, clientA1)}/${added.json().accessId}/remove`, cookies.admin)).statusCode).toBe(200);
+        expect((await call('POST', membersUrl(agencyA, clientA1), cookies.admin, { email: first })).statusCode).toBe(429);
+        expect(await accessOf(clientA1, first)).toMatchObject({ status: 'removed' });
+        // Reativar sends no e-mail, so the limit does not stop it.
+        expect((await call('POST', `${membersUrl(agencyA, clientA1)}/${added.json().accessId}/reactivate`, cookies.admin)).statusCode).toBe(200);
+      } finally {
+        await renew();
+      }
+    });
+  });
+
   describe('the link at the login', () => {
     it('gives the portal to an account whose address is verified, when it loads its contexts, and to nobody before', async () => {
       const email = freshEmail('entra');
