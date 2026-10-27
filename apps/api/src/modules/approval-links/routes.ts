@@ -1,4 +1,5 @@
 import {
+  PORTAL_APPROVAL_TOKEN_PATTERN,
   PortalApprovalApproveRequestSchema,
   PortalApprovalBatchSchema,
   PortalApprovalContentPathParamsSchema,
@@ -164,6 +165,15 @@ export const registerApprovalLinkModule = (app: FastifyInstance, dependencies: A
   app.post(`${APPROVAL_ROUTE_PREFIX}/session`, routeOptions(exchangeDocs, exchangeLimiters), async (request, reply) => {
     routeQuery(exchangeDocs, request);
     const body = routeBody(exchangeDocs, request);
+    // A token of another shape was not issued by us: refused before the database, like any malformed body.
+    if (!PORTAL_APPROVAL_TOKEN_PATTERN.test(body.token)) {
+      throw new HttpError({
+        statusCode: 400,
+        code: 'VALIDATION_ERROR',
+        message: 'Request validation failed',
+        details: { issues: [{ path: 'token', code: 'invalid_string', message: 'The token of the link is malformed.' }] }
+      });
+    }
     const sessionToken = generateApprovalSessionToken();
 
     const session = await inTransaction('read', (transaction) => exchangeApprovalToken(transaction, hashApprovalToken(body.token), hashApprovalToken(sessionToken)));

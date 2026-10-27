@@ -1,0 +1,17 @@
+# ESTRUTURAL: o link de aprovação decide pelo contexto da transação e abre a conversa como acesso
+
+**Data.** 2026-10-27
+
+**Contexto.** A decisão de 2026-10-26 sobre o link de aprovação manda pôr o acesso no contexto local da transação (`set_config(..., true)`) e fazer o trigger de transição e a escrita de comentário aceitarem essa variável só quando a escrita vem da função do link. A decisão de 2026-10-27 sobre o estado do membership já tinha concluído que um marcador posto na transação não prova nada: quem executa SQL na sessão o põe, e uma função de outro caminho (`approve_content`, por exemplo) o leria como verdadeiro. Além disso, "pedir ajuste" pelo link abre a conversa do conteúdo quando ela ainda não existe, e `client_threads.opened_by` era `not null` e uma conta; nenhuma das decisões anteriores fala dessa coluna. Por fim, a nota da Coruja na revisão do PR #728 apontou que `app_private.portal_access_label` mostrava o nome da conta antes de `first_entered_at`, o que o link torna alcançável (o acesso aprova sem entrar).
+
+**Decisão.**
+
+1. **O acesso entra na decisão por uma linha da transação, e não por uma variável.** A tabela `app_private.portal_approval_context` guarda uma linha por transação (`pg_current_xact_id()`, como `app_private.actor_context`), escrita só pelas funções que decidem pelo link (`approve_content_by_portal_approval` e `request_changes_by_portal_approval`), que a apagam ao terminar. A aplicação não lê nem escreve a tabela. `contents_guard`, o gatilho de `client_threads` e o de `client_thread_comments` só aceitam um acesso como autor quando é o que está nessa linha; o de `contents` ainda recusa aprovar com conta e acesso ao mesmo tempo, ou sem nenhum dos dois. Um `set_config` posto pela aplicação não muda nada.
+2. **`client_threads.opened_by` passa a anulável**, e a tabela ganha `opened_by_portal_access_id` (chave composta com o cliente do acesso), com o check de **exatamente um** dos dois e de que o acesso só abre conversa **de conteúdo** e **do lado do cliente**. Espelha o que a decisão de 2026-10-26 fez em `client_thread_comments`. A aplicação não ganha `INSERT` na coluna nova.
+3. **O nome da conta só aparece depois de `first_entered_at`.** `portal_access_label` e `thread_comment_authors` mostram o e-mail do acesso até a conta entrar no portal daquele cliente, e a foto também só depois. Assim, o "aprovado por" e o autor do comentário não dão a conta de um e-mail que a lista de Acessos ainda mostra como "ainda não entrou".
+
+**Consequência.** Estrutural: altera `client_threads` (coluna, checks, gatilho) e `contents_guard`, e troca duas funções de leitura de autoria. `conversation-service` lê o nome do abridor pelo acesso quando não há conta. Nenhuma linha antiga muda: toda conversa existente tem `opened_by`. Os testes do #711 que escreviam um comentário como acesso passam a ligar o acesso à transação como a decisão do link faz, porque agora um acesso só é autor ali. Pede revisão de segurança independente: o ataque a tentar é a autoria de um acesso fora da função do link, por qualquer escritor.
+
+**Origem.** Decisão de 2026-10-26 (itens 3 e Consequência) e de 2026-10-27 (estado do membership), a nota da Coruja na revisão do PR #728 e a implementação da issue #712. O item 1 troca o mecanismo escrito na decisão de 2026-10-26 (a variável) por um que o banco consegue provar; o item 2 é consequência direta de "pedir ajuste" abrir a conversa.
+
+**Validação.** Pendente de validação do dono.

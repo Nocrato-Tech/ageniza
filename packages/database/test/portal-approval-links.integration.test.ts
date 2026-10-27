@@ -140,18 +140,23 @@ const scenario = async (options: ScenarioOptions = {}): Promise<Scenario> => {
 
 const batchOf = (sessionHash: string): Promise<Array<Record<string, unknown>>> =>
   asApp(async (transaction) => (await transaction.raw<{ rows: Array<Record<string, unknown>> }>('select * from app_private.portal_approval_batch(?)', [sessionHash])).rows);
-const contentsOf = (sessionHash: string): Promise<Array<Record<string, any>>> =>
-  asApp(async (transaction) => (await transaction.raw<{ rows: Array<Record<string, any>> }>('select * from app_private.portal_approval_contents(?)', [sessionHash])).rows);
-const mediaOf = (sessionHash: string): Promise<Array<Record<string, any>>> =>
-  asApp(async (transaction) => (await transaction.raw<{ rows: Array<Record<string, any>> }>('select * from app_private.portal_approval_media(?)', [sessionHash])).rows);
+// A row as the database returns it: the tests read columns by name, and the shape of each table is asserted where it matters.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- test helper over untyped rows
+type Row = Record<string, any>;
+/** The row without the columns that are different by construction between two things being compared. */
+const without = (row: Row, ...columns: readonly string[]): Row => Object.fromEntries(Object.entries(row).filter(([column]) => !columns.includes(column)));
+const contentsOf = (sessionHash: string): Promise<Row[]> =>
+  asApp(async (transaction) => (await transaction.raw<{ rows: Row[] }>('select * from app_private.portal_approval_contents(?)', [sessionHash])).rows);
+const mediaOf = (sessionHash: string): Promise<Row[]> =>
+  asApp(async (transaction) => (await transaction.raw<{ rows: Row[] }>('select * from app_private.portal_approval_media(?)', [sessionHash])).rows);
 const approveBy = (sessionHash: string, contentId: string, revision = 1): Promise<unknown> =>
   asApp((transaction) => transaction.raw('select app_private.approve_content_by_portal_approval(?, ?::uuid, ?::integer)', [sessionHash, contentId, revision]));
 const requestBy = (sessionHash: string, contentId: string, comment: string, revision = 1): Promise<unknown> =>
   asApp((transaction) => transaction.raw('select app_private.request_changes_by_portal_approval(?, ?::uuid, ?::integer, ?)', [sessionHash, contentId, revision, comment]));
 
-const contentOf = (id: string): Promise<Record<string, any>> => w.contentRow(id) as Promise<Record<string, any>>;
-const threadsOf = (contentId: string): Promise<Array<Record<string, any>>> => owner()('client_threads').where({ content_id: contentId }) as Promise<Array<Record<string, any>>>;
-const commentsOfThread = (threadId: string): Promise<Array<Record<string, any>>> => owner()('client_thread_comments').where({ thread_id: threadId }) as Promise<Array<Record<string, any>>>;
+const contentOf = (id: string): Promise<Row> => w.contentRow(id) as Promise<Row>;
+const threadsOf = (contentId: string): Promise<Row[]> => owner()('client_threads').where({ content_id: contentId }) as Promise<Row[]>;
+const commentsOfThread = (threadId: string): Promise<Row[]> => owner()('client_thread_comments').where({ thread_id: threadId }) as Promise<Row[]>;
 
 const joinPortal = async (clientId: string): Promise<string> => {
   const id = randomUUID();
@@ -781,10 +786,11 @@ describe('parity with the approval by the account in the portal', () => {
     asAccount(user, (t) => t.raw('select app_private.approve_content(?::uuid, ?::integer)', [contentId, revision]));
   const portalRequest = (user: string, contentId: string, comment: string, revision = 1): Promise<unknown> =>
     asAccount(user, (t) => t.raw('select app_private.request_content_changes(?::uuid, ?::integer, ?)', [contentId, revision, comment]));
-  const comparable = (row: Record<string, any>): Record<string, unknown> => {
-    const { id, approved_by, approved_by_portal_access_id, approved_at, created_at, updated_at, title, ...rest } = row;
-    return { ...rest, approved: approved_by !== null || approved_by_portal_access_id !== null, hasApprovedAt: approved_at !== null };
-  };
+  const comparable = (row: Row): Row => ({
+    ...without(row, 'id', 'approved_by', 'approved_by_portal_access_id', 'approved_at', 'created_at', 'updated_at', 'title'),
+    approved: row.approved_by !== null || row.approved_by_portal_access_id !== null,
+    hasApprovedAt: row.approved_at !== null
+  });
 
   it('leaves the content in the same state as the account does, but for who approved', async () => {
     const s = await scenario({ contents: 1 });
@@ -807,11 +813,10 @@ describe('parity with the approval by the account in the portal', () => {
     await requestBy(s.sessionHash, s.contents[0]!, 'Troque a legenda.');
     const [accountThread] = await threadsOf(twin);
     const [linkThread] = await threadsOf(s.contents[0]!);
-    const { id: _a, content_id: _b, created_at: _c, opened_by, opened_by_portal_access_id, ...accountRest } = accountThread!;
-    const { id: _d, content_id: _e, created_at: _f, opened_by: linkOpenedBy, opened_by_portal_access_id: linkOpenedByAccess, ...linkRest } = linkThread!;
-    expect(linkRest).toEqual(accountRest);
-    expect([opened_by, opened_by_portal_access_id]).toEqual([user, null]);
-    expect([linkOpenedBy, linkOpenedByAccess]).toEqual([null, s.accessId]);
+    const apart = ['id', 'content_id', 'created_at', 'opened_by', 'opened_by_portal_access_id'];
+    expect(without(linkThread!, ...apart)).toEqual(without(accountThread!, ...apart));
+    expect([accountThread!.opened_by, accountThread!.opened_by_portal_access_id]).toEqual([user, null]);
+    expect([linkThread!.opened_by, linkThread!.opened_by_portal_access_id]).toEqual([null, s.accessId]);
     const [accountComment] = await commentsOfThread(accountThread!.id);
     const [linkComment] = await commentsOfThread(linkThread!.id);
     expect(linkComment).toMatchObject({ author_side: accountComment!.author_side, body: accountComment!.body });

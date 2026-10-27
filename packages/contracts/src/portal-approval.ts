@@ -20,12 +20,15 @@ import {
 /** The page of the link in the web app. The token comes after `#` (`${origin}${PORTAL_APPROVAL_PAGE_PATH}#${token}`) and never in a query. */
 export const PORTAL_APPROVAL_PAGE_PATH = '/aprovar';
 
-/** 32 random bytes in base64url, as the worker generates it. A malformed token is a 400 before it reaches the database. */
+/**
+ * 32 random bytes in base64url, as the worker generates it. The route checks a token against it and answers `400` before the database
+ * is asked; the schema of the body does not carry it, so the example of the documentation can be a placeholder, as for every secret.
+ */
 export const PORTAL_APPROVAL_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 /** Body of `POST /portal-approval/session`. The token travels in the body and never in the URL: a URL reaches logs and `Referer`. */
 export const PortalApprovalExchangeRequestSchema = z.object({
-  token: z.string().regex(PORTAL_APPROVAL_TOKEN_PATTERN, 'The token of the link is malformed.')
+  token: z.string().min(1).max(256)
 }).strict();
 
 /** The cookie itself is `Set-Cookie`; the body only says until when the session and the link last. */

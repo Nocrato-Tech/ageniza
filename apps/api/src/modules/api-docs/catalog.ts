@@ -3760,7 +3760,7 @@ path: '/agencies/:agencyId/roles',
     permission: null,
     query: PortalApprovalNoQuerySchema,
     body: PortalApprovalExchangeRequestSchema,
-    requestExample: { token: 'x9Qm2L0vWk3pTz8RjYb4Nc7HsAe1UdFgO5iXqKrMtV6' },
+    requestExample: { token: '<43 caracteres base64url do fragmento do link>' },
     responses: [{ status: 200, description: 'Sessão criada; o cookie vai em `Set-Cookie`.', schema: PortalApprovalExchangeResponseSchema, example: portalApprovalExchangeExample }],
     errors: [
       COMMON_ERRORS.csrf,

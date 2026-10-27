@@ -3172,7 +3172,7 @@ Troca o token do link de aprovação pela sessão de aprovação.
 
 ```json
 {
-  "token": "x9Qm2L0vWk3pTz8RjYb4Nc7HsAe1UdFgO5iXqKrMtV6"
+  "token": "<43 caracteres base64url do fragmento do link>"
 }
 ```
 

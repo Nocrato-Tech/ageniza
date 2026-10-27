@@ -116,8 +116,12 @@ const requestChanges = (link: Link, contentId: string, comment: string, revision
   call('POST', `/portal-approval/contents/${contentId}/request-changes`, { cookie: link.cookie, payload: { revision, comment }, address: link.address });
 
 const errorOf = (reply: { json<T>(): T }): { code?: string; message?: string } => reply.json<{ error?: { code?: string; message?: string } }>().error ?? {};
-const row = (id: string): Promise<Record<string, any>> => w.contentRow(id) as Promise<Record<string, any>>;
-const threadsOf = (contentId: string): Promise<Array<Record<string, any>>> => owner()('client_threads').where({ content_id: contentId });
+// A row or a body as the test reads it: by column or field name, with the shape asserted where it matters.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- test helper over untyped rows
+type Row = Record<string, any>;
+const without = (value: Row, ...keys: readonly string[]): Row => Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
+const row = (id: string): Promise<Row> => w.contentRow(id) as Promise<Row>;
+const threadsOf = (contentId: string): Promise<Row[]> => owner()('client_threads').where({ content_id: contentId });
 
 beforeAll(async () => {
   await w.setup({ logger: logs.logger, wrapMediaStorage: recordingStorage });
@@ -273,12 +277,12 @@ describe('GET /portal-approval/batch', () => {
 
     expect(reply.statusCode).toBe(200);
     expect(reply.headers['cache-control']).toBe('no-store');
-    const body = reply.json<any>();
+    const body = reply.json<{ personEmail: string; clientName: string; contents: Row[] }>();
     expect(Object.keys(body).sort()).toEqual(['agencyName', 'clientName', 'contents', 'linkExpiresAt', 'personEmail', 'sessionExpiresAt']);
     expect(body.personEmail).toBe(link.email);
     expect(body.clientName).toContain('approval-link');
-    expect(body.contents.map((content: { id: string }) => content.id)).toEqual(link.contents);
-    expect(body.contents.map((content: { id: string }) => content.id)).not.toContain(other);
+    expect(body.contents.map((content) => content.id)).toEqual(link.contents);
+    expect(body.contents.map((content) => content.id)).not.toContain(other);
     for (const content of body.contents) {
       expect(content).toMatchObject({ status: 'awaiting_approval', canDecide: true, caption: 'Legenda original', revision: 1, platform: 'instagram' });
       expect(Object.keys(content).sort()).toEqual([
@@ -298,7 +302,7 @@ describe('GET /portal-approval/batch', () => {
     for (const id of [approved, production, cancelled]) {
       await owner()('client_portal_approval_link_contents').insert({ link_id: link.linkId, content_id: id, client_id: link.clientId });
     }
-    const body = (await batch(link)).json<{ contents: Array<Record<string, any>> }>();
+    const body = (await batch(link)).json<{ contents: Row[] }>();
     const byId = new Map(body.contents.map((content) => [content.id as string, content]));
 
     expect(byId.has(cancelled)).toBe(false);
@@ -492,7 +496,7 @@ describe('Aprovar and Pedir ajuste, by POST', () => {
     const byPortal = await w.call('POST', p.people.portalMulti.cookie, `/clients/${link.clientId}/contents/${twin}/approve`, { revision: 1 });
     expect(byPortal.statusCode).toBe(200);
     expect((await approve(link, link.contents[0]!)).statusCode).toBe(200);
-    const strip = ({ id: _id, title: _title, approved_by: _by, approved_by_portal_access_id: _access, approved_at: _at, created_at: _c, updated_at: _u, ...rest }: Record<string, any>) => rest;
+    const strip = (value: Row): Row => without(value, 'id', 'title', 'approved_by', 'approved_by_portal_access_id', 'approved_at', 'created_at', 'updated_at');
     expect(strip(await row(link.contents[0]!))).toEqual(strip(await row(twin)));
     expect(await row(twin)).toMatchObject({ approved_by: p.people.portalMulti.id, approved_by_portal_access_id: null });
   });

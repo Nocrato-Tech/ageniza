@@ -6301,7 +6301,8 @@
         "properties": {
           "token": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9_-]{43}$"
+            "minLength": 1,
+            "maxLength": 256
           }
         },
         "required": [
@@ -24095,7 +24096,7 @@
                 "$ref": "#/components/schemas/exchangePortalApprovalTokenRequest"
               },
               "example": {
-                "token": "x9Qm2L0vWk3pTz8RjYb4Nc7HsAe1UdFgO5iXqKrMtV6"
+                "token": "<43 caracteres base64url do fragmento do link>"
               }
             }
           }
