@@ -18,4 +18,4 @@
 
 **Origem.** Decisões tomadas pelo implementador da issue #713 ao aplicar as decisões de 2026-10-26 e 2026-10-27, com o maestro como intermediário do dono.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-10-27.

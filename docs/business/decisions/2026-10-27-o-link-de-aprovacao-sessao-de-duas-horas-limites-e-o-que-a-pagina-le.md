@@ -22,4 +22,4 @@
 
 **Origem.** Valores e formas derivados pelo implementador na issue #712, a partir dos itens 1 a 9 da decisão de 2026-10-26 e das revisões do #720, #725 e #728.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-10-27.

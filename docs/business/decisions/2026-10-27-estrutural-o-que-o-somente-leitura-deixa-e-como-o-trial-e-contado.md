@@ -21,4 +21,4 @@
 
 **Origem.** Itens 1 a 3: revisão do #720, trazidos pelo maestro em 2026-10-26; o e-mail normalizado do item 2 e o item 10, revisão de segurança do PR #725, em 2026-10-27, que pediu seguir os itens 7 e 8 da decisão de 2026-10-26. Itens 4 a 9: derivados na implementação de #708, #709 e #714, escolhendo o caminho mais restritivo onde nada estava escrito.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-10-27.
