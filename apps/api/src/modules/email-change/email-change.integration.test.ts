@@ -790,7 +790,8 @@ describe('account e-mail change by request (issue #80)', () => {
       expect(confirmed.status).toBe(400);
       expect(confirmed.body.error?.code).toBe('INVALID_LINK');
       expect(await emailOf(victim.id)).toBe(victim.email);
-      expect(await sessionStatus(cookie)).toBe(200);
+      // Any replacement of the password now stamps `passwordChangedAt` (issue #719), so the session opened before it is refused.
+      expect(await sessionStatus(cookie)).toBe(401);
       expect(await requestsOf(victim.id)).toEqual([expect.objectContaining({ status: 'approved' })]);
     });
 
