@@ -21,7 +21,7 @@ To check a branch's migration policy locally, supply the commit range that the p
 node scripts/ci/validate-migrations.mjs --base origin/develop --head HEAD
 ```
 
-The policy guards only `packages/database/migrations`: this is the canonical append-only Knex history for schema and RLS policies. It accepts additions only when the filename is versioned (`8+ digits`, then `_` or `-`, then a `.mjs` name); it rejects edits, deletions, and renames of existing migrations.
+The policy guards only `packages/database/migrations`: this is the canonical append-only Knex history for schema and RLS policies. It accepts additions only when the filename is versioned (`8+ digits`, then `_` or `-`, then a `.mjs` name); it rejects edits, deletions, and renames of existing migrations. It also rejects a new migration whose version (the leading digits) is not greater than the newest migration on the base: the version follows merge order, so a fresh database and an existing one apply migrations in the same order. Rename a late migration with `git mv` before it is merged, never after.
 
 ## Local PostgreSQL job
 
