@@ -316,7 +316,9 @@ describe('the catalog of the queue (issue #252)', () => {
     'app_private.claim_notification_batch(integer)',
     'app_private.mark_notifications_sent(uuid[], uuid)',
     'app_private.fail_notifications(uuid[], uuid, text)',
-    'app_private.recheck_notifications(uuid[], uuid)'
+    'app_private.recheck_notifications(uuid[], uuid)',
+    // The approval link of an e-mail is issued from the items a claim holds (#712): it reads the queue to prove the e-mail exists.
+    'app_private.issue_portal_approval_link(uuid[], uuid, text)'
   ];
   const INTERNAL = [
     'app_private.contents_enqueue_notification()',

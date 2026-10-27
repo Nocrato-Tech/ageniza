@@ -796,8 +796,16 @@ describe('authorship by access (#711)', () => {
       thread = randomUUID();
       await owner()('client_threads').insert({ id: thread, client_id: ids.clientA1, section_key: 'branding', opened_by: ids.adminA, opened_side: 'agency' });
     });
+    // The comment of an access is written only inside the decision of its approval link (#712), which binds the access to the
+    // transaction; the shape checks below run with the access of the comment bound, as that decision would.
     const comment = (extra: Record<string, unknown>): Promise<unknown> =>
-      owner()('client_thread_comments').insert({ thread_id: thread, client_id: ids.clientA1, body: 'Texto', author_side: 'client', ...extra }).then(() => 'inserted', (error: unknown) => error);
+      owner().transaction(async (transaction) => {
+        if (typeof extra.author_portal_access_id === 'string') {
+          await transaction.raw('insert into app_private.portal_approval_context (xact_id, access_id, link_id) values (pg_current_xact_id(), ?::uuid, ?::uuid)', [extra.author_portal_access_id, randomUUID()]);
+        }
+        await transaction('client_thread_comments').insert({ thread_id: thread, client_id: ids.clientA1, body: 'Texto', author_side: 'client', ...extra });
+        await transaction.raw('delete from app_private.portal_approval_context where xact_id = pg_current_xact_id()');
+      }).then(() => 'inserted', (error: unknown) => error);
 
     it('has exactly one author, and an access writes only on the side of the client', async () => {
       expect(await comment({ author_portal_access_id: access.id })).toBe('inserted');
@@ -824,10 +832,13 @@ describe('authorship by access (#711)', () => {
       const unlinked = (await accessOf(ids.clientA1, waiting))!;
       const ownThread = randomUUID();
       await owner()('client_threads').insert({ id: ownThread, client_id: ids.clientA1, section_key: 'colors', opened_by: ids.adminA, opened_side: 'agency' });
-      await owner()('client_thread_comments').insert([
-        { thread_id: ownThread, client_id: ids.clientA1, body: 'a', author_side: 'client', author_portal_access_id: unlinked.id },
-        { thread_id: ownThread, client_id: ids.clientA1, body: 'b', author_side: 'client', author_portal_access_id: access.id }
-      ]);
+      for (const [body, accessId] of [['a', unlinked.id], ['b', access.id]] as const) {
+        await owner().transaction(async (transaction) => {
+          await transaction.raw('insert into app_private.portal_approval_context (xact_id, access_id, link_id) values (pg_current_xact_id(), ?::uuid, ?::uuid)', [accessId, randomUUID()]);
+          await transaction('client_thread_comments').insert({ thread_id: ownThread, client_id: ids.clientA1, body, author_side: 'client', author_portal_access_id: accessId });
+          await transaction.raw('delete from app_private.portal_approval_context where xact_id = pg_current_xact_id()');
+        });
+      }
       const linkedName = (await owner()('auth.user').where({ id: ids.portalA1 }).first('name')).name as string;
       type Author = { author_user_id: string | null; author_portal_access_id: string | null; author_side: string; name: string };
       const authors = await call<Author>(ids.adminA, 'select author_user_id, author_portal_access_id, author_side, name from app_private.thread_comment_authors(?::uuid) order by name', ownThread);

@@ -21,6 +21,8 @@ import { createEmailService, type EmailService } from '../email-service.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requireAnyPermission, requirePermission } from '../../tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from '../../invitations/routes.js';
 import type { ClientModuleDependencies } from '../../clients/routes.js';
+import { approvalCookieOptions } from '../../approval-links/policy.js';
+import type { ApprovalLinkModuleDependencies } from '../../approval-links/routes.js';
 import type { ContentPortalModuleDependencies } from '../../contents/portal-routes.js';
 import type { ContentModuleDependencies } from '../../contents/routes.js';
 import type { ContextModuleDependencies } from '../../contexts/routes.js';
@@ -144,6 +146,7 @@ export const buildTestConfig = (overrides: Partial<ApiConfig> = {}): ApiConfig =
   deployVersion: 'test',
   authSecret: TEST_AUTH_SECRET,
   appPublicUrl: TEST_APP_PUBLIC_URL,
+  apiPublicUrl: 'http://127.0.0.1:3001',
   host: '127.0.0.1',
   port: 0,
   corsOrigins: [TEST_APP_PUBLIC_URL],
@@ -299,6 +302,11 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     requireClientAccess,
     ...(media === undefined ? {} : { media: { storage: media.storage, downloadUrlExpirySeconds: media.config.downloadUrlExpirySeconds } })
   };
+  const approvalLinks: ApprovalLinkModuleDependencies = {
+    database,
+    cookie: approvalCookieOptions(config.apiPublicUrl),
+    ...(media === undefined ? {} : { media: { storage: media.storage, downloadUrlExpirySeconds: media.config.downloadUrlExpirySeconds } })
+  };
   const profile: ProfileModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
     database,
     auth,
@@ -341,6 +349,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     clients,
     contents,
     contentPortal,
+    approvalLinks,
     collaborators,
     media,
     profile,

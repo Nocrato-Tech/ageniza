@@ -82,7 +82,9 @@ export interface ThreadRow {
   readonly section_key: BrandSectionKey | null;
   readonly persona_id: string | null;
   readonly content_id: string | null;
-  readonly opened_by: string;
+  /** An account, or null when the conversation was opened by the access of an approval link (exactly one of the two). */
+  readonly opened_by: string | null;
+  readonly opened_by_portal_access_id: string | null;
   readonly opened_side: ConversationSide;
   readonly resolved_at: Date | null;
   readonly resolved_by: string | null;
@@ -153,7 +155,7 @@ export const loadAuthors = async (transaction: ClientTransaction, threadIds: rea
 // `openThreadSql` and `latestCommentSideSql` are the single definition of the derived state; the
 // statistics below only add what a thread item shows.
 const THREAD_COLUMNS = `
-  thread.id, thread.section_key, thread.persona_id, thread.content_id, thread.opened_by, thread.opened_side,
+  thread.id, thread.section_key, thread.persona_id, thread.content_id, thread.opened_by, thread.opened_by_portal_access_id, thread.opened_side,
   thread.resolved_at, thread.resolved_by,
   stats.comment_count, stats.last_comment_at,
   ${latestCommentSideSql('thread')} as last_side,
@@ -190,7 +192,7 @@ export const threadFromRow = (row: ThreadRow, authors: ConversationAuthors): Thr
     id: row.id,
     subject: subjectOfRow(row),
     state,
-    openedBy: { name: authorOf(authors, row.id, row.opened_side, row.opened_by)?.name ?? null, side: row.opened_side },
+    openedBy: { name: authorOf(authors, row.id, row.opened_side, row.opened_by, row.opened_by_portal_access_id)?.name ?? null, side: row.opened_side },
     lastComment: { side: row.last_side, at: new Date(row.last_comment_at).toISOString(), excerpt: row.excerpt },
     commentCount: Number(row.comment_count),
     // A thread that a later comment reopened keeps its old stamps in the row, but it is not resolved

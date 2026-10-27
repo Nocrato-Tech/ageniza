@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AuthLoginRequestSchema,
   AuthLoginResponseSchema,
@@ -13,6 +13,7 @@ import { contextDestination, contextTarget, rememberContext, targetFromDestinati
 import { useDocumentTitle } from './document-title.js';
 import { ResendVerification } from './email-verification.js';
 import { validateForm } from './forms.js';
+import { forgetGoogleInvite, GOOGLE_REFUSED_MESSAGE, GoogleSignInBlock } from './google-sign-in.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { sessionDestination } from './session-end.js';
 
@@ -39,6 +40,9 @@ export function LoginPage() {
   const authStore = useAuthSessionStore();
   const session = useAuthSession(authStore);
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  // `/entrar?erro=google`: where the API sends every refusal of the Google sign-in, with no reason in the address.
+  const googleRefused = searchParams.get('erro') === 'google';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
@@ -88,6 +92,9 @@ export function LoginPage() {
     }
   };
 
+  // The trip to Google ended in a refusal (the person cancelled there, for one): the invitation kept for it is not for a later visit.
+  useEffect(() => { if (googleRefused) forgetGoogleInvite(); }, [googleRefused]);
+
   // A valid session opening `/entrar` goes to the active context (specs/auth.md, "Já autenticado").
   useEffect(() => {
     if (authenticating || session.status !== 'ready' || !session.isAuthenticated) return;
@@ -132,6 +139,8 @@ export function LoginPage() {
     } finally {
       setSubmitting(false);
     }
+    // A password sign-in is the way in the person took: what was kept for a trip to Google does not outlive it.
+    forgetGoogleInvite();
     if (inviteToken !== undefined) {
       // Rule 3a: a zero-context session created for an invitation must not call resolve, which
       // would end it before the invitation is accepted. Go back to the invitation instead,
@@ -146,6 +155,7 @@ export function LoginPage() {
 
   return <AuthPanel titleId="login-title" title="Entrar" lead="A pauta da sua agência está te esperando.">
     {notice !== undefined && <AuthMessage tone="success" role="status">{notice}</AuthMessage>}
+    {googleRefused && formError === undefined && <AuthMessage tone="danger" role="alert">{GOOGLE_REFUSED_MESSAGE}</AuthMessage>}
     <form ref={formRef} className="auth-form" onSubmit={onSubmit} noValidate>
       <Field label="E-mail" id="login-email" error={errors.email}>
         {(control) => <TextInput
@@ -176,6 +186,8 @@ export function LoginPage() {
       </div>}
       {formError !== undefined && <AuthMessage tone="danger" role="alert">{formError}</AuthMessage>}
       <Button type="submit" className="auth-submit" loading={submitting}>Entrar</Button>
+      {/* The invitation crosses the trip to Google in this tab and is accepted on the way back, on its own screen. */}
+      <GoogleSignInBlock {...(inviteToken === undefined ? {} : { inviteToken })} />
       <p className="auth-note">Ainda não tem conta? <Link to="/criar-conta">Criar conta</Link></p>
     </form>
     {refusedEmail !== undefined && <ResendVerification email={refusedEmail} idPrefix="login" lead="Criou a conta e não confirmou?" buttonLabel="Reenviar o link de confirmação" />}

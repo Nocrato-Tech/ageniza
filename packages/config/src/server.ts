@@ -92,6 +92,11 @@ export interface ApiConfig extends ServerConfig {
   authPrivacyVersion: string;
   /** Trusted browser application origin used for auth redirects and cookies. */
   appPublicUrl: string;
+  /**
+   * The address the browser reaches the API on, with its path and without a trailing slash (`https://<domain>/api`): the
+   * path under which a cookie restricted to a route of the API is sent back. `API_PUBLIC_URL`, or `APP_PUBLIC_URL/api`.
+   */
+  apiPublicUrl: string;
   host: string;
   port: number;
   corsOrigins: readonly string[];
@@ -275,6 +280,7 @@ const apiSchema = sharedServerSchema.extend({
   GOOGLE_CLIENT_ID: optionalText(),
   GOOGLE_CLIENT_SECRET: optionalText(),
   GOOGLE_CALLBACK_URL: optionalUrl('must be a valid URL; supplied values are redacted'),
+  API_PUBLIC_URL: optionalUrl('must be a valid URL; supplied values are redacted'),
   SUPPORT_CONTACT_EMAIL: z.preprocess(
     (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
     z.string().trim().max(320).email('must be a valid e-mail address').optional()
@@ -465,6 +471,28 @@ const loadGoogleConfig = (
   return { clientId, clientSecret, callbackUrl };
 };
 
+/**
+ * Where the browser reaches the API, path included: it is the path a cookie of one route is restricted to, and it is the
+ * `VITE_API_BASE_URL` the web build was given. The web container serves the API under `/api` of `APP_PUBLIC_URL`, which is
+ * the default (as for `GOOGLE_CALLBACK_URL`); `API_PUBLIC_URL` replaces it where the API has its own address, as in the local
+ * stack. It is an address without credentials, query or fragment, and HTTPS in production.
+ */
+const loadApiPublicUrl = (environment: ServerConfig['environment'], appPublicUrl: string, configured: string | undefined): string => {
+  const value = configured ?? `${appPublicUrl}/api`;
+  const parsed = new URL(value);
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new ConfigValidationError('API', [{ path: 'API_PUBLIC_URL', message: 'must be an address without credentials, query or fragment; supplied values are redacted' }]);
+  }
+  // The path is written into a `Path=` attribute: `;` or `,` would end the attribute, a space or a quote would be read as part of
+  // another one, and `%` is not decoded there. Only unreserved characters are a path segment here.
+  const path = parsed.pathname.replace(/\/+$/, '');
+  if (path !== '' && !/^(?:\/[A-Za-z0-9._~-]+)+$/.test(path)) {
+    throw new ConfigValidationError('API', [{ path: 'API_PUBLIC_URL', message: 'must have a path of segments made of letters, digits, ".", "_", "~" and "-"; supplied values are redacted' }]);
+  }
+  assertRuntimeUrlSafety(environment, 'API_PUBLIC_URL', value, { requireHttpsInProduction: true });
+  return `${parsed.origin}${path}`;
+};
+
 /** Loads server-only API settings. Never import this module from browser code. */
 export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
   const result = apiSchema.safeParse(env);
@@ -475,6 +503,7 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
     throw new ConfigValidationError('API', [{ path: 'APP_PUBLIC_URL', message: 'must be an origin without paths; supplied values are redacted' }]);
   }
   assertRuntimeUrlSafety(serverConfig.environment, 'APP_PUBLIC_URL', result.data.APP_PUBLIC_URL, { requireHttpsInProduction: true });
+  const apiPublicUrl = loadApiPublicUrl(serverConfig.environment, result.data.APP_PUBLIC_URL, result.data.API_PUBLIC_URL);
   if (serverConfig.environment === 'production' && containsExampleSecretMarker(result.data.BETTER_AUTH_SECRET)) {
     throw new ConfigValidationError('API', [{
       path: 'BETTER_AUTH_SECRET',
@@ -549,6 +578,7 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
     authTermsVersion: result.data.AUTH_TERMS_VERSION,
     authPrivacyVersion: result.data.AUTH_PRIVACY_VERSION,
     appPublicUrl: result.data.APP_PUBLIC_URL,
+    apiPublicUrl,
     host: result.data.API_HOST,
     port: result.data.PORT,
     corsOrigins: result.data.API_CORS_ORIGINS,

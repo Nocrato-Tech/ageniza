@@ -3193,6 +3193,199 @@ Pede ajuste de um conteúdo, no portal.
 
 **Erros:** `400 CONTENT_COMMENT_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CONTENT_NOT_AWAITING_APPROVAL` · `409 CONTENT_REVISION_CHANGED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
+### approval-link — O link de aprovação do e-mail "conteúdos para aprovar": trocar o token, que vai no fragmento da URL, pela sessão de aprovação; ler o lote com a prévia de celular; assinar a mídia; Aprovar e Pedir ajuste. Sem login, sem conta e só o lote daquele link.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `POST` | `/portal-approval/session` | Pública: o token do link | — | Troca o token do link de aprovação pela sessão de aprovação |
+| `GET` | `/portal-approval/batch` | Cookie da sessão de aprovação | — | Lê o lote do link de aprovação |
+| `GET` | `/portal-approval/contents/:contentId/media/:assetId/url` | Cookie da sessão de aprovação | — | Emite a URL assinada de uma mídia do lote |
+| `POST` | `/portal-approval/contents/:contentId/approve` | Cookie da sessão de aprovação | — | Aprova um conteúdo do lote, pelo link |
+| `POST` | `/portal-approval/contents/:contentId/request-changes` | Cookie da sessão de aprovação | — | Pede ajuste de um conteúdo do lote, pelo link |
+
+#### `POST /portal-approval/session`
+
+Troca o token do link de aprovação pela sessão de aprovação.
+
+- Acesso: Pública: o token do link.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "token": "<43 caracteres base64url do fragmento do link>"
+}
+```
+
+**Resposta `200`** — Sessão criada; o cookie vai em `Set-Cookie`.
+
+```json
+{
+  "sessionExpiresAt": "2026-10-27T14:00:00.000Z",
+  "linkExpiresAt": "2026-11-03T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `403 CSRF_REJECTED` · `404 APPROVAL_LINK_INVALID` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `GET /portal-approval/batch`
+
+Lê o lote do link de aprovação.
+
+- Acesso: Cookie da sessão de aprovação.
+- Permissão: —.
+
+**Resposta `200`** — O lote.
+
+```json
+{
+  "clientName": "Padaria Central",
+  "agencyName": "Agência Exemplo",
+  "personEmail": "maria@padariacentral.exemplo.test",
+  "sessionExpiresAt": "2026-10-27T14:00:00.000Z",
+  "linkExpiresAt": "2026-11-03T12:00:00.000Z",
+  "contents": [
+    {
+      "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "title": "Lançamento da coleção de outono",
+      "platform": "instagram",
+      "format": "reels",
+      "publishOn": "2026-10-20",
+      "publishAtTime": "18:30",
+      "status": "awaiting_approval",
+      "coverAssetId": null,
+      "publishedOn": null,
+      "caption": "Novidades de outono chegando!",
+      "revision": 1,
+      "media": [
+        {
+          "id": "44444444-4444-4444-8444-444444444444",
+          "position": 1,
+          "kind": "image"
+        }
+      ],
+      "canDecide": true
+    }
+  ]
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `404 APPROVAL_LINK_INVALID` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `GET /portal-approval/contents/:contentId/media/:assetId/url`
+
+Emite a URL assinada de uma mídia do lote.
+
+- Acesso: Cookie da sessão de aprovação.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "variant": "thumbnail"
+}
+```
+
+**Resposta `200`** — URL assinada.
+
+```json
+{
+  "url": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+  "expiresAt": "2026-09-29T12:05:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `404 APPROVAL_LINK_INVALID` · `404 NOT_FOUND` · `409 VARIANT_NOT_READY` · `409 VARIANT_PROCESSING_FAILED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `POST /portal-approval/contents/:contentId/approve`
+
+Aprova um conteúdo do lote, pelo link.
+
+- Acesso: Cookie da sessão de aprovação.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "revision": 1
+}
+```
+
+**Resposta `200`** — Conteúdo aprovado.
+
+```json
+{
+  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  "title": "Lançamento da coleção de outono",
+  "platform": "instagram",
+  "format": "reels",
+  "publishOn": "2026-10-20",
+  "publishAtTime": "18:30",
+  "status": "approved",
+  "coverAssetId": null,
+  "publishedOn": null,
+  "caption": "Novidades de outono chegando!",
+  "revision": 1,
+  "media": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "position": 1,
+      "kind": "image"
+    }
+  ],
+  "canDecide": false
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `403 CSRF_REJECTED` · `404 APPROVAL_LINK_INVALID` · `404 NOT_FOUND` · `409 CONTENT_NOT_AWAITING_APPROVAL` · `409 CONTENT_REVISION_CHANGED` · `409 TRY_AGAIN` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `POST /portal-approval/contents/:contentId/request-changes`
+
+Pede ajuste de um conteúdo do lote, pelo link.
+
+- Acesso: Cookie da sessão de aprovação.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "revision": 1,
+  "comment": "Trocar a foto da capa por uma com mais luz."
+}
+```
+
+**Resposta `200`** — Conteúdo em ajuste.
+
+```json
+{
+  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  "title": "Lançamento da coleção de outono",
+  "platform": "instagram",
+  "format": "reels",
+  "publishOn": "2026-10-20",
+  "publishAtTime": "18:30",
+  "status": "adjusting",
+  "coverAssetId": null,
+  "publishedOn": null,
+  "caption": "Novidades de outono chegando!",
+  "revision": 1,
+  "media": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "position": 1,
+      "kind": "image"
+    }
+  ],
+  "canDecide": false
+}
+```
+
+**Erros:** `400 CONTENT_COMMENT_INVALID` · `400 VALIDATION_ERROR` · `403 CSRF_REJECTED` · `404 APPROVAL_LINK_INVALID` · `404 NOT_FOUND` · `409 CONTENT_NOT_AWAITING_APPROVAL` · `409 CONTENT_REVISION_CHANGED` · `409 TRY_AGAIN` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
 ### collaborators — A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.
 
 | método | rota | acesso | permissão | o que faz |
@@ -4197,6 +4390,7 @@ Marca o roteiro como gravado, no portal.
 | `NOT_READY` | Service is not ready |
 | `INTERNAL_ERROR` | An unexpected error occurred |
 | `INVALID_LINK` | Este link não é mais válido. |
+| `APPROVAL_LINK_INVALID` | Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência. |
 | `ACCOUNT_EXISTS` | Já existe uma conta para este endereço. |
 | `INVITATION_ACCOUNT_MISMATCH` | A conta autenticada não corresponde ao convite. |
 | `INVITATION_NOT_PENDING` | O convite não está pendente. |

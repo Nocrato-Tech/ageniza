@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { PassThrough } from 'node:stream';
 
 import { createLogger } from '@ageniza/core';
@@ -131,6 +131,12 @@ const afterClaim = (queue: NotificationQueue, hook: () => Promise<void>): Notifi
 });
 
 const archive = (clientId: string) => knex()('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
+const sha256 = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex');
+/** The approval link in the text of an e-mail, and the token that is in its fragment. */
+const approvalLinkOf = (mail: SentMail): { link: string; token: string } => {
+  const link = /https?:\/\/\S+/.exec(mail.text)![0];
+  return { link, token: new URL(link).hash.slice(1) };
+};
 const uuidsIn = (text: string): string[] => [...new Set(text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi) ?? [])];
 
 beforeAll(async () => {
@@ -156,6 +162,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   try {
+    await knex()('client_portal_approval_links').whereIn('client_id', clients).delete();
     await knex()('notification_queue').whereIn('client_id', clients).delete();
     await knex()('contents').whereIn('id', contents).delete();
     await knex()('media_folders').whereIn('client_id', clients).delete();
@@ -217,26 +224,103 @@ describe('the e-mail to the client: contents to approve (issue #260)', () => {
     expect(box.sent[0]!.subject).toMatch(/^2 conteúdos para você aprovar/);
   });
 
-  it('sends one e-mail per client to a person who has two, each with the link of its own portal', async () => {
+  it('sends one e-mail per client to a person who has two, each with the approval link of its own batch', async () => {
     const first = await freshClient([ids.portal1], ids.agency, 'Padaria Sol');
     const second = await freshClient([ids.portal1], ids.agency, 'Loja Lua');
-    await sendForApproval(await seedContent(first));
-    await sendForApproval(await seedContent(second));
+    const firstContent = await seedContent(first);
+    const secondContent = await seedContent(second);
+    await sendForApproval(firstContent);
+    await sendForApproval(secondContent);
     await ageQueue(16);
     const box = mailbox();
 
     await runJob(box);
 
     expect(box.sent).toHaveLength(2);
-    const links = box.sent.map((mail) => /https?:\/\/\S+/.exec(mail.text)![0]).sort();
-    expect(links).toEqual([`${ORIGIN}/portal/${first}/calendario`, `${ORIGIN}/portal/${second}/calendario`].sort());
-    for (const mail of box.sent) {
-      const link = /https?:\/\/\S+/.exec(mail.text)![0];
-      expect(new URL(link).search).toBe('');
-      expect(new URL(link).hash).toBe('');
-      expect(mail.html).toContain(`<a href="${link}">`);
+    const links = box.sent.map((mail) => approvalLinkOf(mail));
+    for (const { link, token } of links) {
+      const url = new URL(link);
+      expect(url.origin + url.pathname).toBe(`${ORIGIN}/aprovar`);
+      expect(url.search).toBe('');
+      expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     }
-    expect(box.sent.find((mail) => mail.subject.includes('Loja Lua'))!.text).toContain(`/portal/${second}/calendario`);
+    expect(new Set(links.map(({ token }) => token)).size).toBe(2);
+    for (const mail of box.sent) expect(mail.html).toContain(`<a href="${approvalLinkOf(mail).link}">`);
+
+    // The link of each e-mail opens the contents of its own client in the database, and only those.
+    const contentsOpenedBy = async (mail: SentMail): Promise<string[]> => {
+      const session = randomUUID().replaceAll('-', '').repeat(2);
+      const batch = await application.knex.transaction(async (transaction) => {
+        await transaction.raw('select * from app_private.exchange_portal_approval_token(?, ?)', [sha256(approvalLinkOf(mail).token), session]);
+        return (await transaction.raw<{ rows: Array<{ id: string }> }>('select id from app_private.portal_approval_contents(?)', [session])).rows;
+      });
+      return batch.map((row) => row.id);
+    };
+    expect(await contentsOpenedBy(box.sent.find((mail) => mail.subject.includes('Padaria Sol'))!)).toEqual([firstContent]);
+    expect(await contentsOpenedBy(box.sent.find((mail) => mail.subject.includes('Loja Lua'))!)).toEqual([secondContent]);
+  });
+
+  it('issues one link per e-mail, tied to the access that received it, valid for seven days, and keeps only its hash', async () => {
+    const client = await freshClient([ids.portal1, ids.portal2]);
+    const content = await seedContent(client);
+    await sendForApproval(content);
+    await ageQueue(16);
+    const box = mailbox();
+
+    await runJob(box);
+
+    expect(box.sent).toHaveLength(2);
+    const stored = await knex()('client_portal_approval_links as link')
+      .join('client_portal_accesses as access', 'access.id', 'link.portal_access_id')
+      .where('link.client_id', client)
+      .select('link.token_hash', 'link.generation', 'link.expires_at', 'link.created_at', 'access.user_id', 'access.generation as access_generation');
+    expect(stored).toHaveLength(2);
+    expect(stored.map((row) => row.user_id).sort()).toEqual([ids.portal1, ids.portal2].sort());
+    expect(stored.map((row) => row.token_hash as string).sort()).toEqual(box.sent.map((mail) => sha256(approvalLinkOf(mail).token)).sort());
+    for (const row of stored) {
+      expect(row.generation).toBe(row.access_generation);
+      expect(new Date(row.expires_at).getTime() - new Date(row.created_at).getTime()).toBeLessThanOrEqual(7 * 86_400_000);
+      expect(new Date(row.expires_at).getTime() - new Date(row.created_at).getTime()).toBeGreaterThan(6.9 * 86_400_000);
+    }
+    expect(JSON.stringify(stored)).not.toContain(approvalLinkOf(box.sent[0]!).token);
+    // And each e-mail went to the address of the access that owns its link.
+    for (const mail of box.sent) {
+      const link = await knex()('client_portal_approval_links as link')
+        .join('client_portal_accesses as access', 'access.id', 'link.portal_access_id')
+        .where('link.token_hash', sha256(approvalLinkOf(mail).token)).first('access.user_id');
+      expect(mail.to).toBe(emailOf(link!.user_id as string));
+    }
+  });
+
+  it('sends nothing and issues no link when the agency went read-only after the claim: the item is released with the code, and the next claim discards it', async () => {
+    const client = await freshClient([ids.portal1]);
+    const content = await seedContent(client);
+    await sendForApproval(content);
+    await ageQueue(16);
+    const queue = createNotificationQueue(application);
+    const readOnly: NotificationQueue = {
+      ...queue,
+      recheck: async (itemIds, token) => {
+        const kept = await queue.recheck(itemIds, token);
+        await knex()('agencies').where({ id: ids.agency }).update({
+          plan: 'trial', trial_ends_at: knex().raw("now() - interval '1 minute'"), trial_owner_email_key: knex().raw('coalesce(trial_owner_email_key, id::text)')
+        });
+        return kept;
+      }
+    };
+    const box = mailbox();
+
+    try {
+      await runJob(box, { queue: readOnly });
+    } finally {
+      await knex()('agencies').where({ id: ids.agency }).update({ plan: 'isenta', trial_ends_at: null, trial_owner_email_key: null });
+    }
+
+    expect(box.sent).toEqual([]);
+    expect(await knex()('client_portal_approval_links').where({ client_id: client })).toEqual([]);
+    const [item] = await itemsOf(content);
+    expect(item).toMatchObject({ sent_at: null, last_error: 'approval_link_failed' });
+    expect(item!.discarded_at).not.toBeNull();
   });
 
   it('escapes in the HTML what the agency wrote in the title of the content', async () => {
@@ -269,12 +353,18 @@ describe('the e-mail to the client: contents to approve (issue #260)', () => {
     const forbidden = [...claimTokens, ...itemIds, ids.portal1, ids.portal2, contentId, ids.actor, ids.agency];
     expect(claimTokens.size).toBe(1);
     for (const mail of box.sent) {
-      expect(uuidsIn(`${mail.subject}\n${mail.text}\n${mail.html}`)).toEqual([client]);
+      // The link of approval names no client, no content and no person: the token in its fragment is all there is.
+      expect(uuidsIn(`${mail.subject}\n${mail.text}\n${mail.html}`)).toEqual([]);
       for (const secret of forbidden) expect(`${mail.subject}${mail.text}${mail.html}`).not.toContain(secret);
       expect(`${mail.text}${mail.html}`).not.toMatch(/token|claim|senha|password|session/i);
     }
     const log = logs.text();
     expect(log.length).toBeGreaterThan(0);
+    for (const mail of box.sent) {
+      const { token } = approvalLinkOf(mail);
+      expect(log).not.toContain(token);
+      expect(log).not.toContain(sha256(token));
+    }
     for (const secret of [...forbidden, client, emailOf(ids.portal1), emailOf(ids.portal2), `Post ${contentId.slice(0, 8)}`, 'Padaria Sol', '/portal/']) expect(log).not.toContain(secret);
     expect(log).not.toMatch(/token/i);
   });
