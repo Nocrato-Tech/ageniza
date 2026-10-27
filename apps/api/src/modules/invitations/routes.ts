@@ -648,23 +648,13 @@ const pendingInvitationFromRow = (row: PendingInvitationRow) => ({
   expiresAt: new Date(row.expires_at).toISOString()
 });
 
-/**
- * Asks Better Auth to e-mail the confirmation link to the account just signed in, through that new
- * session: a cookie the browser already held for another account must not decide the recipient. A
- * failure never undoes the acceptance, which has committed; it is logged without detail.
- */
-const sendEmailConfirmation = async (auth: AuthInstance, signInHeaders: Headers, email: string, request: FastifyRequest): Promise<void> => {
-  const cookie = signInHeaders.getSetCookie().map((value) => value.split(';')[0]).join('; ');
-  try {
-    await auth.api.sendVerificationEmail({ body: { email }, headers: new Headers({ cookie }) });
-  } catch {
-    request.log.error({
-      operation: 'invitation.email_verification',
-      status: 'failed',
-      error: { name: 'EmailVerificationError', code: 'EMAIL_VERIFICATION_FAILED' }
-    }, 'Failed to request the e-mail confirmation after an invitation acceptance');
-  }
-};
+// Copying a link hands out the invitation's role, so only someone who could have created the same
+// invitation gets it back: `convite.reenviar` alone only re-mails it (security review of #721, finding 1).
+// An admin invitation needs the admin grant too, which the resend already refuses with 403 without it.
+const INVITE_COLLABORATOR_PERMISSION = 'colaborador.convidar';
+
+const mayCopyResentLink = (request: FastifyRequest, purpose: InvitationLookup['purpose']): boolean =>
+  purpose === 'collaborator_invite' && request.tenant !== undefined && tenantHolds(request.tenant, INVITE_COLLABORATOR_PERMISSION);
 
 /** Registers authenticated administration and public invitation routes. */
 export const registerInvitationModule = (app: FastifyInstance, dependencies: InvitationModuleDependencies): void => {
@@ -808,7 +798,7 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     return reply.send(routeResponse(resendDocs, request, {
       invitationId: result.invitationId,
       expiresAt: result.expiresAt.toISOString(),
-      invitationUrl: result.purpose === 'collaborator_invite' ? result.token.actionUrl : null
+      invitationUrl: mayCopyResentLink(request, result.purpose) ? result.token.actionUrl : null
     }));
   });
 
@@ -847,7 +837,7 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     try {
       await dependencies.database.transaction(async (transaction) => {
         // The inviter can copy the link (decision 2026-10-26), so accepting it proves nothing about
-        // the mailbox: the address stays unconfirmed until the confirmation link is opened.
+        // the mailbox: the address stays unconfirmed until the confirmation of #706 proves it.
         await raw(transaction, `
           insert into auth."user" (id, name, email, "emailVerified") values (?, ?, ?, false)
         `, [userId, body.name, invitation.email]);
@@ -867,21 +857,20 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
       throw error;
     }
 
-    let signInHeaders: Headers;
     try {
-      ({ headers: signInHeaders } = await dependencies.auth.api.signInEmail({
+      const { headers } = await dependencies.auth.api.signInEmail({
         body: { email: invitation.email, password: body.password },
         headers: toAuthHeaders(request),
         returnHeaders: true
-      }));
-      applyAuthCookies(reply, signInHeaders);
+      });
+      applyAuthCookies(reply, headers);
     } catch {
       // Account creation and invitation acceptance have already committed, but the API contract
       // promises a session cookie for this flow. Return only a generic server error if Better Auth
       // cannot establish that session; the credential account remains recoverable through login.
       throw new HttpError({ statusCode: 500, code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' });
     }
-    await sendEmailConfirmation(dependencies.auth, signInHeaders, invitation.email, request);
+    // TODO(#706): send the confirmation through `issueEmailConfirmation(userId)` once #706 lands.
     return reply.status(201).send(routeResponse(acceptNewAccountDocs, request, {
       status: 'accepted',
       context: { agencyId: invitation.agencyId, clientId: invitation.clientId }

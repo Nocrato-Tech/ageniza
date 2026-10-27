@@ -15,13 +15,13 @@ from the tenancy module so the invitation module does not duplicate tenant guard
   another agency, or a missing one, is still the same `404`. The pending ones are listed by
   `GET …/clients/:clientId/invitations`, in the `clients` module.
 - `POST /agencies/:agencyId/invitations/:invitationId/resend` replaces a pending invitation; for a
-  collaborator one it answers the new link the same way (`null` for a portal one), and the old link dies.
+  collaborator one it answers the new link the same way only to a caller who also holds
+  `colaborador.convidar` (`null` otherwise, and for a portal one), and the old link dies.
 - `DELETE /agencies/:agencyId/invitations/:invitationId` revokes a pending invitation.
 - `GET /invitations/:token` previews a valid invitation.
 - `POST /invitations/:token/accept-new-account` atomically creates the credential account and
   accepts the invitation. The account is born with `emailVerified = false`, since the inviter may hold
-  the link too, and Better Auth e-mails it a 24-hour confirmation link to `/email/verificar`; the
-  invitation's context is usable at once.
+  the link too; the invitation's context is usable at once. The confirmation e-mail arrives with #706.
 - `POST /invitations/:token/accept` accepts an invitation for the matching authenticated e-mail.
 
 Handing out the `admin` role takes `colaborador.atribuir_admin`, which no preset holds and only the

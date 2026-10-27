@@ -390,7 +390,7 @@ describe('invitation HTTP module', () => {
     expect(legal).toHaveLength(2);
   });
 
-  it('#710: creates the account with the invitation email still unconfirmed, sends the confirmation, and opens the context at once, for every purpose', async () => {
+  it('#710: creates the account with the invitation email still unconfirmed and opens the context at once, for every purpose', async () => {
     const activationAgency = await createAgency('Unverified email activation agency', null);
     const cases = [
       { purpose: 'agency_activation' as const, agencyId: activationAgency, roleId: null, clientId: null },
@@ -418,35 +418,10 @@ describe('invitation HTTP module', () => {
       expect(contexts.statusCode, item.purpose).toBe(200);
       expect(contexts.body, item.purpose).toContain(item.clientId ?? item.agencyId);
 
+      // No confirmation is sent yet: it arrives with #706's stateful, password-checked confirmation.
       await app.emailService.drain();
-      const confirmations = sender.sent.slice(sentBefore).filter((message) => message.template === 'email-verification');
-      expect(confirmations, item.purpose).toHaveLength(1);
-      expect(confirmations[0]?.to).toBe(email);
-      const confirmationToken = /\/email\/verificar\?token=([^\s&]+)/.exec(confirmations[0]?.text ?? '')?.[1];
-      expect(confirmationToken, item.purpose).toBeDefined();
-      // A Better Auth verification token for this address: the confirmation screen of #706 consumes it.
-      await app.auth.api.verifyEmail({ query: { token: decodeURIComponent(confirmationToken!) } });
-      await expect(owner.knex('auth.user').where({ email }).first('emailVerified')).resolves.toEqual({ emailVerified: true });
+      expect(sender.sent.slice(sentBefore), item.purpose).toEqual([]);
     }
-  });
-
-  it('#710: the confirmation goes to the invited address even when the browser still holds another account session', async () => {
-    const email = `confirm-other-session-${randomUUID()}@example.test`;
-    const invitation = await insertInvitation({ agencyId, email });
-    const { own, ownSender, adminCookie } = await ownApp();
-    const response = await own.app.inject({
-      method: 'POST',
-      url: `/invitations/${invitation.token}/accept-new-account`,
-      headers: { ...origin, cookie: adminCookie },
-      payload: { name: 'Other Session Invitee', password: 'a secure activation password', acceptTerms: true }
-    });
-    expect(response.statusCode).toBe(201);
-    const created = await owner.knex('auth.user').where({ email }).first('id');
-    createdUserIds.push(created!.id as string);
-    await own.emailService.drain();
-    const confirmations = ownSender.sent.filter((message) => message.template === 'email-verification');
-    expect(confirmations.map((message) => message.to)).toEqual([email]);
-    await own.close();
   });
 
   /** An app of its own, so these requests do not spend the shared app's per-IP invitation budget. */
@@ -1924,6 +1899,23 @@ describe('invitation HTTP module', () => {
       expect(sender.sent.at(-1)?.to).toBe(refusedTarget.email);
     });
 
+    it('#721 review: a role with only convite.reenviar gets no link back from the resend; adding colaborador.convidar gets it', async () => {
+      const target = await pendingInvitation();
+      const resent = await resend(onlyResendCookie, target.invitationId);
+      expect(resent.statusCode).toBe(200);
+      expect(resent.json<{ invitationUrl: string | null }>().invitationUrl).toBeNull();
+      const mailedToken = invitationTokenFromLatestEmail();
+      expect(sender.sent.at(-1)?.to).toBe(target.email);
+      expect(resent.body).not.toContain(mailedToken);
+      expect(resent.body).not.toContain('/convite/');
+
+      const resendAndInvite = await memberWithPermissions('resend-and-invite', ['convite.reenviar', 'colaborador.convidar']);
+      const second = await pendingInvitation();
+      const allowed = await resend(await loginCookie(resendAndInvite), second.invitationId);
+      expect(allowed.statusCode).toBe(200);
+      expect(allowed.json<{ invitationUrl: string | null }>().invitationUrl).toBe(`${TEST_APP_PUBLIC_URL}/convite/${invitationTokenFromLatestEmail()}`);
+    });
+
     it('lets a role with only convite.cancelar cancel (204, nothing sent) and refuses it the resend', async () => {
       const target = await pendingInvitation();
       const sentBefore = sender.sent.length;
@@ -2057,9 +2049,6 @@ describe('invitation HTTP module', () => {
       payload: { name: 'Activation log owner', password: activationPassword, acceptTerms: true }
     });
     expect(activation.statusCode).toBe(201);
-    await logApp.emailService.drain();
-    const verificationToken = /\/email\/verificar\?token=([^\s&]+)/.exec(logSender.sent.at(-1)?.text ?? '')?.[1];
-    expect(verificationToken).toBeDefined();
     const activationSession = await logApp.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie: sessionCookieHeader(activation.cookies) } });
     expect(activationSession.statusCode).toBe(200);
     createdUserIds.push(activationSession.json<{ user: { id: string } }>().user.id);
@@ -2089,7 +2078,6 @@ describe('invitation HTTP module', () => {
     expect(logs).not.toContain(resentToken!);
     expect(logs).not.toContain(clientToken!);
     expect(logs).not.toContain(resetToken!);
-    expect(logs).not.toContain(decodeURIComponent(verificationToken!));
     expect(logs).not.toContain('/convite/');
     expect(logs).not.toContain(nextPassword);
     expect(logs).not.toContain(activationPassword);

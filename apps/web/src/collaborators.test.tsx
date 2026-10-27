@@ -1785,6 +1785,15 @@ describe('invite collaborator modal (#107)', () => {
     expectLinkNowhere(queryClient, probe, RENEWED_URL);
   });
 
+  it('#721 review: a resend that answers no link (the caller lacks colaborador.convidar) offers no "Copiar link"', async () => {
+    const { impl } = makeFetch({ resend: () => json({ invitationId: inviteJulia.id, expiresAt: inviteJulia.expiresAt, invitationUrl: null }) });
+    renderCollaborators(impl);
+    const region = await invitesRegion();
+    fireEvent.click(await within(region).findByRole('button', { name: 'Reenviar convite de ana@exemplo.com' }));
+    expect((await within(region).findByRole('status')).textContent).toBe('Convite reenviado para ana@exemplo.com. O link anterior deixou de valer.');
+    expect(within(region).queryByRole('button', { name: 'Copiar link' })).toBeNull();
+  });
+
   it('opens with the e-mail and role fields, the role hint and no cargo or remuneration', async () => {
     const { impl } = makeFetch();
     const { container } = renderCollaborators(impl);

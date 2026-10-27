@@ -41,25 +41,6 @@ describe('auth email service', () => {
     expect(sent[0]?.text).toContain('&invite=unused-invite-token');
   });
 
-  it('sends the 24-hour confirmation link to /email/verificar, and a failed delivery logs no token', async () => {
-    const sent: OutgoingEmail[] = [];
-    const service = createEmailService({ sender: senderFor(async (message) => { sent.push(message); }), config, logger: createLogger({ enabled: false }) });
-    service.sendEmailVerification({ to: 'person@example.com', token: 'verification.token+/' });
-    await service.drain();
-    expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ to: 'person@example.com', template: 'email-verification', subject: 'Confirme seu e-mail no Ageniza' });
-    expect(sent[0]?.text).toContain('https://app.ageniza.example/email/verificar?token=verification.token%2B%2F');
-    expect(sent[0]?.text).toContain('Este link expira em 1 dia.');
-
-    const { logger, lines } = captureLogs();
-    const failing = createEmailService({ sender: senderFor(async () => { throw new Error('smtp verification.token+/ refused'); }), config, logger });
-    failing.sendEmailVerification({ to: 'person@example.com', token: 'verification.token+/' });
-    await failing.drain();
-    expect(lines.join('')).toContain('EMAIL_DELIVERY_FAILED');
-    expect(lines.join('')).not.toContain('verification.token');
-    expect(lines.join('')).not.toContain('person@example.com');
-  });
-
   it('returns before a slow sender settles and drains it during shutdown', async () => {
     let release!: () => void;
     const send = vi.fn(() => new Promise<void>((resolve) => {
