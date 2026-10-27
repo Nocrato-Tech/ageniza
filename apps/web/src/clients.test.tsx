@@ -42,7 +42,7 @@ interface TestRole {
 const ADMIN_ROLE: TestRole = { key: 'admin', name: 'Admin' };
 
 const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[]) => ({
-  agencyId, agencyName, isOwner: false, membershipId: null, role: ADMIN_ROLE, permissions
+  agencyId, agencyName, isOwner: false, membershipId: null, role: ADMIN_ROLE, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions
 });
 
 /** The three permissions the client module declares (specs/clientes.md section 2). */

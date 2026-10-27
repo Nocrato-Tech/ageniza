@@ -13,6 +13,7 @@ import {
   normalizeAgencyName,
   normalizeEmail,
   parseAgencyCliArguments,
+  parseTrialEnd,
   runAgencyCli
 } from './agency.js';
 
@@ -292,5 +293,43 @@ describe('agency operator CLI', () => {
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(hashInvitationToken(token)).toMatch(/^[a-f0-9]{64}$/);
     expect(hashInvitationToken(token)).not.toContain(token);
+  });
+});
+
+describe('agency operator CLI: the plan (issue #708)', () => {
+  it('parses upgrade and new-trial', () => {
+    expect(parseAgencyCliArguments(['upgrade', '--agency-id', agencyId])).toEqual({ command: 'upgrade', agencyId });
+    expect(parseAgencyCliArguments(['new-trial', '--agency-id', agencyId, '--ends-at', '2030-01-31'])).toEqual({ command: 'new-trial', agencyId, endsAt: '2030-01-31' });
+    expect(() => parseAgencyCliArguments(['new-trial', '--agency-id', agencyId])).toThrow('Option --ends-at is required.');
+    expect(() => parseAgencyCliArguments(['upgrade', '--agency-id', agencyId, '--ends-at', '2030-01-31'])).toThrow('Unknown option --ends-at.');
+  });
+
+  it('reads a bare date as the end of that day in Brasilia and refuses a past or malformed one', () => {
+    const now = new Date('2030-01-01T12:00:00.000Z');
+    expect(parseTrialEnd('2030-01-31', now).toISOString()).toBe('2030-02-01T02:59:59.000Z');
+    expect(parseTrialEnd('2030-01-02T10:00:00Z', now).toISOString()).toBe('2030-01-02T10:00:00.000Z');
+    expect(() => parseTrialEnd('2029-12-31', now)).toThrow('ends-at must be in the future.');
+    expect(() => parseTrialEnd('31/01/2030', now)).toThrow('ends-at must be an ISO 8601 date');
+  });
+
+  it('upgrades to ativo: clears the end, lifts only the trial quota and audits', async () => {
+    const { database, calls } = fakeDatabase(async <TRow extends object>(statement: string) =>
+      ({ rows: (statement.includes('for update') ? [{ id: agencyId }] : []) as TRow[] }));
+    const { mailer } = fakeMailer();
+    const service = createAgencyCommandService({ database, mailer, appPublicUrl: 'https://app.example.com' });
+    await expect(service.upgrade(agencyId)).resolves.toEqual({ agencyId, plan: 'ativo', trialEndsAt: null });
+    expect(calls.find((call) => call.statement.startsWith('update public.agencies'))?.bindings).toEqual(['ativo', null, agencyId]);
+    expect(calls.find((call) => call.statement.includes('agency_storage_quotas'))?.bindings).toEqual([agencyId, 2147483648]);
+    expect(calls.some((call) => call.statement.includes('audit.events') && call.bindings[0] === 'agency.upgraded')).toBe(true);
+  });
+
+  it('says the owner already has a trial when the new trial collides with the one-per-account index', async () => {
+    const { database } = fakeDatabase(async <TRow extends object>(statement: string) => {
+      if (statement.startsWith('update public.agencies')) throw Object.assign(new Error('duplicate'), { code: '23505' });
+      return { rows: (statement.includes('for update') ? [{ id: agencyId }] : []) as TRow[] };
+    });
+    const { mailer } = fakeMailer();
+    const service = createAgencyCommandService({ database, mailer, appPublicUrl: 'https://app.example.com' });
+    await expect(service.newTrial(agencyId, '2999-01-31')).rejects.toThrow('The owner of this agency already has another agency in trial.');
   });
 });

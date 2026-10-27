@@ -65,7 +65,11 @@ Os outros comandos do CLI:
 pnpm --filter @ageniza/api cli:agency suspend --agency-id <uuid>
 pnpm --filter @ageniza/api cli:agency reactivate --agency-id <uuid>
 pnpm --filter @ageniza/api cli:agency resend-activation --agency-id <uuid>
+pnpm --filter @ageniza/api cli:agency upgrade --agency-id <uuid>
+pnpm --filter @ageniza/api cli:agency new-trial --agency-id <uuid> --ends-at 2026-12-31
 ```
+
+`upgrade` tira uma agência do período de teste (plano `ativo`, sem limites nem somente leitura); `new-trial` devolve a ela um teste com outra data de fim. Para testar o somente leitura na máquina, mude a data pelo banco: `update public.agencies set trial_ends_at = now() - interval '1 minute' where id = '<uuid>'`.
 
 ## Aprovando uma troca de e-mail
 

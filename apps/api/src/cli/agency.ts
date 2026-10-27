@@ -191,7 +191,30 @@ export interface AgencyCommandService {
   suspend(agencyId: string): Promise<AgencyStatusResult>;
   reactivate(agencyId: string): Promise<AgencyStatusResult>;
   resendActivation(agencyId: string): Promise<AgencyCreateResult>;
+  upgrade(agencyId: string): Promise<AgencyPlanResult>;
+  newTrial(agencyId: string, endsAt: string): Promise<AgencyPlanResult>;
 }
+
+export interface AgencyPlanResult {
+  readonly agencyId: string;
+  readonly plan: 'trial' | 'ativo';
+  readonly trialEndsAt: string | null;
+}
+
+/** The trial's storage quota, which `upgrade` lifts back to the deployment default. */
+const TRIAL_STORAGE_BYTES = 2 * 1024 * 1024 * 1024;
+
+/** A bare date ends at the last second of that day in Brasília. */
+export const parseTrialEnd = (value: string, now: Date = new Date()): Date => {
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2}))?$/.test(trimmed)) {
+    throw new AgencyCliError('ends-at must be an ISO 8601 date, such as 2026-12-31 or 2026-12-31T23:59:00-03:00.');
+  }
+  const date = new Date(trimmed.length === 10 ? `${trimmed}T23:59:59-03:00` : trimmed);
+  if (Number.isNaN(date.getTime())) throw new AgencyCliError('ends-at must be a valid date.');
+  if (date.getTime() <= now.getTime()) throw new AgencyCliError('ends-at must be in the future.');
+  return date;
+};
 
 export interface CreateAgencyCommandServiceOptions {
   readonly database: AgencyCliDatabase;
@@ -205,8 +228,8 @@ export const createAgencyCommandService = (options: CreateAgencyCommandServiceOp
     const email = normalizeEmail(input.ownerEmail);
     const persisted = await options.database.transaction(async (transaction): Promise<PersistedInvitation> => {
       const agencyResult = await transaction.query<AgencyRow>(
-        `insert into public.agencies (name, status, owner_user_id)
-         values (?, 'active', null)
+        `insert into public.agencies (name, status, owner_user_id, plan)
+         values (?, 'active', null, 'ativo')
          returning id, name`,
         [name]
       );
@@ -313,8 +336,48 @@ export const createAgencyCommandService = (options: CreateAgencyCommandServiceOp
     return { agencyId: persisted.agencyId, expiresAt: persisted.expiresAt };
   };
 
+  /**
+   * The operation's upgrade (issue #708): `ativo` lifts the limits and the read-only state, a new trial gives the agency
+   * another end. It runs as the owner role, which the triggers of the plan do not govern; the one-trial-per-account index
+   * still holds for a new trial.
+   */
+  const changePlan = async (agencyIdInput: string, plan: 'trial' | 'ativo', endsAt?: Date): Promise<AgencyPlanResult> => {
+    const agencyId = assertUuid(agencyIdInput);
+    return options.database.transaction(async (transaction) => {
+      const result = await transaction.query<AgencyRow>('select id from public.agencies where id = ? for update', [agencyId]);
+      oneRow(result.rows, 'Agency not found.');
+      try {
+        await transaction.query(
+          'update public.agencies set plan = ?, trial_ends_at = ?, updated_at = now() where id = ?',
+          [plan, endsAt === undefined ? null : endsAt.toISOString(), agencyId]
+        );
+      } catch (error) {
+        if (typeof error === 'object' && error !== null && (error as { code?: unknown }).code === '23505') {
+          throw new AgencyCliError('The owner of this agency already has another agency in trial.');
+        }
+        throw error;
+      }
+      if (plan === 'ativo') {
+        await transaction.query(
+          'update public.agency_storage_quotas set quota_bytes = null, updated_at = now() where agency_id = ? and quota_bytes = ?',
+          [agencyId, TRIAL_STORAGE_BYTES]
+        );
+      } else {
+        await transaction.query(
+          `insert into public.agency_storage_quotas (agency_id, quota_bytes) values (?, ?)
+           on conflict (agency_id) do update set quota_bytes = excluded.quota_bytes, updated_at = now()`,
+          [agencyId, TRIAL_STORAGE_BYTES]
+        );
+      }
+      await recordAudit(transaction, plan === 'ativo' ? 'agency.upgraded' : 'agency.trial_renewed', agencyId, 'agency', agencyId);
+      return { agencyId, plan, trialEndsAt: endsAt === undefined ? null : endsAt.toISOString() };
+    });
+  };
+
   return {
     create,
+    upgrade: (agencyId) => changePlan(agencyId, 'ativo'),
+    newTrial: (agencyId, endsAt) => changePlan(agencyId, 'trial', parseTrialEnd(endsAt)),
     suspend: (agencyId) => changeStatus(agencyId, 'suspended', 'agency.suspended'),
     reactivate: (agencyId) => changeStatus(agencyId, 'active', 'agency.reactivated'),
     resendActivation
@@ -408,27 +471,35 @@ export const createAgencyActivationMailer = (input: {
 };
 
 type CreateArguments = { readonly command: 'create'; readonly name: string; readonly ownerEmail: string };
-type AgencyIdArguments = { readonly command: 'suspend' | 'reactivate' | 'resend-activation'; readonly agencyId: string };
-export type AgencyCliArguments = CreateArguments | AgencyIdArguments;
+type AgencyIdArguments = { readonly command: 'suspend' | 'reactivate' | 'resend-activation' | 'upgrade'; readonly agencyId: string };
+type NewTrialArguments = { readonly command: 'new-trial'; readonly agencyId: string; readonly endsAt: string };
+export type AgencyCliArguments = CreateArguments | AgencyIdArguments | NewTrialArguments;
 
 const usage = [
   'Usage:',
   '  node dist/cli/agency.js create --name "<name>" --owner-email "<email>"',
   '  node dist/cli/agency.js suspend --agency-id <uuid>',
   '  node dist/cli/agency.js reactivate --agency-id <uuid>',
-  '  node dist/cli/agency.js resend-activation --agency-id <uuid>'
+  '  node dist/cli/agency.js resend-activation --agency-id <uuid>',
+  '  node dist/cli/agency.js upgrade --agency-id <uuid>',
+  '  node dist/cli/agency.js new-trial --agency-id <uuid> --ends-at <ISO 8601 date>'
 ].join('\n');
 
 const expectedOptions: Record<AgencyCliArguments['command'], readonly string[]> = {
   create: ['name', 'owner-email'],
   suspend: ['agency-id'],
   reactivate: ['agency-id'],
-  'resend-activation': ['agency-id']
+  'resend-activation': ['agency-id'],
+  upgrade: ['agency-id'],
+  'new-trial': ['agency-id', 'ends-at']
 };
+
+const isCommand = (value: string | undefined): value is AgencyCliArguments['command'] =>
+  value !== undefined && Object.hasOwn(expectedOptions, value);
 
 export const parseAgencyCliArguments = (argv: readonly string[]): AgencyCliArguments => {
   const command = argv[0];
-  if (command !== 'create' && command !== 'suspend' && command !== 'reactivate' && command !== 'resend-activation') {
+  if (!isCommand(command)) {
     throw new AgencyCliError(usage);
   }
   const options: Record<string, string> = {};
@@ -455,10 +526,15 @@ export const parseAgencyCliArguments = (argv: readonly string[]): AgencyCliArgum
   }
   const agencyId = options['agency-id'];
   if (agencyId === undefined) throw new AgencyCliError('Option --agency-id is required.');
+  if (command === 'new-trial') {
+    const endsAt = options['ends-at'];
+    if (endsAt === undefined) throw new AgencyCliError('Option --ends-at is required.');
+    return { command, agencyId, endsAt };
+  }
   return { command, agencyId };
 };
 
-export const formatAgencyCliOutput = (result: AgencyCreateResult | AgencyStatusResult): string =>
+export const formatAgencyCliOutput = (result: AgencyCreateResult | AgencyStatusResult | AgencyPlanResult): string =>
   `${JSON.stringify(result)}\n`;
 
 export interface AgencyCliIo {
@@ -484,8 +560,10 @@ export const runAgencyCli = async (options: RunAgencyCliOptions = {}): Promise<n
     database ??= createAgencyCliDatabase(environment.migrationDatabaseUrl);
     mailer ??= createAgencyActivationMailer({ smtpUrl: environment.smtpUrl, emailFrom: environment.emailFrom });
     const service = createAgencyCommandService({ database, mailer, appPublicUrl: environment.appPublicUrl });
-    let result: AgencyCreateResult | AgencyStatusResult;
+    let result: AgencyCreateResult | AgencyStatusResult | AgencyPlanResult;
     if (args.command === 'create') result = await service.create({ name: args.name, ownerEmail: args.ownerEmail });
+    else if (args.command === 'upgrade') result = await service.upgrade(args.agencyId);
+    else if (args.command === 'new-trial') result = await service.newTrial(args.agencyId, args.endsAt);
     else if (args.command === 'suspend') result = await service.suspend(args.agencyId);
     else if (args.command === 'reactivate') result = await service.reactivate(args.agencyId);
     else result = await service.resendActivation(args.agencyId);

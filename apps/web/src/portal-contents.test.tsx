@@ -33,6 +33,7 @@ const json = (body: unknown, status = 200): Response =>
 
 const sessionBody = { user: { id: USER_ID, name: 'Maria', email: 'maria@example.test' }, session: { expiresAt: '2026-01-01T00:00:00.000Z' } };
 const contextsBody = {
+  canCreateAgency: false,
   contexts: [{ type: 'client', clientId: CLIENT_ID, clientName: 'Padaria Central', agencyId: AGENCY_ID, agencyName: 'Agência Um', onboardingPending: false }]
 };
 const legalAccepted = {

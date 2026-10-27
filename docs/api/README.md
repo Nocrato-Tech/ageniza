@@ -33,6 +33,11 @@ Cada rota lista os erros que pode devolver, incluindo os globais: qualquer uma p
 recebem corpo `413 PAYLOAD_TOO_LARGE`. As mensagens em português são as que o
 produto mostra; as demais são internas.
 
+As de escrita de uma agência ou do portal também podem responder `409 AGENCY_READ_ONLY` quando o período de teste
+da agência terminou (só o que reduz acesso continua: remover colaborador, remover acesso ao portal e cancelar convite),
+e as que criam cliente, convidam colaborador ou reativam um deles, `409 TRIAL_CLIENT_LIMIT` ou
+`409 TRIAL_COLLABORATOR_LIMIT` durante o teste. Os três vêm do banco, valem em toda rota e não são repetidos em cada uma.
+
 ## Rotas por módulo
 
 ### system — Saúde e prontidão do processo.
@@ -476,7 +481,8 @@ Lista os contextos válidos da pessoa.
       "roleName": "Admin",
       "isOwner": true
     }
-  ]
+  ],
+  "canCreateAgency": true
 }
 ```
 
@@ -551,6 +557,7 @@ Marca o primeiro acesso ao portal do cliente.
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
 | `GET` | `/agencies/:agencyId/me` | Sessão + vínculo com a agência | — | Devolve as permissões efetivas do contexto de agência |
+| `POST` | `/agencies` | Sessão | — | Cria uma agência em período de teste |
 
 #### `GET /agencies/:agencyId/me`
 
@@ -575,11 +582,48 @@ Devolve as permissões efetivas do contexto de agência.
     "cliente.visualizar",
     "colaborador.visualizar",
     "midia.enviar"
-  ]
+  ],
+  "plan": {
+    "kind": "trial",
+    "trialEndsAt": "2026-11-09T12:00:00.000Z",
+    "readOnly": false
+  }
 }
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies`
+
+Cria uma agência em período de teste.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "name": "Agência Exemplo"
+}
+```
+
+**Resposta `201`** — Agência criada.
+
+```json
+{
+  "context": {
+    "type": "agency",
+    "agencyId": "11111111-1111-4111-8111-111111111111",
+    "agencyName": "Agência Exemplo",
+    "roleKey": "admin",
+    "roleName": "Admin",
+    "isOwner": true
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_VERIFIED` · `409 TRIAL_ALREADY_EXISTS` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
 
 ### clients — Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; agendar, desmarcar, arquivar e reativar o contrato; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.
 
@@ -1764,7 +1808,8 @@ Lê o cadastro do próprio cliente e o resumo do Início, no portal.
     "threadsAnsweredByAgency": 2,
     "brandStudyFilled": 3,
     "contentsAwaitingApproval": 2
-  }
+  },
+  "agencyReadOnly": false
 }
 ```
 
@@ -3996,6 +4041,11 @@ Marca o roteiro como gravado, no portal.
 | `NO_CONTEXT_ACCESS` | Sua conta não tem acesso a nenhum espaço de trabalho. Fale com quem administra a agência para receber um convite. |
 | `NOT_FOUND` | Resource not found. |
 | `CSRF_REJECTED` | Request origin is not allowed |
+| `EMAIL_NOT_VERIFIED` | Confirme o seu e-mail antes de criar uma agência. |
+| `TRIAL_ALREADY_EXISTS` | Sua conta já tem uma agência em período de teste. |
+| `AGENCY_READ_ONLY` | O período de teste desta agência terminou e ela está somente leitura. Fale com a equipe do Ageniza para continuar. |
+| `TRIAL_CLIENT_LIMIT` | O período de teste permite até 3 clientes ativos. |
+| `TRIAL_COLLABORATOR_LIMIT` | O período de teste permite até 3 colaboradores, contando quem criou a agência e os convites pendentes. |
 | `PAYLOAD_TOO_LARGE` | Request payload is too large |
 | `RATE_LIMITED` | Too many requests |
 | `NOT_READY` | Service is not ready |

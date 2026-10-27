@@ -71,7 +71,7 @@ function renderAccountMenu(fetchImplementation: typeof fetch, options: RenderOpt
       body: init?.body === undefined ? undefined : JSON.parse(String(init.body))
     });
     if (url.endsWith('/me/contexts')) {
-      return options.contexts === undefined ? json({ contexts: [agencyA, agencyB, clientC] }) : options.contexts();
+      return options.contexts === undefined ? json({ canCreateAgency: false, contexts: [agencyA, agencyB, clientC] }) : options.contexts();
     }
     return fetchImplementation(input, init);
   };
@@ -247,7 +247,7 @@ describe('AccountMenu', () => {
     renderAccountMenu(async (input) => {
       if (String(input).endsWith('/auth/session')) return json(sessionBody);
       throw new Error('unexpected ' + String(input));
-    }, { contexts: () => json({ contexts: [agencyA] }) });
+    }, { contexts: () => json({ canCreateAgency: false, contexts: [agencyA] }) });
 
     fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
     await waitFor(() => expect(document.querySelector('.account-menu__loading')).toBeNull());
@@ -257,7 +257,7 @@ describe('AccountMenu', () => {
 
   it('shows a loading row while the context list loads', async () => {
     let release: (() => void) | undefined;
-    const pending = new Promise<Response>((resolve) => { release = () => resolve(json({ contexts: [agencyA, agencyB] })); });
+    const pending = new Promise<Response>((resolve) => { release = () => resolve(json({ canCreateAgency: false, contexts: [agencyA, agencyB] })); });
     renderAccountMenu(async (input) => {
       if (String(input).endsWith('/auth/session')) return json(sessionBody);
       throw new Error('unexpected ' + String(input));
@@ -281,7 +281,7 @@ describe('AccountMenu', () => {
         attempts += 1;
         return attempts <= 2
           ? json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500)
-          : json({ contexts: [agencyA, agencyB] });
+          : json({ canCreateAgency: false, contexts: [agencyA, agencyB] });
       }
     });
 
@@ -327,7 +327,7 @@ describe('AccountMenu', () => {
 
   it('focuses the context switcher when the list arrives after the menu opens', async () => {
     let release: (() => void) | undefined;
-    const pending = new Promise<Response>((resolve) => { release = () => resolve(json({ contexts: [agencyA, agencyB] })); });
+    const pending = new Promise<Response>((resolve) => { release = () => resolve(json({ canCreateAgency: false, contexts: [agencyA, agencyB] })); });
     renderAccountMenu(async (input) => {
       if (String(input).endsWith('/auth/session')) return json(sessionBody);
       throw new Error('unexpected ' + String(input));
@@ -345,7 +345,7 @@ describe('AccountMenu', () => {
 
   it('does not pull focus back to the first item when the person has already moved', async () => {
     let release: (() => void) | undefined;
-    const pending = new Promise<Response>((resolve) => { release = () => resolve(json({ contexts: [agencyA, agencyB] })); });
+    const pending = new Promise<Response>((resolve) => { release = () => resolve(json({ canCreateAgency: false, contexts: [agencyA, agencyB] })); });
     renderAccountMenu(async (input) => {
       if (String(input).endsWith('/auth/session')) return json(sessionBody);
       throw new Error('unexpected ' + String(input));
@@ -366,7 +366,7 @@ describe('AccountMenu', () => {
     renderAccountMenu(async (input) => {
       if (String(input).endsWith('/auth/session')) return json(sessionBody);
       throw new Error('unexpected ' + String(input));
-    }, { contexts: () => json({ contexts: [{ ...agencyA, agencyName: hostile }, agencyB] }) });
+    }, { contexts: () => json({ canCreateAgency: false, contexts: [{ ...agencyA, agencyName: hostile }, agencyB] }) });
 
     fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
     fireEvent.click(await screen.findByRole('menuitem', { name: /Trocar de contexto/ }));

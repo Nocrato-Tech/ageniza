@@ -324,6 +324,24 @@ describe('no e-mail for what stopped being true (issue #260)', () => {
     expect((await itemsOf(content)).every((row) => row.discarded_at !== null)).toBe(true);
   });
 
+  it('sends nothing for an agency whose trial ended, and discards the items (issue #708)', async () => {
+    const client = await freshClient([ids.portal3], ids.agencySuspended);
+    const content = await seedContent(client, 'in_production', undefined, ids.suspendedActor);
+    await sendForApproval(content, ids.suspendedActor);
+    await ageQueue(16);
+    const box = mailbox();
+    await knex()('agencies').where({ id: ids.agencySuspended }).update({ plan: 'trial', trial_ends_at: knex().raw("now() - interval '1 minute'") });
+
+    try {
+      await runJob(box);
+    } finally {
+      await knex()('agencies').where({ id: ids.agencySuspended }).update({ plan: 'isenta', trial_ends_at: null });
+    }
+
+    expect(box.sent).toEqual([]);
+    expect((await itemsOf(content)).every((row) => row.discarded_at !== null)).toBe(true);
+  });
+
   it('sends nothing for an agency that was already suspended', async () => {
     const client = await freshClient([ids.portal3], ids.agencySuspended);
     const content = await seedContent(client, 'in_production', undefined, ids.suspendedActor);

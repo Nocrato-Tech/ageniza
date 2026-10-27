@@ -33,6 +33,25 @@ const clientErrorResponses: Readonly<Record<string, Omit<PublicErrorResponse, 'd
   FST_ERR_BAD_URL: { statusCode: 400, code: 'INVALID_URL', message: 'O caminho da requisição não é válido.' }
 };
 
+/**
+ * Refusals of the agency's plan, raised by the database in any module (migration 20261027020000), so each one has a
+ * single public answer instead of a 500 in every route that writes.
+ */
+const planErrorResponses: Readonly<Record<string, Omit<PublicErrorResponse, 'details'>>> = {
+  A0090: {
+    statusCode: 409,
+    code: 'AGENCY_READ_ONLY',
+    message: 'O período de teste desta agência terminou e ela está somente leitura. Fale com a equipe do Ageniza para continuar.'
+  },
+  A0091: { statusCode: 409, code: 'TRIAL_CLIENT_LIMIT', message: 'O período de teste permite até 3 clientes ativos.' },
+  A0092: {
+    statusCode: 409,
+    code: 'TRIAL_COLLABORATOR_LIMIT',
+    message: 'O período de teste permite até 3 colaboradores, contando quem criou a agência e os convites pendentes.'
+  }
+};
+
+
 const isRateLimitError = (error: unknown): error is { statusCode: number; code: string } =>
   typeof error === 'object' && error !== null &&
   'statusCode' in error && error.statusCode === 429 &&
@@ -54,7 +73,7 @@ const isAbortedBody = (error: unknown, request: FastifyRequest): boolean =>
 
 const clientErrorResponse = (error: unknown): PublicErrorResponse | undefined => {
   if (!(error instanceof Error) || !('code' in error) || typeof error.code !== 'string') return undefined;
-  return clientErrorResponses[error.code];
+  return clientErrorResponses[error.code] ?? planErrorResponses[error.code];
 };
 
 const publicError = (error: unknown, request: FastifyRequest): PublicErrorResponse => {

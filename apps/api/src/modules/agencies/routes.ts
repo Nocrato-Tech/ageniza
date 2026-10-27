@@ -1,4 +1,4 @@
-import { AgencyMeResponseSchema, AgencyPathParamsSchema } from '@ageniza/contracts';
+import { AgencyMeResponseSchema, AgencyPathParamsSchema, CreateAgencyRequestSchema, CreateAgencyResponseSchema } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -6,8 +6,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { routeResponse } from '../../plugins/infra/zod.js';
-import { loadAgencyMe } from './service.js';
+import { routeBody, routeResponse } from '../../plugins/infra/zod.js';
+import { createTrialAgency, loadAgencyMe } from './service.js';
 
 export type AgencyPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
@@ -37,8 +37,27 @@ const agencyMeDocs = {
   schemas: { params: AgencyPathParamsSchema, response: AgencyMeResponseSchema }
 } satisfies DocumentedRouteConfig;
 
+const createAgencyDocs = {
+  permission: null,
+  responseStatus: 201,
+  schemas: { body: CreateAgencyRequestSchema, response: CreateAgencyResponseSchema }
+} satisfies DocumentedRouteConfig;
+
 export const registerAgencyModule = (app: FastifyInstance, dependencies: AgencyModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
+
+  // Any signed-in account may ask; the database decides (verified e-mail, one trial per account) and makes the actor
+  // Owner, so nothing from the body is trusted but the name.
+  app.post('/agencies', { preHandler: requireSession, config: createAgencyDocs }, async (request, reply) => {
+    const auth = requireAuth(request);
+    const body = routeBody(createAgencyDocs, request);
+    const context = await withAuthenticatedUserTransaction(
+      dependencies.database,
+      auth.claims,
+      (transaction) => createTrialAgency(transaction, body.name)
+    );
+    return reply.status(201).send(routeResponse(createAgencyDocs, request, { context }));
+  });
 
   // No extra permission: whoever `requireAgencyAccess` lets into the agency may know what they can
   // do in it. The response is a UX input, never an authorization source.

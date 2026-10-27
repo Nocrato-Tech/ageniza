@@ -84,7 +84,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     if (path.endsWith('/auth/session')) return json(sessionBody);
     const me = /\/agencies\/([^/]+)\/me$/.exec(path);
     if (me !== null) {
-      return json({ agencyId: me[1], agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'custom', name: 'Papel' }, permissions: ['conteudo.visualizar', 'cliente.visualizar'] });
+      return json({ agencyId: me[1], agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'custom', name: 'Papel' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: ['conteudo.visualizar', 'cliente.visualizar'] });
     }
     if (/\/agencies\/[^/]+\/clients$/.test(path)) return json({ data: ROSTER, meta: { page: 1, pageSize: 100, totalItems: ROSTER.length, totalPages: 1 } });
     const media = /\/agencies\/[^/]+\/media\/([^/]+)\/download-url$/.exec(path);

@@ -41,7 +41,7 @@ const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 const sessionBody = { user: { id: '99999999-9999-4999-8999-999999999999', name: 'Maria', email: 'maria@example.test' }, session: { expiresAt: '2026-12-01T00:00:00.000Z' } };
-const contextsBody = { contexts: [{ type: 'client', clientId: CLIENT, clientName: 'Padaria Central', agencyId: AGENCY, agencyName: 'Agência Um', onboardingPending: false }] };
+const contextsBody = { canCreateAgency: false, contexts: [{ type: 'client', clientId: CLIENT, clientName: 'Padaria Central', agencyId: AGENCY, agencyName: 'Agência Um', onboardingPending: false }] };
 const legalAccepted = {
   documents: [
     { document: 'terms', currentVersion: '2026-01-01', acceptedVersion: '2026-01-01', pending: false },

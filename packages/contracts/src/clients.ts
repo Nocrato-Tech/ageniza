@@ -448,7 +448,9 @@ export const PortalClientResponseSchema = z.object({
   agencyName: z.string(),
   /** When the caller's own link saw the tour; never another person's of the same client. */
   onboardingSeenAt: z.string().nullable(),
-  home: PortalHomeSchema
+  home: PortalHomeSchema,
+  /** The agency's trial ended: the portal still reads everything and writes nothing (issue #708). */
+  agencyReadOnly: z.boolean()
 }).strict();
 
 /** A section as the portal reads it: the same as the agency's, without who edited it internally. */

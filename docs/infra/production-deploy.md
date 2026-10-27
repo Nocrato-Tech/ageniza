@@ -215,7 +215,14 @@ docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-fil
 docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js suspend --agency-id <agency UUID>
 docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js reactivate --agency-id <agency UUID>
 docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js resend-activation --agency-id <agency UUID>
+docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js upgrade --agency-id <agency UUID>
+docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js new-trial --agency-id <agency UUID> --ends-at <YYYY-MM-DD or ISO 8601 instant>
 ```
+
+An agency created through the product starts in a 14-day trial (decision 2026-10-26). `upgrade` moves it to the
+`ativo` plan: no limits, no read-only state, and the 2 GiB trial quota goes back to the deployment default. `new-trial`
+gives it a new trial end instead (a bare date ends at 23:59:59 in Brasília); it refuses when the owner already has
+another agency in trial. An agency created by `create` starts as `ativo`.
 
 Account e-mail changes are operator-only too, with the same image and files. A person asks from the
 account menu; nothing notifies the operation, so `list` is how open requests are found. `approve`

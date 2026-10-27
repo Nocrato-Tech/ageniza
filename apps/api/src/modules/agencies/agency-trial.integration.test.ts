@@ -1,0 +1,204 @@
+import { randomUUID } from 'node:crypto';
+
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { createAgencyCliDatabase, createAgencyCommandService } from '../../cli/agency.js';
+import {
+  buildTestApp,
+  insertTestUser,
+  OWNER_DATABASE_URL,
+  ownerClient,
+  TEST_APP_PUBLIC_URL,
+  type TestApp,
+  type TestUserFixture
+} from '../auth/test-support/harness.js';
+
+// Issues #708 and #709 through the API: creating an agency in trial, the plan in `/me`, `canCreateAgency`, and the
+// database refusals of the plan answered as 409, never as 500. The end of the trial is moved in the database.
+const origin = { origin: TEST_APP_PUBLIC_URL };
+
+let app: TestApp;
+const owner = ownerClient();
+
+const createdUserIds: string[] = [];
+const createdAgencyIds: string[] = [];
+
+const sessionCookieHeader = (cookies: readonly { name: string; value: string }[]): string =>
+  cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
+
+let portalAgencyId: string;
+let portalClientId: string;
+
+/** A person who can sign in (a portal link elsewhere gives them a context), verified or not. */
+const signedIn = async (verified: boolean): Promise<{ user: TestUserFixture; cookie: string }> => {
+  const user = await insertTestUser(app.pool, app.auth, { emailLabel: 'trial' });
+  createdUserIds.push(user.id);
+  await owner.knex('auth.user').where({ id: user.id }).update({ emailVerified: verified });
+  await owner.knex('client_memberships').insert({ client_id: portalClientId, user_id: user.id });
+  const response = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email: user.email, password: user.password } });
+  expect(response.statusCode).toBe(200);
+  return { user, cookie: sessionCookieHeader(response.cookies) };
+};
+
+const request = async (cookie: string, method: 'GET' | 'POST', url: string, payload?: Record<string, unknown>) =>
+  payload === undefined
+    ? await app.app.inject({ method, url, headers: { ...origin, cookie } })
+    : await app.app.inject({ method, url, headers: { ...origin, cookie }, payload });
+
+const createAgency = async (cookie: string, name = `Agência ${randomUUID().slice(0, 8)}`) => {
+  const response = await request(cookie, 'POST', '/agencies', { name });
+  if (response.statusCode === 201) createdAgencyIds.push(response.json<{ context: { agencyId: string } }>().context.agencyId);
+  return response;
+};
+
+beforeAll(async () => {
+  app = await buildTestApp();
+  portalAgencyId = randomUUID();
+  portalClientId = randomUUID();
+  createdAgencyIds.push(portalAgencyId);
+  await owner.knex('agencies').insert({ id: portalAgencyId, name: `Agência do portal ${portalAgencyId}` });
+  await owner.knex('clients').insert({ id: portalClientId, agency_id: portalAgencyId, name: `Cliente ${portalClientId}` });
+});
+
+afterAll(async () => {
+  const clientIds = (await owner.knex('clients').whereIn('agency_id', createdAgencyIds).select('id')).map((row) => row.id as string);
+  await owner.knex('invitations').whereIn('agency_id', createdAgencyIds).delete();
+  await owner.knex('client_memberships').whereIn('client_id', clientIds).delete();
+  await owner.knex('media_folders').whereIn('client_id', clientIds).delete();
+  await owner.knex('clients').whereIn('id', clientIds).delete();
+  await owner.knex('agency_storage_quotas').whereIn('agency_id', createdAgencyIds).delete();
+  await owner.knex('agency_memberships').whereIn('agency_id', createdAgencyIds).delete();
+  await owner.knex.raw('delete from audit.events where agency_id = any(?::uuid[])', [createdAgencyIds]);
+  await owner.knex('agencies').whereIn('id', createdAgencyIds).update({ owner_user_id: null });
+  await owner.knex('agencies').whereIn('id', createdAgencyIds).delete();
+  await owner.knex('legal_acceptances').whereIn('user_id', createdUserIds).delete();
+  await app.pool.query('delete from auth."user" where id = any($1::uuid[])', [createdUserIds]);
+  await app.close();
+  await owner.close();
+});
+
+describe('POST /agencies (issue #709)', () => {
+  it('refuses an account whose e-mail is not verified, and does not offer the creation', async () => {
+    const { user, cookie } = await signedIn(false);
+    const contexts = await request(cookie, 'GET', '/me/contexts');
+    expect(contexts.json<{ canCreateAgency: boolean }>().canCreateAgency).toBe(false);
+    const response = await createAgency(cookie);
+    expect(response.statusCode).toBe(403);
+    expect(response.json<{ error: { code: string } }>().error.code).toBe('EMAIL_NOT_VERIFIED');
+    expect(await owner.knex('agencies').where({ owner_user_id: user.id })).toHaveLength(0);
+  });
+
+  it('creates the agency in trial with the caller as Owner and answers the context to enter', async () => {
+    const { user, cookie } = await signedIn(true);
+    expect((await request(cookie, 'GET', '/me/contexts')).json<{ canCreateAgency: boolean }>().canCreateAgency).toBe(true);
+
+    const response = await createAgency(cookie, 'Estúdio Novo');
+    expect(response.statusCode).toBe(201);
+    const { context } = response.json<{ context: Record<string, unknown> & { agencyId: string } }>();
+    expect(context).toEqual({ type: 'agency', agencyId: expect.any(String), agencyName: 'Estúdio Novo', roleKey: 'admin', roleName: 'Admin', isOwner: true });
+    expect(await owner.knex('agencies').where({ id: context.agencyId }).first('owner_user_id', 'plan')).toEqual({ owner_user_id: user.id, plan: 'trial' });
+
+    const me = await request(cookie, 'GET', `/agencies/${context.agencyId}/me`);
+    expect(me.statusCode).toBe(200);
+    const plan = me.json<{ plan: { kind: string; trialEndsAt: string; readOnly: boolean } }>().plan;
+    expect(plan).toMatchObject({ kind: 'trial', readOnly: false });
+    expect(Math.round((Date.parse(plan.trialEndsAt) - Date.now()) / 86_400_000)).toBe(14);
+
+    const contexts = (await request(cookie, 'GET', '/me/contexts')).json<{ contexts: Array<{ agencyId: string; type: string }>; canCreateAgency: boolean }>();
+    expect(contexts.canCreateAgency).toBe(false);
+    expect(contexts.contexts.some((entry) => entry.type === 'agency' && entry.agencyId === context.agencyId)).toBe(true);
+
+    const second = await createAgency(cookie);
+    expect(second.statusCode).toBe(409);
+    expect(second.json<{ error: { code: string } }>().error.code).toBe('TRIAL_ALREADY_EXISTS');
+  });
+
+  it('answers TRIAL_ALREADY_EXISTS to every creation but one when they arrive together', async () => {
+    const { cookie } = await signedIn(true);
+    const responses = await Promise.all([createAgency(cookie), createAgency(cookie), createAgency(cookie)]);
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([201, 409, 409]);
+  });
+
+  it('validates the name like the operation command does', async () => {
+    const { cookie } = await signedIn(true);
+    expect((await createAgency(cookie, '   ')).statusCode).toBe(400);
+    expect((await createAgency(cookie, 'Nome​invisível')).statusCode).toBe(400);
+    expect((await createAgency(cookie, 'a'.repeat(257))).statusCode).toBe(400);
+  });
+});
+
+describe('the plan refusals through the API (issue #708)', () => {
+  it('answers 409 TRIAL_CLIENT_LIMIT for the 4th client and 409 TRIAL_COLLABORATOR_LIMIT for the 3rd invitation', async () => {
+    const { cookie } = await signedIn(true);
+    const agencyId = (await createAgency(cookie)).json<{ context: { agencyId: string } }>().context.agencyId;
+    for (let index = 0; index < 3; index += 1) {
+      expect((await request(cookie, 'POST', `/agencies/${agencyId}/clients`, { name: `Cliente ${index} ${randomUUID().slice(0, 6)}` })).statusCode).toBe(201);
+    }
+    const fourth = await request(cookie, 'POST', `/agencies/${agencyId}/clients`, { name: `Cliente 4 ${randomUUID().slice(0, 6)}` });
+    expect(fourth.statusCode).toBe(409);
+    expect(fourth.json<{ error: { code: string; message: string } }>().error).toEqual({ code: 'TRIAL_CLIENT_LIMIT', message: 'O período de teste permite até 3 clientes ativos.' });
+
+    const roleId = (await owner.knex('roles').whereNull('agency_id').where({ key: 'production' }).first('id')).id as string;
+    for (let index = 0; index < 2; index += 1) {
+      expect((await request(cookie, 'POST', `/agencies/${agencyId}/invitations/collaborators`, { email: `c${index}-${randomUUID().slice(0, 6)}@trial.test`, roleId })).statusCode).toBe(201);
+    }
+    const third = await request(cookie, 'POST', `/agencies/${agencyId}/invitations/collaborators`, { email: `c3-${randomUUID().slice(0, 6)}@trial.test`, roleId });
+    expect(third.statusCode).toBe(409);
+    expect(third.json<{ error: { code: string } }>().error.code).toBe('TRIAL_COLLABORATOR_LIMIT');
+  });
+
+  it('answers 409 AGENCY_READ_ONLY once the trial ended, keeps the reads, and says so in /me and in the portal', async () => {
+    const { cookie } = await signedIn(true);
+    const agencyId = (await createAgency(cookie)).json<{ context: { agencyId: string } }>().context.agencyId;
+    const clientId = (await request(cookie, 'POST', `/agencies/${agencyId}/clients`, { name: `Cliente ${randomUUID().slice(0, 6)}` })).json<{ id: string }>().id;
+    const portal = await signedIn(true);
+    await owner.knex('client_memberships').insert({ client_id: clientId, user_id: portal.user.id });
+
+    await owner.knex('agencies').where({ id: agencyId }).update({ trial_ends_at: owner.knex.raw("now() - interval '1 minute'") });
+
+    const write = await request(cookie, 'POST', `/agencies/${agencyId}/clients`, { name: `Outro ${randomUUID().slice(0, 6)}` });
+    expect(write.statusCode).toBe(409);
+    expect(write.json<{ error: { code: string } }>().error.code).toBe('AGENCY_READ_ONLY');
+
+    const me = await request(cookie, 'GET', `/agencies/${agencyId}/me`);
+    expect(me.json<{ plan: { readOnly: boolean } }>().plan.readOnly).toBe(true);
+    expect((await request(cookie, 'GET', `/agencies/${agencyId}/clients/${clientId}`)).statusCode).toBe(200);
+
+    const portalClient = await request(portal.cookie, 'GET', `/clients/${clientId}`);
+    expect(portalClient.statusCode).toBe(200);
+    expect(portalClient.json<{ agencyReadOnly: boolean }>().agencyReadOnly).toBe(true);
+    expect((await request(portal.cookie, 'GET', `/clients/${portalClientId}`)).json<{ agencyReadOnly: boolean }>().agencyReadOnly).toBe(false);
+  });
+});
+
+describe('the operation command lifts the trial (issue #708)', () => {
+  it('upgrade turns a read-only trial into ativo, writable and without the trial quota; new-trial gives it another end', async () => {
+    const { cookie } = await signedIn(true);
+    const agencyId = (await createAgency(cookie)).json<{ context: { agencyId: string } }>().context.agencyId;
+    await owner.knex('agencies').where({ id: agencyId }).update({ trial_ends_at: owner.knex.raw("now() - interval '1 minute'") });
+    expect((await request(cookie, 'POST', `/agencies/${agencyId}/clients`, { name: `Antes ${randomUUID().slice(0, 6)}` })).statusCode).toBe(409);
+
+    const database = createAgencyCliDatabase(OWNER_DATABASE_URL);
+    const service = createAgencyCommandService({
+      database,
+      mailer: { sendActivationEmail: async () => undefined, close: async () => undefined },
+      appPublicUrl: TEST_APP_PUBLIC_URL
+    });
+    try {
+      const ends = new Date(Date.now() + 5 * 86_400_000).toISOString();
+      await expect(service.newTrial(agencyId, ends)).resolves.toMatchObject({ plan: 'trial' });
+      expect((await request(cookie, 'GET', `/agencies/${agencyId}/me`)).json<{ plan: { readOnly: boolean } }>().plan.readOnly).toBe(false);
+
+      await expect(service.upgrade(agencyId)).resolves.toEqual({ agencyId, plan: 'ativo', trialEndsAt: null });
+      expect((await request(cookie, 'GET', `/agencies/${agencyId}/me`)).json<{ plan: unknown }>().plan).toEqual({ kind: 'ativo', trialEndsAt: null, readOnly: false });
+      expect((await owner.knex('agency_storage_quotas').where({ agency_id: agencyId }).first('quota_bytes')).quota_bytes).toBeNull();
+      for (let index = 0; index < 4; index += 1) {
+        expect((await request(cookie, 'POST', `/agencies/${agencyId}/clients`, { name: `Depois ${index} ${randomUUID().slice(0, 6)}` })).statusCode).toBe(201);
+      }
+      // With the first agency ativo, the account may start a trial again.
+      expect((await createAgency(cookie)).statusCode).toBe(201);
+    } finally {
+      await database.close();
+    }
+  });
+});

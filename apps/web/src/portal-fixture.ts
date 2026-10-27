@@ -16,6 +16,7 @@ export const portalClientBody = (clientId: string, name: string, onboardingSeenA
   archivedAt: null,
   agencyName: 'Agência Um',
   onboardingSeenAt,
+  agencyReadOnly: false,
   home: { threadsAnsweredByAgency: 0, brandStudyFilled: 0, contentsAwaitingApproval: 0 }
 });
 

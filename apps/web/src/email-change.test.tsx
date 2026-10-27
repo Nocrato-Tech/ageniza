@@ -58,7 +58,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     const method = init?.method ?? 'GET';
     const body: unknown = init?.body === undefined ? undefined : JSON.parse(String(init.body));
     if (url.pathname === '/auth/session') return json(sessionBody);
-    if (url.pathname === '/me/contexts') return json({ contexts: [] });
+    if (url.pathname === '/me/contexts') return json({ canCreateAgency: false, contexts: [] });
     calls.push({ path: url.pathname, method, body });
     if (url.pathname === '/me/email-change' && method === 'POST') {
       const parsed = EmailChangeRequestSchema.safeParse(body);

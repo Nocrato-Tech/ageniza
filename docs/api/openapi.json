@@ -704,10 +704,14 @@
                 }
               ]
             }
+          },
+          "canCreateAgency": {
+            "type": "boolean"
           }
         },
         "required": [
-          "contexts"
+          "contexts",
+          "canCreateAgency"
         ],
         "additionalProperties": false
       },
@@ -1019,12 +1023,16 @@
                     "type": "null"
                   }
                 ]
+              },
+              "canCreateAgency": {
+                "type": "boolean"
               }
             },
             "required": [
               "decision",
               "contexts",
-              "highlighted"
+              "highlighted",
+              "canCreateAgency"
             ],
             "additionalProperties": false
           }
@@ -1123,6 +1131,35 @@
               "minLength": 1,
               "maxLength": 128
             }
+          },
+          "plan": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "trial",
+                  "ativo",
+                  "isenta"
+                ]
+              },
+              "trialEndsAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "readOnly": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "trialEndsAt",
+              "readOnly"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -1131,7 +1168,73 @@
           "isOwner",
           "membershipId",
           "role",
-          "permissions"
+          "permissions",
+          "plan"
+        ],
+        "additionalProperties": false
+      },
+      "createAgencyResponse": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "agency"
+                ]
+              },
+              "agencyId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "agencyName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "roleKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "roleName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "isOwner": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "agencyId",
+              "agencyName",
+              "roleKey",
+              "roleName",
+              "isOwner"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "context"
+        ],
+        "additionalProperties": false
+      },
+      "createAgencyRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "name"
         ],
         "additionalProperties": false
       },
@@ -4799,6 +4902,9 @@
               "brandStudyFilled"
             ],
             "additionalProperties": false
+          },
+          "agencyReadOnly": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -4818,7 +4924,8 @@
           "archivedAt",
           "agencyName",
           "onboardingSeenAt",
-          "home"
+          "home",
+          "agencyReadOnly"
         ],
         "additionalProperties": false
       },
@@ -8130,7 +8237,8 @@
                       "roleName": "Admin",
                       "isOwner": true
                     }
-                  ]
+                  ],
+                  "canCreateAgency": true
                 }
               }
             }
@@ -8180,7 +8288,7 @@
       "get": {
         "operationId": "resolveMyContext",
         "summary": "Resolve em qual contexto entrar",
-        "description": "`none` encerra a sessão quando não há contexto algum; `enter` traz o contexto único (ou o\núltimo usado); `select` traz a lista para escolher. Um `preferred` inválido é ignorado em\nsilêncio, nunca vira 400.\n\nAcesso: Sessão.",
+        "description": "`none` encerra a sessão quando não há contexto algum; `enter` traz o contexto único (ou o\núltimo usado); `select` traz a lista para escolher e `canCreateAgency` (se a conta pode criar uma agência em teste). Um `preferred` inválido é ignorado em\nsilêncio, nunca vira 400.\n\nAcesso: Sessão.",
         "tags": [
           "contexts"
         ],
@@ -8530,7 +8638,12 @@
                     "cliente.visualizar",
                     "colaborador.visualizar",
                     "midia.enviar"
-                  ]
+                  ],
+                  "plan": {
+                    "kind": "trial",
+                    "trialEndsAt": "2026-11-09T12:00:00.000Z",
+                    "readOnly": false
+                  }
                 }
               }
             }
@@ -8584,6 +8697,166 @@
                   "error": {
                     "code": "NOT_FOUND",
                     "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies": {
+      "post": {
+        "operationId": "createAgency",
+        "summary": "Cria uma agência em período de teste",
+        "description": "Quem chama vira Owner, com o vínculo Admin, de uma agência em teste por 14 dias, com até 3 clientes ativos,\n3 colaboradores (contando o Owner e os convites pendentes) e 2 GB. Só conta com e-mail confirmado, e no máximo\numa agência em teste por conta, vencida ou não; o banco decide as duas coisas. Devolve o contexto novo.\n\nAcesso: Sessão.",
+        "tags": [
+          "agencies"
+        ],
+        "x-permission": null,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/createAgencyRequest"
+              },
+              "example": {
+                "name": "Agência Exemplo"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Agência criada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/createAgencyResponse"
+                },
+                "example": {
+                  "context": {
+                    "type": "agency",
+                    "agencyId": "11111111-1111-4111-8111-111111111111",
+                    "agencyName": "Agência Exemplo",
+                    "roleKey": "admin",
+                    "roleName": "Admin",
+                    "isOwner": true
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | EMAIL_NOT_VERIFIED: Confirme o seu e-mail antes de criar uma agência.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "TRIAL_ALREADY_EXISTS: Sua conta já tem uma agência em período de teste.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "TRIAL_ALREADY_EXISTS",
+                    "message": "Sua conta já tem uma agência em período de teste."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Request payload is too large"
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
@@ -19087,7 +19360,8 @@
                     "threadsAnsweredByAgency": 2,
                     "brandStudyFilled": 3,
                     "contentsAwaitingApproval": 2
-                  }
+                  },
+                  "agencyReadOnly": false
                 }
               }
             }
