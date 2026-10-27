@@ -10,3 +10,5 @@
 
 **Origem.** Issue #32.
 
+
+**Substituída em 2026-10-26** pela decisão "ESTRUTURAL: a agência nasce pelo produto, em trial de 14 dias, e o upgrade é da operação". A agência passa a nascer também pelo produto. O comando interno, a CLI fora do RLS e a regra de nunca imprimir o token continuam valendo.

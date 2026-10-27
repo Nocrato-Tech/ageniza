@@ -6,9 +6,9 @@ Para quem chegou agora e precisa entender o domínio antes do código. Os detalh
 
 Uma plataforma de operação para **agências** que gerenciam conteúdo de redes sociais para seus **clientes**. A agência produz o conteúdo, o cliente aprova, e a plataforma publica.
 
-Não é um produto de autoatendimento. Não existe cadastro público, e uma agência só passa a existir quando alguém da operação cria por comando interno. O produto atende a nossa agência e parceiros.
+Desde 2026-10-26 a entrada é aberta. Qualquer pessoa cria conta, com e-mail e senha ou com o Google, confirma o e-mail e cria a própria agência em **trial de 14 dias** (3 clientes, 3 colaboradores, 2 GB). Ao fim do trial, a agência fica somente leitura, sem perder nada, até a operação liberar o upgrade por comando interno. Agências também continuam nascendo por comando interno.
 
-**Cobrança ainda não existe no sistema, mas está prevista.** Trial e cobrança por volume — clientes, colaboradores, armazenamento — são intenção registrada e não desenhada, e a nossa própria agência é isenta. Nada disso está implementado; ver a entrada correspondente em [decisions/](decisions/) antes de projetar qualquer coisa que dependa de plano.
+**Cobrança ainda não existe no sistema.** O trial é o único limite por plano. Preço, pagamento e faturamento não estão desenhados, e a nossa própria agência é isenta. Antes de projetar qualquer coisa que dependa de plano, leia as decisões de 2026-09-24 e de 2026-10-26 em [decisions/](decisions/).
 
 ## Os dois lados
 
@@ -37,7 +37,9 @@ Duas consequências que costumam surpreender:
 
 ## Como se entra
 
-Só por convite. Existem três tipos:
+Por cadastro (e-mail e senha ou Google, com o e-mail confirmado) ou por convite. Uma conta nova sem convite só pode criar a própria agência. Ver uma agência ou um portal de outra pessoa depende sempre do vínculo que aquela agência deu. Desde 2026-10-26, o acesso ao portal é dado a um **e-mail**, e a conta é opcional: quem não tem conta aprova pelo link que chega no e-mail "conteúdos para aprovar", sem login.
+
+Os convites existentes são de três tipos:
 
 1. **Ativação de agência** — criada por comando interno da operação. Quem recebe vira owner da agência nova.
 2. **Convite de colaborador** — um Admin da agência convida alguém para a área interna, já com o papel definido.

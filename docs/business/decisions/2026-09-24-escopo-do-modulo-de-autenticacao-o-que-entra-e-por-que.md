@@ -16,3 +16,5 @@ Sobre as três levantadas:
 
 **Origem.** Decidido em sessão (entrevista do módulo de autenticação).
 
+
+**Substituída em parte em 2026-10-26**: a verificação de e-mail deixa de estar "satisfeita pelo convite". Há cadastro público com confirmação do e-mail, e o link do convite de colaborador pode ser copiado, então a conta criada pelo aceite nasce com o e-mail não confirmado. Ver as decisões de 2026-10-26 sobre o cadastro público e sobre o link copiável. O restante do escopo continua valendo.

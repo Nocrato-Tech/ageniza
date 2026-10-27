@@ -17,13 +17,12 @@ Deixar alguém entrar no produto, provar quem é, escolher em qual dos seus cont
 
 ### Não resolve
 
-- **Cadastro público.** Não existe e não vai existir: conta nasce de convite (`disableSignUp: true` no Better Auth).
-- **Verificação de e-mail.** Já está satisfeita — a conta nasce `emailVerified = true` porque o convite chegou naquele endereço.
+- ~~**Cadastro público.**~~ e ~~**Verificação de e-mail.**~~ Entram pela seção 13, decidida em 2026-10-26: a conta passa a nascer também por cadastro, com confirmação do e-mail.
 - **Troca de senha por quem está logado.** Fora do MVP; a recuperação por link cobre quem perdeu o acesso.
 - **Troca de e-mail da conta pela própria pessoa.** A pessoa não troca sozinha: ela pede, e a operação aprova (regras 12 a 18 da seção 5).
 - **Vínculo entre identidades.** Dois e-mails são duas contas, e elas não se conhecem.
-- **Criação de agência.** É comando interno da operação, não fluxo de produto.
-- **Login social e segundo fator.** Nunca entraram em pauta.
+- ~~**Criação de agência.**~~ Passa a ser fluxo de produto, em trial (seção 13, 2026-10-26). O comando interno continua existindo.
+- ~~**Login social.**~~ O Google entra pela seção 13 (2026-10-26). **Segundo fator** continua fora.
 
 ## 2. Atores e autorização
 
@@ -223,7 +222,7 @@ As rotas do navegador são em português; as da API continuam em inglês.
 
 **Layout:** da largura de 64rem para cima, a tela é de duas colunas: à esquerda o painel de marca (o mascote amigável centralizado sobre a cor da marca, encostado nas bordas da tela) e à direita o formulário, afastado da borda e em largura de formulário. Abaixo disso o painel some e o formulário ocupa a tela. O mesmo molde vale para esqueci a senha, redefinir, convite e confirmação de e-mail (2026-10-16).
 
-**Sem cadastro:** não há "criar conta". Quem chega sem convite não tem o que fazer aqui, e a tela diz isso em uma linha em vez de oferecer um caminho que não existe.
+**Sem cadastro:** não há "criar conta". Quem chega sem convite não tem o que fazer aqui, e a tela diz isso em uma linha em vez de oferecer um caminho que não existe. *Substituído pela seção 13 (2026-10-26): a tela ganha "Entrar com o Google" e "Criar conta".*
 
 ### Esqueci a senha — `/senha/esquecida`
 
@@ -470,3 +469,28 @@ A [#54](https://github.com/Nocrato-Tech/ageniza/issues/54), que registrava a dí
 Duas tasks não esperam design: **#68**, a única de API do épico, e **#71**, que é comportamento do cliente HTTP e do roteador. **#74**, as minutas, também não depende de tela.
 
 As outras nove são `aguardando-design`: nascem escritas a partir do esboço da seção 7, e o código espera a entrega do designer. Sendo onze tasks de web contra uma de API, **o designer é o gargalo real deste módulo** — o backend já existe.
+
+## 13. Entrada aberta (2026-10-26)
+
+Decidida em sessão pelo dono do produto. As regras de segurança derivadas pelo maestro estão **pendentes de validação**. Cada decisão tem o seu arquivo, e esta seção junta o que muda neste módulo. Onde ela contradiz as seções 1 a 12, vale esta seção. As seções antigas são reescritas quando cada parte for implementada.
+
+| decisão | o que muda aqui |
+|---|---|
+| [Cadastro público com e-mail e senha](../docs/business/decisions/2026-10-26-estrutural-cadastro-publico-com-e-mail-e-senha-e-confirmacao.md) | `/criar-conta`; confirmação do e-mail por link de 24 h; o login de conta não confirmada diz "confirme o seu e-mail" só com a senha certa; conta confirmada sem contexto cria sessão (a regra 3 muda) |
+| [Entrar com o Google](../docs/business/decisions/2026-10-26-estrutural-entrar-com-google-e-a-conta-que-o-google-assume.md) | botão nas telas de entrada; só vale e-mail verificado pelo Google; o Google assume a conta de e-mail não confirmado; conta só com Google reautentica pelo Google onde hoje se pede a senha |
+| [Agência nasce pelo produto, em trial](../docs/business/decisions/2026-10-26-estrutural-a-agencia-nasce-pelo-produto-em-trial-de-14-dias.md) | "Criar agência" na tela sem contexto e no seletor de contexto; 14 dias, 3 clientes, 3 colaboradores, 2 GB; somente leitura ao fim; upgrade por comando interno |
+| [Link do convite de colaborador copiável](../docs/business/decisions/2026-10-26-estrutural-o-link-do-convite-de-colaborador-pode-ser-copiado.md) | `accept-new-account` deixa de marcar o e-mail como verificado e envia a confirmação (a regra 6 não muda) |
+| [Acesso ao portal por e-mail](../docs/business/decisions/2026-10-26-estrutural-o-acesso-ao-portal-e-por-e-mail-e-a-conta-e-opcional.md) | uma conta ganha o portal quando o e-mail dela, verificado, tem acesso dado pela agência |
+
+### Telas novas ou alteradas
+
+- **`/criar-conta`**: nome, e-mail, senha, aceite único de Termos e Privacidade, "Criar conta" e "Entrar com o Google". Depois de enviar, a tela é sempre a mesma: "enviamos um link para o seu e-mail", com reenvio.
+- **`/email/verificar?token=…`**: pede um clique, como `/email/confirmar`. Abre com qualquer sessão, como exceção da regra 11.
+- **`/entrar`**: ganha "Entrar com o Google" e "Criar conta".
+- **`/comecar`**, para conta confirmada sem contexto, toma o lugar de `/sem-acesso` nesse caso. Oferece "Criar agência", pedindo só o nome, e explica que convites e acessos ao portal aparecem aqui quando chegarem.
+- **Seletor de contexto e `/contextos`**: item fixo "Criar agência", escondido quando a conta já tem uma agência em trial.
+- **Primeiro login pelo Google sem conta**: aceite de Termos e Privacidade antes do primeiro uso.
+
+### O que fica igual
+
+As regras invioláveis 1, 2 e 4 a 18; a resposta igual para e-mail existente e inexistente; o convite de uso único, com só o hash no banco; o teto de sessão.

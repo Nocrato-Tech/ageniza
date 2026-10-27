@@ -483,7 +483,7 @@ Só para `cliente.convidar_usuario`. O mesmo desenho da seção de convites de C
 │  joao@padaria.com   expira em 5 dias   [reenviar][cancelar] │
 ```
 
-- **Convidar**: modal só com o e-mail.
+- **Convidar**: modal só com o e-mail. *Pela decisão de 2026-10-26 ([acesso ao portal por e-mail](../docs/business/decisions/2026-10-26-estrutural-o-acesso-ao-portal-e-por-e-mail-e-a-conta-e-opcional.md)), vira **Adicionar pessoa**. O acesso vale na hora, sem conta, e a pessoa aprova pelo link do e-mail. O portal aparece quando uma conta com aquele e-mail verificado entra. A lista mostra "sem conta" para quem ainda não entrou, e a seção de convites aguardando aceite some quando o último convite antigo vencer.*
 - **Remover** pede confirmação: a pessoa perde o acesso ao portal deste cliente e é deslogada de tudo na hora, porque a sessão é global (2026-10-08, #411); as outras pessoas não são afetadas, e os vínculos dela com outros clientes continuam. Removidas ficam num filtro, com **Reativar**, que não cria sessão: a pessoa entra de novo.
 - **Vazio**: "Ninguém deste cliente acessa o portal ainda", com **Convidar**.
 - Convites vazios: a seção some.
