@@ -168,11 +168,11 @@ describe('the login screen in the new layout', () => {
     expect(primary.map((element) => element.textContent)).toEqual(['Entrar']);
   });
 
-  it('keeps the invitation note under the button', async () => {
+  it('keeps the "Criar conta" note under the button', async () => {
     renderAt('/entrar');
     await screen.findByRole('heading', { name: 'Entrar' });
 
-    const note = screen.getByText('O acesso ao Ageniza é por convite.');
+    const note = screen.getByRole('link', { name: 'Criar conta' });
     expect(screen.getByRole('button', { name: 'Entrar' }).compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
