@@ -400,6 +400,10 @@ describe('portal access tab (#140)', () => {
         expected: 'Você não tem permissão para adicionar pessoas a este cliente.'
       },
       {
+        response: () => json({ error: { code: 'AGENCY_READ_ONLY', message: 'private diagnostic' } }, 409),
+        expected: 'O plano desta agência precisa ser renovado para usar esta opção.'
+      },
+      {
         response: () => json({ error: { code: 'DAILY_EMAIL_LIMIT', message: 'private diagnostic' } }, 429),
         expected: 'Limite diário de e-mails da agência atingido. Tente amanhã.'
       },
@@ -638,6 +642,23 @@ describe('portal access tab (#140)', () => {
     // The General tab counter follows the invalidated detail summary, without a reload.
     fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
     expect(await screen.findByText('2 pessoas com acesso')).toBeTruthy();
+  });
+
+  it.each([
+    { code: 'AGENCY_READ_ONLY', expected: 'O plano desta agência precisa ser renovado para usar esta opção.' },
+    { code: 'CLIENT_ARCHIVED', expected: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' },
+    { code: 'FORBIDDEN', expected: 'Você não tem permissão para alterar o acesso deste cliente.' }
+  ])('tells a refused reactivation apart: $code', async ({ code, expected }) => {
+    const { impl } = makeFetch({
+      members: (status) => json(pageOf(status === 'removed' ? [pedro] : [maria])),
+      memberStatus: () => json({ error: { code, message: 'private diagnostic' } }, code === 'FORBIDDEN' ? 403 : 409)
+    });
+    const { container } = renderAccess(impl);
+    await screen.findByText('Maria Souza');
+    fireEvent.click(screen.getByRole('button', { name: 'Removidas (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar o acesso de Pedro Alves' }));
+    expect((await screen.findByRole('alert')).textContent).toBe(expected);
+    expect(container.textContent).not.toContain('private diagnostic');
   });
 
   it('offers no action at all on an archived client, and keeps the lists readable', async () => {

@@ -31,6 +31,8 @@ const INVITATIONS_FAILED = 'Não foi possível carregar os convites. Tente de no
 const REMOVE_FAILED = 'Não foi possível remover o acesso. Tente de novo.';
 const REACTIVATE_FAILED = 'Não foi possível reativar o acesso. Tente de novo.';
 const CANCEL_FAILED = 'Não foi possível cancelar o convite. Tente de novo.';
+const READ_ONLY_FAILED = 'O plano desta agência precisa ser renovado para usar esta opção.';
+const ARCHIVED_FAILED = 'Cliente arquivado: o acesso ao portal não pode ser alterado.';
 const NO_PERMISSION = 'Você não tem permissão para alterar o acesso deste cliente.';
 const REMOVE_DESCRIPTION = 'A pessoa perde o acesso ao portal deste cliente. As outras pessoas não são afetadas.';
 const ADD_HINT = 'A pessoa passa a ter acesso ao portal deste cliente na hora e recebe um e-mail de boas-vindas.';
@@ -121,6 +123,7 @@ function AddPersonDialog({ client, onClose, onAdded }: { client: ClientDetailRes
       if (!(error instanceof HttpClientError)) { setFormError(ADD_FAILED); return; }
       if (error.code === 'ACCESS_EXISTS') { setEmailError('Esta pessoa já tem acesso ao portal deste cliente.'); return; }
       if (error.code === 'CLIENT_ARCHIVED') { setFormError('Cliente arquivado: não é possível adicionar pessoas ao portal.'); return; }
+      if (error.code === 'AGENCY_READ_ONLY') { setFormError(READ_ONLY_FAILED); return; }
       if (error.code === 'FORBIDDEN' || error.status === 403) { setFormError('Você não tem permissão para adicionar pessoas a este cliente.'); return; }
       if (error.status === 429 && error.code === 'DAILY_EMAIL_LIMIT') { setFormError('Limite diário de e-mails da agência atingido. Tente amanhã.'); return; }
       if (error.status === 502 && error.code === 'EMAIL_DELIVERY_FAILED') {
@@ -268,9 +271,12 @@ export function ClientAccessTab() {
     },
     onError: (error: unknown, action: PendingAction) => {
       setPending(null);
+      const refused = (code: string): boolean => error instanceof HttpClientError && error.code === code;
       setActionError(error instanceof HttpClientError && (error.code === 'FORBIDDEN' || error.status === 403)
         ? NO_PERMISSION
-        : action.kind === 'remove' ? REMOVE_FAILED : REACTIVATE_FAILED);
+        : refused('AGENCY_READ_ONLY') ? READ_ONLY_FAILED
+          : refused('CLIENT_ARCHIVED') ? ARCHIVED_FAILED
+            : action.kind === 'remove' ? REMOVE_FAILED : REACTIVATE_FAILED);
       void invalidateAccess();
     }
   });
