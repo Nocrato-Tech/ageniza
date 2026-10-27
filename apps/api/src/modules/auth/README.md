@@ -50,7 +50,9 @@ thing (second review of PR #722); the screen offers the resend instead. `routes.
 account holds, with one explicit exception (decision on the copyable invitation link, 2026-10-26): the
 account created by `accept-new-account` keeps the session that route creates while
 `app_private.unconfirmed_account_may_hold_session` finds the link its invitation gave it (the agency
-it owns, or an active membership in the invitation's agency or client). The password login stays
+it owns, or an active membership in the invitation's agency or client) and that context would still be
+listed: a suspended agency or an archived client ends the session too, as in `contexts/service.ts`
+(migration `20261027010400`). The password login stays
 closed to it until it confirms, with the same 401, so an invited account is never told apart. If the sign-in after a consumed link fails (the password changed in between),
 `/auth/email/verify` answers `400 INVALID_LINK_OR_PASSWORD`, never 500; consuming the link locks the
 credential row, so a reset either waits for it or makes it refuse.
