@@ -626,6 +626,58 @@ describe('the daily e-mail limit of an agency (review of #725)', () => {
     await expect(portalInvite(creator.id, agencyId, clientId)).resolves.toEqual(expect.any(String));
   });
 
+  // The trigger counts against the database clock, which a test cannot move, so the sends are placed on the day of São Paulo
+  // that the clock is in: `dayOffset` 0 is today there and -1 yesterday, at the given wall-clock time of São Paulo.
+  const brasiliaAt = async (dayOffset: number, hours: number, minutes: number): Promise<Date> => {
+    const { rows } = await owner().raw<{ rows: Array<{ at: Date }> }>(
+      "select (date_trunc('day', now() at time zone 'America/Sao_Paulo') + make_interval(days => ?, hours => ?, mins => ?)) at time zone 'America/Sao_Paulo' as at",
+      [dayOffset, hours, minutes]
+    );
+    return rows[0]!.at;
+  };
+  const sentAt = async (agencyId: string, clientId: string, actor: string, when: ReadonlyArray<readonly [number, number, number]>) => {
+    for (const [dayOffset, hours, minutes] of when) await sentBefore(agencyId, clientId, actor, 1, await brasiliaAt(dayOffset, hours, minutes));
+  };
+  /** Sends one e-mail at a time until the limit refuses, and says how many went through. */
+  const acceptedUntilRefused = async (actor: string, agencyId: string, clientId: string): Promise<number> => {
+    for (let accepted = 0; accepted < 10; accepted += 1) {
+      try {
+        await portalInvite(actor, agencyId, clientId);
+      } catch (error) {
+        expect(error).toMatchObject(DAILY_LIMIT);
+        return accepted;
+      }
+    }
+    throw new Error('The limit never refused.');
+  };
+
+  it('counts together the sends of the whole day of São Paulo, from 00:30 to 23:30', async () => {
+    const { creator, agencyId, clientId } = await agencyWithClient('isenta');
+    await owner()('agencies').where({ id: agencyId }).update({ daily_email_limit: 3 });
+    await sentAt(agencyId, clientId, creator.id, [[0, 0, 30], [0, 23, 30]]);
+    // Two are counted, so exactly one place is left: a window shorter than the day would leave more.
+    expect(await acceptedUntilRefused(creator.id, agencyId, clientId)).toBe(1);
+  });
+
+  it('does not count what was sent the day before in São Paulo, however close to midnight', async () => {
+    const { creator, agencyId, clientId } = await agencyWithClient('isenta');
+    await owner()('agencies').where({ id: agencyId }).update({ daily_email_limit: 2 });
+    await sentAt(agencyId, clientId, creator.id, [[-1, 0, 30], [-1, 22, 30], [-1, 23, 59]]);
+    await sentAt(agencyId, clientId, creator.id, [[0, 0, 30]]);
+    // Only today's send counts: the three of yesterday are inside the last 48 hours and, mostly, inside the last 24.
+    expect(await acceptedUntilRefused(creator.id, agencyId, clientId)).toBe(1);
+  });
+
+  it('keeps the day of São Paulo when UTC has already turned to the next one', async () => {
+    const { creator, agencyId, clientId } = await agencyWithClient('isenta');
+    await owner()('agencies').where({ id: agencyId }).update({ daily_email_limit: 3 });
+    // 21:30 and 23:50 in São Paulo are 00:30 and 02:50 of the next day in UTC: still today in São Paulo, so they count
+    // with the one of noon; 21:30 of yesterday is 00:30 of today in UTC, and is not today in São Paulo. Three today and one
+    // yesterday: a day counted in UTC finds two before 21:00 in São Paulo and two after it, never the three.
+    await sentAt(agencyId, clientId, creator.id, [[0, 12, 0], [0, 21, 30], [0, 23, 50], [-1, 21, 30]]);
+    expect(await acceptedUntilRefused(creator.id, agencyId, clientId)).toBe(0);
+  });
+
   it('is not writable by the application role', async () => {
     const { creator, agencyId } = await agencyWithClient('trial');
     await expect(w.asUser(creator.id, (t) => t('agencies').where({ id: agencyId }).update({ daily_email_limit: 1000 }))).rejects.toMatchObject({ code: '42501' });
