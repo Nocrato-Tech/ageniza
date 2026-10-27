@@ -204,7 +204,8 @@ export const registerAccessRoutes = (app: FastifyInstance, dependencies: AccessR
         if (client === undefined) return { kind: 'client-not-found' } as const;
         if (client.status === 'archived') return { kind: 'client-archived' } as const;
 
-        // TODO(#725): count the welcome e-mail in the daily limit of e-mails of the agency, and say so when it is over.
+        // The database counts the welcome e-mail in the daily limit of the agency (A0095, 429) and refuses a read-only agency
+        // (A0090, 409); both reach the error handler as they are.
         const added = await addClientMember(transaction, clientId, body.email);
 
         // The address changed hands and the account that held it lost the access: that is a removal for it, and ends its sessions.

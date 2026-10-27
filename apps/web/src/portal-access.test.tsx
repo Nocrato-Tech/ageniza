@@ -774,7 +774,7 @@ describe('portal access of a read-only agency (issue #714, decision 2026-10-27)'
     expect(remove.getAttribute('aria-disabled')).toBeNull();
     fireEvent.click(remove);
     fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remover acesso' }));
-    await waitFor(() => expect(removedIds).toEqual([`remove:${joao.membershipId}`]));
+    await waitFor(() => expect(removedIds).toEqual([`remove:${joao.accessId}`]));
 
     const cancel = screen.getByRole('button', { name: 'Cancelar convite de carla@padaria.test' });
     expect(cancel.getAttribute('aria-disabled')).toBeNull();

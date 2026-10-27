@@ -284,8 +284,9 @@ conta com aquele e-mail verificado carrega os contextos (`app_private.link_clien
 - **Adicionar pessoa**: só o e-mail. Dá o acesso na hora, sem conta e sem aceite, e manda o e-mail de boas-vindas
   ("Entrar no portal"). O mesmo e-mail de novo reativa a mesma linha (`409 ACCESS_EXISTS` se já estava ativo). Se a conta
   que tinha o endereço já trocou de e-mail, ela é solta e as sessões dela terminam
-  (`2026-10-27-adicionar-pessoa-de-novo-solta-a-conta-que-trocou-de-e-mail`). O limite diário de e-mails da agência
-  entra com o #725 (`TODO(#725)` na rota).
+  (`2026-10-27-adicionar-pessoa-de-novo-solta-a-conta-que-trocou-de-e-mail`). O e-mail de boas-vindas conta no limite diário
+  de e-mails da agência, no mesmo orçamento dos convites (`429 DAILY_EMAIL_LIMIT`), e agência em somente leitura recusa
+  adicionar e reativar (`409 AGENCY_READ_ONLY`); remover continua livre.
 - **Convites**: 20 por página, o que expira primeiro no topo (`id` de desempate), só
   `purpose = 'client_invite'` **daquele cliente**, não aceitos, não revogados e não expirados. A policy
   `invitations_select` deixa quem tem `cliente.convidar_usuario` ler convite de colaborador também

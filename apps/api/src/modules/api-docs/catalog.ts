@@ -2698,8 +2698,9 @@ path: '/agencies/:agencyId/roles',
       'quando uma conta com aquele e-mail verificado entra, e nunca nesta rota. Adicionar de novo um e-mail removido',
       'reativa a mesma linha (a geração dos links de aprovação continua onde a remoção a deixou). Se a conta que',
       'tinha aquele endereço já trocou de e-mail, ela perde o acesso e as sessões dela são encerradas. Um endereço que',
-      'já tem acesso ativo responde 409 `ACCESS_EXISTS`. Cliente arquivado responde 409; cliente de outra agência ou',
-      'inexistente, 404.'
+      'já tem acesso ativo responde 409 `ACCESS_EXISTS`. O e-mail de boas-vindas conta no limite diário de e-mails da agência,',
+      'junto com os convites: passado o limite, 429 `DAILY_EMAIL_LIMIT` e nada é gravado. Agência em somente leitura responde',
+      '409 `AGENCY_READ_ONLY`. Cliente arquivado responde 409; cliente de outra agência ou inexistente, 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.convidar_usuario',
@@ -2720,8 +2721,10 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
       { status: 409, code: 'ACCESS_EXISTS', message: 'Este endereço já tem acesso ao portal deste cliente.' },
+      { status: 409, code: 'AGENCY_READ_ONLY' },
       { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' },
       { status: 409, code: 'TRY_AGAIN' },
+      { status: 429, code: 'DAILY_EMAIL_LIMIT' },
       { status: 502, code: 'EMAIL_DELIVERY_FAILED' }
     ]
   },
@@ -2768,6 +2771,7 @@ path: '/agencies/:agencyId/roles',
     description: [
       'A pessoa volta a entrar no portal na requisição seguinte, sem convite novo, e a geração do acesso fica',
       'como a remoção a deixou. Reativar quem já está ativo não escreve nada e responde o acesso como está.',
+      'Agência em somente leitura responde 409 `AGENCY_READ_ONLY`, ao contrário de Remover, que continua livre.',
       'Cliente arquivado responde 409; acesso de outro cliente ou id inválido, 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
@@ -2781,6 +2785,7 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Member not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' },
+      { status: 409, code: 'AGENCY_READ_ONLY' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
   },

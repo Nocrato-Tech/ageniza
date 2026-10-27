@@ -12,12 +12,119 @@
 // Stable error codes, in the style of 20261006000300:
 //   A0020 -> 404  client or access not found, of another agency, archived, or the caller lacks the permission (one error for all)
 //   A0023 -> 400  set_client_membership_status got a status other than 'active' or 'removed'
-//   A0095 -> 400  the address is not an e-mail address
+//   A0098 -> 400  the address is not an e-mail address
+// and, from 20261027020000 and 20261027020100 (the trial), A0090 (the agency is read-only) and A0095 (its daily e-mail limit).
 //
-// A function that writes with no actor in the transaction checks by itself that the agency is not suspended: the accepted invitation
-// (the caller is the account, with no actor bound) and the link. TODO(#725): they must also refuse an agency that is read-only.
+// The plan of the agency (issue #711 on top of #725):
+//   - add and reactivate widen access, so they refuse a read-only agency (A0090); remove narrows it and stays open, and the
+//     trigger of the table recognises that exact change of the row, like the ones of 20261027020000.
+//   - the welcome e-mail of "Adicionar pessoa" counts in the daily limit of the agency, in the same budget and under the same
+//     lock as the invitations (A0095, nothing written). The count reads the invitations and the audit events of the welcome.
+//   - a function that writes with no actor in the transaction checks by itself that the agency is not suspended and accepts
+//     writes: the accepted invitation (A0090) and the link, which skips what it must not touch.
 
 export async function up(knex) {
+  await knex.raw(`
+    -- The welcome e-mails are counted from the audit events the function writes; this is the index of that count.
+    create index events_agency_action_occurred_idx on audit.events (agency_id, action, occurred_at);
+
+    -- The e-mails an agency sent today (the day of São Paulo): its invitations, collaborator and portal, and the welcomes.
+    create function app_private.agency_emails_today(p_agency_id uuid)
+    returns bigint
+    language sql
+    stable
+    security definer
+    set search_path = ''
+    as $function$
+      select
+        (select pg_catalog.count(*)
+         from public.invitations invitation
+         where invitation.agency_id = p_agency_id
+           and invitation.purpose in ('collaborator_invite', 'client_invite')
+           and invitation.created_at > pg_catalog.now() - interval '2 days'
+           and app_private.sao_paulo_date(invitation.created_at) = app_private.sao_paulo_date(pg_catalog.now()))
+        +
+        (select pg_catalog.count(*)
+         from audit.events event
+         where event.agency_id = p_agency_id
+           and event.action in ('client_member.added', 'client_member.readded')
+           and event.occurred_at > pg_catalog.now() - interval '2 days'
+           and app_private.sao_paulo_date(event.occurred_at) = app_private.sao_paulo_date(pg_catalog.now()))
+    $function$;
+    revoke all on function app_private.agency_emails_today(uuid) from public;
+
+    -- The place for one more e-mail, or A0095. The lock is the one of the invitations (20261027020100), so the two kinds of
+    -- e-mail share the budget under concurrency, and the count is a statement of its own after the lock.
+    create function app_private.charge_daily_email(p_agency_id uuid)
+    returns void
+    language plpgsql
+    security definer
+    set search_path = ''
+    as $function$
+    declare
+      v_limit integer;
+    begin
+      if app_private.role_bypasses_rls(session_user) then
+        return;
+      end if;
+      perform app_private.require_read_committed();
+      perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('agency_daily_email_limit:' || p_agency_id::text, 0));
+      v_limit := app_private.agency_daily_email_limit(p_agency_id);
+      if v_limit is not null and app_private.agency_emails_today(p_agency_id) >= v_limit then
+        raise exception using errcode = 'A0095', message = 'The agency reached its daily e-mail limit.';
+      end if;
+    end;
+    $function$;
+    revoke all on function app_private.charge_daily_email(uuid) from public;
+
+    -- The trigger of the invitations counts the welcomes too, so an invitation cannot go past what the welcomes spent.
+    create or replace function app_private.enforce_daily_email_limit()
+    returns trigger
+    language plpgsql
+    security definer
+    set search_path = ''
+    as $function$
+    begin
+      if app_private.role_bypasses_rls(session_user) or new.purpose not in ('collaborator_invite', 'client_invite') then
+        return new;
+      end if;
+      perform app_private.charge_daily_email(new.agency_id);
+      return new;
+    end;
+    $function$;
+
+    -- Read-only: the writes of the table are refused like the ones of the other tables of the agency (20261027020000), except the
+    -- removal of an access, recognised by the exact change of the row.
+    create function app_private.refuse_portal_access_write_to_read_only_agency()
+    returns trigger
+    language plpgsql
+    security definer
+    set search_path = ''
+    as $function$
+    declare
+      v_agency_id uuid;
+    begin
+      if app_private.role_bypasses_rls(session_user) or app_private.current_user_id() is null then
+        return new;
+      end if;
+      if tg_op = 'UPDATE' and old.status = 'active' and new.status = 'removed' and new.generation = old.generation + 1
+         and (pg_catalog.to_jsonb(old) - array['status', 'generation', 'updated_at']) = (pg_catalog.to_jsonb(new) - array['status', 'generation', 'updated_at']) then
+        return new;
+      end if;
+      select client.agency_id into v_agency_id from public.clients client where client.id = new.client_id;
+      if v_agency_id is not null and not app_private.agency_accepts_writes(v_agency_id) then
+        raise exception using errcode = 'A0090', message = 'The agency is read-only: its trial has ended.';
+      end if;
+      return new;
+    end;
+    $function$;
+    revoke all on function app_private.refuse_portal_access_write_to_read_only_agency() from public;
+
+    create trigger "00_client_portal_accesses_agency_accepts_writes"
+      before insert or update on public.client_portal_accesses
+      for each row execute function app_private.refuse_portal_access_write_to_read_only_agency();
+  `);
+
   await knex.raw(`
     create function app_private.add_client_portal_access(p_client_id uuid, p_email text)
     returns table(access_id uuid, outcome text, unlinked_user_id uuid)
@@ -35,7 +142,7 @@ export async function up(knex) {
       v_outcome text;
     begin
       if v_email is null or v_email not like '%@%' or pg_catalog.char_length(v_email) not between 3 and 320 then
-        raise exception using errcode = 'A0095', message = 'The address is not an e-mail address.';
+        raise exception using errcode = 'A0098', message = 'The address is not an e-mail address.';
       end if;
 
       -- Resolve the client and check the permission WITHOUT a lock: an unauthorized caller never waits on another tenant's row.
@@ -53,15 +160,27 @@ export async function up(knex) {
         raise exception using errcode = 'A0020', message = 'Client not found.';
       end if;
 
-      insert into public.client_portal_accesses (client_id, email)
-      values (p_client_id, v_email)
-      on conflict on constraint client_portal_accesses_client_id_email_key do nothing
-      returning * into v_access;
+      -- Adding widens access: a read-only agency does not.
+      if not app_private.agency_accepts_writes(v_client.agency_id) then
+        raise exception using errcode = 'A0090', message = 'The agency is read-only: its trial has ended.';
+      end if;
 
-      if found then
-        v_outcome := 'created';
-      else
-        select * into v_access from public.client_portal_accesses where client_id = p_client_id and email = v_email for update;
+      select * into v_access from public.client_portal_accesses where client_id = p_client_id and email = v_email for update;
+      if not found then
+        -- A new address is a welcome e-mail: it takes a place in the day before anything is written.
+        perform app_private.charge_daily_email(v_client.agency_id);
+        insert into public.client_portal_accesses (client_id, email)
+        values (p_client_id, v_email)
+        on conflict on constraint client_portal_accesses_client_id_email_key do nothing
+        returning * into v_access;
+        if found then
+          v_outcome := 'created';
+        else
+          select * into v_access from public.client_portal_accesses where client_id = p_client_id and email = v_email for update;
+        end if;
+      end if;
+
+      if v_outcome is null then
 
         -- The account that held the address may hold another one today (it changed it). The row must not give the access back
         -- to it: it lets go of the account, so whoever has the address now can link at the next login.
@@ -76,6 +195,8 @@ export async function up(knex) {
           v_outcome := 'already_active';
         else
           v_outcome := 'reactivated';
+          -- The welcome goes again: it takes a place in the day too.
+          perform app_private.charge_daily_email(v_client.agency_id);
           update public.client_portal_accesses
           set status = 'active', user_id = case when v_unlinked is null then user_id else null end, updated_at = pg_catalog.now()
           where id = v_access.id;
@@ -96,7 +217,7 @@ export async function up(knex) {
       if v_outcome <> 'already_active' then
         insert into audit.events (action, actor_user_id, agency_id, target_type, target_id)
         values (
-          case when v_outcome = 'created' then 'client_member.added' else 'client_member.reactivated' end,
+          case when v_outcome = 'created' then 'client_member.added' else 'client_member.readded' end,
           v_actor, v_client.agency_id, 'client_portal_access', v_access.id
         );
       end if;
@@ -197,6 +318,11 @@ export async function up(knex) {
         return;
       end if;
 
+      -- Bringing someone back widens access: a read-only agency does not (removing, which narrows it, stays open).
+      if not app_private.agency_accepts_writes(v_client.agency_id) then
+        raise exception using errcode = 'A0090', message = 'The agency is read-only: its trial has ended.';
+      end if;
+
       -- The generation stays where the removal left it: a link of the earlier life of the access does not come back.
       update public.client_portal_accesses set status = 'active', updated_at = pg_catalog.now() where id = v_access.id;
 
@@ -218,7 +344,9 @@ export async function up(knex) {
     $function$;
 
     -- The account of the transaction takes the active accesses of its own verified address. It never takes an access that has an
-    -- account, never one of an address it has not confirmed, and never one of a client that is archived or of a suspended agency.
+    -- account, never one of an address it has not confirmed, and never one of a client that is archived, of a suspended agency or of
+    -- a read-only one: the account is the actor here, so the trigger of the table would refuse the write, and the load of the
+    -- contexts must not fail for an agency whose trial ended. The access waits and is taken after the agency renews.
     create function app_private.link_client_portal_accesses()
     returns integer
     language plpgsql
@@ -253,6 +381,7 @@ export async function up(knex) {
           and access.status = 'active'
           and client.status = 'active'
           and agency.status = 'active'
+          and app_private.agency_accepts_writes(agency.id)
         order by access.id
         for update of access
         for share of client
@@ -306,6 +435,10 @@ export async function up(knex) {
          or not exists (select 1 from public.agencies agency where agency.id = v_client.agency_id and agency.status = 'active')
       then
         raise exception using errcode = 'A0001', message = 'Invitation link is not valid.';
+      end if;
+      -- No actor is bound here, so the trigger of the table does not look: the plan of the agency is asked explicitly.
+      if not app_private.agency_accepts_writes(v_client.agency_id) then
+        raise exception using errcode = 'A0090', message = 'The agency is read-only: its trial has ended.';
       end if;
 
       select * into v_access from public.client_portal_accesses where client_id = p_client_id and email = p_email for update;
@@ -429,6 +562,7 @@ AS $function$
          or invitation.revoked_at is not null
          or invitation.expires_at <= pg_catalog.clock_timestamp()
          or agency.status <> 'active'
+         or not app_private.agency_accepts_writes(agency.id)
       then
         raise exception using
           errcode = 'A0001',

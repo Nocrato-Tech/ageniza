@@ -337,6 +337,7 @@ export async function up(knex) {
           and access.status = 'active'
           and client.status = 'active'
           and agency.status = 'active'
+          and app_private.agency_accepts_writes(agency.id)
           and content.status = case p_type
             when 'content_awaiting_approval' then 'awaiting_approval'
             when 'content_published' then 'published'

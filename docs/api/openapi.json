@@ -17961,7 +17961,7 @@
       "post": {
         "operationId": "addClientMember",
         "summary": "Adiciona uma pessoa ao portal do cliente",
-        "description": "Só o e-mail. O acesso vale na hora, sem conta e sem aceite, e a pessoa recebe um e-mail de boas-vindas com\n\"Entrar no portal\". Ter um endereço com conta no Ageniza não muda nada aqui: o acesso passa à conta no login,\nquando uma conta com aquele e-mail verificado entra, e nunca nesta rota. Adicionar de novo um e-mail removido\nreativa a mesma linha (a geração dos links de aprovação continua onde a remoção a deixou). Se a conta que\ntinha aquele endereço já trocou de e-mail, ela perde o acesso e as sessões dela são encerradas. Um endereço que\njá tem acesso ativo responde 409 `ACCESS_EXISTS`. Cliente arquivado responde 409; cliente de outra agência ou\ninexistente, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
+        "description": "Só o e-mail. O acesso vale na hora, sem conta e sem aceite, e a pessoa recebe um e-mail de boas-vindas com\n\"Entrar no portal\". Ter um endereço com conta no Ageniza não muda nada aqui: o acesso passa à conta no login,\nquando uma conta com aquele e-mail verificado entra, e nunca nesta rota. Adicionar de novo um e-mail removido\nreativa a mesma linha (a geração dos links de aprovação continua onde a remoção a deixou). Se a conta que\ntinha aquele endereço já trocou de e-mail, ela perde o acesso e as sessões dela são encerradas. Um endereço que\njá tem acesso ativo responde 409 `ACCESS_EXISTS`. O e-mail de boas-vindas conta no limite diário de e-mails da agência,\njunto com os convites: passado o limite, 429 `DAILY_EMAIL_LIMIT` e nada é gravado. Agência em somente leitura responde\n409 `AGENCY_READ_ONLY`. Cliente arquivado responde 409; cliente de outra agência ou inexistente, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
         "tags": [
           "clients"
         ],
@@ -18095,7 +18095,7 @@
             }
           },
           "409": {
-            "description": "ACCESS_EXISTS: Este endereço já tem acesso ao portal deste cliente. | CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "description": "ACCESS_EXISTS: Este endereço já tem acesso ao portal deste cliente. | AGENCY_READ_ONLY: O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados. | CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -18105,6 +18105,25 @@
                   "error": {
                     "code": "ACCESS_EXISTS",
                     "message": "Este endereço já tem acesso ao portal deste cliente."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "DAILY_EMAIL_LIMIT: Limite diário de envios atingido. Tente amanhã.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "DAILY_EMAIL_LIMIT",
+                    "message": "Limite diário de envios atingido. Tente amanhã."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
@@ -18314,7 +18333,7 @@
       "post": {
         "operationId": "reactivateClientMember",
         "summary": "Reativa uma pessoa do portal do cliente",
-        "description": "A pessoa volta a entrar no portal na requisição seguinte, sem convite novo, e a geração do acesso fica\ncomo a remoção a deixou. Reativar quem já está ativo não escreve nada e responde o acesso como está.\nCliente arquivado responde 409; acesso de outro cliente ou id inválido, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.remover_usuario`.",
+        "description": "A pessoa volta a entrar no portal na requisição seguinte, sem convite novo, e a geração do acesso fica\ncomo a remoção a deixou. Reativar quem já está ativo não escreve nada e responde o acesso como está.\nAgência em somente leitura responde 409 `AGENCY_READ_ONLY`, ao contrário de Remover, que continua livre.\nCliente arquivado responde 409; acesso de outro cliente ou id inválido, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.remover_usuario`.",
         "tags": [
           "clients"
         ],
@@ -18426,7 +18445,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado. | AGENCY_READ_ONLY: O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {

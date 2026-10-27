@@ -19,6 +19,7 @@ const { applicationUrl } = resolveIntegrationDatabaseUrls();
 let worker: DatabaseClient;
 const extraUsers: string[] = [];
 const extraClients: string[] = [];
+const extraAgencies: string[] = [];
 
 const owner = (): Knex => w.getOwner().knex;
 
@@ -45,6 +46,11 @@ afterAll(async () => {
     await knex('invitations').whereIn('client_id', extraClients).delete();
     await knex('audit.events').whereIn('agency_id', [ids.agencyA, ids.agencyB, ids.agencySuspended]).delete();
     await knex('clients').whereIn('id', extraClients).delete();
+    await knex('invitations').whereIn('agency_id', extraAgencies).delete();
+    await knex('audit.events').whereIn('agency_id', extraAgencies).delete();
+    await knex('agency_memberships').whereIn('agency_id', extraAgencies).delete();
+    await knex('agencies').whereIn('id', extraAgencies).update({ owner_user_id: null });
+    await knex('agencies').whereIn('id', extraAgencies).delete();
     await knex('client_memberships').whereIn('user_id', extraUsers).delete();
   } finally {
     await worker.close();
@@ -375,7 +381,7 @@ describe('add_client_portal_access (Adicionar pessoa)', () => {
     expect(again).toMatchObject({ access_id: first.access_id, outcome: 'reactivated' });
     expect(await accessOf(client, email)).toMatchObject({ id: first.access_id, status: 'active', generation: 2 });
     expect(await countAccesses(client)).toBe(1);
-    expect(await sinceAuditCount('client_member.reactivated', first.access_id)).toBe(1);
+    expect(await sinceAuditCount('client_member.readded', first.access_id)).toBe(1);
   });
 
   it('gives a removed account its portal back when the address is added again and the account still has it', async () => {
@@ -434,7 +440,7 @@ describe('add_client_portal_access (Adicionar pessoa)', () => {
   it('refuses an address that is not an address, writing nothing', async () => {
     const client = await freshClient();
     for (const email of ['', '   ', 'sem-arroba', `${'a'.repeat(320)}@x.test`]) {
-      await expect(addAs(ids.adminA, client, email), email).rejects.toMatchObject({ code: 'A0095' });
+      await expect(addAs(ids.adminA, client, email), email).rejects.toMatchObject({ code: 'A0098' });
     }
     expect(await countAccesses(client)).toBe(0);
   });
@@ -1081,9 +1087,220 @@ describe('the functions that write the access', () => {
       order by t.tgname
     `);
     expect(rows).toEqual([
+      { name: '00_client_memberships_agency_accepts_writes', definer: true },
+      { name: '00_client_portal_accesses_agency_accepts_writes', definer: true },
       { name: 'client_memberships_follow_access', definer: false },
       { name: 'client_portal_accesses_guard', definer: false },
       { name: 'client_portal_accesses_have_their_membership', definer: true }
     ]);
+  });
+});
+
+// ---- the plan of the agency (#725) ------------------------------------------------------------------------------------------
+
+describe('the plan of the agency: read-only and the daily limit of e-mails (#711 on #725)', () => {
+  const READ_ONLY = { code: 'A0090' };
+  const DAILY_LIMIT = { code: 'A0095' };
+
+  const expire = (agencyId: string): Promise<number> => owner()('agencies').where({ id: agencyId }).update({
+    plan: 'trial', trial_ends_at: owner().raw("now() - interval '1 minute'"), trial_owner_email_key: owner().raw('coalesce(trial_owner_email_key, id::text)')
+  });
+  const renew = (agencyId: string): Promise<number> =>
+    owner()('agencies').where({ id: agencyId }).update({ plan: 'isenta', trial_ends_at: null, trial_owner_email_key: null });
+  const whileReadOnly = async (work: () => Promise<void>): Promise<void> => {
+    await expire(ids.agencyA);
+    try { await work(); } finally { await renew(ids.agencyA); }
+  };
+
+  describe('read-only', () => {
+    it('refuses Adicionar pessoa and Reativar, which widen access, and writes nothing', async () => {
+      const client = await freshClient();
+      const removedEmail = freshEmail();
+      const removed = await addAs(ids.adminA, client, removedEmail);
+      await removeAs(ids.adminA, removed.access_id);
+      const before = await owner()('client_portal_accesses').where({ client_id: client }).select('id', 'status', 'generation', 'updated_at');
+
+      await whileReadOnly(async () => {
+        await expect(addAs(ids.adminA, client, freshEmail())).rejects.toMatchObject(READ_ONLY);
+        // Not even the address that is already there, removed: it would come back.
+        await expect(addAs(ids.adminA, client, removedEmail)).rejects.toMatchObject(READ_ONLY);
+        await expect(reactivateAs(ids.adminA, removed.access_id)).rejects.toMatchObject(READ_ONLY);
+      });
+      expect(await owner()('client_portal_accesses').where({ client_id: client }).select('id', 'status', 'generation', 'updated_at')).toEqual(before);
+      // The agency renews and the same call works.
+      expect((await reactivateAs(ids.adminA, removed.access_id)).changed).toBe(true);
+    });
+
+    it('lets Remover through, which narrows access: the generation advances and the membership goes with it', async () => {
+      const client = await freshClient();
+      const account = await newUser();
+      await owner()('client_memberships').insert({ client_id: client, user_id: account.id });
+      const linked = (await accessOfUser(client, account.id))!;
+      const waiting = await addAs(ids.adminA, client, freshEmail());
+
+      await whileReadOnly(async () => {
+        expect(await removeAs(ids.adminA, linked.id)).toEqual({ account_user_id: account.id, changed: true });
+        expect(await removeAs(ids.adminA, waiting.access_id)).toEqual({ account_user_id: null, changed: true });
+        expect(await removeAs(ids.adminA, linked.id)).toEqual({ account_user_id: account.id, changed: false });
+      });
+      expect(await accessOfUser(client, account.id)).toMatchObject({ status: 'removed', generation: 2 });
+      expect((await membershipOf(client, account.id))!.status).toBe('removed');
+      expect(await owner()('client_portal_accesses').where({ id: waiting.access_id }).first('status', 'generation')).toEqual({ status: 'removed', generation: 2 });
+    });
+
+    it('refuses by the trigger of the table too, with the application role and an actor, and lets only the removal through', async () => {
+      const client = await freshClient();
+      const waiting = await addAs(ids.adminA, client, freshEmail());
+      const removedOne = await addAs(ids.adminA, client, freshEmail());
+      await removeAs(ids.adminA, removedOne.access_id);
+      await expire(ids.agencyA);
+      try {
+        // The application role has no write on the table and no policy for one, so both are given inside a transaction that is never
+        // committed.
+        const attempt = async (statement: (t: Knex.Transaction) => Promise<unknown>): Promise<unknown> =>
+          owner().transaction(async (t) => {
+            await t.raw('grant insert, update on public.client_portal_accesses to ageniza_app');
+            await t.raw('create policy temporary_write on public.client_portal_accesses for all to ageniza_app using (true) with check (true)');
+            await t.raw('set local session authorization ageniza_app');
+            await t.raw('select app_private.bind_actor(?::uuid)', [ids.adminA]);
+            await statement(t);
+            throw new Error('rolled back on purpose');
+          }).then(() => 'done', (error: unknown) => error);
+
+        expect(await attempt((t) => t('client_portal_accesses').insert({ client_id: client, email: freshEmail() }))).toMatchObject(READ_ONLY);
+        expect(await attempt((t) => t('client_portal_accesses').where({ id: removedOne.access_id }).update({ status: 'active' }))).toMatchObject(READ_ONLY);
+        expect(await attempt((t) => t('client_portal_accesses').where({ id: waiting.access_id }).update({ status: 'removed', generation: 2 })))
+          .toMatchObject({ message: 'rolled back on purpose' });
+        // The removal with any other change in the row is not the removal.
+        expect(await attempt((t) => t('client_portal_accesses').where({ id: waiting.access_id }).update({ status: 'removed', generation: 2, user_id: ids.portalA1 })))
+          .toMatchObject(READ_ONLY);
+      } finally {
+        await renew(ids.agencyA);
+      }
+    });
+
+    it('does not let the link fail the load of the contexts, nor take the access of a read-only agency, until it renews', async () => {
+      const client = await freshClient();
+      const account = await newUser();
+      await addAs(ids.adminA, client, account.email);
+      await whileReadOnly(async () => {
+        expect(await linkAs(account.id)).toBe(0);
+        expect(await accessOf(client, account.email)).toMatchObject({ user_id: null });
+      });
+      expect(await linkAs(account.id)).toBe(1);
+    });
+
+    it('refuses the accepted portal invitation of a read-only agency, before and inside the function that writes the access', async () => {
+      const client = await freshClient();
+      const account = await newUser({ verified: false });
+      const tokenHash = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
+      await owner()('invitations').insert({
+        agency_id: ids.agencyA, purpose: 'client_invite', email: account.email, client_id: client, token_hash: tokenHash,
+        expires_at: new Date(Date.now() + 86_400_000)
+      });
+      await whileReadOnly(async () => {
+        await expect(call(account.id, 'select * from app_private.accept_invitation(?, ?::uuid, null, null, false)', tokenHash, account.id)).rejects.toMatchObject({ code: 'A0001' });
+        // The function that writes the access asks by itself, whoever calls it.
+        await expect(owner().raw('select app_private.grant_client_portal_access_from_invitation(?::uuid, ?::uuid, ?)', [client, account.id, account.email]))
+          .rejects.toMatchObject(READ_ONLY);
+      });
+      expect(await countAccesses(client)).toBe(0);
+    });
+  });
+
+  describe('the daily limit of e-mails', () => {
+    const limitedAgency = async (limit: number): Promise<{ agencyId: string; admin: string; client: string }> => {
+      const admin = await newUser();
+      const agencyId = randomUUID();
+      extraAgencies.push(agencyId);
+      await owner()('agencies').insert({ id: agencyId, name: `Limite ${agencyId}`, owner_user_id: admin.id, daily_email_limit: limit });
+      const role = await owner()('roles').whereNull('agency_id').where({ key: 'admin' }).first('id');
+      await owner()('agency_memberships').insert({ agency_id: agencyId, user_id: admin.id, role_id: role.id });
+      const client = randomUUID();
+      extraClients.push(client);
+      await owner()('clients').insert({ id: client, agency_id: agencyId, name: `Limite ${client}` });
+      return { agencyId, admin: admin.id, client };
+    };
+    const portalInvitation = (admin: string, agencyId: string, client: string): Promise<void> =>
+      w.asUser(admin, async (t) => {
+        await t('invitations').insert({
+          agency_id: agencyId, purpose: 'client_invite', email: freshEmail(), client_id: client, token_hash: `hash-${randomUUID()}`,
+          expires_at: new Date(Date.now() + 86_400_000), invited_by_user_id: admin
+        });
+      });
+
+    it('counts the welcome of a new address and refuses the one past the limit, writing nothing', async () => {
+      const { admin, client } = await limitedAgency(2);
+      await addAs(admin, client, freshEmail());
+      await addAs(admin, client, freshEmail());
+      const refused = freshEmail();
+      await expect(addAs(admin, client, refused)).rejects.toMatchObject(DAILY_LIMIT);
+      expect(await accessOf(client, refused)).toBeUndefined();
+      expect(await countAccesses(client)).toBe(2);
+    });
+
+    it('counts the welcome that goes again to a removed address: at the limit it is refused, and the address stays removed', async () => {
+      const { admin, client } = await limitedAgency(2);
+      const email = freshEmail();
+      const first = await addAs(admin, client, email);
+      await addAs(admin, client, freshEmail());
+      await removeAs(admin, first.access_id);
+      await expect(addAs(admin, client, email)).rejects.toMatchObject(DAILY_LIMIT);
+      expect(await accessOf(client, email)).toMatchObject({ status: 'removed' });
+      // Reativar sends no e-mail, so the limit does not stop it.
+      expect((await reactivateAs(admin, first.access_id)).changed).toBe(true);
+    });
+
+    it('spends no place on an address that already has the access: at the limit it still answers already_active', async () => {
+      const { admin, client } = await limitedAgency(1);
+      const email = freshEmail();
+      expect((await addAs(admin, client, email)).outcome).toBe('created');
+      expect((await addAs(admin, client, email)).outcome).toBe('already_active');
+      await expect(addAs(admin, client, freshEmail())).rejects.toMatchObject(DAILY_LIMIT);
+    });
+
+    it('shares the budget with the invitations, in both directions', async () => {
+      const { agencyId, admin, client } = await limitedAgency(2);
+      await portalInvitation(admin, agencyId, client);
+      await addAs(admin, client, freshEmail());
+      await expect(addAs(admin, client, freshEmail())).rejects.toMatchObject(DAILY_LIMIT);
+
+      const second = await limitedAgency(2);
+      await addAs(second.admin, second.client, freshEmail());
+      await addAs(second.admin, second.client, freshEmail());
+      await expect(portalInvitation(second.admin, second.agencyId, second.client)).rejects.toMatchObject(DAILY_LIMIT);
+    });
+
+    it('makes a second addition wait for the one that takes the last place, and then refuses it', async () => {
+      const { admin, client } = await limitedAgency(1);
+      const holder = await w.openTransactionAs(admin);
+      let committed = false;
+      try {
+        await holder.raw('select * from app_private.add_client_portal_access(?::uuid, ?)', [client, freshEmail()]);
+        const second = addAs(admin, client, freshEmail()).then(() => 'added', (error: unknown) => error);
+        // Nothing is written by the second while the first holds the place; it queues behind the lock of the agency.
+        await w.waitUntilSomeoneWaitsOnALock();
+        await holder.commit();
+        committed = true;
+        expect(await second).toMatchObject(DAILY_LIMIT);
+        expect(await countAccesses(client)).toBe(1);
+      } finally {
+        if (!committed) await holder.rollback();
+      }
+    });
+
+    it('counts the day of São Paulo: the welcomes of the days before do not count', async () => {
+      const { agencyId, admin, client } = await limitedAgency(1);
+      await owner()('audit.events').insert(Array.from({ length: 5 }, () => ({
+        action: 'client_member.added', agency_id: agencyId, target_type: 'client_portal_access', target_id: randomUUID(),
+        occurred_at: new Date(Date.now() - 3 * 86_400_000)
+      })));
+      const { rows } = await owner().raw<{ rows: Array<{ at: Date }> }>(
+        "select (date_trunc('day', now() at time zone 'America/Sao_Paulo') at time zone 'America/Sao_Paulo') - interval '1 minute' as at"
+      );
+      await owner()('audit.events').insert({ action: 'client_member.readded', agency_id: agencyId, target_type: 'client_portal_access', target_id: randomUUID(), occurred_at: rows[0]!.at });
+      await expect(addAs(admin, client, freshEmail())).resolves.toMatchObject({ outcome: 'created' });
+      await expect(addAs(admin, client, freshEmail())).rejects.toMatchObject(DAILY_LIMIT);
+    });
   });
 });
