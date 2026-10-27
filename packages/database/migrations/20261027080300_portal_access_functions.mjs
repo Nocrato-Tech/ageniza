@@ -566,6 +566,9 @@ export async function up(knex) {
     grant execute on function app_private.link_client_portal_accesses() to ageniza_app;
   `);
 
+  // The lookup by either token is the one 20261027050000 (#731) left in this function: a token copied from the link of a collaborator
+  // invitation and the one that only travels in the e-mail. This migration runs after it, so the definition below carries that clause
+  // (a test reads the catalog for it).
   await knex.raw(`CREATE OR REPLACE FUNCTION app_private.accept_invitation(p_token_hash text, p_user_id uuid, p_terms_version text, p_privacy_version text, p_record_acceptance boolean)
  RETURNS TABLE(status text, agency_id uuid, client_id uuid)
  LANGUAGE plpgsql
@@ -585,7 +588,7 @@ AS $function$
       select *
       into invitation
       from public.invitations
-      where token_hash = p_token_hash
+      where (token_hash = p_token_hash or email_token_hash = p_token_hash)
       for update;
 
       if not found then
