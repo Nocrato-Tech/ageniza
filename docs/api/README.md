@@ -90,7 +90,7 @@ Verifica se a API está pronta para receber tráfego.
 | `POST` | `/auth/login` | Público | — | Autentica com e-mail e senha |
 | `POST` | `/auth/sign-up` | Público | — | Cria uma conta com e-mail e senha |
 | `POST` | `/auth/email/verification/resend` | Público | — | Reenvia o link de confirmação do e-mail |
-| `POST` | `/auth/email/verify` | Pública, pelo token do link e a senha | — | Confirma o e-mail com o link e a senha da conta |
+| `POST` | `/auth/email/verify` | Pública, pelo token do link e a senha | — | Confirma o e-mail com o link e a senha da conta, ou com a sessão dela |
 | `POST` | `/auth/logout` | Sessão | — | Encerra a sessão atual |
 | `POST` | `/auth/logout-all` | Sessão | — | Encerra todas as sessões da conta |
 | `GET` | `/auth/session` | Sessão | — | Devolve a sessão e a pessoa autenticada |
@@ -179,7 +179,7 @@ Reenvia o link de confirmação do e-mail.
 
 #### `POST /auth/email/verify`
 
-Confirma o e-mail com o link e a senha da conta.
+Confirma o e-mail com o link e a senha da conta, ou com a sessão dela.
 
 - Acesso: Pública, pelo token do link e a senha.
 - Permissão: —.
@@ -193,7 +193,7 @@ Confirma o e-mail com o link e a senha da conta.
 }
 ```
 
-**Resposta `200`** — E-mail confirmado; o cookie httpOnly da sessão vem na resposta.
+**Resposta `200`** — E-mail confirmado; com a senha, o cookie httpOnly da sessão vem na resposta. Sem a senha, a sessão que já existia continua e nenhum cookie novo vem.
 
 ```json
 {

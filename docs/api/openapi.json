@@ -301,8 +301,7 @@
           }
         },
         "required": [
-          "token",
-          "password"
+          "token"
         ],
         "additionalProperties": false
       },
@@ -6698,8 +6697,8 @@
     "/auth/email/verify": {
       "post": {
         "operationId": "postAuthEmailVerify",
-        "summary": "Confirma o e-mail com o link e a senha da conta",
-        "description": "O link sozinho não confirma: pede a senha da conta. Link válido com a senha certa confirma o e-mail,\ngasta o link e cria a sessão. Link inválido, usado ou vencido e senha errada respondem o mesmo\n400 `INVALID_LINK_OR_PASSWORD`, sem mudar nada; as tentativas contam nos limites do login.\n\nAcesso: Pública, pelo token do link e a senha.",
+        "summary": "Confirma o e-mail com o link e a senha da conta, ou com a sessão dela",
+        "description": "O link sozinho não confirma: pede a senha da conta. Link válido com a senha certa confirma o e-mail,\ngasta o link e cria a sessão. Sem senha, só vale com a sessão da própria conta do link, que ainda\ntenha o vínculo do convite: a conta criada pelo link copiado de um convite confirma com o clique,\ne a sessão que ela já tem continua. Sem senha e sem essa sessão, ou com a sessão de outra conta, a\nresposta é a mesma. Link inválido, usado ou vencido e senha errada respondem o mesmo\n400 `INVALID_LINK_OR_PASSWORD`, sem mudar nada; as tentativas contam nos limites do login.\n\nAcesso: Pública, pelo token do link e a senha.",
         "tags": [
           "auth"
         ],
@@ -6720,7 +6719,7 @@
         },
         "responses": {
           "200": {
-            "description": "E-mail confirmado; o cookie httpOnly da sessão vem na resposta.",
+            "description": "E-mail confirmado; com a senha, o cookie httpOnly da sessão vem na resposta. Sem a senha, a sessão que já existia continua e nenhum cookie novo vem.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7499,7 +7498,7 @@
       "post": {
         "operationId": "createCollaboratorInvitation",
         "summary": "Convida uma pessoa para a agência",
-        "description": "O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail. Convidar com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). A resposta informa o convite pendente que esta criação revogou, quando havia um, e traz uma única vez o link que foi ao e-mail (`invitationUrl`, `Cache-Control: no-store`): nenhuma outra rota o devolve, e reenviar gera outro link e invalida este.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.convidar`.",
+        "description": "O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail. Convidar com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). A resposta informa o convite pendente que esta criação revogou, quando havia um, e traz uma única vez o link para copiar (`invitationUrl`, `Cache-Control: no-store`): nenhuma outra rota o devolve, e reenviar gera outro e invalida este. O convite tem dois tokens de uso único: o do e-mail, que só vai no e-mail e nunca sai numa resposta, e este. Usar qualquer um consome o convite.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.convidar`.",
         "tags": [
           "invitations"
         ],
@@ -8052,7 +8051,7 @@
       "post": {
         "operationId": "resendInvitation",
         "summary": "Reenvia um convite pendente",
-        "description": "Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. Num convite de colaborador, a resposta traz uma única vez o link novo (`invitationUrl`, `Cache-Control: no-store`) a quem também tem `colaborador.convidar`; sem ela, ou num convite de portal, `null`. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). O reenvio de convite de portal de um cliente que acabou de ser arquivado responde 409 `CLIENT_ARCHIVED` e o convite segue como estava.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `convite.reenviar`.",
+        "description": "Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. Num convite de colaborador, a resposta traz uma única vez o link novo para copiar (`invitationUrl`, `Cache-Control: no-store`) a quem também tem `colaborador.convidar`; sem ela, ou num convite de portal, `null`. O reenvio gera de novo os dois tokens do convite de colaborador (o do e-mail e o copiável) e invalida os anteriores. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). O reenvio de convite de portal de um cliente que acabou de ser arquivado responde 409 `CLIENT_ARCHIVED` e o convite segue como estava.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `convite.reenviar`.",
         "tags": [
           "invitations"
         ],
@@ -8427,7 +8426,7 @@
       "post": {
         "operationId": "acceptInvitationNewAccount",
         "summary": "Cria a conta e aceita o convite",
-        "description": "A conta nasce com o e-mail do convite, ainda não confirmado; a sessão já vem no cookie da resposta e o contexto do convite vale na hora. O link de confirmação vai por e-mail e pede a senha escolhida aqui; até confirmar, o login por senha responde 401 e a sessão vale enquanto a conta tiver o vínculo que o convite deu.\n\nAcesso: Token do convite.",
+        "description": "A conta nasce com o e-mail do convite; a sessão já vem no cookie da resposta e o contexto do convite vale na hora. Pelo token do e-mail (convite de colaborador ou de ativação de agência) a conta nasce com o e-mail confirmado e nenhum e-mail de confirmação sai. Pelo token copiado, ou num convite de portal, ela nasce não confirmada: o link de confirmação vai por e-mail, até confirmar o login por senha responde 401 e a sessão vale enquanto a conta tiver o vínculo que o convite deu.\n\nAcesso: Token do convite.",
         "tags": [
           "invitations"
         ],

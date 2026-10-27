@@ -23,7 +23,7 @@ import { APIError } from 'better-auth';
 import { runWithAuditRequestId, runWithPasswordResetInviteToken } from './audit-context.js';
 import { recordAuthAuditEventSafely, type AuthAuditRecorder } from './audit.js';
 import type { InMemoryAuthLimiter } from './auth-limiter.js';
-import type { AuthInstance } from './better-auth.js';
+import { unconfirmedAccountMayHoldSession, type AuthInstance } from './better-auth.js';
 import { applyAuthCookies, toAuthHeaders, toPublicAuthError } from './bridge.js';
 import type { EmailService } from './email-service.js';
 import {
@@ -251,22 +251,40 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
   // with someone else's address chose the password. Only a live link plus the account's password
   // confirms the e-mail, and only then is there a session. A wrong password changes nothing and
   // answers exactly like a link that is not valid.
+  //
+  // One exception (decision 2026-10-27): the account an invitation created through the copied link has
+  // a session already, and that session proves the password. With no password, the request must carry
+  // the session of the very account the link belongs to, and that account must still hold it through the
+  // invitation. Without it, or with the session of another account, the answer is the same one.
   app.post('/auth/email/verify', { ...perIpRateLimit(AUTH_RATE_LIMITS.verifyEmail.ip, verifyEmailDocs), onRequest: noStore }, async (request, reply) => {
     const body = routeBody(verifyEmailDocs, request);
     const pending = await findPendingVerification(dependencies.database.knex, body.token);
     // The login's counters: guessing the password here costs the same attempts as at `/entrar`.
     dependencies.limiter.consume('login', normalizeRateLimitIp(request.ip), pending?.email ?? `email-confirmation:${hashEmailConfirmationToken(body.token)}`);
 
-    const password = (await dependencies.auth.$context).password;
     const credential = pending === undefined ? undefined : await credentialHashOf(dependencies.database, pending.userId);
-    const passwordMatches = credential === undefined
-      ? await verifyAgainstDecoy(password, body.password)
-      : await password.verify({ hash: credential, password: body.password });
-    if (pending === undefined || credential === undefined || !passwordMatches) throw new HttpError(verificationFailedError);
+    let sessionUser: { readonly id: string; readonly name: string; readonly email: string } | undefined;
+    let proven: boolean;
+    if (body.password === undefined) {
+      sessionUser = await sessionAccountOf(dependencies.auth, request);
+      proven = pending !== undefined && sessionUser?.id === pending.userId && await unconfirmedAccountMayHoldSession(dependencies.auth, pending.userId);
+    } else {
+      const password = (await dependencies.auth.$context).password;
+      proven = credential !== undefined && await password.verify({ hash: credential, password: body.password });
+      if (credential === undefined) await verifyAgainstDecoy(password, body.password);
+    }
+    if (pending === undefined || credential === undefined || !proven) throw new HttpError(verificationFailedError);
 
     const confirmed = await dependencies.database.transaction((transaction) =>
       consumeEmailVerification(transaction, body.token, credential));
     if (!confirmed) throw new HttpError(verificationFailedError);
+
+    // The session that proved the password stays: the account is the same, now confirmed, and there is
+    // nothing to sign in with (the request carried no password).
+    if (body.password === undefined) {
+      if (sessionUser === undefined) throw new HttpError(verificationFailedError);
+      return routeResponse(verifyEmailDocs, request, { user: { id: sessionUser.id, name: sessionUser.name, email: sessionUser.email } });
+    }
 
     let headers: Headers;
     let response: { readonly user: { readonly id: string; readonly name: string; readonly email: string } };
@@ -401,6 +419,19 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     // password (2026-10-16 decision), so the invitation continues through the login, not here.
     return reply.status(204).send();
   });
+};
+
+/**
+ * The account of the session the request carries, read without renewing it and without any side effect, or
+ * undefined. It is not the guard: it answers who, and the caller decides whether that account may act.
+ */
+const sessionAccountOf = async (auth: AuthInstance, request: FastifyRequest): Promise<{ readonly id: string; readonly name: string; readonly email: string } | undefined> => {
+  try {
+    const result = await auth.api.getSession({ headers: toAuthHeaders(request), query: { disableRefresh: true } });
+    return result === null ? undefined : { id: result.user.id, name: result.user.name, email: result.user.email };
+  } catch {
+    return undefined;
+  }
 };
 
 const credentialHashOf = async (database: DatabaseClient, userId: string): Promise<string | undefined> => {

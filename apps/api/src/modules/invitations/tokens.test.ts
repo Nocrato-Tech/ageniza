@@ -6,6 +6,7 @@ import {
   INVITATION_TOKEN_BYTES,
   INVITATION_TOKEN_TTL_MS,
   createInvitationToken,
+  createInvitationTokenPair,
   generateInvitationToken,
   hashInvitationToken,
   invitationLink
@@ -45,5 +46,19 @@ describe('invitation token primitives', () => {
     const token = 'abc';
 
     expect(invitationLink('https://app.example.test/', token)).toBe('https://app.example.test/convite/abc');
+  });
+
+  it('generates the e-mail token and the token to copy as two different secrets with the same expiry', () => {
+    const now = new Date('2026-09-17T12:00:00.000Z');
+    const { email, copy } = createInvitationTokenPair({ appPublicUrl: 'https://app.example.test', now });
+
+    expect(email.token).not.toBe(copy.token);
+    expect(email.tokenHash).not.toBe(copy.tokenHash);
+    expect(email.tokenHash).toBe(hashInvitationToken(email.token));
+    expect(copy.tokenHash).toBe(hashInvitationToken(copy.token));
+    expect(email.actionUrl).toBe(`https://app.example.test/convite/${email.token}`);
+    expect(copy.actionUrl).toBe(`https://app.example.test/convite/${copy.token}`);
+    expect(email.expiresAt.toISOString()).toBe(copy.expiresAt.toISOString());
+    expect(copy.expiresAt.getTime() - now.getTime()).toBe(INVITATION_TOKEN_TTL_MS);
   });
 });

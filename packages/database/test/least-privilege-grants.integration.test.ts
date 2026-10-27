@@ -165,9 +165,9 @@ describe('the seven tables with an INSERT of the whole table and no INSERT polic
 });
 
 describe('invitations and user_context_preferences are written by column (acceptance 1)', () => {
-  it('invitations: INSERT is the eight columns the routes write, and UPDATE stays revoked_at alone', async () => {
+  it('invitations: INSERT is the nine columns the routes write, and UPDATE stays revoked_at alone', async () => {
     expect(await columnsWith('public.invitations', 'insert')).toEqual(
-      ['agency_id', 'client_id', 'email', 'expires_at', 'invited_by_user_id', 'purpose', 'role_id', 'token_hash']
+      ['agency_id', 'client_id', 'email', 'email_token_hash', 'expires_at', 'invited_by_user_id', 'purpose', 'role_id', 'token_hash']
     );
     expect(await columnsWith('public.invitations', 'update')).toEqual(['revoked_at']);
   });
