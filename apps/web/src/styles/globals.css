@@ -2573,6 +2573,50 @@ a.client-general__block:focus-visible {
   font: var(--body-md);
 }
 
+/* "ou" and the Google button under a sign-in form; the grid child is allowed to shrink, so a long label never pushes the button off a narrow screen. */
+.auth-alternative {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  color: var(--text-muted);
+  font: var(--body-md);
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-default);
+}
+
+/* The acceptance screen sits in a centered status panel; its form reads left to right. */
+.accept-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 28rem;
+  text-align: left;
+}
+
+/* `.status-panel p` greys every paragraph of the panel; the failure of the acceptance keeps the error color and the size of the sign-in screens. */
+.accept-form .auth-message {
+  max-width: none;
+  font: var(--body-md);
+}
+
+.accept-form .auth-message--danger {
+  color: var(--text-danger);
+}
+
 /* "Esqueci minha senha" sits on the label row of the password field, as in the artboard; the link stays after the input in the tab order. */
 .auth-field-link {
   position: relative;

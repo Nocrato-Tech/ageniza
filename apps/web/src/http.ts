@@ -55,6 +55,11 @@ const assertSafeRequestPath = (path: string): void => {
   if (/[\u0000-\u001f\u007f\\#]/.test(path)) {
     throw invalidRequest('Request paths must not contain a fragment, a backslash or a control character.');
   }
+  // The URL parser strips spaces and C0 controls from both ends of the WHOLE input before it normalizes anything, so `/.. ` reads
+  // as `/..` there and leaves the base path, while the segment above would have been checked as `.. `.
+  if (path.startsWith(' ') || path.endsWith(' ')) {
+    throw invalidRequest('Request paths must not start or end with a space.');
+  }
   const queryIndex = path.indexOf('?');
   const pathname = queryIndex === -1 ? path : path.slice(0, queryIndex);
   const query = queryIndex === -1 ? '' : path.slice(queryIndex + 1);
@@ -72,22 +77,48 @@ const assertSafeRequestPath = (path: string): void => {
   }
 };
 
-const resolveRelativePath = (baseUrl: string, path: string): URL => {
-  assertSafeRequestPath(path);
+/**
+ * The second barrier, on the result: the address the URL parser made of the base and the path is on the same origin and still
+ * under the path of the base. It does not trust the first barrier (the parser strips spaces from the ends of its input and
+ * normalizes `..` after that, which is how `/.. ` once left `/api`). Exported only so a test can hit it alone.
+ */
+export const joinUnderBase = (base: URL, basePath: string, path: string): URL => {
   let resolved: URL;
   try {
-    resolved = new URL(path, baseUrl);
+    resolved = new URL(`${base.origin}${basePath}${path}`);
   } catch (error: unknown) {
     throw new HttpClientError('Request path is invalid.', { code: 'INVALID_REQUEST', cause: error });
   }
-  const base = new URL(baseUrl);
   if (resolved.origin !== base.origin) throw invalidRequest('Request paths must stay on the configured API origin.');
   // The parser never sees a relative or empty segment (checked above), but the resolved pathname
   // is re-checked so a future normalization cannot reintroduce one silently.
   if (resolved.pathname.includes('//') || /(^|\/)\.\.?(\/|$)/.test(resolved.pathname)) {
     throw invalidRequest('Request paths must not contain a relative segment.');
   }
+  if (!resolved.pathname.startsWith(`${basePath}/`)) throw invalidRequest('Request paths must stay under the path of the API base.');
   return resolved;
+};
+
+/**
+ * The one rule that turns a configured API base and a request path into an address, for a request and for a navigation alike.
+ * The base keeps its own path (`https://<domain>/api`, with or without a trailing slash): `new URL(path, base)` would throw it
+ * away, since a path that starts with `/` replaces the whole path of the base. The path is checked first (no other origin, no
+ * relative or empty segment, no separator in any encoding), and the result is checked again: same origin, and still under the
+ * path of the base, so nothing that reached the parser can have walked out of it.
+ */
+const resolveApiUrl = (baseUrl: string, path: string): URL => {
+  assertSafeRequestPath(path);
+  let base: URL;
+  try {
+    base = new URL(baseUrl);
+  } catch (error: unknown) {
+    throw new HttpClientError('The API base address is invalid.', { code: 'INVALID_REQUEST', cause: error });
+  }
+  const basePath = base.pathname.replace(/\/+$/, '');
+  if (base.search !== '' || base.hash !== '' || basePath.includes('//')) {
+    throw invalidRequest('The API base address must not carry a query, a fragment or an empty segment.');
+  }
+  return joinUnderBase(base, basePath, path);
 };
 
 const createRequestId = (): string => {
@@ -153,6 +184,14 @@ export class HttpClient {
   private sessionGeneration = 0;
   private sessionArmed = false;
 
+  /**
+   * The address the *browser* is sent to for an API route that is a navigation, not a request (the start of the Google
+   * sign-in). It resolves with the same rule as a request: the path of the configured base (`https://<domain>/api`) is kept.
+   */
+  public browserUrl(path: string): string {
+    return resolveApiUrl(this.baseUrl, path).toString();
+  }
+
   /** Called once the API has proven a session exists; requests sent from now on can end it. */
   public confirmSession(): void {
     this.sessionGeneration += 1;
@@ -163,7 +202,7 @@ export class HttpClient {
     if (options.timeoutMs !== undefined && (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0)) {
       throw invalidRequest('Request timeout must be a finite, positive number.');
     }
-    const url = resolveRelativePath(this.baseUrl, options.path);
+    const url = resolveApiUrl(this.baseUrl, options.path);
     const generation = this.sessionGeneration;
     const requestId = createRequestId();
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;

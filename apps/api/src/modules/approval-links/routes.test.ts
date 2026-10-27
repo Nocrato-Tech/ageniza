@@ -5,7 +5,7 @@ import Fastify from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { registerErrorHandling } from '../../plugins/infra/errors.js';
-import { APPROVAL_COOKIE_NAME } from './policy.js';
+import { APPROVAL_COOKIE_NAME, approvalCookieOptions } from './policy.js';
 import { registerApprovalLinkModule } from './routes.js';
 
 // What the routes of the approval link answer when the database refuses (issue #712), without a database: a fake that fails with the
@@ -43,6 +43,35 @@ const requests = {
   approve: (cookie: string) => ({ method: 'POST' as const, url: `/portal-approval/contents/${CONTENT_ID}/approve`, headers: { ...origin, cookie }, payload: { revision: 1 } }),
   changes: (cookie: string) => ({ method: 'POST' as const, url: `/portal-approval/contents/${CONTENT_ID}/request-changes`, headers: { ...origin, cookie }, payload: { revision: 1, comment: 'Troque.' } })
 };
+
+describe('the cookie of the exchange is sent back to the path of the public address of the API (issue #737)', () => {
+  const exchanged = async (apiPublicUrl: string) => {
+    const database = {
+      transaction: async (work: (transaction: unknown) => Promise<unknown>) => work({
+        raw: async () => ({ rows: [{ session_expires_at: new Date(Date.now() + 7_200_000), link_expires_at: new Date(Date.now() + 86_400_000) }] })
+      })
+    } as unknown as DatabaseClient;
+    const app = Fastify();
+    registerErrorHandling(app);
+    registerApprovalLinkModule(app, { database, cookie: approvalCookieOptions(apiPublicUrl) });
+    await app.ready();
+    apps.push(app);
+    const reply = await app.inject(requests.exchange());
+    expect(reply.statusCode).toBe(200);
+    return [reply.headers['set-cookie']].flat().join('\n');
+  };
+
+  it.each([
+    ['https://app.example.test/api', '/api/portal-approval', true],
+    ['https://app.example.test/api/', '/api/portal-approval', true],
+    ['http://127.0.0.1:3001', '/portal-approval', false],
+    ['http://127.0.0.1:3001/', '/portal-approval', false]
+  ])('sets Path and Secure from %s: Path=%s, Secure %s', async (apiPublicUrl, path, secure) => {
+    const header = await exchanged(apiPublicUrl);
+    expect(header).toContain(`; Path=${path};`);
+    expect(header.includes('Secure')).toBe(secure);
+  });
+});
 
 describe('the routes of the approval link translate what the database refuses (issue #712)', () => {
   it.each([

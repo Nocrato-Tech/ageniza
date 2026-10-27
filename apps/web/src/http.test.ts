@@ -1,7 +1,7 @@
 import { HealthResponseSchema } from '@ageniza/contracts';
 import { describe, expect, it, vi } from 'vitest';
 
-import { HttpClient } from './http.js';
+import { HttpClient, joinUnderBase } from './http.js';
 import type { HttpClientError } from './http.js';
 
 const clientWith = (implementation: typeof fetch): HttpClient => new HttpClient('http://127.0.0.1:3001', implementation);
@@ -105,6 +105,173 @@ describe('HttpClient', () => {
     await expect(client.request({ path: '/me/contexts/resolve?preferred=agency%3A11111111-1111-4111-8111-111111111111', response: HealthResponseSchema })).resolves.toEqual({ status: 'ok' });
     await expect(client.request({ path: '/invitations/abc_DEF-123', response: HealthResponseSchema })).resolves.toEqual({ status: 'ok' });
     expect(calls).toBe(3);
+  });
+
+  describe('the path of the API base (#737)', () => {
+    const requested = async (baseUrl: string, path: string): Promise<string> => {
+      let seen = '';
+      const client = new HttpClient(baseUrl, async (input) => {
+        seen = String(input);
+        return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
+      });
+      await client.request({ path, response: HealthResponseSchema });
+      return seen;
+    };
+
+    it.each([
+      ['https://app.example.test/api', 'https://app.example.test/api/auth/login'],
+      ['https://app.example.test/api/', 'https://app.example.test/api/auth/login'],
+      ['https://app.example.test/api//', 'https://app.example.test/api/auth/login'],
+      ['https://app.example.test/v1/api', 'https://app.example.test/v1/api/auth/login'],
+      ['https://app.example.test', 'https://app.example.test/auth/login'],
+      ['https://app.example.test/', 'https://app.example.test/auth/login'],
+      ['http://127.0.0.1:3001', 'http://127.0.0.1:3001/auth/login'],
+      ['http://127.0.0.1:3001/', 'http://127.0.0.1:3001/auth/login']
+    ])('keeps the path of the base %s: a request goes to %s', async (baseUrl, expected) => {
+      expect(await requested(baseUrl, '/auth/login')).toBe(expected);
+    });
+
+    it('keeps the base path and the query of the path', async () => {
+      expect(await requested('https://app.example.test/api', '/me/contexts/resolve?preferred=agency%3Aabc')).toBe('https://app.example.test/api/me/contexts/resolve?preferred=agency%3Aabc');
+    });
+
+    it('resolves a request and a navigation with one rule', async () => {
+      for (const [baseUrl, expected] of [
+        ['https://app.example.test/api', 'https://app.example.test/api/auth/google/start?intent=reauth'],
+        ['https://app.example.test/api/', 'https://app.example.test/api/auth/google/start?intent=reauth'],
+        ['http://127.0.0.1:3001', 'http://127.0.0.1:3001/auth/google/start?intent=reauth'],
+        ['http://127.0.0.1:3001/', 'http://127.0.0.1:3001/auth/google/start?intent=reauth']
+      ] as const) {
+        const noFetch: typeof fetch = async () => { throw new Error('no request expected'); };
+        expect(new HttpClient(baseUrl, noFetch).browserUrl('/auth/google/start?intent=reauth'), baseUrl).toBe(expected);
+        expect(await requested(baseUrl, '/auth/google/start?intent=reauth'), baseUrl).toBe(expected);
+      }
+    });
+
+    it('refuses, under a base with a path, everything it refuses without one', async () => {
+      let calls = 0;
+      const client = new HttpClient('https://app.example.test/api', async () => {
+        calls += 1;
+        return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
+      });
+      for (const path of [
+        '/../admin',
+        '/..',
+        '/agencies/../../admin',
+        '/%2E%2E/admin',
+        '/%2e%2e%2fadmin',
+        '/agencies/..%2F..%2Fadmin',
+        '//evil.example.test/x',
+        '//api/x',
+        'https://evil.example.test/',
+        'auth/login',
+        '/auth//login',
+        '/auth/a\\b',
+        '/auth/a#b',
+        '/auth/login?x=1?y=2',
+        '/auth/%'
+      ]) {
+        await expect(client.request({ path, response: HealthResponseSchema }), path).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+        expect(() => client.browserUrl(path), path).toThrow();
+      }
+      expect(calls).toBe(0);
+    });
+
+    it('refuses a space or a control character at the ends of the path, which the URL parser strips before it resolves ".."', async () => {
+      let calls = 0;
+      const answer = async (): Promise<Response> => {
+        calls += 1;
+        return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
+      };
+      const clients = [new HttpClient('https://app.example.test/api', answer), new HttpClient('https://app.example.test', answer)];
+      for (const client of clients) {
+        for (const path of [
+          '/.. ',
+          '/%2e%2e ',
+          '/%2E%2E ',
+          '/agencies/.. ',
+          '/agencies/%2e%2e ',
+          '/agencies/. ',
+          '/health ',
+          '/health  ',
+          '/health\t',
+          '/health\n',
+          '/health\r',
+          '/health\u0000',
+          '/health\u001f',
+          '/health\u007f',
+          '/..\t',
+          '/.\t./x',
+          '/ag\nencies/../x',
+          '/agencies/.. \n'
+        ]) {
+          await expect(client.request({ path, response: HealthResponseSchema }), JSON.stringify(path)).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+          expect(() => client.browserUrl(path), JSON.stringify(path)).toThrow();
+        }
+      }
+      expect(calls).toBe(0);
+    });
+
+    it('never lets a path that was accepted leave the path of the base, whatever the characters it is made of', async () => {
+      const seen: string[] = [];
+      const client = new HttpClient('https://app.example.test/api', async (input) => {
+        seen.push(String(input));
+        return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
+      });
+      const pieces = ['/', '.', '..', '%2e', '%2E%2e', '%2f', '%5c', ' ', '\t', '\n', 'a', '?', '=', ' ', '　', '%20', '%00'];
+      let accepted = 0;
+      const walk = async (prefix: string, depth: number): Promise<void> => {
+        if (depth === 0) {
+          try {
+            await client.request({ path: prefix, response: HealthResponseSchema });
+            accepted += 1;
+          } catch {
+            // refused, which is always allowed
+          }
+          return;
+        }
+        for (const piece of pieces) await walk(prefix + piece, depth - 1);
+      };
+      await walk('/', 3);
+      expect(accepted).toBeGreaterThan(100);
+      expect(seen).toHaveLength(accepted);
+      for (const address of seen) {
+        expect(address.startsWith('https://app.example.test/api/'), address).toBe(true);
+        expect(new URL(address).pathname.startsWith('/api/'), address).toBe(true);
+      }
+    });
+
+    it('keeps the second barrier on its own: what the parser makes of the base and the path must stay on the origin and under the path of the base', () => {
+      const base = new URL('https://app.example.test/api');
+      // The parser strips the spaces at the ends of its input before it normalizes "..", so these leave /api for the root of the domain.
+      for (const path of ['/.. ', '/%2e%2e ', '/%2E%2E ', '/../x', '/%2e%2e/x', '/agencies/../../x']) {
+        expect(() => joinUnderBase(base, '/api', path), path).toThrow();
+      }
+      expect(() => joinUnderBase(new URL('https://app.example.test'), '', '/.. ')).not.toThrow();
+      expect(joinUnderBase(base, '/api', '/auth/login?x=1').toString()).toBe('https://app.example.test/api/auth/login?x=1');
+    });
+
+    it('refuses a base that carries a query, a fragment or an empty segment, and one that is not an address', async () => {
+      for (const baseUrl of ['https://app.example.test/api?x=1', 'https://app.example.test/api#x', 'https://app.example.test//api', 'not a url']) {
+        const client = new HttpClient(baseUrl, async () => new Response('{}', { status: 200 }));
+        await expect(client.request({ path: '/health', response: HealthResponseSchema }), baseUrl).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+      }
+    });
+  });
+
+  it('builds the address of an API route for the browser to open, keeping the base path of the API', () => {
+    const noFetch: typeof fetch = async () => { throw new Error('no request expected'); };
+    expect(new HttpClient('http://127.0.0.1:3001', noFetch).browserUrl('/auth/google/start')).toBe('http://127.0.0.1:3001/auth/google/start');
+    expect(new HttpClient('https://app.example.test/api', noFetch).browserUrl('/auth/google/start?intent=reauth')).toBe('https://app.example.test/api/auth/google/start?intent=reauth');
+    expect(new HttpClient('https://app.example.test/api/', noFetch).browserUrl('/auth/google/start')).toBe('https://app.example.test/api/auth/google/start');
+  });
+
+  it('refuses to build the browser address of a path that could leave the API', () => {
+    const noFetch: typeof fetch = async () => { throw new Error('no request expected'); };
+    const client = new HttpClient('https://app.example.test/api', noFetch);
+    for (const path of ['//evil.example.test/x', 'https://evil.example.test/', '/../admin', 'auth/google/start']) {
+      expect(() => client.browserUrl(path), path).toThrow();
+    }
   });
 
   it('calls the provided fetch with globalThis as `this`, never as a method of the client (#197)', async () => {

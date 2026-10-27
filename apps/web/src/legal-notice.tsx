@@ -8,7 +8,7 @@ import { Button } from '@ageniza/ui';
 
 import { useApiClient } from './http.js';
 
-const LEGAL_KEY = ['legal-acceptances'] as const;
+export const LEGAL_KEY = ['legal-acceptances'] as const;
 const DISMISSED_KEY = ['legal-acceptances', 'dismissed'] as const;
 
 const DOCUMENTS: Record<LegalDocumentKind, { readonly announcement: string; readonly read: string; readonly acceptLabel: string; readonly to: string }> = {

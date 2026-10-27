@@ -3,6 +3,7 @@ import { Link, Navigate, Outlet, Route, Routes, useLocation, useParams } from 'r
 import { useQuery } from '@tanstack/react-query';
 
 import type { AuthSessionSnapshot } from './auth.js';
+import { AcceptanceGate, AcceptancePage } from './acceptance.js';
 import { AccountMenu } from './account-menu.js';
 import { ApprovalLinkPage } from './approval-link.js';
 import { DarkArea } from './area-theme.js';
@@ -21,6 +22,7 @@ import { ContextSelectPage } from './contexts.js';
 import { ConfirmEmailChangePage } from './email-change.js';
 import { VerifyEmailPage } from './email-verification.js';
 import { ForgotPasswordPage } from './forgot-password.js';
+import { GoogleLandingPage } from './google-sign-in.js';
 import { getHealth } from './health.js';
 import { useApiClient } from './http.js';
 import { InvitationPage } from './invite.js';
@@ -112,6 +114,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
     </Route>
     <Route element={<AuthLayout />}>
       <Route path="entrar" element={<LoginPage />} />
+      <Route path="entrar/google" element={<GoogleLandingPage />} />
       <Route path="senha/esquecida" element={session.isAuthenticated ? <Navigate to="/app" replace /> : <ForgotPasswordPage />} />
       <Route path="senha/redefinir" element={<ResetPasswordPage />} />
       <Route path="convite/:token" element={<InvitationPage />} />
@@ -189,7 +192,10 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
     {DesignSystemPage !== null && <Route path="design-system" element={<Suspense fallback={<LoadingPage />}><DesignSystemPage /></Suspense>} />}
     <Route element={<ProtectedLayout session={session} />}>
       <Route path="contextos" element={<ContextSelectPage />} />
-      <Route path="comecar" element={<StartPage />} />
+      {/* An account that came in by Google and has not accepted the Terms and the Privacy Policy has no context, so the resolve
+          sends it here (`none`): this is where it is sent on to `/aceite`. The picker stays free of the legal read. */}
+      <Route path="comecar" element={<AcceptanceGate><StartPage /></AcceptanceGate>} />
+      <Route path="aceite" element={<AcceptancePage />} />
       {/* `/app` is not a destination anymore; the resolve decides where the person enters. */}
       <Route path="app" element={<Navigate to="/contextos" replace />} />
     </Route>
