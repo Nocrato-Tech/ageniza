@@ -35,6 +35,7 @@ import type { AuthInstance } from '../auth/better-auth.js';
 import { applyAuthCookies, toAuthHeaders } from '../auth/bridge.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { EmailService } from '../auth/email-service.js';
+import { issueEmailConfirmation } from '../auth/email-verification.js';
 import { AUTH_RATE_LIMITS } from '../auth/policy.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { tryAgain } from '../../plugins/infra/conflict.js';
@@ -834,8 +835,9 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
 
     const passwordHash = await (await dependencies.auth.$context).password.hash(body.password);
     const userId = randomUUID();
+    let confirmationToken: string | undefined;
     try {
-      await dependencies.database.transaction(async (transaction) => {
+      confirmationToken = await dependencies.database.transaction(async (transaction) => {
         // The inviter can copy the link (decision 2026-10-26), so accepting it proves nothing about
         // the mailbox: the address stays unconfirmed until the confirmation of #706 proves it.
         await raw(transaction, `
@@ -849,6 +851,8 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
           select * from app_private.accept_invitation(?, ?, ?, ?, true)
         `, [hashInvitationToken(token), userId, dependencies.config.authTermsVersion, dependencies.config.authPrivacyVersion]);
         if (result.rows[0] === undefined) throw new HttpError(INVITATION_INVALID);
+        // Same transaction: the account never exists without its confirmation link.
+        return issueEmailConfirmation(transaction, userId);
       });
     } catch (error) {
       if (isRetryableConflict(error)) throw tryAgain();
@@ -870,7 +874,9 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
       // cannot establish that session; the credential account remains recoverable through login.
       throw new HttpError({ statusCode: 500, code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' });
     }
-    // TODO(#706): send the confirmation through `issueEmailConfirmation(userId)` once #706 lands.
+    // The link asks for the password chosen here, so whoever accepted a copied link cannot confirm a
+    // mailbox that is not theirs (#706).
+    if (confirmationToken !== undefined) dependencies.emailService.sendEmailVerification({ to: invitation.email, token: confirmationToken });
     return reply.status(201).send(routeResponse(acceptNewAccountDocs, request, {
       status: 'accepted',
       context: { agencyId: invitation.agencyId, clientId: invitation.clientId }

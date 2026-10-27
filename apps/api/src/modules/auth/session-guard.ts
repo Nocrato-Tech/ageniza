@@ -3,7 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { HttpError } from '@ageniza/core';
 import { createVerifiedUserClaims, type VerifiedUserClaims } from '@ageniza/database';
 
-import type { AuthInstance } from './better-auth.js';
+import { unconfirmedAccountMayHoldSession, type AuthInstance } from './better-auth.js';
 import { applyAuthCookies, toAuthHeaders, toPublicAuthError } from './bridge.js';
 import { AUTH_SESSION_MAX_AGE_MS } from './policy.js';
 
@@ -76,8 +76,10 @@ export const createRequireSession = (dependencies: SessionGuardDependencies, opt
     applyAuthCookies(reply, responseHeaders);
 
     const { session, user } = result;
-    // "Sem confirmar, não há sessão" (2026-10-26): no route creates one, and none is honoured either.
-    if (user.emailVerified !== true) {
+    // "Sem confirmar, não há sessão" (2026-10-26), with one explicit exception: the account created by
+    // accepting an invitation, while it keeps what the invitation gave it (decision on the copyable
+    // invitation link, item 2). Any other unconfirmed account's session is revoked here.
+    if (user.emailVerified !== true && !(await unconfirmedAccountMayHoldSession(dependencies.auth, user.id))) {
       await dependencies.auth.api.revokeSession({ body: { token: session.token }, headers }).catch(() => undefined);
       throw unauthenticated();
     }

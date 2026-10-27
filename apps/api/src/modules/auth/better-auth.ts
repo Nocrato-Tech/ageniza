@@ -84,8 +84,12 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
       enabled: true,
       // The public sign-up is `POST /auth/sign-up` (routes.ts), never Better Auth's own endpoint.
       disableSignUp: true,
-      // An unconfirmed account gets no session: `signInEmail` refuses it after the password matched.
-      requireEmailVerification: true,
+      // Off on purpose: `POST /auth/login` checks the password itself and refuses an unconfirmed
+      // account before it ever calls `signInEmail` (routes.ts), so the login of any unconfirmed account
+      // answers like invalid credentials. `signInEmail` must still sign in the one unconfirmed account
+      // that gets a session, the one `accept-new-account` just created (2026-10-26 decision on the
+      // copyable invitation link, item 2); the session guard then holds the rest of the rule.
+      requireEmailVerification: false,
       minPasswordLength: 10,
       autoSignIn: false,
       resetPasswordTokenExpiresIn: 60 * 30,
@@ -139,4 +143,26 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
 
 export type AuthInstance = ReturnType<typeof buildAuth>;
 
-export const createAuth = (dependencies: CreateAuthDependencies): AuthInstance => buildAuth(dependencies);
+const poolsByAuth = new WeakMap<AuthInstance, Pool>();
+
+export const createAuth = (dependencies: CreateAuthDependencies): AuthInstance => {
+  const auth = buildAuth(dependencies);
+  poolsByAuth.set(auth, dependencies.pool);
+  return auth;
+};
+
+/**
+ * Whether an unconfirmed account may keep a session: only the account created by accepting an
+ * invitation, while it keeps the link that invitation gave it (migration 20261027010300). Any
+ * failure answers no.
+ */
+export const unconfirmedAccountMayHoldSession = async (auth: AuthInstance, userId: string): Promise<boolean> => {
+  const pool = poolsByAuth.get(auth);
+  if (pool === undefined) return false;
+  try {
+    const result = await pool.query<{ allowed: boolean }>('select app_private.unconfirmed_account_may_hold_session($1::uuid) as allowed', [userId]);
+    return result.rows[0]?.allowed === true;
+  } catch {
+    return false;
+  }
+};
