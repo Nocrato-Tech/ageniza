@@ -1674,6 +1674,9 @@
                   "agency",
                   "client"
                 ]
+              },
+              "viaLink": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -1800,6 +1803,9 @@
                         "agency",
                         "client"
                       ]
+                    },
+                    "viaLink": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -2113,6 +2119,9 @@
                   "agency",
                   "client"
                 ]
+              },
+              "viaLink": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -2683,405 +2692,6 @@
           "comment"
         ],
         "additionalProperties": false
-      },
-      "exchangePortalApprovalTokenResponse": {
-        "type": "object",
-        "properties": {
-          "sessionExpiresAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "linkExpiresAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "sessionExpiresAt",
-          "linkExpiresAt"
-        ],
-        "additionalProperties": false
-      },
-      "exchangePortalApprovalTokenRequest": {
-        "type": "object",
-        "properties": {
-          "token": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9_-]{43}$"
-          }
-        },
-        "required": [
-          "token"
-        ],
-        "additionalProperties": false
-      },
-      "getPortalApprovalBatchResponse": {
-        "type": "object",
-        "properties": {
-          "clientName": {
-            "type": "string"
-          },
-          "agencyName": {
-            "type": "string"
-          },
-          "personEmail": {
-            "type": "string"
-          },
-          "sessionExpiresAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "linkExpiresAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "contents": {
-            "type": "array",
-            "items": {
-              "anyOf": [
-                {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "format": {
-                      "type": "string",
-                      "enum": [
-                        "image",
-                        "carousel",
-                        "reels",
-                        "long_video",
-                        "vsl"
-                      ]
-                    },
-                    "publishOn": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "string",
-                      "enum": [
-                        "in_production"
-                      ]
-                    },
-                    "canDecide": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "title",
-                    "format",
-                    "publishOn",
-                    "status",
-                    "canDecide"
-                  ],
-                  "additionalProperties": false
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "platform": {
-                      "type": "string",
-                      "enum": [
-                        "instagram"
-                      ]
-                    },
-                    "format": {
-                      "type": "string",
-                      "enum": [
-                        "image",
-                        "carousel",
-                        "reels",
-                        "long_video",
-                        "vsl"
-                      ]
-                    },
-                    "publishOn": {
-                      "type": "string"
-                    },
-                    "publishAtTime": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "status": {
-                      "type": "string",
-                      "enum": [
-                        "awaiting_approval",
-                        "adjusting",
-                        "approved",
-                        "published"
-                      ]
-                    },
-                    "coverAssetId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "format": "uuid"
-                    },
-                    "publishedOn": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "caption": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "revision": {
-                      "type": "integer",
-                      "exclusiveMinimum": 0
-                    },
-                    "media": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string",
-                            "format": "uuid"
-                          },
-                          "position": {
-                            "type": "integer",
-                            "exclusiveMinimum": 0
-                          },
-                          "kind": {
-                            "type": "string",
-                            "enum": [
-                              "image",
-                              "video"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "id",
-                          "position",
-                          "kind"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "canDecide": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "title",
-                    "platform",
-                    "format",
-                    "publishOn",
-                    "publishAtTime",
-                    "status",
-                    "coverAssetId",
-                    "publishedOn",
-                    "caption",
-                    "revision",
-                    "media",
-                    "canDecide"
-                  ],
-                  "additionalProperties": false
-                }
-              ]
-            }
-          }
-        },
-        "required": [
-          "clientName",
-          "agencyName",
-          "personEmail",
-          "sessionExpiresAt",
-          "linkExpiresAt",
-          "contents"
-        ],
-        "additionalProperties": false
-      },
-      "approvePortalApprovalContentResponse": {
-        "anyOf": [
-          {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "title": {
-                "type": "string"
-              },
-              "format": {
-                "type": "string",
-                "enum": [
-                  "image",
-                  "carousel",
-                  "reels",
-                  "long_video",
-                  "vsl"
-                ]
-              },
-              "publishOn": {
-                "type": "string"
-              },
-              "status": {
-                "type": "string",
-                "enum": [
-                  "in_production"
-                ]
-              },
-              "canDecide": {
-                "type": "boolean",
-                "enum": [
-                  false
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "title",
-              "format",
-              "publishOn",
-              "status",
-              "canDecide"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "title": {
-                "type": "string"
-              },
-              "platform": {
-                "type": "string",
-                "enum": [
-                  "instagram"
-                ]
-              },
-              "format": {
-                "type": "string",
-                "enum": [
-                  "image",
-                  "carousel",
-                  "reels",
-                  "long_video",
-                  "vsl"
-                ]
-              },
-              "publishOn": {
-                "type": "string"
-              },
-              "publishAtTime": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "status": {
-                "type": "string",
-                "enum": [
-                  "awaiting_approval",
-                  "adjusting",
-                  "approved",
-                  "published"
-                ]
-              },
-              "coverAssetId": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "format": "uuid"
-              },
-              "publishedOn": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "caption": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "revision": {
-                "type": "integer",
-                "exclusiveMinimum": 0
-              },
-              "media": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "position": {
-                      "type": "integer",
-                      "exclusiveMinimum": 0
-                    },
-                    "kind": {
-                      "type": "string",
-                      "enum": [
-                        "image",
-                        "video"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "position",
-                    "kind"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "canDecide": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "id",
-              "title",
-              "platform",
-              "format",
-              "publishOn",
-              "publishAtTime",
-              "status",
-              "coverAssetId",
-              "publishedOn",
-              "caption",
-              "revision",
-              "media",
-              "canDecide"
-            ],
-            "additionalProperties": false
-          }
-        ]
       },
       "listCollaboratorsResponse": {
         "type": "object",
@@ -6667,6 +6277,405 @@
           "recordedAt"
         ],
         "additionalProperties": false
+      },
+      "exchangePortalApprovalTokenResponse": {
+        "type": "object",
+        "properties": {
+          "sessionExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "linkExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "sessionExpiresAt",
+          "linkExpiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "exchangePortalApprovalTokenRequest": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "additionalProperties": false
+      },
+      "getPortalApprovalBatchResponse": {
+        "type": "object",
+        "properties": {
+          "clientName": {
+            "type": "string"
+          },
+          "agencyName": {
+            "type": "string"
+          },
+          "personEmail": {
+            "type": "string"
+          },
+          "sessionExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "linkExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "contents": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "format": {
+                      "type": "string",
+                      "enum": [
+                        "image",
+                        "carousel",
+                        "reels",
+                        "long_video",
+                        "vsl"
+                      ]
+                    },
+                    "publishOn": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "in_production"
+                      ]
+                    },
+                    "canDecide": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "format",
+                    "publishOn",
+                    "status",
+                    "canDecide"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "platform": {
+                      "type": "string",
+                      "enum": [
+                        "instagram"
+                      ]
+                    },
+                    "format": {
+                      "type": "string",
+                      "enum": [
+                        "image",
+                        "carousel",
+                        "reels",
+                        "long_video",
+                        "vsl"
+                      ]
+                    },
+                    "publishOn": {
+                      "type": "string"
+                    },
+                    "publishAtTime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "awaiting_approval",
+                        "adjusting",
+                        "approved",
+                        "published"
+                      ]
+                    },
+                    "coverAssetId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "publishedOn": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "caption": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "media": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "position": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "image",
+                              "video"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "position",
+                          "kind"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "canDecide": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "platform",
+                    "format",
+                    "publishOn",
+                    "publishAtTime",
+                    "status",
+                    "coverAssetId",
+                    "publishedOn",
+                    "caption",
+                    "revision",
+                    "media",
+                    "canDecide"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "clientName",
+          "agencyName",
+          "personEmail",
+          "sessionExpiresAt",
+          "linkExpiresAt",
+          "contents"
+        ],
+        "additionalProperties": false
+      },
+      "approvePortalApprovalContentResponse": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string"
+              },
+              "format": {
+                "type": "string",
+                "enum": [
+                  "image",
+                  "carousel",
+                  "reels",
+                  "long_video",
+                  "vsl"
+                ]
+              },
+              "publishOn": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "in_production"
+                ]
+              },
+              "canDecide": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "format",
+              "publishOn",
+              "status",
+              "canDecide"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string"
+              },
+              "platform": {
+                "type": "string",
+                "enum": [
+                  "instagram"
+                ]
+              },
+              "format": {
+                "type": "string",
+                "enum": [
+                  "image",
+                  "carousel",
+                  "reels",
+                  "long_video",
+                  "vsl"
+                ]
+              },
+              "publishOn": {
+                "type": "string"
+              },
+              "publishAtTime": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "awaiting_approval",
+                  "adjusting",
+                  "approved",
+                  "published"
+                ]
+              },
+              "coverAssetId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "publishedOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "caption": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "media": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "position": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "image",
+                        "video"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "position",
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "canDecide": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "platform",
+              "format",
+              "publishOn",
+              "publishAtTime",
+              "status",
+              "coverAssetId",
+              "publishedOn",
+              "caption",
+              "revision",
+              "media",
+              "canDecide"
+            ],
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "parameters": {}
@@ -13545,790 +13554,6 @@
                   "error": {
                     "code": "CONTENT_NOT_AWAITING_APPROVAL",
                     "message": "Só um conteúdo aguardando aprovação recebe um pedido de ajuste."
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "INTERNAL_ERROR: An unexpected error occurred",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "INTERNAL_ERROR",
-                    "message": "An unexpected error occurred"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/portal-approval/session": {
-      "post": {
-        "operationId": "exchangePortalApprovalToken",
-        "summary": "Troca o token do link de aprovação pela sessão de aprovação",
-        "description": "O e-mail \"conteúdos para aprovar\" leva um link com um token no fragmento (`#`), que o navegador não envia ao servidor. A tela lê o\nfragmento, o apaga da barra de endereço e o manda aqui, **no corpo** (`token`, 43 caracteres base64url). Rota nenhuma do link aceita\nconsulta (`?`): qualquer parâmetro na URL, o token inclusive, é `400 VALIDATION_ERROR`. A resposta traz o cookie `ageniza_approval`\n(`HttpOnly`, `SameSite=Strict`, `Secure` onde o app é HTTPS, restrito às rotas do link, de duas horas e nunca além do link), que não é\numa sessão de conta e só alcança o lote daquele link. Abrir o link não decide nada: esta rota só cria a sessão.\nO link vale por 7 dias e **a cada uso** o banco confere: o acesso está ativo e na mesma geração do link (remover o acesso mata o link\npara sempre, e reativá-lo não o traz de volta), o cliente não está arquivado, a agência não está suspensa nem somente leitura. Link\ndesconhecido, vencido ou revogado por qualquer um desses motivos devolve o mesmo `404 APPROVAL_LINK_INVALID`. Limites por IP (30 a cada 15\nminutos) e por token (10 a cada 15 minutos): o excedente é `429 RATE_LIMITED`. A resposta é `Cache-Control: no-store`.\n\nAcesso: Pública: o token do link.",
-        "tags": [
-          "approval-link"
-        ],
-        "x-permission": null,
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/exchangePortalApprovalTokenRequest"
-              },
-              "example": {
-                "token": "x9Qm2L0vWk3pTz8RjYb4Nc7HsAe1UdFgO5iXqKrMtV6"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Sessão criada; o cookie vai em `Set-Cookie`.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/exchangePortalApprovalTokenResponse"
-                },
-                "example": {
-                  "sessionExpiresAt": "2026-10-27T14:00:00.000Z",
-                  "linkExpiresAt": "2026-11-03T12:00:00.000Z"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "VALIDATION_ERROR: Request validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "VALIDATION_ERROR",
-                    "message": "Request validation failed"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "CSRF_REJECTED",
-                    "message": "Request origin is not allowed"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "APPROVAL_LINK_INVALID: Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "APPROVAL_LINK_INVALID",
-                    "message": "Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência."
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "RATE_LIMITED: Too many requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "RATE_LIMITED",
-                    "message": "Too many requests"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "INTERNAL_ERROR: An unexpected error occurred",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "INTERNAL_ERROR",
-                    "message": "An unexpected error occurred"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/portal-approval/batch": {
-      "get": {
-        "operationId": "getPortalApprovalBatch",
-        "summary": "Lê o lote do link de aprovação",
-        "description": "Os conteúdos do lote daquele e-mail, no estado de agora, com a legenda e a mídia da prévia de celular, na ordem do dia e da hora. Só o\nlote: nada da marca, da conversa geral nem de outro conteúdo do cliente, e um conteúdo cancelado some. O que já foi decidido, por esta ou\npor outra pessoa, aparece com o estado atual e `canDecide: false`; o que voltou a aguardar aprovação continua no lote enquanto o link\nvale. Um conteúdo em produção traz só título, dia e formato. `canDecide` é o que manda desenhar Aprovar e Pedir ajuste: verdadeiro\nexatamente quando o conteúdo aguarda aprovação. `personEmail` é o endereço que recebeu o acesso, para o link \"Criar conta para ver o\nportal\" levar a `/criar-conta` com ele preenchido; a resposta nunca diz se o endereço já tem conta. Sem o cookie, ou com o link morto: `404\nAPPROVAL_LINK_INVALID`. Ler não decide nada. `Cache-Control: no-store`.\n\nAcesso: Cookie da sessão de aprovação.",
-        "tags": [
-          "approval-link"
-        ],
-        "x-permission": null,
-        "responses": {
-          "200": {
-            "description": "O lote.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/getPortalApprovalBatchResponse"
-                },
-                "example": {
-                  "clientName": "Padaria Central",
-                  "agencyName": "Agência Exemplo",
-                  "personEmail": "maria@padariacentral.exemplo.test",
-                  "sessionExpiresAt": "2026-10-27T14:00:00.000Z",
-                  "linkExpiresAt": "2026-11-03T12:00:00.000Z",
-                  "contents": [
-                    {
-                      "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
-                      "title": "Lançamento da coleção de outono",
-                      "platform": "instagram",
-                      "format": "reels",
-                      "publishOn": "2026-10-20",
-                      "publishAtTime": "18:30",
-                      "status": "awaiting_approval",
-                      "coverAssetId": null,
-                      "publishedOn": null,
-                      "caption": "Novidades de outono chegando!",
-                      "revision": 1,
-                      "media": [
-                        {
-                          "id": "44444444-4444-4444-8444-444444444444",
-                          "position": 1,
-                          "kind": "image"
-                        }
-                      ],
-                      "canDecide": true
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "VALIDATION_ERROR: Request validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "VALIDATION_ERROR",
-                    "message": "Request validation failed"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "APPROVAL_LINK_INVALID: Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "APPROVAL_LINK_INVALID",
-                    "message": "Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência."
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "RATE_LIMITED: Too many requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "RATE_LIMITED",
-                    "message": "Too many requests"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "INTERNAL_ERROR: An unexpected error occurred",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "INTERNAL_ERROR",
-                    "message": "An unexpected error occurred"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/portal-approval/contents/{contentId}/media/{assetId}/url": {
-      "get": {
-        "operationId": "getPortalApprovalMediaUrl",
-        "summary": "Emite a URL assinada de uma mídia do lote",
-        "description": "Assina só a capa ou um item da mídia de um conteúdo do lote (de \"aguardando aprovação\" em diante). Conteúdo fora do lote, em produção ou\ncancelado, e arquivo removido, não confirmado ou que não é deste conteúdo, devolvem 404, sem assinar nada. A URL é só GET e vale por\nminutos (no máximo 5), nunca pelos 7 dias do link. `variant=thumbnail` devolve o próprio original para a imagem e a miniatura para o\nvídeo processado, senão 409 `VARIANT_NOT_READY` (ou `VARIANT_PROCESSING_FAILED`). Não há conta, então não há evento de auditoria por pessoa.\n\nAcesso: Cookie da sessão de aprovação.",
-        "tags": [
-          "approval-link"
-        ],
-        "x-permission": null,
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "contentId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "assetId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "enum": [
-                "original",
-                "thumbnail"
-              ],
-              "default": "original"
-            },
-            "required": false,
-            "name": "variant",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "URL assinada.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/getPortalContentMediaUrlResponse"
-                },
-                "example": {
-                  "url": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
-                  "expiresAt": "2026-09-29T12:05:00.000Z"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "VALIDATION_ERROR: Request validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "VALIDATION_ERROR",
-                    "message": "Request validation failed"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "APPROVAL_LINK_INVALID: Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência. | NOT_FOUND: Media asset not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "APPROVAL_LINK_INVALID",
-                    "message": "Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência."
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "VARIANT_NOT_READY: This variant has not been generated yet. | VARIANT_PROCESSING_FAILED: Video processing failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "VARIANT_NOT_READY",
-                    "message": "This variant has not been generated yet."
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "RATE_LIMITED: Too many requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "RATE_LIMITED",
-                    "message": "Too many requests"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "INTERNAL_ERROR: An unexpected error occurred",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "INTERNAL_ERROR",
-                    "message": "An unexpected error occurred"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/portal-approval/contents/{contentId}/approve": {
-      "post": {
-        "operationId": "approvePortalApprovalContent",
-        "summary": "Aprova um conteúdo do lote, pelo link",
-        "description": "O mesmo efeito da aprovação no portal: o conteúdo que aguarda aprovação passa a aprovado, uma pessoa basta, e aprovar um conteúdo já\naprovado não muda nada (quem aprovou primeiro continua sendo quem aprovou). A decisão é gravada **como aquele acesso**: a agência lê\nquem aprovou como `{ name, side: \"client\" }` e vê que veio pelo link do e-mail. `revision` é a revisão que a pessoa leu\n(`409 CONTENT_REVISION_CHANGED`). Fora de \"aguardando aprovação\" (em produção, em ajuste, publicado): `409\nCONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do lote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto, inclusive a agência em\nsomente leitura: `404 APPROVAL_LINK_INVALID`, e nada é gravado. Limites por IP (60 a cada 15 minutos) e por sessão (30 a cada 15 minutos).\n\nAcesso: Cookie da sessão de aprovação.",
-        "tags": [
-          "approval-link"
-        ],
-        "x-permission": null,
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "contentId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/approvePortalContentRequest"
-              },
-              "example": {
-                "revision": 1
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Conteúdo aprovado.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/approvePortalApprovalContentResponse"
-                },
-                "example": {
-                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
-                  "title": "Lançamento da coleção de outono",
-                  "platform": "instagram",
-                  "format": "reels",
-                  "publishOn": "2026-10-20",
-                  "publishAtTime": "18:30",
-                  "status": "approved",
-                  "coverAssetId": null,
-                  "publishedOn": null,
-                  "caption": "Novidades de outono chegando!",
-                  "revision": 1,
-                  "media": [
-                    {
-                      "id": "44444444-4444-4444-8444-444444444444",
-                      "position": 1,
-                      "kind": "image"
-                    }
-                  ],
-                  "canDecide": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "VALIDATION_ERROR: Request validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "VALIDATION_ERROR",
-                    "message": "Request validation failed"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "CSRF_REJECTED",
-                    "message": "Request origin is not allowed"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "APPROVAL_LINK_INVALID: Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência. | NOT_FOUND: Content not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "APPROVAL_LINK_INVALID",
-                    "message": "Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência."
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "CONTENT_NOT_AWAITING_APPROVAL: Só um conteúdo aguardando aprovação é aprovado. | CONTENT_REVISION_CHANGED: O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "CONTENT_NOT_AWAITING_APPROVAL",
-                    "message": "Só um conteúdo aguardando aprovação é aprovado."
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "RATE_LIMITED: Too many requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "RATE_LIMITED",
-                    "message": "Too many requests"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "INTERNAL_ERROR: An unexpected error occurred",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "INTERNAL_ERROR",
-                    "message": "An unexpected error occurred"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/portal-approval/contents/{contentId}/request-changes": {
-      "post": {
-        "operationId": "requestPortalApprovalContentChanges",
-        "summary": "Pede ajuste de um conteúdo do lote, pelo link",
-        "description": "O mesmo efeito do pedido de ajuste no portal: o conteúdo passa a \"em ajuste\" e o `comment`, obrigatório, entra na conversa do conteúdo\ncomo comentário do cliente (a conversa é aberta se ainda não existe). O comentário e a abertura da conversa são gravados **como aquele\nacesso**. O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de formato, nunca\nvazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. `revision` é a revisão\nque a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Fora de \"aguardando aprovação\": `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do\nlote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto: `404 APPROVAL_LINK_INVALID`. Os mesmos limites de Aprovar.\n\nAcesso: Cookie da sessão de aprovação.",
-        "tags": [
-          "approval-link"
-        ],
-        "x-permission": null,
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "contentId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/requestPortalContentChangesRequest"
-              },
-              "example": {
-                "revision": 1,
-                "comment": "Trocar a foto da capa por uma com mais luz."
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Conteúdo em ajuste.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/approvePortalApprovalContentResponse"
-                },
-                "example": {
-                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
-                  "title": "Lançamento da coleção de outono",
-                  "platform": "instagram",
-                  "format": "reels",
-                  "publishOn": "2026-10-20",
-                  "publishAtTime": "18:30",
-                  "status": "adjusting",
-                  "coverAssetId": null,
-                  "publishedOn": null,
-                  "caption": "Novidades de outono chegando!",
-                  "revision": 1,
-                  "media": [
-                    {
-                      "id": "44444444-4444-4444-8444-444444444444",
-                      "position": 1,
-                      "kind": "image"
-                    }
-                  ],
-                  "canDecide": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "VALIDATION_ERROR: Request validation failed | CONTENT_COMMENT_INVALID:",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "VALIDATION_ERROR",
-                    "message": "Request validation failed"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "CSRF_REJECTED",
-                    "message": "Request origin is not allowed"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "APPROVAL_LINK_INVALID: Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência. | NOT_FOUND: Content not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "APPROVAL_LINK_INVALID",
-                    "message": "Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência."
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "CONTENT_NOT_AWAITING_APPROVAL: Só um conteúdo aguardando aprovação recebe um pedido de ajuste. | CONTENT_REVISION_CHANGED: O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "CONTENT_NOT_AWAITING_APPROVAL",
-                    "message": "Só um conteúdo aguardando aprovação recebe um pedido de ajuste."
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "RATE_LIMITED: Too many requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "RATE_LIMITED",
-                    "message": "Too many requests"
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
@@ -24823,6 +24048,790 @@
                   "error": {
                     "code": "TRY_AGAIN",
                     "message": "Houve um conflito momentâneo. Tente de novo."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/portal-approval/session": {
+      "post": {
+        "operationId": "exchangePortalApprovalToken",
+        "summary": "Troca o token do link de aprovação pela sessão de aprovação",
+        "description": "O e-mail \"conteúdos para aprovar\" leva um link com um token no fragmento (`#`), que o navegador não envia ao servidor. A tela lê o\nfragmento, o apaga da barra de endereço e o manda aqui, **no corpo** (`token`, 43 caracteres base64url). Rota nenhuma do link aceita\nconsulta (`?`): qualquer parâmetro na URL, o token inclusive, é `400 VALIDATION_ERROR`. A resposta traz o cookie `ageniza_approval`\n(`HttpOnly`, `SameSite=Strict`, `Secure` onde o app é HTTPS, restrito às rotas do link, de duas horas e nunca além do link), que não é\numa sessão de conta e só alcança o lote daquele link. Abrir o link não decide nada: esta rota só cria a sessão.\nO link vale por 7 dias e **a cada uso** o banco confere: o acesso está ativo e na mesma geração do link (remover o acesso mata o link\npara sempre, e reativá-lo não o traz de volta), o cliente não está arquivado, a agência não está suspensa nem somente leitura. Link\ndesconhecido, vencido ou revogado por qualquer um desses motivos devolve o mesmo `404 APPROVAL_LINK_INVALID`. Limites por IP (30 a cada 15\nminutos) e por token (10 a cada 15 minutos): o excedente é `429 RATE_LIMITED`. A resposta é `Cache-Control: no-store`.\n\nAcesso: Pública: o token do link.",
+        "tags": [
+          "approval-link"
+        ],
+        "x-permission": null,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/exchangePortalApprovalTokenRequest"
+              },
+              "example": {
+                "token": "x9Qm2L0vWk3pTz8RjYb4Nc7HsAe1UdFgO5iXqKrMtV6"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sessão criada; o cookie vai em `Set-Cookie`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/exchangePortalApprovalTokenResponse"
+                },
+                "example": {
+                  "sessionExpiresAt": "2026-10-27T14:00:00.000Z",
+                  "linkExpiresAt": "2026-11-03T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "APPROVAL_LINK_INVALID: Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "APPROVAL_LINK_INVALID",
+                    "message": "Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/portal-approval/batch": {
+      "get": {
+        "operationId": "getPortalApprovalBatch",
+        "summary": "Lê o lote do link de aprovação",
+        "description": "Os conteúdos do lote daquele e-mail, no estado de agora, com a legenda e a mídia da prévia de celular, na ordem do dia e da hora. Só o\nlote: nada da marca, da conversa geral nem de outro conteúdo do cliente, e um conteúdo cancelado some. O que já foi decidido, por esta ou\npor outra pessoa, aparece com o estado atual e `canDecide: false`; o que voltou a aguardar aprovação continua no lote enquanto o link\nvale. Um conteúdo em produção traz só título, dia e formato. `canDecide` é o que manda desenhar Aprovar e Pedir ajuste: verdadeiro\nexatamente quando o conteúdo aguarda aprovação. `personEmail` é o endereço que recebeu o acesso, para o link \"Criar conta para ver o\nportal\" levar a `/criar-conta` com ele preenchido; a resposta nunca diz se o endereço já tem conta. Sem o cookie, ou com o link morto: `404\nAPPROVAL_LINK_INVALID`. Ler não decide nada. `Cache-Control: no-store`.\n\nAcesso: Cookie da sessão de aprovação.",
+        "tags": [
+          "approval-link"
+        ],
+        "x-permission": null,
+        "responses": {
+          "200": {
+            "description": "O lote.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getPortalApprovalBatchResponse"
+                },
+                "example": {
+                  "clientName": "Padaria Central",
+                  "agencyName": "Agência Exemplo",
+                  "personEmail": "maria@padariacentral.exemplo.test",
+                  "sessionExpiresAt": "2026-10-27T14:00:00.000Z",
+                  "linkExpiresAt": "2026-11-03T12:00:00.000Z",
+                  "contents": [
+                    {
+                      "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                      "title": "Lançamento da coleção de outono",
+                      "platform": "instagram",
+                      "format": "reels",
+                      "publishOn": "2026-10-20",
+                      "publishAtTime": "18:30",
+                      "status": "awaiting_approval",
+                      "coverAssetId": null,
+                      "publishedOn": null,
+                      "caption": "Novidades de outono chegando!",
+                      "revision": 1,
+                      "media": [
+                        {
+                          "id": "44444444-4444-4444-8444-444444444444",
+                          "position": 1,
+                          "kind": "image"
+                        }
+                      ],
+                      "canDecide": true
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "APPROVAL_LINK_INVALID: Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "APPROVAL_LINK_INVALID",
+                    "message": "Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/portal-approval/contents/{contentId}/media/{assetId}/url": {
+      "get": {
+        "operationId": "getPortalApprovalMediaUrl",
+        "summary": "Emite a URL assinada de uma mídia do lote",
+        "description": "Assina só a capa ou um item da mídia de um conteúdo do lote (de \"aguardando aprovação\" em diante). Conteúdo fora do lote, em produção ou\ncancelado, e arquivo removido, não confirmado ou que não é deste conteúdo, devolvem 404, sem assinar nada. A URL é só GET e vale por\nminutos (no máximo 5), nunca pelos 7 dias do link. `variant=thumbnail` devolve o próprio original para a imagem e a miniatura para o\nvídeo processado, senão 409 `VARIANT_NOT_READY` (ou `VARIANT_PROCESSING_FAILED`). Não há conta, então não há evento de auditoria por pessoa.\n\nAcesso: Cookie da sessão de aprovação.",
+        "tags": [
+          "approval-link"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "assetId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "original",
+                "thumbnail"
+              ],
+              "default": "original"
+            },
+            "required": false,
+            "name": "variant",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "URL assinada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getPortalContentMediaUrlResponse"
+                },
+                "example": {
+                  "url": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+                  "expiresAt": "2026-09-29T12:05:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "APPROVAL_LINK_INVALID: Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência. | NOT_FOUND: Media asset not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "APPROVAL_LINK_INVALID",
+                    "message": "Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "VARIANT_NOT_READY: This variant has not been generated yet. | VARIANT_PROCESSING_FAILED: Video processing failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VARIANT_NOT_READY",
+                    "message": "This variant has not been generated yet."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/portal-approval/contents/{contentId}/approve": {
+      "post": {
+        "operationId": "approvePortalApprovalContent",
+        "summary": "Aprova um conteúdo do lote, pelo link",
+        "description": "O mesmo efeito da aprovação no portal: o conteúdo que aguarda aprovação passa a aprovado, uma pessoa basta, e aprovar um conteúdo já\naprovado não muda nada (quem aprovou primeiro continua sendo quem aprovou). A decisão é gravada **como aquele acesso**: a agência lê\nquem aprovou como `{ name, side: \"client\" }` e vê que veio pelo link do e-mail. `revision` é a revisão que a pessoa leu\n(`409 CONTENT_REVISION_CHANGED`). Fora de \"aguardando aprovação\" (em produção, em ajuste, publicado): `409\nCONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do lote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto, inclusive a agência em\nsomente leitura: `404 APPROVAL_LINK_INVALID`, e nada é gravado. Limites por IP (60 a cada 15 minutos) e por sessão (30 a cada 15 minutos).\n\nAcesso: Cookie da sessão de aprovação.",
+        "tags": [
+          "approval-link"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/approvePortalContentRequest"
+              },
+              "example": {
+                "revision": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conteúdo aprovado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/approvePortalApprovalContentResponse"
+                },
+                "example": {
+                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                  "title": "Lançamento da coleção de outono",
+                  "platform": "instagram",
+                  "format": "reels",
+                  "publishOn": "2026-10-20",
+                  "publishAtTime": "18:30",
+                  "status": "approved",
+                  "coverAssetId": null,
+                  "publishedOn": null,
+                  "caption": "Novidades de outono chegando!",
+                  "revision": 1,
+                  "media": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "position": 1,
+                      "kind": "image"
+                    }
+                  ],
+                  "canDecide": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "APPROVAL_LINK_INVALID: Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência. | NOT_FOUND: Content not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "APPROVAL_LINK_INVALID",
+                    "message": "Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CONTENT_NOT_AWAITING_APPROVAL: Só um conteúdo aguardando aprovação é aprovado. | CONTENT_REVISION_CHANGED: O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CONTENT_NOT_AWAITING_APPROVAL",
+                    "message": "Só um conteúdo aguardando aprovação é aprovado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/portal-approval/contents/{contentId}/request-changes": {
+      "post": {
+        "operationId": "requestPortalApprovalContentChanges",
+        "summary": "Pede ajuste de um conteúdo do lote, pelo link",
+        "description": "O mesmo efeito do pedido de ajuste no portal: o conteúdo passa a \"em ajuste\" e o `comment`, obrigatório, entra na conversa do conteúdo\ncomo comentário do cliente (a conversa é aberta se ainda não existe). O comentário e a abertura da conversa são gravados **como aquele\nacesso**. O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de formato, nunca\nvazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. `revision` é a revisão\nque a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Fora de \"aguardando aprovação\": `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do\nlote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto: `404 APPROVAL_LINK_INVALID`. Os mesmos limites de Aprovar.\n\nAcesso: Cookie da sessão de aprovação.",
+        "tags": [
+          "approval-link"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/requestPortalContentChangesRequest"
+              },
+              "example": {
+                "revision": 1,
+                "comment": "Trocar a foto da capa por uma com mais luz."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conteúdo em ajuste.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/approvePortalApprovalContentResponse"
+                },
+                "example": {
+                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                  "title": "Lançamento da coleção de outono",
+                  "platform": "instagram",
+                  "format": "reels",
+                  "publishOn": "2026-10-20",
+                  "publishAtTime": "18:30",
+                  "status": "adjusting",
+                  "coverAssetId": null,
+                  "publishedOn": null,
+                  "caption": "Novidades de outono chegando!",
+                  "revision": 1,
+                  "media": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "position": 1,
+                      "kind": "image"
+                    }
+                  ],
+                  "canDecide": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed | CONTENT_COMMENT_INVALID:",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "APPROVAL_LINK_INVALID: Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência. | NOT_FOUND: Content not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "APPROVAL_LINK_INVALID",
+                    "message": "Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CONTENT_NOT_AWAITING_APPROVAL: Só um conteúdo aguardando aprovação recebe um pedido de ajuste. | CONTENT_REVISION_CHANGED: O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CONTENT_NOT_AWAITING_APPROVAL",
+                    "message": "Só um conteúdo aguardando aprovação recebe um pedido de ajuste."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"

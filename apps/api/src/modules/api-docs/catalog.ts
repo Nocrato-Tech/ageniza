@@ -1852,158 +1852,6 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     ]
   },
   {
-    method: 'post',
-    path: '/portal-approval/session',
-    operationId: 'exchangePortalApprovalToken',
-    module: 'approval-link',
-    summary: 'Troca o token do link de aprovação pela sessão de aprovação',
-    description: [
-      'O e-mail "conteúdos para aprovar" leva um link com um token no fragmento (`#`), que o navegador não envia ao servidor. A tela lê o',
-      'fragmento, o apaga da barra de endereço e o manda aqui, **no corpo** (`token`, 43 caracteres base64url). Rota nenhuma do link aceita',
-      'consulta (`?`): qualquer parâmetro na URL, o token inclusive, é `400 VALIDATION_ERROR`. A resposta traz o cookie `ageniza_approval`',
-      '(`HttpOnly`, `SameSite=Strict`, `Secure` onde o app é HTTPS, restrito às rotas do link, de duas horas e nunca além do link), que não é',
-      'uma sessão de conta e só alcança o lote daquele link. Abrir o link não decide nada: esta rota só cria a sessão.',
-      'O link vale por 7 dias e **a cada uso** o banco confere: o acesso está ativo e na mesma geração do link (remover o acesso mata o link',
-      'para sempre, e reativá-lo não o traz de volta), o cliente não está arquivado, a agência não está suspensa nem somente leitura. Link',
-      'desconhecido, vencido ou revogado por qualquer um desses motivos devolve o mesmo `404 APPROVAL_LINK_INVALID`. Limites por IP (30 a cada 15',
-      'minutos) e por token (10 a cada 15 minutos): o excedente é `429 RATE_LIMITED`. A resposta é `Cache-Control: no-store`.'
-    ].join('\n'),
-    access: 'Pública: o token do link',
-    permission: null,
-    query: PortalApprovalNoQuerySchema,
-    body: PortalApprovalExchangeRequestSchema,
-    requestExample: { token: 'x9Qm2L0vWk3pTz8RjYb4Nc7HsAe1UdFgO5iXqKrMtV6' },
-    responses: [{ status: 200, description: 'Sessão criada; o cookie vai em `Set-Cookie`.', schema: PortalApprovalExchangeResponseSchema, example: portalApprovalExchangeExample }],
-    errors: [
-      COMMON_ERRORS.csrf,
-      COMMON_ERRORS.internal,
-      { status: 400, code: 'VALIDATION_ERROR' },
-      { status: 404, code: 'APPROVAL_LINK_INVALID' },
-      { status: 429, code: 'RATE_LIMITED' }
-    ]
-  },
-  {
-    method: 'get',
-    path: '/portal-approval/batch',
-    operationId: 'getPortalApprovalBatch',
-    module: 'approval-link',
-    summary: 'Lê o lote do link de aprovação',
-    description: [
-      'Os conteúdos do lote daquele e-mail, no estado de agora, com a legenda e a mídia da prévia de celular, na ordem do dia e da hora. Só o',
-      'lote: nada da marca, da conversa geral nem de outro conteúdo do cliente, e um conteúdo cancelado some. O que já foi decidido, por esta ou',
-      'por outra pessoa, aparece com o estado atual e `canDecide: false`; o que voltou a aguardar aprovação continua no lote enquanto o link',
-      'vale. Um conteúdo em produção traz só título, dia e formato. `canDecide` é o que manda desenhar Aprovar e Pedir ajuste: verdadeiro',
-      'exatamente quando o conteúdo aguarda aprovação. `personEmail` é o endereço que recebeu o acesso, para o link "Criar conta para ver o',
-      'portal" levar a `/criar-conta` com ele preenchido; a resposta nunca diz se o endereço já tem conta. Sem o cookie, ou com o link morto: `404',
-      'APPROVAL_LINK_INVALID`. Ler não decide nada. `Cache-Control: no-store`.'
-    ].join('\n'),
-    access: 'Cookie da sessão de aprovação',
-    permission: null,
-    query: PortalApprovalNoQuerySchema,
-    responses: [{ status: 200, description: 'O lote.', schema: PortalApprovalBatchSchema, example: portalApprovalBatchExample }],
-    errors: [
-      COMMON_ERRORS.internal,
-      { status: 400, code: 'VALIDATION_ERROR' },
-      { status: 404, code: 'APPROVAL_LINK_INVALID' },
-      { status: 429, code: 'RATE_LIMITED' }
-    ]
-  },
-  {
-    method: 'get',
-    path: '/portal-approval/contents/:contentId/media/:assetId/url',
-    operationId: 'getPortalApprovalMediaUrl',
-    module: 'approval-link',
-    summary: 'Emite a URL assinada de uma mídia do lote',
-    description: [
-      'Assina só a capa ou um item da mídia de um conteúdo do lote (de "aguardando aprovação" em diante). Conteúdo fora do lote, em produção ou',
-      'cancelado, e arquivo removido, não confirmado ou que não é deste conteúdo, devolvem 404, sem assinar nada. A URL é só GET e vale por',
-      'minutos (no máximo 5), nunca pelos 7 dias do link. `variant=thumbnail` devolve o próprio original para a imagem e a miniatura para o',
-      'vídeo processado, senão 409 `VARIANT_NOT_READY` (ou `VARIANT_PROCESSING_FAILED`). Não há conta, então não há evento de auditoria por pessoa.'
-    ].join('\n'),
-    access: 'Cookie da sessão de aprovação',
-    permission: null,
-    params: PortalApprovalMediaPathParamsSchema,
-    query: PortalApprovalMediaUrlQuerySchema,
-    requestExample: { variant: 'thumbnail' },
-    responses: [{ status: 200, description: 'URL assinada.', schema: PortalApprovalMediaUrlResponseSchema, example: { url: signedStorageUrl, expiresAt: '2026-09-29T12:05:00.000Z' } }],
-    errors: [
-      COMMON_ERRORS.internal,
-      { status: 400, code: 'VALIDATION_ERROR' },
-      { status: 404, code: 'APPROVAL_LINK_INVALID' },
-      { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
-      { status: 409, code: 'VARIANT_NOT_READY' },
-      { status: 409, code: 'VARIANT_PROCESSING_FAILED' },
-      { status: 429, code: 'RATE_LIMITED' }
-    ]
-  },
-  {
-    method: 'post',
-    path: '/portal-approval/contents/:contentId/approve',
-    operationId: 'approvePortalApprovalContent',
-    module: 'approval-link',
-    summary: 'Aprova um conteúdo do lote, pelo link',
-    description: [
-      'O mesmo efeito da aprovação no portal: o conteúdo que aguarda aprovação passa a aprovado, uma pessoa basta, e aprovar um conteúdo já',
-      'aprovado não muda nada (quem aprovou primeiro continua sendo quem aprovou). A decisão é gravada **como aquele acesso**: a agência lê',
-      'quem aprovou como `{ name, side: "client" }` e vê que veio pelo link do e-mail. `revision` é a revisão que a pessoa leu',
-      '(`409 CONTENT_REVISION_CHANGED`). Fora de "aguardando aprovação" (em produção, em ajuste, publicado): `409',
-      'CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do lote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto, inclusive a agência em',
-      'somente leitura: `404 APPROVAL_LINK_INVALID`, e nada é gravado. Limites por IP (60 a cada 15 minutos) e por sessão (30 a cada 15 minutos).'
-    ].join('\n'),
-    access: 'Cookie da sessão de aprovação',
-    permission: null,
-    params: PortalApprovalContentPathParamsSchema,
-    query: PortalApprovalNoQuerySchema,
-    body: PortalApprovalApproveRequestSchema,
-    requestExample: { revision: 1 },
-    responses: [{ status: 200, description: 'Conteúdo aprovado.', schema: PortalApprovalContentSchema, example: { ...portalContentDetailExample, status: 'approved', canDecide: false } }],
-    errors: [
-      COMMON_ERRORS.csrf,
-      COMMON_ERRORS.internal,
-      { status: 400, code: 'VALIDATION_ERROR' },
-      { status: 404, code: 'APPROVAL_LINK_INVALID' },
-      { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
-      { status: 409, code: 'CONTENT_NOT_AWAITING_APPROVAL', message: 'Só um conteúdo aguardando aprovação é aprovado.' },
-      { status: 409, code: 'CONTENT_REVISION_CHANGED' },
-      { status: 409, code: 'TRY_AGAIN' },
-      { status: 429, code: 'RATE_LIMITED' }
-    ]
-  },
-  {
-    method: 'post',
-    path: '/portal-approval/contents/:contentId/request-changes',
-    operationId: 'requestPortalApprovalContentChanges',
-    module: 'approval-link',
-    summary: 'Pede ajuste de um conteúdo do lote, pelo link',
-    description: [
-      'O mesmo efeito do pedido de ajuste no portal: o conteúdo passa a "em ajuste" e o `comment`, obrigatório, entra na conversa do conteúdo',
-      'como comentário do cliente (a conversa é aberta se ainda não existe). O comentário e a abertura da conversa são gravados **como aquele',
-      'acesso**. O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de formato, nunca',
-      'vazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. `revision` é a revisão',
-      'que a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Fora de "aguardando aprovação": `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do',
-      'lote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto: `404 APPROVAL_LINK_INVALID`. Os mesmos limites de Aprovar.'
-    ].join('\n'),
-    access: 'Cookie da sessão de aprovação',
-    permission: null,
-    params: PortalApprovalContentPathParamsSchema,
-    query: PortalApprovalNoQuerySchema,
-    body: PortalApprovalRequestChangesRequestSchema,
-    requestExample: { revision: 1, comment: 'Trocar a foto da capa por uma com mais luz.' },
-    responses: [{ status: 200, description: 'Conteúdo em ajuste.', schema: PortalApprovalContentSchema, example: { ...portalContentDetailExample, status: 'adjusting', canDecide: false } }],
-    errors: [
-      COMMON_ERRORS.csrf,
-      COMMON_ERRORS.internal,
-      { status: 400, code: 'VALIDATION_ERROR' },
-      { status: 400, code: 'CONTENT_COMMENT_INVALID' },
-      { status: 404, code: 'APPROVAL_LINK_INVALID' },
-      { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
-      { status: 409, code: 'CONTENT_NOT_AWAITING_APPROVAL', message: 'Só um conteúdo aguardando aprovação recebe um pedido de ajuste.' },
-      { status: 409, code: 'CONTENT_REVISION_CHANGED' },
-      { status: 409, code: 'TRY_AGAIN' },
-      { status: 429, code: 'RATE_LIMITED' }
-    ]
-  },
-  {
     method: 'get',
     path: '/agencies/:agencyId/collaborators',
     operationId: 'listCollaborators',
@@ -3889,6 +3737,158 @@ path: '/agencies/:agencyId/roles',
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 404, code: 'NOT_FOUND', message: 'Story script not found.' },
       { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/portal-approval/session',
+    operationId: 'exchangePortalApprovalToken',
+    module: 'approval-link',
+    summary: 'Troca o token do link de aprovação pela sessão de aprovação',
+    description: [
+      'O e-mail "conteúdos para aprovar" leva um link com um token no fragmento (`#`), que o navegador não envia ao servidor. A tela lê o',
+      'fragmento, o apaga da barra de endereço e o manda aqui, **no corpo** (`token`, 43 caracteres base64url). Rota nenhuma do link aceita',
+      'consulta (`?`): qualquer parâmetro na URL, o token inclusive, é `400 VALIDATION_ERROR`. A resposta traz o cookie `ageniza_approval`',
+      '(`HttpOnly`, `SameSite=Strict`, `Secure` onde o app é HTTPS, restrito às rotas do link, de duas horas e nunca além do link), que não é',
+      'uma sessão de conta e só alcança o lote daquele link. Abrir o link não decide nada: esta rota só cria a sessão.',
+      'O link vale por 7 dias e **a cada uso** o banco confere: o acesso está ativo e na mesma geração do link (remover o acesso mata o link',
+      'para sempre, e reativá-lo não o traz de volta), o cliente não está arquivado, a agência não está suspensa nem somente leitura. Link',
+      'desconhecido, vencido ou revogado por qualquer um desses motivos devolve o mesmo `404 APPROVAL_LINK_INVALID`. Limites por IP (30 a cada 15',
+      'minutos) e por token (10 a cada 15 minutos): o excedente é `429 RATE_LIMITED`. A resposta é `Cache-Control: no-store`.'
+    ].join('\n'),
+    access: 'Pública: o token do link',
+    permission: null,
+    query: PortalApprovalNoQuerySchema,
+    body: PortalApprovalExchangeRequestSchema,
+    requestExample: { token: 'x9Qm2L0vWk3pTz8RjYb4Nc7HsAe1UdFgO5iXqKrMtV6' },
+    responses: [{ status: 200, description: 'Sessão criada; o cookie vai em `Set-Cookie`.', schema: PortalApprovalExchangeResponseSchema, example: portalApprovalExchangeExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 404, code: 'APPROVAL_LINK_INVALID' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/portal-approval/batch',
+    operationId: 'getPortalApprovalBatch',
+    module: 'approval-link',
+    summary: 'Lê o lote do link de aprovação',
+    description: [
+      'Os conteúdos do lote daquele e-mail, no estado de agora, com a legenda e a mídia da prévia de celular, na ordem do dia e da hora. Só o',
+      'lote: nada da marca, da conversa geral nem de outro conteúdo do cliente, e um conteúdo cancelado some. O que já foi decidido, por esta ou',
+      'por outra pessoa, aparece com o estado atual e `canDecide: false`; o que voltou a aguardar aprovação continua no lote enquanto o link',
+      'vale. Um conteúdo em produção traz só título, dia e formato. `canDecide` é o que manda desenhar Aprovar e Pedir ajuste: verdadeiro',
+      'exatamente quando o conteúdo aguarda aprovação. `personEmail` é o endereço que recebeu o acesso, para o link "Criar conta para ver o',
+      'portal" levar a `/criar-conta` com ele preenchido; a resposta nunca diz se o endereço já tem conta. Sem o cookie, ou com o link morto: `404',
+      'APPROVAL_LINK_INVALID`. Ler não decide nada. `Cache-Control: no-store`.'
+    ].join('\n'),
+    access: 'Cookie da sessão de aprovação',
+    permission: null,
+    query: PortalApprovalNoQuerySchema,
+    responses: [{ status: 200, description: 'O lote.', schema: PortalApprovalBatchSchema, example: portalApprovalBatchExample }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 404, code: 'APPROVAL_LINK_INVALID' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/portal-approval/contents/:contentId/media/:assetId/url',
+    operationId: 'getPortalApprovalMediaUrl',
+    module: 'approval-link',
+    summary: 'Emite a URL assinada de uma mídia do lote',
+    description: [
+      'Assina só a capa ou um item da mídia de um conteúdo do lote (de "aguardando aprovação" em diante). Conteúdo fora do lote, em produção ou',
+      'cancelado, e arquivo removido, não confirmado ou que não é deste conteúdo, devolvem 404, sem assinar nada. A URL é só GET e vale por',
+      'minutos (no máximo 5), nunca pelos 7 dias do link. `variant=thumbnail` devolve o próprio original para a imagem e a miniatura para o',
+      'vídeo processado, senão 409 `VARIANT_NOT_READY` (ou `VARIANT_PROCESSING_FAILED`). Não há conta, então não há evento de auditoria por pessoa.'
+    ].join('\n'),
+    access: 'Cookie da sessão de aprovação',
+    permission: null,
+    params: PortalApprovalMediaPathParamsSchema,
+    query: PortalApprovalMediaUrlQuerySchema,
+    requestExample: { variant: 'thumbnail' },
+    responses: [{ status: 200, description: 'URL assinada.', schema: PortalApprovalMediaUrlResponseSchema, example: { url: signedStorageUrl, expiresAt: '2026-09-29T12:05:00.000Z' } }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 404, code: 'APPROVAL_LINK_INVALID' },
+      { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
+      { status: 409, code: 'VARIANT_NOT_READY' },
+      { status: 409, code: 'VARIANT_PROCESSING_FAILED' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/portal-approval/contents/:contentId/approve',
+    operationId: 'approvePortalApprovalContent',
+    module: 'approval-link',
+    summary: 'Aprova um conteúdo do lote, pelo link',
+    description: [
+      'O mesmo efeito da aprovação no portal: o conteúdo que aguarda aprovação passa a aprovado, uma pessoa basta, e aprovar um conteúdo já',
+      'aprovado não muda nada (quem aprovou primeiro continua sendo quem aprovou). A decisão é gravada **como aquele acesso**: a agência lê',
+      'quem aprovou como `{ name, side: "client" }` e vê que veio pelo link do e-mail. `revision` é a revisão que a pessoa leu',
+      '(`409 CONTENT_REVISION_CHANGED`). Fora de "aguardando aprovação" (em produção, em ajuste, publicado): `409',
+      'CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do lote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto, inclusive a agência em',
+      'somente leitura: `404 APPROVAL_LINK_INVALID`, e nada é gravado. Limites por IP (60 a cada 15 minutos) e por sessão (30 a cada 15 minutos).'
+    ].join('\n'),
+    access: 'Cookie da sessão de aprovação',
+    permission: null,
+    params: PortalApprovalContentPathParamsSchema,
+    query: PortalApprovalNoQuerySchema,
+    body: PortalApprovalApproveRequestSchema,
+    requestExample: { revision: 1 },
+    responses: [{ status: 200, description: 'Conteúdo aprovado.', schema: PortalApprovalContentSchema, example: { ...portalContentDetailExample, status: 'approved', canDecide: false } }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 404, code: 'APPROVAL_LINK_INVALID' },
+      { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
+      { status: 409, code: 'CONTENT_NOT_AWAITING_APPROVAL', message: 'Só um conteúdo aguardando aprovação é aprovado.' },
+      { status: 409, code: 'CONTENT_REVISION_CHANGED' },
+      { status: 409, code: 'TRY_AGAIN' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/portal-approval/contents/:contentId/request-changes',
+    operationId: 'requestPortalApprovalContentChanges',
+    module: 'approval-link',
+    summary: 'Pede ajuste de um conteúdo do lote, pelo link',
+    description: [
+      'O mesmo efeito do pedido de ajuste no portal: o conteúdo passa a "em ajuste" e o `comment`, obrigatório, entra na conversa do conteúdo',
+      'como comentário do cliente (a conversa é aberta se ainda não existe). O comentário e a abertura da conversa são gravados **como aquele',
+      'acesso**. O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de formato, nunca',
+      'vazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. `revision` é a revisão',
+      'que a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Fora de "aguardando aprovação": `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do',
+      'lote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto: `404 APPROVAL_LINK_INVALID`. Os mesmos limites de Aprovar.'
+    ].join('\n'),
+    access: 'Cookie da sessão de aprovação',
+    permission: null,
+    params: PortalApprovalContentPathParamsSchema,
+    query: PortalApprovalNoQuerySchema,
+    body: PortalApprovalRequestChangesRequestSchema,
+    requestExample: { revision: 1, comment: 'Trocar a foto da capa por uma com mais luz.' },
+    responses: [{ status: 200, description: 'Conteúdo em ajuste.', schema: PortalApprovalContentSchema, example: { ...portalContentDetailExample, status: 'adjusting', canDecide: false } }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'CONTENT_COMMENT_INVALID' },
+      { status: 404, code: 'APPROVAL_LINK_INVALID' },
+      { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
+      { status: 409, code: 'CONTENT_NOT_AWAITING_APPROVAL', message: 'Só um conteúdo aguardando aprovação recebe um pedido de ajuste.' },
+      { status: 409, code: 'CONTENT_REVISION_CHANGED' },
+      { status: 409, code: 'TRY_AGAIN' },
+      { status: 429, code: 'RATE_LIMITED' }
     ]
   }
 ];
