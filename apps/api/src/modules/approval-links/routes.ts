@@ -25,7 +25,8 @@ import { mediaNotFound, variantNotReady, variantProcessingFailed, type PortalCon
 import type { ContentTransaction } from '../contents/service.js';
 import type { MediaStorageClient } from '../media/storage-client.js';
 import { approvalLinkInvalid, translateApprovalError } from './errors.js';
-import { APPROVAL_MEDIA_URL_MAX_SECONDS, APPROVAL_RATE_LIMITS, APPROVAL_ROUTE_PREFIX, type ApprovalRateLimitWindow } from './policy.js';
+import { APPROVAL_MEDIA_URL_MAX_SECONDS, APPROVAL_RATE_LIMITS, APPROVAL_ROUTE_PREFIX } from './policy.js';
+import { createWindowCounter, limitBy, type LimitRule, type WindowCounter } from './rate-limit.js';
 import {
   approveByLink,
   exchangeApprovalToken,
@@ -40,6 +41,8 @@ import { approvalSessionTokenOf, generateApprovalSessionToken, hashApprovalToken
 export interface ApprovalLinkModuleDependencies {
   readonly database: DatabaseClient;
   readonly cookie: ApprovalCookieOptions;
+  /** Test seam: the counter of the limits. */
+  readonly counter?: WindowCounter;
   /** Undefined only where object storage is not configured: the route that signs a media is then not registered. */
   readonly media?: {
     readonly storage: Pick<MediaStorageClient, 'presignGetObject'>;
@@ -111,9 +114,8 @@ export const registerApprovalLinkModule = (app: FastifyInstance, dependencies: A
     config: { permission: docs.permission, responseStatus: docs.responseStatus, schemas: docs.schemas }
   });
 
-  // One store per limiter, shared by the routes that ask for it: the plugin makes a store per configuration.
-  const limiter = (limit: ApprovalRateLimitWindow, key: (request: FastifyRequest) => string): preHandlerAsyncHookHandler =>
-    app.rateLimit({ max: limit.max, timeWindow: limit.windowMs, keyGenerator: key }) as preHandlerAsyncHookHandler;
+  // One counter for the module: a bucket is the scope of the rule plus the address or the digest, so the routes of a scope share it.
+  const counter = dependencies.counter ?? createWindowCounter();
 
   const byIp = (scope: string) => (request: FastifyRequest): string => `${scope}:ip:${normalizeRateLimitIp(request.ip)}`;
   const bySession = (scope: string) => (request: FastifyRequest): string => {
@@ -125,18 +127,19 @@ export const registerApprovalLinkModule = (app: FastifyInstance, dependencies: A
     return typeof token === 'string' ? `${scope}:token:${hashApprovalToken(token)}` : byIp(scope)(request);
   };
 
-  const exchangeLimiters = [
-    limiter(APPROVAL_RATE_LIMITS.exchangePerIp, byIp('approval-exchange')),
-    limiter(APPROVAL_RATE_LIMITS.exchangePerToken, byToken('approval-exchange'))
-  ];
-  const decideLimiters = [
-    limiter(APPROVAL_RATE_LIMITS.decidePerIp, byIp('approval-decide')),
-    limiter(APPROVAL_RATE_LIMITS.decidePerSession, bySession('approval-decide'))
-  ];
-  const readLimiters = [
-    limiter(APPROVAL_RATE_LIMITS.readPerIp, byIp('approval-read')),
-    limiter(APPROVAL_RATE_LIMITS.readPerSession, bySession('approval-read'))
-  ];
+  const rules = (first: LimitRule, second: LimitRule): preHandlerAsyncHookHandler[] => [limitBy(counter, [first, second])];
+  const exchangeLimiters = rules(
+    { window: APPROVAL_RATE_LIMITS.exchangePerIp, key: byIp('approval-exchange') },
+    { window: APPROVAL_RATE_LIMITS.exchangePerToken, key: byToken('approval-exchange') }
+  );
+  const decideLimiters = rules(
+    { window: APPROVAL_RATE_LIMITS.decidePerIp, key: byIp('approval-decide') },
+    { window: APPROVAL_RATE_LIMITS.decidePerSession, key: bySession('approval-decide') }
+  );
+  const readLimiters = rules(
+    { window: APPROVAL_RATE_LIMITS.readPerIp, key: byIp('approval-read') },
+    { window: APPROVAL_RATE_LIMITS.readPerSession, key: bySession('approval-read') }
+  );
 
   /** The session of the cookie, hashed. A request without a valid-looking cookie is the dead link and never reaches the database. */
   const sessionHashOf = (request: FastifyRequest): string => {

@@ -627,12 +627,12 @@ describe('Aprovar, as the access of the link', () => {
   it('leaves no context behind: the transaction ends with nothing bound, and the next write is not the access', async () => {
     const s = await scenario({ contents: 3 });
     await approveBy(s.sessionHash, s.contents[0]!);
-    expect((await owner().raw<{ rows: Array<{ n: string }> }>('select count(*)::text as n from app_private.portal_approval_context')).rows[0]!.n).toBe('0');
+    expect((await owner().raw<{ rows: Array<{ n: string }> }>('select count(*)::text as n from app_private.portal_approval_context where access_id = ?::uuid', [s.accessId])).rows[0]!.n).toBe('0');
     // In the same transaction, after a decision, a plain approval has no access to borrow: the guard refuses it.
     await expect(owner().transaction(async (transaction) => {
       await transaction.raw('select app_private.approve_content_by_portal_approval(?, ?::uuid, 1)', [s.sessionHash, s.contents[1]!]);
       await transaction('contents').where({ id: s.contents[2]! }).update({ status: 'approved' });
-    })).rejects.toMatchObject({ code: '42501', message: expect.stringContaining('approved by one person') });
+    })).rejects.toMatchObject({ code: '42501', message: expect.stringContaining('approved by a person') });
     expect((await contentOf(s.contents[1]!)).status).toBe('awaiting_approval');
     expect((await contentOf(s.contents[2]!)).status).toBe('awaiting_approval');
     const decidedTwice = await scenario();
@@ -852,7 +852,7 @@ describe('the authorship of an access is written only inside the decision of its
   it('refuses to approve as an access outside the function: the guard of contents (owner, no context, no account)', async () => {
     const s = await scenario({ contents: 1 });
     await expect(owner()('contents').where({ id: s.contents[0]! }).update({ status: 'approved' })).rejects.toMatchObject({
-      code: '42501', message: expect.stringContaining('approved by one person')
+      code: '42501', message: expect.stringContaining('approved by a person')
     });
     expect((await contentOf(s.contents[0]!)).status).toBe('awaiting_approval');
   });

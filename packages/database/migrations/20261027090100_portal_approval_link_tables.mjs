@@ -173,10 +173,15 @@ export async function up(knex) {
           new.approved_by := app_private.current_user_id();
           new.approved_by_portal_access_id := v_link_access;
           new.approved_at := pg_catalog.now();
-          if (new.approved_by is null) = (v_link_access is null) then
+          if new.approved_by is null and v_link_access is null then
             raise exception using
               errcode = '42501',
-              message = 'A content is approved by one person: an account, or the access of an approval link.';
+              message = 'A content is approved by a person.';
+          end if;
+          if new.approved_by is not null and v_link_access is not null then
+            raise exception using
+              errcode = '42501',
+              message = 'A content is approved by an account or by the access of an approval link, never by both.';
           end if;
         elsif new.status = 'approved' then
           if old.published_at is null or app_private.sao_paulo_date(old.published_at) <> v_today then
