@@ -1815,9 +1815,180 @@ a.client-general__block:focus-visible {
   overflow-y: auto;
 }
 
+/* DatePicker: the day typed as dd/mm/aaaa, or picked on a calendar with 44px cells. The card is placed on the screen by the
+   component (`--ui-date-top`, `--ui-date-left`), so no scrolling or clipping ancestor cuts it; it stays out of sight until it is. */
+.ui-date-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.ui-date-picker__field {
+  position: relative;
+  display: flex;
+}
+
+.ui-date-picker__input {
+  padding-right: var(--space-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-date-picker__toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ui-date-picker__toggle:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.ui-date-picker__toggle:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+.ui-date-picker__toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ui-date-picker__hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.ui-date-picker__panel {
+  position: fixed;
+  top: var(--ui-date-top, 0);
+  left: var(--ui-date-left, 0);
+  z-index: 30;
+  display: grid;
+  gap: var(--space-3);
+  width: min(21.5rem, calc(100vw - var(--space-8)));
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-floating);
+  color: var(--text-primary);
+  visibility: hidden;
+  animation: ui-float-in var(--motion-fast) var(--motion-easing-standard);
+}
+
+.ui-date-picker__panel[style] {
+  visibility: visible;
+}
+
+.ui-date-picker__panel:focus {
+  outline: none;
+}
+
+.ui-date-picker__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ui-date-picker__title {
+  margin: 0;
+  font: var(--heading-md);
+  text-align: center;
+}
+
+.ui-date-picker__grid {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 var(--space-1);
+  table-layout: fixed;
+}
+
+.ui-date-picker__grid th {
+  padding-bottom: var(--space-1);
+  color: var(--text-muted);
+  font: var(--label-sm);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ui-date-picker__grid abbr {
+  text-decoration: none;
+}
+
+.ui-date-picker__grid td {
+  padding: 0;
+}
+
+.ui-date-picker__day {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--body-md);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.ui-date-picker__day--outside {
+  color: var(--text-muted);
+}
+
+.ui-date-picker__day:hover:not(:disabled) {
+  border-color: var(--border-default);
+  background: var(--bg-hover);
+}
+
+.ui-date-picker__day:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* Today is the one filled index (indigo is the action, today and the viewer's turn); the chosen day is filled in ink, never in indigo. */
+.ui-date-picker__day[aria-current='date'] {
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+}
+
+.ui-date-picker__grid td[aria-selected='true'] .ui-date-picker__day {
+  border-color: var(--text-primary);
+  background: var(--text-primary);
+  color: var(--bg-surface);
+}
+
+.ui-date-picker__day:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.ui-date-picker__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ui-modal[open],
-  .ui-popover {
+  .ui-popover,
+  .ui-date-picker__panel {
     animation: none;
   }
 }
@@ -2266,7 +2437,8 @@ a.client-general__block:focus-visible {
 
 /*
  * Entrada (#629): sign-in, recovery, invitation and e-mail confirmation. One column with the logo on top and the
- * legal links at the bottom; a wide screen adds the example week beside it. Three text sizes on every screen:
+ * legal links at the bottom; a wide screen adds the brand panel (the friendly mascot, centred, on the brand tint) beside it,
+ * flush with the left edge, and centres the form in its column (#700). Three text sizes on every screen:
  * heading/xl, body/md and caption.
  */
 .auth {
@@ -2308,7 +2480,7 @@ a.client-general__block:focus-visible {
   color: var(--text-muted);
 }
 
-.auth__showcase {
+.auth__visual {
   display: none;
 }
 
@@ -2456,158 +2628,53 @@ a.client-general__block:focus-visible {
 
 @media (min-width: 64rem) {
   .auth {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
-  .auth__showcase {
+  /* The brand panel on the left, flush with the edges of the screen; the form column keeps the page background on the right. */
+  .auth__visual {
+    grid-column: 1;
+    grid-row: 1;
     display: flex;
     flex-direction: column;
+    align-items: center;
     justify-content: center;
     gap: var(--space-6);
     padding: var(--space-12);
-    background: var(--bg-surface);
-    border-left: 1px solid var(--border-default);
+    background: color-mix(in srgb, var(--action-primary-bg) 14%, var(--bg-surface));
+    text-align: center;
+  }
+
+  .auth__column {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  /* The form sits in the middle of its column, away from the edge and at a comfortable width. */
+  .auth__main {
+    align-items: center;
   }
 }
 
-.auth-showcase__title {
+.auth__visual .ui-mascot {
+  max-width: 100%;
+  height: auto;
+}
+
+.auth-visual__title {
   margin: 0;
   max-width: 16ch;
+  color: var(--text-primary);
   font: var(--heading-xl);
   letter-spacing: -0.02em;
   text-wrap: balance;
 }
 
-.auth-showcase__lead {
+.auth-visual__lead {
   margin: 0;
-  max-width: 46ch;
+  max-width: 36ch;
   color: var(--text-secondary);
   font: var(--body-md);
-}
-
-.auth-week {
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  background: var(--bg-canvas);
-  overflow: hidden;
-}
-
-.auth-week__head {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  color: var(--text-muted);
-  font: var(--caption);
-}
-
-.auth-week__head span:first-child {
-  color: var(--text-primary);
-}
-
-.auth-week__grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  border-top: 1px solid var(--border-default);
-}
-
-.auth-day {
-  display: grid;
-  align-content: start;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border-left: 1px solid var(--border-default);
-  min-width: 0;
-  font: var(--caption);
-}
-
-.auth-day:first-child {
-  border-left: 0;
-}
-
-.auth-day--today {
-  background: var(--calendar-today-bg);
-}
-
-.auth-day__label {
-  color: var(--text-muted);
-}
-
-/* Today is one of the three places the solid indigo is allowed (docs/design-system.md, Pauta). */
-.auth-day__today {
-  padding: 0 var(--space-1);
-  border-radius: var(--radius-sm);
-  background: var(--action-primary-bg);
-  color: var(--action-primary-fg);
-}
-
-.auth-day__note {
-  color: var(--text-secondary);
-}
-
-.auth-post {
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-}
-
-.auth-post--reels {
-  background: var(--format-reels-bg);
-  color: var(--format-reels-fg);
-}
-
-.auth-post--carousel {
-  background: var(--format-carousel-bg);
-  color: var(--format-carousel-fg);
-}
-
-.auth-post__tags {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.auth-tag {
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-sm);
-}
-
-.auth-tag--reels {
-  background: var(--format-reels-tag-bg);
-  color: var(--format-reels-tag-fg);
-}
-
-.auth-tag--carousel {
-  background: var(--format-carousel-tag-bg);
-  color: var(--format-carousel-tag-fg);
-}
-
-.auth-state {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-.auth-state__icon {
-  width: 0.75rem;
-  height: 0.75rem;
-}
-
-.auth-state__icon--late {
-  color: var(--status-late-fg);
-}
-
-.auth-state__icon--adjust {
-  color: var(--status-adjust-fg);
-}
-
-.auth-state__icon--waiting {
-  color: var(--status-waiting-fg);
 }
 
 .form-stack {
@@ -5469,9 +5536,7 @@ html:has(.portal-post__bar) {
 }
 
 .contents__actions,
-.contents__period,
-.contents__toggle,
-.contents__views {
+.contents__period {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -5480,21 +5545,6 @@ html:has(.portal-post__bar) {
 
 .contents__actions {
   gap: var(--space-3);
-}
-
-.contents__views,
-.contents__toggle {
-  gap: var(--space-1);
-  padding: var(--space-1);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--bg-canvas);
-}
-
-.contents__views .ui-button,
-.contents__toggle .ui-button {
-  min-height: 2.25rem;
-  border-radius: var(--radius-md);
 }
 
 /* The grid scrolls inside the panel: the track must be able to shrink below the grid's own width. */
@@ -5513,8 +5563,8 @@ html:has(.portal-post__bar) {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-4);
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-6) var(--space-4);
 }
 
 .contents__period {
@@ -5537,32 +5587,25 @@ html:has(.portal-post__bar) {
   color: var(--text-secondary);
 }
 
+/* The aside holds the phone and nothing else: the device is the frame, so the aside has none of its own. */
 .contents__feed {
   display: grid;
+  justify-items: center;
   align-content: start;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-canvas);
-  color: var(--text-secondary);
-}
-
-.contents__feed > .content-feed {
-  overflow: hidden;
-  padding-bottom: var(--space-3);
-  border-radius: var(--radius-lg);
-  background: var(--bg-surface);
-}
-
-.contents__feed p {
-  margin: 0;
+  min-width: 0;
 }
 
 @media (min-width: 64rem) {
   .contents__workspace {
-    grid-template-columns: minmax(0, 1fr) 18.75rem;
+    grid-template-columns: minmax(0, 1fr) 22rem;
+    gap: var(--space-8);
     align-items: start;
+  }
+
+  /* The phone stays in view while the month scrolls, like the screen of a device held beside the calendar. */
+  .contents__feed {
+    position: sticky;
+    top: var(--space-6);
   }
 }
 
@@ -5592,7 +5635,7 @@ html:has(.portal-post__bar) {
 }
 
 .content-calendar__weekdays li {
-  padding: var(--space-2);
+  padding: var(--space-3) var(--space-4);
 }
 
 /* `minmax(0, 1fr)` lets a card shrink to the day: tags that do not fit wrap inside it instead of widening the column. */
@@ -5601,10 +5644,10 @@ html:has(.portal-post__bar) {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-content: start;
-  gap: var(--space-2);
+  gap: var(--space-3);
   min-width: 0;
-  min-height: 8.25rem;
-  padding: var(--space-2) var(--space-1);
+  min-height: 10rem;
+  padding: var(--space-3) var(--space-2);
   border-top: 1px solid var(--border-subtle);
   border-right: 1px solid var(--border-subtle);
   background: transparent;
@@ -5615,7 +5658,7 @@ html:has(.portal-post__bar) {
 }
 
 .content-calendar[data-view='week'] .content-day {
-  min-height: 16rem;
+  min-height: 18rem;
 }
 
 .content-day--outside {
@@ -5629,7 +5672,7 @@ html:has(.portal-post__bar) {
 
 .content-day__number {
   margin: 0;
-  padding: 0 var(--space-1);
+  padding: 0 var(--space-2);
   font: var(--label-md);
   font-variant-numeric: tabular-nums;
 }
@@ -5664,7 +5707,7 @@ html:has(.portal-post__bar) {
 .content-day__items {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-2);
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -5674,7 +5717,7 @@ html:has(.portal-post__bar) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
 }
 
 /* The "+" is one small control in the corner of the day: seen on hover or focus, always where there is no hover. */
@@ -5684,10 +5727,10 @@ html:has(.portal-post__bar) {
 
 .content-day__tools .ui-menu__trigger {
   position: absolute;
-  top: var(--space-1);
-  right: var(--space-1);
-  min-width: 1.5rem;
-  min-height: 1.5rem;
+  top: var(--space-2);
+  right: var(--space-2);
+  min-width: 2rem;
+  min-height: 2rem;
   padding: 0;
   border: 0;
   background: transparent;
@@ -5715,7 +5758,7 @@ html:has(.portal-post__bar) {
 }
 
 .content-day__tools .ui-menu__content {
-  top: 2rem;
+  top: 2.5rem;
   right: auto;
   left: var(--space-2);
   min-width: 11rem;
@@ -5727,27 +5770,30 @@ html:has(.portal-post__bar) {
   left: auto;
 }
 
+/* The story script of a day is a row of its own, the width of the day and 44px tall: a capsule of 20px was a target nobody could press. */
 .content-day__scripts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
+  display: grid;
+  flex: 1 1 100%;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .content-day__script {
-  display: inline-flex;
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1);
-  max-width: 100%;
-  padding: 0 var(--space-2);
+  gap: var(--space-1) var(--space-2);
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   background: var(--bg-canvas);
   color: var(--text-secondary);
-  font: var(--caption);
+  font: var(--label-sm);
   text-align: left;
   cursor: pointer;
 }
@@ -5917,7 +5963,7 @@ html:has(.portal-post__bar) {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
-  padding: var(--space-2);
+  padding: var(--space-3) var(--space-2);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
@@ -6082,11 +6128,6 @@ html:has(.portal-post__bar) {
   aspect-ratio: 1;
   overflow: hidden;
   background: var(--bg-hover);
-}
-
-.content-feed__tile--empty {
-  border: 1px dashed var(--border-default);
-  background: var(--bg-surface);
 }
 
 .content-feed__cover {
@@ -6287,6 +6328,109 @@ html:has(.portal-post__bar) {
   margin: 0;
   color: var(--text-secondary);
   text-align: center;
+}
+
+/* The phone the agency's feed is drawn on: an ink bezel, the camera island and the home bar around a screen with room.
+   Everything here is scoped to the phone: the portal draws its own feed with the same tile classes. */
+.content-phone {
+  width: min(100%, 22rem);
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: calc(var(--radius-xl) * 2);
+  background: var(--color-ink-900);
+}
+
+.content-phone__screen {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  min-height: 42rem;
+  padding: var(--space-12) var(--space-4) var(--space-8);
+  border-radius: calc(var(--radius-xl) * 2 - var(--space-2));
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.content-phone__island {
+  position: absolute;
+  top: var(--space-3);
+  left: 50%;
+  width: 5.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-full);
+  background: var(--color-ink-900);
+  transform: translateX(-50%);
+}
+
+.content-phone__home {
+  position: absolute;
+  bottom: var(--space-3);
+  left: 50%;
+  width: 7rem;
+  height: 0.25rem;
+  border-radius: var(--radius-full);
+  background: var(--border-control);
+  transform: translateX(-50%);
+}
+
+.content-phone .content-feed {
+  gap: var(--space-4);
+}
+
+.content-phone .content-feed__handle {
+  padding: 0;
+  font: var(--label-md);
+}
+
+.content-phone .content-feed__profile {
+  gap: var(--space-4);
+  padding: 0;
+}
+
+.content-phone .content-feed__grid {
+  gap: var(--space-1);
+}
+
+.content-phone .content-feed__tile,
+.content-feed__slot {
+  border-radius: var(--radius-sm);
+}
+
+/* A slot with nothing in it keeps the grid whole: a dashed frame and the icon that says there is nothing on that day. */
+.content-feed__slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  border: 1px dashed var(--border-default);
+  background: var(--bg-canvas);
+  color: var(--text-muted);
+}
+
+.content-feed__slot svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  stroke-width: 1.75;
+}
+
+.content-feed__pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.content-feed__range {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.content-feed__pager .ui-button[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .content-folders,

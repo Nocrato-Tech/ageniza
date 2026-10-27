@@ -179,7 +179,7 @@
           },
           "password": {
             "type": "string",
-            "minLength": 10,
+            "minLength": 1,
             "maxLength": 128
           },
           "inviteToken": {
@@ -267,48 +267,6 @@
         ],
         "additionalProperties": false
       },
-      "postAuthPasswordResetResponse": {
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "signedIn": {
-                "type": "boolean",
-                "enum": [
-                  true
-                ]
-              }
-            },
-            "required": [
-              "signedIn"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "signedIn": {
-                "type": "boolean",
-                "enum": [
-                  false
-                ]
-              },
-              "reason": {
-                "type": "string",
-                "enum": [
-                  "NO_CONTEXT_ACCESS",
-                  "SIGN_IN_REQUIRED"
-                ]
-              }
-            },
-            "required": [
-              "signedIn",
-              "reason"
-            ],
-            "additionalProperties": false
-          }
-        ]
-      },
       "postAuthPasswordResetRequest": {
         "type": "object",
         "properties": {
@@ -321,11 +279,6 @@
             "type": "string",
             "minLength": 10,
             "maxLength": 128
-          },
-          "inviteToken": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 2048
           }
         },
         "required": [
@@ -6659,8 +6612,8 @@
     "/auth/password/reset": {
       "post": {
         "operationId": "postAuthPasswordReset",
-        "summary": "Redefine a senha e tenta autenticar de volta",
-        "description": "A senha é sempre trocada e todas as sessões antigas encerradas. Com contexto confirmado,\na resposta é `signedIn: true`; com zero contextos confirmados, `signedIn: false` e\n`reason: NO_CONTEXT_ACCESS`; se a sessão não puder ser criada por outro motivo,\n`signedIn: false` e `reason: SIGN_IN_REQUIRED`.\n\nAcesso: Público.",
+        "summary": "Redefine a senha",
+        "description": "Troca a senha e encerra todas as sessões da conta. Não cria sessão: a pessoa entra de novo com a senha nova.\n\nAcesso: Público.",
         "tags": [
           "auth"
         ],
@@ -6680,18 +6633,8 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Senha redefinida; a sessão depende do resultado.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/postAuthPasswordResetResponse"
-                },
-                "example": {
-                  "signedIn": true
-                }
-              }
-            }
+          "204": {
+            "description": "Senha redefinida; nenhuma sessão é criada."
           },
           "400": {
             "description": "INVALID_LINK: Este link não é mais válido. | VALIDATION_ERROR: Request validation failed",

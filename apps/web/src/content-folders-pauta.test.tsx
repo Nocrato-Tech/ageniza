@@ -137,7 +137,7 @@ describe('the Pastas view in the Pauta: one place to act in each state', () => {
     const empty = (await screen.findByText('Pasta não encontrada.')).closest('.ui-empty-state') as HTMLElement;
 
     const back = within(empty).getByRole('link', { name: 'Voltar às pastas' });
-    expect(back.getAttribute('href')).toMatch(/\?vista=pastas$/);
+    expect(back.getAttribute('href')).toMatch(/\/clientes\/[^/]+\/midias$/);
     expect(empty.querySelector('h3')?.textContent).toBe('Pasta não encontrada.');
     expect(back.classList.contains('ui-button')).toBe(true);
     expect(back.closest('.ui-empty-state__action')).not.toBeNull();

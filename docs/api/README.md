@@ -86,7 +86,7 @@ Verifica se a API está pronta para receber tráfego.
 | `GET` | `/auth/session` | Sessão | — | Devolve a sessão e a pessoa autenticada |
 | `GET` | `/auth/session/check` | Sessão | — | Confere se a sessão continua válida, sem renová-la |
 | `POST` | `/auth/password/forgot` | Público | — | Pede o link de recuperação de senha |
-| `POST` | `/auth/password/reset` | Público | — | Redefine a senha e tenta autenticar de volta |
+| `POST` | `/auth/password/reset` | Público | — | Redefine a senha |
 
 #### `POST /auth/login`
 
@@ -213,7 +213,7 @@ Pede o link de recuperação de senha.
 
 #### `POST /auth/password/reset`
 
-Redefine a senha e tenta autenticar de volta.
+Redefine a senha.
 
 - Acesso: Público.
 - Permissão: —.
@@ -227,13 +227,7 @@ Redefine a senha e tenta autenticar de volta.
 }
 ```
 
-**Resposta `200`** — Senha redefinida; a sessão depende do resultado.
-
-```json
-{
-  "signedIn": true
-}
-```
+**Resposta `204`** — Senha redefinida; nenhuma sessão é criada.
 
 **Erros:** `400 INVALID_LINK` · `400 VALIDATION_ERROR` · `403 CSRF_REJECTED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 

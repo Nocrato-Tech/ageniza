@@ -296,7 +296,7 @@ function LocationProbe({ probe }: { probe: Probe }) {
   return null;
 }
 
-export const foldersUrl = (search = ''): string => `/agencia/${AGENCY_A}/conteudos/${padaria.id}?vista=pastas${search}`;
+export const foldersUrl = (search = ''): string => `/agencia/${AGENCY_A}/clientes/${padaria.id}/midias${search === '' ? '' : `?${search.replace(/^[?&]/, '')}`}`;
 
 export const renderFolders = (impl: typeof fetch, entry: string | { pathname: string; search: string; state: unknown } = foldersUrl()): RenderResult & { probe: Probe } => {
   const sessionEnd = createSessionEndSignal();

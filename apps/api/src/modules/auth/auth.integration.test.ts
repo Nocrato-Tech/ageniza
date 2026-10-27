@@ -151,6 +151,32 @@ describe('POST /auth/login (#1, #2, #3)', () => {
     expect(wrongPassword.json()).toMatchObject({ error: { code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas.' } });
   });
 
+  it('#700 answers a wrong password shorter than 10 characters with the same 401 INVALID_CREDENTIALS, not a 400 (the 10-character rule is for creating a password)', async () => {
+    const app = await openApp();
+    const user = await makeUser(app, 'login-short-wrong-password');
+    const sharedRequestId = 'auth-test-700-shared-request-id';
+
+    const shortWrong = await app.app.inject({
+      method: 'POST', url: '/auth/login', headers: { ...origin, 'x-request-id': sharedRequestId },
+      payload: { email: user.email, password: 'curta' }
+    });
+    const longWrong = await app.app.inject({
+      method: 'POST', url: '/auth/login', headers: { ...origin, 'x-request-id': sharedRequestId },
+      payload: { email: user.email, password: 'definitely the wrong password' }
+    });
+    const empty = await app.app.inject({
+      method: 'POST', url: '/auth/login', headers: origin,
+      payload: { email: user.email, password: '' }
+    });
+
+    expect(shortWrong.statusCode).toBe(401);
+    expect(shortWrong.json()).toMatchObject({ error: { code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas.' } });
+    expect(shortWrong.body).toBe(longWrong.body);
+    expect(shortWrong.cookies).toHaveLength(0);
+    // An empty password is still not a credential: the contract refuses it before the server checks anything.
+    expect(empty.statusCode).toBe(400);
+  });
+
   it('#3 finds the user when the login email has uppercase letters and surrounding spaces', async () => {
     const app = await openApp();
     const user = await makeUser(app, 'login-normalize');
@@ -851,13 +877,15 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
     return decodeURIComponent(match[1]);
   };
 
-  it('#9 resets the password with a valid token, revokes all (multiple) prior sessions, signs the account back in, and audits auth.password_reset', async () => {
+  it('#9 resets the password with a valid token, revokes all (multiple) prior sessions, creates no session, and audits auth.password_reset', async () => {
     const sender = createFakeEmailSender();
     const app = await openApp({ sender });
     const user = await makeUser(app, 'reset-ok');
+    const bystander = await makeUser(app, 'reset-bystander');
+    const bystanderLogin = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(bystander) });
+    const bystanderCookie = sessionCookieHeader(bystanderLogin.cookies);
 
-    // More than one prior session (security review of PR #176: #9 previously only ever had one),
-    // as if the same person were logged in on two devices.
+    // More than one prior session, as if the same person were logged in on two devices.
     const firstLogin = await app.app.inject({
       method: 'POST', url: '/auth/login', headers: { ...origin, 'user-agent': 'device-a' }, payload: loginPayload(user)
     });
@@ -875,26 +903,29 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
       method: 'POST', url: '/auth/password/reset', headers: origin,
       payload: { token, newPassword }
     });
-    // Issue #175: a reset with at least one context always authenticates, not just the
-    // invite-continuation branch — a new, valid, cookied session, same mechanism as login.
-    expect(reset.statusCode).toBe(200);
-    expect(reset.json()).toEqual({ signedIn: true });
-    expect(reset.cookies.length).toBeGreaterThan(0);
+    // 2026-10-16: the reset only changes the password; it never signs the person in.
+    expect(reset.statusCode).toBe(204);
+    expect(reset.body).toBe('');
+    expect(reset.cookies).toEqual([]);
+    expect(reset.headers['set-cookie']).toBeUndefined();
 
     const oldSessionCheckA = await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie: firstCookie } });
     const oldSessionCheckB = await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie: secondCookie } });
     expect(oldSessionCheckA.statusCode).toBe(401);
     expect(oldSessionCheckB.statusCode).toBe(401);
 
-    const newSessionCheck = await app.app.inject({
-      method: 'GET', url: '/auth/session', headers: { cookie: sessionCookieHeader(reset.cookies) }
-    });
-    expect(newSessionCheck.statusCode).toBe(200);
-
-    // Exactly one session survives: the one the reset just created.
+    // No session survives: not the old ones, and the reset did not create a new one.
     const sessionRowsAfter = await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id]);
-    expect(sessionRowsAfter.rowCount).toBe(1);
+    expect(sessionRowsAfter.rowCount).toBe(0);
 
+    // Only the account that reset loses its sessions.
+    const bystanderCheck = await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie: bystanderCookie } });
+    expect(bystanderCheck.statusCode).toBe(200);
+
+    const loginWithOldPassword = await app.app.inject({
+      method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user)
+    });
+    expect(loginWithOldPassword.statusCode).toBe(401);
     const loginWithNewPassword = await app.app.inject({
       method: 'POST', url: '/auth/login', headers: origin, payload: { email: user.email, password: newPassword }
     });
@@ -907,7 +938,7 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
     expect(auditRows.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('#423 a reset that signs the person back in answers Cache-Control: no-store, as it issues the session cookie', async () => {
+  it('#423 a reset answers Cache-Control: no-store, as it carries the reset token and the new password', async () => {
     const sender = createFakeEmailSender();
     const app = await openApp({ sender });
     const user = await makeUser(app, 'reset-no-store');
@@ -918,8 +949,7 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
       payload: { token, newPassword: 'a brand new correct horse battery staple' }
     });
 
-    expect(reset.statusCode).toBe(200);
-    expect(reset.cookies.length).toBeGreaterThan(0);
+    expect(reset.statusCode).toBe(204);
     expect(reset.headers['cache-control']).toBe('no-store');
   });
 
@@ -936,15 +966,15 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
       payload: { token, newPassword }
     });
 
-    expect(reset.statusCode).toBe(200);
-    expect(reset.json()).toEqual({ signedIn: false, reason: 'NO_CONTEXT_ACCESS' });
+    // The reset answers the same whether or not the account has a context.
+    expect(reset.statusCode).toBe(204);
+    expect(reset.body).toBe('');
     expect(reset.cookies.length).toBe(0);
 
     const sessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id]);
     expect(sessionRows.rowCount).toBe(0);
 
-    // The password change itself is still audited even though no session was created (security
-    // review of PR #176, aceite: "senha trocada" — the audit trail must reflect that it happened).
+    // The password change itself is audited even though no session was created.
     const auditRows = await queryAsOwner<{ action: string }>(
       "select action from audit.events where action = 'auth.password_reset' and actor_user_id = $1",
       [user.id]
@@ -958,54 +988,92 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
     expect(loginWithNewPassword.json()).toMatchObject({ error: { code: 'NO_CONTEXT_ACCESS' } });
   });
 
-  it('signs in with at least one context, but responds SIGN_IN_REQUIRED (never NO_CONTEXT_ACCESS) when the post-reset sign-in itself fails', async () => {
-    // 2026-09-29 security review of PR #176, achado 1: with contexts, a `signInEmail` failure must
-    // never be mislabeled as "no access" — that code is reserved for a *confirmed* zero count.
+  it('never signs in nor counts contexts, so neither a sign-in failure nor a count failure changes the answer', async () => {
     const sender = createFakeEmailSender();
-    const app = await openApp({ sender });
-    const user = await makeUser(app, 'reset-sign-in-fails');
+    const countValidContexts = vi.fn(async (): Promise<number> => { throw new Error('simulated context count failure'); });
+    const app = await openApp({ sender, countValidContexts });
+    const user = await makeUser(app, 'reset-no-sign-in');
+    const signInSpy = vi.spyOn(app.auth.api, 'signInEmail').mockRejectedValue(new Error('simulated sign-in failure'));
 
-    const token = await requestResetToken(app, sender, user.email);
-    const signInSpy = vi.spyOn(app.auth.api, 'signInEmail').mockRejectedValueOnce(new Error('simulated sign-in failure'));
+    try {
+      const token = await requestResetToken(app, sender, user.email);
+      const reset = await app.app.inject({
+        method: 'POST', url: '/auth/password/reset', headers: origin,
+        payload: { token, newPassword: 'a password nobody gets signed in with' }
+      });
 
-    const reset = await app.app.inject({
-      method: 'POST', url: '/auth/password/reset', headers: origin,
-      payload: { token, newPassword: 'a password nobody gets signed in with' }
-    });
-
-    expect(reset.statusCode).toBe(200);
-    expect(reset.json()).toEqual({ signedIn: false, reason: 'SIGN_IN_REQUIRED' });
-    expect(reset.cookies.length).toBe(0);
-    signInSpy.mockRestore();
-
-    // The password did change, and the account still has its context: an ordinary login with the
-    // new password (no more failure injected) succeeds.
-    const loginWithNewPassword = await app.app.inject({
-      method: 'POST', url: '/auth/login', headers: origin,
-      payload: { email: user.email, password: 'a password nobody gets signed in with' }
-    });
-    expect(loginWithNewPassword.statusCode).toBe(200);
-  });
-
-  it('responds SIGN_IN_REQUIRED, and creates no session, when counting contexts after a successful reset fails', async () => {
-    // 2026-09-29 security review of PR #176, achado 2: counting before signing in means a count
-    // failure never leaves an orphaned session -- there is none to leave, because none was created.
-    const sender = createFakeEmailSender();
-    const app = await openApp({ sender, countValidContexts: async () => { throw new Error('simulated context count failure'); } });
-    const user = await makeUser(app, 'reset-context-count-fails');
-
-    const token = await requestResetToken(app, sender, user.email);
-    const reset = await app.app.inject({
-      method: 'POST', url: '/auth/password/reset', headers: origin,
-      payload: { token, newPassword: 'a password with an uncountable context' }
-    });
-
-    expect(reset.statusCode).toBe(200);
-    expect(reset.json()).toEqual({ signedIn: false, reason: 'SIGN_IN_REQUIRED' });
-    expect(reset.cookies.length).toBe(0);
+      expect(reset.statusCode).toBe(204);
+      expect(reset.cookies.length).toBe(0);
+      expect(signInSpy).not.toHaveBeenCalled();
+      expect(countValidContexts).not.toHaveBeenCalled();
+    } finally {
+      signInSpy.mockRestore();
+    }
 
     const sessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id]);
     expect(sessionRows.rowCount).toBe(0);
+  });
+
+  it('B10 an unexpected failure part-way through a reset still revokes every session of the account, and tells the client nothing', async () => {
+    const sender = createFakeEmailSender();
+    const app = await openApp({ sender });
+    const user = await makeUser(app, 'reset-b10');
+    const bystander = await makeUser(app, 'reset-b10-bystander');
+    const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
+    const secondLogin = await app.app.inject({
+      method: 'POST', url: '/auth/login', headers: { ...origin, 'user-agent': 'device-b' }, payload: loginPayload(user)
+    });
+    const bystanderLogin = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(bystander) });
+    expect((await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id])).rowCount).toBe(2);
+    const token = await requestResetToken(app, sender, user.email);
+    const resetSpy = vi.spyOn(app.auth.api, 'resetPassword').mockRejectedValueOnce(new Error('simulated mid-way failure'));
+
+    try {
+      const reset = await app.app.inject({
+        method: 'POST', url: '/auth/password/reset', headers: origin,
+        payload: { token, newPassword: 'a password that may or may not be saved' }
+      });
+
+      expect(resetSpy).toHaveBeenCalledTimes(1);
+      expect(reset.statusCode).toBe(500);
+      expect(reset.json()).toMatchObject({ error: { code: 'INTERNAL_ERROR' } });
+      expect(reset.body).not.toContain('simulated mid-way failure');
+      expect(reset.headers['set-cookie']).toBeUndefined();
+    } finally {
+      resetSpy.mockRestore();
+    }
+
+    for (const cookies of [login.cookies, secondLogin.cookies]) {
+      const check = await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie: sessionCookieHeader(cookies) } });
+      expect(check.statusCode).toBe(401);
+    }
+    expect((await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id])).rowCount).toBe(0);
+    const bystanderCheck = await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie: sessionCookieHeader(bystanderLogin.cookies) } });
+    expect(bystanderCheck.statusCode).toBe(200);
+  });
+
+  it('refuses an inviteToken in the body: the invitation continues through the login, and nothing changes', async () => {
+    const sender = createFakeEmailSender();
+    const app = await openApp({ sender });
+    const user = await makeUser(app, 'reset-invite-in-body');
+    const token = await requestResetToken(app, sender, user.email);
+
+    const refused = await app.app.inject({
+      method: 'POST', url: '/auth/password/reset', headers: origin,
+      payload: { token, newPassword: 'a password the strict body must refuse', inviteToken: 'invite-token' }
+    });
+
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+    // The refusal came before the token was used: the old password still logs in, and the same
+    // link still resets.
+    const stillOldPassword = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
+    expect(stillOldPassword.statusCode).toBe(200);
+    const reset = await app.app.inject({
+      method: 'POST', url: '/auth/password/reset', headers: origin,
+      payload: { token, newPassword: 'a password the strict body must refuse' }
+    });
+    expect(reset.statusCode).toBe(204);
   });
 
   it('#10 a reused token and an expired token both return 400 INVALID_LINK', async () => {
@@ -1031,19 +1099,16 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
       method: 'POST', url: '/auth/password/reset', headers: origin,
       payload: { token: reusedToken, newPassword: 'first use new password value' }
     });
-    expect(firstUse.statusCode).toBe(200);
-    expect(firstUse.json()).toEqual({ signedIn: true });
+    expect(firstUse.statusCode).toBe(204);
     const secondUse = await app.app.inject({
       method: 'POST', url: '/auth/password/reset', headers: origin,
       payload: { token: reusedToken, newPassword: 'second use new password value' }
     });
     expect(secondUse.statusCode).toBe(400);
     expect(secondUse.json()).toMatchObject({ error: { code: 'INVALID_LINK', message: 'Este link não é mais válido.' } });
-    // Aceite (issue #175): an invalid/expired token gets "the same generic response as today, no
-    // session" -- checked explicitly, not just the status code.
     expect(secondUse.cookies.length).toBe(0);
     const reusedSessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [reusedUser.id]);
-    expect(reusedSessionRows.rowCount).toBe(1); // only the one session the first (successful) use created
+    expect(reusedSessionRows.rowCount).toBe(0);
 
     const expiredUser = await makeUser(app, 'reset-expired');
     const expiredToken = await requestResetToken(app, sender, expiredUser.email);

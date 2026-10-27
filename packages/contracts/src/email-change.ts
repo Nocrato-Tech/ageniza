@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { AuthEmailSchema } from './auth.js';
+import { AuthEmailSchema, AuthLoginPasswordSchema } from './auth.js';
 
 /**
  * `POST /me/email-change` body: the address the person wants and the current password, which is
@@ -10,7 +10,7 @@ import { AuthEmailSchema } from './auth.js';
  */
 export const EmailChangeRequestSchema = z.object({
   newEmail: AuthEmailSchema,
-  currentPassword: z.string().min(1).max(128)
+  currentPassword: AuthLoginPasswordSchema
 }).strict();
 
 /** Empty on purpose: the answer is the same whether or not another account uses the address. */

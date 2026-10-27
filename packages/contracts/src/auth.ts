@@ -10,14 +10,18 @@ export const AuthUserSchema = z.object({
   email: AuthEmailSchema
 }).strict();
 
+/** A password being created (invitation, reset): the 10-character rule lives here, not on sign-in. */
 export const AuthPasswordSchema = z.string().min(10).max(128);
+
+/** A password being presented at sign-in: any non-empty value reaches the server, which answers 401 for a wrong one. */
+export const AuthLoginPasswordSchema = z.string().min(1).max(128);
 
 /** Optional invitation continuation; the token is opaque and is never echoed in a response. */
 export const AuthInvitationTokenSchema = z.string().min(1).max(2_048);
 
 export const AuthLoginRequestSchema = z.object({
   email: AuthEmailSchema,
-  password: AuthPasswordSchema,
+  password: AuthLoginPasswordSchema,
   inviteToken: AuthInvitationTokenSchema.optional()
 }).strict();
 
@@ -45,33 +49,11 @@ export const AuthPasswordForgotResponseSchema = z.object({}).strict();
 
 export const AuthPasswordResetRequestSchema = z.object({
   token: z.string().min(1).max(2_048),
-  newPassword: AuthPasswordSchema,
-  inviteToken: AuthInvitationTokenSchema.optional()
+  newPassword: AuthPasswordSchema
 }).strict();
 
-/**
- * A reset always authenticates (issue #175, 2026-09-29 decision "O reset de senha sempre
- * autentica, exceto sem nenhum contexto"), with two distinct `signedIn: false` reasons — the
- * 2026-09-29 security review of PR #176 found that collapsing every no-session outcome into
- * `NO_CONTEXT_ACCESS` misidentified a real access problem for an account that actually has
- * contexts, whenever the post-reset sign-in itself failed for an unrelated reason (a transient
- * error, or two valid reset tokens for the same account racing each other):
- *
- * - `NO_CONTEXT_ACCESS` — the account was confirmed to have **zero** contexts (and no valid
- *   `inviteToken` continuation). The password changed; there is deliberately nothing to sign into.
- * - `SIGN_IN_REQUIRED` — the account's context count was never confirmed to be zero (it either has
- *   contexts, or that could not be determined) but the server could not create a session anyway.
- *   The password still changed; the client should route to `/entrar` instead of `/sem-acesso`.
- */
-export const AuthPasswordResetSignedInResponseSchema = z.object({ signedIn: z.literal(true) }).strict();
-export const AuthPasswordResetNoSessionResponseSchema = z.object({
-  signedIn: z.literal(false),
-  reason: z.enum(['NO_CONTEXT_ACCESS', 'SIGN_IN_REQUIRED'])
-}).strict();
-export const AuthPasswordResetResponseSchema = z.discriminatedUnion('signedIn', [
-  AuthPasswordResetSignedInResponseSchema,
-  AuthPasswordResetNoSessionResponseSchema
-]);
+/** A reset only changes the password and ends every session: the person signs in again (2026-10-16). */
+export const AuthPasswordResetResponseSchema = AuthNoContentResponseSchema;
 
 // Endpoint-local aliases keep route code concise while the Auth-prefixed names
 // remain unambiguous for consumers importing the package root.
@@ -104,8 +86,6 @@ export type AuthPasswordForgotRequest = z.infer<typeof AuthPasswordForgotRequest
 export type AuthPasswordForgotResponse = z.infer<typeof AuthPasswordForgotResponseSchema>;
 export type AuthPasswordResetRequest = z.infer<typeof AuthPasswordResetRequestSchema>;
 export type AuthPasswordResetResponse = z.infer<typeof AuthPasswordResetResponseSchema>;
-export type AuthPasswordResetSignedInResponse = z.infer<typeof AuthPasswordResetSignedInResponseSchema>;
-export type AuthPasswordResetNoSessionResponse = z.infer<typeof AuthPasswordResetNoSessionResponseSchema>;
 export type LoginRequest = AuthLoginRequest;
 export type LoginResponse = AuthLoginResponse;
 export type LogoutRequest = AuthLogoutRequest;

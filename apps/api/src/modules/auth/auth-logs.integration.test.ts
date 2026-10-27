@@ -54,7 +54,7 @@ const assertNoSecretsLogged = (logText: string, secrets: { readonly password: st
 };
 
 /** A `collaborator_invite` addressed to `email`, same shape as `auth.integration.test.ts`'s own
- * helper -- needed here to exercise the `password/reset` `inviteToken` continuation branch. */
+ * helper -- needed here to exercise the login that continues an invitation after a reset. */
 const insertCollaboratorInvitation = async (input: { readonly agencyId: string; readonly email: string }): Promise<{ readonly token: string }> => {
   const roleRows = await queryAsOwner<{ id: string }>("select id from public.roles where key = 'production' and agency_id is null limit 1");
   const roleId = roleRows[0]?.id;
@@ -127,13 +127,12 @@ describe('auth logging never leaks secrets (#15)', () => {
       method: 'POST', url: '/auth/password/reset', headers: origin,
       payload: { token: token as string, newPassword }
     });
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ signedIn: true });
+    expect(response.statusCode).toBe(204);
 
     assertNoSecretsLogged(text(), { password: newPassword, email: user.email, token });
   });
 
-  it('#15 password/reset with zero contexts (signedIn:false, NO_CONTEXT_ACCESS) never logs the token, the new password, or the email', async () => {
+  it('#15 password/reset with zero contexts never logs the token, the new password, or the email', async () => {
     const sender = createFakeEmailSender();
     const bootstrapApp = await buildTestApp({ sender });
     openApps.push(bootstrapApp);
@@ -156,13 +155,12 @@ describe('auth logging never leaks secrets (#15)', () => {
       method: 'POST', url: '/auth/password/reset', headers: origin,
       payload: { token: token as string, newPassword }
     });
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ signedIn: false, reason: 'NO_CONTEXT_ACCESS' });
+    expect(response.statusCode).toBe(204);
 
     assertNoSecretsLogged(text(), { password: newPassword, email: user.email, token });
   });
 
-  it('#15 password/reset with a valid inviteToken continuation never logs the token, the inviteToken, the new password, or the email', async () => {
+  it('#15 password/reset followed by the login that continues an invitation never logs the tokens, the new password, or the email', async () => {
     const sender = createFakeEmailSender();
     const bootstrapApp = await buildTestApp({ sender });
     openApps.push(bootstrapApp);
@@ -190,10 +188,14 @@ describe('auth logging never leaks secrets (#15)', () => {
 
     const response = await app.app.inject({
       method: 'POST', url: '/auth/password/reset', headers: origin,
-      payload: { token: resetToken as string, newPassword, inviteToken }
+      payload: { token: resetToken as string, newPassword }
     });
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ signedIn: true });
+    expect(response.statusCode).toBe(204);
+    const login = await app.app.inject({
+      method: 'POST', url: '/auth/login', headers: origin,
+      payload: { email: invitee.email, password: newPassword, inviteToken }
+    });
+    expect(login.statusCode).toBe(200);
 
     assertNoSecretsLogged(text(), { password: newPassword, email: invitee.email, token: resetToken, inviteToken });
   });

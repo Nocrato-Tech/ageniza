@@ -11,7 +11,7 @@ import {
   type UpdateContentRequest,
   type UpdateContentTaskRequest
 } from '@ageniza/contracts';
-import { Button, FieldMessage, Select, Skeleton, Textarea, TextInput } from '@ageniza/ui';
+import { Button, DatePicker, FieldMessage, Select, Skeleton, Textarea, TextInput } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -298,13 +298,13 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
                 {form.errors.assigneeMembershipId !== undefined && <FieldMessage role="alert">{form.errors.assigneeMembershipId}</FieldMessage>}
                 <div className="form-field">
                   <label htmlFor={`${ids}-edit-due-${task.id}`}>Prazo de “{task.title}”</label>
-                  <TextInput
+                  <DatePicker
                     id={`${ids}-edit-due-${task.id}`}
-                    type="date"
+                    today={todayInSaoPaulo()}
                     value={form.values.dueOn}
                     disabled={busy}
-                    onChange={(event) => changeEdit({ dueOn: event.target.value }, 'dueOn')}
-                    aria-invalid={form.errors.dueOn !== undefined}
+                    onChange={(day) => changeEdit({ dueOn: day }, 'dueOn')}
+                    aria-invalid={form.errors.dueOn === undefined ? undefined : true}
                   />
                   {form.errors.dueOn !== undefined && <FieldMessage role="alert">{form.errors.dueOn}</FieldMessage>}
                 </div>
@@ -367,13 +367,13 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
               {draftErrors.assigneeMembershipId !== undefined && <FieldMessage role="alert">{draftErrors.assigneeMembershipId}</FieldMessage>}
               <div className="form-field">
                 <label htmlFor={`${ids}-due`}>Prazo da subtarefa</label>
-                <TextInput
+                <DatePicker
                   id={`${ids}-due`}
-                  type="date"
+                  today={todayInSaoPaulo()}
                   value={draft.dueOn}
                   disabled={busy}
-                  onChange={(event) => edit({ dueOn: event.target.value }, 'dueOn')}
-                  aria-invalid={draftErrors.dueOn !== undefined}
+                  onChange={(day) => edit({ dueOn: day }, 'dueOn')}
+                  aria-invalid={draftErrors.dueOn === undefined ? undefined : true}
                 />
                 {draftErrors.dueOn !== undefined && <FieldMessage role="alert">{draftErrors.dueOn}</FieldMessage>}
               </div>

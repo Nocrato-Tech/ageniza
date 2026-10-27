@@ -11,7 +11,7 @@ import {
   type CreateContentRequest,
   type UpdateContentRequest
 } from '@ageniza/contracts';
-import { Button, Dialog, Field, FieldMessage, FormatTag, Select, Skeleton, StatusTag, Tabs, Textarea, TextInput } from '@ageniza/ui';
+import { Button, DatePicker, Dialog, Field, FieldMessage, FormatTag, Select, Skeleton, StatusTag, Tabs, Textarea, TextInput } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -200,7 +200,26 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
     conversation.current?.focus({ preventScroll: true });
   };
 
-  const textField = (field: 'title' | 'publishOn' | 'publishAtTime', label: string, type?: 'date' | 'time') => {
+  const dayField = () => {
+    const error = errors.publishOn;
+    return <Field label="Data">
+      {(control) => <>
+        <DatePicker
+          {...control}
+          today={todayInSaoPaulo()}
+          toggleLabel="Abrir calendário da data"
+          value={form.publishOn}
+          disabled={busy || !writable}
+          onChange={(day) => edit({ publishOn: day }, 'publishOn')}
+          aria-invalid={error === undefined ? undefined : true}
+          aria-describedby={error === undefined ? undefined : `${control.id}-error`}
+        />
+        {error !== undefined && <FieldMessage id={`${control.id}-error`} role="alert">{error}</FieldMessage>}
+      </>}
+    </Field>;
+  };
+
+  const textField = (field: 'title' | 'publishAtTime', label: string, type?: 'time') => {
     const error = errors[field];
     return <Field label={label}>
       {(control) => <>
@@ -245,7 +264,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
           }}
         />
         <div className="content-modal__when">
-          {textField('publishOn', 'Data', 'date')}
+          {dayField()}
           {textField('publishAtTime', 'Hora', 'time')}
         </div>
         <FolderField

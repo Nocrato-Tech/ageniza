@@ -135,31 +135,52 @@ describe('LoginPage (/entrar)', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('Muitas tentativas');
   });
 
-  it('rejects a short password before calling the API', () => {
+  it('asks for the password when it is empty, before calling the API', () => {
     const { impl, calls } = makeFetch();
     renderLogin(impl);
-    submit('pessoa@example.test', 'short');
-    expect(screen.getByText('A senha tem no mínimo 10 caracteres.')).toBeTruthy();
+    submit('pessoa@example.test', '');
+    expect(screen.getByText('Informe a sua senha.')).toBeTruthy();
+    expect(screen.queryByText('A senha tem no mínimo 10 caracteres.')).toBeNull();
     expect(calls.login).toBe(0);
+  });
+
+  it('does not judge the length of the password: a short one goes to the server, which answers the wrong credential', async () => {
+    const { impl, calls } = makeFetch();
+    renderLogin(impl);
+    submit('pessoa@example.test', 'curta');
+
+    await waitFor(() => expect(calls.login).toBe(1));
+    expect(screen.queryByText('A senha tem no mínimo 10 caracteres.')).toBeNull();
+    expect(screen.getByLabelText('Senha').getAttribute('aria-invalid')).toBeNull();
+  });
+
+  it('shows the wrong-credential sentence for a short wrong password, as for any other', async () => {
+    const { impl } = makeFetch({ loginError: json({ error: { code: 'INVALID_CREDENTIALS', message: 'x' } }, 401) });
+    renderLogin(impl);
+    submit('pessoa@example.test', 'curta');
+
+    expect((await screen.findByRole('alert')).textContent).toBe('E-mail ou senha incorretos.');
   });
 
   it('puts the focus on the one invalid field, and says nothing more than its own description', () => {
     const { impl } = makeFetch();
     renderLogin(impl);
-    submit('pessoa@example.test', 'short');
+    submit('pessoa@example.test', '');
 
     expect(document.activeElement).toBe(screen.getByLabelText('Senha'));
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('puts the focus on the first invalid field and gives one alert that names both', () => {
+  it('puts the focus on the first invalid field and keeps each message in its field, with no summary (decision 2026-10-16)', () => {
     const { impl, calls } = makeFetch();
     renderLogin(impl);
-    submit('not-an-email', 'short');
+    submit('not-an-email', '');
 
     expect(document.activeElement).toBe(screen.getByLabelText('E-mail'));
-    expect(screen.getAllByRole('alert')).toHaveLength(1);
-    expect(screen.getByRole('alert').textContent).toBe('Corrija 2 campos: E-mail, Senha.');
+    expect(screen.getByText('Informe um e-mail válido.')).toBeTruthy();
+    expect(screen.getByText('Informe a sua senha.')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(/Corrija/)).toBeNull();
     expect(calls.login).toBe(0);
   });
 

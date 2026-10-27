@@ -10,7 +10,7 @@ import {
   type PublishContentRequest,
   type RescheduleContentRequest
 } from '@ageniza/contracts';
-import { Button, FieldMessage, Textarea, TextInput } from '@ageniza/ui';
+import { Button, DatePicker, FieldMessage, Textarea } from '@ageniza/ui';
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -199,14 +199,14 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone,
       </div>}
       {panel === 'publish' && available.includes('publish') && <div className="form-field content-actions__panel">
         <label htmlFor={`${ids}-published`}>Dia real da publicação</label>
-        <TextInput
+        <DatePicker
           id={`${ids}-published`}
-          type="date"
+          today={todayInSaoPaulo()}
           max={todayInSaoPaulo()}
           value={publishedOn}
           disabled={busy}
-          onChange={(event) => { setPublishedOn(event.target.value); setProblem(undefined); }}
-          aria-invalid={problem !== undefined}
+          onChange={(day) => { setPublishedOn(day); setProblem(undefined); }}
+          aria-invalid={problem === undefined ? undefined : true}
           aria-describedby={problem === undefined ? undefined : `${ids}-problem`}
         />
         {problem !== undefined && <FieldMessage id={`${ids}-problem`} role="alert">{problem}</FieldMessage>}
@@ -216,13 +216,13 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone,
       </div>}
       {panel === 'reschedule' && available.includes('reschedule') && <div className="form-field content-actions__panel">
         <label htmlFor={`${ids}-reschedule`}>Novo dia da publicação</label>
-        <TextInput
+        <DatePicker
           id={`${ids}-reschedule`}
-          type="date"
+          today={todayInSaoPaulo()}
           value={publishOn}
           disabled={busy}
-          onChange={(event) => { setPublishOn(event.target.value); setProblem(undefined); }}
-          aria-invalid={problem !== undefined}
+          onChange={(day) => { setPublishOn(day); setProblem(undefined); }}
+          aria-invalid={problem === undefined ? undefined : true}
           aria-describedby={problem === undefined ? undefined : `${ids}-problem`}
         />
         {problem !== undefined && <FieldMessage id={`${ids}-problem`} role="alert">{problem}</FieldMessage>}
