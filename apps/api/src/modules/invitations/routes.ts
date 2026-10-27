@@ -13,6 +13,7 @@ import {
   InvitationAcceptResponseSchema,
   InvitationCreatedResponseSchema,
   InvitationPreviewResponseSchema,
+  InvitationResentResponseSchema,
   PaginationInputSchema,
   PendingInvitationListResponseSchema,
   PublicInvitationTokenPathParamsSchema,
@@ -647,6 +648,24 @@ const pendingInvitationFromRow = (row: PendingInvitationRow) => ({
   expiresAt: new Date(row.expires_at).toISOString()
 });
 
+/**
+ * Asks Better Auth to e-mail the confirmation link to the account just signed in, through that new
+ * session: a cookie the browser already held for another account must not decide the recipient. A
+ * failure never undoes the acceptance, which has committed; it is logged without detail.
+ */
+const sendEmailConfirmation = async (auth: AuthInstance, signInHeaders: Headers, email: string, request: FastifyRequest): Promise<void> => {
+  const cookie = signInHeaders.getSetCookie().map((value) => value.split(';')[0]).join('; ');
+  try {
+    await auth.api.sendVerificationEmail({ body: { email }, headers: new Headers({ cookie }) });
+  } catch {
+    request.log.error({
+      operation: 'invitation.email_verification',
+      status: 'failed',
+      error: { name: 'EmailVerificationError', code: 'EMAIL_VERIFICATION_FAILED' }
+    }, 'Failed to request the e-mail confirmation after an invitation acceptance');
+  }
+};
+
 /** Registers authenticated administration and public invitation routes. */
 export const registerInvitationModule = (app: FastifyInstance, dependencies: InvitationModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
@@ -688,7 +707,7 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
   const resendDocs = {
     permission: 'convite.reenviar',
     responseStatus: 200,
-    schemas: { params: AgencyInvitationPathParamsSchema, response: InvitationCreatedResponseSchema }
+    schemas: { params: AgencyInvitationPathParamsSchema, response: InvitationResentResponseSchema }
   } satisfies DocumentedRouteConfig;
   const cancelDocs = {
     permission: 'convite.cancelar',
@@ -722,7 +741,8 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     });
   });
 
-  app.post('/agencies/:agencyId/invitations/collaborators', authenticated(collaboratorDocs), async (request, reply) => {
+  // The 201 carries the invitation link, so no cache may keep it (decision 2026-10-26, issue #710).
+  app.post('/agencies/:agencyId/invitations/collaborators', { onRequest: noStore, ...authenticated(collaboratorDocs) }, async (request, reply) => {
     const params = routeParams(collaboratorDocs, request);
     const body = routeBody(collaboratorDocs, request);
     const result = await createCollaboratorInvitation(dependencies, request, body.email, body.roleId, params.agencyId);
@@ -739,7 +759,8 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     return reply.status(201).send(routeResponse(collaboratorDocs, request, {
       invitationId: result.invitationId,
       expiresAt: result.expiresAt.toISOString(),
-      supersededInvitationId: result.supersededInvitationId
+      supersededInvitationId: result.supersededInvitationId,
+      invitationUrl: result.token.actionUrl
     }));
   });
 
@@ -761,7 +782,7 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     return reply.status(201).send(routeResponse(clientInviteDocs, request, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
   });
 
-  app.post('/agencies/:agencyId/invitations/:invitationId/resend', authenticated(resendDocs), async (request, reply) => {
+  app.post('/agencies/:agencyId/invitations/:invitationId/resend', { onRequest: noStore, ...authenticated(resendDocs) }, async (request, reply) => {
     const params = routeParams(resendDocs, request);
     const result = await resendInvitation(dependencies, request, params.agencyId, params.invitationId);
     try {
@@ -784,7 +805,11 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     } catch {
       throw emailDeliveryFailed();
     }
-    return reply.send(routeResponse(resendDocs, request, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
+    return reply.send(routeResponse(resendDocs, request, {
+      invitationId: result.invitationId,
+      expiresAt: result.expiresAt.toISOString(),
+      invitationUrl: result.purpose === 'collaborator_invite' ? result.token.actionUrl : null
+    }));
   });
 
   app.delete('/agencies/:agencyId/invitations/:invitationId', authenticated(cancelDocs), async (request, reply) => {
@@ -821,8 +846,10 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     const userId = randomUUID();
     try {
       await dependencies.database.transaction(async (transaction) => {
+        // The inviter can copy the link (decision 2026-10-26), so accepting it proves nothing about
+        // the mailbox: the address stays unconfirmed until the confirmation link is opened.
         await raw(transaction, `
-          insert into auth."user" (id, name, email, "emailVerified") values (?, ?, ?, true)
+          insert into auth."user" (id, name, email, "emailVerified") values (?, ?, ?, false)
         `, [userId, body.name, invitation.email]);
         await raw(transaction, `
           insert into auth."account" (id, "accountId", "providerId", "userId", password, "updatedAt")
@@ -840,19 +867,21 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
       throw error;
     }
 
+    let signInHeaders: Headers;
     try {
-      const { headers } = await dependencies.auth.api.signInEmail({
+      ({ headers: signInHeaders } = await dependencies.auth.api.signInEmail({
         body: { email: invitation.email, password: body.password },
         headers: toAuthHeaders(request),
         returnHeaders: true
-      });
-      applyAuthCookies(reply, headers);
+      }));
+      applyAuthCookies(reply, signInHeaders);
     } catch {
       // Account creation and invitation acceptance have already committed, but the API contract
       // promises a session cookie for this flow. Return only a generic server error if Better Auth
       // cannot establish that session; the credential account remains recoverable through login.
       throw new HttpError({ statusCode: 500, code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' });
     }
+    await sendEmailConfirmation(dependencies.auth, signInHeaders, invitation.email, request);
     return reply.status(201).send(routeResponse(acceptNewAccountDocs, request, {
       status: 'accepted',
       context: { agencyId: invitation.agencyId, clientId: invitation.clientId }

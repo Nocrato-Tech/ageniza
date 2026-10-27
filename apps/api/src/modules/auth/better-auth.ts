@@ -8,7 +8,7 @@ import { captureUnexpectedError, type CoreLogger } from '@ageniza/core';
 import { currentAuditRequestId, currentPasswordResetInviteToken } from './audit-context.js';
 import { recordAuthAuditEventSafely, type AuthAuditRecorder } from './audit.js';
 import type { EmailService } from './email-service.js';
-import { AUTH_SESSION_MAX_AGE_MS } from './policy.js';
+import { AUTH_SESSION_MAX_AGE_MS, EMAIL_VERIFICATION_TTL_SECONDS } from './policy.js';
 
 export interface CreateAuthDependencies {
   readonly pool: Pool;
@@ -80,6 +80,13 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
       }
     },
     verification: { storeIdentifier: 'hashed' },
+    // No Better Auth route is mounted: `verify-email` is not reachable, only `auth.api` is called.
+    emailVerification: {
+      expiresIn: EMAIL_VERIFICATION_TTL_SECONDS,
+      sendVerificationEmail: async ({ user, token }): Promise<void> => {
+        dependencies.sender.sendEmailVerification({ to: user.email, token });
+      }
+    },
     emailAndPassword: {
       enabled: true,
       disableSignUp: true,

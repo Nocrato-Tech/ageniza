@@ -4,6 +4,7 @@ import {
   collaboratorInvitationEmail,
   emailChangedEmail,
   emailChangeRequestedEmail,
+  emailVerificationEmail,
   maskEmailAddress,
   passwordResetEmail,
   type EmailSender
@@ -38,6 +39,12 @@ export interface SendClientInvitationEmailInput extends SendInvitationEmailInput
   readonly clientName: string;
 }
 
+export interface SendEmailVerificationInput {
+  readonly to: string;
+  /** The Better Auth verification token. Never persisted or logged. */
+  readonly token: string;
+}
+
 export interface SendAccountNoticeInput {
   readonly to: string;
 }
@@ -45,6 +52,8 @@ export interface SendAccountNoticeInput {
 export interface EmailService {
   /** Schedules delivery and returns without waiting for the email transport. */
   sendPasswordReset(input: SendPasswordResetInput): void;
+  /** Asks the account to confirm its address. Detached like a reset. */
+  sendEmailVerification(input: SendEmailVerificationInput): void;
   /** To the address the account has now, when a change of address is requested. Detached like a reset. */
   sendEmailChangeRequested(input: SendAccountNoticeInput): void;
   /** To the old address, after the swap. Detached like a reset. */
@@ -70,6 +79,12 @@ const PASSWORD_RESET_OPERATION = 'auth.password_reset_email';
 
 const actionUrlFor = (appPublicUrl: string, token: string): string =>
   `${appPublicUrl.replace(/\/$/, '')}/senha/redefinir?token=${encodeURIComponent(token)}`;
+
+const EMAIL_VERIFICATION_EXPIRES_IN_MINUTES = 24 * 60;
+
+/** The screen of specs/auth.md §13, `/email/verificar?token=…`. */
+const verificationActionUrlFor = (appPublicUrl: string, token: string): string =>
+  `${appPublicUrl.replace(/\/$/, '')}/email/verificar?token=${encodeURIComponent(token)}`;
 
 const resetActionUrlFor = (appPublicUrl: string, token: string, inviteToken?: string): string => {
   const actionUrl = actionUrlFor(appPublicUrl, token);
@@ -188,6 +203,12 @@ export const createEmailService = (options: CreateEmailServiceOptions): EmailSer
       }).catch(() => {
         // The rejection is already handled above; keep cleanup detached and safe.
       });
+    },
+    sendEmailVerification(input): void {
+      sendNotice(input.to, emailVerificationEmail({
+        actionUrl: verificationActionUrlFor(options.config.appPublicUrl, input.token),
+        expiresInMinutes: EMAIL_VERIFICATION_EXPIRES_IN_MINUTES
+      }), 'email-verification');
     },
     sendEmailChangeRequested(input): void {
       sendNotice(input.to, emailChangeRequestedEmail(), 'email-change-requested');

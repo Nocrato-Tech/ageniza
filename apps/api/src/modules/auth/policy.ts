@@ -33,3 +33,6 @@ export const AUTH_SESSION_MAX_AGE_SECONDS = AUTH_SESSION_MAX_AGE_DAYS * 24 * 60 
 export const AUTH_SESSION_MAX_AGE_MS = AUTH_SESSION_MAX_AGE_SECONDS * 1_000;
 
 export type AuthRateLimitRoute = keyof typeof AUTH_RATE_LIMITS;
+
+/** The e-mail confirmation link lasts 24 hours (decision 2026-10-26, public sign-up). */
+export const EMAIL_VERIFICATION_TTL_SECONDS = 24 * 60 * 60;
