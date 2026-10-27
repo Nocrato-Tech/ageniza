@@ -38,6 +38,14 @@ const REMOVE_DESCRIPTION = 'A pessoa perde o acesso ao portal deste cliente. As 
 const ADD_HINT = 'A pessoa passa a ter acesso ao portal deste cliente na hora e recebe um e-mail de boas-vindas.';
 const NOT_ENTERED = 'ainda não entrou';
 const ADD_FAILED = 'Não foi possível adicionar a pessoa. Tente de novo.';
+const RESEND_FAILED = 'Não foi possível reenviar o e-mail. Tente de novo.';
+const RESEND_INVITATION_FAILED = 'Não foi possível reenviar o convite. Tente de novo.';
+const DAILY_LIMIT_FAILED = 'Limite diário de envios atingido. Tente amanhã.';
+const TOO_SOON_FAILED = 'Aguarde um minuto para reenviar o e-mail desta pessoa de novo.';
+const NOT_PENDING_FAILED = 'Esta pessoa já entrou no portal ou já não tem acesso: não há e-mail para reenviar.';
+const INVITATION_GONE_FAILED = 'Este convite já foi aceito, cancelado ou venceu.';
+const ACCESS_EXISTS_FAILED = 'Este endereço já tem acesso ao portal deste cliente. Cancele o convite antigo.';
+const EMAIL_NOT_DELIVERED = 'O e-mail não foi entregue. Tente reenviar em um minuto.';
 
 const parsePage = (value: string | null): number => {
   const parsed = Number(value);
@@ -79,6 +87,21 @@ const clampedPage = (page: number, data: { meta: { totalPages: number } } | unde
   if (data === undefined) return null;
   const lastPage = Math.max(1, data.meta.totalPages);
   return page > lastPage ? lastPage : null;
+};
+
+/** What the agency reads when a resend is refused, by the code the API answered; the same words for the two kinds of resend. */
+const resendRefusal = (error: unknown, fallback: string): string => {
+  if (!(error instanceof HttpClientError)) return fallback;
+  if (error.code === 'FORBIDDEN' || error.status === 403) return NO_PERMISSION;
+  if (error.code === 'AGENCY_READ_ONLY') return READ_ONLY_FAILED;
+  if (error.code === 'CLIENT_ARCHIVED') return ARCHIVED_FAILED;
+  if (error.code === 'DAILY_EMAIL_LIMIT') return DAILY_LIMIT_FAILED;
+  if (error.code === 'RESEND_TOO_SOON') return TOO_SOON_FAILED;
+  if (error.code === 'ACCESS_NOT_PENDING') return NOT_PENDING_FAILED;
+  if (error.code === 'INVITATION_NOT_PENDING') return INVITATION_GONE_FAILED;
+  if (error.code === 'ACCESS_EXISTS') return ACCESS_EXISTS_FAILED;
+  if (error.code === 'EMAIL_DELIVERY_FAILED') return EMAIL_NOT_DELIVERED;
+  return fallback;
 };
 
 interface PendingAction {
@@ -127,7 +150,7 @@ function AddPersonDialog({ client, onClose, onAdded }: { client: ClientDetailRes
       if (error.code === 'FORBIDDEN' || error.status === 403) { setFormError('Você não tem permissão para adicionar pessoas a este cliente.'); return; }
       if (error.status === 429 && error.code === 'DAILY_EMAIL_LIMIT') { setFormError('Limite diário de e-mails da agência atingido. Tente amanhã.'); return; }
       if (error.status === 502 && error.code === 'EMAIL_DELIVERY_FAILED') {
-        setFormError('O acesso foi dado, mas o e-mail de boas-vindas não foi entregue. Para mandar de novo, remova o acesso e adicione o e-mail outra vez.');
+        setFormError('O acesso foi dado, mas o e-mail de boas-vindas não foi entregue. Para mandar de novo, use Reenviar e-mail na linha da pessoa.');
         return;
       }
       if (error.status === 400) {
@@ -180,7 +203,7 @@ function AddPersonDialog({ client, onClose, onAdded }: { client: ClientDetailRes
  * the client's portal, the removed ones and the old invitations still pending. Reading and adding
  * need `cliente.convidar_usuario` (the tab gate); removing and reactivating need
  * `cliente.remover_usuario`, cancelling an old invitation needs `convite.cancelar`; without them the
- * action is simply absent. A pending portal invitation is never resent (decision 2026-10-27). Every write invalidates the clients prefix, which
+ * action is simply absent. An old portal invitation is resent into the access of its address, and a person who has not entered gets the welcome e-mail again (decision 2026-10-27, "acessos pendentes ... reenviados e removidos"); both need the permission of the gate. Every write invalidates the clients prefix, which
  * carries the roster badge, the detail summary and this tab's lists (SPEC §6 invalidation table).
  */
 export function ClientAccessTab() {
@@ -201,6 +224,9 @@ export function ClientAccessTab() {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [actionError, setActionError] = useState<string | undefined>();
   const [addedEmail, setAddedEmail] = useState<string | null>(null);
+  const [resentTo, setResentTo] = useState<string | null>(null);
+  // A synchronous guard: the state of the mutation only changes on the next render, and two clicks inside one task both see it idle.
+  const resending = useRef(false);
 
   const membersPage = parsePage(searchParams.get('membros'));
   const removedPage = parsePage(searchParams.get('removidas'));
@@ -281,6 +307,33 @@ export function ClientAccessTab() {
     }
   });
 
+  // One mutation per kind of resend, keyed by the row that was clicked: only that row shows the sending state.
+  const resendEmail = useMutation({
+    mutationFn: (member: ClientMember) => httpClient.request({
+      path: apiPath('/agencies/:agencyId/clients/:clientId/members/:accessId/resend', { agencyId: agency.agencyId, clientId: client.id, accessId: member.accessId }),
+      method: 'POST',
+      response: ClientMemberSchema
+    }),
+    onSuccess: (_person, member) => { setActionError(undefined); setAddedEmail(null); setResentTo(`E-mail reenviado para ${member.email}.`); },
+    onError: (error: unknown) => { setResentTo(null); setActionError(resendRefusal(error, RESEND_FAILED)); },
+    onSettled: () => { resending.current = false; void invalidateAccess(); }
+  });
+
+  const resendInvitation = useMutation({
+    mutationFn: (invitation: ClientPendingInvitation) => httpClient.request({
+      path: apiPath('/agencies/:agencyId/clients/:clientId/invitations/:invitationId/resend', {
+        agencyId: agency.agencyId,
+        clientId: client.id,
+        invitationId: invitation.invitationId
+      }),
+      method: 'POST',
+      response: ClientMemberSchema
+    }),
+    onSuccess: (_person, invitation) => { setActionError(undefined); setResentTo(null); setAddedEmail(invitation.email); },
+    onError: (error: unknown) => { setAddedEmail(null); setResentTo(null); setActionError(resendRefusal(error, RESEND_INVITATION_FAILED)); },
+    onSettled: () => { resending.current = false; void invalidateAccess(); }
+  });
+
   const cancel = useMutation({
     mutationFn: (invitationId: string) => httpClient.request({
       path: apiPath('/agencies/:agencyId/invitations/:invitationId', { agencyId: agency.agencyId, invitationId }),
@@ -309,11 +362,12 @@ export function ClientAccessTab() {
   return <section className="portal-access" aria-labelledby="portal-access-title">
     <header className="portal-access__header">
       <h2 id="portal-access-title">Pessoas com acesso ao portal</h2>
-      {activeClient && <Button variant={emptyList ? 'secondary' : 'primary'} leadingIcon={<Plus />} blockedReason={blocked} onClick={() => { setAddedEmail(null); setAddOpen(true); }}>Adicionar pessoa</Button>}
+      {activeClient && <Button variant={emptyList ? 'secondary' : 'primary'} leadingIcon={<Plus />} blockedReason={blocked} onClick={() => { setAddedEmail(null); setResentTo(null); setAddOpen(true); }}>Adicionar pessoa</Button>}
     </header>
 
     {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
     {addedEmail !== null && <LiveStatus>{addedEmail} agora tem acesso ao portal deste cliente.</LiveStatus>}
+    {resentTo !== null && <LiveStatus>{resentTo}</LiveStatus>}
 
     {members.isPending ? (
       <ul className="portal-access__list" aria-hidden="true">
@@ -342,12 +396,22 @@ export function ClientAccessTab() {
             <span className="portal-access__email">{member.email}</span>
           </span>
           <span className="portal-access__since">desde {formatAgencyDayMonth(member.since)}</span>
-          {activeClient && canRemove && <Button
-            size="sm"
-            variant="secondary"
-            aria-label={`Remover o acesso de ${member.name ?? member.email}`}
-            onClick={() => { setActionError(undefined); setPending({ kind: 'remove', id: member.accessId, name: member.name ?? member.email }); }}
-          >Remover</Button>}
+          <span className="portal-access__actions">
+            {activeClient && !member.entered && <Button
+              size="sm"
+              variant="secondary"
+              aria-label={`Reenviar e-mail para ${member.email}`}
+              blockedReason={blocked}
+              loading={resendEmail.isPending && resendEmail.variables?.accessId === member.accessId}
+              onClick={() => { if (resending.current) return; resending.current = true; setActionError(undefined); resendEmail.mutate(member); }}
+            >Reenviar e-mail</Button>}
+            {activeClient && canRemove && <Button
+              size="sm"
+              variant="secondary"
+              aria-label={`Remover o acesso de ${member.name ?? member.email}`}
+              onClick={() => { setActionError(undefined); setPending({ kind: 'remove', id: member.accessId, name: member.name ?? member.email }); }}
+            >Remover</Button>}
+          </span>
         </li>)}
       </ul>
       <Pagination page={members.data?.meta.page ?? 1} totalPages={members.data?.meta.totalPages ?? 1} onPageChange={(page) => { replacePage(setSearchParams, location.state, 'membros', page); }} />
@@ -413,6 +477,14 @@ export function ClientAccessTab() {
             <span className="portal-access__who"><span className="portal-access__email">{invitation.email}</span></span>
             <Pill icon={<Clock />}>{pendingInviteExpiryLabel(invitation.expiresAt)}</Pill>
             <span className="portal-access__actions">
+              {activeClient && <Button
+                size="sm"
+                variant="secondary"
+                aria-label={`Reenviar convite de ${invitation.email}`}
+                blockedReason={blocked}
+                loading={resendInvitation.isPending && resendInvitation.variables?.invitationId === invitation.invitationId}
+                onClick={() => { if (resending.current) return; resending.current = true; setActionError(undefined); resendInvitation.mutate(invitation); }}
+              >Reenviar</Button>}
               {activeClient && canCancel && <Button
                 size="sm"
                 variant="ghost"
