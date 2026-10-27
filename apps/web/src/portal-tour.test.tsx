@@ -89,6 +89,7 @@ const makeWorld = (scenario: Scenario = {}) => {
     if (path.endsWith('/me/legal-acceptances')) return json(legalAccepted);
     if (path.endsWith('/me/contexts')) {
       return json({
+        canCreateAgency: false,
         contexts: [
           ...Object.entries(names).map(([clientId, clientName]) => ({ type: 'client', clientId, clientName, agencyId: AGENCY_ID, agencyName: 'Agência Um', onboardingPending: seenAt[clientId] === null })),
           ...(scenario.alsoCollaborator === true ? [{ type: 'agency', agencyId: AGENCY_ID, agencyName: 'Agência Um', roleKey: 'admin', roleName: 'Admin', isOwner: false }] : [])

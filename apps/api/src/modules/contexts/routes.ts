@@ -15,7 +15,7 @@ import { createRequireSession } from '../auth/session-guard.js';
 import { noStore } from '../../plugins/infra/no-store.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
-import { findPreferredContext, isValidAgencyContext, isValidClientContext, listValidContexts } from './service.js';
+import { canCreateAgency, findPreferredContext, isValidAgencyContext, isValidClientContext, listValidContexts } from './service.js';
 
 export type ContextPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
@@ -65,21 +65,21 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
 
   app.get('/me/contexts', { onRequest: noStore, preHandler: requireSession, config: listDocs }, async (request, reply) => {
     const auth = requireAuth(request);
-    const { contexts } = await withAuthenticatedUserTransaction(
+    const { contexts, allowed } = await withAuthenticatedUserTransaction(
       dependencies.database,
       auth.claims,
-      (transaction) => listValidContexts(transaction)
+      async (transaction) => ({ ...(await listValidContexts(transaction)), allowed: await canCreateAgency(transaction) })
     );
-    return reply.send(routeResponse(listDocs, request, { contexts }));
+    return reply.send(routeResponse(listDocs, request, { contexts, canCreateAgency: allowed }));
   });
 
   app.get('/me/contexts/resolve', { preHandler: requireSession, config: resolveDocs }, async (request, reply) => {
     const auth = requireAuth(request);
     const query = routeQuery(resolveDocs, request);
-    const { contexts, lastUsedContext } = await withAuthenticatedUserTransaction(
+    const { contexts, lastUsedContext, allowed } = await withAuthenticatedUserTransaction(
       dependencies.database,
       auth.claims,
-      (transaction) => listValidContexts(transaction)
+      async (transaction) => ({ ...(await listValidContexts(transaction)), allowed: await canCreateAgency(transaction) })
     );
 
     // Step 2: no valid context. The session stays: only a confirmed account has one, and it goes to
@@ -95,14 +95,14 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
     // invalid/inaccessible `preferred` is ignored in silence and the algorithm falls through.
     const preferred = query.preferred === undefined ? undefined : findPreferredContext(contexts, query.preferred);
     if (preferred !== undefined) {
-      return reply.send(routeResponse(resolveDocs, request, { decision: 'select', contexts, highlighted: preferred }));
+      return reply.send(routeResponse(resolveDocs, request, { decision: 'select', contexts, highlighted: preferred, canCreateAgency: allowed }));
     }
     // Step 5: the last-used context, if still valid.
     if (lastUsedContext !== null) {
       return reply.send(routeResponse(resolveDocs, request, { decision: 'enter', context: lastUsedContext }));
     }
     // Step 6: no signal to prefer any one context.
-    return reply.send(routeResponse(resolveDocs, request, { decision: 'select', contexts, highlighted: null }));
+    return reply.send(routeResponse(resolveDocs, request, { decision: 'select', contexts, highlighted: null, canCreateAgency: allowed }));
   });
 
   app.put('/me/last-context', { preHandler: requireSession, config: lastContextDocs }, async (request, reply) => {

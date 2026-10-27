@@ -84,7 +84,8 @@ export const registerPortalReadRoutes = (app: FastifyInstance, dependencies: Por
       ...clientFromRow(result.row, photoUrl),
       agencyName: result.row.agency_name,
       onboardingSeenAt: result.row.onboarding_seen_at === null ? null : new Date(result.row.onboarding_seen_at).toISOString(),
-      home: result.home
+      home: result.home,
+      agencyReadOnly: result.row.agency_read_only === true
     }));
   });
 

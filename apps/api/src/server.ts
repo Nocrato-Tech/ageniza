@@ -71,6 +71,7 @@ export const startApi = async (): Promise<void> => {
   const agencyDependencies: AgencyModuleDependencies = {
     database,
     auth,
+    ...(config.supportContactEmail === undefined ? {} : { supportContactEmail: config.supportContactEmail }),
     requireAgencyAccess: createRequireAgencyAccess({ database })
   };
   const clientDependencies: ClientModuleDependencies = {

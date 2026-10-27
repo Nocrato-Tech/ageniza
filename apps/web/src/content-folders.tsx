@@ -18,7 +18,7 @@ import {
 } from '@ageniza/contracts';
 import { Button, ButtonLink, ConfirmDialog, EmptyState, FieldMessage, Modal, Pagination, Pill, Skeleton, TextInput } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { isHttpUrl, MediaThumbnail } from './media-thumbnail.js';
@@ -200,6 +200,7 @@ function FolderLinks({ folders, searchParams, param, extra }: {
 
 function MediaTile({ clientId, folderId, asset, canOperate }: { clientId: string; folderId: string; asset: MediaFolderAsset; canOperate: boolean }) {
   const agency = useAgencyContext();
+  const blocked = useWriteBlocked();
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
@@ -262,7 +263,7 @@ function MediaTile({ clientId, folderId, asset, canOperate }: { clientId: string
     </div>
     <div className="folder-media__actions">
       <Button size="sm" variant="secondary" leadingIcon={<Download />} aria-label={`Baixar ${label}`} loading={download.isPending} onClick={() => { setNotice(undefined); download.mutate(); }}>Baixar</Button>
-      {canOperate && <Button size="sm" variant="ghost" leadingIcon={<Trash2 />} aria-label={`Remover ${label}`} onClick={() => { setNotice(undefined); setConfirming(true); }}>Remover</Button>}
+      {canOperate && <Button size="sm" variant="ghost" leadingIcon={<Trash2 />} aria-label={`Remover ${label}`} blockedReason={blocked} onClick={() => { setNotice(undefined); setConfirming(true); }}>Remover</Button>}
     </div>
     {notice !== undefined && <FieldMessage role="alert">{notice}</FieldMessage>}
     <ConfirmDialog
@@ -285,6 +286,7 @@ const parsePage = (raw: string | null): number => {
 
 function FolderMedia({ clientId, folder, canOperate }: { clientId: string; folder: MediaFolder; canOperate: boolean }) {
   const httpClient = useApiClient();
+  const blocked = useWriteBlocked();
   const agency = useAgencyContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const page = parsePage(searchParams.get('pagina'));
@@ -318,7 +320,7 @@ function FolderMedia({ clientId, folder, canOperate }: { clientId: string; folde
       headingLevel={4}
       title="Nenhuma mídia nesta pasta ainda."
       description={canOperate ? 'Envie imagens ou vídeos para esta pasta.' : undefined}
-      action={canOperate ? <Button variant="secondary" leadingIcon={<Upload />} onClick={() => picker.current?.click()}>Enviar mídia</Button> : undefined}
+      action={canOperate ? <Button variant="secondary" leadingIcon={<Upload />} blockedReason={blocked} onClick={() => picker.current?.click()}>Enviar mídia</Button> : undefined}
     />;
   } else if (assets.data.data.length === 0) {
     body = <EmptyState
@@ -369,6 +371,7 @@ export function ContentFolders({ clientId, canWrite }: { clientId: string; canWr
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const canOperate = useCan('conteudo.operar') && canWrite;
+  const blocked = useWriteBlocked();
   const [creating, setCreating] = useState(false);
   const folders = useClientFolders(clientId);
 
@@ -414,7 +417,7 @@ export function ContentFolders({ clientId, canWrite }: { clientId: string; canWr
     {open === undefined && <>
       <div className="content-folders__heading">
         <h3>Pastas</h3>
-        {canOperate && firstLevel.length > 0 && <Button variant="secondary" leadingIcon={<FolderPlus />} onClick={() => setCreating(true)}>Nova pasta</Button>}
+        {canOperate && firstLevel.length > 0 && <Button variant="secondary" leadingIcon={<FolderPlus />} blockedReason={blocked} onClick={() => setCreating(true)}>Nova pasta</Button>}
       </div>
       {firstLevel.length === 0
         ? <EmptyState
@@ -422,14 +425,14 @@ export function ContentFolders({ clientId, canWrite }: { clientId: string; canWr
           headingLevel={4}
           title={canOperate ? 'Nenhuma pasta ainda. Crie a primeira.' : 'Nenhuma pasta ainda.'}
           description={canOperate ? 'As pastas guardam as mídias deste cliente.' : undefined}
-          action={canOperate ? <Button variant="secondary" leadingIcon={<FolderPlus />} onClick={() => setCreating(true)}>Nova pasta</Button> : undefined}
+          action={canOperate ? <Button variant="secondary" leadingIcon={<FolderPlus />} blockedReason={blocked} onClick={() => setCreating(true)}>Nova pasta</Button> : undefined}
         />
         : <FolderLinks folders={firstLevel} searchParams={searchParams} param="pasta" extra={{ subpasta: null }} />}
     </>}
     {top !== undefined && sub === undefined && <>
       <div className="content-folders__heading">
         <h3>{top.name}</h3>
-        {canOperate && children.length > 0 && <Button variant="secondary" leadingIcon={<FolderPlus />} onClick={() => setCreating(true)}>Nova pasta de trabalho</Button>}
+        {canOperate && children.length > 0 && <Button variant="secondary" leadingIcon={<FolderPlus />} blockedReason={blocked} onClick={() => setCreating(true)}>Nova pasta de trabalho</Button>}
       </div>
       <section className="content-folders__section" aria-labelledby={`work-${top.id}`}>
         <h4 id={`work-${top.id}`}>Pastas de trabalho</h4>
@@ -439,7 +442,7 @@ export function ContentFolders({ clientId, canWrite }: { clientId: string; canWr
             headingLevel={4}
             title="Nenhuma pasta de trabalho nesta pasta."
             description={canOperate ? 'Uma pasta de trabalho agrupa mídias dentro desta pasta.' : undefined}
-            action={canOperate ? <Button variant="secondary" leadingIcon={<FolderPlus />} onClick={() => setCreating(true)}>Nova pasta de trabalho</Button> : undefined}
+            action={canOperate ? <Button variant="secondary" leadingIcon={<FolderPlus />} blockedReason={blocked} onClick={() => setCreating(true)}>Nova pasta de trabalho</Button> : undefined}
           />
           : <FolderLinks folders={children} searchParams={searchParams} param="subpasta" />}
       </section>
