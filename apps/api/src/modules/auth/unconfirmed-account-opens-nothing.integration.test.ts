@@ -125,6 +125,13 @@ describe.each(PURPOSES)('the session of an unconfirmed account created by an inv
     expect((await get(mine.cookie, '/auth/session')).statusCode).toBe(401);
   });
 
+  it('signs out of every session, so a person who cannot confirm is never trapped in it', async () => {
+    const mine = await scene(purpose);
+
+    expect((await send(mine.cookie, 'POST', '/auth/logout-all')).statusCode).toBe(204);
+    expect((await get(mine.cookie, '/auth/session')).statusCode).toBe(401);
+  });
+
   it('lists no context and resolves to none, though the agency and the client are linked to it', async () => {
     const mine = await scene(purpose);
 
