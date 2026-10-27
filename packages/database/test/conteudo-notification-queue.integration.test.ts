@@ -6,6 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createLocalTestDatabaseClient, resolveIntegrationDatabaseUrls, type DatabaseClient } from '../src/index.js';
 
 import { createContentWorld } from './support/content-world.js';
+import { setPortalAccessStatus } from './support/portal-access.js';
 
 // Issue #252 (specs/conteudo.md §5 rule 8 and §8): the notification queue. Every attack of the application runs as
 // `ageniza_app`; the worker is `ageniza_app` too, with no actor bound to the transaction, which is how `asWorker` opens
@@ -87,8 +88,21 @@ const readyContent = async (clientId: string = ids.clientA1, status: 'in_product
 };
 
 type Row = Record<string, unknown>;
-const itemsOf = (contentId: string): Promise<Row[]> =>
-  owner()('notification_queue').where({ content_id: contentId }).orderBy('recipient_user_id') as unknown as Promise<Row[]>;
+// The queue names the access (#711); the tests below talk about people, so the account of each access is read back as `recipient_user_id`.
+const accountsByAccess = async (): Promise<Map<string, string | null>> =>
+  new Map((await owner()('client_portal_accesses').select('id', 'user_id')).map((row: { id: string; user_id: string | null }) => [row.id, row.user_id]));
+const accessOf = async (clientId: string, userId: string): Promise<string> => {
+  const row = await owner()('client_portal_accesses').where({ client_id: clientId, user_id: userId }).first('id');
+  if (row === undefined) throw new Error(`No access of ${userId} in ${clientId}.`);
+  return row.id as string;
+};
+const itemsOf = async (contentId: string): Promise<Row[]> => {
+  const accounts = await accountsByAccess();
+  const rows = (await owner()('notification_queue').where({ content_id: contentId })) as Row[];
+  return rows
+    .map((row) => ({ ...row, recipient_user_id: accounts.get(row.recipient_portal_access_id as string) ?? null }))
+    .sort((a, b) => (a.recipient_user_id as string) < (b.recipient_user_id as string) ? -1 : (a.recipient_user_id as string) > (b.recipient_user_id as string) ? 1 : 0);
+};
 const openRecipients = async (contentId: string, type?: string): Promise<string[]> =>
   (await itemsOf(contentId))
     .filter((row) => row.sent_at === null && row.discarded_at === null && (type === undefined || row.type === type))
@@ -99,7 +113,12 @@ const itemOf = async (contentId: string, recipient: string): Promise<Row> => {
   return row;
 };
 const setItems = (contentId: string, patch: Record<string, unknown>, recipient?: string): Promise<number> =>
-  owner()('notification_queue').where({ content_id: contentId, ...(recipient === undefined ? {} : { recipient_user_id: recipient }) }).update(patch);
+  owner()('notification_queue')
+    .where({ content_id: contentId })
+    .modify((query) => {
+      if (recipient !== undefined) query.whereIn('recipient_portal_access_id', owner()('client_portal_accesses').where({ user_id: recipient }).select('id'));
+    })
+    .update(patch);
 const setItemsAgo = (contentId: string, column: 'sent_at' | 'claimed_at' | 'send_after', minutes: number): Promise<unknown> =>
   owner().raw(`update public.notification_queue set ${column} = now() - (?::integer * interval '1 minute') where content_id = ?::uuid`, [minutes, contentId]);
 
@@ -107,14 +126,21 @@ const setItemsAgo = (contentId: string, column: 'sent_at' | 'claimed_at' | 'send
 const asWorker = <T>(work: (transaction: Knex.Transaction) => Promise<T>, isolationLevel?: 'read committed' | 'repeatable read' | 'serializable'): Promise<T> =>
   worker.knex.transaction(work, isolationLevel === undefined ? {} : { isolationLevel });
 
-interface Claimed {
+interface RawClaimed {
   item_id: string; claim_token: string; notification_type: string; client_id: string; client_name: string; agency_name: string;
-  recipient_user_id: string; recipient_email: string; content_id: string; content_title: string; content_publish_on: string;
+  recipient_portal_access_id: string; recipient_email: string; content_id: string; content_title: string; content_publish_on: string;
 }
-const CLAIM_SQL = `select item_id, claim_token, notification_type, client_id, client_name, agency_name, recipient_user_id, recipient_email,
+// What the function returns, plus the account of the access (the person the tests talk about).
+interface Claimed extends RawClaimed { recipient_user_id: string }
+const withPeople = async (rows: readonly RawClaimed[]): Promise<Claimed[]> => {
+  const accounts = await accountsByAccess();
+  return rows.map((row) => ({ ...row, recipient_user_id: accounts.get(row.recipient_portal_access_id) as string }));
+};
+const CLAIM_SQL = `select item_id, claim_token, notification_type, client_id, client_name, agency_name, recipient_portal_access_id, recipient_email,
   content_id, content_title, content_publish_on::text as content_publish_on from app_private.claim_notification_batch(?::integer)`;
-const claimIn = async (transaction: Knex.Transaction, limit = 100): Promise<Claimed[]> =>
-  (await transaction.raw<{ rows: Claimed[] }>(CLAIM_SQL, [limit])).rows.filter((row) => worldClients().includes(row.client_id));
+const rawClaimIn = async (transaction: Knex.Transaction, limit = 100): Promise<RawClaimed[]> =>
+  (await transaction.raw<{ rows: RawClaimed[] }>(CLAIM_SQL, [limit])).rows.filter((row) => worldClients().includes(row.client_id));
+const claimIn = async (transaction: Knex.Transaction, limit = 100): Promise<Claimed[]> => withPeople(await rawClaimIn(transaction, limit));
 const claim = (limit = 100): Promise<Claimed[]> => asWorker((transaction) => claimIn(transaction, limit));
 // The token of the claim that holds these items, as the worker received it; a test of the token passes its own.
 const tokenOf = async (ids_: readonly string[]): Promise<string | null> =>
@@ -129,10 +155,10 @@ const fail = async (ids_: readonly string[], code: string | null, token?: string
 };
 const forContent = (rows: readonly Claimed[], contentId: string): Claimed[] => rows.filter((row) => row.content_id === contentId);
 // Issue #260: the worker asks again, right before it sends, whether what its claim handed over is still true.
-const RECHECK_SQL = `select item_id, claim_token, notification_type, client_id, client_name, agency_name, recipient_user_id, recipient_email,
+const RECHECK_SQL = `select item_id, claim_token, notification_type, client_id, client_name, agency_name, recipient_portal_access_id, recipient_email,
   content_id, content_title, content_publish_on::text as content_publish_on from app_private.recheck_notifications(?::uuid[], ?::uuid)`;
 const recheckIn = async (transaction: Knex.Transaction, items: readonly string[] | null, token: string | null): Promise<Claimed[]> =>
-  (await transaction.raw<{ rows: Claimed[] }>(RECHECK_SQL, [items as never, token])).rows;
+  withPeople((await transaction.raw<{ rows: RawClaimed[] }>(RECHECK_SQL, [items as never, token])).rows);
 const recheck = (batch: readonly Claimed[], token: string | null = batch[0]?.claim_token ?? randomUUID()): Promise<Claimed[]> =>
   asWorker((transaction) => recheckIn(transaction, batch.map((row) => row.item_id), token));
 const peopleOf = (rows: readonly Claimed[]): string[] => rows.map((row) => row.recipient_user_id).sort();
@@ -166,8 +192,8 @@ describe('the queue is reachable only through its functions (issue #252)', () =>
 
   it.each([
     ['select', (t: Knex.Transaction) => t('notification_queue').select('id')],
-    ['select of the recipients', (t: Knex.Transaction) => t.raw('select recipient_user_id from public.notification_queue')],
-    ['insert', (t: Knex.Transaction) => t('notification_queue').insert({ type: 'content_published', client_id: ids.clientA1, recipient_user_id: ids.portalA1, content_id: randomUUID(), send_after: new Date() })],
+    ['select of the recipients', (t: Knex.Transaction) => t.raw('select recipient_portal_access_id from public.notification_queue')],
+    ['insert', async (t: Knex.Transaction) => t('notification_queue').insert({ type: 'content_published', client_id: ids.clientA1, recipient_portal_access_id: await accessOf(ids.clientA1, ids.portalA1), content_id: randomUUID(), send_after: new Date() })],
     ['update', (t: Knex.Transaction) => t('notification_queue').update({ sent_at: new Date() })],
     ['delete', (t: Knex.Transaction) => t('notification_queue').delete()]
   ])('refuses %s to a person of the agency, of the portal and to the worker', async (_label, statement) => {
@@ -193,6 +219,7 @@ describe('the queue is reachable only through its functions (issue #252)', () =>
     expect(flags.rows).toEqual([{ enabled: true, forced: true, policies: '0' }]);
 
     const seen: Record<string, unknown> = {};
+    const access = await accessOf(ids.clientA1, ids.portalA1);
     await owner().transaction(async (t) => {
       await t.raw('grant all on public.notification_queue to ageniza_app');
       await t.raw('set local role ageniza_app');
@@ -200,7 +227,7 @@ describe('the queue is reachable only through its functions (issue #252)', () =>
       seen.updated = await t('notification_queue').update({ attempts: 3 });
       seen.deleted = await t('notification_queue').delete();
       seen.inserted = await t.transaction(async (inner) => {
-        await inner('notification_queue').insert({ type: 'content_published', client_id: ids.clientA1, recipient_user_id: ids.portalA1, content_id: randomUUID(), send_after: new Date() });
+        await inner('notification_queue').insert({ type: 'content_published', client_id: ids.clientA1, recipient_portal_access_id: access, content_id: randomUUID(), send_after: new Date() });
       }).then(() => 'inserted', (error: unknown) => error);
       throw new Error('rolled back on purpose');
     }).catch((error: unknown) => { if ((error as Error).message !== 'rolled back on purpose') throw error; });
@@ -226,7 +253,7 @@ describe('the queue is reachable only through its functions (issue #252)', () =>
       { column_name: 'discarded_at', data_type: 'timestamp with time zone', is_nullable: 'YES' },
       { column_name: 'id', data_type: 'uuid', is_nullable: 'NO' },
       { column_name: 'last_error', data_type: 'text', is_nullable: 'YES' },
-      { column_name: 'recipient_user_id', data_type: 'uuid', is_nullable: 'NO' },
+      { column_name: 'recipient_portal_access_id', data_type: 'uuid', is_nullable: 'NO' },
       { column_name: 'send_after', data_type: 'timestamp with time zone', is_nullable: 'NO' },
       { column_name: 'sent_at', data_type: 'timestamp with time zone', is_nullable: 'YES' },
       { column_name: 'type', data_type: 'text', is_nullable: 'NO' }
@@ -234,7 +261,13 @@ describe('the queue is reachable only through its functions (issue #252)', () =>
   });
 
   describe('the constraints of a row', () => {
-    const base = (): Row => ({ type: 'content_published', client_id: ids.clientA1, recipient_user_id: ids.portalA1, send_after: new Date() });
+    let portalA1Access: string;
+    let portalA1SecondAccess: string;
+    beforeAll(async () => {
+      portalA1Access = await accessOf(ids.clientA1, ids.portalA1);
+      portalA1SecondAccess = await accessOf(ids.clientA1, ids.portalA1Second);
+    });
+    const base = (): Row => ({ type: 'content_published', client_id: ids.clientA1, recipient_portal_access_id: portalA1Access, send_after: new Date() });
 
     it('accepts a valid row, and refuses each invalid one by the constraint that owns the rule', async () => {
       const content = await w.seedContent(ids.clientA1);
@@ -243,7 +276,7 @@ describe('the queue is reachable only through its functions (issue #252)', () =>
       await owner()('notification_queue').insert(good);
 
       const refused = async (patch: Row): Promise<unknown> =>
-        owner()('notification_queue').insert({ ...good, recipient_user_id: ids.portalA1Second, ...patch }).then(() => 'inserted', (error: unknown) => error);
+        owner()('notification_queue').insert({ ...good, recipient_portal_access_id: portalA1SecondAccess, ...patch }).then(() => 'inserted', (error: unknown) => error);
 
       expect(await refused({ type: 'content_unknown', content_id: null })).toMatchObject({ code: '23514', constraint: 'notification_queue_type_check' });
       expect(await refused({ content_id: null })).toMatchObject({ code: '23514', constraint: 'notification_queue_reference_check' });
@@ -252,8 +285,8 @@ describe('the queue is reachable only through its functions (issue #252)', () =>
       expect(await refused({ claim_token: randomUUID() })).toMatchObject({ code: '23514', constraint: 'notification_queue_claim_shape' });
       expect(await refused({ sent_at: new Date(), discarded_at: new Date() })).toMatchObject({ code: '23514', constraint: 'notification_queue_closed_once' });
       expect(await refused({ content_id: other })).toMatchObject({ code: '23503', constraint: 'notification_queue_content_fk' });
-      expect(await refused({ recipient_user_id: randomUUID() })).toMatchObject({ code: '23503' });
-      expect(await refused({ recipient_user_id: ids.portalA1 })).toMatchObject({ code: '23505', constraint: 'notification_queue_open_item_key' });
+      expect(await refused({ recipient_portal_access_id: randomUUID() })).toMatchObject({ code: '23503' });
+      expect(await refused({ recipient_portal_access_id: portalA1Access })).toMatchObject({ code: '23505', constraint: 'notification_queue_open_item_key' });
       for (const text of ['Mailbox pessoa@exemplo.test full', 'UPPER', 'with space', '', 'x'.repeat(65)]) {
         expect(await refused({ last_error: text })).toMatchObject({ code: '23514', constraint: 'notification_queue_last_error_check' });
       }
@@ -361,7 +394,7 @@ describe('the catalog of the queue (issue #252)', () => {
         await t.raw('grant insert on public.notification_queue to ageniza_app');
         await t.raw('create policy temporary_insert on public.notification_queue for insert to ageniza_app with check (true)');
         await t.raw('set local session authorization ageniza_app');
-        await t('notification_queue').insert({ type: 'content_published', client_id: client, recipient_user_id: ids.portalA1, content_id: content, send_after: new Date() });
+        await t('notification_queue').insert({ type: 'content_published', client_id: client, recipient_portal_access_id: await accessOf(client, ids.portalA1), content_id: content, send_after: new Date() });
         throw new Error('rolled back on purpose');
       }).then(() => 'inserted', (error: unknown) => error);
 
@@ -645,12 +678,13 @@ describe('claiming a batch (issue #252)', () => {
     await sendDue(ids.productionA, id);
     const content = await w.contentRow(id);
 
-    const batch = await claim();
+    const rawBatch = await asWorker((transaction) => rawClaimIn(transaction));
+    const batch = await withPeople(rawBatch);
 
     expect(batch).toHaveLength(PEOPLE_OF_A1.length);
-    expect(Object.keys(batch[0]!).sort()).toEqual([
+    expect(Object.keys(rawBatch[0]!).sort()).toEqual([
       'agency_name', 'claim_token', 'client_id', 'client_name', 'content_id', 'content_publish_on', 'content_title', 'item_id',
-      'notification_type', 'recipient_email', 'recipient_user_id'
+      'notification_type', 'recipient_email', 'recipient_portal_access_id'
     ]);
     const queue = await itemsOf(id);
     const expected = queue.map((item) => ({
@@ -660,13 +694,13 @@ describe('claiming a batch (issue #252)', () => {
       client_id: ids.clientA1,
       client_name: `Cliente A1 ${ids.clientA1}`,
       agency_name: `conteudo-notification-queue A ${ids.agencyA}`,
-      recipient_user_id: item.recipient_user_id,
+      recipient_portal_access_id: item.recipient_portal_access_id,
       recipient_email: `${item.recipient_user_id as string}@conteudo-notification-queue.test`,
       content_id: id,
       content_title: content.title,
       content_publish_on: '2026-10-20'
     }));
-    expect([...batch].sort((a, b) => a.recipient_user_id.localeCompare(b.recipient_user_id))).toEqual(expected);
+    expect([...rawBatch].sort((a, b) => (a.recipient_email < b.recipient_email ? -1 : 1))).toEqual(expected);
     for (const item of await itemsOf(id)) {
       expect(item).toMatchObject({ attempts: 1, sent_at: null, discarded_at: null });
       expect(item.claimed_at).toBeInstanceOf(Date);
@@ -827,7 +861,7 @@ describe('claiming a batch (issue #252)', () => {
   it('does not make a second worker wait for what the first is dropping or claiming', async () => {
     const id = await readyContent();
     await sendDue(ids.productionA, id);
-    await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'removed' });
+    await setPortalAccessStatus(owner(), ids.clientA1, ids.portalA1Second, 'removed');
 
     const first = await worker.knex.transaction();
     try {
@@ -838,7 +872,7 @@ describe('claiming a batch (issue #252)', () => {
       expect(outcome).toEqual([]);
     } finally {
       await first.commit();
-      await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'active' });
+      await setPortalAccessStatus(owner(), ids.clientA1, ids.portalA1Second, 'active');
     }
     expect((await itemOf(id, ids.portalA1Second)).discarded_at).toBeInstanceOf(Date);
   });
@@ -1012,7 +1046,7 @@ describe('claiming a batch (issue #252)', () => {
     it('debounces each person apart: a person whose window is still open does not hold the others', async () => {
       const id = await send();
       await sentAgo(id, 16);
-      await owner().raw("update public.notification_queue set created_at = now() - interval '1 minute', send_after = now() + interval '14 minutes' where content_id = ?::uuid and recipient_user_id = ?::uuid", [id, ids.portalA1]);
+      await owner().raw("update public.notification_queue set created_at = now() - interval '1 minute', send_after = now() + interval '14 minutes' where content_id = ?::uuid and recipient_portal_access_id = ?::uuid", [id, await accessOf(ids.clientA1, ids.portalA1)]);
 
       expect((await claim()).map((row) => row.recipient_user_id).sort()).toEqual(PEOPLE_OF_A1.filter((person) => person !== ids.portalA1));
     });
@@ -1181,12 +1215,12 @@ describe('claiming a batch (issue #252)', () => {
     it('a person removed from the portal after the item was queued: only that person is dropped', async () => {
       const id = await readyContent();
       await sendDue(ids.productionA, id);
-      await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'removed' });
+      await setPortalAccessStatus(owner(), ids.clientA1, ids.portalA1Second, 'removed');
       try {
         const batch = await claim();
         expect(batch.map((row) => row.recipient_user_id).sort()).toEqual(PEOPLE_OF_A1.filter((person) => person !== ids.portalA1Second));
       } finally {
-        await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'active' });
+        await setPortalAccessStatus(owner(), ids.clientA1, ids.portalA1Second, 'active');
       }
       expect(await discardedOf(id)).toEqual([ids.portalA1Second]);
     });
@@ -1425,20 +1459,25 @@ describe('rechecking what a claim handed over, right before the send (issue #260
       await sendDue(ids.productionA, content);
       return {
         content, people: PEOPLE_OF_A1, dropped: [ids.portalA1Second],
-        change: async () => { await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'removed' }); },
-        undo: async () => { await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'active' }); }
+        change: async () => { await setPortalAccessStatus(owner(), ids.clientA1, ids.portalA1Second, 'removed'); },
+        undo: async () => { await setPortalAccessStatus(owner(), ids.clientA1, ids.portalA1Second, 'active'); }
       };
     }],
     ['one person is removed from this client while still active in another one: the other link does not hold the item', async () => {
-      await owner()('client_memberships').insert({ client_id: ids.clientA2, user_id: ids.portalA1Second });
+      // The person is in clientA2 for the length of the scenario: a later run finds the access removed by the undo and brings it back.
+      if ((await owner()('client_memberships').where({ client_id: ids.clientA2, user_id: ids.portalA1Second }).first('id')) === undefined) {
+        await owner()('client_memberships').insert({ client_id: ids.clientA2, user_id: ids.portalA1Second });
+      } else {
+        await setPortalAccessStatus(owner(), ids.clientA2, ids.portalA1Second, 'active');
+      }
       const content = await readyContent();
       await sendDue(ids.productionA, content);
       return {
         content, people: PEOPLE_OF_A1, dropped: [ids.portalA1Second],
-        change: async () => { await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'removed' }); },
+        change: async () => { await setPortalAccessStatus(owner(), ids.clientA1, ids.portalA1Second, 'removed'); },
         undo: async () => {
-          await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'active' });
-          await owner()('client_memberships').where({ client_id: ids.clientA2, user_id: ids.portalA1Second }).delete();
+          await setPortalAccessStatus(owner(), ids.clientA1, ids.portalA1Second, 'active');
+          await setPortalAccessStatus(owner(), ids.clientA2, ids.portalA1Second, 'removed');
         }
       };
     }],
@@ -1690,8 +1729,8 @@ describe('what commits between the two statements of the recheck (issue #260)', 
   };
 
   it.each([
-    ['a person removed from the portal', async () => { await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'removed' }); },
-      async () => { await owner()('client_memberships').where({ client_id: ids.clientA1, user_id: ids.portalA1Second }).update({ status: 'active' }); },
+    ['a person removed from the portal', async () => { await setPortalAccessStatus(owner(), ids.clientA1, ids.portalA1Second, 'removed'); },
+      async () => { await setPortalAccessStatus(owner(), ids.clientA1, ids.portalA1Second, 'active'); },
       PEOPLE_OF_A1.filter((person) => person !== ids.portalA1Second)],
     ['the agency suspended', async () => { await owner()('agencies').where({ id: ids.agencyA }).update({ status: 'suspended' }); },
       async () => { await owner()('agencies').where({ id: ids.agencyA }).update({ status: 'active' }); },
