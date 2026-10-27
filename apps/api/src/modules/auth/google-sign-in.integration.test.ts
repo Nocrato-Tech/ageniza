@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
@@ -10,6 +10,7 @@ import {
   insertTestUser,
   queryAsOwner,
   TEST_APP_PUBLIC_URL,
+  TEST_AUTH_SECRET,
   uniqueTestEmail,
   type FakeEmailSender,
   type TestApp
@@ -47,6 +48,13 @@ beforeAll(async () => {
 
 afterEach(async () => {
   const agencies = createdAgencies.splice(0);
+  if (agencies.length > 0) {
+    await queryAsOwner('delete from public.agency_memberships where agency_id = any($1::uuid[])', [agencies]);
+    await queryAsOwner('delete from public.role_permissions where role_id in (select id from public.roles where agency_id = any($1::uuid[]))', [agencies]);
+    await queryAsOwner('delete from public.roles where agency_id = any($1::uuid[])', [agencies]);
+    await queryAsOwner('delete from public.client_memberships where client_id in (select id from public.clients where agency_id = any($1::uuid[]))', [agencies]);
+    await queryAsOwner('delete from public.clients where agency_id = any($1::uuid[])', [agencies]);
+  }
   for (const agencyId of agencies) await cleanupOwnedAgencyContext(agencyId);
   const emails = createdEmails.splice(0);
   if (emails.length === 0) return;
@@ -74,6 +82,9 @@ const acceptancesOf = (userId: string) =>
 
 const cookieOf = (response: { readonly cookies: ReadonlyArray<{ readonly name: string; readonly value: string }> }): string =>
   response.cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
+/** The cookie Better Auth accepts: the token and the base64 HMAC-SHA256 of it under the secret, URL-encoded. A bare token is never read. */
+const signedSessionCookie = (token: string): string =>
+  `ageniza.session_token=${encodeURIComponent(`${token}.${createHmac('sha256', TEST_AUTH_SECRET).update(token).digest('base64')}`)}`;
 const getAs = (cookie: string, url: string) => app.app.inject({ method: 'GET', url, headers: { cookie } });
 const passwordLogin = (email: string, candidate = password) =>
   app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, remoteAddress: '127.0.0.9', payload: { email, password: candidate } });
@@ -478,18 +489,23 @@ describe('Google takes over an unconfirmed account (rule 5)', () => {
     );
     expect((await queryAsOwner('select 1 from public.email_confirmations where user_id = $1 and consumed_at is null', [userId])).length).toBe(1);
     expect((await acceptancesOf(userId)).length).toBe(2);
+    expect((await userRow(email))?.name).toBe('Quem se Cadastrou');
 
     const result = await signInWithGoogle(app.app, google, identity(email));
 
     expect(result.location).toBe(LANDING);
     expect((await userRow(email))?.emailVerified).toBe(true);
+    // The name the earlier holder typed is gone: the account carries the name of the Google profile.
+    expect((await userRow(email))?.name).toBe('Pessoa do Google');
     // The password is gone, and the old sign-in no longer works.
     expect((await accountsOf(userId)).map((account) => account.providerId)).toEqual(['google']);
     expect((await passwordLogin(email)).statusCode).toBe(401);
     // Every earlier session is gone; the only one is the one Google just made.
     expect(await queryAsOwner('select 1 from auth.session where id = $1', [survivor])).toEqual([]);
     expect(await sessionCount(userId)).toBe(1);
-    expect((await getAs(`ageniza.session_token=token-${survivor}`, '/auth/session')).statusCode).toBe(401);
+    // Signed the way the server reads it, the cookie of the old session is refused now because the session is gone: the account is
+    // confirmed by this point, so nothing else could refuse it (the test below shows that the same kind of cookie is accepted).
+    expect((await getAs(signedSessionCookie(`token-${survivor}`), '/auth/session')).statusCode).toBe(401);
     // The pending links die: reset links and confirmations.
     expect(await queryAsOwner(`select 1 from auth.verification where value = $1 and identifier like 'reset-%'`, [userId])).toEqual([]);
     expect(await queryAsOwner('select 1 from public.email_confirmations where user_id = $1 and consumed_at is null', [userId])).toEqual([]);
@@ -546,6 +562,28 @@ describe('Google takes over an unconfirmed account (rule 5)', () => {
     expect((await getAs(result.cookie, '/me/contexts')).json().contexts).toHaveLength(1);
   });
 
+  it('reads the signed cookie of a live session and refuses the same token unsigned, so the refusal above is about the session', async () => {
+    const person = await insertTestUser(app.pool, app.auth, { emailLabel: 'google-signed-cookie' });
+    createdEmails.push(person.email);
+    const sessionId = randomUUID();
+    await queryAsOwner(
+      `insert into auth.session (id, "expiresAt", token, "createdAt", "updatedAt", "userId") values ($1, now() + interval '1 day', $2, now(), now(), $3)`,
+      [sessionId, `token-${sessionId}`, person.id]
+    );
+
+    expect((await getAs(signedSessionCookie(`token-${sessionId}`), '/auth/session')).statusCode).toBe(200);
+    expect((await getAs(`ageniza.session_token=token-${sessionId}`, '/auth/session')).statusCode).toBe(401);
+  });
+
+  it.each([['an empty name', ''], ['a name of blanks', '   ']])('names the account by the part of the address before the @ when the Google profile has %s', async (_label, profileName) => {
+    const email = newEmail('google-takeover-noname');
+    await signUpUnconfirmed(email);
+
+    await signInWithGoogle(app.app, google, identity(email, { name: profileName }));
+
+    expect((await userRow(email))?.name).toBe(email.split('@')[0]);
+  });
+
   it('never takes a confirmed account over: its password and acceptances are the person\'s', async () => {
     const person = await insertTestUser(app.pool, app.auth, { emailLabel: 'google-no-takeover' });
     createdEmails.push(person.email);
@@ -553,6 +591,8 @@ describe('Google takes over an unconfirmed account (rule 5)', () => {
     await signInWithGoogle(app.app, google, identity(person.email));
     expect((await passwordLogin(person.email, person.password)).statusCode).toBe(200);
     expect((await acceptancesOf(person.id)).every((row) => row.revoked_at === null)).toBe(true);
+    // Nor does it rename it: the name is the one the person chose.
+    expect((await userRow(person.email))?.name).toBe('Integration Test User');
   });
 });
 
@@ -769,6 +809,167 @@ describe('the Google flow reveals nothing about who has a password account (rule
     const after = await passwordLogin(email);
     expect(after.statusCode).toBe(before.statusCode);
     expect(after.json().error).toEqual(before.json().error);
+  });
+});
+
+// The acceptance is asked for before the first use on every road in, not only on the screen: the routes of an agency and of the
+// portal answer 403 TERMS_NOT_ACCEPTED while it is pending (decision 2026-10-26, items 2 and 4), and what the person needs to
+// accept stays reachable. The cases are the two accounts the block exists for, each with a link to an agency and to a client.
+interface Linked { readonly agencyId: string; readonly clientId: string }
+
+const linkedTo = async (userId: string): Promise<Linked> => {
+  const agencyId = await grantOwnedAgencyContext(userId);
+  createdAgencies.push(agencyId);
+  const clientId = randomUUID();
+  await queryAsOwner(`insert into public.clients (id, agency_id, name, status) values ($1, $2, 'Cliente do vínculo', 'active')`, [clientId, agencyId]);
+  await queryAsOwner(`insert into public.client_memberships (client_id, user_id, status) values ($1, $2, 'active')`, [clientId, userId]);
+  return { agencyId, clientId };
+};
+
+interface Probe { readonly label: string; readonly method: 'GET' | 'POST'; readonly url: string; readonly payload?: object; readonly allowed: number }
+const agencyProbes = (linked: Linked): Probe[] => [
+  { label: 'GET /agencies/:agencyId/me', method: 'GET', url: `/agencies/${linked.agencyId}/me`, allowed: 200 },
+  { label: 'GET /agencies/:agencyId/clients', method: 'GET', url: `/agencies/${linked.agencyId}/clients`, allowed: 200 },
+  { label: 'POST /agencies/:agencyId/clients', method: 'POST', url: `/agencies/${linked.agencyId}/clients`, payload: { name: 'Cliente sem aceite' }, allowed: 201 }
+];
+const portalProbes = (linked: Linked): Probe[] => [
+  { label: 'GET /clients/:clientId', method: 'GET', url: `/clients/${linked.clientId}`, allowed: 200 },
+  { label: 'POST /clients/:clientId/onboarding/seen', method: 'POST', url: `/clients/${linked.clientId}/onboarding/seen`, allowed: 204 }
+];
+const callAs = (cookie: string, probe: Probe) => app.app.inject({
+  method: probe.method, url: probe.url, headers: { ...origin, cookie }, ...(probe.payload === undefined ? {} : { payload: probe.payload })
+});
+const expectRefusedForTerms = async (cookie: string, probes: readonly Probe[]): Promise<void> => {
+  for (const probe of probes) {
+    const response = await callAs(cookie, probe);
+    expect(response.statusCode, probe.label).toBe(403);
+    expect(response.json().error.code, probe.label).toBe('TERMS_NOT_ACCEPTED');
+  }
+};
+const expectAllowed = async (cookie: string, probes: readonly Probe[]): Promise<void> => {
+  for (const probe of probes) expect((await callAs(cookie, probe)).statusCode, probe.label).toBe(probe.allowed);
+};
+
+describe('the acceptance blocks the routes of an agency and of the portal, not only the screen (issue #707)', () => {
+  const accounts: ReadonlyArray<readonly [string, () => Promise<{ cookie: string; userId: string }>]> = [
+    ['a Google account that has accepted nothing', () => newGoogleAccount('block-new', { accept: false })],
+    ['an invitation account Google took over, with both acceptances revoked', async () => {
+      const email = newEmail('block-takeover');
+      const userId = await signUpUnconfirmed(email);
+      return { cookie: (await signInWithGoogle(app.app, google, identity(email))).cookie, userId };
+    }]
+  ];
+
+  describe.each(accounts)('%s', (_label, makeAccount) => {
+    it('is refused by every agency route, and the write leaves nothing behind', async () => {
+      const { cookie, userId } = await makeAccount();
+      const linked = await linkedTo(userId);
+
+      await expectRefusedForTerms(cookie, agencyProbes(linked));
+
+      expect(await queryAsOwner(`select 1 from public.clients where agency_id = $1 and name = 'Cliente sem aceite'`, [linked.agencyId])).toEqual([]);
+    });
+
+    it('is refused by every portal route, and the write leaves nothing behind', async () => {
+      const { cookie, userId } = await makeAccount();
+      const linked = await linkedTo(userId);
+
+      await expectRefusedForTerms(cookie, portalProbes(linked));
+
+      expect(await queryAsOwner(`select 1 from public.client_memberships where client_id = $1 and onboarding_seen_at is not null`, [linked.clientId])).toEqual([]);
+    });
+
+    it('is let in by the very same routes once both documents are accepted', async () => {
+      const { cookie, userId } = await makeAccount();
+      const linked = await linkedTo(userId);
+      await expectRefusedForTerms(cookie, [...agencyProbes(linked), ...portalProbes(linked)]);
+
+      await acceptBoth(cookie);
+
+      await expectAllowed(cookie, [...agencyProbes(linked), ...portalProbes(linked)]);
+      expect((await queryAsOwner(`select 1 from public.clients where agency_id = $1 and name = 'Cliente sem aceite'`, [linked.agencyId])).length).toBe(1);
+    });
+
+    it('stays refused after accepting only one of the two documents', async () => {
+      const { cookie, userId } = await makeAccount();
+      const linked = await linkedTo(userId);
+
+      const first = await app.app.inject({ method: 'POST', url: '/me/legal-acceptances', headers: { ...origin, cookie }, payload: { document: 'terms' } });
+      expect(first.statusCode).toBe(200);
+      await expectRefusedForTerms(cookie, [agencyProbes(linked)[0]!, portalProbes(linked)[0]!]);
+
+      const second = await app.app.inject({ method: 'POST', url: '/me/legal-acceptances', headers: { ...origin, cookie }, payload: { document: 'privacy' } });
+      expect(second.statusCode).toBe(200);
+      await expectAllowed(cookie, [agencyProbes(linked)[0]!, portalProbes(linked)[0]!]);
+    });
+
+    it('keeps free what the person needs in order to accept: the session, the documents, the profile and the sign-out', async () => {
+      const { cookie } = await makeAccount();
+
+      expect((await getAs(cookie, '/auth/session')).statusCode).toBe(200);
+      const status = await getAs(cookie, '/me/legal-acceptances');
+      expect(status.statusCode).toBe(200);
+      expect(status.json().required).toBe(true);
+      const profile = await app.app.inject({ method: 'PATCH', url: '/me/profile', headers: { ...origin, cookie }, payload: { name: 'Nome para aceitar' } });
+      expect(profile.statusCode).toBe(200);
+      const accepted = await app.app.inject({ method: 'POST', url: '/me/legal-acceptances', headers: { ...origin, cookie }, payload: { document: 'terms' } });
+      expect(accepted.statusCode).toBe(200);
+      expect((await app.app.inject({ method: 'POST', url: '/auth/logout', headers: { ...origin, cookie } })).statusCode).toBe(204);
+    });
+  });
+
+  it('does not refuse an old confirmed account that has no acceptance row and no Google: only an account with Google is blocked', async () => {
+    const person = await insertTestUser(app.pool, app.auth, { emailLabel: 'block-legacy' });
+    createdEmails.push(person.email);
+    expect(await acceptancesOf(person.id)).toEqual([]);
+    const login = await passwordLogin(person.email, person.password);
+    expect(login.statusCode).toBe(200);
+    const linked = await linkedTo(person.id);
+
+    await expectAllowed(cookieOf(login), [...agencyProbes(linked), ...portalProbes(linked)]);
+  });
+
+  it('refuses that same old account from the moment it gains Google, until it accepts: the side effect the decision accepts', async () => {
+    const person = await insertTestUser(app.pool, app.auth, { emailLabel: 'block-legacy-google' });
+    createdEmails.push(person.email);
+    const linked = await linkedTo(person.id);
+
+    const result = await signInWithGoogle(app.app, google, identity(person.email));
+    expect(result.location).toBe(LANDING);
+    expect(await acceptancesOf(person.id)).toEqual([]);
+    await expectRefusedForTerms(result.cookie, [agencyProbes(linked)[0]!, portalProbes(linked)[0]!]);
+
+    await acceptBoth(result.cookie);
+    await expectAllowed(result.cookie, [agencyProbes(linked)[0]!, portalProbes(linked)[0]!]);
+  });
+
+  it('holds for a collaborator whose role has the one permission the route needs, and lets exactly that route in once accepted', async () => {
+    const owner = await insertTestUser(app.pool, app.auth, { emailLabel: 'block-role-owner' });
+    createdEmails.push(owner.email);
+    const agencyId = await grantOwnedAgencyContext(owner.id);
+    createdAgencies.push(agencyId);
+    const roleId = randomUUID();
+    await queryAsOwner(`insert into public.roles (id, agency_id, key, name, is_system) values ($1, $2, 'only-clients-read', 'only-clients-read', false)`, [roleId, agencyId]);
+    await queryAsOwner(`insert into public.role_permissions (role_id, permission_key) values ($1, 'cliente.visualizar')`, [roleId]);
+    const { cookie, userId } = await newGoogleAccount('block-role', { accept: false });
+    await queryAsOwner(`insert into public.agency_memberships (agency_id, user_id, role_id, status) values ($1, $2, $3, 'active')`, [agencyId, userId, roleId]);
+
+    await expectRefusedForTerms(cookie, [{ label: 'GET clients', method: 'GET', url: `/agencies/${agencyId}/clients`, allowed: 200 }]);
+    await acceptBoth(cookie);
+
+    expect((await getAs(cookie, `/agencies/${agencyId}/clients`)).statusCode).toBe(200);
+    // The permission is still the route's: the role has no right to register a client, with or without the acceptance.
+    expect((await app.app.inject({ method: 'POST', url: `/agencies/${agencyId}/clients`, headers: { ...origin, cookie }, payload: { name: 'Sem permissão' } })).statusCode).toBe(403);
+  });
+
+  it('answers 404 before 403 for an agency or a client the person is not linked to, so the block tells nothing about other people', async () => {
+    const { cookie } = await newGoogleAccount('block-stranger', { accept: false });
+    const stranger = await insertTestUser(app.pool, app.auth, { emailLabel: 'block-stranger-owner' });
+    createdEmails.push(stranger.email);
+    const elsewhere = await linkedTo(stranger.id);
+
+    expect((await getAs(cookie, `/agencies/${elsewhere.agencyId}/me`)).statusCode).toBe(404);
+    expect((await getAs(cookie, `/clients/${elsewhere.clientId}`)).statusCode).toBe(404);
   });
 });
 

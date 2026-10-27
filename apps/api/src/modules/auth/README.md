@@ -97,10 +97,11 @@ and redirects. `GET /auth/callback/google` calls `auth.api.callbackOAuth`; **eve
 not the landing `/entrar/google`, redirects to `/entrar?erro=google` with no body and no reason (the reason goes to the
 log), so the flow is no oracle for which address has a password account. `google.ts` is the one place the rules live:
 `verifyGoogleIdToken` (signature, `iss`, `aud`, expiry, `nonce`), `email_verified === true`, then
-`app_private.google_sign_in_admission(sub, email)`, which decides in the database, locking the user: a linked `sub` enters
+`app_private.google_sign_in_admission(sub, email, name)`, which decides in the database, locking the user: a linked `sub` enters
 only with the address of its account; an account holding another Google identity is refused; an **unconfirmed** account
 is taken over by `app_private.google_takes_over_account` (password, sessions, reset and confirmation links and open
-e-mail changes die; the legal acceptances are revoked; `passwordChangedAt` is set); a confirmed account just gains the
+e-mail changes die; the legal acceptances are revoked; `passwordChangedAt` is set; the name the earlier holder typed gives
+way to the name of the Google profile); a confirmed account just gains the
 second way in (`accountLinking` is on, `trustedProviders` empty, and `requireLocalEmailVerified` is why the takeover is
 our code). The account is the `sub` (`auth.account.accountId`, unique per provider and one Google per user). No Google
 token is stored (`databaseHooks.account.create.before`), and no other provider can be linked. `session-guard.ts`

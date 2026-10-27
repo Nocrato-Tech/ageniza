@@ -9,7 +9,7 @@
 // 2. `auth."user"."passwordChangedAt`: the date the credential of the account was replaced under the person's feet. The
 //    session guard refuses a session created before it (the mechanism of issue #719). The application role reads it and
 //    never writes it: only the functions below do.
-// 3. `app_private.google_sign_in_admission(subject, email)`: the one decision on whether this Google identity may sign in,
+// 3. `app_private.google_sign_in_admission(subject, email, name)`: the one decision on whether this Google identity may sign in,
 //    made in a single transaction with the account locked. It also carries out the takeover of an unconfirmed account.
 // 4. `app_private.credential_fingerprint` falls back to the Google subject for an account without a password (item 6).
 // 5. `app_private.legal_acceptance_blocks_access`: the Google account that has not accepted the Terms and the Privacy
@@ -103,8 +103,10 @@ export async function up(knex) {
 
   await knex.raw(`
     -- The mailbox owner proved the address to Google, so the account that was created with it before them is theirs
-    -- (decision 2026-10-26, item 4). Everything the earlier holder could still use dies in the same transaction.
-    create function app_private.google_takes_over_account(p_user_id uuid)
+    -- (decision 2026-10-26, item 4). Everything the earlier holder could still use dies in the same transaction, and so
+    -- does the name the earlier holder typed: it becomes the name of the Google profile (the part of the address before
+    -- the @ when the profile has none), the same criterion as the takeover by "Esqueci a senha" (issue #724).
+    create function app_private.google_takes_over_account(p_user_id uuid, p_name text)
     returns void
     language plpgsql
     security definer
@@ -112,7 +114,8 @@ export async function up(knex) {
     as $function$
     begin
       update auth."user"
-      set "emailVerified" = true, "passwordChangedAt" = pg_catalog.clock_timestamp(), "updatedAt" = pg_catalog.now()
+      set "emailVerified" = true, "passwordChangedAt" = pg_catalog.clock_timestamp(), "updatedAt" = pg_catalog.now(),
+          name = coalesce(nullif(pg_catalog.btrim(p_name), ''), pg_catalog.split_part(email, '@', 1))
       where id = p_user_id;
 
       delete from auth."account" where "userId" = p_user_id and "providerId" = 'credential';
@@ -130,14 +133,14 @@ export async function up(knex) {
       values ('auth.google_takeover', p_user_id, 'user', p_user_id);
     end;
     $function$;
-    revoke all on function app_private.google_takes_over_account(uuid) from public;
-    revoke all on function app_private.google_takes_over_account(uuid) from ageniza_app;
+    revoke all on function app_private.google_takes_over_account(uuid, text) from public;
+    revoke all on function app_private.google_takes_over_account(uuid, text) from ageniza_app;
 
     -- Whether this Google identity (the id token already proved: signed, for this client, with a verified address) may
     -- sign in, and the takeover of the unconfirmed account that holds its address. The subject names the account once it
     -- is linked (item 5); before that the address does, and only an address that nobody holds, or that a confirmed
     -- account or an unconfirmed one holds, goes on. False refuses, and the caller answers it like a wrong credential.
-    create function app_private.google_sign_in_admission(p_subject text, p_email text)
+    create function app_private.google_sign_in_admission(p_subject text, p_email text, p_name text)
     returns boolean
     language plpgsql
     security definer
@@ -172,13 +175,13 @@ export async function up(knex) {
       end if;
 
       if not v_verified then
-        perform app_private.google_takes_over_account(v_user_id);
+        perform app_private.google_takes_over_account(v_user_id, p_name);
       end if;
       return true;
     end;
     $function$;
-    revoke all on function app_private.google_sign_in_admission(text, text) from public;
-    grant execute on function app_private.google_sign_in_admission(text, text) to ageniza_app;
+    revoke all on function app_private.google_sign_in_admission(text, text, text) from public;
+    grant execute on function app_private.google_sign_in_admission(text, text, text) to ageniza_app;
   `);
 }
 

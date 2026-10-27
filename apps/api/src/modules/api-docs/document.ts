@@ -49,6 +49,17 @@ const groupErrorsByStatus = (errors: readonly ApiErrorDoc[]): ReadonlyArray<read
   return [...grouped.entries()].sort(([a], [b]) => a - b);
 };
 
+const TERMS_NOT_ACCEPTED_ERROR: ApiErrorDoc = { status: 403, code: 'TERMS_NOT_ACCEPTED' };
+
+/**
+ * The agency and the portal guards refuse an account that still has to accept the Terms and the Privacy Policy (issue #707), so
+ * every route behind them can answer it; the catalog lists it here once instead of on each of those routes.
+ */
+export const routeErrors = (route: { readonly path: string; readonly errors: readonly ApiErrorDoc[] }): readonly ApiErrorDoc[] =>
+  /^\/(agencies\/:agencyId|clients\/:clientId)(\/|$)/.test(route.path) && !route.errors.some((error) => error.code === TERMS_NOT_ACCEPTED_ERROR.code)
+    ? [...route.errors, TERMS_NOT_ACCEPTED_ERROR]
+    : route.errors;
+
 /**
  * Builds the OpenAPI 3.1 document from the route catalog. Every schema comes from
  * `@ageniza/contracts`; this module never restates one. Examples are validated against the schema
@@ -112,7 +123,7 @@ export const buildOpenApiDocument = (): Record<string, unknown> => {
       };
     }
 
-    for (const [status, errors] of groupErrorsByStatus(route.errors)) {
+    for (const [status, errors] of groupErrorsByStatus(routeErrors(route))) {
       const example = errorExample(errors[0]!);
       assertExample(ApiErrorResponseSchema, example, `${route.method.toUpperCase()} ${route.path} ${status}`);
       responses[String(status)] = {
