@@ -80,7 +80,8 @@ export function DatePicker({
   };
 
   useLayoutEffect(() => {
-    if (!open || !focusDay.current) return;
+    // The card stays hidden until it is placed, and a hidden button refuses focus: wait for the position before moving it.
+    if (!open || placed === null || !focusDay.current) return;
     focusDay.current = false;
     panelRef.current?.querySelector<HTMLButtonElement>(`button[data-day="${focused}"]`)?.focus();
   });

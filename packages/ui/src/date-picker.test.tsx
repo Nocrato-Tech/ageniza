@@ -111,6 +111,25 @@ describe('DatePicker field', () => {
 });
 
 describe('DatePicker calendar', () => {
+  it('moves the focus to the day only after the card is placed, since the browser will not focus inside a hidden card', () => {
+    // jsdom ignores `visibility`, so refuse focus the way the browser does while the card has no position yet.
+    const focus = HTMLElement.prototype.focus;
+    const spy = vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement, options?: FocusOptions) {
+      if (this.closest('.ui-date-picker__panel:not([style])') !== null) return;
+      focus.call(this, options);
+    });
+    try {
+      render(<Harness initial="2026-10-20" />);
+
+      fireEvent.click(toggle());
+
+      expect(panel()!.hasAttribute('style')).toBe(true);
+      expect(document.activeElement).toBe(dayButton('2026-10-20'));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('opens on the chosen day, in its month, with the toggle expanded', () => {
     render(<Harness initial="2026-10-20" />);
 
