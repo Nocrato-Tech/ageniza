@@ -433,19 +433,20 @@ describe('invitation HTTP module', () => {
   it('#710: the confirmation goes to the invited address even when the browser still holds another account session', async () => {
     const email = `confirm-other-session-${randomUUID()}@example.test`;
     const invitation = await insertInvitation({ agencyId, email });
-    const sentBefore = sender.sent.length;
-    const response = await app.app.inject({
+    const { own, ownSender, adminCookie } = await ownApp();
+    const response = await own.app.inject({
       method: 'POST',
       url: `/invitations/${invitation.token}/accept-new-account`,
-      headers: { ...origin, cookie: await loginCookie(invitee) },
+      headers: { ...origin, cookie: adminCookie },
       payload: { name: 'Other Session Invitee', password: 'a secure activation password', acceptTerms: true }
     });
     expect(response.statusCode).toBe(201);
     const created = await owner.knex('auth.user').where({ email }).first('id');
     createdUserIds.push(created!.id as string);
-    await app.emailService.drain();
-    const confirmations = sender.sent.slice(sentBefore).filter((message) => message.template === 'email-verification');
+    await own.emailService.drain();
+    const confirmations = ownSender.sent.filter((message) => message.template === 'email-verification');
     expect(confirmations.map((message) => message.to)).toEqual([email]);
+    await own.close();
   });
 
   /** An app of its own, so these requests do not spend the shared app's per-IP invitation budget. */
