@@ -8,6 +8,8 @@ import type { ContentFormat, PortalApprovalBatch, PortalApprovalContent } from '
  */
 
 export const APPROVAL_TOKEN = 'Zq3_kT9-aB1cD2eF3gH4iJ5kL6mN7oP8qR9sT0uV1wX';
+/** The token of a second link (`addLink`), for a page that is opened again with another one. */
+export const OTHER_TOKEN = 'Yq3_kT9-aB1cD2eF3gH4iJ5kL6mN7oP8qR9sT0uV1wX';
 export const CLIENT_NAME = 'Padaria Central';
 export const AGENCY_NAME = 'Agência Exemplo';
 export const PERSON_EMAIL = 'maria@padariacentral.example.test';
@@ -70,6 +72,10 @@ export interface ApprovalControls {
   fail: { exchange?: () => Response | 'network' | undefined; batch?: () => Response | 'network' | undefined; decision?: () => Response | 'network' | undefined; media?: () => Response | 'network' | undefined };
   /** How long a signed address of a media lasts. */
   mediaTtlMs: number;
+  /** How far behind the clock of the device the clock of the server is: the `expiresAt` it signs is that much earlier on the device's own clock. */
+  serverBehindMs: number;
+  /** Whether a request the page aborts stops, as in a browser. Off: its answer still arrives, late, as one already on the wire would. */
+  abortable: boolean;
 }
 
 export const stored = (seed: SeedContent): StoredContent => ({
@@ -111,8 +117,11 @@ const asContent = (row: StoredContent): PortalApprovalContent => {
 export const createApprovalApi = (seeds: readonly SeedContent[], initial: Partial<ApprovalControls> = {}) => {
   const rows: StoredContent[] = seeds.map(stored);
   const calls: RecordedCall[] = [];
-  const controls: ApprovalControls = { latency: 3, hold: {}, fail: {}, mediaTtlMs: 5 * 60_000, ...initial };
-  const world = { cookie: false, linkAlive: true, sessionLive: true, mediaCalls: 0, clientName: CLIENT_NAME };
+  const controls: ApprovalControls = { latency: 3, hold: {}, fail: {}, mediaTtlMs: 5 * 60_000, serverBehindMs: 0, abortable: true, ...initial };
+  const lots = new Map<string, StoredContent[]>([[APPROVAL_TOKEN, rows]]);
+  const world = { cookie: false, activeToken: APPROVAL_TOKEN, linkAlive: true, sessionLive: true, mediaCalls: 0, clientName: CLIENT_NAME };
+  /** The lot of the link whose token opened the session the cookie holds. */
+  const live = (): StoredContent[] => lots.get(world.activeToken) ?? rows;
 
   const batch = (): PortalApprovalBatch => ({
     clientName: world.clientName,
@@ -120,7 +129,7 @@ export const createApprovalApi = (seeds: readonly SeedContent[], initial: Partia
     personEmail: PERSON_EMAIL,
     sessionExpiresAt: '2026-10-27T14:00:00.000Z',
     linkExpiresAt: '2026-11-04T01:30:00.000Z',
-    contents: rows.map(asContent)
+    contents: live().map(asContent)
   });
 
   const decide = (row: StoredContent | undefined, body: unknown, action: 'approve' | 'request'): Response => {
@@ -150,8 +159,9 @@ export const createApprovalApi = (seeds: readonly SeedContent[], initial: Partia
       if (override !== undefined) return override;
       const record = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {};
       if (Object.keys(record).join() !== 'token' || typeof record.token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(record.token)) return failure(400, 'VALIDATION_ERROR');
-      if (record.token !== APPROVAL_TOKEN || !world.linkAlive) return failure(404, 'APPROVAL_LINK_INVALID');
+      if (!lots.has(record.token) || !world.linkAlive) return failure(404, 'APPROVAL_LINK_INVALID');
       world.cookie = true;
+      world.activeToken = record.token;
       return json({ sessionExpiresAt: '2026-10-27T14:00:00.000Z', linkExpiresAt: '2026-11-04T01:30:00.000Z' });
     }
 
@@ -171,12 +181,12 @@ export const createApprovalApi = (seeds: readonly SeedContent[], initial: Partia
       const override = controls.fail.media?.();
       if (override === 'network') throw new TypeError('Failed to fetch');
       if (override !== undefined) return override;
-      const row = rows.find((entry) => entry.id === media[1]);
+      const row = live().find((entry) => entry.id === media[1]);
       const variant = url.searchParams.get('variant') ?? 'original';
       if (row === undefined || row.status === 'in_production' || !['original', 'thumbnail'].includes(variant)) return failure(404, 'NOT_FOUND');
       if (!row.media.some((entry) => entry.id === media[2]) && row.coverAssetId !== media[2]) return failure(404, 'NOT_FOUND');
       world.mediaCalls += 1;
-      return json({ url: `https://storage.example.test/${media[2]}/${variant}?n=${world.mediaCalls}`, expiresAt: new Date(Date.now() + controls.mediaTtlMs).toISOString() });
+      return json({ url: `https://storage.example.test/${media[2]}/${variant}?n=${world.mediaCalls}`, expiresAt: new Date(Date.now() - controls.serverBehindMs + controls.mediaTtlMs).toISOString() });
     }
 
     const decision = /^\/portal-approval\/contents\/([^/]+)\/(approve|request-changes)$/.exec(path);
@@ -185,7 +195,7 @@ export const createApprovalApi = (seeds: readonly SeedContent[], initial: Partia
       const override = controls.fail.decision?.();
       if (override === 'network') throw new TypeError('Failed to fetch');
       if (override !== undefined) return override;
-      return decide(rows.find((entry) => entry.id === decision[1]), body, decision[2] === 'approve' ? 'approve' : 'request');
+      return decide(live().find((entry) => entry.id === decision[1]), body, decision[2] === 'approve' ? 'approve' : 'request');
     }
     return failure(404, 'NOT_FOUND');
   };
@@ -195,8 +205,20 @@ export const createApprovalApi = (seeds: readonly SeedContent[], initial: Partia
     const method = init?.method ?? 'GET';
     const body: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
     calls.push({ method, path: url.pathname, search: url.search, body, credentials: init?.credentials, hashAtSend: window.location.hash });
-    await new Promise<void>((resolve) => { setTimeout(resolve, controls.latency); });
-    return answer(url, method, body);
+    const signal = init?.signal ?? undefined;
+    const aborted = new Promise<never>((_resolve, reject) => {
+      const stop = (): void => { reject(new DOMException('The operation was aborted.', 'AbortError')); };
+      if (!controls.abortable) return;
+      if (signal?.aborted === true) stop();
+      else signal?.addEventListener('abort', stop, { once: true });
+    });
+    const served = (async () => {
+      await new Promise<void>((resolve) => { setTimeout(resolve, controls.latency); });
+      return answer(url, method, body);
+    })();
+    // A request nobody waits for any more must not leave an unhandled rejection behind.
+    served.catch(() => undefined);
+    return Promise.race([served, aborted]);
   };
 
   return {
@@ -205,8 +227,10 @@ export const createApprovalApi = (seeds: readonly SeedContent[], initial: Partia
     controls,
     world,
     rows,
+    /** A second link, with its own lot: the session opened with its token shows it. */
+    addLink: (token: string, lot: readonly SeedContent[]): void => { lots.set(token, lot.map(stored)); },
     row: (id: string): StoredContent => {
-      const found = rows.find((entry) => entry.id === id);
+      const found = [...lots.values()].flat().find((entry) => entry.id === id);
       if (found === undefined) throw new Error(`no content ${id} in the fixture`);
       return found;
     },

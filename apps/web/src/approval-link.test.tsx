@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import {
   AGENCY_NAME,
   APPROVAL_TOKEN,
+  OTHER_TOKEN,
   asset,
   CLIENT_NAME,
   contentId,
@@ -22,7 +23,6 @@ import {
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
-import { URL_MARGIN_MS } from './signed-url.js';
 
 afterEach(cleanup);
 
@@ -394,14 +394,6 @@ describe('the page of the approval link (#717)', () => {
       expect(api.callsTo('GET', /\/media\/[^/]+\/url$/).map((call) => call.search).sort()).toEqual(['?variant=original', '?variant=thumbnail']);
     });
 
-    it('asks again, shortly before it lapses, for the signed address of a picture that stays on screen', async () => {
-      const { api } = await loaded([A], { controls: { mediaTtlMs: URL_MARGIN_MS + 1_200 } });
-      const first = (await screen.findByRole('img', { name: `${A.title}: mídia 1 de 1` })).getAttribute('src');
-      expect(first).toContain('?n=1');
-      await waitFor(() => { expect(api.callsTo('GET', /\/media\/[^/]+\/url$/).length).toBeGreaterThanOrEqual(2); }, { timeout: 4_000 });
-      await waitFor(() => { expect(screen.getByRole('img', { name: `${A.title}: mídia 1 de 1` }).getAttribute('src')).not.toBe(first); });
-      expect(screen.getByRole('img', { name: `${A.title}: mídia 1 de 1` }).getAttribute('src')).toMatch(/\?n=[2-9]$/);
-    }, 10_000);
 
     it('asks again when the tab comes back to the front after the address lapsed (a phone freezes the timer of a hidden tab), and not while it is still fresh', async () => {
       const { api } = await loaded([A]);
@@ -697,6 +689,203 @@ describe('the page of the approval link (#717)', () => {
       expect(screen.getByRole('link', { name: 'Criar conta para ver o portal' })).toBeTruthy();
     });
   });
+  describe('the link opened again on the tab that already has the page', () => {
+    // Only the fragment changes, so the browser does not load the page again: the page has to notice by itself.
+    const openAgain = async (fragment: string): Promise<void> => {
+      act(() => { window.location.hash = fragment; });
+      await waitFor(() => { expect(window.location.hash).toBe(''); });
+    };
+    const mediaOf = (api: ApprovalApi) => api.callsTo('GET', /\/media\/[^/]+\/url$/);
+
+    it('after "Sua sessão venceu", pasting the link again exchanges the token, shows the lot and leaves no token in the bar or a second entry in the history', async () => {
+      const { api } = await loaded([A]);
+      api.world.sessionLive = false;
+      fireEvent.click(within(card(A.title)).getByRole('button', { name: 'Aprovar' }));
+      expect(await screen.findByText('Sua sessão venceu')).toBeTruthy();
+      api.world.sessionLive = true;
+      api.world.cookie = false;
+      const entries = window.history.length;
+      await openAgain(APPROVAL_TOKEN);
+      expect(await pendingHeading()).toBeTruthy();
+      expect(card(A.title)).toBeTruthy();
+      expect(sessionCalls(api).map((call) => call.body)).toEqual([{ token: APPROVAL_TOKEN }, { token: APPROVAL_TOKEN }]);
+      expect(api.calls.every((call) => call.hashAtSend === '')).toBe(true);
+      expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe('/aprovar');
+      // The one entry is the person's own navigation; erasing the token took the token out of it and added nothing.
+      expect(window.history.length - entries).toBe(1);
+    });
+
+    it('with another token, shows the lot of the new link and not the old one', async () => {
+      const { api } = await loaded([A]);
+      api.addLink(OTHER_TOKEN, [{ ...B, title: 'Lote do outro link' }]);
+      await openAgain(OTHER_TOKEN);
+      expect(await screen.findByRole('article', { name: 'Lote do outro link' })).toBeTruthy();
+      expect(screen.queryByRole('article', { name: A.title })).toBeNull();
+      expect(sessionCalls(api).map((call) => call.body)).toEqual([{ token: APPROVAL_TOKEN }, { token: OTHER_TOKEN }]);
+    });
+
+    it('with a fragment that is not a token, shows the one screen of the wrong link, asks nothing and erases it', async () => {
+      const { api } = await loaded([A]);
+      const before = api.calls.length;
+      await openAgain('curto');
+      expect(await screen.findByText('Este link não vale mais')).toBeTruthy();
+      expect(api.calls).toHaveLength(before);
+      expect(window.location.hash).toBe('');
+    });
+
+    it('does not let the link that was being opened write over the new one, even when its answer arrives after (nothing aborts it)', async () => {
+      const gate = held();
+      const { api } = open([A], { controls: { hold: { exchange: gate.promise }, abortable: false } });
+      await waitFor(() => { expect(sessionCalls(api)).toHaveLength(1); });
+      await new Promise<void>((resolve) => { setTimeout(resolve, 30); });
+      api.addLink(OTHER_TOKEN, [{ ...B, title: 'Lote do outro link' }]);
+      delete api.controls.hold.exchange;
+      await openAgain(OTHER_TOKEN);
+      // The old answer is the last to arrive: if the new exchange had not waited for it, it would be the cookie that stays.
+      await new Promise<void>((resolve) => { setTimeout(resolve, 40); });
+      let sawOld = false;
+      const watcher = new MutationObserver(() => { if (screen.queryByRole('article', { name: A.title }) !== null) sawOld = true; });
+      watcher.observe(document.body, { childList: true, subtree: true });
+      gate.release();
+      expect(await screen.findByRole('article', { name: 'Lote do outro link' })).toBeTruthy();
+      watcher.disconnect();
+      expect(sawOld).toBe(false);
+      expect(sessionCalls(api).map((call) => call.body)).toEqual([{ token: APPROVAL_TOKEN }, { token: OTHER_TOKEN }]);
+      expect(api.world.activeToken).toBe(OTHER_TOKEN);
+      expect(screen.queryByRole('article', { name: A.title })).toBeNull();
+    });
+
+    it('does not show, not even for a moment, the lot the old link was reading when the new one was opened (the exchange was done, the lot was on the wire)', async () => {
+      const gate = held();
+      const { api } = open([A], { controls: { hold: { batch: gate.promise }, abortable: false } });
+      await waitFor(() => { expect(batchCalls(api)).toHaveLength(1); });
+      await new Promise<void>((resolve) => { setTimeout(resolve, 30); });
+      api.addLink(OTHER_TOKEN, [{ ...B, title: 'Lote do outro link' }]);
+      await openAgain(OTHER_TOKEN);
+      await new Promise<void>((resolve) => { setTimeout(resolve, 40); });
+      let sawOld = false;
+      const watcher = new MutationObserver(() => { if (screen.queryByRole('article', { name: A.title }) !== null) sawOld = true; });
+      watcher.observe(document.body, { childList: true, subtree: true });
+      delete api.controls.hold.batch;
+      gate.release();
+      expect(await screen.findByRole('article', { name: 'Lote do outro link' })).toBeTruthy();
+      watcher.disconnect();
+      expect(sawOld).toBe(false);
+      expect(sessionCalls(api).map((call) => call.body)).toEqual([{ token: APPROVAL_TOKEN }, { token: OTHER_TOKEN }]);
+    });
+
+    it('stops asking for the old link as soon as the new one is opened: the new exchange does not wait for a request nobody wants', async () => {
+      const gate = held();
+      const { api } = open([A], { controls: { hold: { exchange: gate.promise } } });
+      await waitFor(() => { expect(sessionCalls(api)).toHaveLength(1); });
+      await new Promise<void>((resolve) => { setTimeout(resolve, 30); });
+      api.addLink(OTHER_TOKEN, [{ ...B, title: 'Lote do outro link' }]);
+      delete api.controls.hold.exchange;
+      await openAgain(OTHER_TOKEN);
+      await act(async () => { await Promise.resolve(); });
+      // The aborted request of the old link is not a failure of the new one.
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(await screen.findByRole('article', { name: 'Lote do outro link' })).toBeTruthy();
+      gate.release();
+    });
+
+    it('drops the answer of a decision that was in flight for the old link: a dead link there does not end the session of the new one', async () => {
+      const gate = held();
+      const { api } = await loaded([A], { controls: { hold: { decision: gate.promise }, fail: { decision: () => new Response(JSON.stringify({ error: { code: 'APPROVAL_LINK_INVALID', message: 'MENSAGEM DO SERVIDOR' } }), { status: 404, headers: { 'content-type': 'application/json' } }) } } });
+      fireEvent.click(within(card(A.title)).getByRole('button', { name: 'Aprovar' }));
+      await waitFor(() => { expect(decisionCalls(api)).toHaveLength(1); });
+      api.addLink(OTHER_TOKEN, [{ ...B, title: 'Lote do outro link' }]);
+      await openAgain(OTHER_TOKEN);
+      expect(await screen.findByRole('article', { name: 'Lote do outro link' })).toBeTruthy();
+      gate.release();
+      await new Promise<void>((resolve) => { setTimeout(resolve, 80); });
+      expect(screen.queryByText('Sua sessão venceu')).toBeNull();
+      expect(screen.getByRole('article', { name: 'Lote do outro link' })).toBeTruthy();
+    });
+
+    it('drops the answer of an approval that was in flight for the old link even when the new lot has a content with the same id', async () => {
+      const gate = held();
+      const { api } = await loaded([A], { controls: { hold: { decision: gate.promise } } });
+      fireEvent.click(within(card(A.title)).getByRole('button', { name: 'Aprovar' }));
+      await waitFor(() => { expect(decisionCalls(api)).toHaveLength(1); });
+      api.addLink(OTHER_TOKEN, [{ ...A, title: 'Lote do outro link' }]);
+      await openAgain(OTHER_TOKEN);
+      await screen.findByRole('article', { name: 'Lote do outro link' });
+      gate.release();
+      await new Promise<void>((resolve) => { setTimeout(resolve, 80); });
+      // The page shows what it read for the new link, whatever came back for the old one.
+      expect(within(card('Lote do outro link')).getByRole('button', { name: 'Aprovar' })).toBeTruthy();
+      expect(screen.queryByText('Conteúdo aprovado. Obrigado!')).toBeNull();
+    });
+
+    it('does nothing when the fragment is taken away (the person went back to the bare address)', async () => {
+      const { api } = await loaded([A]);
+      const before = api.calls.length;
+      act(() => { window.dispatchEvent(new HashChangeEvent('hashchange')); });
+      await new Promise<void>((resolve) => { setTimeout(resolve, 60); });
+      expect(api.calls).toHaveLength(before);
+      expect(card(A.title)).toBeTruthy();
+      expect(mediaOf(api).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('the renewal of the signed address', () => {
+    beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] }); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    // The clock is the test's own: the page, the fake API and React Query all read it, so minutes pass at once and nothing races.
+    const pass = (ms: number): Promise<void> => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+    const openFake = async (seeds: readonly SeedContent[], controls: Partial<ApprovalControls> = {}): Promise<ApprovalApi> => {
+      const { api } = open(seeds, { controls });
+      // Three seconds of the test's own clock: the exchange, the lot and the first address, each a macrotask apart.
+      for (let step = 0; step < 6; step++) await pass(500);
+      return api;
+    };
+    const originals = (api: ApprovalApi) => api.callsTo('GET', /\/media\/[^/]+\/url$/).filter((call) => call.search === '?variant=original');
+
+    it('asks again shortly before the address of five minutes ends, and not before', async () => {
+      const api = await openFake([A]);
+      const first = screen.getByRole('img', { name: `${A.title}: mídia 1 de 1` }).getAttribute('src');
+      expect(first).toContain('?n=1');
+      await pass(200_000);
+      expect(originals(api)).toHaveLength(1);
+      await pass(80_000);
+      expect(originals(api)).toHaveLength(2);
+      expect(screen.getByRole('img', { name: `${A.title}: mídia 1 de 1` }).getAttribute('src')).toMatch(/original\?n=[2-9]$/);
+    });
+
+    it('renews an address of 30 seconds before it ends, and then no more often than the floor: a few requests in a minute, not one per second', async () => {
+      const api = await openFake([A], { mediaTtlMs: 30_000 });
+      await pass(28_000);
+      expect(originals(api).length).toBeGreaterThanOrEqual(2);
+      await pass(32_000);
+      expect(originals(api).length).toBeLessThanOrEqual(5);
+    });
+
+    it('does not turn a clock that is five minutes off into a request per second for the media on screen', async () => {
+      const api = await openFake([A], { serverBehindMs: 300_000 });
+      await pass(60_000);
+      const asked = originals(api).length;
+      expect(asked).toBeGreaterThanOrEqual(3);
+      expect(asked).toBeLessThanOrEqual(4);
+    });
+
+    it('lets a video that is playing keep the address it started with, and takes the new one when it stops', async () => {
+      const api = await openFake([{ ...A, format: 'reels', coverAssetId: asset(9), media: [{ id: asset(4), kind: 'video' }] }]);
+      const video = screen.getByLabelText(`${A.title}: mídia 1 de 1`);
+      const first = video.getAttribute('src');
+      expect(first).toContain(`/${asset(4)}/original?n=`);
+      fireEvent.play(video);
+      await pass(285_000);
+      expect(originals(api)).toHaveLength(2);
+      expect(screen.getByLabelText(`${A.title}: mídia 1 de 1`).getAttribute('src')).toBe(first);
+      fireEvent.pause(video);
+      await pass(10);
+      expect(screen.getByLabelText(`${A.title}: mídia 1 de 1`).getAttribute('src')).toMatch(new RegExp(`/${asset(4)}/original\\?n=\\d+$`));
+      expect(screen.getByLabelText(`${A.title}: mídia 1 de 1`).getAttribute('src')).not.toBe(first);
+    });
+  });
+
   describe('CSS contract', () => {
     const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
     const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({

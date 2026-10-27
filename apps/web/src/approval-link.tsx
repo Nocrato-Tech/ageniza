@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Pencil } from 'lucide-react';
 
 import {
@@ -29,7 +29,7 @@ import { HttpClientError, useApiClient } from './http.js';
 import { PORTAL_STATUS_LABELS, PORTAL_STATUS_TAGS } from './portal-status.js';
 import { COMMENT_MESSAGES, RequestChangesDialog, type RequestError } from './request-changes-dialog.js';
 import { signUpEmailState } from './sign-up.js';
-import { signedUrlStaleTime, URL_MARGIN_MS } from './signed-url.js';
+import { URL_MARGIN_MS } from './signed-url.js';
 import { StatusPanel } from './status-panel.js';
 
 /**
@@ -44,8 +44,10 @@ const BATCH_PATH = '/portal-approval/batch';
 const CONTENT_PATH = '/portal-approval/contents/:contentId';
 const MEDIA_URL_PATH = '/portal-approval/contents/:contentId/media/:assetId/url';
 
-/** A refresh of a signed URL is never closer than this to the last one: a refused refresh must not become a loop. */
-const MIN_MEDIA_REFRESH_MS = 1_000;
+/** The API never signs an address for longer than this. */
+const MAX_URL_LIFETIME_MS = 5 * 60_000;
+/** A signed address is never asked for again sooner than this after the last one: a short life or a wrong clock must not make a loop. */
+const MIN_MEDIA_REFRESH_MS = 20_000;
 
 const MESSAGES = {
   loading: 'Carregando os conteúdos…',
@@ -109,6 +111,8 @@ const failurePhase = (error: unknown): Phase => {
 
 interface ApprovalLink {
   readonly phase: Phase;
+  /** Which opening of the page this is: it changes when the link is opened again, and what belongs to an older one is dropped. */
+  readonly generation: () => number;
   /** The lot is being read again after a conflict: a click in the meantime would carry a revision about to be replaced. */
   readonly reloading: boolean;
   readonly retry: () => void;
@@ -120,28 +124,37 @@ interface ApprovalLink {
 /** The state of the page: exchange of the token, the lot, and what a decision or a new reading does to it. */
 function useApprovalLink(): ApprovalLink {
   const httpClient = useApiClient();
+  const queryClient = useQueryClient();
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
   const [reloading, setReloading] = useState(false);
   const fragment = useRef<Fragment | undefined>(undefined);
   const opening = useRef<Promise<void> | null>(null);
+  const aborter = useRef<AbortController | null>(null);
+  // A link opened again on the same tab starts a new generation: whatever an older one still has in flight is dropped, never written.
+  const current = useRef(0);
 
-  const readBatch = (): Promise<PortalApprovalBatch> => httpClient.request({ path: BATCH_PATH, response: PortalApprovalBatchSchema });
+  const readBatch = (signal?: AbortSignal): Promise<PortalApprovalBatch> => httpClient.request({ path: BATCH_PATH, response: PortalApprovalBatchSchema, signal });
 
   const open = (): Promise<void> => {
     if (opening.current !== null) return opening.current;
+    const mine = current.current;
+    const controller = new AbortController();
+    aborter.current = controller;
     const run = (async () => {
       try {
         const found = fragment.current;
         if (found?.kind === 'malformed') { setPhase({ kind: 'invalid' }); return; }
         if (found?.kind === 'token') {
-          await httpClient.request({ path: SESSION_PATH, method: 'POST', body: { token: found.value }, response: PortalApprovalExchangeResponseSchema });
+          await httpClient.request({ path: SESSION_PATH, method: 'POST', body: { token: found.value }, response: PortalApprovalExchangeResponseSchema, signal: controller.signal });
+          if (mine !== current.current) return;
           // The session cookie holds the access from here on: the page keeps no copy of the token.
           fragment.current = { kind: 'none' };
         }
-        const batch = await readBatch();
+        const batch = await readBatch(controller.signal);
+        if (mine !== current.current) return;
         setPhase({ kind: 'ready', batch });
       } catch (error: unknown) {
-        setPhase(failurePhase(error));
+        if (mine === current.current) setPhase(failurePhase(error));
       }
     })();
     opening.current = run;
@@ -149,10 +162,29 @@ function useApprovalLink(): ApprovalLink {
     return run;
   };
 
+  /** The link was opened again on this tab: only the fragment changed, so the page was not loaded again. The new one is read like the first. */
+  const reopen = (): void => {
+    current.current += 1;
+    aborter.current?.abort();
+    const previous = opening.current;
+    opening.current = null;
+    fragment.current = takeFragment();
+    // What was asked in the name of the old session is not the new link's.
+    void queryClient.cancelQueries({ queryKey: ['approval'] });
+    queryClient.removeQueries({ queryKey: ['approval'] });
+    setReloading(false);
+    setPhase({ kind: 'loading' });
+    // The new exchange leaves after the old one ended, so the cookie that stays is the new one's.
+    void (previous ?? Promise.resolve()).then(open);
+  };
+
   useEffect(() => {
     // Strict Mode runs this twice; the fragment is read once and the exchange is one promise both runs share.
     if (fragment.current === undefined) fragment.current = takeFragment();
     void open();
+    const onHashChange = (): void => { if (window.location.hash !== '') reopen(); };
+    window.addEventListener('hashchange', onHashChange);
+    return () => { window.removeEventListener('hashchange', onHashChange); };
   }, []);
 
   const retry = (): void => {
@@ -161,16 +193,18 @@ function useApprovalLink(): ApprovalLink {
   };
 
   const reload = async (): Promise<boolean> => {
+    const mine = current.current;
     setReloading(true);
     try {
       const batch = await readBatch();
+      if (mine !== current.current) return false;
       setPhase({ kind: 'ready', batch });
       return true;
     } catch (error: unknown) {
-      if (isDeadLink(error)) setPhase({ kind: 'expired' });
+      if (mine === current.current && isDeadLink(error)) setPhase({ kind: 'expired' });
       return false;
     } finally {
-      setReloading(false);
+      if (mine === current.current) setReloading(false);
     }
   };
 
@@ -182,7 +216,7 @@ function useApprovalLink(): ApprovalLink {
 
   const expire = (): void => { setPhase({ kind: 'expired' }); };
 
-  return { phase, reloading, retry, reload, replace, expire };
+  return { phase, generation: () => current.current, reloading, retry, reload, replace, expire };
 }
 
 /**
@@ -216,25 +250,38 @@ const linkExpiryText = (iso: string): string => new Intl.DateTimeFormat('pt-BR',
 
 const isVideoFormat = (format: ContentFormat): boolean => format !== 'image' && format !== 'carousel';
 
+/** A signed address and how long the API gave it, measured when it arrived (the API sends only the end, in the clock of the server). */
+interface MediaUrl extends PortalContentMediaUrlResponse {
+  readonly lifetimeMs: number;
+}
+
+/**
+ * How long a signed address is trusted before the next ask: it is renewed a margin before it ends, and never sooner than the floor
+ * after the last one. A clock that is off, or an address that lives 30 s, then costs a request every few seconds at most, not one
+ * per second for every media on screen.
+ */
+const refreshAfterMs = (lifetimeMs: number): number => Math.max(MIN_MEDIA_REFRESH_MS, lifetimeMs - URL_MARGIN_MS);
+
 /**
  * The signed address of a media. It lasts minutes, so it is asked for again shortly before it expires (while the page is open),
  * when the tab comes back to the front with a stale one, and by the control of the media when the browser refused it.
  */
 function useApprovalMediaUrl(contentId: string, assetId: string, variant: 'original' | 'thumbnail', enabled = true) {
   const httpClient = useApiClient();
-  return useQuery<PortalContentMediaUrlResponse>({
+  return useQuery<MediaUrl>({
     queryKey: ['approval', 'media', contentId, assetId, variant],
     enabled,
-    staleTime: signedUrlStaleTime,
+    staleTime: (query) => query.state.data === undefined ? 0 : refreshAfterMs(query.state.data.lifetimeMs),
     refetchOnWindowFocus: true,
-    refetchInterval: (query) => query.state.data === undefined || query.state.status === 'error'
-      ? false
-      : Math.max(MIN_MEDIA_REFRESH_MS, Date.parse(query.state.data.expiresAt) - URL_MARGIN_MS - Date.now()),
-    queryFn: ({ signal }) => httpClient.request({
-      path: `${apiPath(MEDIA_URL_PATH, { contentId, assetId })}?variant=${variant}`,
-      response: PortalApprovalMediaUrlResponseSchema,
-      signal
-    })
+    refetchInterval: (query) => query.state.data === undefined || query.state.status === 'error' ? false : refreshAfterMs(query.state.data.lifetimeMs),
+    queryFn: async ({ signal }) => {
+      const answer = await httpClient.request({
+        path: `${apiPath(MEDIA_URL_PATH, { contentId, assetId })}?variant=${variant}`,
+        response: PortalApprovalMediaUrlResponseSchema,
+        signal
+      });
+      return { ...answer, lifetimeMs: Math.min(MAX_URL_LIFETIME_MS, Math.max(0, Date.parse(answer.expiresAt) - Date.now())) };
+    }
   });
 }
 
@@ -251,10 +298,12 @@ function Slide({ content, item, position, total }: {
   total: number;
 }) {
   const [failed, setFailed] = useState(false);
+  // The address a video was playing from: a new `src` would restart it, so it keeps this one until it stops, ends or fails.
+  const [playingFrom, setPlayingFrom] = useState<string | undefined>();
   const asVideo = item.kind === 'video';
   const original = useApprovalMediaUrl(content.id, item.id, 'original');
   const poster = useApprovalMediaUrl(content.id, isVideoFormat(content.format) ? (content.coverAssetId ?? item.id) : item.id, 'thumbnail', asVideo);
-  const url = usableUrl(original.data);
+  const url = failed ? usableUrl(original.data) : playingFrom ?? usableUrl(original.data);
   const posterUrl = usableUrl(poster.data);
 
   if (original.isPending) return <Skeleton className="approval-post__skeleton" aria-busy="true" />;
@@ -266,7 +315,19 @@ function Slide({ content, item, position, total }: {
   }
   const label = `${content.title}: mídia ${position} de ${total}`;
   return asVideo
-    ? <video className="approval-post__item" src={url} poster={posterUrl} controls playsInline preload="metadata" aria-label={label} onError={() => { setFailed(true); }} />
+    ? <video
+      className="approval-post__item"
+      src={url}
+      poster={posterUrl}
+      controls
+      playsInline
+      preload="metadata"
+      aria-label={label}
+      onPlay={() => { setPlayingFrom(url); }}
+      onPause={() => { setPlayingFrom(undefined); }}
+      onEnded={() => { setPlayingFrom(undefined); }}
+      onError={() => { setPlayingFrom(undefined); setFailed(true); }}
+    />
     : <img className="approval-post__item" src={url} alt={label} onError={() => { setFailed(true); }} />;
 }
 
@@ -385,17 +446,21 @@ function ReadyView({ batch, link }: { batch: PortalApprovalBatch; link: Approval
   const send = async (content: OpenContent, action: 'approve' | 'request', path: string, body: PortalApprovalApproveRequest | PortalApprovalRequestChangesRequest): Promise<void> => {
     if (sending.current) return;
     sending.current = true;
+    const session = link.generation();
     setBusy({ contentId: content.id, action });
     setCardError(undefined);
     setNotice(undefined);
     try {
       const updated = await httpClient.request({ path: apiPath(`${CONTENT_PATH}/${path}`, { contentId: content.id }), method: 'POST', body, response: PortalApprovalContentSchema });
+      if (session !== link.generation()) return;
       link.replace(updated);
       setRequestError(undefined);
       setDraft('');
       setAsking(null);
       setNotice({ tone: 'success', text: action === 'approve' ? MESSAGES.approved : MESSAGES.requested });
     } catch (error: unknown) {
+      // The page was opened again with a link while this was in flight: what it answers is about the old one.
+      if (session !== link.generation()) return;
       if (isDeadLink(error)) { link.expire(); return; }
       if (isCode(error, 'CONTENT_REVISION_CHANGED')) { setAsking(null); void stale(MESSAGES.revisionChanged); return; }
       if (isCode(error, 'CONTENT_NOT_AWAITING_APPROVAL') || isCode(error, 'NOT_FOUND')) { setAsking(null); void stale(MESSAGES.stateChanged); return; }
