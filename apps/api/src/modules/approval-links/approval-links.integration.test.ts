@@ -451,6 +451,18 @@ describe('Aprovar and Pedir ajuste, by POST', () => {
     expect((await row(outside)).status).toBe('awaiting_approval');
   });
 
+  it('takes no query on the decisions either: a token in the URL is a 400 and decides nothing', async () => {
+    const link = await withSession({ count: 1 });
+    for (const action of ['approve', 'request-changes']) {
+      const payload = action === 'approve' ? { revision: 1 } : { revision: 1, comment: 'Troque.' };
+      const reply = await call('POST', `/portal-approval/contents/${link.contents[0]}/${action}?token=${link.token}`, { cookie: link.cookie, payload, address: link.address });
+      expect(reply.statusCode, action).toBe(400);
+      expect(reply.body).not.toContain(link.token);
+    }
+    expect((await row(link.contents[0]!)).status).toBe('awaiting_approval');
+    expect(await threadsOf(link.contents[0]!)).toEqual([]);
+  });
+
   it('refuses a body with an extra field: who approved is never a field', async () => {
     const link = await withSession({ count: 1 });
     for (const payload of [{ revision: 1, approvedBy: people.admin.id }, { revision: 1, accessId: link.accessId }, { revision: '1' }, {}]) {

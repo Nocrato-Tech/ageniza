@@ -66,6 +66,10 @@ export async function up(knex) {
       v_link_expires_at timestamptz;
       v_session_expires_at timestamptz;
     begin
+      -- The judgment after the locks is a statement of its own that sees what the wait committed: that holds only in READ COMMITTED.
+      if p_for_write then
+        perform app_private.require_read_committed();
+      end if;
       if p_session_hash is null or p_session_hash !~ '^[0-9a-f]{64}$' then
         raise exception using errcode = 'A0100', message = 'The approval link is not valid.';
       end if;
@@ -201,6 +205,7 @@ export async function up(knex) {
       v_now timestamptz;
       v_expires_at timestamptz;
     begin
+      perform app_private.require_read_committed();
       if p_token_hash is null or p_token_hash !~ '^[0-9a-f]{64}$' or p_session_hash is null or p_session_hash !~ '^[0-9a-f]{64}$' then
         raise exception using errcode = 'A0100', message = 'The approval link is not valid.';
       end if;

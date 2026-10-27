@@ -704,10 +704,11 @@ describe('Aprovar, as the access of the link', () => {
 
   it('refuses an account bound to the transaction: the link is the door of the one with no login', async () => {
     const s = await scenario({ contents: 1 });
+    // The message is the function's own: the guard of contents refuses an account and a link at once with another one.
     await expect(asAccount(ids.adminA, (t) => t.raw('select app_private.approve_content_by_portal_approval(?, ?::uuid, 1)', [s.sessionHash, s.contents[0]!])))
-      .rejects.toMatchObject({ code: '42501' });
+      .rejects.toMatchObject({ code: '42501', message: expect.stringContaining('no account bound') });
     await expect(asAccount(ids.adminA, (t) => t.raw('select app_private.request_changes_by_portal_approval(?, ?::uuid, 1, ?)', [s.sessionHash, s.contents[0]!, 'Troque.'])))
-      .rejects.toMatchObject({ code: '42501' });
+      .rejects.toMatchObject({ code: '42501', message: expect.stringContaining('no account bound') });
     expect((await contentOf(s.contents[0]!)).status).toBe('awaiting_approval');
   });
 });
@@ -979,6 +980,35 @@ describe('the label of an access shows the name of the account only after the ac
     expect(await authors(ids.adminA)).toEqual([expect.objectContaining({ author_portal_access_id: s.accessId, name: s.email, photo_key: null })]);
     await owner()('client_portal_accesses').where({ id: s.accessId }).update({ first_entered_at: owner().fn.now() });
     expect(await authors(ids.adminA)).toEqual([expect.objectContaining({ author_portal_access_id: s.accessId, name: 'Nome da Conta', photo_key: 'identity/foto.png' })]);
+  });
+});
+
+// ---- only READ COMMITTED -------------------------------------------------------------------------------------------------------------
+
+describe('the writes of the link refuse another isolation level (the judgment after the wait only sees the commit in READ COMMITTED)', () => {
+  const inLevel = async (level: 'repeatable read' | 'serializable', work: (transaction: Knex.Transaction) => Promise<unknown>): Promise<unknown> => {
+    const transaction = await worker.knex.transaction({ isolationLevel: level });
+    try {
+      await work(transaction);
+      await transaction.commit();
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+  };
+
+  it.each(['repeatable read', 'serializable'] as const)('answers 40001 in %s to the exchange, to Aprovar and to Pedir ajuste, and writes nothing', async (level) => {
+    const s = await scenario({ contents: 2, exchanged: false });
+    const session = newToken().hash;
+    await expect(inLevel(level, (t) => t.raw('select * from app_private.exchange_portal_approval_token(?, ?)', [s.tokenHash, session]))).rejects.toMatchObject({ code: '40001' });
+    expect(await owner()('client_portal_approval_sessions').where({ link_id: s.linkId })).toEqual([]);
+
+    await exchange(s.tokenHash, s.sessionHash);
+    await expect(inLevel(level, (t) => t.raw('select app_private.approve_content_by_portal_approval(?, ?::uuid, 1)', [s.sessionHash, s.contents[0]!]))).rejects.toMatchObject({ code: '40001' });
+    await expect(inLevel(level, (t) => t.raw('select app_private.request_changes_by_portal_approval(?, ?::uuid, 1, ?)', [s.sessionHash, s.contents[1]!, 'Troque.']))).rejects.toMatchObject({ code: '40001' });
+    expect((await contentOf(s.contents[0]!)).status).toBe('awaiting_approval');
+    expect((await contentOf(s.contents[1]!)).status).toBe('awaiting_approval');
+    expect(await threadsOf(s.contents[1]!)).toEqual([]);
   });
 });
 
