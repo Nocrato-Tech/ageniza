@@ -247,8 +247,8 @@ export const loadClientSummary = async (transaction: ClientTransaction, clientId
           and ${latestCommentSideSql('thread')} = 'agency'
       ) as threads_answered_by_agency,
       (
-        select count(*) from public.client_memberships membership
-        where membership.client_id = ?::uuid and membership.status = 'active'
+        select count(*) from public.client_portal_accesses access
+        where access.client_id = ?::uuid and access.status = 'active'
       ) as active_portal_members
   `, [clientId, clientId, clientId, clientId, clientId]);
   const row = result.rows[0];

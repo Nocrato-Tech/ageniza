@@ -492,4 +492,65 @@ describe('CLIENTS portal access by e-mail (#711)', () => {
       expect(await accessOf(clientA1, email)).toMatchObject({ user_id: null, status: 'removed' });
     });
   });
+  describe('what the second review of #728 found: the link leaves no trace in what the agency sees', () => {
+    // The probe: an address the agency typed, whose account belongs to a person who works elsewhere (so the account can sign in).
+    // The name of the account sorts before every address and the address sorts late, so a list that orders by the account moves it.
+    const probe = async (key: string, name: string) => {
+      const email = `zzz-sonda-${randomUUID().slice(0, 8)}@portal-access.test`;
+      const person = await makeUser(key, name, { email, emailVerified: true });
+      await owner.knex('client_memberships').insert({ client_id: clientA2, user_id: person.id });
+      const added = (await call('POST', membersUrl(agencyA, clientA1), cookies.admin, { email })).json();
+      return { person, email, added };
+    };
+    const emailsInOrder = async (): Promise<string[]> =>
+      (await call('GET', `${membersUrl(agencyA, clientA1)}?pageSize=100`, cookies.admin)).json().data.map((item: { email: string }) => item.email);
+    const summaryOf = async () => (await call('GET', `/agencies/${agencyA}/clients/${clientA1}`, cookies.admin)).json().summary;
+    const activeAccesses = async (): Promise<number> =>
+      Number((await owner.knex('client_portal_accesses').where({ client_id: clientA1, status: 'active' }).count<{ count: string }[]>('id as count'))[0]?.count ?? 0);
+
+    it('keeps the order of the list when the victim loads the contexts, and moves it by the name once the person entered', async () => {
+      const { person, email } = await probe('orderProbe', '0 Sonda da Ordem');
+      const before = await emailsInOrder();
+      expect(before.indexOf(email)).toBeGreaterThan(0);
+
+      const cookie = await login(person);
+      expect((await call('GET', '/me/contexts', cookie)).statusCode).toBe(200);
+      expect(await accessOf(clientA1, email)).toMatchObject({ user_id: person.id, first_entered_at: null });
+      expect(await emailsInOrder()).toEqual(before);
+
+      // The entry is what shows the name, so it is what the order may use.
+      expect((await call('GET', `/clients/${clientA1}`, cookie)).statusCode).toBe(200);
+      expect((await emailsInOrder())[0]).toBe(email);
+    });
+
+    it('keeps the count of people with access when the victim loads the contexts, and counts the accesses and not the links', async () => {
+      const { person } = await probe('countProbe', 'Sonda da Contagem');
+      const before = (await summaryOf()).activePortalMembers;
+      // The address typed by the agency counts at once, linked or not.
+      expect(before).toBe(await activeAccesses());
+
+      const cookie = await login(person);
+      expect((await call('GET', '/me/contexts', cookie)).statusCode).toBe(200);
+      expect(await accessOf(clientA1, person.email)).toMatchObject({ user_id: person.id });
+      expect((await summaryOf()).activePortalMembers).toBe(before);
+
+      // A removed access leaves the count, and the removal is the only thing that does.
+      const removed = await accessOf(clientA1, person.email);
+      expect((await call('POST', `${membersUrl(agencyA, clientA1)}/${removed.id}/remove`, cookies.admin)).statusCode).toBe(200);
+      expect((await summaryOf()).activePortalMembers).toBe(before - 1);
+    });
+
+    it('records the entry when the resolve decides by the last used context', async () => {
+      const { person, email } = await probe('lastUsedProbe', 'Sonda do Último Contexto');
+      // The preference is the person\'s from an earlier visit: written here by the owner, because the route that writes it also records the entry.
+      await owner.knex('user_context_preferences').insert({ user_id: person.id, context_type: 'client', client_id: clientA1 });
+      const cookie = await login(person);
+
+      expect((await call('GET', '/me/contexts/resolve', cookie)).json()).toMatchObject({ decision: 'enter', context: { clientId: clientA1 } });
+      expect((await accessOf(clientA1, email)).first_entered_at).toBeInstanceOf(Date);
+      expect((await call('GET', membersUrl(agencyA, clientA1), cookies.admin)).json().data.find((item: { email: string }) => item.email === email))
+        .toMatchObject({ entered: true, name: 'Sonda do Último Contexto' });
+    });
+  });
+
 });

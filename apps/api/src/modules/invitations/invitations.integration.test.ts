@@ -132,6 +132,13 @@ const insertInvitation = async (input: {
   return { invitationId, token: token.token };
 };
 
+/** The token inside a `/convite/<token>` link: what the "Copiar link" answer carries. */
+const tokenOfLink = (link: string): string => {
+  const token = link.match(/\/convite\/([^\s]+)/)?.[1];
+  if (token === undefined) throw new Error('The link did not contain a token.');
+  return token;
+};
+
 const invitationTokenFromLatestEmail = (emailSender = sender): string => {
   const text = emailSender.sent.at(-1)?.text ?? '';
   const token = text.match(/\/convite\/([^\s]+)/)?.[1];
@@ -542,7 +549,7 @@ describe('invitation HTTP module', () => {
     return { own, ownSender, adminCookie: sessionCookieHeader(login.cookies) };
   };
 
-  it('#710: the collaborator creation answers, once and no-store, the same link the e-mail carries, and the database keeps only its hash', async () => {
+  it('#710 and the e-mail token: the collaborator creation answers, once and no-store, the link to copy, which is not the one the e-mail carries, and the database keeps only the two hashes', async () => {
     const { own, ownSender, adminCookie } = await ownApp();
     const email = `copy-link-${randomUUID()}@example.test`;
     const created = await own.app.inject({
@@ -554,18 +561,24 @@ describe('invitation HTTP module', () => {
     expect(created.statusCode).toBe(201);
     expect(created.headers['cache-control']).toBe('no-store');
     const body = created.json<{ invitationId: string; invitationUrl: string }>();
-    const token = invitationTokenFromLatestEmail(ownSender);
+    const emailToken = invitationTokenFromLatestEmail(ownSender);
+    const token = tokenOfLink(body.invitationUrl);
     expect(body.invitationUrl).toBe(`${TEST_APP_PUBLIC_URL}/convite/${token}`);
-    expect(ownSender.sent.at(-1)?.text).toContain(body.invitationUrl);
+    // Two tokens: the one to copy is never the one the e-mail carries, and the e-mail one is in no answer.
+    expect(token).not.toBe(emailToken);
+    expect(ownSender.sent.at(-1)?.text).not.toContain(token);
+    expect(created.body).not.toContain(emailToken);
 
     const row = await owner.knex('invitations').where({ id: body.invitationId }).first();
     expect(row?.token_hash).toBe(hashInvitationToken(token));
+    expect(row?.email_token_hash).toBe(hashInvitationToken(emailToken));
     expect(JSON.stringify(row)).not.toContain(token);
+    expect(JSON.stringify(row)).not.toContain(emailToken);
 
     const list = await own.app.inject({ method: 'GET', url: `/agencies/${agencyId}/invitations?pageSize=100`, headers: { ...origin, cookie: adminCookie } });
     expect(list.statusCode).toBe(200);
     expect(list.body).toContain(body.invitationId);
-    expect(list.body).not.toContain(token);
+    for (const secret of [token, emailToken, hashInvitationToken(token), hashInvitationToken(emailToken)]) expect(list.body).not.toContain(secret);
     expect(list.body).not.toContain('/convite/');
 
     // Resending answers a new link, no-store as well, and the copied one stops working.
@@ -577,11 +590,19 @@ describe('invitation HTTP module', () => {
     expect(resent.statusCode).toBe(200);
     expect(resent.headers['cache-control']).toBe('no-store');
     const renewed = resent.json<{ invitationUrl: string }>();
-    const renewedToken = invitationTokenFromLatestEmail(ownSender);
+    const renewedEmailToken = invitationTokenFromLatestEmail(ownSender);
+    const renewedToken = tokenOfLink(renewed.invitationUrl);
     expect(renewed.invitationUrl).toBe(`${TEST_APP_PUBLIC_URL}/convite/${renewedToken}`);
-    expect(renewedToken).not.toBe(token);
-    expect((await own.app.inject({ method: 'GET', url: `/invitations/${token}` })).statusCode).toBe(410);
-    expect((await own.app.inject({ method: 'GET', url: `/invitations/${renewedToken}` })).statusCode).toBe(200);
+    expect(renewedToken).not.toBe(renewedEmailToken);
+    expect(resent.body).not.toContain(renewedEmailToken);
+    expect(new Set([token, emailToken, renewedToken, renewedEmailToken]).size).toBe(4);
+    // Resending replaces both tokens: each of the old ones is gone, each of the new ones is live.
+    for (const stale of [token, emailToken]) {
+      expect((await own.app.inject({ method: 'GET', url: `/invitations/${stale}` })).statusCode).toBe(410);
+    }
+    for (const live of [renewedToken, renewedEmailToken]) {
+      expect((await own.app.inject({ method: 'GET', url: `/invitations/${live}` })).statusCode).toBe(200);
+    }
     await own.close();
   });
 
@@ -1950,7 +1971,11 @@ describe('invitation HTTP module', () => {
       const second = await pendingInvitation();
       const allowed = await resend(await loginCookie(resendAndInvite), second.invitationId);
       expect(allowed.statusCode).toBe(200);
-      expect(allowed.json<{ invitationUrl: string | null }>().invitationUrl).toBe(`${TEST_APP_PUBLIC_URL}/convite/${invitationTokenFromLatestEmail()}`);
+      const mailedToSecond = invitationTokenFromLatestEmail();
+      const copyLink = allowed.json<{ invitationUrl: string | null }>().invitationUrl;
+      expect(copyLink).toMatch(new RegExp(`^${TEST_APP_PUBLIC_URL}/convite/[A-Za-z0-9_-]{43}$`));
+      expect(tokenOfLink(copyLink!)).not.toBe(mailedToSecond);
+      expect(allowed.body).not.toContain(mailedToSecond);
     });
 
     it('lets a role with only convite.cancelar cancel (204, nothing sent) and refuses it the resend', async () => {
@@ -2030,8 +2055,12 @@ describe('invitation HTTP module', () => {
     });
     const collaboratorId = collaborator.json<{ invitationId: string }>().invitationId;
     const collaboratorToken = invitationTokenFromLatestEmail(logSender);
-    // These responses do carry the links (#710): a log of any response body fails the assertions below.
-    expect(collaborator.body).toContain(collaboratorToken);
+    // These responses do carry the link to copy (#710), never the one in the e-mail: a log of any
+    // response body fails the assertions below.
+    const collaboratorCopyToken = tokenOfLink(collaborator.json<{ invitationUrl: string }>().invitationUrl);
+    expect(collaboratorCopyToken).not.toBe(collaboratorToken);
+    expect(collaborator.body).toContain(collaboratorCopyToken);
+    expect(collaborator.body).not.toContain(collaboratorToken);
     const resent = await logApp.app.inject({
       method: 'POST',
       url: `/agencies/${logAgencyId}/invitations/${collaboratorId}/resend`,
@@ -2041,7 +2070,10 @@ describe('invitation HTTP module', () => {
     const resentInvitationId = resent.json<{ invitationId: string }>().invitationId;
     const resentToken = logSender.sent.at(-1)?.text.match(/\/convite\/([^\s]+)/)?.[1];
     expect(resentToken).toBeDefined();
-    expect(resent.body).toContain(resentToken!);
+    const resentCopyToken = tokenOfLink(resent.json<{ invitationUrl: string }>().invitationUrl);
+    expect(resentCopyToken).not.toBe(resentToken);
+    expect(resent.body).toContain(resentCopyToken);
+    expect(resent.body).not.toContain(resentToken!);
 
     const logClientId = randomUUID();
     createdClientIds.push(logClientId);
@@ -2089,8 +2121,11 @@ describe('invitation HTTP module', () => {
     // token, only its hash, so asserting the response lacks the token is vacuously true. What
     // could actually leak is the hash, so that is what gets checked, against both the response and
     // the logs this specific request produced.
-    const resentTokenHash = (await owner.knex('invitations').where({ id: resentInvitationId }).first('token_hash'))?.token_hash;
+    const resentRow = await owner.knex('invitations').where({ id: resentInvitationId }).first('token_hash', 'email_token_hash');
+    const resentTokenHash = resentRow?.token_hash;
+    const resentEmailTokenHash = resentRow?.email_token_hash;
     expect(resentTokenHash).toBeDefined();
+    expect(resentEmailTokenHash).toBeDefined();
     const pendingList = await logApp.app.inject({
       method: 'GET',
       url: `/agencies/${logAgencyId}/invitations`,
@@ -2099,11 +2134,15 @@ describe('invitation HTTP module', () => {
     expect(pendingList.statusCode).toBe(200);
     const pendingListBody = JSON.stringify(pendingList.json());
     expect(pendingListBody).not.toContain(resentTokenHash);
+    expect(pendingListBody).not.toContain(resentEmailTokenHash);
     expect(pendingListBody).not.toMatch(/token/i);
 
     await new Promise<void>((resolve) => setImmediate(resolve));
     const logs = text();
     expect(logs).not.toContain(resentTokenHash);
+    expect(logs).not.toContain(resentEmailTokenHash);
+    expect(logs).not.toContain(collaboratorCopyToken);
+    expect(logs).not.toContain(resentCopyToken);
     expect(logs).not.toContain(collaboratorToken);
     expect(logs).not.toContain(resentToken!);
     expect(logs).not.toContain(clientToken!);

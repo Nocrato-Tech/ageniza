@@ -52,8 +52,13 @@ account created by `accept-new-account` keeps the session that route creates whi
 `app_private.unconfirmed_account_may_hold_session` finds the link its invitation gave it (the agency
 it owns, or an active membership in the invitation's agency or client) and that context would still be
 listed: a suspended agency or an archived client ends the session too, as in `contexts/service.ts`
-(migration `20261027010400`). The password login stays
-closed to it until it confirms, with the same 401, so an invited account is never told apart. If the sign-in after a consumed link fails (the password changed in between),
+(migration `20261027010400`). The exception only exists for the account born through the *copied* invitation
+token; through the e-mail token the account is born confirmed (decision 2026-10-27). The password login stays
+closed to it until it confirms, with the same 401, so an invited account is never told apart. While the person
+holds that session, `POST /auth/email/verify` takes the link with no password: it needs the session user to be
+the owner of the link *and* the account to still hold the exception, and any other case (no session, another
+account's session, a session that no longer stands) answers the same `400 INVALID_LINK_OR_PASSWORD` as a bad
+link, without consuming it. If the sign-in after a consumed link fails (the password changed in between),
 `/auth/email/verify` answers `400 INVALID_LINK_OR_PASSWORD`, never 500; consuming the link locks the
 credential row, so a reset either waits for it or makes it refuse.
 

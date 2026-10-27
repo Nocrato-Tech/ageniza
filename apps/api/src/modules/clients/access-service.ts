@@ -31,9 +31,15 @@ export interface ClientMemberRow {
   readonly created_at: Date;
 }
 
+/**
+ * The name the agency sees: the account's own, and only after the person entered THIS portal (the link at the login is not an entry).
+ * The list shows it and the order uses it, so neither tells the agency that an address has an account.
+ */
+const SHOWN_NAME_SQL = 'case when access.first_entered_at is not null then member.name end';
+
 const MEMBER_COLUMNS = `
   access.id as access_id,
-  case when access.first_entered_at is not null then member.name end as name,
+  ${SHOWN_NAME_SQL} as name,
   access.email as email,
   access.status as status,
   (access.first_entered_at is not null and access.user_id is not null) as entered,
@@ -61,7 +67,7 @@ export interface ClientMemberPage {
 }
 
 /**
- * One page of the people of a client in one status, by name ascending (the account's name once it is linked, the address before;
+ * One page of the people of a client in one status, by name ascending (the account's name once the person entered, the address before;
  * accent and case folded, then compared byte by byte like the collaborators, so the order does not depend on the database
  * collation) with the access id as the tie-break. `count(*) over ()` rides the page's own snapshot.
  */
@@ -77,7 +83,7 @@ export const listClientMembers = async (
     select ${MEMBER_COLUMNS}, count(*) over () as total
     ${MEMBER_FROM}
     where ${where}
-    order by ${foldTextSql('coalesce(member.name, access.email)')} collate "C" asc, access.id asc
+    order by ${foldTextSql(`coalesce(${SHOWN_NAME_SQL}, access.email)`)} collate "C" asc, access.id asc
     limit ? offset ?
   `, [...bindings, pagination.pageSize, pagination.offset]);
   if (result.rows.length > 0) return { items: result.rows, totalItems: Number(result.rows[0]?.total ?? 0) };
