@@ -22,4 +22,4 @@
 
 **Origem.** Issue #717, o contrato do #712 (`apps/api/src/modules/approval-links/README.md` e `docs/api/README.md`) e as decisões de 2026-10-26 (itens 5, 6 e 8) e de 2026-10-27 (itens 3 e 9) sobre o link. Os itens 1, 4 a 8, 10 e 11 foram derivados pelo implementador a partir delas.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-10-27.

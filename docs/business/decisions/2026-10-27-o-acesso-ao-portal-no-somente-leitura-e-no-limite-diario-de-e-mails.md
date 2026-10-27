@@ -14,4 +14,4 @@
 
 **Origem.** Pedido do maestro, na revisão do PR #728.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-10-27.

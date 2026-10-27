@@ -26,4 +26,4 @@
 
 **Origem.** Pedido do dono do produto em sessão, 2026-10-26. Os 14 dias, os 3 clientes, os 3 colaboradores, os 2 GB, o somente leitura e o upgrade por comando foram escolhidos pelo dono. O que conta no limite (item 2, segunda parte), as exceções do somente leitura (item 3), o worker (item 4) e os itens 6 a 8 foram propostos pelo maestro, alguns pela revisão do PR #720. **Substituída em parte em 2026-10-27**, quanto ao upgrade (item 5) e ao comando interno: a agência só nasce pelo produto, e a operação só troca o plano de uma agência existente, num comando único (ver a entrada de 2026-10-27 "ESTRUTURAL: a agência só nasce pelo produto, o plano `isenta` e o aviso do somente leitura"). O resto continua valendo.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-10-27.
