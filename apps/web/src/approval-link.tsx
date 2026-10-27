@@ -101,8 +101,8 @@ type Phase =
   | { readonly kind: 'limited' }
   | { readonly kind: 'failed' };
 
-const failurePhase = (error: unknown, hadBatch: boolean): Phase => {
-  if (isDeadLink(error) || isStatus(error, 400)) return hadBatch ? { kind: 'expired' } : { kind: 'invalid' };
+const failurePhase = (error: unknown): Phase => {
+  if (isDeadLink(error) || isStatus(error, 400)) return { kind: 'invalid' };
   if (isCode(error, 'RATE_LIMITED') || isStatus(error, 429)) return { kind: 'limited' };
   return { kind: 'failed' };
 };
@@ -123,17 +123,13 @@ function useApprovalLink(): ApprovalLink {
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
   const [reloading, setReloading] = useState(false);
   const fragment = useRef<Fragment | undefined>(undefined);
-  const everReady = useRef(false);
   const opening = useRef<Promise<void> | null>(null);
-  // The newest reading wins: an answer that arrives after a newer one was asked for is dropped.
-  const newest = useRef(0);
 
   const readBatch = (): Promise<PortalApprovalBatch> => httpClient.request({ path: BATCH_PATH, response: PortalApprovalBatchSchema });
 
   const open = (): Promise<void> => {
     if (opening.current !== null) return opening.current;
     const run = (async () => {
-      const mine = ++newest.current;
       try {
         const found = fragment.current;
         if (found?.kind === 'malformed') { setPhase({ kind: 'invalid' }); return; }
@@ -143,11 +139,9 @@ function useApprovalLink(): ApprovalLink {
           fragment.current = { kind: 'none' };
         }
         const batch = await readBatch();
-        if (mine !== newest.current) return;
-        everReady.current = true;
         setPhase({ kind: 'ready', batch });
       } catch (error: unknown) {
-        if (mine === newest.current) setPhase(failurePhase(error, everReady.current));
+        setPhase(failurePhase(error));
       }
     })();
     opening.current = run;
@@ -167,18 +161,16 @@ function useApprovalLink(): ApprovalLink {
   };
 
   const reload = async (): Promise<boolean> => {
-    const mine = ++newest.current;
     setReloading(true);
     try {
       const batch = await readBatch();
-      if (mine !== newest.current) return false;
       setPhase({ kind: 'ready', batch });
       return true;
     } catch (error: unknown) {
-      if (mine === newest.current && isDeadLink(error)) setPhase({ kind: 'expired' });
+      if (isDeadLink(error)) setPhase({ kind: 'expired' });
       return false;
     } finally {
-      if (mine === newest.current) setReloading(false);
+      setReloading(false);
     }
   };
 

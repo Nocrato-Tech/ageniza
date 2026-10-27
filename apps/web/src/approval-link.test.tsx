@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
@@ -403,6 +403,28 @@ describe('the page of the approval link (#717)', () => {
       expect(screen.getByRole('img', { name: `${A.title}: mídia 1 de 1` }).getAttribute('src')).toMatch(/\?n=[2-9]$/);
     }, 10_000);
 
+    it('asks again when the tab comes back to the front after the address lapsed (a phone freezes the timer of a hidden tab), and not while it is still fresh', async () => {
+      const { api } = await loaded([A]);
+      const first = (await screen.findByRole('img', { name: `${A.title}: mídia 1 de 1` })).getAttribute('src');
+      expect(first).toContain('?n=1');
+      const mediaCalls = () => api.callsTo('GET', /\/media\/[^/]+\/url$/);
+      // Back to the front with five minutes of address still ahead: nothing to ask.
+      act(() => { focusManager.setFocused(false); focusManager.setFocused(true); });
+      await new Promise<void>((resolve) => { setTimeout(resolve, 60); });
+      expect(mediaCalls()).toHaveLength(1);
+      // The person comes back ten minutes later; only the clock moves, the page's own timer never fired.
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(Date.now() + 10 * 60_000);
+        act(() => { focusManager.setFocused(false); focusManager.setFocused(true); });
+        await waitFor(() => { expect(mediaCalls()).toHaveLength(2); });
+        await waitFor(() => { expect(screen.getByRole('img', { name: `${A.title}: mídia 1 de 1` }).getAttribute('src')).toContain('?n=2'); });
+      } finally {
+        vi.useRealTimers();
+        focusManager.setFocused(undefined);
+      }
+    });
+
     it('says the media could not load when the signed address is refused, and asks again on the retry', async () => {
       const { api } = await loaded([A], { controls: { fail: { media: () => new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'MENSAGEM DO SERVIDOR' } }), { status: 404, headers: { 'content-type': 'application/json' } }) } } });
       expect(await screen.findByText('Não foi possível carregar esta mídia.')).toBeTruthy();
@@ -419,6 +441,20 @@ describe('the page of the approval link (#717)', () => {
       expect(await screen.findByText('Não foi possível carregar esta mídia.')).toBeTruthy();
       fireEvent.click(within(card(A.title)).getByRole('button', { name: 'Tentar de novo' }));
       await waitFor(() => { expect(api.callsTo('GET', /\/media\/[^/]+\/url$/)).toHaveLength(2); });
+      await waitFor(() => { expect(screen.getByRole('img', { name: `${A.title}: mídia 1 de 1` }).getAttribute('src')).toContain('?n=2'); });
+    });
+
+    it('keeps the failure on screen until the new address is there: the refused picture is never drawn again meanwhile', async () => {
+      const { api } = await loaded([A]);
+      fireEvent.error(await screen.findByRole('img', { name: `${A.title}: mídia 1 de 1` }));
+      expect(await screen.findByText('Não foi possível carregar esta mídia.')).toBeTruthy();
+      const gate = held();
+      api.controls.hold.media = gate.promise;
+      fireEvent.click(within(card(A.title)).getByRole('button', { name: 'Tentar de novo' }));
+      await waitFor(() => { expect(api.callsTo('GET', /\/media\/[^/]+\/url$/)).toHaveLength(2); });
+      expect(screen.queryByRole('img', { name: `${A.title}: mídia 1 de 1` })).toBeNull();
+      expect(screen.getByText('Não foi possível carregar esta mídia.')).toBeTruthy();
+      gate.release();
       await waitFor(() => { expect(screen.getByRole('img', { name: `${A.title}: mídia 1 de 1` }).getAttribute('src')).toContain('?n=2'); });
     });
   });
@@ -486,6 +522,28 @@ describe('the page of the approval link (#717)', () => {
       await loaded([A], { controls: { fail: { decision: () => new Response(JSON.stringify({ error: { code: 'RATE_LIMITED', message: 'MENSAGEM DO SERVIDOR' } }), { status: 429, headers: { 'content-type': 'application/json', 'retry-after': '60' } }) } } });
       fireEvent.click(within(card(A.title)).getByRole('button', { name: 'Aprovar' }));
       expect((await within(card(A.title)).findByRole('alert')).textContent).toBe('Muitas tentativas agora. Espere alguns minutos e tente de novo.');
+      expect(buttonsOf(A.title)).toEqual(['Pedir ajuste', 'Aprovar']);
+    });
+
+    it('keeps the focus on Aprovar while it sends: the button is aria-disabled, never natively disabled, so the keyboard stays where it was', async () => {
+      const gate = held();
+      const { api } = await loaded([A], { controls: { hold: { decision: gate.promise } } });
+      const button = within(card(A.title)).getByRole('button', { name: 'Aprovar' }) as HTMLButtonElement;
+      button.focus();
+      fireEvent.click(button);
+      await waitFor(() => { expect(decisionCalls(api)).toHaveLength(1); });
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.disabled).toBe(false);
+      expect(document.activeElement).toBe(button);
+      gate.release();
+      await screen.findByText('Conteúdo aprovado. Obrigado!');
+    });
+
+    it('says to try again on a conflict of the database that is not a change of the content (TRY_AGAIN), without reading the lot again', async () => {
+      const { api } = await loaded([A], { controls: { fail: { decision: () => new Response(JSON.stringify({ error: { code: 'TRY_AGAIN', message: 'MENSAGEM DO SERVIDOR' } }), { status: 409, headers: { 'content-type': 'application/json' } }) } } });
+      fireEvent.click(within(card(A.title)).getByRole('button', { name: 'Aprovar' }));
+      expect((await within(card(A.title)).findByRole('alert')).textContent).toBe('Não foi possível agora. Tente de novo em instantes.');
+      expect(batchCalls(api)).toHaveLength(1);
       expect(buttonsOf(A.title)).toEqual(['Pedir ajuste', 'Aprovar']);
     });
 
