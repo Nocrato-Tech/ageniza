@@ -221,3 +221,41 @@ describe('app_private.accept_legal_document (issue #81)', () => {
     });
   });
 });
+
+describe('the reset that takes over an unconfirmed account revokes its acceptances (issue #706)', () => {
+  const confirmByReset = async (userId: string): Promise<boolean> => {
+    const result = await raw<{ rows: readonly { confirmed: boolean }[] }>(getApplication().knex, 'select app_private.confirm_email_by_password_reset(?) as confirmed', [userId]);
+    return result.rows[0]?.confirmed ?? false;
+  };
+  const activeRowsOf = (userId: string): Promise<{ document: string; version: string }[]> =>
+    getOwner().knex('legal_acceptances').where({ user_id: userId }).whereNull('revoked_at').orderBy('document').select('document', 'version');
+
+  it('confirms the account, keeps the revoked rows, and the same version can be accepted again', async () => {
+    const userId = randomUUID();
+    await getOwner().knex('auth.user').insert({ id: userId, name: 'Legal Takeover', email: `legal-takeover-${userId}@example.test`, emailVerified: false });
+    try {
+      await expect(accept(userId, 'terms', '2026-01-01')).resolves.toBe(true);
+      await expect(accept(userId, 'privacy', '2026-01-01')).resolves.toBe(true);
+
+      await expect(confirmByReset(userId)).resolves.toBe(true);
+
+      expect((await getOwner().knex('auth.user').where({ id: userId }).first('emailVerified')).emailVerified).toBe(true);
+      await expect(activeRowsOf(userId)).resolves.toEqual([]);
+      await expect(rowsOf(userId)).resolves.toHaveLength(2);
+      await expect(accept(userId, 'terms', '2026-01-01')).resolves.toBe(true);
+      await expect(accept(userId, 'terms', '2026-01-01')).resolves.toBe(false);
+      await expect(activeRowsOf(userId)).resolves.toEqual([{ document: 'terms', version: '2026-01-01' }]);
+    } finally {
+      await getOwner().knex('legal_acceptances').where({ user_id: userId }).delete();
+      await getOwner().knex('auth.user').where({ id: userId }).delete();
+    }
+  });
+
+  it('does nothing to a confirmed account', async () => {
+    const before = await activeRowsOf(actorB);
+
+    await expect(confirmByReset(actorB)).resolves.toBe(false);
+
+    await expect(activeRowsOf(actorB)).resolves.toEqual(before);
+  });
+});
