@@ -142,7 +142,7 @@ const addMemberWithMembershipId = async (
   const userId = randomUUID();
   createdUserIds.push(userId);
   await app.pool.query(
-    'insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, false)',
+    'insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, true)',
     [userId, input.name, `${input.emailLabel}.${randomUUID().slice(0, 8)}@collab-integration.test`]
   );
   await owner.knex('agency_memberships').insert({ id: input.membershipId, agency_id: agencyId, user_id: userId, role_id: input.roleId, job_title: null, status: 'active' });

@@ -4,7 +4,7 @@ import { HttpError } from '@ageniza/core';
 
 import { AUTH_RATE_LIMITS, type AuthRateLimitWindow } from './policy.js';
 
-export type AuthLimiterRoute = 'login' | 'forgot';
+export type AuthLimiterRoute = 'login' | 'forgot' | 'signUp' | 'resendVerification';
 
 export interface AuthWindowCounter {
   count: number;
@@ -75,7 +75,9 @@ export class InMemoryAuthLimiter {
     this.store = options.store ?? new Map<string, AuthWindowCounter>();
     this.limits = options.limits ?? {
       login: AUTH_RATE_LIMITS.login,
-      forgot: AUTH_RATE_LIMITS.forgot
+      forgot: AUTH_RATE_LIMITS.forgot,
+      signUp: AUTH_RATE_LIMITS.signUp,
+      resendVerification: AUTH_RATE_LIMITS.resendVerification
     };
     this.maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
   }

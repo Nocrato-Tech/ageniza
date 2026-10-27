@@ -76,6 +76,11 @@ export const createRequireSession = (dependencies: SessionGuardDependencies, opt
     applyAuthCookies(reply, responseHeaders);
 
     const { session, user } = result;
+    // "Sem confirmar, não há sessão" (2026-10-26): no route creates one, and none is honoured either.
+    if (user.emailVerified !== true) {
+      await dependencies.auth.api.revokeSession({ body: { token: session.token }, headers }).catch(() => undefined);
+      throw unauthenticated();
+    }
     const ageMs = Date.now() - new Date(session.createdAt).getTime();
     if (ageMs > AUTH_SESSION_MAX_AGE_MS) {
       await dependencies.auth.api.revokeSession({ body: { token: session.token }, headers }).catch(() => {

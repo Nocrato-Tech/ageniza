@@ -23,7 +23,7 @@ export const loadLegalStatus = async (
   const result = await raw<RawRows<{ document: LegalDocumentKind; version: string }>>(transaction, `
     select document, max(version collate "C") as version
     from public.legal_acceptances
-    where user_id = ?::uuid
+    where user_id = ?::uuid and revoked_at is null
     group by document
   `, [userId]);
   const accepted = new Map(result.rows.map((row) => [row.document, row.version]));

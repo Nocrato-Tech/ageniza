@@ -13,7 +13,10 @@ Origin/CSRF checking is global (see below); no route repeats it.
 
 | Method and route | Body | Success | Errors |
 | --- | --- | --- | --- |
-| `POST /auth/login` | `{ email, password, inviteToken? }` | `200 { user: { id, name, email } }` + session cookie | `401 INVALID_CREDENTIALS`; `403 NO_CONTEXT_ACCESS`; `429 RATE_LIMITED` |
+| `POST /auth/login` | `{ email, password, inviteToken? }` | `200 { user: { id, name, email } }` + session cookie | `401 INVALID_CREDENTIALS`; `403 EMAIL_NOT_VERIFIED`; `429 RATE_LIMITED` |
+| `POST /auth/sign-up` | `{ name, email, password, acceptTerms: true }` | always `202 {}`, no cookie | `400 VALIDATION_ERROR`; `429 RATE_LIMITED` |
+| `POST /auth/email/verification/resend` | `{ email }` | always `202 {}` | `429 RATE_LIMITED` |
+| `POST /auth/email/verify` | `{ token, password }` | `200 { user }` + session cookie | `400 INVALID_LINK_OR_PASSWORD`; `429 RATE_LIMITED` |
 | `POST /auth/logout` | — (session cookie) | `204`, revokes only the current session | `401 UNAUTHENTICATED` |
 | `POST /auth/logout-all` | — (session cookie) | `204`, revokes every session for the user; audits `auth.logout_all` | `401 UNAUTHENTICATED` |
 | `GET /auth/session` | — (session cookie) | `200 { user: { id, name, email }, session: { expiresAt } }` | `401 UNAUTHENTICATED`; `401 SESSION_EXPIRED` |
@@ -23,53 +26,49 @@ Origin/CSRF checking is global (see below); no route repeats it.
 
 Login failure (wrong password vs. unknown email) is byte-for-byte identical, so a client cannot
 enumerate accounts. `password/reset` returns the same `INVALID_LINK` whether the token is unknown,
-expired, already used, or belongs to a different purpose. There is no public sign-up endpoint:
-`emailAndPassword.disableSignUp` is `true` and no sign-up route is mounted, so any sign-up request
-gets the ordinary `404` route-not-found response.
+expired, already used, or belongs to a different purpose. Better Auth's own sign-up stays off
+(`emailAndPassword.disableSignUp` is `true`): the public sign-up is `POST /auth/sign-up`, ours.
 
 Every email is `trim()`ed and lower-cased before it is validated or handed to Better Auth
 (`AuthEmailSchema` in contracts), matching the `auth.user.email` normalized-value constraint
 enforced by the migration.
 
-**Zero contexts (issue #68).** A correct credential that resolves to zero agency/client contexts
-never gets a session: `routes.ts` authenticates first, then counts contexts through
-`countValidContexts` (injected from the `contexts` module, wired in `server.ts`/the test harness),
-and revokes the session Better Auth just created before it ever reaches the client if that count is
-zero. The response is `403 NO_CONTEXT_ACCESS`, a message distinct from `INVALID_CREDENTIALS`
-because by this point the caller already proved they know the password — see the 2026-09-24
-decision "Credencial correta sem nenhum contexto não cria sessão" in `docs/business/decisions.md`.
-The same rule ends the session on `GET /me/contexts/resolve`'s `decision: 'none'` (see the
-`contexts` module's README) — deliberately **not** in `session-guard.ts`: charging it on every
-authenticated request would cost an extra query for no benefit, since `requireAgencyAccess`/
-`requireClientAccess` already 404 anything a contextless session cannot reach.
+**Zero contexts (issue #706, replacing #68).** A confirmed account with zero contexts gets its
+session and lands on `/comecar`; `GET /me/contexts/resolve` answers `none` and keeps the session.
+`NO_CONTEXT_ACCESS` no longer exists. `inviteToken` on the login is still accepted (the reset link of
+an invitation carries it) but no longer changes the outcome.
 
-**Re-invited zero-context account (issue #76, 2026-09-29 decision, pending validation).** An
-account removed from every agency and then re-invited also has zero contexts, but the 2026-09-24
-decision itself says that case must keep working through the existing-account accept flow, and
-`POST /invitations/:token/accept` needs a session to run. `POST /auth/login` accepts an optional
-`inviteToken` for exactly this: when the credential is correct, contexts are zero, and `inviteToken`
-resolves (through the same `invitationTokenLookup`/`app_private.invitation_by_token_hash` validity
-check the invitations module itself uses — not re-implemented here) to a **valid** invitation
-addressed to the **same e-mail**, the session is kept instead of revoked. An invalid, expired,
-revoked, mismatched-email, or absent token is indistinguishable from one another: every one of them
-falls through to the ordinary `403 NO_CONTEXT_ACCESS`, byte-for-byte, so `inviteToken` can never be
-used to probe whether an invitation or an account exists.
+**Unconfirmed accounts (issue #706).** `requireEmailVerification: true` makes Better Auth refuse the
+sign-in of an account whose `emailVerified` is false, after the password is checked: a wrong password
+is still `401 INVALID_CREDENTIALS`, byte-for-byte, and only the right one gets
+`403 EMAIL_NOT_VERIFIED`, with no cookie and no session row. `routes.ts` checks `emailVerified` again
+on the response, and `session-guard.ts` revokes any session an unconfirmed account holds.
 
-The session this creates is **still zero-context** until the invitation is actually accepted: the
-invite screen (issue #76, "já tem conta" state) **must** call `POST /invitations/:token/accept` with
-this same session **before** ever calling `GET /me/contexts/resolve`. Calling `resolve` first ends
-the session on sight (`decision: 'none'`, same as any other zero-context session), and the person
-would need to log in again with the token to retry. Once `accept` succeeds, the account has a real
-context and an ordinary login (no `inviteToken` needed) works from then on.
+**Sign-up and the confirmation link (issue #706, finding A1 of the review of PR #720, security
+review of PR #721).** `POST /auth/sign-up` creates the account unconfirmed, with the credential and
+both legal acceptances, and issues the link; it hashes the password on every path and sends e-mail in
+the background, so a taken address (confirmed or not) answers the same `202 {}` in the same time, and
+gets a notice with no link. The link is not Better Auth's e-mail verification (a stateless JWT with
+the address in it, replayable, not voided by a resend, confirming without the password): it is a
+random 32-byte token whose SHA-256 lives in `public.email_confirmations`, reached only through the
+`app_private` functions of migration `20261027010100`. `email-verification.ts` exposes
+`issueEmailConfirmation(executor, userId)`, which voids the earlier links and returns the token to
+send with `emailService.sendEmailVerification` (the invitation acceptance of #721 calls it too).
+`POST /auth/email/verify` takes the token **and the account password**, spends the login's attempt
+counters, and answers `400 INVALID_LINK_OR_PASSWORD` for a wrong password and for a dead link alike
+(checking a decoy hash when the link is dead); only both right consume the link (while the credential
+is still the one checked), confirm the e-mail and create the session. A password reset of an
+unconfirmed account takes it over: `onPasswordReset` calls
+`app_private.confirm_email_by_password_reset`, which voids the links, confirms the e-mail and revokes
+the legal acceptances recorded at sign-up.
 
 **`password/reset` creates no session (issue #699, 2026-10-16 decision "Redefinir a senha não entra
 direto: volta ao login").** The reset ends every previous session (`revokeSessionsOnPasswordReset`)
 and answers `204`, no body and no cookie, whether or not the account has a context: it never signs
-the account in, never counts contexts, and takes no `inviteToken`. The person signs in again with the
-new password, so `NO_CONTEXT_ACCESS` only ever comes from `POST /auth/login`. An invitation that
-started the recovery (`forgot` appends `invite=` to the link only for a valid invite addressed to
-that e-mail) continues through that login, which carries the `inviteToken` above. An
-invalid/expired/used reset token gets the generic `400 INVALID_LINK`.
+the account in and takes no `inviteToken`. The person signs in again with the new password. An
+invitation that started the recovery (`forgot` appends `invite=` to the link only for a valid invite
+addressed to that e-mail) continues through that login. An invalid/expired/used reset token gets the
+generic `400 INVALID_LINK`.
 
 ## Composition
 
@@ -117,6 +116,9 @@ Three independent dimensions, matching issue #31 exactly. Every limit exceeded r
 | --- | --- | --- | --- |
 | `POST /auth/login` | 100 / 15 min | 10 / 15 min | 50 / 1 h |
 | `POST /auth/password/forgot` | 30 / 15 min | 3 / 15 min | 10 / 1 h |
+| `POST /auth/sign-up` | 30 / 15 min | 3 / 15 min | 10 / 1 h |
+| `POST /auth/email/verification/resend` | 30 / 15 min | 3 / 15 min | 10 / 1 h |
+| `POST /auth/email/verify` | 100 / 15 min | the login's counters, keyed by the link's e-mail | the login's |
 | `POST /auth/password/reset` | 30 / 15 min | — | — |
 
 - **Per IP** uses the already-registered `@fastify/rate-limit` plugin (`config: { rateLimit: {...} }`

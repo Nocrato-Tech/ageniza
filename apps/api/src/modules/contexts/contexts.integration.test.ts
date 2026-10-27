@@ -183,31 +183,27 @@ describe('contexts module (AUTH-20C)', () => {
     expect(readAsA.rows).toHaveLength(1);
   });
 
-  it('#2 zero contexts: resolve ends the session instead of returning an empty app (issue #68)', async () => {
+  it('#2 zero contexts: resolve answers none and keeps the session of the confirmed account (#706)', async () => {
     const user = await makeUser('ctx-resolve-none');
     const agency = await createAgency('Resolve None Agency', user.id);
     await addAgencyMembership(agency, user.id, adminRoleId);
-    // Login succeeds: the person currently has exactly one context.
     const cookie = await loginCookie(user);
 
-    // The session guard itself never charges for zero contexts (AGENTS.md / decisions.md
-    // 2026-09-24): with a still-valid session, `GET /me/contexts` plainly reports nothing.
     await setAgencyStatus(agency, 'suspended');
     const emptyList = await getContexts(cookie);
     expect(emptyList.contexts).toEqual([]);
 
-    // `resolve` is where the zero-context rule is charged: it both answers `none` and ends the
-    // session, per the 2026-09-24 decision ("quem perde o último contexto... é encerrado na
-    // próxima passagem pelo resolve").
+    // The 2026-10-26 decision on the public sign-up: the confirmed account without a context keeps
+    // its session and goes to `/comecar`, instead of being signed out here.
     const none = await resolve(cookie);
     expect(none.status).toBe(200);
     expect(none.body).toEqual({ decision: 'none' });
 
-    // The same cookie is now unusable: the session row is gone, not merely stale.
-    const afterNone = await resolve(cookie);
-    expect(afterNone.status).toBe(401);
+    const again = await resolve(cookie);
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual({ decision: 'none' });
     const sessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id]);
-    expect(sessionRows.rowCount).toBe(0);
+    expect(sessionRows.rowCount).toBe(1);
   });
 
   it('#3, #4, #5, #6, #7, #8, #10 (partial) cover the resolve algorithm as contexts are added, preferred, suspended and restored', async () => {

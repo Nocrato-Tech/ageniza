@@ -24,7 +24,6 @@ import type { ClientModuleDependencies } from '../../clients/routes.js';
 import type { ContentPortalModuleDependencies } from '../../contents/portal-routes.js';
 import type { ContentModuleDependencies } from '../../contents/routes.js';
 import type { ContextModuleDependencies } from '../../contexts/routes.js';
-import { countValidContexts } from '../../contexts/service.js';
 import { createRequireSession } from '../session-guard.js';
 import { createMediaJobDispatcher, type MediaJobDispatcher } from '../../media/job-dispatcher.js';
 import type { MediaModuleDependencies } from '../../media/routes.js';
@@ -171,12 +170,6 @@ export interface TestAppOptions {
    * `requireAgencyAccess`/`requireClientAccess` prehandlers without a bespoke fixture.
    */
   readonly registerExtraRoutes?: (app: FastifyInstance, guards: TestGuardBuilders) => void | Promise<void>;
-  /**
-   * Overrides the real `countValidContexts` the auth module is normally wired with. Exists so a
-   * test can deterministically simulate the context-count lookup failing (2026-09-29 security
-   * review of PR #176, achado 2) without relying on a real, hard-to-trigger database error.
-   */
-  readonly countValidContexts?: (userId: string) => Promise<number>;
   /** Test-only route observer, forwarded to `buildApp` (issue #182 route-inventory test). */
   readonly onRoute?: ApiAppOptions['onRoute'];
   /**
@@ -327,7 +320,9 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     limiter,
     auditRecorder,
     invitationTokenLookup,
-    countValidContexts: options.countValidContexts ?? ((userId: string) => countValidContexts(database, userId))
+    database,
+    emailService,
+    legalVersions: { terms: config.authTermsVersion, privacy: config.authPrivacyVersion }
   };
   const app = await buildApp({
     config,
@@ -392,6 +387,8 @@ export interface InsertTestUserOptions {
   readonly email?: string;
   readonly password?: string;
   readonly name?: string;
+  /** Confirmed by default, like every account but a fresh public sign-up (issue #706). */
+  readonly emailVerified?: boolean;
 }
 
 /** Inserts a credential user directly into `auth.user`/`auth.account`, exactly as issue #31 prescribes. */
@@ -402,7 +399,7 @@ export const insertTestUser = async (pool: Pool, auth: AuthInstance, options: In
   const name = options.name ?? 'Integration Test User';
   const passwordHash = await (await auth.$context).password.hash(password);
 
-  await pool.query('insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, false)', [id, name, email]);
+  await pool.query('insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, $4)', [id, name, email, options.emailVerified ?? true]);
   await pool.query(
     'insert into auth."account" (id, "accountId", "providerId", "userId", password, "updatedAt") values ($1, $2, $3, $4, $5, now())',
     [randomUUID(), id, 'credential', id, passwordHash]

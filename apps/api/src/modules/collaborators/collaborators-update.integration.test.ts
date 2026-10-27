@@ -84,7 +84,7 @@ interface Member {
 const insertBareUser = async (label: string): Promise<TestUserFixture> => {
   const id = randomUUID();
   const email = `${label}.${id.slice(0, 8)}@collab-update.test`;
-  await app.pool.query('insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, false)', [id, `Pessoa ${label}`, email]);
+  await app.pool.query('insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, true)', [id, `Pessoa ${label}`, email]);
   return { id, email, password: '', name: `Pessoa ${label}` };
 };
 

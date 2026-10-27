@@ -47,7 +47,7 @@ describe('OpenAPI document (issue #182)', () => {
     const login = document.paths['/auth/login']!.post!;
     const codes = Object.values(login.responses).map((response) => response.description ?? '').join(' | ');
     expect(codes).toContain('INVALID_CREDENTIALS');
-    expect(codes).toContain('NO_CONTEXT_ACCESS');
+    expect(codes).toContain('EMAIL_NOT_VERIFIED');
     expect(codes).toContain('RATE_LIMITED');
     expect(login.responses['401']).toBeDefined();
 

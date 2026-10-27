@@ -82,7 +82,10 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
     verification: { storeIdentifier: 'hashed' },
     emailAndPassword: {
       enabled: true,
+      // The public sign-up is `POST /auth/sign-up` (routes.ts), never Better Auth's own endpoint.
       disableSignUp: true,
+      // An unconfirmed account gets no session: `signInEmail` refuses it after the password matched.
+      requireEmailVerification: true,
       minPasswordLength: 10,
       autoSignIn: false,
       resetPasswordTokenExpiresIn: 60 * 30,
@@ -91,6 +94,20 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
         dependencies.sender.sendPasswordReset({ to: user.email, token, inviteToken: currentPasswordResetInviteToken() });
       },
       onPasswordReset: async ({ user }): Promise<void> => {
+        // The reset link reached the mailbox, so it confirms an unconfirmed account and voids its
+        // pending confirmation links and the Terms acceptance recorded at sign-up: whoever signed up with
+        // someone else's address loses it here (finding A1 of the review of PR #720). If this fails the account stays unconfirmed, and its
+        // links still ask for the password, which is now the new one.
+        try {
+          await dependencies.pool.query('select app_private.confirm_email_by_password_reset($1::uuid)', [user.id]);
+        } catch (error) {
+          dependencies.logger.error({
+            operation: 'auth.email_verification_by_reset',
+            status: 'failed',
+            error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'EMAIL_VERIFICATION_BY_RESET_FAILED' }
+          }, 'Failed to confirm the e-mail after a password reset');
+          captureUnexpectedError(error, { operation: 'auth.email_verification_by_reset' });
+        }
         // The notice about an account e-mail change tells the person to change the password if the
         // request was not theirs, so this is where that request dies (issue #80, security review of
         // PR #325). It never undoes the reset: if it fails, the request is still refused when it is
