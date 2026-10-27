@@ -343,12 +343,16 @@ describe('the password reset that takes over an unconfirmed account (issue #724)
     (await raw<{ rows: readonly { taken: boolean }[] }>(getApplication().knex, 'select app_private.confirm_email_by_password_reset(?::uuid) as taken', [userId])).rows[0]!.taken;
   const nameOf = async (userId: string): Promise<string> => (await getOwner().knex('auth.user').where({ id: userId }).first<{ name: string }>('name')).name;
 
-  it('does not keep the name the third party typed: the owner of the mailbox fills it in at the first sign-in', async () => {
+  const localPartOf = async (userId: string): Promise<string> =>
+    (await getOwner().knex('auth.user').where({ id: userId }).first<{ email: string }>('email')).email.split('@')[0]!;
+
+  it('does not keep the name the third party typed: it becomes the part of the address before the @, never empty', async () => {
     const id = await abandoned({ createdAt: ago(1), name: 'Nome do Atacante' });
 
     await expect(reset(id)).resolves.toBe(true);
 
-    expect(await nameOf(id)).toBe('');
+    expect(await nameOf(id)).toBe(await localPartOf(id));
+    expect(await nameOf(id)).toMatch(/^purge-[0-9a-f-]{36}$/);
     expect((await getOwner().knex('auth.user').where({ id }).first<{ emailVerified: boolean }>('emailVerified')).emailVerified).toBe(true);
   });
 

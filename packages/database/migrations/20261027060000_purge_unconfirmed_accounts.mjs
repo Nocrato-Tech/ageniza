@@ -15,9 +15,10 @@
 //    - Each account is locked (`for update`) and its ties are read again under that lock: a tie is created through a foreign key
 //      to the account, which waits for that lock. An account that still cannot be deleted for a key not listed here is left.
 //    - The audit records the id of the account, never the e-mail or the name.
-// 2. `confirm_email_by_password_reset` also clears the name: the account is taken over by the owner of the mailbox, who types
-//    the name on the first sign-in, and the name the third party typed does not survive. `auth."user".name` is `not null`, so
-//    "cleared" is the empty string.
+// 2. `confirm_email_by_password_reset` also replaces the name: the account is taken over by the owner of the mailbox, and the name
+//    the third party typed does not survive. The name is not empty because the response of sign-in and of the session requires one
+//    (`AuthUserSchema`, `min(1)`): an empty name made the taken-over account unable to sign in. It becomes the part of the address
+//    before the `@`, which is the owner's own data, until the owner edits the profile.
 
 export async function up(knex) {
   await knex.raw(`
@@ -126,7 +127,7 @@ export async function up(knex) {
       where link.user_id = p_user_id and link.consumed_at is null;
 
       update auth."user"
-      set "emailVerified" = true, name = '', "updatedAt" = pg_catalog.now()
+      set "emailVerified" = true, name = pg_catalog.left(pg_catalog.split_part(email, '@', 1), 256), "updatedAt" = pg_catalog.now()
       where id = p_user_id and "emailVerified" = false;
       if not found then
         return false;
