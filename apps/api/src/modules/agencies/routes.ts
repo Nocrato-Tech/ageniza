@@ -16,6 +16,8 @@ export interface AgencyModuleDependencies {
   readonly auth: AuthInstance;
   /** Injected by the tenancy module so this module never duplicates agency-access guard SQL. */
   readonly requireAgencyAccess: AgencyPreHandler;
+  /** `SUPPORT_CONTACT_EMAIL`: the public contact the plan notice shows; absent, the notice names none. */
+  readonly supportContactEmail?: string;
 }
 
 const unauthenticated = (): HttpError => new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
@@ -77,6 +79,9 @@ export const registerAgencyModule = (app: FastifyInstance, dependencies: AgencyM
     // The guard ran a separate transaction: if the agency was suspended in between, this is a 404
     // indistinct from a nonexistent or inaccessible one.
     if (result === undefined) throw agencyNotFound();
-    return reply.send(routeResponse(agencyMeDocs, request, result));
+    return reply.send(routeResponse(agencyMeDocs, request, {
+      ...result,
+      plan: { ...result.plan, supportContactEmail: dependencies.supportContactEmail ?? null }
+    }));
   });
 };

@@ -1183,6 +1183,14 @@
               },
               "readOnly": {
                 "type": "boolean"
+              },
+              "supportContactEmail": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 320,
+                "format": "email"
               }
             },
             "required": [

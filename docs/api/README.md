@@ -36,7 +36,9 @@ produto mostra; as demais são internas.
 As de escrita de uma agência ou do portal também podem responder `409 AGENCY_READ_ONLY` quando o período de teste
 da agência terminou (só o que reduz acesso continua: remover colaborador, remover acesso ao portal e cancelar convite),
 e as que criam cliente, convidam colaborador ou reativam um deles, `409 TRIAL_CLIENT_LIMIT` ou
-`409 TRIAL_COLLABORATOR_LIMIT` durante o teste. Os três vêm do banco, valem em toda rota e não são repetidos em cada uma.
+`409 TRIAL_COLLABORATOR_LIMIT` durante o teste. Os convites (criar e reenviar, de colaborador e de portal) podem
+responder `429 DAILY_EMAIL_LIMIT` quando a agência passou do limite diário de e-mails (20 no teste e 200 nos demais
+planos, ajustável pela operação). Todos vêm do banco, valem em toda rota e não são repetidos em cada uma.
 
 ## Rotas por módulo
 
@@ -4045,7 +4047,8 @@ Marca o roteiro como gravado, no portal.
 | `CSRF_REJECTED` | Request origin is not allowed |
 | `EMAIL_NOT_VERIFIED` | Confirme o seu e-mail antes de criar uma agência. |
 | `TRIAL_ALREADY_EXISTS` | Sua conta já tem uma agência em período de teste. |
-| `AGENCY_READ_ONLY` | O período de teste desta agência terminou e ela está somente leitura. Fale com a equipe do Ageniza para continuar. |
+| `AGENCY_READ_ONLY` | O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados. |
+| `DAILY_EMAIL_LIMIT` | Limite diário de envios atingido. Tente amanhã. |
 | `TRIAL_CLIENT_LIMIT` | O período de teste permite até 3 clientes ativos. |
 | `TRIAL_COLLABORATOR_LIMIT` | O período de teste permite até 3 colaboradores, contando quem criou a agência e os convites pendentes. |
 | `PAYLOAD_TOO_LARGE` | Request payload is too large |

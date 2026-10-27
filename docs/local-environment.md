@@ -35,9 +35,11 @@ docker compose --env-file .local/storage.env up -d --wait mailpit
 
 ## Criando algo com que trabalhar
 
-**Aqui é onde todo mundo trava.** O banco recém-migrado está vazio: não há agência, não há conta, e **não existe cadastro público** — por decisão de produto, uma agência só nasce por comando interno da operação.
+**Aqui é onde todo mundo trava.** O banco recém-migrado está vazio: não há agência nem conta. Uma agência só nasce pelo produto: uma conta com e-mail verificado usa "Criar agência" e a agência nasce em teste de 14 dias (decisão 2026-10-27, "a agência só nasce pelo produto"). Não existe comando que crie agência.
 
-O comando é `cli:agency`, e ele roda o JavaScript compilado. Compile a API antes:
+O caminho mais curto é a semente de demonstração (seção [Dados de demonstração](#dados-de-demonstração)): ela cria duas agências com plano `isenta`, sem limites. Para ver o teste por dentro, entre com uma conta de e-mail verificado e use "Criar agência" no seletor de contexto ou em `/contextos`.
+
+O plano de uma agência que já existe é trocado pela operação com `cli:agency`, que roda o JavaScript compilado. Compile a API antes:
 
 ```sh
 pnpm --filter @ageniza/api build
@@ -50,26 +52,22 @@ MIGRATION_DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:54322/ageniza' 
 SMTP_URL='smtp://127.0.0.1:1025' \
 EMAIL_FROM='Ageniza <no-reply@ageniza.local>' \
 APP_PUBLIC_URL='http://127.0.0.1:5173' \
-pnpm --filter @ageniza/api cli:agency create --name "Agência Teste" --owner-email "dono@exemplo.test"
+pnpm --filter @ageniza/api cli:agency set-plan --agency-id <uuid> --plan ativo
 ```
 
-A saída é o identificador da agência e a validade do convite:
-
-```json
-{"agencyId":"741c4d6d-…","expiresAt":"2026-10-01T23:24:21.392Z"}
-```
-
-Os outros comandos do CLI:
+Os comandos do CLI:
 
 ```sh
+pnpm --filter @ageniza/api cli:agency set-plan --agency-id <uuid> --plan isenta|ativo|trial [--ends-at 2026-12-31]
+pnpm --filter @ageniza/api cli:agency set-email-limit --agency-id <uuid> --per-day 50|padrao
 pnpm --filter @ageniza/api cli:agency suspend --agency-id <uuid>
 pnpm --filter @ageniza/api cli:agency reactivate --agency-id <uuid>
 pnpm --filter @ageniza/api cli:agency resend-activation --agency-id <uuid>
-pnpm --filter @ageniza/api cli:agency upgrade --agency-id <uuid>
-pnpm --filter @ageniza/api cli:agency new-trial --agency-id <uuid> --ends-at 2026-12-31
 ```
 
-`upgrade` tira uma agência do período de teste (plano `ativo`, sem limites nem somente leitura); `new-trial` devolve a ela um teste com outra data de fim. Para testar o somente leitura na máquina, mude a data pelo banco: `update public.agencies set trial_ends_at = now() - interval '1 minute' where id = '<uuid>'`.
+`set-plan` é a única troca de plano, e a aplicação nunca muda `plan`: `isenta` é a agência que não paga e usa tudo; `ativo` é a que fez upgrade; `trial` devolve um teste com outra data de fim (`--ends-at`, obrigatório; só a data termina às 23:59:59 de Brasília). Cada troca fica auditada. `set-email-limit` muda o limite diário de convites enviados pela agência (20 no teste e 200 nos outros planos; `padrao` volta ao do plano). Para testar o somente leitura na máquina, mude a data pelo banco: `update public.agencies set trial_ends_at = now() - interval '1 minute' where id = '<uuid>'`.
+
+O aviso de teste vencido mostra um contato só quando a API tem `SUPPORT_CONTACT_EMAIL` (um e-mail público, sem segredo). Sem ela, o aviso só diz que o teste acabou e que os dados estão guardados.
 
 ## Aprovando uma troca de e-mail
 
@@ -112,6 +110,8 @@ A suíte de integração que usa este comando (`seed-demo.integration.test.ts`) 
 > Arquivar um cliente e agendar encerramento ainda ficam de fora: dependem das funções da #123, e o seed não escreve colunas que a aplicação não pode escrever.
 
 ## Pegando o link de ativação
+
+Só uma agência que já existia com a ativação pendente tem esse convite, reenviado por `cli:agency resend-activation`; nenhuma agência nova nasce assim. Os convites de colaborador e de portal chegam ao Mailpit do mesmo jeito.
 
 O convite **não aparece em lugar nenhum além do e-mail**. O banco guarda apenas o hash do token: nem a operação recupera o token depois de enviado — é decisão de segurança, não limitação.
 

@@ -104,6 +104,8 @@ export interface ApiConfig extends ServerConfig {
    * `/docs` viewer must check this before trying to load.
    */
   containerLocal: boolean;
+  /** Public contact the read-only agency is pointed to (`SUPPORT_CONTACT_EMAIL`); not a secret. Undefined: no contact. */
+  supportContactEmail?: string;
 }
 /** Object storage the worker talks to directly (issue #24): download the confirmed original,
  * upload the generated thumbnail/preview. Unlike `StorageConfig`, the worker never presigns a
@@ -255,6 +257,10 @@ const apiSchema = sharedServerSchema.extend({
   API_CORS_ORIGINS: z.string().default('http://127.0.0.1:5173').transform(commaSeparatedValues),
   API_BODY_LIMIT_BYTES: z.coerce.number().int().min(1_024).max(50 * 1024 * 1024).default(1_048_576),
   API_TRUSTED_PROXY_CIDRS: z.string().default('').transform(commaSeparatedValues),
+  SUPPORT_CONTACT_EMAIL: z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.string().trim().max(320).email('must be a valid e-mail address').optional()
+  ),
   // Object storage (issue #21): R2 in production, LocalStack locally. All required together.
   ...storageEnvironmentShape,
   R2_PUBLIC_ENDPOINT: optionalUrl('must be a valid storage endpoint URL'),
@@ -509,6 +515,7 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
     bodyLimitBytes: result.data.API_BODY_LIMIT_BYTES,
     trustedProxyCidrs: result.data.API_TRUSTED_PROXY_CIDRS,
     containerLocal: result.data.APP_CONTAINER_LOCAL === 'true',
+    ...(result.data.SUPPORT_CONTACT_EMAIL === undefined ? {} : { supportContactEmail: result.data.SUPPORT_CONTACT_EMAIL }),
     storage: allStoragePresent ? {
       endpoint: result.data.R2_ENDPOINT!,
       publicEndpoint: result.data.R2_PUBLIC_ENDPOINT ?? result.data.R2_ENDPOINT!,

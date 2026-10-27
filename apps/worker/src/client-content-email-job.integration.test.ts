@@ -330,12 +330,12 @@ describe('no e-mail for what stopped being true (issue #260)', () => {
     await sendForApproval(content, ids.suspendedActor);
     await ageQueue(16);
     const box = mailbox();
-    await knex()('agencies').where({ id: ids.agencySuspended }).update({ plan: 'trial', trial_ends_at: knex().raw("now() - interval '1 minute'") });
+    await knex()('agencies').where({ id: ids.agencySuspended }).update({ plan: 'trial', trial_ends_at: knex().raw("now() - interval '1 minute'"), trial_owner_email_key: `worker-${ids.agencySuspended}` });
 
     try {
       await runJob(box);
     } finally {
-      await knex()('agencies').where({ id: ids.agencySuspended }).update({ plan: 'isenta', trial_ends_at: null });
+      await knex()('agencies').where({ id: ids.agencySuspended }).update({ plan: 'isenta', trial_ends_at: null, trial_owner_email_key: null });
     }
 
     expect(box.sent).toEqual([]);

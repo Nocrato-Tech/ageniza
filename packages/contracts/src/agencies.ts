@@ -31,7 +31,9 @@ export const AgencyMeRoleSchema = z.object({
 export const AgencyPlanSchema = z.object({
   kind: z.enum(['trial', 'ativo', 'isenta']),
   trialEndsAt: z.string().datetime().nullable(),
-  readOnly: z.boolean()
+  readOnly: z.boolean(),
+  /** The public contact of the operation (`SUPPORT_CONTACT_EMAIL`), or null when none is configured. */
+  supportContactEmail: z.string().email().max(320).nullable().optional()
 }).strict();
 
 export const AgencyMeResponseSchema = z.object({
