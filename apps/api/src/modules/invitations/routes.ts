@@ -119,7 +119,7 @@ const INVITATION_INVALID = {
 const portalInvitationDiscontinued = (): HttpError => new HttpError({
   statusCode: 409,
   code: 'PORTAL_INVITATION_DISCONTINUED',
-  message: 'O convite de portal não é mais reenviado: adicione a pessoa na aba Acessos.'
+  message: 'O convite de portal é reenviado na aba Acessos do cliente, que dá o acesso à pessoa.'
 });
 
 const invitationNotPending = (): HttpError => new HttpError({

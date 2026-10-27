@@ -140,6 +140,81 @@ export const addClientMember = async (
   return { accessId: row.access_id, outcome: row.outcome, unlinkedUserId: row.unlinked_user_id };
 };
 
+const databaseCode = (error: unknown): string | undefined =>
+  typeof error === 'object' && error !== null && typeof (error as { code?: unknown }).code === 'string' ? (error as { code: string }).code : undefined;
+
+/** Nothing to resend: the access was removed or its person already entered, or the old invitation is no longer pending. */
+export const isNothingToResend = (error: unknown): boolean => databaseCode(error) === 'A0097';
+
+/** The same access was mailed less than a minute ago. */
+export const isResendTooSoon = (error: unknown): boolean => databaseCode(error) === 'A0099';
+
+/**
+ * "Reenviar e-mail": the function checks `cliente.convidar_usuario`, the plan of the agency, the state of the access and the minute
+ * of the person, takes a place in the daily limit and writes the event the count reads. It writes nothing else: the access, its
+ * generation and the approval links stay as they are.
+ */
+export const resendClientMemberEmail = async (transaction: ClientTransaction, accessId: string): Promise<void> => {
+  const result = await raw<RawRows<{ access_id: string }>>(transaction, 'select * from app_private.resend_client_portal_access(?::uuid)', [accessId]);
+  if (result.rows[0] === undefined) throw new Error('The resend of the access could not be read back.');
+};
+
+export interface ConvertedClientInvitation extends AddedClientAccess {
+  /** `false` when the address already had an active access: nothing was written and the invitation stays pending. */
+  readonly invitationRevoked: boolean;
+}
+
+/**
+ * "Reenviar" of an old portal invitation: the access of its address as "Adicionar pessoa" gives it, and the revocation of the
+ * invitation, in the one call and so in the one transaction.
+ */
+export const convertClientInvitation = async (
+  transaction: ClientTransaction,
+  clientId: string,
+  invitationId: string
+): Promise<ConvertedClientInvitation> => {
+  const result = await raw<RawRows<{ access_id: string; outcome: AddedClientAccess['outcome']; unlinked_user_id: string | null; invitation_revoked: boolean }>>(
+    transaction,
+    'select * from app_private.convert_client_portal_invitation(?::uuid, ?::uuid)',
+    [clientId, invitationId]
+  );
+  const row = result.rows[0];
+  if (row === undefined) throw new Error('The invitation just converted could not be read back.');
+  return { accessId: row.access_id, outcome: row.outcome, unlinkedUserId: row.unlinked_user_id, invitationRevoked: row.invitation_revoked };
+};
+
+/**
+ * Whether the invitation is still pending now, read after the conversion answered `already_active`: the address had the access
+ * because somebody accepted this very invitation while the conversion waited, or because it was given another way.
+ */
+export const clientInvitationPending = async (
+  transaction: ClientTransaction,
+  scope: { readonly agencyId: string; readonly clientId: string; readonly invitationId: string }
+): Promise<boolean> => {
+  const result = await raw<RawRows<{ id: string }>>(
+    transaction,
+    `select id from public.invitations
+     where id = ?::uuid and agency_id = ?::uuid and client_id = ?::uuid and purpose = 'client_invite'
+       and used_at is null and revoked_at is null and expires_at > clock_timestamp()`,
+    [scope.invitationId, scope.agencyId, scope.clientId]
+  );
+  return result.rows[0] !== undefined;
+};
+
+/** Whether an invitation of this portal exists for the agency to see; the permission is asked by the caller before. */
+export const clientInvitationExists = async (
+  transaction: ClientTransaction,
+  scope: { readonly agencyId: string; readonly clientId: string; readonly invitationId: string }
+): Promise<boolean> => {
+  const result = await raw<RawRows<{ id: string }>>(
+    transaction,
+    `select id from public.invitations
+     where id = ?::uuid and agency_id = ?::uuid and client_id = ?::uuid and purpose = 'client_invite'`,
+    [scope.invitationId, scope.agencyId, scope.clientId]
+  );
+  return result.rows[0] !== undefined;
+};
+
 export interface ChangedClientAccess {
   /** The account linked to the access, whose sessions end when the access is removed; `null` for an access nobody has entered. */
   readonly accountUserId: string | null;

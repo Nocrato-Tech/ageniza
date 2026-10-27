@@ -13,8 +13,10 @@ from the tenancy module so the invitation module does not duplicate tenant guard
 - A portal invitation is **no longer created** (issue #711, decision 2026-10-26): "Adicionar pessoa", in the
   `clients` module, gives the access to an e-mail address at once. The ones still pending are listed by
   `GET …/clients/:clientId/invitations`, can be cancelled, and are accepted until they expire; accepting one creates
-  or links the access of its address in the same transaction (`app_private.accept_invitation`). Resending one answers
-  `409 PORTAL_INVITATION_DISCONTINUED`.
+  or links the access of its address in the same transaction (`app_private.accept_invitation`). Resending one **through this module's route** answers
+  `409 PORTAL_INVITATION_DISCONTINUED`: that route is guarded by `convite.reenviar`, which does not cover giving access.
+  The resend of the access tab is `POST …/clients/:clientId/invitations/:invitationId/resend` in the `clients` module, which
+  turns the invitation into the access of its address and revokes it (decision 2026-10-27, "acessos pendentes ...").
 - `POST /agencies/:agencyId/invitations/:invitationId/resend` replaces a pending collaborator invitation and answers the
   new link to copy the same way only to a caller who also holds `colaborador.convidar` (`null` otherwise), and both old
   tokens die with the old row.

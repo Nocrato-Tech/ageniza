@@ -8412,7 +8412,7 @@
       "post": {
         "operationId": "resendInvitation",
         "summary": "Reenvia um convite pendente",
-        "description": "Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. A resposta traz uma única vez o link novo para copiar (`invitationUrl`, `Cache-Control: no-store`) a quem também tem `colaborador.convidar`; sem ela, `null`. O reenvio gera de novo os dois tokens do convite de colaborador (o do e-mail e o copiável) e invalida os anteriores. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). O convite de portal não é mais criado nem renovado (decisão de 2026-10-26): os que ainda estão pendentes valem até vencer, e reenviar um deles responde 409 `PORTAL_INVITATION_DISCONTINUED`; a pessoa entra pela aba Acessos, em \"Adicionar pessoa\".\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `convite.reenviar`.",
+        "description": "Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. A resposta traz uma única vez o link novo para copiar (`invitationUrl`, `Cache-Control: no-store`) a quem também tem `colaborador.convidar`; sem ela, `null`. O reenvio gera de novo os dois tokens do convite de colaborador (o do e-mail e o copiável) e invalida os anteriores. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). O convite de portal não é mais criado nem renovado (decisão de 2026-10-26): os que ainda estão pendentes valem até vencer, e reenviar um deles por esta rota responde 409 `PORTAL_INVITATION_DISCONTINUED`, porque esta rota é guardada por `convite.reenviar`, que não cobre dar acesso. O Reenviar da aba Acessos é `POST /agencies/:agencyId/clients/:clientId/invitations/:invitationId/resend` (decisão de 2026-10-27, \"acessos pendentes podem ser reenviados e removidos\").\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `convite.reenviar`.",
         "tags": [
           "invitations"
         ],
@@ -19364,6 +19364,394 @@
           },
           "409": {
             "description": "ACCESS_EXISTS: Este endereço já tem acesso ao portal deste cliente. | AGENCY_READ_ONLY: O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados. | CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "ACCESS_EXISTS",
+                    "message": "Este endereço já tem acesso ao portal deste cliente."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "DAILY_EMAIL_LIMIT: Limite diário de envios atingido. Tente amanhã.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "DAILY_EMAIL_LIMIT",
+                    "message": "Limite diário de envios atingido. Tente amanhã."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "EMAIL_DELIVERY_FAILED: Não foi possível entregar o e-mail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "EMAIL_DELIVERY_FAILED",
+                    "message": "Não foi possível entregar o e-mail."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/members/{accessId}/resend": {
+      "post": {
+        "operationId": "resendClientMemberEmail",
+        "summary": "Reenvia o e-mail de boas-vindas de quem ainda não entrou no portal",
+        "description": "Manda de novo o e-mail de boas-vindas de um acesso **ativo que ainda não entrou** (`entered: false`). Não muda o\nacesso, a geração dele nem os links de aprovação. Quem já entrou ou foi removido responde 409 `ACCESS_NOT_PENDING`.\nReenviar amplia o alcance, como Adicionar pessoa: agência em somente leitura responde 409 `AGENCY_READ_ONLY`. Cada\nreenvio gasta um lugar no limite diário de e-mails da agência, no mesmo orçamento dos convites e das boas-vindas:\npassado o limite, 429 `DAILY_EMAIL_LIMIT` e nada é gravado. Um reenvio por minuto por pessoa (proposta pendente\nde validação, decisão de 2026-10-27): o segundo antes disso responde 429 `RESEND_TOO_SOON` e não gasta lugar. Se a entrega\nfalhar, 502 `EMAIL_DELIVERY_FAILED` com o lugar já gasto. Cliente arquivado responde 409; acesso de outro cliente, de\noutra agência ou `:accessId` inválido, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.convidar_usuario",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true,
+            "name": "accessId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "E-mail reenviado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/addClientMemberResponse"
+                },
+                "example": {
+                  "accessId": "66666666-6666-4666-8666-666666666666",
+                  "name": null,
+                  "email": "maria@padariacentral.exemplo.test",
+                  "status": "active",
+                  "entered": false,
+                  "since": "2026-09-02T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Member not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Member not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ACCESS_NOT_PENDING: Esta pessoa já entrou no portal ou já não tem acesso: não há e-mail para reenviar. | AGENCY_READ_ONLY: O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados. | CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "ACCESS_NOT_PENDING",
+                    "message": "Esta pessoa já entrou no portal ou já não tem acesso: não há e-mail para reenviar."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "DAILY_EMAIL_LIMIT: Limite diário de envios atingido. Tente amanhã. | RESEND_TOO_SOON:",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "DAILY_EMAIL_LIMIT",
+                    "message": "Limite diário de envios atingido. Tente amanhã."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "EMAIL_DELIVERY_FAILED: Não foi possível entregar o e-mail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "EMAIL_DELIVERY_FAILED",
+                    "message": "Não foi possível entregar o e-mail."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/invitations/{invitationId}/resend": {
+      "post": {
+        "operationId": "resendClientInvitation",
+        "summary": "Transforma um convite de portal antigo em acesso direto",
+        "description": "O Reenviar de um convite de portal que ainda está pendente: faz o mesmo que Adicionar pessoa para o e-mail do convite\n(acesso na hora, e-mail de boas-vindas) e **revoga o convite antigo na mesma transação**, o que mata o link dele.\nSe algo falha, o convite continua pendente e nada é gravado. A resposta é a pessoa com acesso, não um link.\nÉ uma rota própria, e não a de reenviar convite de colaborador, porque dar acesso pede `cliente.convidar_usuario`, e\nnão `convite.reenviar`. Se o endereço já tem acesso ativo, 409 `ACCESS_EXISTS` e nada é gravado (o convite fica, e a agência\no cancela). Convite aceito, cancelado ou vencido responde 409 `INVITATION_NOT_PENDING`. Gasta um lugar no limite diário\n(429 `DAILY_EMAIL_LIMIT`) e agência em somente leitura responde 409 `AGENCY_READ_ONLY`. Cliente arquivado responde 409;\nconvite de outro cliente, de colaborador, de outra agência ou `:invitationId` inválido, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.convidar_usuario",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true,
+            "name": "invitationId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Convite convertido em acesso.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/addClientMemberResponse"
+                },
+                "example": {
+                  "accessId": "66666666-6666-4666-8666-666666666666",
+                  "name": null,
+                  "email": "maria@padariacentral.exemplo.test",
+                  "status": "active",
+                  "entered": false,
+                  "since": "2026-09-02T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Invitation not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Invitation not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ACCESS_EXISTS: Este endereço já tem acesso ao portal deste cliente. | AGENCY_READ_ONLY: O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados. | CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado. | INVITATION_NOT_PENDING: O convite não está pendente. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
