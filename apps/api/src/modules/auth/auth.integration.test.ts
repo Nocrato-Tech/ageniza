@@ -189,6 +189,28 @@ describe('POST /auth/login and the confirmation of the e-mail (#706)', () => {
     expect(sessionRows.rowCount).toBe(0);
   });
 
+  it('never lets an unconfirmed account reach the sign-in, whatever the password, so the time tells nothing (review of PR #722, B2)', async () => {
+    const app = await openApp();
+    const unconfirmed = await insertTestUser(app.pool, app.auth, { emailLabel: 'login-never-signs-in', emailVerified: false });
+    const confirmed = await insertTestUser(app.pool, app.auth, { emailLabel: 'login-signs-in' });
+    createdUsers.push({ app, userId: unconfirmed.id }, { app, userId: confirmed.id });
+    const signIn = vi.spyOn(app.auth.api, 'signInEmail');
+    const login = (email: string, password: string) =>
+      app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email, password } });
+
+    try {
+      expect((await login(unconfirmed.email, unconfirmed.password)).statusCode).toBe(401);
+      expect((await login(unconfirmed.email, 'definitely the wrong password')).statusCode).toBe(401);
+      expect((await login(uniqueTestEmail('login-never-signs-in-unknown'), 'definitely the wrong password')).statusCode).toBe(401);
+      expect(signIn).not.toHaveBeenCalled();
+
+      expect((await login(confirmed.email, confirmed.password)).statusCode).toBe(200);
+      expect(signIn).toHaveBeenCalledTimes(1);
+    } finally {
+      signIn.mockRestore();
+    }
+  });
+
   it('answers an unconfirmed account with a wrong password byte for byte like an unknown e-mail', async () => {
     const app = await openApp();
     const user = await insertTestUser(app.pool, app.auth, { emailLabel: 'login-unverified-wrong', emailVerified: false });
