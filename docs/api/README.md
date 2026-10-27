@@ -83,11 +83,14 @@ Verifica se a API está pronta para receber tráfego.
 
 **Erros:** `503 NOT_READY`
 
-### auth — Login, sessão, logout e recuperação de senha.
+### auth — Cadastro e confirmação do e-mail, login, sessão, logout e recuperação de senha.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
 | `POST` | `/auth/login` | Público | — | Autentica com e-mail e senha |
+| `POST` | `/auth/sign-up` | Público | — | Cria uma conta com e-mail e senha |
+| `POST` | `/auth/email/verification/resend` | Público | — | Reenvia o link de confirmação do e-mail |
+| `POST` | `/auth/email/verify` | Pública, pelo token do link e a senha | — | Confirma o e-mail com o link e a senha da conta |
 | `POST` | `/auth/logout` | Sessão | — | Encerra a sessão atual |
 | `POST` | `/auth/logout-all` | Sessão | — | Encerra todas as sessões da conta |
 | `GET` | `/auth/session` | Sessão | — | Devolve a sessão e a pessoa autenticada |
@@ -123,7 +126,86 @@ Autentica com e-mail e senha.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 INVALID_CREDENTIALS` · `403 CSRF_REJECTED` · `403 NO_CONTEXT_ACCESS` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 INVALID_CREDENTIALS` · `403 CSRF_REJECTED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `POST /auth/sign-up`
+
+Cria uma conta com e-mail e senha.
+
+- Acesso: Público.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "name": "Pessoa Nova",
+  "email": "nova@exemplo.test",
+  "password": "<senha-do-exemplo>",
+  "acceptTerms": true
+}
+```
+
+**Resposta `202`** — Pedido aceito; o link segue por e-mail.
+
+```json
+{}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `403 CSRF_REJECTED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `POST /auth/email/verification/resend`
+
+Reenvia o link de confirmação do e-mail.
+
+- Acesso: Público.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "email": "nova@exemplo.test"
+}
+```
+
+**Resposta `202`** — Pedido aceito.
+
+```json
+{}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `403 CSRF_REJECTED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `POST /auth/email/verify`
+
+Confirma o e-mail com o link e a senha da conta.
+
+- Acesso: Pública, pelo token do link e a senha.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "token": "<token-do-link>",
+  "password": "<senha-do-exemplo>"
+}
+```
+
+**Resposta `200`** — E-mail confirmado; o cookie httpOnly da sessão vem na resposta.
+
+```json
+{
+  "user": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "name": "Pessoa Nova",
+    "email": "nova@exemplo.test"
+  }
+}
+```
+
+**Erros:** `400 INVALID_LINK_OR_PASSWORD` · `400 VALIDATION_ERROR` · `403 CSRF_REJECTED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 #### `POST /auth/logout`
 

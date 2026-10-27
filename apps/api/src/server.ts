@@ -18,7 +18,6 @@ import type { ContentPortalModuleDependencies } from './modules/contents/portal-
 import type { ContentModuleDependencies } from './modules/contents/routes.js';
 import { createIdentityStorageClient } from './modules/identity-storage/storage-client.js';
 import type { ContextModuleDependencies } from './modules/contexts/routes.js';
-import { countValidContexts } from './modules/contexts/service.js';
 import type { CollaboratorModuleDependencies } from './modules/collaborators/routes.js';
 import { createMediaJobDispatcher } from './modules/media/job-dispatcher.js';
 import type { MediaModuleDependencies } from './modules/media/routes.js';
@@ -159,7 +158,15 @@ export const startApi = async (): Promise<void> => {
     logger,
     readiness,
     dependencyChecks,
-    auth: { auth, limiter, auditRecorder, invitationTokenLookup, countValidContexts: (userId) => countValidContexts(database, userId) },
+    auth: {
+      auth,
+      limiter,
+      auditRecorder,
+      invitationTokenLookup,
+      database,
+      emailService,
+      legalVersions: { terms: config.authTermsVersion, privacy: config.authPrivacyVersion }
+    },
     invitations: invitationDependencies,
     contexts: contextDependencies,
     agencies: agencyDependencies,

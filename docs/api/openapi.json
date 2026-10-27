@@ -12,7 +12,7 @@
     },
     {
       "name": "auth",
-      "description": "Login, sessão, logout e recuperação de senha."
+      "description": "Cadastro e confirmação do e-mail, login, sessão, logout e recuperação de senha."
     },
     {
       "name": "invitations",
@@ -190,6 +190,118 @@
         },
         "required": [
           "email",
+          "password"
+        ],
+        "additionalProperties": false
+      },
+      "postAuthSignUpResponse": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "postAuthSignUpRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 128
+          },
+          "acceptTerms": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "password",
+          "acceptTerms"
+        ],
+        "additionalProperties": false
+      },
+      "postAuthEmailVerificationResendResponse": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "postAuthEmailVerificationResendRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "format": "email"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "additionalProperties": false
+      },
+      "postAuthEmailVerifyResponse": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "email": {
+                "type": "string",
+                "maxLength": 320,
+                "format": "email"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "email"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "user"
+        ],
+        "additionalProperties": false
+      },
+      "postAuthEmailVerifyRequest": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "token",
           "password"
         ],
         "additionalProperties": false
@@ -6219,7 +6331,7 @@
       "post": {
         "operationId": "postAuthLogin",
         "summary": "Autentica com e-mail e senha",
-        "description": "Credencial correta sem nenhum contexto não cria sessão e responde 403 `NO_CONTEXT_ACCESS`,\nsalvo quando o corpo traz um `inviteToken` válido para o mesmo e-mail.\n\nAcesso: Público.",
+        "description": "Conta com e-mail confirmado ganha sessão mesmo sem nenhum contexto (o `resolve` responde `none`).\nConta não confirmada responde o mesmo 401 `INVALID_CREDENTIALS`, com a senha certa ou não, e não cria sessão;\ne não tem efeito colateral. `inviteToken` é aceito e não muda a resposta.\n\nAcesso: Público.",
         "tags": [
           "auth"
         ],
@@ -6295,7 +6407,356 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | NO_CONTEXT_ACCESS: Sua conta não tem acesso a nenhum espaço de trabalho. Fale com quem administra a agência para receber um convite.",
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/sign-up": {
+      "post": {
+        "operationId": "postAuthSignUp",
+        "summary": "Cria uma conta com e-mail e senha",
+        "description": "A conta nasce com o e-mail não confirmado, grava o aceite das versões em vigor de Termos e Privacidade\ne recebe um link de confirmação de 24 h. Não cria sessão. Um e-mail que já tem conta, confirmada ou não,\nrecebe a mesma resposta, e o endereço recebe um aviso sem link.\n\nAcesso: Público.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/postAuthSignUpRequest"
+              },
+              "example": {
+                "name": "Pessoa Nova",
+                "email": "nova@exemplo.test",
+                "password": "<senha-do-exemplo>",
+                "acceptTerms": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Pedido aceito; o link segue por e-mail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/postAuthSignUpResponse"
+                },
+                "example": {}
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/email/verification/resend": {
+      "post": {
+        "operationId": "postAuthEmailVerificationResend",
+        "summary": "Reenvia o link de confirmação do e-mail",
+        "description": "Invalida o link anterior. Responde igual exista ou não uma conta não confirmada com o e-mail.\n\nAcesso: Público.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/postAuthEmailVerificationResendRequest"
+              },
+              "example": {
+                "email": "nova@exemplo.test"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Pedido aceito.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/postAuthEmailVerificationResendResponse"
+                },
+                "example": {}
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/email/verify": {
+      "post": {
+        "operationId": "postAuthEmailVerify",
+        "summary": "Confirma o e-mail com o link e a senha da conta",
+        "description": "O link sozinho não confirma: pede a senha da conta. Link válido com a senha certa confirma o e-mail,\ngasta o link e cria a sessão. Link inválido, usado ou vencido e senha errada respondem o mesmo\n400 `INVALID_LINK_OR_PASSWORD`, sem mudar nada; as tentativas contam nos limites do login.\n\nAcesso: Pública, pelo token do link e a senha.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/postAuthEmailVerifyRequest"
+              },
+              "example": {
+                "token": "<token-do-link>",
+                "password": "<senha-do-exemplo>"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "E-mail confirmado; o cookie httpOnly da sessão vem na resposta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/postAuthEmailVerifyResponse"
+                },
+                "example": {
+                  "user": {
+                    "id": "55555555-5555-4555-8555-555555555555",
+                    "name": "Pessoa Nova",
+                    "email": "nova@exemplo.test"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed | INVALID_LINK_OR_PASSWORD:",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed",
             "content": {
               "application/json": {
                 "schema": {
@@ -7966,7 +8427,7 @@
       "post": {
         "operationId": "acceptInvitationNewAccount",
         "summary": "Cria a conta e aceita o convite",
-        "description": "A conta nasce com o e-mail do convite, ainda não confirmado; a sessão já vem no cookie da resposta e o contexto do convite vale na hora.\n\nAcesso: Token do convite.",
+        "description": "A conta nasce com o e-mail do convite, ainda não confirmado; a sessão já vem no cookie da resposta e o contexto do convite vale na hora. O link de confirmação vai por e-mail e pede a senha escolhida aqui; até confirmar, o login por senha responde 401 e a sessão vale enquanto a conta tiver o vínculo que o convite deu.\n\nAcesso: Token do convite.",
         "tags": [
           "invitations"
         ],
@@ -8329,7 +8790,7 @@
       "get": {
         "operationId": "resolveMyContext",
         "summary": "Resolve em qual contexto entrar",
-        "description": "`none` encerra a sessão quando não há contexto algum; `enter` traz o contexto único (ou o\núltimo usado); `select` traz a lista para escolher e `canCreateAgency` (se a conta pode criar uma agência em teste). Um `preferred` inválido é ignorado em\nsilêncio, nunca vira 400.\n\nAcesso: Sessão.",
+        "description": "`none` quando não há contexto algum (a sessão continua e a pessoa vai a `/comecar`); `enter` traz o contexto único (ou o\núltimo usado); `select` traz a lista para escolher e `canCreateAgency` (se a conta pode criar uma agência em teste). Um `preferred` inválido é ignorado em\nsilêncio, nunca vira 400.\n\nAcesso: Sessão.",
         "tags": [
           "contexts"
         ],

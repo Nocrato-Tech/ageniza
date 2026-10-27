@@ -14,7 +14,6 @@ import {
   type TestApp,
   type TestUserFixture
 } from './test-support/harness.js';
-import { createInvitationToken } from '../invitations/tokens.js';
 
 // Issue #31 acceptance tests 1-11, 8b, 13, and 14. Runs against the migrated local database
 // (`pnpm db:migrate`) as the application role. Every fixture uses a randomly suffixed email and is
@@ -24,7 +23,6 @@ const origin = { origin: TEST_APP_PUBLIC_URL };
 
 const createdUsers: Array<{ app: TestApp; userId: string }> = [];
 const createdAgencyIds: string[] = [];
-const createdInvitationIds: string[] = [];
 const openApps: TestApp[] = [];
 
 const openApp: typeof buildTestApp = async (...args) => {
@@ -33,9 +31,8 @@ const openApp: typeof buildTestApp = async (...args) => {
   return app;
 };
 
-/** Also grants an owned agency: every test below needs the login it exercises to actually
- * succeed, and issue #68 now rejects a correct credential that resolves to zero contexts. Tests
- * for that rejection itself use `insertTestUser` directly instead, deliberately with no context. */
+/** Also grants an owned agency, so the login lands on a context. The tests of zero contexts and of
+ * unconfirmed accounts use `insertTestUser` directly. */
 const makeUser = async (app: TestApp, emailLabel: string): Promise<TestUserFixture> => {
   const user = await insertTestUser(app.pool, app.auth, { emailLabel });
   createdUsers.push({ app, userId: user.id });
@@ -43,41 +40,8 @@ const makeUser = async (app: TestApp, emailLabel: string): Promise<TestUserFixtu
   return user;
 };
 
-/**
- * The 2026-09-29 decision's one legitimate exception to zero contexts, exercised below: a
- * `collaborator_invite` addressed to `email`, in the given agency.
- */
-const insertCollaboratorInvitation = async (input: {
-  readonly agencyId: string;
-  readonly email: string;
-  readonly expiresAt?: Date;
-  readonly revokedAt?: Date;
-}): Promise<{ readonly invitationId: string; readonly token: string }> => {
-  const roleRows = await queryAsOwner<{ id: string }>("select id from public.roles where key = 'production' and agency_id is null limit 1");
-  const roleId = roleRows[0]?.id;
-  if (roleId === undefined) throw new Error('Production role seed is missing.');
-  const token = createInvitationToken({ appPublicUrl: TEST_APP_PUBLIC_URL });
-  const rows = await queryAsOwner<{ id: string }>(`
-    insert into public.invitations (agency_id, purpose, email, role_id, token_hash, expires_at, revoked_at)
-    values ($1, 'collaborator_invite', $2, $3, $4, $5, $6)
-    returning id
-  `, [input.agencyId, input.email, roleId, token.tokenHash, input.expiresAt ?? token.expiresAt, input.revokedAt ?? null]);
-  const invitationId = rows[0]?.id;
-  if (invitationId === undefined) throw new Error('Failed to insert the test invitation.');
-  createdInvitationIds.push(invitationId);
-  return { invitationId, token: token.token };
-};
-
 afterEach(async () => {
-  // Invitations first: `invitations.agency_id` has an FK to `public.agencies` with no `on delete`
-  // action, so a still-referencing invitation would block the agency deletion right after it.
-  const invitationIds = createdInvitationIds.splice(0);
-  if (invitationIds.length > 0) {
-    await queryAsOwner('delete from public.invitations where id = any($1::uuid[])', [invitationIds]);
-  }
-  // A test that runs `POST /invitations/:token/accept` (the inviteToken tests below) leaves a real
-  // `agency_memberships` row behind; that FK has no `on delete` action either, and would otherwise
-  // block deleting the agency or the user right after this.
+  // `agency_memberships` has no `on delete` action and would block deleting the agency or the user.
   const agencyIds = [...createdAgencyIds];
   const userIds = createdUsers.map(({ userId }) => userId);
   if (agencyIds.length > 0 || userIds.length > 0) {
@@ -191,225 +155,93 @@ describe('POST /auth/login (#1, #2, #3)', () => {
     expect(response.json()).toMatchObject({ user: { id: user.id, email: user.email } });
   });
 });
-
-// Issue #68 acceptance tests. Deliberately uses `insertTestUser` directly, never `makeUser`
-// above, so the user starts with exactly zero valid contexts.
-describe('POST /auth/login rejects a correct credential with zero contexts (#68)', () => {
-  it('responds with NO_CONTEXT_ACCESS and creates no row in auth."session"', async () => {
+// Rule 3 as the 2026-10-26 decision on the public sign-up left it: a confirmed account gets its
+// session even with zero contexts (it lands on `/comecar`), and an unconfirmed one never gets one.
+describe('POST /auth/login and the confirmation of the e-mail (#706)', () => {
+  it('creates a session for a confirmed account with zero contexts', async () => {
     const app = await openApp();
     const user = await insertTestUser(app.pool, app.auth, { emailLabel: 'login-zero-context' });
     createdUsers.push({ app, userId: user.id });
 
     const response = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
 
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toMatchObject({
-      error: {
-        code: 'NO_CONTEXT_ACCESS',
-        message: 'Sua conta não tem acesso a nenhum espaço de trabalho. Fale com quem administra a agência para receber um convite.'
-      }
-    });
-    expect(response.cookies.length).toBe(0);
+    expect(response.statusCode).toBe(200);
+    expect(response.cookies.length).toBeGreaterThan(0);
+    const sessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id]);
+    expect(sessionRows.rowCount).toBe(1);
+  });
 
+  it('answers an unconfirmed account with the right password exactly like a wrong one, with no cookie and no session row (security review of PR #722)', async () => {
+    const app = await openApp();
+    const user = await insertTestUser(app.pool, app.auth, { emailLabel: 'login-unverified', emailVerified: false });
+    createdUsers.push({ app, userId: user.id });
+    createdAgencyIds.push(await grantOwnedAgencyContext(user.id));
+
+    const headers = { ...origin, 'x-request-id': 'login-unverified-right-shared-request-id' };
+    const response = await app.app.inject({ method: 'POST', url: '/auth/login', headers, payload: loginPayload(user) });
+    const wrong = await app.app.inject({ method: 'POST', url: '/auth/login', headers, payload: { email: user.email, password: 'definitely the wrong password' } });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.body).toBe(wrong.body);
+    expect(response.json()).toMatchObject({ error: { code: 'INVALID_CREDENTIALS' } });
+    expect(response.cookies.length).toBe(0);
     const sessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id]);
     expect(sessionRows.rowCount).toBe(0);
   });
 
-  it('still responds with the generic INVALID_CREDENTIALS for a wrong password on a zero-context account', async () => {
+  it('never lets an unconfirmed account reach the sign-in, whatever the password, so the time tells nothing (review of PR #722, B2)', async () => {
     const app = await openApp();
-    const user = await insertTestUser(app.pool, app.auth, { emailLabel: 'login-zero-context-wrong-password' });
+    const unconfirmed = await insertTestUser(app.pool, app.auth, { emailLabel: 'login-never-signs-in', emailVerified: false });
+    const confirmed = await insertTestUser(app.pool, app.auth, { emailLabel: 'login-signs-in' });
+    createdUsers.push({ app, userId: unconfirmed.id }, { app, userId: confirmed.id });
+    const signIn = vi.spyOn(app.auth.api, 'signInEmail');
+    const login = (email: string, password: string) =>
+      app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email, password } });
+
+    try {
+      expect((await login(unconfirmed.email, unconfirmed.password)).statusCode).toBe(401);
+      expect((await login(unconfirmed.email, 'definitely the wrong password')).statusCode).toBe(401);
+      expect((await login(uniqueTestEmail('login-never-signs-in-unknown'), 'definitely the wrong password')).statusCode).toBe(401);
+      expect(signIn).not.toHaveBeenCalled();
+
+      expect((await login(confirmed.email, confirmed.password)).statusCode).toBe(200);
+      expect(signIn).toHaveBeenCalledTimes(1);
+    } finally {
+      signIn.mockRestore();
+    }
+  });
+
+  it('answers an unconfirmed account with a wrong password byte for byte like an unknown e-mail', async () => {
+    const app = await openApp();
+    const user = await insertTestUser(app.pool, app.auth, { emailLabel: 'login-unverified-wrong', emailVerified: false });
     createdUsers.push({ app, userId: user.id });
 
-    const response = await app.app.inject({
-      method: 'POST', url: '/auth/login', headers: origin,
+    const requestId = 'login-unverified-wrong-shared-request-id';
+    const wrong = await app.app.inject({
+      method: 'POST', url: '/auth/login', headers: { ...origin, 'x-request-id': requestId },
       payload: { email: user.email, password: 'definitely the wrong password' }
     });
+    const unknown = await app.app.inject({
+      method: 'POST', url: '/auth/login', headers: { ...origin, 'x-request-id': requestId },
+      payload: { email: uniqueTestEmail('login-unverified-unknown'), password: 'definitely the wrong password' }
+    });
 
-    expect(response.statusCode).toBe(401);
-    expect(response.json()).toMatchObject({ error: { code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas.' } });
-    expect(response.cookies.length).toBe(0);
+    expect(wrong.statusCode).toBe(401);
+    expect(wrong.body).toBe(unknown.body);
+    expect(wrong.cookies.length).toBe(0);
+  });
 
+  it('refuses a session an unconfirmed account somehow holds, and revokes it', async () => {
+    const app = await openApp();
+    const user = await makeUser(app, 'session-unverified');
+    const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
+    expect(login.statusCode).toBe(200);
+    await app.pool.query('update auth."user" set "emailVerified" = false where id = $1', [user.id]);
+
+    const session = await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie: sessionCookieHeader(login.cookies) } });
+
+    expect(session.statusCode).toBe(401);
     const sessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id]);
-    expect(sessionRows.rowCount).toBe(0);
-  });
-
-  it('succeeds once the account is granted a context', async () => {
-    const app = await openApp();
-    const user = await insertTestUser(app.pool, app.auth, { emailLabel: 'login-gains-context' });
-    createdUsers.push({ app, userId: user.id });
-
-    const denied = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
-    expect(denied.statusCode).toBe(403);
-
-    const agencyId = await grantOwnedAgencyContext(user.id);
-    createdAgencyIds.push(agencyId);
-
-    const granted = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
-    expect(granted.statusCode).toBe(200);
-    expect(granted.cookies.length).toBeGreaterThan(0);
-  });
-});
-
-// 2026-09-29 decision, complementing #68: a zero-context login still gets a session when it
-// continues straight into accepting an existing-account invitation addressed to it.
-describe('POST /auth/login accepts inviteToken for a zero-context account continuing into accept', () => {
-  it('creates a session, lets accept run, and an ordinary login succeeds afterwards', async () => {
-    const app = await openApp();
-    const agencyOwner = await insertTestUser(app.pool, app.auth, { emailLabel: 'invite-login-owner' });
-    createdUsers.push({ app, userId: agencyOwner.id });
-    const agencyId = await grantOwnedAgencyContext(agencyOwner.id);
-    createdAgencyIds.push(agencyId);
-
-    const invitee = await insertTestUser(app.pool, app.auth, { emailLabel: 'invite-login-invitee' });
-    createdUsers.push({ app, userId: invitee.id });
-    const { token } = await insertCollaboratorInvitation({ agencyId, email: invitee.email });
-
-    const loginWithToken = await app.app.inject({
-      method: 'POST', url: '/auth/login', headers: origin,
-      payload: { ...loginPayload(invitee), inviteToken: token }
-    });
-    expect(loginWithToken.statusCode).toBe(200);
-    expect(loginWithToken.cookies.length).toBeGreaterThan(0);
-    const sessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [invitee.id]);
-    expect(sessionRows.rowCount).toBe(1);
-
-    // The session is contextless until accept runs — exactly the order issue #76's invite screen
-    // must follow (never call `resolve` first: it would end this same session on sight).
-    const cookie = sessionCookieHeader(loginWithToken.cookies);
-    const accept = await app.app.inject({ method: 'POST', url: `/invitations/${token}/accept`, headers: { ...origin, cookie } });
-    expect(accept.statusCode).toBe(200);
-    expect(accept.json()).toMatchObject({ status: 'accepted', context: { agencyId, clientId: null } });
-
-    const secondLogin = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(invitee) });
-    expect(secondLogin.statusCode).toBe(200);
-    expect(secondLogin.cookies.length).toBeGreaterThan(0);
-  });
-
-  it('denies exactly like no token at all when inviteToken is addressed to a different e-mail', async () => {
-    const app = await openApp();
-    const agencyOwner = await insertTestUser(app.pool, app.auth, { emailLabel: 'invite-login-mismatch-owner' });
-    createdUsers.push({ app, userId: agencyOwner.id });
-    const agencyId = await grantOwnedAgencyContext(agencyOwner.id);
-    createdAgencyIds.push(agencyId);
-
-    const invitee = await insertTestUser(app.pool, app.auth, { emailLabel: 'invite-login-mismatch-invitee' });
-    createdUsers.push({ app, userId: invitee.id });
-    const { token } = await insertCollaboratorInvitation({ agencyId, email: uniqueTestEmail('invite-login-mismatch-someone-else') });
-
-    const sharedRequestId = 'invite-login-mismatch-shared-request-id';
-    const withToken = await app.app.inject({
-      method: 'POST', url: '/auth/login', headers: { ...origin, 'x-request-id': sharedRequestId },
-      payload: { ...loginPayload(invitee), inviteToken: token }
-    });
-    const withoutToken = await app.app.inject({
-      method: 'POST', url: '/auth/login', headers: { ...origin, 'x-request-id': sharedRequestId },
-      payload: loginPayload(invitee)
-    });
-
-    expect(withToken.statusCode).toBe(403);
-    expect(withToken.cookies.length).toBe(0);
-    expect(withToken.body).toBe(withoutToken.body);
-  });
-
-  it('denies exactly like no token at all when inviteToken is expired', async () => {
-    const app = await openApp();
-    const agencyOwner = await insertTestUser(app.pool, app.auth, { emailLabel: 'invite-login-expired-owner' });
-    createdUsers.push({ app, userId: agencyOwner.id });
-    const agencyId = await grantOwnedAgencyContext(agencyOwner.id);
-    createdAgencyIds.push(agencyId);
-
-    const invitee = await insertTestUser(app.pool, app.auth, { emailLabel: 'invite-login-expired-invitee' });
-    createdUsers.push({ app, userId: invitee.id });
-    const { token } = await insertCollaboratorInvitation({ agencyId, email: invitee.email, expiresAt: new Date(Date.now() - 60_000) });
-
-    const sharedRequestId = 'invite-login-expired-shared-request-id';
-    const withToken = await app.app.inject({
-      method: 'POST', url: '/auth/login', headers: { ...origin, 'x-request-id': sharedRequestId },
-      payload: { ...loginPayload(invitee), inviteToken: token }
-    });
-    const withoutToken = await app.app.inject({
-      method: 'POST', url: '/auth/login', headers: { ...origin, 'x-request-id': sharedRequestId },
-      payload: loginPayload(invitee)
-    });
-
-    expect(withToken.statusCode).toBe(403);
-    expect(withToken.cookies.length).toBe(0);
-    expect(withToken.body).toBe(withoutToken.body);
-  });
-
-  it('denies exactly like no token at all when inviteToken was revoked', async () => {
-    const app = await openApp();
-    const agencyOwner = await insertTestUser(app.pool, app.auth, { emailLabel: 'invite-login-revoked-owner' });
-    createdUsers.push({ app, userId: agencyOwner.id });
-    const agencyId = await grantOwnedAgencyContext(agencyOwner.id);
-    createdAgencyIds.push(agencyId);
-
-    const invitee = await insertTestUser(app.pool, app.auth, { emailLabel: 'invite-login-revoked-invitee' });
-    createdUsers.push({ app, userId: invitee.id });
-    const { token } = await insertCollaboratorInvitation({ agencyId, email: invitee.email, revokedAt: new Date() });
-
-    const sharedRequestId = 'invite-login-revoked-shared-request-id';
-    const withToken = await app.app.inject({
-      method: 'POST', url: '/auth/login', headers: { ...origin, 'x-request-id': sharedRequestId },
-      payload: { ...loginPayload(invitee), inviteToken: token }
-    });
-    const withoutToken = await app.app.inject({
-      method: 'POST', url: '/auth/login', headers: { ...origin, 'x-request-id': sharedRequestId },
-      payload: loginPayload(invitee)
-    });
-
-    expect(withToken.statusCode).toBe(403);
-    expect(withToken.cookies.length).toBe(0);
-    expect(withToken.body).toBe(withoutToken.body);
-  });
-
-  it('denies exactly like no token at all when the invite\'s agency is suspended', async () => {
-    const app = await openApp();
-    const agencyOwner = await insertTestUser(app.pool, app.auth, { emailLabel: 'invite-login-suspended-owner' });
-    createdUsers.push({ app, userId: agencyOwner.id });
-    const agencyId = await grantOwnedAgencyContext(agencyOwner.id);
-    createdAgencyIds.push(agencyId);
-
-    const invitee = await insertTestUser(app.pool, app.auth, { emailLabel: 'invite-login-suspended-invitee' });
-    createdUsers.push({ app, userId: invitee.id });
-    const { token } = await insertCollaboratorInvitation({ agencyId, email: invitee.email });
-    await queryAsOwner('update public.agencies set status = $1 where id = $2', ['suspended', agencyId]);
-
-    const sharedRequestId = 'invite-login-suspended-shared-request-id';
-    const withToken = await app.app.inject({
-      method: 'POST', url: '/auth/login', headers: { ...origin, 'x-request-id': sharedRequestId },
-      payload: { ...loginPayload(invitee), inviteToken: token }
-    });
-    const withoutToken = await app.app.inject({
-      method: 'POST', url: '/auth/login', headers: { ...origin, 'x-request-id': sharedRequestId },
-      payload: loginPayload(invitee)
-    });
-
-    expect(withToken.statusCode).toBe(403);
-    expect(withToken.cookies.length).toBe(0);
-    expect(withToken.body).toBe(withoutToken.body);
-  });
-
-  it('still responds with the generic INVALID_CREDENTIALS when inviteToken is valid but the password is wrong', async () => {
-    const app = await openApp();
-    const agencyOwner = await insertTestUser(app.pool, app.auth, { emailLabel: 'invite-login-wrong-password-owner' });
-    createdUsers.push({ app, userId: agencyOwner.id });
-    const agencyId = await grantOwnedAgencyContext(agencyOwner.id);
-    createdAgencyIds.push(agencyId);
-
-    const invitee = await insertTestUser(app.pool, app.auth, { emailLabel: 'invite-login-wrong-password-invitee' });
-    createdUsers.push({ app, userId: invitee.id });
-    const { token } = await insertCollaboratorInvitation({ agencyId, email: invitee.email });
-
-    const response = await app.app.inject({
-      method: 'POST', url: '/auth/login', headers: origin,
-      payload: { email: invitee.email, password: 'definitely the wrong password', inviteToken: token }
-    });
-
-    expect(response.statusCode).toBe(401);
-    expect(response.json()).toMatchObject({ error: { code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas.' } });
-    expect(response.cookies.length).toBe(0);
-    const sessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [invitee.id]);
     expect(sessionRows.rowCount).toBe(0);
   });
 });
@@ -953,7 +785,7 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
     expect(reset.headers['cache-control']).toBe('no-store');
   });
 
-  it('resets the password with zero contexts, creates no session, audits the reset, and a following login gets NO_CONTEXT_ACCESS', async () => {
+  it('resets the password with zero contexts, creates no session, audits the reset, and a following login gets its session', async () => {
     const sender = createFakeEmailSender();
     const app = await openApp({ sender });
     const user = await insertTestUser(app.pool, app.auth, { emailLabel: 'reset-zero-context' });
@@ -984,14 +816,12 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
     const loginWithNewPassword = await app.app.inject({
       method: 'POST', url: '/auth/login', headers: origin, payload: { email: user.email, password: newPassword }
     });
-    expect(loginWithNewPassword.statusCode).toBe(403);
-    expect(loginWithNewPassword.json()).toMatchObject({ error: { code: 'NO_CONTEXT_ACCESS' } });
+    expect(loginWithNewPassword.statusCode).toBe(200);
   });
 
-  it('never signs in nor counts contexts, so neither a sign-in failure nor a count failure changes the answer', async () => {
+  it('never signs in, so a sign-in failure does not change the answer', async () => {
     const sender = createFakeEmailSender();
-    const countValidContexts = vi.fn(async (): Promise<number> => { throw new Error('simulated context count failure'); });
-    const app = await openApp({ sender, countValidContexts });
+    const app = await openApp({ sender });
     const user = await makeUser(app, 'reset-no-sign-in');
     const signInSpy = vi.spyOn(app.auth.api, 'signInEmail').mockRejectedValue(new Error('simulated sign-in failure'));
 
@@ -1005,7 +835,6 @@ describe('POST /auth/password/reset (#9, #10, #11)', () => {
       expect(reset.statusCode).toBe(204);
       expect(reset.cookies.length).toBe(0);
       expect(signInSpy).not.toHaveBeenCalled();
-      expect(countValidContexts).not.toHaveBeenCalled();
     } finally {
       signInSpy.mockRestore();
     }
@@ -1190,10 +1019,10 @@ describe('global origin/CSRF check (#13)', () => {
   });
 });
 
-describe('no public sign-up route (#14)', () => {
-  it('#14 every plausible sign-up route responds 404', async () => {
+describe('Better Auth\'s own sign-up is never reachable (#14)', () => {
+  it('#14 every sign-up route but `POST /auth/sign-up` (#706) responds 404', async () => {
     const app = await openApp();
-    for (const url of ['/auth/sign-up', '/auth/signup', '/auth/register', '/auth/sign-up/email']) {
+    for (const url of ['/auth/signup', '/auth/register', '/auth/sign-up/email']) {
       const response = await app.app.inject({ method: 'POST', url, headers: origin, payload: {} });
       expect(response.statusCode).toBe(404);
     }

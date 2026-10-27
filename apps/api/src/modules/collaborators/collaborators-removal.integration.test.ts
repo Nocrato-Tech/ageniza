@@ -86,7 +86,7 @@ interface Member {
 const insertBareUser = async (label: string): Promise<TestUserFixture> => {
   const id = randomUUID();
   const email = `${label}.${id.slice(0, 8)}@collab-removal.test`;
-  await app.pool.query('insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, false)', [id, `Pessoa ${label}`, email]);
+  await app.pool.query('insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, true)', [id, `Pessoa ${label}`, email]);
   return { id, email, password: '', name: `Pessoa ${label}` };
 };
 
@@ -843,14 +843,14 @@ describe('POST /agencies/:agencyId/collaborators/:membershipId/reactivate (issue
     const person = await addMember(fx.agencyId, 'reactivate-access-person', presetRoleIds.sales);
     expect((await remove(fx.ownerCookie, fx.agencyId, person.membershipId)).status).toBe(200);
     expectRefused(await list(person.cookie, fx.agencyId), 401, 'UNAUTHENTICATED');
-    // Their only agency is gone, so there is no context to sign in to until they are brought back.
-    const refusedLogin = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email: person.user.email, password: person.user.password } });
-    expect(refusedLogin.statusCode).toBe(403);
-    expect(await sessionCount(person.user.id)).toBe(0);
+    // Their only agency is gone: the confirmed account still signs in, with no context (#706).
+    const zeroContextLogin = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email: person.user.email, password: person.user.password } });
+    expect(zeroContextLogin.statusCode).toBe(200);
+    expect(await sessionCount(person.user.id)).toBe(1);
 
     expect((await reactivate(fx.ownerCookie, fx.agencyId, person.membershipId, { roleId: presetRoleIds.production })).status).toBe(200);
 
-    expect(await sessionCount(person.user.id)).toBe(0);
+    expect(await sessionCount(person.user.id)).toBe(1);
     expectRefused(await list(person.cookie, fx.agencyId), 401, 'UNAUTHENTICATED');
     const again = await loginCookie(person.user);
     expect((await list(again, fx.agencyId)).status).toBe(200);
