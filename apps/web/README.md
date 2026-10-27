@@ -1,6 +1,6 @@
 # @ageniza/web
 
-The product SPA is a React/Vite application with deliberate public and protected route boundaries. It currently provides infrastructure only: no sign-in, signup, social-login, or account-recovery screens are present.
+The product SPA is a React/Vite application with deliberate public and protected route boundaries. The sign-in, sign-up and account-recovery screens are in place. "Entrar com o Google" is drawn on `/entrar` and `/criar-conta` only while `GET /auth/providers` answers `google: true`; any other answer, or none, leaves it out (specs/auth.md, section 13).
 
 ## Browser configuration
 

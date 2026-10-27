@@ -107,6 +107,21 @@ describe('HttpClient', () => {
     expect(calls).toBe(3);
   });
 
+  it('builds the address of an API route for the browser to open, keeping the base path of the API', () => {
+    const noFetch: typeof fetch = async () => { throw new Error('no request expected'); };
+    expect(new HttpClient('http://127.0.0.1:3001', noFetch).browserUrl('/auth/google/start')).toBe('http://127.0.0.1:3001/auth/google/start');
+    expect(new HttpClient('https://app.example.test/api', noFetch).browserUrl('/auth/google/start?intent=reauth')).toBe('https://app.example.test/api/auth/google/start?intent=reauth');
+    expect(new HttpClient('https://app.example.test/api/', noFetch).browserUrl('/auth/google/start')).toBe('https://app.example.test/api/auth/google/start');
+  });
+
+  it('refuses to build the browser address of a path that could leave the API', () => {
+    const noFetch: typeof fetch = async () => { throw new Error('no request expected'); };
+    const client = new HttpClient('https://app.example.test/api', noFetch);
+    for (const path of ['//evil.example.test/x', 'https://evil.example.test/', '/../admin', 'auth/google/start']) {
+      expect(() => client.browserUrl(path), path).toThrow();
+    }
+  });
+
   it('calls the provided fetch with globalThis as `this`, never as a method of the client (#197)', async () => {
     const receivers: unknown[] = [];
     // Chromium's native fetch is a normal function that brand-checks `this`; an arrow could not

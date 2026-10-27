@@ -13,6 +13,7 @@ import { useOptionalAuthSessionStore } from './auth.js';
 import { AUTH_LINK_BUTTON_CLASS, AuthMessage, AuthPanel } from './auth-layout.js';
 import { useDocumentTitle } from './document-title.js';
 import { validateForm } from './forms.js';
+import { GoogleLink, rememberReauthReturn, useGoogleEnabled } from './google-sign-in.js';
 import { HttpClientError, useApiClient } from './http.js';
 
 /** The contract leaves the password out for an account with only Google; this form is for the account that has one. */
@@ -21,15 +22,28 @@ const PasswordEmailChangeSchema = EmailChangeRequestSchema.required({ currentPas
 const REQUEST_FAILED ='Não foi possível enviar o pedido. Tente de novo.';
 const RATE_LIMITED = 'Muitas tentativas. Tente novamente mais tarde.';
 const CONFIRM_FAILED = 'Não foi possível confirmar a troca. Tente de novo.';
+const REAUTH_MESSAGE = 'Confirme com o Google para continuar.';
 
 /**
  * The account menu's "Pedir troca de e-mail" (issue #80). The person asks, with the current
  * password; the operation approves outside the product, and the link goes to the new address. The
  * success text says nothing about the new address, because the answer is the same whether or not
  * another account already uses it.
+ *
+ * An account that has only Google has no password to give (decision 2026-10-26, item 6): while Google is on, the person can say so,
+ * and the request goes without one. The API then wants a Google sign-in of the last 5 minutes (`REAUTH_REQUIRED`), and the dialog
+ * offers it; it comes back to this very screen with the dialog open (`viaGoogle`).
  */
-export function EmailChangeDialog({ onClose }: { onClose: () => void }) {
+export function EmailChangeDialog({ onClose, viaGoogle = false, returnTo = '/contextos' }: {
+  onClose: () => void;
+  viaGoogle?: boolean;
+  /** The address of this screen, where the Google confirmation must come back to. */
+  returnTo?: string;
+}) {
   const httpClient = useApiClient();
+  const googleEnabled = useGoogleEnabled();
+  const [withoutPassword, setWithoutPassword] = useState(viaGoogle);
+  const [reauthRequired, setReauthRequired] = useState(false);
   const { formRef, summary } = useFormErrors();
   const [newEmail, setNewEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -42,7 +56,10 @@ export function EmailChangeDialog({ onClose }: { onClose: () => void }) {
   const onSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     setFormError(undefined);
-    const validation = validateForm(PasswordEmailChangeSchema, { newEmail, currentPassword: password });
+    setReauthRequired(false);
+    const validation = withoutPassword
+      ? validateForm(EmailChangeRequestSchema, { newEmail })
+      : validateForm(PasswordEmailChangeSchema, { newEmail, currentPassword: password });
     setEmailError(validation.success || validation.errors.newEmail === undefined ? undefined : 'Informe um e-mail válido.');
     setPasswordError(validation.success || validation.errors.currentPassword === undefined ? undefined : 'Informe a senha atual.');
     if (!validation.success) return;
@@ -57,6 +74,13 @@ export function EmailChangeDialog({ onClose }: { onClose: () => void }) {
       setPassword('');
       setSent(true);
     } catch (caught: unknown) {
+      if (caught instanceof HttpClientError && caught.status === 403 && caught.code === 'REAUTH_REQUIRED') { setReauthRequired(true); return; }
+      // The account has a password after all (or no Google to stand for it): back to the field that asks for it.
+      if (withoutPassword && caught instanceof HttpClientError && ((caught.status === 400 && caught.code === 'VALIDATION_ERROR') || (caught.status === 403 && caught.code === 'INVALID_PASSWORD'))) {
+        setWithoutPassword(false);
+        setPasswordError('Informe a senha atual.');
+        return;
+      }
       if (caught instanceof HttpClientError && caught.status === 403 && caught.code === 'INVALID_PASSWORD') { setPasswordError('A senha atual não confere.'); return; }
       if (caught instanceof HttpClientError && caught.status === 400 && caught.code === 'SAME_EMAIL') { setEmailError('Informe um e-mail diferente do atual.'); return; }
       if (caught instanceof HttpClientError && caught.status === 429) { setFormError(RATE_LIMITED); return; }
@@ -85,16 +109,28 @@ export function EmailChangeDialog({ onClose }: { onClose: () => void }) {
               onChange={(event) => setNewEmail(event.target.value)}
             />}
           </Field>
-          <Field label='Senha atual' id='email-change-password' error={passwordError}>
-            {(control) => <TextInput
-              {...control}
-              name='currentPassword'
-              type='password'
-              autoComplete='current-password'
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />}
-          </Field>
+          {withoutPassword
+            ? <div className='form-stack'>
+                <p className='auth-note'>Você entra com o Google, então não há senha para confirmar. Se o seu último acesso foi há mais de 5 minutos, vamos pedir que confirme com o Google.</p>
+                <Button variant='ghost' size='sm' onClick={() => { setWithoutPassword(false); setReauthRequired(false); }}>Tenho uma senha</Button>
+              </div>
+            : <>
+                <Field label='Senha atual' id='email-change-password' error={passwordError}>
+                  {(control) => <TextInput
+                    {...control}
+                    name='currentPassword'
+                    type='password'
+                    autoComplete='current-password'
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                  />}
+                </Field>
+                {googleEnabled && <Button variant='ghost' size='sm' onClick={() => { setWithoutPassword(true); setPasswordError(undefined); }}>Não tenho senha, entro com o Google</Button>}
+              </>}
+          {reauthRequired && <div className='form-stack' role='alert'>
+            <AuthMessage tone='danger'>{REAUTH_MESSAGE}</AuthMessage>
+            <GoogleLink intent='reauth' className='' onNavigate={() => { rememberReauthReturn(returnTo); }}>Confirmar com o Google</GoogleLink>
+          </div>}
           {formError !== undefined && <AuthMessage tone='danger' role='alert'>{formError}</AuthMessage>}
           <div className='form-actions'>
             <Button variant='ghost' onClick={onClose}>Cancelar</Button>

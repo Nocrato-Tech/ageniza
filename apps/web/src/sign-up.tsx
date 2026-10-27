@@ -8,12 +8,14 @@ import { AuthMessage, AuthPanel } from './auth-layout.js';
 import { useDocumentTitle } from './document-title.js';
 import { ResendVerification } from './email-verification.js';
 import { validateForm } from './forms.js';
+import { GoogleSignInBlock } from './google-sign-in.js';
 import { HttpClientError, useApiClient } from './http.js';
 
 /**
  * `/criar-conta` (specs/auth.md section 13). `POST /auth/sign-up` answers the same whether or not the
  * address already has an account, so after sending the screen is always the same: the link went to
- * the e-mail, with a resend. "Entrar com o Google" has its place here and lands with its own issue.
+ * the e-mail, with a resend. "Entrar com o Google" is under the form while the server has Google on; the Terms are
+ * accepted on their own screen after it, so the box above does not gate it.
  */
 export function SignUpPage() {
   const httpClient = useApiClient();
@@ -95,6 +97,7 @@ export function SignUpPage() {
       </label>
       {formError !== undefined && <AuthMessage tone="danger" role="alert">{formError}</AuthMessage>}
       <Button type="submit" className="auth-submit" loading={submitting} disabled={!acceptedTerms}>Criar conta</Button>
+      <GoogleSignInBlock />
       {backToSignIn}
     </form>
   </AuthPanel>;

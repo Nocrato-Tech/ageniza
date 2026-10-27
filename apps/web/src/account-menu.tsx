@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronsUpDown, LogOut } from 'lucide-react';
@@ -66,7 +66,9 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
   const [menuOpen, setMenuOpen] = useState(false);
   const [panel, setPanel] = useState<AccountMenuPanel>('root');
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [emailChangeOpen, setEmailChangeOpen] = useState(false);
+  // Coming back from the Google confirmation of an e-mail change (`GoogleLandingPage`): the dialog reopens in its Google mode.
+  const [reopenedViaGoogle, setReopenedViaGoogle] = useState(() => (location.state as { reopenEmailChange?: unknown } | null)?.reopenEmailChange === true);
+  const [emailChangeOpen, setEmailChangeOpen] = useState(reopenedViaGoogle);
   const [createAgencyOpen, setCreateAgencyOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<LogoutAction | null>(null);
   const [failedAction, setFailedAction] = useState<LogoutAction | null>(null);
@@ -98,6 +100,11 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
   });
 
   const currentTarget = targetFromDestination(location.pathname);
+
+  // The marker is spent on arrival, so a reload or a later visit to the same entry does not reopen the dialog.
+  useEffect(() => {
+    if (reopenedViaGoogle) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, []);
 
   if (user === null || (userOverride === undefined && session.status === 'loading')) {
     return <Skeleton className='account-menu__skeleton' />;
@@ -234,7 +241,7 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
           <Button size='sm' variant='ghost' onClick={() => { void startLogout(failedAction); }}>Tentar de novo</Button>
         </div>
       )}
-      {emailChangeOpen && <EmailChangeDialog onClose={() => { setEmailChangeOpen(false); }} />}
+      {emailChangeOpen && <EmailChangeDialog viaGoogle={reopenedViaGoogle} returnTo={`${location.pathname}${location.search}`}onClose={() => { setEmailChangeOpen(false); setReopenedViaGoogle(false); }} />}
       {createAgencyOpen && <CreateAgencyDialog onClose={() => { setCreateAgencyOpen(false); }} />}
       <ConfirmDialog
         open={confirmOpen}
