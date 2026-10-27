@@ -8,11 +8,22 @@
 
 1. Só vale o e-mail que o Google declara **verificado** (`email_verified`). Sem isso, o login é recusado com a mesma mensagem de credencial inválida.
 2. **Não há conta com o e-mail**: o Google cria a conta já verificada, com o nome do Google. O aceite de Termos e Privacidade é pedido numa tela antes do primeiro uso, e sem ele não há contexto.
-3. **Há conta com o e-mail, e o e-mail dela é verificado**: o Google passa a ser um segundo jeito de entrar na mesma conta. A senha continua valendo.
-4. **Há conta com o e-mail, e o e-mail dela não foi confirmado**: o Google **assume** a conta. A senha é apagada, as sessões são encerradas, e o e-mail passa a verificado. Assim, quem criou uma conta com o e-mail de outra pessoa perde tudo no primeiro login do dono do e-mail. Os vínculos que a conta já tinha continuam.
-5. Conta só com Google não tem senha. Os fluxos que pedem a senha atual (pedir troca de e-mail, regra 12 de `specs/auth.md`) passam a aceitar, para essa conta, a reautenticação recente pelo Google (no máximo 5 minutos). A impressão de credencial do pedido de troca de e-mail usa o identificador da conta Google no lugar do hash da senha. "Esqueci a senha" numa conta só com Google envia um link que **cria** a senha, pelo mesmo fluxo de redefinição.
-6. Um token do Google nunca é guardado além do que o Better Auth exige para o login. O produto não pede escopo nenhum além de `openid email profile`.
+3. **Há conta com o e-mail, e o e-mail dela é verificado**: o Google passa a ser um segundo jeito de entrar na mesma conta. A senha continua valendo. Esse vínculo automático depende de configurar o `accountLinking` do Better Auth **só para o Google** e **só com `email_verified`**. Nenhum outro provider vincula sozinho.
+4. **Há conta com o e-mail, e o e-mail dela não foi confirmado**: o Google **assume** a conta, e o e-mail passa a verificado. Morre, na mesma transação:
+   - a senha;
+   - todas as sessões, invalidadas **pela data da troca**, para que um login com a senha antiga em andamento não sobreviva;
+   - os links de redefinição de senha pendentes;
+   - as confirmações de e-mail pendentes;
+   - os pedidos de troca de e-mail abertos (`superseded`, como na regra 18 de `specs/auth.md`), porque a conta não confirmada criada pelo convite tem sessão e pode pedir a troca;
+   - o aceite de Termos e Privacidade gravado antes. O registro fica, para auditoria, mas deixa de valer para a conta, e o aceite é pedido de novo ao dono do e-mail antes do primeiro uso, como no item 2.
 
-**Consequência.** Estrutural: um provider novo em `auth."account"` e uma regra nova de quem é dono de uma conta (item 4). A troca de e-mail por pedido (decisão 2026-10-07) ganha um segundo tipo de credencial. Nenhuma tabela existente muda de forma e não há backfill. Pede credenciais OAuth do Google por ambiente (variáveis do servidor, nunca no frontend nem no repositório) e revisão de segurança independente.
+   Os vínculos que a conta já tinha continuam. Os links de aprovação não mudam, porque pertencem ao acesso ao portal dado ao e-mail e não à conta (decisão do mesmo dia sobre o acesso ao portal). Assim, quem criou uma conta com o e-mail de outra pessoa perde tudo no primeiro login do dono do e-mail. "Esqueci a senha" numa conta não confirmada tem o mesmo efeito (decisão do mesmo dia sobre o cadastro, item 5).
+5. **A conta Google é identificada pelo `sub`**, e não pelo e-mail, depois do primeiro vínculo (`auth."account".accountId`). Se o e-mail que o Google declara não for mais o da conta vinculada àquele `sub`, ou se o `sub` estiver vinculado a outra conta que não a do e-mail, o login é recusado com a mesma mensagem de credencial inválida.
+6. Conta só com Google não tem senha. Os fluxos que pedem a senha atual (pedir troca de e-mail, regra 12 de `specs/auth.md`) passam a aceitar, para essa conta, a reautenticação recente pelo Google (no máximo 5 minutos). A impressão de credencial do pedido de troca de e-mail (regra 18) usa o `sub` da conta Google no lugar do hash da senha. "Esqueci a senha" numa conta só com Google envia um link que **cria** a senha, pelo mesmo fluxo de redefinição.
+7. Um token do Google nunca é guardado além do que o Better Auth exige para o login. O produto não pede escopo nenhum além de `openid email profile`.
 
-**Origem.** Pedido do dono do produto em sessão, 2026-10-26. A existência do login com Google é do dono. Os itens 1 a 6 são as regras de segurança derivadas pelo maestro e estão **pendentes de validação pelo dono do produto**.
+**Consequência.** Estrutural: um provider novo em `auth."account"` e uma regra nova de quem é dono de uma conta (item 4). A troca de e-mail por pedido (decisão 2026-10-07) ganha um segundo tipo de credencial, o que muda as regras 12 e 18 de `specs/auth.md`. O aceite jurídico ganha um caso em que deixa de valer. Nenhuma tabela existente muda de forma e não há backfill. Pede credenciais OAuth do Google por ambiente (variáveis do servidor, nunca no frontend nem no repositório) e revisão de segurança independente.
+
+**Origem.** Pedido do dono do produto em sessão, 2026-10-26. A existência do login com Google é do dono. Os itens 1 a 7 são as regras de segurança derivadas pelo maestro, e a lista do item 4, o `accountLinking` do item 3 e o item 5 vieram da revisão do PR #720.
+
+**Validação.** Pendente de validação do dono.
