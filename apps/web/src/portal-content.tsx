@@ -261,13 +261,13 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
           subject={{ contentId: content.id }}
           subjectLabel={content.title}
           canWrite
-          readOnly={false}
+          readOnly={client.agencyReadOnly}
           onWritten={refresh}
           headingLevel={3}
         />
       </section>
     </div>
-    {awaiting && <section className="portal-post__bar" aria-labelledby="portal-post-decision">
+    {awaiting && !client.agencyReadOnly && <section className="portal-post__bar" aria-labelledby="portal-post-decision">
       <h2 id="portal-post-decision" className="visually-hidden">Sua decisão</h2>
       {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
       <div className="portal-post__actions">

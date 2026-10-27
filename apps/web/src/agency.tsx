@@ -13,6 +13,7 @@ import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';
+import { TrialNotice } from './plan-notice.js';
 import { StatusPanel } from './status-panel.js';
 import { NotFoundHomeContext, NotFoundPage } from './status-pages.js';
 
@@ -34,8 +35,20 @@ export const useAgencyContext = (): AgencyMeResponse => {
   return agency;
 };
 
+/**
+ * What a read-only agency still offers (issue #708, review of #720): the reads, the tab gates that are read through a
+ * write key, and what reduces access. The database refuses every other write; this only keeps the button away.
+ */
+const READ_ONLY_KEYS: ReadonlySet<string> = new Set(['cliente.convidar_usuario', 'colaborador.remover', 'cliente.remover_usuario', 'convite.cancelar']);
+
+export const useAgencyReadOnly = (): boolean => useAgencyContext().plan.readOnly;
+
 /** UX only: the backend validates every operation against the same source (specs/autorizacao.md 7). */
-export const useCan = (permission: string): boolean => useAgencyContext().permissions.includes(permission);
+export const useCan = (permission: string): boolean => {
+  const agency = useAgencyContext();
+  if (!agency.permissions.includes(permission)) return false;
+  return !agency.plan.readOnly || permission.endsWith('.visualizar') || READ_ONLY_KEYS.has(permission);
+};
 
 const isNotFound = (error: unknown): boolean => error instanceof HttpClientError && error.status === 404;
 
@@ -110,6 +123,7 @@ export function AgencyAreaLayout() {
       <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
       <AgencySidebar agenciaId={agenciaId} agencyName={data.agencyName} permissions={data.permissions} />
       <div className="agency-body">
+        <TrialNotice plan={data.plan} />
         <LegalNotice />
         <main className="agency-content" id="main-content"><InvitationNotice /><NotFoundHomeContext.Provider value={`/agencia/${data.agencyId}`}><Outlet /></NotFoundHomeContext.Provider></main>
       </div>

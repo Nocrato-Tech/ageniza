@@ -9,6 +9,7 @@ import { apiPath } from './api-path.js';
 import { formatAgencyDayMonth } from './client-detail.js';
 import { todayInSaoPaulo } from './content-dates.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { usePortalClient } from './portal.js';
 
 const LIST_PATH = '/clients/:clientId/story-scripts';
 const RECORDED_PATH = '/clients/:clientId/story-scripts/:scriptId/recorded';
@@ -31,6 +32,7 @@ function Script({ script, number, several, sending, onRecord }: {
   sending: string | null;
   onRecord: (script: PortalStoryScript) => void;
 }) {
+  const readOnly = usePortalClient().agencyReadOnly;
   return <article className="portal-script portal-block">
     {several && <h3 className="portal-script__title">Roteiro {number}</h3>}
     <ol className="portal-script__scenes">
@@ -40,7 +42,7 @@ function Script({ script, number, several, sending, onRecord }: {
       </li>)}
     </ol>
     {script.status === 'sent'
-      ? <Button
+      ? readOnly ? null : <Button
         variant="secondary"
         aria-label={several ? `Já gravei o roteiro ${number}` : undefined}
         loading={sending === script.id}

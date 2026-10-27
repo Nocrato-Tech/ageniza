@@ -3070,7 +3070,8 @@ a.client-general__block:focus-visible {
   min-width: 0;
 }
 
-.agency-body > .legal-notice {
+.agency-body > .legal-notice,
+.agency-body > .trial-notice {
   margin: var(--space-4) var(--space-8) 0;
 }
 
@@ -3315,7 +3316,8 @@ a.client-general__block:focus-visible {
     padding: var(--space-6) var(--space-4) calc(var(--space-16) + var(--space-8));
   }
 
-  .agency-body > .legal-notice {
+  .agency-body > .legal-notice,
+  .agency-body > .trial-notice {
     margin-inline: var(--space-4);
   }
 

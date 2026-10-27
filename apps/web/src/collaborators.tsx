@@ -85,7 +85,7 @@ export function CollaboratorsPage() {
   // Seeing removed links is the administrative permission of the SPEC; reactivating needs the role
   // permission, because the route asks for it (specs/colaboradores.md §5 rule 9, issue #98/#105).
   const canSeeRemoved = agency.isOwner || canRemove || canChangeRole;
-  const canReactivate = agency.isOwner || canChangeRole;
+  const canReactivate = (agency.isOwner || canChangeRole) && !agency.plan.readOnly;
   const [inviteOpen, setInviteOpen] = useState(false);
   const [reactivating, setReactivating] = useState<{ membershipId: string; name: string } | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();

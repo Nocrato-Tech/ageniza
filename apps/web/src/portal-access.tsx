@@ -194,6 +194,8 @@ export function ClientAccessTab() {
   const canResend = useCan('convite.reenviar');
   const canCancel = useCan('convite.cancelar');
   const activeClient = client.status === 'active';
+  // Removing and cancelling reduce access and stay in a read-only agency; inviting and reactivating do not.
+  const writable = activeClient && !agency.plan.readOnly;
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const [removedOpen, setRemovedOpen] = useState(false);
@@ -316,7 +318,7 @@ export function ClientAccessTab() {
   return <section className="portal-access" aria-labelledby="portal-access-title">
     <header className="portal-access__header">
       <h2 id="portal-access-title">Pessoas com acesso ao portal</h2>
-      {activeClient && <Button variant={emptyList ? 'secondary' : 'primary'} leadingIcon={<Plus />} onClick={() => setInviteOpen(true)}>Convidar</Button>}
+      {writable && <Button variant={emptyList ? 'secondary' : 'primary'} leadingIcon={<Plus />} onClick={() => setInviteOpen(true)}>Convidar</Button>}
     </header>
 
     {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
@@ -339,7 +341,7 @@ export function ClientAccessTab() {
         headingLevel={3}
         title="Ninguém deste cliente acessa o portal ainda"
         description={activeClient ? INVITE_HINT : undefined}
-        action={activeClient ? <Button leadingIcon={<Plus />} onClick={() => setInviteOpen(true)}>Convidar</Button> : undefined}
+        action={writable ? <Button leadingIcon={<Plus />} onClick={() => setInviteOpen(true)}>Convidar</Button> : undefined}
       />
     ) : <>
       <ul className="portal-access__list">
@@ -385,7 +387,7 @@ export function ClientAccessTab() {
                 <span className="portal-access__email">{member.email}</span>
               </span>
               <span className="portal-access__since">removido</span>
-              {activeClient && canRemove && <Button
+              {writable && canRemove && <Button
                 size="sm"
                 variant="secondary"
                 aria-label={`Reativar o acesso de ${member.name}`}

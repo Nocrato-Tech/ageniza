@@ -41,8 +41,10 @@ interface TestRole {
 
 const ADMIN_ROLE: TestRole = { key: 'admin', name: 'Admin' };
 
-const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[]) => ({
-  agencyId, agencyName, isOwner: false, membershipId: null, role: ADMIN_ROLE, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions
+const EXEMPT_PLAN = { kind: 'isenta', trialEndsAt: null, readOnly: false };
+
+const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[], plan: unknown = EXEMPT_PLAN) => ({
+  agencyId, agencyName, isOwner: false, membershipId: null, role: ADMIN_ROLE, plan, permissions
 });
 
 /** The three permissions the client module declares (specs/clientes.md section 2). */
@@ -138,6 +140,7 @@ const listResponse = (data: readonly unknown[], page = 1, totals?: { totalItems:
 interface Scenario {
   readonly authenticated?: boolean;
   readonly permissions?: readonly string[];
+  readonly plan?: unknown;
   readonly clients?: (query: URLSearchParams, agencyId: string) => Response | Promise<Response>;
   readonly createClient?: (body: unknown, agencyId: string) => Response | Promise<Response>;
   readonly detail?: (clientId: string, agencyId: string) => Response | Promise<Response>;
@@ -156,7 +159,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     if (path.endsWith('/auth/session')) return authenticated ? json(sessionBody) : unauthenticated();
     if (!authenticated) return unauthenticated();
     const me = /\/agencies\/([^/]+)\/me$/.exec(path);
-    if (me !== null) return json(agencyMe(me[1]!, me[1] === AGENCY_B ? 'Agência Dois' : 'Agência Um', permissions));
+    if (me !== null) return json(agencyMe(me[1]!, me[1] === AGENCY_B ? 'Agência Dois' : 'Agência Um', permissions, scenario.plan));
     const clients = /\/agencies\/([^/]+)\/clients$/.exec(path);
     if (clients !== null && method === 'GET') {
       if (!permissions.includes('cliente.visualizar')) return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
@@ -344,6 +347,39 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
     const withPermission = makeFetch();
     renderClients(withPermission.impl);
     expect(await screen.findByRole('button', { name: 'Cadastrar cliente' })).toBeTruthy();
+  });
+
+  describe('the trial of the agency (issue #714)', () => {
+    const DAY = 86_400_000;
+
+    it('counts the days left of a running trial, says the limits, and keeps the create button', async () => {
+      const trialEndsAt = new Date(Date.now() + 3 * DAY - 60_000).toISOString();
+      renderClients(makeFetch({ plan: { kind: 'trial', trialEndsAt, readOnly: false } }).impl);
+      const notice = await screen.findByRole('region', { name: 'Período de teste' });
+      expect(notice.textContent).toContain('faltam 3 dias');
+      expect(notice.textContent).toContain('3 clientes ativos, 3 colaboradores e 2 GB');
+      expect(await screen.findByRole('button', { name: 'Cadastrar cliente' })).toBeTruthy();
+    });
+
+    it('says "falta 1 dia" on the last day', async () => {
+      renderClients(makeFetch({ plan: { kind: 'trial', trialEndsAt: new Date(Date.now() + 3_600_000).toISOString(), readOnly: false } }).impl);
+      expect((await screen.findByRole('region', { name: 'Período de teste' })).textContent).toContain('falta 1 dia');
+    });
+
+    it('turns the agency read-only when it ended: the list stays, the create action goes', async () => {
+      renderClients(makeFetch({ plan: { kind: 'trial', trialEndsAt: new Date(Date.now() - DAY).toISOString(), readOnly: true } }).impl);
+      const notice = await screen.findByRole('region', { name: 'Período de teste' });
+      expect(notice.textContent).toContain('Somente leitura.');
+      expect(notice.textContent).toContain('fale com a equipe do Ageniza');
+      expect(await screen.findByText('Padaria Central')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Cadastrar cliente' })).toBeNull();
+    });
+
+    it('shows nothing for an exempt or active agency', async () => {
+      renderClients(makeFetch({ plan: { kind: 'ativo', trialEndsAt: null, readOnly: false } }).impl);
+      await screen.findByRole('button', { name: 'Cadastrar cliente' });
+      expect(screen.queryByRole('region', { name: 'Período de teste' })).toBeNull();
+    });
   });
 
   it('does not exist without cliente.visualizar and never requests the listing', async () => {

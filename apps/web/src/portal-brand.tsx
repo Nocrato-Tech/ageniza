@@ -91,7 +91,7 @@ function PersonaCard({ persona, onWritten, onStale }: { persona: PortalPersona; 
       subject={{ personaId: persona.id }}
       subjectLabel={persona.name}
       canWrite
-      readOnly={false}
+      readOnly={client.agencyReadOnly}
       headingLevel={4}
       onWritten={onWritten}
       onStale={onStale}
@@ -166,7 +166,7 @@ export function PortalBrandPage() {
           subject={{ sectionKey: section.key }}
           subjectLabel={section.label}
           canWrite
-          readOnly={false}
+          readOnly={client.agencyReadOnly}
           headingLevel={3}
           onWritten={onWritten}
           onStale={onStale}
