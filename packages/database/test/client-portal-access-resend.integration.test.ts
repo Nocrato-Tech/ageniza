@@ -177,6 +177,26 @@ describe('resend_client_portal_access: the welcome e-mail goes again to an acces
     expect(await eventCount('client_member.resent', added.access_id)).toBe(0);
   });
 
+  it('still resends to an access that keeps its first entry but lost its account: the list says "ainda não entrou" for it', async () => {
+    const client = await freshClient();
+    const account = await newUser();
+    const oldEmail = account.email;
+    await owner()('client_memberships').insert({ client_id: client, user_id: account.id });
+    const old = (await owner()('client_portal_accesses').where({ client_id: client, user_id: account.id }).first('id'))!;
+    await removeAs(ids.adminA, old.id);
+    const newEmail = freshEmail();
+    await owner()('auth.user').where({ id: account.id }).update({ email: newEmail });
+    await addAs(ids.adminA, client, newEmail);
+    // The link lets go of the removed row of the same account, which keeps the date of its first entry.
+    expect(Number((await call<{ linked: number }>(account.id, 'select app_private.link_client_portal_accesses() as linked'))[0]!.linked)).toBe(1);
+    await addAs(ids.adminA, client, oldEmail);
+    expect(await accessById(old.id)).toMatchObject({ status: 'active', user_id: null });
+    expect((await accessById(old.id)).first_entered_at).toBeInstanceOf(Date);
+    await ageEvents(old.id);
+
+    expect(await resendAs(ids.adminA, old.id)).toBe(old.id);
+  });
+
   it('refuses a removed access, and writes nothing', async () => {
     const client = await freshClient();
     const added = await addAs(ids.adminA, client, freshEmail());
@@ -292,6 +312,31 @@ describe('resend_client_portal_access: the welcome e-mail goes again to an acces
       await ageEvents(added.access_id, 61);
       expect(await resendAs(ids.adminA, added.access_id)).toBe(added.access_id);
       expect(await eventCount('client_member.resent', added.access_id)).toBe(2);
+    });
+
+    it('refuses a resend right after the address was added back, which is its own event', async () => {
+      const client = await freshClient();
+      const added = await addAs(ids.adminA, client, freshEmail());
+      await removeAs(ids.adminA, added.access_id);
+      await ageEvents(added.access_id);
+      const readded = await addAs(ids.adminA, client, (await accessById(added.access_id) as unknown as { email: string }).email);
+      expect(readded).toMatchObject({ access_id: added.access_id, outcome: 'reactivated' });
+      expect(await eventCount('client_member.readded', added.access_id)).toBe(1);
+      await expect(resendAs(ids.adminA, added.access_id)).rejects.toMatchObject(TOO_SOON);
+      await ageEvents(added.access_id);
+      expect(await resendAs(ids.adminA, added.access_id)).toBe(added.access_id);
+    });
+
+    it('reads the minute through the agency first, so it uses events_agency_action_occurred_idx and does not scan audit.events under the lock', async () => {
+      const definition = await owner().raw<{ rows: Array<{ source: string }> }>(
+        "select pg_get_functiondef('app_private.resend_client_portal_access(uuid)'::regprocedure) as source"
+      );
+      const source = definition.rows[0]!.source.replace(/\s+/g, ' ');
+      expect(source).toContain("from audit.events event where event.agency_id = v_client.agency_id and event.target_type = 'client_portal_access'");
+      const index = await owner().raw<{ rows: Array<{ definition: string }> }>(
+        "select pg_get_indexdef(indexrelid) as definition from pg_index where indexrelid = 'audit.events_agency_action_occurred_idx'::regclass"
+      );
+      expect(index.rows[0]!.definition).toContain('(agency_id, action, occurred_at)');
     });
 
     it('counts per access: the minute of one person does not hold the resend of another', async () => {
