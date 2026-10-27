@@ -235,25 +235,23 @@ describe('ContextSelectPage (/contextos)', () => {
     expect(screen.queryByRole('heading', { name: 'Onde você quer entrar?' })).toBeNull();
   });
 
-  it('ends the session and goes to /sem-acesso when resolve answers none', async () => {
+  it('keeps the session and goes to /comecar when resolve answers none (#713)', async () => {
     const client = new HttpClient('http://127.0.0.1:3001', async () => json({ decision: 'none' }));
     const store = createAuthSessionStore(client);
     const end = vi.spyOn(store, 'end');
 
     const { probe } = renderContexts(async () => json({ decision: 'none' }), { store });
-    await waitFor(() => expect(end).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(probe.pathname).toBe('/sem-acesso'));
+    await waitFor(() => expect(probe.pathname).toBe('/comecar'));
+    expect(end).not.toHaveBeenCalled();
   });
 
-  it('reaches /sem-acesso on none and never /entrar, with the real session and the session-ended redirect', async () => {
+  it('reaches /comecar on none with the real session, and stays signed in there', async () => {
     const sessionEnd = createSessionEndSignal();
-    let serverLoggedIn = true;
     const calls = { logout: 0 };
-    // The real API answers 401 UNAUTHENTICATED on an authenticated route without a session.
     const client = new HttpClient('http://127.0.0.1:3001', async (input) => {
       const url = String(input);
-      if (url.endsWith('/auth/session')) return serverLoggedIn ? json(sessionBody) : unauthenticated();
-      if (url.endsWith('/me/contexts/resolve')) { serverLoggedIn = false; return json({ decision: 'none' }); }
+      if (url.endsWith('/auth/session')) return json(sessionBody);
+      if (url.endsWith('/me/contexts/resolve')) return json({ decision: 'none' });
       if (url.endsWith('/auth/logout')) { calls.logout += 1; return unauthenticated(); }
       throw new Error(`unexpected ${url}`);
     }, { onSessionEnded: sessionEnd.notify });
@@ -275,8 +273,8 @@ describe('ContextSelectPage (/contextos)', () => {
       </AuthSessionProvider>
     );
 
-    await waitFor(() => expect(probe.pathname).toBe('/sem-acesso'));
-    // The none path never calls logout, so nothing 401s into the /entrar redirect.
+    await waitFor(() => expect(probe.pathname).toBe('/comecar'));
+    expect(await screen.findByRole('heading', { name: 'Sua conta está pronta' })).toBeTruthy();
     expect(calls.logout).toBe(0);
   });
 

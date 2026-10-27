@@ -18,6 +18,7 @@ import { ContentCreateRoute, ContentModalRoute } from './content-modal.js';
 import { ContentsClientPage, ContentsPage } from './contents.js';
 import { ContextSelectPage } from './contexts.js';
 import { ConfirmEmailChangePage } from './email-change.js';
+import { VerifyEmailPage } from './email-verification.js';
 import { ForgotPasswordPage } from './forgot-password.js';
 import { getHealth } from './health.js';
 import { useApiClient } from './http.js';
@@ -35,6 +36,8 @@ import { PortalBrandPage } from './portal-brand.js';
 import { PortalContentPage } from './portal-content.js';
 import { ResetPasswordPage } from './reset-password.js';
 import { SessionWatch } from './session-watch.js';
+import { SignUpPage } from './sign-up.js';
+import { StartPage } from './start.js';
 import { LoadingPage, NotFoundPage, SessionGate } from './status-pages.js';
 
 /** Internal page of tokens and components: dev only. Vite replaces `import.meta.env.DEV` with `false` in the production build, which drops the branch and its chunk. */
@@ -110,6 +113,8 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="senha/redefinir" element={<ResetPasswordPage />} />
       <Route path="convite/:token" element={<InvitationPage />} />
       <Route path="email/confirmar" element={<ConfirmEmailChangePage />} />
+      <Route path="email/verificar" element={<VerifyEmailPage />} />
+      <Route path="criar-conta" element={session.isAuthenticated ? <Navigate to="/app" replace /> : <SignUpPage />} />
     </Route>
     <Route path="agencia/:agenciaId" element={<DarkArea><SessionGate session={session}><SessionWatch /><AgencyAreaLayout /></SessionGate></DarkArea>}>
       <Route index element={<AgencyHomePage />} />
@@ -181,6 +186,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
     {DesignSystemPage !== null && <Route path="design-system" element={<Suspense fallback={<LoadingPage />}><DesignSystemPage /></Suspense>} />}
     <Route element={<ProtectedLayout session={session} />}>
       <Route path="contextos" element={<ContextSelectPage />} />
+      <Route path="comecar" element={<StartPage />} />
       {/* `/app` is not a destination anymore; the resolve decides where the person enters. */}
       <Route path="app" element={<Navigate to="/contextos" replace />} />
     </Route>
