@@ -140,6 +140,10 @@ Sobe API, web e worker em modo de desenvolvimento, na máquina. Antes de subir, 
 
 As portas e o banco vêm do `.env`, porque o turbo não repassa variáveis do shell para as tarefas. `PORT=3100 pnpm dev` não muda nada: vale o `.env`. Para subir ao lado de outra instância, mude no `.env` `PORT`, `WORKER_HEALTH_PORT`, `API_CORS_ORIGINS`, `VITE_API_BASE_URL`, `APP_PUBLIC_URL` (senão os links de e-mail e de convite levam à instância do outro) e as URLs do banco, e passe a porta do Vite: `pnpm dev -- --port 5273 --host 127.0.0.1 --strictPort`. Os argumentos depois de `--` vão para todos os apps, mas só o Vite os lê.
 
+### O endereço público da API
+
+O cookie do link de aprovação (`ageniza_approval`) só volta para o caminho em que o **navegador** vê a API, e o cliente HTTP do web monta toda requisição a partir de `VITE_API_BASE_URL`, caminho incluso. Por isso o `.env` tem `API_PUBLIC_URL`, que tem de ser o mesmo endereço que `VITE_API_BASE_URL`: localmente a API tem a própria origem (`API_PUBLIC_URL=http://127.0.0.1:3001`, cookie em `/portal-approval`); em produção o contêiner web repassa `/api`, e vale o padrão, `APP_PUBLIC_URL` + `/api` (cookie em `/api/portal-approval`). Um `.env` antigo sem a variável cai no padrão de produção: o link de aprovação até abre, mas o cookie não volta e a troca do token parece não funcionar. Acrescente a linha do `.env.example`.
+
 ### Entrar com o Google
 
 O Google fica **desligado** enquanto `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` estiverem vazios no `.env`: `GET /auth/providers` responde `{ "google": false }`, as rotas do Google respondem 404 e as telas não mostram o botão. Para ligar, crie no Google Cloud Console um cliente OAuth do tipo "Aplicativo da Web", autorize nele a URL de retorno abaixo e preencha as duas variáveis (as duas juntas: só uma recusa a subida da API). O segredo é só do servidor; nunca ponha `VITE_` nelas.

@@ -612,6 +612,54 @@ describe('server configuration', () => {
     expect(() => loadApiConfig({ ...localEnvironment, SUPPORT_CONTACT_EMAIL: 'suporte' })).toThrow(ConfigValidationError);
   });
 
+  describe('the public address of the API (issue #737)', () => {
+    const production = {
+      ...localEnvironment,
+      BETTER_AUTH_SECRET: productionAuthSecret,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl,
+      APP_PUBLIC_URL: 'https://app.ageniza.example',
+      API_CORS_ORIGINS: 'https://app.ageniza.example',
+      ...productionEmailSettings,
+      ...productionStorageSettings,
+      ...productionIdentityStorageSettings
+    };
+
+    it('is the /api of the public URL by default, where the web container serves the API', () => {
+      expect(loadApiConfig(localEnvironment).apiPublicUrl).toBe('http://127.0.0.1:5173/api');
+      expect(loadApiConfig(production).apiPublicUrl).toBe('https://app.ageniza.example/api');
+      expect(loadApiConfig({ ...production, API_PUBLIC_URL: '  ' }).apiPublicUrl).toBe('https://app.ageniza.example/api');
+    });
+
+    it('takes the address given, path included, without a trailing slash', () => {
+      expect(loadApiConfig({ ...localEnvironment, API_PUBLIC_URL: 'http://127.0.0.1:3001' }).apiPublicUrl).toBe('http://127.0.0.1:3001');
+      expect(loadApiConfig({ ...localEnvironment, API_PUBLIC_URL: 'http://127.0.0.1:3001/' }).apiPublicUrl).toBe('http://127.0.0.1:3001');
+      expect(loadApiConfig({ ...production, API_PUBLIC_URL: 'https://app.ageniza.example/api/' }).apiPublicUrl).toBe('https://app.ageniza.example/api');
+      expect(loadApiConfig({ ...production, API_PUBLIC_URL: 'https://api.ageniza.example/v1//' }).apiPublicUrl).toBe('https://api.ageniza.example/v1');
+    });
+
+    it('refuses an address with credentials, a query or a fragment, without printing it', () => {
+      for (const value of ['https://user:pass@app.ageniza.example/api', 'https://app.ageniza.example/api?x=1', 'https://app.ageniza.example/api#x', 'not a url']) {
+        expect(() => loadApiConfig({ ...production, API_PUBLIC_URL: value }), value).toThrow(ConfigValidationError);
+        expect(() => loadApiConfig({ ...production, API_PUBLIC_URL: value }), value).not.toThrow(/pass|x=1/);
+      }
+    });
+
+    it('refuses a path that cannot be the Path of a cookie: only letters, digits, ".", "_", "~" and "-" make a segment', () => {
+      for (const path of ['/;', '/api;', '/;/x', '/a,b', '/a b', '/a%20b', '/a%3Bb', '/a"b', "/a'b", '/a=b', '/a(b)', '/a@b', '/a:b', '/ä']) {
+        const value = 'https://app.ageniza.example' + path;
+        expect(() => loadApiConfig({ ...production, API_PUBLIC_URL: value }), value).toThrow(ConfigValidationError);
+        expect(() => loadApiConfig({ ...production, API_PUBLIC_URL: value }), value).not.toThrow(/%20|%3B|ä/);
+      }
+      expect(loadApiConfig({ ...production, API_PUBLIC_URL: 'https://app.ageniza.example/a.b_c~d-e/v2' }).apiPublicUrl).toBe('https://app.ageniza.example/a.b_c~d-e/v2');
+    });
+
+    it('requires HTTPS and a non-loopback host in production', () => {
+      expect(() => loadApiConfig({ ...production, API_PUBLIC_URL: 'http://app.ageniza.example/api' })).toThrow('must use HTTPS');
+      expect(() => loadApiConfig({ ...production, API_PUBLIC_URL: 'https://127.0.0.1/api' })).toThrow('loopback');
+    });
+  });
+
   describe('Google sign-in (issue #707)', () => {
     const google = { GOOGLE_CLIENT_ID: 'client-id.apps.googleusercontent.com', GOOGLE_CLIENT_SECRET: 'google-client-secret-value' };
     const production = {

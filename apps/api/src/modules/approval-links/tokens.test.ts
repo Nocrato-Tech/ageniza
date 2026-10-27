@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { PORTAL_APPROVAL_TOKEN_PATTERN } from '@ageniza/contracts';
 import { describe, expect, it } from 'vitest';
 
-import { APPROVAL_COOKIE_NAME, approvalCookiePath } from './policy.js';
+import { APPROVAL_COOKIE_NAME, approvalCookieOptions } from './policy.js';
 import { approvalSessionTokenOf, generateApprovalSessionToken, hashApprovalToken, serializeApprovalCookie } from './tokens.js';
 
 const TOKEN = 'x9Qm2L0vWk3pTz8RjYb4Nc7HsAe1UdFgO5iXqKrMtV6';
@@ -49,8 +49,19 @@ describe('the tokens and the cookie of the approval link (issue #712)', () => {
     expect(serializeApprovalCookie(TOKEN, -5, { path: '/p', secure: false })).toContain('Max-Age=0');
   });
 
-  it('restricts the cookie to the path the browser sees: behind the web server in production the API answers under /api', () => {
-    expect(approvalCookiePath('production')).toBe('/api/portal-approval');
-    for (const environment of ['local', 'test', 'development']) expect(approvalCookiePath(environment)).toBe('/portal-approval');
+  it('restricts the cookie to the path the browser sees, which is the path of the public address of the API (#737)', () => {
+    expect(approvalCookieOptions('https://app.example.test/api')).toEqual({ path: '/api/portal-approval', secure: true });
+    expect(approvalCookieOptions('http://127.0.0.1:3001')).toEqual({ path: '/portal-approval', secure: false });
+    // A trailing slash, or several, change nothing; a deeper path is kept whole.
+    expect(approvalCookieOptions('https://app.example.test/api/')).toEqual({ path: '/api/portal-approval', secure: true });
+    expect(approvalCookieOptions('http://127.0.0.1:3001/')).toEqual({ path: '/portal-approval', secure: false });
+    expect(approvalCookieOptions('https://app.example.test/v1/api//')).toEqual({ path: '/v1/api/portal-approval', secure: true });
+  });
+
+  it('refuses a public path that could end the Path attribute early: ";", "," a space, "%" and the quotes', () => {
+    for (const path of ['/;', '/api;', '/a,b', '/a b', '/a%3Bb', '/a"b', "/a'b"]) {
+      expect(() => approvalCookieOptions('https://app.example.test' + path), path).toThrow('Path of a cookie');
+    }
+    expect(approvalCookieOptions('https://app.example.test/a.b_c~d-e').path).toBe('/a.b_c~d-e/portal-approval');
   });
 });
