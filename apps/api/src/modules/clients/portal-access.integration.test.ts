@@ -62,7 +62,7 @@ const login = async (user: TestUserFixture): Promise<string> => {
   return response.cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
 };
 
-const makeUser = async (key: string, name: string, options: { email?: string } = {}): Promise<TestUserFixture> => {
+const makeUser = async (key: string, name: string, options: { email?: string; emailVerified?: boolean } = {}): Promise<TestUserFixture> => {
   const user = await insertTestUser(app.pool, app.auth, { emailLabel: `pa-${key.toLowerCase()}`, name, ...options });
   createdUserIds.push(user.id);
   users[key] = user;
@@ -448,21 +448,21 @@ describe('CLIENTS portal access by e-mail (#711)', () => {
   describe('the link at the login', () => {
     it('gives the portal to an account whose address is verified, when it loads its contexts, and to nobody before', async () => {
       const email = freshEmail('entra');
-      const person = await makeUser('enters', 'Pessoa que Entra', { email });
+      const person = await makeUser('enters', 'Pessoa que Entra', { email, emailVerified: false });
       // An account with no context at all cannot sign in; this one is already a person of the portal of another client.
       await owner.knex('client_memberships').insert({ client_id: clientA2, user_id: person.id });
       const added = (await call('POST', membersUrl(agencyA, clientA1), cookies.admin, { email })).json();
       expect(added.entered).toBe(false);
 
-      // Unconfirmed: logged in, and the portal does not appear.
-      const unconfirmed = await login(person);
-      const before = (await call('GET', '/me/contexts', unconfirmed)).json();
-      expect(before.contexts.filter((context: { type: string }) => context.type === 'client')).toEqual([expect.objectContaining({ clientId: clientA2 })]);
+      // Unconfirmed: the account does not even sign in (issue #706), so nothing reaches the portal. The database refuses the link
+      // of an unverified address as well (packages/database/test/client-portal-accesses.integration.test.ts).
+      const refused = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email, password: person.password } });
+      expect(refused.statusCode).toBe(401);
       expect(await accessOf(clientA1, email)).toMatchObject({ user_id: null });
-      expect((await call('GET', `/clients/${clientA1}`, unconfirmed)).statusCode).toBe(404);
 
-      // Confirmed: the next time it loads its contexts, the portal is there.
+      // Confirmed: the first time it loads its contexts, the portal is there.
       await app.pool.query('update auth."user" set "emailVerified" = true where id = $1', [person.id]);
+      const unconfirmed = await login(person);
       const after = (await call('GET', '/me/contexts', unconfirmed)).json();
       expect(after.contexts.map((context: { clientId: string }) => context.clientId).sort()).toEqual([clientA1, clientA2].sort());
       expect(after.contexts).toContainEqual(expect.objectContaining({ type: 'client', clientId: clientA1, clientName: 'Padaria Central <A1>' }));

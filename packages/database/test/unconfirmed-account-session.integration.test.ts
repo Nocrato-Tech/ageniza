@@ -8,6 +8,7 @@ import {
   resolveIntegrationDatabaseUrls,
   type DatabaseClient
 } from '../src/index.js';
+import { setPortalAccessStatus } from './support/portal-access.js';
 
 // Issue #706 and the review of PR #722 (findings B1 and B3): the one unconfirmed account that may
 // hold a session is the one an invitation created, for as long as the context the invitation gave it
@@ -144,7 +145,8 @@ describe.each(PURPOSES)('app_private.unconfirmed_account_may_hold_session, invit
     const lose: Record<Purpose, () => Promise<unknown>> = {
       agency_activation: () => knex('agencies').where({ id: agencyId }).update({ owner_user_id: null }),
       collaborator_invite: () => knex('agency_memberships').where({ agency_id: agencyId, user_id: userId }).update({ status: 'removed' }),
-      client_invite: () => knex('client_memberships').where({ client_id: clientId, user_id: userId }).update({ status: 'removed' })
+      // The membership follows the portal access (issue #711): the link is gone when the access is removed.
+      client_invite: () => setPortalAccessStatus(knex, clientId, userId, 'removed')
     };
     await lose[purpose]();
     await expect(mayHold(userId)).resolves.toBe(false);

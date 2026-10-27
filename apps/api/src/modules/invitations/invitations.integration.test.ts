@@ -11,6 +11,7 @@ import {
   type TestUserFixture
 } from '../auth/test-support/harness.js';
 import { createInvitationToken, hashInvitationToken } from './tokens.js';
+import { setPortalAccessStatus } from '../clients/test-support/portal-access.js';
 import { raw, type DatabaseClient } from '@ageniza/database';
 import { createHash, randomUUID } from 'node:crypto';
 
@@ -511,7 +512,8 @@ describe('invitation HTTP module', () => {
         const lose = {
           agency_activation: () => owner.knex('agencies').where({ id: session.agencyId }).update({ owner_user_id: null }),
           collaborator_invite: () => owner.knex('agency_memberships').where({ agency_id: session.agencyId, user_id: session.userId }).update({ status: 'removed' }),
-          client_invite: () => owner.knex('client_memberships').where({ client_id: session.clientId, user_id: session.userId }).update({ status: 'removed' })
+          // The membership follows the portal access (issue #711): the link is gone when the access is removed.
+          client_invite: () => setPortalAccessStatus(owner.knex, session.clientId, session.userId, 'removed')
         }[purpose];
         await lose();
         await refused(session);
