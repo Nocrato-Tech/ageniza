@@ -263,11 +263,14 @@ Decisão: `2026-10-07-portal-le-o-cadastro-inteiro-e-o-inicio-conta-so-o-que-o`.
 | `POST` | `/agencies/:agencyId/clients/:clientId/members` ("Adicionar pessoa") | `cliente.convidar_usuario` |
 | `POST` | `…/members/:accessId/remove` | `cliente.remover_usuario` |
 | `POST` | `…/members/:accessId/reactivate` | `cliente.remover_usuario` |
+| `POST` | `…/members/:accessId/resend` ("Reenviar e-mail") | `cliente.convidar_usuario` |
+| `POST` | `…/invitations/:invitationId/resend` ("Reenviar" do convite antigo) | `cliente.convidar_usuario` |
 | `GET` | `/agencies/:agencyId/clients/:clientId/invitations` | `cliente.convidar_usuario` |
 
-Em `access-routes.ts` e `access-service.ts`. Reenviar e cancelar convite são as rotas do módulo
-`invitations`; o convite de portal deixou de ser criado e o reenvio dele responde `409
-PORTAL_INVITATION_DISCONTINUED` (decisão `2026-10-27-o-convite-de-portal-pendente-nao-se-reenvia`).
+Em `access-routes.ts` e `access-service.ts`. Cancelar convite é a rota do módulo `invitations` (`convite.cancelar`); o
+convite de portal deixou de ser criado, e o reenvio dele é a rota `…/invitations/:invitationId/resend` deste módulo, que o
+transforma em acesso (decisão `2026-10-27-acessos-pendentes-podem-ser-reenviados-e-removidos`). A rota de reenviar
+convite do módulo `invitations` segue respondendo `409 PORTAL_INVITATION_DISCONTINUED` para convite de portal.
 
 **Uma pessoa é um acesso dado a um e-mail** (`client_portal_accesses`, decisão
 `2026-10-26-estrutural-o-acesso-ao-portal-e-por-e-mail-e-a-conta-e-opcional`), com conta ou sem ela. A aplicação
@@ -287,6 +290,18 @@ conta com aquele e-mail verificado carrega os contextos (`app_private.link_clien
   (`2026-10-27-adicionar-pessoa-de-novo-solta-a-conta-que-trocou-de-e-mail`). O e-mail de boas-vindas conta no limite diário
   de e-mails da agência, no mesmo orçamento dos convites (`429 DAILY_EMAIL_LIMIT`), e agência em somente leitura recusa
   adicionar e reativar (`409 AGENCY_READ_ONLY`); remover continua livre.
+- **Reenviar e-mail** (`…/members/:accessId/resend`): para o acesso **ativo que ainda não entrou**. Chama
+  `app_private.resend_client_portal_access`, que confere `cliente.convidar_usuario`, o plano (`409 AGENCY_READ_ONLY`), o estado
+  do acesso (`409 ACCESS_NOT_PENDING` se removido ou se a pessoa já entrou), o minuto da pessoa (`429 RESEND_TOO_SOON`, proposta
+  pendente de validação) e o limite diário (`429 DAILY_EMAIL_LIMIT`, mesma trava dos convites), e grava o evento
+  `client_member.resent`, que a contagem diária lê. Não muda o acesso, a geração nem os links de aprovação. O e-mail sai
+  depois do commit; a falha dele é `502 EMAIL_DELIVERY_FAILED` com o lugar já gasto. A rota confere antes que o acesso é
+  **daquele cliente** (`404`), porque a função só conhece a agência.
+- **Reenviar convite antigo** (`…/invitations/:invitationId/resend`): chama `app_private.convert_client_portal_invitation`, que
+  dá o acesso do endereço como Adicionar pessoa (`add_client_portal_access`) e revoga o convite, na mesma transação, travando
+  o acesso antes do convite (a ordem da remoção). Quem aceitou ou cancelou o convite no meio ganha, e o acesso recém-dado
+  volta com o rollback (`409 INVITATION_NOT_PENDING`). Endereço que já tem acesso ativo: `409 ACCESS_EXISTS`, nada gravado, o
+  convite fica. Se a conta que tinha o endereço já trocou de e-mail, as sessões dela terminam, como em Adicionar pessoa.
 - **Convites**: 20 por página, o que expira primeiro no topo (`id` de desempate), só
   `purpose = 'client_invite'` **daquele cliente**, não aceitos, não revogados e não expirados. A policy
   `invitations_select` deixa quem tem `cliente.convidar_usuario` ler convite de colaborador também

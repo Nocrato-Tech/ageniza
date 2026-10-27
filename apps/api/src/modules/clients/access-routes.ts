@@ -1,4 +1,5 @@
 import {
+  AgencyClientInvitationPathParamsSchema,
   AgencyClientMemberPathParamsSchema,
   AgencyClientPathParamsSchema,
   ClientInvitationListQuerySchema,
@@ -24,11 +25,16 @@ import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.j
 import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import {
   addClientMember,
+  clientInvitationExists,
   clientMemberFromRow,
+  convertClientInvitation,
   isAccessFunctionRefusal,
+  isNothingToResend,
+  isResendTooSoon,
   listClientMembers,
   listPendingClientInvitations,
   loadClientMember,
+  resendClientMemberEmail,
   setClientMemberStatus
 } from './access-service.js';
 import { CLIENT_INVITATION_DEFAULT_PAGE_SIZE, CLIENT_MEMBER_DEFAULT_PAGE_SIZE } from './policy.js';
@@ -59,6 +65,22 @@ const accessExists = (): HttpError => new HttpError({
   statusCode: 409,
   code: 'ACCESS_EXISTS',
   message: 'Este endereço já tem acesso ao portal deste cliente.'
+});
+const invitationNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Invitation not found.' });
+const accessNotPending = (): HttpError => new HttpError({
+  statusCode: 409,
+  code: 'ACCESS_NOT_PENDING',
+  message: 'Esta pessoa já entrou no portal ou já não tem acesso: não há e-mail para reenviar.'
+});
+const invitationNotPending = (): HttpError => new HttpError({
+  statusCode: 409,
+  code: 'INVITATION_NOT_PENDING',
+  message: 'O convite não está pendente.'
+});
+const resendTooSoon = (): HttpError => new HttpError({
+  statusCode: 429,
+  code: 'RESEND_TOO_SOON',
+  message: 'Aguarde um minuto para reenviar o e-mail desta pessoa de novo.'
 });
 const emailDeliveryFailed = (): HttpError => new HttpError({
   statusCode: 502,
@@ -119,6 +141,16 @@ export const registerAccessRoutes = (app: FastifyInstance, dependencies: AccessR
     responseStatus: 200,
     schemas: { params: AgencyClientMemberPathParamsSchema, response: ClientMemberSchema }
   } satisfies DocumentedRouteConfig;
+  const resendMemberDocs = {
+    permission: 'cliente.convidar_usuario',
+    responseStatus: 200,
+    schemas: { params: AgencyClientMemberPathParamsSchema, response: ClientMemberSchema }
+  } satisfies DocumentedRouteConfig;
+  const resendInvitationDocs = {
+    permission: 'cliente.convidar_usuario',
+    responseStatus: 200,
+    schemas: { params: AgencyClientInvitationPathParamsSchema, response: ClientMemberSchema }
+  } satisfies DocumentedRouteConfig;
   const listInvitationsDocs = {
     permission: 'cliente.convidar_usuario',
     responseStatus: 200,
@@ -170,11 +202,12 @@ export const registerAccessRoutes = (app: FastifyInstance, dependencies: AccessR
    * Why a function of the access refused a change the checks before it let through: the client was archived or the access
    * vanished in between, or the caller lost the permission. Read back in a fresh transaction, because the one that was
    * refused is aborted. `accessId` is absent when the change was an addition. Whoever lost the permission can no longer read
-   * the access either, so the permission is asked before the access is looked for.
+   * the access either, so the permission is asked before the access is looked for. `invitationId` is present when the change
+   * was the conversion of an old invitation.
    */
   const diagnoseRefusal = async (
     request: FastifyRequest,
-    scope: { readonly agencyId: string; readonly clientId: string; readonly accessId?: string },
+    scope: { readonly agencyId: string; readonly clientId: string; readonly accessId?: string; readonly invitationId?: string },
     permission: string
   ): Promise<HttpError> => withAuthenticatedUserTransaction(dependencies.database, requireAuth(request).claims, async (transaction) => {
     const client = await loadClient(transaction, scope);
@@ -187,6 +220,7 @@ export const registerAccessRoutes = (app: FastifyInstance, dependencies: AccessR
     );
     if (held.rows[0]?.held !== true) return forbidden();
     if (scope.accessId !== undefined && await loadClientMember(transaction, { ...scope, accessId: scope.accessId }) === undefined) return memberNotFound();
+    if (scope.invitationId !== undefined && !await clientInvitationExists(transaction, { ...scope, invitationId: scope.invitationId })) return invitationNotFound();
     return forbidden();
   });
 
@@ -242,6 +276,104 @@ export const registerAccessRoutes = (app: FastifyInstance, dependencies: AccessR
       throw emailDeliveryFailed();
     }
     return reply.status(201).send(routeResponse(addMemberDocs, request, clientMemberFromRow(outcome.member)));
+  });
+
+  // The access is committed; the e-mail tells the person. A refused delivery is told to the agency, which resends it from the
+  // row of the person.
+  const sendWelcome = async (outcome: { readonly member: { readonly email: string }; readonly agencyName: string; readonly clientName: string }): Promise<void> => {
+    try {
+      await dependencies.emailService.sendClientPortalWelcome({
+        to: outcome.member.email,
+        agencyName: outcome.agencyName,
+        clientName: outcome.clientName
+      });
+    } catch {
+      throw emailDeliveryFailed();
+    }
+  };
+
+  const agencyNameOf = async (transaction: Parameters<typeof loadClient>[0], agencyId: string): Promise<string> => {
+    const agency = await raw<{ readonly rows: readonly { readonly name: string }[] }>(
+      transaction,
+      'select name from public.agencies where id = ?::uuid',
+      [agencyId]
+    );
+    return agency.rows[0]?.name ?? '';
+  };
+
+  app.post('/agencies/:agencyId/clients/:clientId/members/:accessId/resend', authenticated(resendMemberDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = uuidFromRoute(request, 'clientId', clientNotFound);
+    const accessId = uuidFromRoute(request, 'accessId', memberNotFound);
+    const scope = { agencyId: tenant.agencyId, clientId, accessId };
+
+    let outcome;
+    try {
+      outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+        const client = await loadClient(transaction, scope);
+        if (client === undefined) return { kind: 'client-not-found' } as const;
+        if (client.status === 'archived') return { kind: 'client-archived' } as const;
+        if (await loadClientMember(transaction, scope) === undefined) return { kind: 'member-not-found' } as const;
+
+        // The database counts the e-mail in the daily limit (A0095, 429), refuses a read-only agency (A0090, 409), an access that
+        // was removed or whose person entered (A0097) and the second e-mail of the same minute (A0099).
+        await resendClientMemberEmail(transaction, accessId);
+
+        const member = await loadClientMember(transaction, scope);
+        if (member === undefined) throw new Error('The access just resent could not be read back.');
+        return { kind: 'ok', member, clientName: client.name, agencyName: await agencyNameOf(transaction, scope.agencyId) } as const;
+      });
+    } catch (error) {
+      if (isRetryableConflict(error)) throw tryAgain();
+      if (isNothingToResend(error)) throw accessNotPending();
+      if (isResendTooSoon(error)) throw resendTooSoon();
+      if (!isAccessFunctionRefusal(error)) throw error;
+      throw await diagnoseRefusal(request, scope, resendMemberDocs.permission);
+    }
+
+    if (outcome.kind === 'client-not-found') throw clientNotFound();
+    if (outcome.kind === 'client-archived') throw clientArchived();
+    if (outcome.kind === 'member-not-found') throw memberNotFound();
+    await sendWelcome(outcome);
+    return reply.send(routeResponse(resendMemberDocs, request, clientMemberFromRow(outcome.member)));
+  });
+
+  app.post('/agencies/:agencyId/clients/:clientId/invitations/:invitationId/resend', authenticated(resendInvitationDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = uuidFromRoute(request, 'clientId', clientNotFound);
+    const invitationId = uuidFromRoute(request, 'invitationId', invitationNotFound);
+    const scope = { agencyId: tenant.agencyId, clientId };
+
+    let outcome;
+    try {
+      outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+        const client = await loadClient(transaction, scope);
+        if (client === undefined) return { kind: 'client-not-found' } as const;
+        if (client.status === 'archived') return { kind: 'client-archived' } as const;
+
+        // The effects of "Adicionar pessoa" for the address of the invitation, and the revocation of the invitation, in this
+        // transaction: if anything fails, the invitation is still pending.
+        const converted = await convertClientInvitation(transaction, clientId, invitationId);
+        if (converted.unlinkedUserId !== null) await revokeUserSessions(transaction, converted.unlinkedUserId, auth.sessionId);
+
+        const member = await loadClientMember(transaction, { ...scope, accessId: converted.accessId });
+        if (member === undefined) throw new Error('The access just given could not be read back.');
+        return { kind: 'ok', converted, member, clientName: client.name, agencyName: await agencyNameOf(transaction, scope.agencyId) } as const;
+      });
+    } catch (error) {
+      if (isRetryableConflict(error)) throw tryAgain();
+      if (isNothingToResend(error)) throw invitationNotPending();
+      if (!isAccessFunctionRefusal(error)) throw error;
+      throw await diagnoseRefusal(request, { ...scope, invitationId }, resendInvitationDocs.permission);
+    }
+
+    if (outcome.kind === 'client-not-found') throw clientNotFound();
+    if (outcome.kind === 'client-archived') throw clientArchived();
+    if (!outcome.converted.invitationRevoked) throw accessExists();
+    await sendWelcome(outcome);
+    return reply.send(routeResponse(resendInvitationDocs, request, clientMemberFromRow(outcome.member)));
   });
 
   const memberStatusHandler = (docs: typeof removeMemberDocs, status: ClientMemberStatus) => async (request: FastifyRequest, reply: FastifyReply) => {

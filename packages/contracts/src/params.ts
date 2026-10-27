@@ -77,6 +77,13 @@ export const AgencyClientMemberPathParamsSchema = z.object({
   accessId: z.string().min(1).max(100)
 }).strict();
 
+export const AgencyClientInvitationPathParamsSchema = z.object({
+  agencyId: z.string().uuid(),
+  clientId: z.string().uuid(),
+  // A plain string for the same reason as `AgencyClientMemberPathParamsSchema.accessId`.
+  invitationId: z.string().min(1).max(100)
+}).strict();
+
 export const ClientThreadPathParamsSchema = z.object({
   clientId: z.string().uuid(),
   threadId: z.string().uuid()
@@ -98,5 +105,6 @@ export type AgencyClientSectionPathParams = z.infer<typeof AgencyClientSectionPa
 export type AgencyClientPersonaPathParams = z.infer<typeof AgencyClientPersonaPathParamsSchema>;
 export type AgencyClientThreadPathParams = z.infer<typeof AgencyClientThreadPathParamsSchema>;
 export type AgencyClientMemberPathParams = z.infer<typeof AgencyClientMemberPathParamsSchema>;
+export type AgencyClientInvitationPathParams = z.infer<typeof AgencyClientInvitationPathParamsSchema>;
 export type ClientThreadPathParams = z.infer<typeof ClientThreadPathParamsSchema>;
 export type PublicInvitationTokenPathParams = z.infer<typeof PublicInvitationTokenPathParamsSchema>;
