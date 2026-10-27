@@ -108,7 +108,7 @@ PostgreSQL 17 runs on the VPS as the internal `postgres` container ([ADR 0011](.
 
 ### Public address of the API (`API_PUBLIC_URL`)
 
-The browser reaches the API on `https://<domain>/api` (the web container proxies `/api`), and the cookie of the approval link (issue #712) is restricted to `<that path>/portal-approval`, so it only comes back if the API knows that path. `API_PUBLIC_URL` in `runtime.env` is that address, **the same value as `PRODUCTION_VITE_API_BASE_URL`** (HTTPS, no query or fragment, no credentials). Leave it empty for the default, `APP_PUBLIC_URL` plus `/api`; set it only if the web build was given another base. A mismatch does not break the API: the cookie is sent to a path the browser never asks for, and the link of the e-mail stops working.
+The browser reaches the API on `https://<domain>/api` (the web container proxies `/api`), and the cookie of the approval link (issue #712) is restricted to `<that path>/portal-approval`, so it only comes back if the API knows that path. `API_PUBLIC_URL` in `runtime.env` is that address, **the same value as `PRODUCTION_VITE_API_BASE_URL`** (HTTPS, no query or fragment, no credentials, and a path made only of letters, digits, `.`, `_`, `~` and `-`: the API refuses to start with anything else). Leave it empty for the default, `APP_PUBLIC_URL` plus `/api`; set it only if the web build was given another base. A mismatch does not break the API: the cookie is sent to a path the browser never asks for, and the link of the e-mail stops working.
 
 ### Sign in with Google (optional)
 

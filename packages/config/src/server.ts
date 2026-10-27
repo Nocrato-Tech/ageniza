@@ -483,8 +483,14 @@ const loadApiPublicUrl = (environment: ServerConfig['environment'], appPublicUrl
   if (parsed.username || parsed.password || parsed.search || parsed.hash) {
     throw new ConfigValidationError('API', [{ path: 'API_PUBLIC_URL', message: 'must be an address without credentials, query or fragment; supplied values are redacted' }]);
   }
+  // The path is written into a `Path=` attribute: `;` or `,` would end the attribute, a space or a quote would be read as part of
+  // another one, and `%` is not decoded there. Only unreserved characters are a path segment here.
+  const path = parsed.pathname.replace(/\/+$/, '');
+  if (path !== '' && !/^(?:\/[A-Za-z0-9._~-]+)+$/.test(path)) {
+    throw new ConfigValidationError('API', [{ path: 'API_PUBLIC_URL', message: 'must have a path of segments made of letters, digits, ".", "_", "~" and "-"; supplied values are redacted' }]);
+  }
   assertRuntimeUrlSafety(environment, 'API_PUBLIC_URL', value, { requireHttpsInProduction: true });
-  return `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}`;
+  return `${parsed.origin}${path}`;
 };
 
 /** Loads server-only API settings. Never import this module from browser code. */

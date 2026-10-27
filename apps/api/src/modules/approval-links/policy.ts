@@ -18,7 +18,10 @@ export const APPROVAL_ROUTE_PREFIX = '/portal-approval';
  */
 export const approvalCookieOptions = (apiPublicUrl: string): { readonly path: string; readonly secure: boolean } => {
   const base = new URL(apiPublicUrl);
-  return { path: `${base.pathname.replace(/\/+$/, '')}${APPROVAL_ROUTE_PREFIX}`, secure: base.protocol === 'https:' };
+  const basePath = base.pathname.replace(/\/+$/, '');
+  // The config refuses these at boot; the attribute is built from them, so the cookie checks again that nothing can end it early.
+  if (basePath !== '' && !/^(?:\/[A-Za-z0-9._~-]+)+$/.test(basePath)) throw new Error('The public path of the API cannot be the Path of a cookie.');
+  return { path: `${basePath}${APPROVAL_ROUTE_PREFIX}`, secure: base.protocol === 'https:' };
 };
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1_000;

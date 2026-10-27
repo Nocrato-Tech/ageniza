@@ -1,7 +1,7 @@
 import { HealthResponseSchema } from '@ageniza/contracts';
 import { describe, expect, it, vi } from 'vitest';
 
-import { HttpClient } from './http.js';
+import { HttpClient, joinUnderBase } from './http.js';
 import type { HttpClientError } from './http.js';
 
 const clientWith = (implementation: typeof fetch): HttpClient => new HttpClient('http://127.0.0.1:3001', implementation);
@@ -175,6 +175,80 @@ describe('HttpClient', () => {
         expect(() => client.browserUrl(path), path).toThrow();
       }
       expect(calls).toBe(0);
+    });
+
+    it('refuses a space or a control character at the ends of the path, which the URL parser strips before it resolves ".."', async () => {
+      let calls = 0;
+      const answer = async (): Promise<Response> => {
+        calls += 1;
+        return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
+      };
+      const clients = [new HttpClient('https://app.example.test/api', answer), new HttpClient('https://app.example.test', answer)];
+      for (const client of clients) {
+        for (const path of [
+          '/.. ',
+          '/%2e%2e ',
+          '/%2E%2E ',
+          '/agencies/.. ',
+          '/agencies/%2e%2e ',
+          '/agencies/. ',
+          '/health ',
+          '/health  ',
+          '/health\t',
+          '/health\n',
+          '/health\r',
+          '/health\u0000',
+          '/health\u001f',
+          '/health\u007f',
+          '/..\t',
+          '/.\t./x',
+          '/ag\nencies/../x',
+          '/agencies/.. \n'
+        ]) {
+          await expect(client.request({ path, response: HealthResponseSchema }), JSON.stringify(path)).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+          expect(() => client.browserUrl(path), JSON.stringify(path)).toThrow();
+        }
+      }
+      expect(calls).toBe(0);
+    });
+
+    it('never lets a path that was accepted leave the path of the base, whatever the characters it is made of', async () => {
+      const seen: string[] = [];
+      const client = new HttpClient('https://app.example.test/api', async (input) => {
+        seen.push(String(input));
+        return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
+      });
+      const pieces = ['/', '.', '..', '%2e', '%2E%2e', '%2f', '%5c', ' ', '\t', '\n', 'a', '?', '=', ' ', '　', '%20', '%00'];
+      let accepted = 0;
+      const walk = async (prefix: string, depth: number): Promise<void> => {
+        if (depth === 0) {
+          try {
+            await client.request({ path: prefix, response: HealthResponseSchema });
+            accepted += 1;
+          } catch {
+            // refused, which is always allowed
+          }
+          return;
+        }
+        for (const piece of pieces) await walk(prefix + piece, depth - 1);
+      };
+      await walk('/', 3);
+      expect(accepted).toBeGreaterThan(100);
+      expect(seen).toHaveLength(accepted);
+      for (const address of seen) {
+        expect(address.startsWith('https://app.example.test/api/'), address).toBe(true);
+        expect(new URL(address).pathname.startsWith('/api/'), address).toBe(true);
+      }
+    });
+
+    it('keeps the second barrier on its own: what the parser makes of the base and the path must stay on the origin and under the path of the base', () => {
+      const base = new URL('https://app.example.test/api');
+      // The parser strips the spaces at the ends of its input before it normalizes "..", so these leave /api for the root of the domain.
+      for (const path of ['/.. ', '/%2e%2e ', '/%2E%2E ', '/../x', '/%2e%2e/x', '/agencies/../../x']) {
+        expect(() => joinUnderBase(base, '/api', path), path).toThrow();
+      }
+      expect(() => joinUnderBase(new URL('https://app.example.test'), '', '/.. ')).not.toThrow();
+      expect(joinUnderBase(base, '/api', '/auth/login?x=1').toString()).toBe('https://app.example.test/api/auth/login?x=1');
     });
 
     it('refuses a base that carries a query, a fragment or an empty segment, and one that is not an address', async () => {

@@ -57,4 +57,11 @@ describe('the tokens and the cookie of the approval link (issue #712)', () => {
     expect(approvalCookieOptions('http://127.0.0.1:3001/')).toEqual({ path: '/portal-approval', secure: false });
     expect(approvalCookieOptions('https://app.example.test/v1/api//')).toEqual({ path: '/v1/api/portal-approval', secure: true });
   });
+
+  it('refuses a public path that could end the Path attribute early: ";", "," a space, "%" and the quotes', () => {
+    for (const path of ['/;', '/api;', '/a,b', '/a b', '/a%3Bb', '/a"b', "/a'b"]) {
+      expect(() => approvalCookieOptions('https://app.example.test' + path), path).toThrow('Path of a cookie');
+    }
+    expect(approvalCookieOptions('https://app.example.test/a.b_c~d-e').path).toBe('/a.b_c~d-e/portal-approval');
+  });
 });

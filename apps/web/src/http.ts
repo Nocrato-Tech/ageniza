@@ -55,6 +55,11 @@ const assertSafeRequestPath = (path: string): void => {
   if (/[\u0000-\u001f\u007f\\#]/.test(path)) {
     throw invalidRequest('Request paths must not contain a fragment, a backslash or a control character.');
   }
+  // The URL parser strips spaces and C0 controls from both ends of the WHOLE input before it normalizes anything, so `/.. ` reads
+  // as `/..` there and leaves the base path, while the segment above would have been checked as `.. `.
+  if (path.startsWith(' ') || path.endsWith(' ')) {
+    throw invalidRequest('Request paths must not start or end with a space.');
+  }
   const queryIndex = path.indexOf('?');
   const pathname = queryIndex === -1 ? path : path.slice(0, queryIndex);
   const query = queryIndex === -1 ? '' : path.slice(queryIndex + 1);
@@ -73,25 +78,12 @@ const assertSafeRequestPath = (path: string): void => {
 };
 
 /**
- * The one rule that turns a configured API base and a request path into an address, for a request and for a navigation alike.
- * The base keeps its own path (`https://<domain>/api`, with or without a trailing slash): `new URL(path, base)` would throw it
- * away, since a path that starts with `/` replaces the whole path of the base. The path is checked first (no other origin, no
- * relative or empty segment, no separator in any encoding), and the result is checked again: same origin, and still under the
- * path of the base, so nothing that reached the parser can have walked out of it.
+ * The second barrier, on the result: the address the URL parser made of the base and the path is on the same origin and still
+ * under the path of the base. It does not trust the first barrier (the parser strips spaces from the ends of its input and
+ * normalizes `..` after that, which is how `/.. ` once left `/api`). Exported only so a test can hit it alone.
  */
-const resolveApiUrl = (baseUrl: string, path: string): URL => {
-  assertSafeRequestPath(path);
-  let base: URL;
+export const joinUnderBase = (base: URL, basePath: string, path: string): URL => {
   let resolved: URL;
-  try {
-    base = new URL(baseUrl);
-  } catch (error: unknown) {
-    throw new HttpClientError('The API base address is invalid.', { code: 'INVALID_REQUEST', cause: error });
-  }
-  const basePath = base.pathname.replace(/\/+$/, '');
-  if (base.search !== '' || base.hash !== '' || basePath.includes('//')) {
-    throw invalidRequest('The API base address must not carry a query, a fragment or an empty segment.');
-  }
   try {
     resolved = new URL(`${base.origin}${basePath}${path}`);
   } catch (error: unknown) {
@@ -105,6 +97,28 @@ const resolveApiUrl = (baseUrl: string, path: string): URL => {
   }
   if (!resolved.pathname.startsWith(`${basePath}/`)) throw invalidRequest('Request paths must stay under the path of the API base.');
   return resolved;
+};
+
+/**
+ * The one rule that turns a configured API base and a request path into an address, for a request and for a navigation alike.
+ * The base keeps its own path (`https://<domain>/api`, with or without a trailing slash): `new URL(path, base)` would throw it
+ * away, since a path that starts with `/` replaces the whole path of the base. The path is checked first (no other origin, no
+ * relative or empty segment, no separator in any encoding), and the result is checked again: same origin, and still under the
+ * path of the base, so nothing that reached the parser can have walked out of it.
+ */
+const resolveApiUrl = (baseUrl: string, path: string): URL => {
+  assertSafeRequestPath(path);
+  let base: URL;
+  try {
+    base = new URL(baseUrl);
+  } catch (error: unknown) {
+    throw new HttpClientError('The API base address is invalid.', { code: 'INVALID_REQUEST', cause: error });
+  }
+  const basePath = base.pathname.replace(/\/+$/, '');
+  if (base.search !== '' || base.hash !== '' || basePath.includes('//')) {
+    throw invalidRequest('The API base address must not carry a query, a fragment or an empty segment.');
+  }
+  return joinUnderBase(base, basePath, path);
 };
 
 const createRequestId = (): string => {

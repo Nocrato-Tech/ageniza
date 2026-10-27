@@ -645,6 +645,15 @@ describe('server configuration', () => {
       }
     });
 
+    it('refuses a path that cannot be the Path of a cookie: only letters, digits, ".", "_", "~" and "-" make a segment', () => {
+      for (const path of ['/;', '/api;', '/;/x', '/a,b', '/a b', '/a%20b', '/a%3Bb', '/a"b', "/a'b", '/a=b', '/a(b)', '/a@b', '/a:b', '/ä']) {
+        const value = 'https://app.ageniza.example' + path;
+        expect(() => loadApiConfig({ ...production, API_PUBLIC_URL: value }), value).toThrow(ConfigValidationError);
+        expect(() => loadApiConfig({ ...production, API_PUBLIC_URL: value }), value).not.toThrow(/%20|%3B|ä/);
+      }
+      expect(loadApiConfig({ ...production, API_PUBLIC_URL: 'https://app.ageniza.example/a.b_c~d-e/v2' }).apiPublicUrl).toBe('https://app.ageniza.example/a.b_c~d-e/v2');
+    });
+
     it('requires HTTPS and a non-loopback host in production', () => {
       expect(() => loadApiConfig({ ...production, API_PUBLIC_URL: 'http://app.ageniza.example/api' })).toThrow('must use HTTPS');
       expect(() => loadApiConfig({ ...production, API_PUBLIC_URL: 'https://127.0.0.1/api' })).toThrow('loopback');
