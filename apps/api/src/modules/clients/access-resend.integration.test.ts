@@ -13,7 +13,7 @@ import {
   type TestUserFixture
 } from '../auth/test-support/harness.js';
 import type { DatabaseClient } from '@ageniza/database';
-import { createInvitationToken } from '../invitations/tokens.js';
+import { createInvitationToken, hashInvitationToken } from '../invitations/tokens.js';
 
 // Decision 2026-10-27, "acessos pendentes na aba Acessos podem ser reenviados e removidos": Reenviar e-mail (a person added who has not
 // entered) and Reenviar (an old portal invitation, which becomes the access of its address). Every permission is held alone by a
@@ -379,6 +379,37 @@ describe('CLIENTS Reenviar e-mail and Reenviar convite, agency side', () => {
       expect(response.json().error.code).toBe('ACCESS_EXISTS');
       expect(await invitationRow(old.id)).toEqual(PENDING);
       expect(await welcomes(person.email)).toHaveLength(0);
+    });
+
+    it('answers 409 INVITATION_NOT_PENDING, not ACCESS_EXISTS, when the acceptance of that very invitation wins the race', async () => {
+      const account = await makeUser(`acceptor${randomUUID().slice(0, 6)}`, 'Conta que Aceita');
+      const old = await seedInvitation(clientA1, account.email);
+      // The acceptance has the invitation locked and its access written, but not committed: the conversion starts, passes the
+      // check of the invitation, and waits on the access that is being born.
+      const acceptance = await owner.knex.transaction();
+      try {
+        await acceptance.raw('select * from app_private.accept_invitation(?, ?::uuid, null, null, false)', [hashInvitationToken(old.token), account.id]);
+        const response = call('POST', resendInvitationUrl(agencyA, clientA1, old.id), cookies.admin);
+        let waiting = false;
+        for (let attempt = 0; attempt < 100 && !waiting; attempt += 1) {
+          const blocked = await owner.knex.raw(
+            "select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query ilike '%convert_client_portal_invitation%'"
+          );
+          waiting = blocked.rows.length > 0;
+          if (!waiting) await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        expect(waiting).toBe(true);
+        await acceptance.commit();
+
+        const answered = await response;
+        expect(answered.statusCode).toBe(409);
+        expect(answered.json().error.code).toBe('INVITATION_NOT_PENDING');
+      } finally {
+        if (!acceptance.isCompleted()) await acceptance.rollback();
+      }
+      expect(await invitationRow(old.id)).toMatchObject({ used_at: expect.any(Date), revoked_at: null });
+      expect(await owner.knex('client_portal_accesses').where({ client_id: clientA1, email: account.email }).count<{ count: string }[]>('id as count')).toEqual([{ count: '1' }]);
+      expect(await welcomes(account.email)).toHaveLength(0);
     });
 
     it('answers 409 INVITATION_NOT_PENDING to an invitation that was used, revoked or expired, and gives no access', async () => {

@@ -26,6 +26,7 @@ import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js
 import {
   addClientMember,
   clientInvitationExists,
+  clientInvitationPending,
   clientMemberFromRow,
   convertClientInvitation,
   isAccessFunctionRefusal,
@@ -360,7 +361,10 @@ export const registerAccessRoutes = (app: FastifyInstance, dependencies: AccessR
 
         const member = await loadClientMember(transaction, { ...scope, accessId: converted.accessId });
         if (member === undefined) throw new Error('The access just given could not be read back.');
-        return { kind: 'ok', converted, member, clientName: client.name, agencyName: await agencyNameOf(transaction, scope.agencyId) } as const;
+        // Nothing was written: either the address had the access already, or whoever accepted this invitation while the conversion
+        // waited gave it. Those are two answers.
+        const invitationPending = converted.invitationRevoked || await clientInvitationPending(transaction, { ...scope, invitationId });
+        return { kind: 'ok', converted, invitationPending, member, clientName: client.name, agencyName: await agencyNameOf(transaction, scope.agencyId) } as const;
       });
     } catch (error) {
       if (isRetryableConflict(error)) throw tryAgain();
@@ -371,7 +375,7 @@ export const registerAccessRoutes = (app: FastifyInstance, dependencies: AccessR
 
     if (outcome.kind === 'client-not-found') throw clientNotFound();
     if (outcome.kind === 'client-archived') throw clientArchived();
-    if (!outcome.converted.invitationRevoked) throw accessExists();
+    if (!outcome.converted.invitationRevoked) throw outcome.invitationPending ? accessExists() : invitationNotPending();
     await sendWelcome(outcome);
     return reply.send(routeResponse(resendInvitationDocs, request, clientMemberFromRow(outcome.member)));
   });

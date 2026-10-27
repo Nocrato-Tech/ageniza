@@ -183,6 +183,24 @@ export const convertClientInvitation = async (
   return { accessId: row.access_id, outcome: row.outcome, unlinkedUserId: row.unlinked_user_id, invitationRevoked: row.invitation_revoked };
 };
 
+/**
+ * Whether the invitation is still pending now, read after the conversion answered `already_active`: the address had the access
+ * because somebody accepted this very invitation while the conversion waited, or because it was given another way.
+ */
+export const clientInvitationPending = async (
+  transaction: ClientTransaction,
+  scope: { readonly agencyId: string; readonly clientId: string; readonly invitationId: string }
+): Promise<boolean> => {
+  const result = await raw<RawRows<{ id: string }>>(
+    transaction,
+    `select id from public.invitations
+     where id = ?::uuid and agency_id = ?::uuid and client_id = ?::uuid and purpose = 'client_invite'
+       and used_at is null and revoked_at is null and expires_at > clock_timestamp()`,
+    [scope.invitationId, scope.agencyId, scope.clientId]
+  );
+  return result.rows[0] !== undefined;
+};
+
 /** Whether an invitation of this portal exists for the agency to see; the permission is asked by the caller before. */
 export const clientInvitationExists = async (
   transaction: ClientTransaction,
