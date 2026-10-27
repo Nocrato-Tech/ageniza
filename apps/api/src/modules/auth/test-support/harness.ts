@@ -327,7 +327,8 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     invitationTokenLookup,
     database,
     emailService,
-    legalVersions: { terms: config.authTermsVersion, privacy: config.authPrivacyVersion }
+    legalVersions: { terms: config.authTermsVersion, privacy: config.authPrivacyVersion },
+    ...(config.google === undefined ? {} : { google: { appPublicUrl: config.appPublicUrl } })
   };
   const app = await buildApp({
     config,

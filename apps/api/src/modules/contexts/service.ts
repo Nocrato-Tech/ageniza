@@ -159,6 +159,10 @@ const fetchLastUsedKey = async (transaction: ContextTransaction): Promise<string
  * exactly.
  */
 export const listValidContexts = async (transaction: ContextTransaction): Promise<ListValidContextsResult> => {
+  // A Google account that has not accepted the Terms and the Privacy Policy has no context until it does (issue #707).
+  const blocked = await raw<RawRows<{ blocked: boolean }>>(transaction, 'select app_private.legal_acceptance_blocks_access(app_private.current_user_id()) as blocked', []);
+  if (blocked.rows[0]?.blocked === true) return { contexts: [], lastUsedContext: null };
+
   const [agencyContexts, clientContexts, lastUsedKey] = await Promise.all([
     fetchAgencyContexts(transaction),
     fetchClientContexts(transaction),

@@ -23,6 +23,7 @@ const dead = (code: 'UNAUTHENTICATED' | 'SESSION_EXPIRED'): Response => json({ e
 
 const sessionBody = { user: { id: USER_ID, name: 'Maria', email: 'maria@example.test' }, session: { expiresAt: '2026-11-01T00:00:00.000Z' } };
 const legalAccepted = {
+  required: false,
   documents: [
     { document: 'terms', currentVersion: '2026-01-01', acceptedVersion: '2026-01-01', pending: false },
     { document: 'privacy', currentVersion: '2026-01-01', acceptedVersion: '2026-01-01', pending: false }

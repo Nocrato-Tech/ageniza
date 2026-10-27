@@ -76,6 +76,12 @@ export const createRequireSession = (dependencies: SessionGuardDependencies, opt
     applyAuthCookies(reply, responseHeaders);
 
     const { session, user } = result;
+    // A session older than the last time the account's credential was replaced under the person (Google taking the
+    // account over) is not theirs, even if its row survived the deletion that came with the replacement (issue #719).
+    if (user.passwordChangedAt != null && new Date(session.createdAt).getTime() <= new Date(user.passwordChangedAt).getTime()) {
+      await dependencies.auth.api.revokeSession({ body: { token: session.token }, headers }).catch(() => undefined);
+      throw unauthenticated();
+    }
     // "Sem confirmar, não há sessão" (2026-10-26), with one explicit exception: the account created by
     // accepting an invitation, while it keeps what the invitation gave it (decision on the copyable
     // invitation link, item 2). Any other unconfirmed account's session is revoked here.

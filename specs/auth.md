@@ -521,6 +521,10 @@ Decidida em sessão pelo dono do produto. As regras de segurança derivadas pelo
 - **Regra 12**: a conta só com Google pede a troca de e-mail com a reautenticação recente pelo Google, no lugar da senha atual.
 - **Regra 18**: a impressão de credencial do pedido usa o `sub` da conta Google quando não há senha, e o Google assumir a conta encerra os pedidos abertos, como a redefinição.
 
+### Implementado: entrar com o Google (issue #707)
+
+A API do Google está pronta (rotas `/auth/providers`, `/auth/google/start` e `/auth/callback/google`); as telas são a #713. O que a implementação decidiu além do texto acima está em [Entrar com o Google, o que a implementação decidiu](../docs/business/decisions/2026-10-27-estrutural-entrar-com-o-google-o-que-a-implementacao-decidiu.md), pendente de validação do dono: uma identidade Google por conta; reautenticação recente é a sessão de até 5 minutos criada com `prompt=login`; o bloqueio do aceite é uma regra derivada (conta com Google sem os dois aceites ativos), na listagem de contextos e na criação de agência; a URL de retorno é `APP_PUBLIC_URL/api/auth/callback/google`, ou `GOOGLE_CALLBACK_URL`. Sem as credenciais o Google fica desligado (404, e o campo `google` de `/auth/providers` é falso).
+
 ### O que fica igual
 
 As regras invioláveis 1, 2, 3a, 4 a 6, 8a, 9, 10 e 13 a 17. A regra 8a vale também para a redefinição que assume uma conta não confirmada: ela não cria sessão, e a pessoa entra com a senha nova; a resposta igual para e-mail existente e inexistente, agora também no cadastro e no reenvio da confirmação; o convite de uso único, com só o hash no banco; o teto de sessão.

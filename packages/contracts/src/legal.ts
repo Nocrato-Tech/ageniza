@@ -29,7 +29,12 @@ export const LegalDocumentStatusSchema = z.object({
 
 /** Always one entry per document, `terms` first. Shared by the read and by the acceptance reply. */
 export const LegalAcceptancesResponseSchema = z.object({
-  documents: z.array(LegalDocumentStatusSchema).length(LEGAL_DOCUMENTS.length)
+  documents: z.array(LegalDocumentStatusSchema).length(LEGAL_DOCUMENTS.length),
+  /**
+   * True when the account has no access until it accepts both documents: a Google account that is new, or that Google took
+   * over, and has no acceptance in force (issue #707). Every other account has the non-blocking notice only.
+   */
+  required: z.boolean()
 }).strict();
 
 export type LegalDocumentKind = z.infer<typeof LegalDocumentSchema>;

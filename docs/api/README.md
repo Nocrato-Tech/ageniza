@@ -89,6 +89,9 @@ Verifica se a API está pronta para receber tráfego.
 |---|---|---|---|---|
 | `POST` | `/auth/login` | Público | — | Autentica com e-mail e senha |
 | `POST` | `/auth/sign-up` | Público | — | Cria uma conta com e-mail e senha |
+| `GET` | `/auth/providers` | Público | — | Diz se o Google está ligado |
+| `GET` | `/auth/google/start` | Público | — | Leva o navegador ao Google para entrar |
+| `GET` | `/auth/callback/google` | Público | — | Volta do Google: cria ou abre a sessão |
 | `POST` | `/auth/email/verification/resend` | Público | — | Reenvia o link de confirmação do e-mail |
 | `POST` | `/auth/email/verify` | Pública, pelo token do link e a senha | — | Confirma o e-mail com o link e a senha da conta, ou com a sessão dela |
 | `POST` | `/auth/logout` | Sessão | — | Encerra a sessão atual |
@@ -153,6 +156,45 @@ Cria uma conta com e-mail e senha.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `403 CSRF_REJECTED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `GET /auth/providers`
+
+Diz se o Google está ligado.
+
+- Acesso: Público.
+- Permissão: —.
+
+**Resposta `200`** — Provedores ligados.
+
+```json
+{
+  "google": true
+}
+```
+
+**Erros:** `500 INTERNAL_ERROR`
+
+#### `GET /auth/google/start`
+
+Leva o navegador ao Google para entrar.
+
+- Acesso: Público.
+- Permissão: —.
+
+**Resposta `302`** — Redirecionamento ao Google; o estado do fluxo vai num cookie assinado.
+
+**Erros:** `400 VALIDATION_ERROR` · `404 NOT_FOUND` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `GET /auth/callback/google`
+
+Volta do Google: cria ou abre a sessão.
+
+- Acesso: Público.
+- Permissão: —.
+
+**Resposta `302`** — Para `/entrar/google` (entrou) ou `/entrar?erro=google` (recusado).
+
+**Erros:** `404 NOT_FOUND` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 #### `POST /auth/email/verification/resend`
 
@@ -709,7 +751,7 @@ Cria uma agência em período de teste.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_VERIFIED` · `409 TRIAL_ALREADY_EXISTS` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_VERIFIED` · `403 TERMS_NOT_ACCEPTED` · `409 TRIAL_ALREADY_EXISTS` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
 
 ### clients — Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; agendar, desmarcar, arquivar e reativar o contrato; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.
 
@@ -3724,6 +3766,7 @@ Consulta a versão aceita dos Termos e da Privacidade.
 
 ```json
 {
+  "required": false,
   "documents": [
     {
       "document": "terms",
@@ -3762,6 +3805,7 @@ Aceita um documento legal, na versão em vigor.
 
 ```json
 {
+  "required": false,
   "documents": [
     {
       "document": "terms",
@@ -3810,7 +3854,7 @@ Pede a troca do e-mail da própria conta.
 {}
 ```
 
-**Erros:** `400 SAME_EMAIL` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 INVALID_PASSWORD` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+**Erros:** `400 SAME_EMAIL` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 INVALID_PASSWORD` · `403 REAUTH_REQUIRED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 #### `POST /email-change/confirm`
 
@@ -4168,6 +4212,8 @@ Marca o roteiro como gravado, no portal.
 | `STORY_SCRIPT_STATE` | O roteiro não está no estado que esta ação exige. |
 | `STORY_SCENES_MISMATCH` | O roteiro mudou: recarregue e envie todas as cenas, na ordem desejada. |
 | `INVALID_PASSWORD` | A senha atual não confere. |
+| `REAUTH_REQUIRED` | Confirme com o Google para continuar. |
+| `TERMS_NOT_ACCEPTED` | Aceite os Termos de Uso e a Política de Privacidade para continuar. |
 | `SAME_EMAIL` | Informe um e-mail diferente do atual. |
 | `EMAIL_DELIVERY_FAILED` | Não foi possível entregar o e-mail. |
 | `QUOTA_EXCEEDED` | This agency has reached its storage quota. |

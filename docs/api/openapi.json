@@ -232,6 +232,18 @@
         ],
         "additionalProperties": false
       },
+      "getAuthProvidersResponse": {
+        "type": "object",
+        "properties": {
+          "google": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "google"
+        ],
+        "additionalProperties": false
+      },
       "postAuthEmailVerificationResendResponse": {
         "type": "object",
         "properties": {},
@@ -5829,10 +5841,14 @@
               ],
               "additionalProperties": false
             }
+          },
+          "required": {
+            "type": "boolean"
           }
         },
         "required": [
-          "documents"
+          "documents",
+          "required"
         ],
         "additionalProperties": false
       },
@@ -5872,8 +5888,7 @@
           }
         },
         "required": [
-          "newEmail",
-          "currentPassword"
+          "newEmail"
         ],
         "additionalProperties": false
       },
@@ -6532,6 +6547,277 @@
                   "error": {
                     "code": "CSRF_REJECTED",
                     "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/providers": {
+      "get": {
+        "operationId": "getAuthProviders",
+        "summary": "Diz se o Google está ligado",
+        "description": "Um campo só, sem segredo nem identificador do cliente OAuth: `google` é verdadeiro quando o servidor tem as\ncredenciais do Google. A interface esconde \"Entrar com o Google\" quando é falso.\n\nAcesso: Público.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "responses": {
+          "200": {
+            "description": "Provedores ligados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getAuthProvidersResponse"
+                },
+                "example": {
+                  "google": true
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/google/start": {
+      "get": {
+        "operationId": "getAuthGoogleStart",
+        "summary": "Leva o navegador ao Google para entrar",
+        "description": "Navegação, não chamada de API: o navegador é redirecionado (302) para a tela de consentimento do Google, com\n`state`, PKCE (S256) e `nonce` próprios do fluxo e só os escopos `openid`, `email` e `profile`.\n`intent=reauth` pede ao Google que autentique a pessoa de novo (`prompt=login`), para a conta que não tem senha\nconfirmar uma operação sensível; a volta cai em `/entrar/google?intent=reauth`. Com o Google desligado responde 404.\n\nAcesso: Público.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "login",
+                "reauth"
+              ]
+            },
+            "required": false,
+            "name": "intent",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirecionamento ao Google; o estado do fluxo vai num cookie assinado."
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Resource not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/callback/google": {
+      "get": {
+        "operationId": "getAuthCallbackGoogle",
+        "summary": "Volta do Google: cria ou abre a sessão",
+        "description": "É o endereço de retorno cadastrado no Google. Troca o código (com o segredo do cliente e o verificador PKCE),\nconfere o id token (assinatura, emissor, cliente, validade e `nonce`) e só aceita e-mail que o Google verificou. Depois\ndecide pela identidade (`sub`): cria a conta, abre a sessão da conta vinculada, vincula o Google a uma conta\nconfirmada ou assume uma conta não confirmada (a decisão de 2026-10-26 lista o que morre). Sempre 302: sucesso vai\na `/entrar/google` com o cookie de sessão, e **qualquer** falha vai a `/entrar?erro=google`, sem motivo, para a rota\nnunca dizer se um e-mail tem conta. Com o Google desligado responde 404.\n\nAcesso: Público.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "required": false,
+            "name": "code",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "required": false,
+            "name": "state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "required": false,
+            "name": "error",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "required": false,
+            "name": "error_description",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "required": false,
+            "name": "iss",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Para `/entrar/google` (entrou) ou `/entrar?erro=google` (recusado)."
+          },
+          "404": {
+            "description": "NOT_FOUND: Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Resource not found."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
@@ -9310,7 +9596,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | EMAIL_NOT_VERIFIED: Confirme o seu e-mail antes de criar uma agência.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | EMAIL_NOT_VERIFIED: Confirme o seu e-mail antes de criar uma agência. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -21994,7 +22280,7 @@
       "get": {
         "operationId": "getMyLegalAcceptances",
         "summary": "Consulta a versão aceita dos Termos e da Privacidade",
-        "description": "Uma entrada por documento, Termos primeiro: a versão em vigor no servidor, a versão mais nova\nque a conta aceitou (`null` se nunca aceitou) e se há aceite pendente. Pendente não bloqueia\nnenhuma funcionalidade; só alimenta o aviso da interface.\n\nAcesso: Sessão.",
+        "description": "Uma entrada por documento, Termos primeiro: a versão em vigor no servidor, a versão mais nova\nque a conta aceitou (`null` se nunca aceitou) e se há aceite pendente. Pendente não bloqueia\nnenhuma funcionalidade; só alimenta o aviso da interface.\n\n`required` é verdadeiro só para a conta que tem o Google e não tem o aceite dos dois documentos\n(conta criada pelo Google, ou conta que o Google assumiu): sem o aceite essa conta não tem contexto\ne não cria agência, e a interface a leva à tela de aceite antes do primeiro uso.\n\nAcesso: Sessão.",
         "tags": [
           "legal"
         ],
@@ -22008,6 +22294,7 @@
                   "$ref": "#/components/schemas/getMyLegalAcceptancesResponse"
                 },
                 "example": {
+                  "required": false,
                   "documents": [
                     {
                       "document": "terms",
@@ -22096,6 +22383,7 @@
                   "$ref": "#/components/schemas/getMyLegalAcceptancesResponse"
                 },
                 "example": {
+                  "required": false,
                   "documents": [
                     {
                       "document": "terms",
@@ -22216,7 +22504,7 @@
       "post": {
         "operationId": "requestEmailChange",
         "summary": "Pede a troca do e-mail da própria conta",
-        "description": "A pessoa não troca o e-mail sozinha: ela pede, e a operação da plataforma aprova pelo CLI\n(`cli:email-change`), porque a conta é global e o pedido não pertence a nenhuma agência. O\ncorpo traz só o e-mail novo e a senha atual; a conta é sempre a da sessão. Há um pedido\naberto por conta, e um novo substitui o anterior. O endereço atual recebe um aviso.\nA resposta é a mesma 202 vazia quando o e-mail novo já pertence a outra conta: a rota não\nrevela quais e-mails têm conta. O teto é de 5 pedidos por hora e por conta.\n\nAcesso: Sessão.",
+        "description": "A pessoa não troca o e-mail sozinha: ela pede, e a operação da plataforma aprova pelo CLI\n(`cli:email-change`), porque a conta é global e o pedido não pertence a nenhuma agência. O\ncorpo traz só o e-mail novo e a senha atual; a conta é sempre a da sessão. A conta que só\ntem o Google não tem senha: omite `currentPassword` e prova a identidade com um login pelo Google de até\n5 minutos (`403 REAUTH_REQUIRED` quando passou disso; a interface leva a pessoa a `/auth/google/start?intent=reauth`).\nHá um pedido aberto por conta, e um novo substitui o anterior. O endereço atual recebe um aviso.\nA resposta é a mesma 202 vazia quando o e-mail novo já pertence a outra conta: a rota não\nrevela quais e-mails têm conta. O teto é de 5 pedidos por hora e por conta.\n\nAcesso: Sessão.",
         "tags": [
           "email-change"
         ],
@@ -22286,7 +22574,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | INVALID_PASSWORD: A senha atual não confere.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | INVALID_PASSWORD: A senha atual não confere. | REAUTH_REQUIRED: Confirme com o Google para continuar.",
             "content": {
               "application/json": {
                 "schema": {

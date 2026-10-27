@@ -10,7 +10,8 @@ import { AuthEmailSchema, AuthLoginPasswordSchema } from './auth.js';
  */
 export const EmailChangeRequestSchema = z.object({
   newEmail: AuthEmailSchema,
-  currentPassword: AuthLoginPasswordSchema
+  /** Absent for an account with no password, which proves itself by a Google sign-in of the last 5 minutes. */
+  currentPassword: AuthLoginPasswordSchema.optional()
 }).strict();
 
 /** Empty on purpose: the answer is the same whether or not another account uses the address. */

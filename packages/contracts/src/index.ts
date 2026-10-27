@@ -17,6 +17,7 @@ export * from './legal.js';
 export * from './invisible-characters.js';
 export * from './media-folders.js';
 export * from './media.js';
+export * from './google.js';
 export * from './pagination.js';
 export * from './params.js';
 export * from './portal-contents.js';

@@ -15,7 +15,10 @@ import { useDocumentTitle } from './document-title.js';
 import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
 
-const REQUEST_FAILED = 'Não foi possível enviar o pedido. Tente de novo.';
+/** The contract leaves the password out for an account with only Google; this form is for the account that has one. */
+const PasswordEmailChangeSchema = EmailChangeRequestSchema.required({ currentPassword: true });
+
+const REQUEST_FAILED ='Não foi possível enviar o pedido. Tente de novo.';
 const RATE_LIMITED = 'Muitas tentativas. Tente novamente mais tarde.';
 const CONFIRM_FAILED = 'Não foi possível confirmar a troca. Tente de novo.';
 
@@ -39,7 +42,7 @@ export function EmailChangeDialog({ onClose }: { onClose: () => void }) {
   const onSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     setFormError(undefined);
-    const validation = validateForm(EmailChangeRequestSchema, { newEmail, currentPassword: password });
+    const validation = validateForm(PasswordEmailChangeSchema, { newEmail, currentPassword: password });
     setEmailError(validation.success || validation.errors.newEmail === undefined ? undefined : 'Informe um e-mail válido.');
     setPasswordError(validation.success || validation.errors.currentPassword === undefined ? undefined : 'Informe a senha atual.');
     if (!validation.success) return;

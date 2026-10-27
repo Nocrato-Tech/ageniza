@@ -56,6 +56,7 @@ const contextsBody = {
   contexts: [{ type: 'client', clientId: CLIENT_ID, clientName: 'Padaria Central', agencyId: AGENCY_A, agencyName: 'Agência Um', onboardingPending: false }]
 };
 const legalAccepted = {
+  required: false,
   documents: [
     { document: 'terms', currentVersion: '2026-01-01', acceptedVersion: '2026-01-01', pending: false },
     { document: 'privacy', currentVersion: '2026-01-01', acceptedVersion: '2026-01-01', pending: false }
