@@ -18,6 +18,7 @@ import { contextDestination, targetFromDestination, type ContextTarget } from '.
 import { contextDescription, contextKey, contextTitle } from './context-labels.js';
 import { CREATE_AGENCY_LABEL, CreateAgencyDialog } from './create-agency.js';
 import { EmailChangeDialog } from './email-change.js';
+import { forgetGoogleInvite } from './google-sign-in.js';
 import { HttpClientError, useApiClient } from './http.js';
 
 type LogoutAction = 'logout' | 'logout-all';
@@ -125,6 +126,7 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
         response: action === 'logout' ? AuthLogoutResponseSchema : AuthLogoutAllResponseSchema
       });
       queryClient.clear();
+      forgetGoogleInvite();
       authStore?.end();
       navigate('/entrar', { replace: true });
     } catch (error: unknown) {
@@ -133,6 +135,7 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
       // redirect saved, so the next account is not sent back to the previous one's address.
       if (error instanceof HttpClientError && error.status === 401) {
         queryClient.clear();
+        forgetGoogleInvite();
         authStore?.end();
         navigate('/entrar', { replace: true });
         return;

@@ -83,22 +83,40 @@ export function GoogleSignInBlock({ inviteToken }: { inviteToken?: string }) {
   </div>;
 }
 
-/** Keeps the invitation across the trip to Google, or forgets any kept one when there is none. */
+/** How long a kept invitation is good for: a trip to Google and back takes a minute, not a quarter of an hour. */
+export const INVITE_RETURN_TTL_MS = 10 * 60_000;
+
+/** Forgets the invitation kept for the trip to Google. Every way out of the trip does it: the refusal, the reauthentication, a password sign-in and a sign-out. */
+export const forgetGoogleInvite = (): void => {
+  try { window.sessionStorage.removeItem(INVITE_RETURN_KEY); } catch { /* nothing kept */ }
+};
+
+/** Keeps the invitation across the trip to Google, with the time it was kept, or forgets any kept one when there is none. */
 const rememberGoogleInvite = (token: string | undefined): void => {
+  if (token === undefined) { forgetGoogleInvite(); return; }
   try {
-    if (token === undefined) window.sessionStorage.removeItem(INVITE_RETURN_KEY);
-    else window.sessionStorage.setItem(INVITE_RETURN_KEY, token);
+    window.sessionStorage.setItem(INVITE_RETURN_KEY, JSON.stringify({ token, savedAt: Date.now() }));
   } catch { /* storage refused: the person comes back to the sign-in screen and opens the invitation again */ }
 };
 
-/** Reads and forgets the invitation: it is used once, and only a token the API could have issued is followed. */
+/**
+ * Reads and forgets the invitation: it is used once, only within the time it is good for, and only a token the API could have
+ * issued is followed. Anything else in the key (another shape, a time in the future) is nothing.
+ */
 const takeGoogleInvite = (): string | null => {
   let stored: string | null = null;
-  try {
-    stored = window.sessionStorage.getItem(INVITE_RETURN_KEY);
-    window.sessionStorage.removeItem(INVITE_RETURN_KEY);
-  } catch { /* nothing kept */ }
-  return stored !== null && AuthInvitationTokenSchema.safeParse(stored).success ? stored : null;
+  try { stored = window.sessionStorage.getItem(INVITE_RETURN_KEY); } catch { /* nothing kept */ }
+  forgetGoogleInvite();
+  if (stored === null) return null;
+  let kept: unknown;
+  try { kept = JSON.parse(stored); } catch { return null; }
+  if (typeof kept !== 'object' || kept === null) return null;
+  const { token, savedAt } = kept as { token?: unknown; savedAt?: unknown };
+  if (typeof savedAt !== 'number') return null;
+  const age = Date.now() - savedAt;
+  if (age < 0 || age > INVITE_RETURN_TTL_MS) return null;
+  const parsed = AuthInvitationTokenSchema.safeParse(token);
+  return parsed.success ? parsed.data : null;
 };
 
 /** Remembers the address a reauthentication must come back to, when the browser can keep it. */
@@ -134,9 +152,11 @@ export function GoogleLandingPage() {
     void (async () => {
       try { await authStore.refresh(); } catch { /* an unreadable session is no session */ }
       if (!current) return;
-      // Forgotten whatever the answer is: a kept invitation is used by this return and by no other. (After the guard above, so a
-      // run that was replaced, as Strict Mode does in development, leaves it for the one that goes on.)
-      const invitation = reauth ? null : takeGoogleInvite();
+      // Forgotten whatever the answer is, and whatever the intent: a kept invitation is used by this return and by no other, and a
+      // reauthentication has no use for it. (After the guard above, so a run that was replaced, as Strict Mode does in
+      // development, leaves it for the one that goes on.)
+      const kept = takeGoogleInvite();
+      const invitation = reauth ? null : kept;
       if (!authStore.getSnapshot().isAuthenticated) { navigate('/entrar?erro=google', { replace: true }); return; }
       // An invitation goes back to its own screen, which accepts it only when the session is the invited address (the same
       // path as a password sign-in that carried the invitation).

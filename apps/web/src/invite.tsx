@@ -18,7 +18,7 @@ import { contextDestination, rememberContext, type ContextTarget } from './conte
 import { useDocumentTitle } from './document-title.js';
 import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
-import { GoogleSignInBlock } from './google-sign-in.js';
+import { forgetGoogleInvite, GoogleSignInBlock } from './google-sign-in.js';
 import { invitationNoticeState } from './invitation-notice.js';
 
 const INVITATION_INVALID = 'Este convite não é mais válido';
@@ -128,6 +128,7 @@ export function InvitationPage() {
   const enterWithAnotherAccount = async (): Promise<void> => {
     if (session.isAuthenticated) {
       try { await httpClient.request({ path: '/auth/logout', method: 'POST', response: AuthLogoutResponseSchema }); } catch { /* best effort */ }
+      forgetGoogleInvite();
       authStore.end();
       queryClient.clear();
     }

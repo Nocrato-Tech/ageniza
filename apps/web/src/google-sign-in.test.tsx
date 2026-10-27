@@ -40,6 +40,9 @@ const agencyB = { type: 'agency', agencyId: AGENCY_B, agencyName: 'Agência Dois
 const agencyMe = { agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] };
 const INVITE_TOKEN = 'tok-invite-0123456789abcdef';
 const INVITE_KEY = 'ageniza.google-invite-return';
+/** What the page keeps for the trip to Google: the token and when it was kept. */
+const keepInvite = (token: string = INVITE_TOKEN, savedAt: number = Date.now()): void => { window.sessionStorage.setItem(INVITE_KEY, JSON.stringify({ token, savedAt })); };
+const keptInvite = (): unknown => { const raw = window.sessionStorage.getItem(INVITE_KEY); return raw === null ? null : JSON.parse(raw); };
 const CLIENT_ID = '44444444-4444-4444-8444-444444444444';
 const portalClient = {
   id: CLIENT_ID, name: 'Padaria Central', status: 'active', photoUrl: null, legalName: null, taxId: null, segment: null, website: null,
@@ -64,6 +67,10 @@ interface Scenario {
   /** What `GET /auth/providers` answers; Google is on by default. */
   readonly providers?: () => Response;
   readonly loggedIn?: boolean;
+  /** POST /auth/login answers 200 and opens the session, instead of 401. */
+  readonly loginAccepted?: boolean;
+  /** What POST /auth/logout answers (the session ends either way); 204 by default. */
+  readonly logout?: () => Response;
   /** Holds `GET /auth/session` until released, to see the landing page while it waits. */
   readonly sessionGate?: Promise<void>;
   /**
@@ -86,6 +93,8 @@ interface Scenario {
  */
 const makeFetch = (scenario: Scenario = {}) => {
   const calls: Call[] = [];
+  // The session follows the sign-in and the sign-out, as the cookie does.
+  let signedIn = scenario.loggedIn === true;
   const impl: typeof fetch = async (input, init) => {
     // A base path (`https://host/api`) is cut by the proxy before the API sees the route.
     const path = new URL(String(input)).pathname.replace(/^\/api(?=\/)/, '');
@@ -96,15 +105,20 @@ const makeFetch = (scenario: Scenario = {}) => {
     if (path === '/auth/session') {
       await scenario.sessionGate;
       if (scenario.sessionDelayMs !== undefined) await new Promise((resolve) => setTimeout(resolve, scenario.sessionDelayMs));
-      return scenario.loggedIn === true ? json(sessionBody) : apiError(401, 'UNAUTHENTICATED');
+      return signedIn ? json(sessionBody) : apiError(401, 'UNAUTHENTICATED');
     }
-    if (path === '/auth/login') return apiError(401, 'INVALID_CREDENTIALS');
+    if (path === '/auth/login') {
+      if (scenario.loginAccepted !== true) return apiError(401, 'INVALID_CREDENTIALS');
+      signedIn = true;
+      return json({ user: sessionBody.user });
+    }
     const invitation = scenario.invitation;
     if (invitation !== undefined && path === `/invitations/${INVITE_TOKEN}`) {
       if (invitation.gone?.() === true) return apiError(410, 'INVITATION_INVALID');
       return json({ purpose: 'collaborator_invite', email: invitation.email, agency: { name: 'Agência Um' }, client: null, accountExists: invitation.accountExists ?? true });
     }
-    if (scenario.loggedIn !== true) return apiError(401, 'UNAUTHENTICATED');
+    if (!signedIn) return apiError(401, 'UNAUTHENTICATED');
+    if (path === '/auth/logout' && method === 'POST') { signedIn = false; return scenario.logout?.() ?? new Response(null, { status: 204 }); }
     if (invitation !== undefined && path === `/invitations/${INVITE_TOKEN}/accept` && method === 'POST') {
       // Like the API: a gone invitation is 410, and only the account of the invited address accepts.
       if (invitation.gone?.() === true) return apiError(410, 'INVITATION_INVALID');
@@ -270,7 +284,7 @@ describe('the Google button on /entrar and /criar-conta (issue #713)', () => {
     const link = await screen.findByRole('link', { name: 'Entrar com o Google' });
     expect(link.getAttribute('href')).toBe(START);
     expect(clickAndReportCancelled(link)).toBe(false);
-    expect(window.sessionStorage.getItem(INVITE_KEY)).toBe(INVITE_TOKEN);
+    expect(keptInvite()).toEqual({ token: INVITE_TOKEN, savedAt: expect.any(Number) });
   });
 });
 
@@ -536,7 +550,7 @@ describe('Google on the invitation screen (review of #736; owner decision 2026-1
   });
 
   it('uses the kept invitation once: a later return goes on through the sign-in screen', async () => {
-    window.sessionStorage.setItem(INVITE_KEY, INVITE_TOKEN);
+    keepInvite();
     const first = makeFetch({ loggedIn: true, invitation: { email: INVITED } });
     const firstRun = renderApp(first.impl, '/entrar/google');
     await waitFor(() => expect(firstRun.probe.pathname).toBe(`/agencia/${AGENCY_A}`));
@@ -550,7 +564,7 @@ describe('Google on the invitation screen (review of #736; owner decision 2026-1
   });
 
   it('forgets a refused return: without a session the kept invitation goes too', async () => {
-    window.sessionStorage.setItem(INVITE_KEY, INVITE_TOKEN);
+    keepInvite();
     const { impl } = makeFetch({ loggedIn: false });
     renderApp(impl, '/entrar/google');
 
@@ -559,7 +573,7 @@ describe('Google on the invitation screen (review of #736; owner decision 2026-1
   });
 
   it('does not follow a kept value that is not a token', async () => {
-    window.sessionStorage.setItem(INVITE_KEY, 'x'.repeat(2_049));
+    keepInvite('x'.repeat(2_049));
     const { impl } = makeFetch({ loggedIn: true });
     const { probe } = renderApp(impl, '/entrar/google');
 
@@ -568,7 +582,7 @@ describe('Google on the invitation screen (review of #736; owner decision 2026-1
   });
 
   it('does not let an abandoned invitation ride on a later sign-in that has none', async () => {
-    window.sessionStorage.setItem(INVITE_KEY, INVITE_TOKEN);
+    keepInvite();
     const { impl } = makeFetch();
     renderApp(impl, '/entrar');
 
@@ -578,7 +592,7 @@ describe('Google on the invitation screen (review of #736; owner decision 2026-1
   });
 
   it('never takes a reauthentication to an invitation, even when one was left in the tab', async () => {
-    window.sessionStorage.setItem(INVITE_KEY, INVITE_TOKEN);
+    keepInvite();
     window.sessionStorage.setItem(REAUTH_KEY, '/contextos');
     const { impl } = makeFetch({ loggedIn: true, resolve: selectBoth, invitation: { email: INVITED } });
     const { probe } = renderApp(impl, '/entrar/google?intent=reauth');
@@ -588,8 +602,130 @@ describe('Google on the invitation screen (review of #736; owner decision 2026-1
     expect(probe.visited.some((address) => address.startsWith('/convite/'))).toBe(false);
   });
 
+  describe('what is kept for the trip does not outlive it (review of #736)', () => {
+    /** Clicks the button on the invitation, which keeps it, and leaves the page as the browser does. */
+    const startTheTrip = async (): Promise<void> => {
+      const { impl } = makeFetch({ invitation: { email: INVITED } });
+      renderApp(impl, `/convite/${INVITE_TOKEN}`);
+      expect(clickAndReportCancelled(await screen.findByRole('link', { name: 'Entrar com o Google' }))).toBe(false);
+      expect(keptInvite()).not.toBeNull();
+      cleanup();
+    };
+
+    /** A later visit to the return on the same tab: it must not accept the invitation without a new click. */
+    const laterVisit = async (entry: string) => {
+      const later = makeFetch({ loggedIn: true, resolve: selectBoth, invitation: { email: INVITED } });
+      const { probe } = renderApp(later.impl, entry);
+      await waitFor(() => expect(probe.pathname).toMatch(/^\/(agencia|contextos)/));
+      await settle();
+      expect(acceptPosts(later.calls)).toHaveLength(0);
+      expect(probe.visited.some((address) => address.startsWith('/convite/'))).toBe(false);
+    };
+
+    it('is forgotten when the person cancels at Google (the refusal), and a later visit to the return accepts nothing', async () => {
+      await startTheTrip();
+      const refused = makeFetch();
+      renderApp(refused.impl, '/entrar?erro=google');
+      await screen.findByRole('alert');
+      expect(keptInvite()).toBeNull();
+      cleanup();
+
+      await laterVisit('/entrar/google');
+    });
+
+    it('is forgotten by a password sign-in after the trip was cancelled, and a later visit to the return accepts nothing', async () => {
+      await startTheTrip();
+      const { impl } = makeFetch({ loginAccepted: true, resolve: selectBoth });
+      const { probe } = renderApp(impl, '/entrar');
+      fireEvent.change(await screen.findByLabelText('E-mail'), { target: { value: INVITED } });
+      fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'uma-senha-qualquer' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
+
+      await waitFor(() => expect(probe.pathname).toBe('/contextos'));
+      expect(keptInvite()).toBeNull();
+      cleanup();
+
+      await laterVisit('/entrar/google');
+    });
+
+    it('is forgotten by a reauthentication after the trip was cancelled, and a later visit to the return accepts nothing', async () => {
+      await startTheTrip();
+      window.sessionStorage.setItem(REAUTH_KEY, '/contextos');
+      const { impl } = makeFetch({ loggedIn: true, resolve: selectBoth, invitation: { email: INVITED } });
+      const { probe } = renderApp(impl, '/entrar/google?intent=reauth');
+
+      expect(await screen.findByRole('dialog', { name: 'Pedir troca de e-mail' })).toBeTruthy();
+      expect(probe.visited.some((address) => address.startsWith('/convite/'))).toBe(false);
+      expect(keptInvite()).toBeNull();
+      cleanup();
+
+      await laterVisit('/entrar/google');
+    });
+
+    it('is forgotten by a visit to the return that was cancelled, even a reauthentication one', async () => {
+      await startTheTrip();
+      await laterVisit('/entrar/google?intent=reauth');
+      expect(keptInvite()).toBeNull();
+    });
+
+    it.each([
+      ['a sign-out', () => new Response(null, { status: 204 })],
+      ['a sign-out the API answers with 401 (the session had ended)', () => apiError(401, 'UNAUTHENTICATED')]
+    ])('is forgotten by %s', async (_name, logout) => {
+      keepInvite();
+      const { impl } = makeFetch({ loggedIn: true, logout: () => logout() });
+      renderMenu(impl);
+      fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Sair' }));
+
+      await waitFor(() => expect(keptInvite()).toBeNull());
+    });
+
+    it('is forgotten when the person leaves the invitation with another account', async () => {
+      keepInvite();
+      const { impl } = makeFetch({ loggedIn: true, invitation: { email: INVITED } });
+      renderApp(impl, `/convite/${INVITE_TOKEN}`);
+      fireEvent.click(await screen.findByRole('button', { name: 'Entrar com outra conta' }));
+
+      await waitFor(() => expect(keptInvite()).toBeNull());
+    });
+
+    it('is good for ten minutes: nine are followed, eleven are not, and nothing is left', async () => {
+      keepInvite(INVITE_TOKEN, Date.now() - 9 * 60_000);
+      const recent = makeFetch({ loggedIn: true, invitation: { email: INVITED } });
+      const followed = renderApp(recent.impl, '/entrar/google');
+      await waitFor(() => expect(followed.probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+      expect(acceptPosts(recent.calls)).toHaveLength(1);
+      cleanup();
+
+      keepInvite(INVITE_TOKEN, Date.now() - 11 * 60_000);
+      const old = makeFetch({ loggedIn: true, invitation: { email: INVITED } });
+      const ignored = renderApp(old.impl, '/entrar/google');
+      await waitFor(() => expect(ignored.probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+      await settle();
+      expect(acceptPosts(old.calls)).toHaveLength(0);
+      expect(ignored.probe.visited.some((address) => address.startsWith('/convite/'))).toBe(false);
+      expect(keptInvite()).toBeNull();
+    });
+
+    it.each([
+      ['a time in the future', () => keepInvite(INVITE_TOKEN, Date.now() + 60_000)],
+      ['no time at all', () => window.sessionStorage.setItem(INVITE_KEY, JSON.stringify({ token: INVITE_TOKEN }))],
+      ['the bare token of the first version', () => window.sessionStorage.setItem(INVITE_KEY, INVITE_TOKEN)],
+      ['something that is not an object', () => window.sessionStorage.setItem(INVITE_KEY, '123')]
+    ])('does not follow a kept value with %s', async (_name, keep) => {
+      keep();
+      const { impl, calls } = makeFetch({ loggedIn: true, invitation: { email: INVITED } });
+      const { probe } = renderApp(impl, '/entrar/google');
+
+      await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+      expect(acceptPosts(calls)).toHaveLength(0);
+      expect(probe.visited.some((address) => address.startsWith('/convite/'))).toBe(false);
+    });
+  });
+
   it('does not keep the invitation for the reauthentication of an e-mail change', async () => {
-    window.sessionStorage.setItem(INVITE_KEY, INVITE_TOKEN);
+    keepInvite();
     const { impl } = makeFetch({ loggedIn: true, emailChange: () => apiError(403, 'REAUTH_REQUIRED') });
     renderMenu(impl);
     const dialog = await openDialog();
