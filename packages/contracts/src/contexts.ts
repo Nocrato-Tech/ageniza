@@ -26,7 +26,9 @@ export const ContextSchema = z.discriminatedUnion('type', [AgencyContextSchema, 
 
 /** `GET /me/contexts` response: every valid context for the current user, already ordered. */
 export const MeContextsResponseSchema = z.object({
-  contexts: z.array(ContextSchema)
+  contexts: z.array(ContextSchema),
+  /** Whether "Criar agência" is offered: a verified e-mail and no agency in trial yet (issue #714). */
+  canCreateAgency: z.boolean()
 }).strict();
 
 /** `preferred=agency:<uuid>` or `preferred=client:<uuid>`, parsed from the raw query string.
@@ -59,7 +61,8 @@ export const ContextResolveEnterSchema = z.object({
 export const ContextResolveSelectSchema = z.object({
   decision: z.literal('select'),
   contexts: z.array(ContextSchema),
-  highlighted: ContextSchema.nullable()
+  highlighted: ContextSchema.nullable(),
+  canCreateAgency: z.boolean()
 }).strict();
 
 /** `GET /me/contexts/resolve` response: exactly one of `none`, `enter`, or `select`. */

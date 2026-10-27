@@ -17,7 +17,7 @@ const CLIENT = '22222222-2222-4222-8222-222222222222';
 const user = { id: AGENCY, name: 'Pessoa', email: 'pessoa@example.test' };
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-const agencyMe = { agencyId: AGENCY, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: [] };
+const agencyMe = { agencyId: AGENCY, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: [] };
 
 const fetchImpl: typeof fetch = async (input) => {
   const url = String(input);

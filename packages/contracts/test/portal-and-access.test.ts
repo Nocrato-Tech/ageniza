@@ -29,6 +29,7 @@ const portalClient = {
   archivedAt: null,
   agencyName: 'Agência Exemplo',
   onboardingSeenAt: null,
+  agencyReadOnly: false,
   home: { threadsAnsweredByAgency: 0, brandStudyFilled: 0, contentsAwaitingApproval: 0 }
 };
 

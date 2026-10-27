@@ -15,7 +15,7 @@ import {
 } from '@ageniza/contracts';
 import { Avatar, Button, ClientStrip, IconButton, Segmented, Skeleton } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { clientDetailQueryKey } from './client-detail.js';
 import { contentsAddress, ContentsHomeContext } from './content-address.js';
@@ -186,6 +186,7 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
 
   const queryClient = useQueryClient();
   const canOperate = useCan('conteudo.operar');
+  const blocked = useWriteBlocked();
   const [moveError, setMoveError] = useState<string | null>(null);
   const move = useMutation({
     mutationFn: ({ content, day }: { content: ContentListItem; day: string }) => httpClient.request({
@@ -211,7 +212,7 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
   };
   const scriptLayer = useStoryScriptLayer({
     clientId: normalizedId,
-    canOperate: canWriteScripts,
+    canOperate: canWriteScripts && blocked === undefined,
     scripts: contents.data?.data.storyScripts ?? [],
     today,
     onCreateContent: startContent
@@ -249,7 +250,8 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
   const loaded = contents.data;
   const unitLabel = view === 'week' ? 'semana' : 'mês';
   const archived = clientData?.status === 'archived';
-  const canMove = canOperate && clientData !== undefined && !archived;
+  const canEdit = canOperate && clientData !== undefined && !archived;
+  const canMove = canEdit && blocked === undefined;
 
   const Title = pinned ? 'h2' : 'h1';
   // The other home of the same view, on the same client and period, and with the roster's address carried along.
@@ -286,7 +288,7 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
             <p className="contents__subtitle">Planeje, agende e acompanhe todas as publicações.</p>
           </div>}
           <div className="contents__actions">
-            {canWriteScripts && <Button size="lg" leadingIcon={<Plus />} onClick={() => startContent(today)}>Nova publicação</Button>}
+            {canWriteScripts && <Button size="lg" leadingIcon={<Plus />} blockedReason={blocked} onClick={() => startContent(today)}>Nova publicação</Button>}
           </div>
         </div>
         {archived && <p className="contents__note">Cliente arquivado: o calendário é só leitura.</p>}
@@ -343,7 +345,7 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
     {scriptLayer.modal}
     <Outlet context={{
       clientId: normalizedId,
-      canEdit: canMove,
+      canEdit,
       ready: clientData !== undefined || client.isError,
       archived,
       handle: clientData?.instagramHandle ?? null

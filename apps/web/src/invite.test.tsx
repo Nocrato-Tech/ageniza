@@ -80,7 +80,7 @@ const makeFetch = (scenario: Scenario = {}) => {
       return noContent();
     }
     if (url.endsWith(`/agencies/${AGENCY_A}/me`)) {
-      return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] });
+      return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] });
     }
     if (url.endsWith('/auth/logout')) { calls.push('logout'); serverLoggedIn = false; return noContent(); }
     throw new Error(`unexpected ${method} ${url}`);
@@ -380,7 +380,7 @@ describe('InvitationPage (/convite/:token)', () => {
   });
 
   it('does not show the notice on /contextos, only at the agency or the portal', async () => {
-    const { impl } = makeFetch({ authenticated: true, resolve: { decision: 'select', contexts: [agencyA], highlighted: null } });
+    const { impl } = makeFetch({ authenticated: true, resolve: { decision: 'select', contexts: [agencyA], highlighted: null, canCreateAgency: false } });
     renderInvite(impl, { path: '/contextos', state: { invitationNotice: { agencyName: 'Agência Um' } } });
 
     // Wait for the choice list; the loading state has its own LiveStatus.
@@ -491,7 +491,7 @@ describe('InvitationPage (/convite/:token)', () => {
     await screen.findByRole('heading', { name: 'Você foi convidado' });
     await waitFor(() => expect(probe.sessionStatus).toBe('ready'));
     queryClient.setQueryData(['agency', AGENCY_A, 'me'], {
-      agencyId: AGENCY_A, agencyName: 'Agência ANTIGA', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: []
+      agencyId: AGENCY_A, agencyName: 'Agência ANTIGA', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: []
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
@@ -513,7 +513,7 @@ describe('InvitationPage (/convite/:token)', () => {
     await screen.findByRole('heading', { name: 'Você foi convidado' });
     await waitFor(() => expect(probe.sessionStatus).toBe('ready'));
     queryClient.setQueryData(['agency', AGENCY_A, 'me'], {
-      agencyId: AGENCY_A, agencyName: 'Agência ANTIGA', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: []
+      agencyId: AGENCY_A, agencyName: 'Agência ANTIGA', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: []
     });
 
     fillNewAccount();

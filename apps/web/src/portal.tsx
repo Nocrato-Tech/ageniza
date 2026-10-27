@@ -13,6 +13,7 @@ import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';
+import { PortalReadOnlyNotice } from './plan-notice.js';
 import { PortalTour, type PortalTourTarget } from './portal-tour.js';
 import { NotFoundHomeContext, NotFoundPage } from './status-pages.js';
 
@@ -167,6 +168,7 @@ export function PortalAreaLayout() {
         <AccountMenu activeContext={data.name} onReviewTour={tourMode === null ? () => { setReviewingClientId(clienteId); } : undefined} />
       </header>
       <LegalNotice />
+      {data.agencyReadOnly && <PortalReadOnlyNotice agencyName={data.agencyName} />}
       <main className="portal-content" id="main-content"><InvitationNotice /><NotFoundHomeContext.Provider value={`/portal/${data.id}/inicio`}><Outlet /></NotFoundHomeContext.Provider></main>
       {/* The card lives in the bar so it sits right above it, whatever the bar's height becomes. */}
       <PortalNav clienteId={clienteId} tourTarget={tourTarget}>

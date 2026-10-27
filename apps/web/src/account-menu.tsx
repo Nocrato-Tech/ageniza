@@ -16,6 +16,7 @@ import { Avatar, Button, ConfirmDialog, IconButton, Menu, MenuItem, MenuSeparato
 import { useAuthSession, useOptionalAuthSessionStore, type AuthSessionStore } from './auth.js';
 import { contextDestination, targetFromDestination, type ContextTarget } from './context-destination.js';
 import { contextDescription, contextKey, contextTitle } from './context-labels.js';
+import { CREATE_AGENCY_LABEL, CreateAgencyDialog } from './create-agency.js';
 import { EmailChangeDialog } from './email-change.js';
 import { HttpClientError, useApiClient } from './http.js';
 
@@ -66,6 +67,7 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
   const [panel, setPanel] = useState<AccountMenuPanel>('root');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [emailChangeOpen, setEmailChangeOpen] = useState(false);
+  const [createAgencyOpen, setCreateAgencyOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<LogoutAction | null>(null);
   const [failedAction, setFailedAction] = useState<LogoutAction | null>(null);
 
@@ -172,6 +174,9 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
               {switchLabel} <span aria-hidden='true'>{'\u203A'}</span>
             </MenuItem>
           )}
+          {contexts.data?.canCreateAgency === true && (
+            <MenuItem onClick={() => { setCreateAgencyOpen(true); }}>{CREATE_AGENCY_LABEL}</MenuItem>
+          )}
           {onReviewTour !== undefined && <MenuItem onClick={onReviewTour}>Rever o tour</MenuItem>}
           <MenuItem onClick={() => { setEmailChangeOpen(true); }}>{emailChangeLabel}</MenuItem>
           <MenuSeparator />
@@ -230,6 +235,7 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
         </div>
       )}
       {emailChangeOpen && <EmailChangeDialog onClose={() => { setEmailChangeOpen(false); }} />}
+      {createAgencyOpen && <CreateAgencyDialog onClose={() => { setCreateAgencyOpen(false); }} />}
       <ConfirmDialog
         open={confirmOpen}
         title={`${logoutAllLabel}?`}
