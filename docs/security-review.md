@@ -165,3 +165,7 @@ O registro detalhado vive no ai-memory, em `notes/licoes-seguranca-rls.md`. As r
 - Marca de uso único no estado da navegação: conferir se um esqueleto monta o mesmo componente antes e gasta a marca (#736).
 - O parser WHATWG URL apara espaço e C0 das pontas da string antes de resolver `..`; checagem de segmento feita no texto cru recusa espaço nas pontas, senão `/x/.. ` vira o pai (#741).
 - Valor de configuração que entra num cabeçalho (o `Path` de cookie) aceita só caracteres seguros (`[A-Za-z0-9._~-]` por segmento) e é recusado no boot; um `;` no valor muda o cookie (#741).
+- Regra de guarda de sessão se prova com um teste de varredura. Ele percorre as rotas registradas (`onRoute` ou `printRoutes`) com a sessão restrita e exige recusa em toda rota fora de **duas** listas fixas: as liberadas e as públicas. Classificar a rota pela resposta ao anônimo deixa escapar a rota que valida o corpo ou responde 404 antes da sessão (#749).
+- Guarda de sessão nasce fail-closed. A liberação é opcional, por nome explícito na rota (por exemplo, `requireSessionUnconfirmedAllowed`), nunca padrão de um módulo inteiro (#749).
+- Consulta em `audit.events` leva `agency_id` no predicado. Sem ele, não usa o índice `events_agency_action_occurred_idx` e varre os eventos de todas as agências, e isso dentro de uma trava de linha (#750).
+- A fixture `agencySuspended` do content-world não grava `status='suspended'`. Teste de "agência suspensa" precisa gravar o status de verdade e conferir que a recusa veio do A0020 (#750).
