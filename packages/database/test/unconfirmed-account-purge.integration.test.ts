@@ -198,6 +198,11 @@ describe('app_private.purge_unconfirmed_accounts: an account with a tie is never
       agency_id: await agency(), purpose: 'collaborator_invite', email: `purge-${randomUUID()}@example.test`, role_id: adminRoleId,
       token_hash: createHash('sha256').update(randomUUID()).digest('hex'), expires_at: ago(-1), used_at: ago(8), accepted_by_user_id: userId
     })],
+    ['an invitation with both tokens (#731) it accepted', async (userId) => getOwner().knex('invitations').insert({
+      agency_id: await agency(), purpose: 'collaborator_invite', email: `purge-${randomUUID()}@example.test`, role_id: adminRoleId,
+      token_hash: createHash('sha256').update(randomUUID()).digest('hex'), email_token_hash: createHash('sha256').update(randomUUID()).digest('hex'),
+      expires_at: ago(-1), used_at: ago(8), accepted_by_user_id: userId
+    })],
     ['an invitation it sent', async (userId) => getOwner().knex('invitations').insert({
       agency_id: await agency(), purpose: 'collaborator_invite', email: `purge-${randomUUID()}@example.test`, role_id: adminRoleId,
       token_hash: createHash('sha256').update(randomUUID()).digest('hex'), expires_at: ago(-1), invited_by_user_id: userId
