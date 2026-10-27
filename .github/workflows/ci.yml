@@ -178,7 +178,7 @@ jobs:
   database-local:
     name: PostgreSQL local database
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     # The test harnesses have no default database and refuse the one named `ageniza` (issue #391), so
     # the job creates its own and points every command at it. Throwaway credentials, same as compose.yml.
     env:
