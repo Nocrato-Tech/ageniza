@@ -141,8 +141,6 @@ const verificationFailedError = {
   message: 'O link não é mais válido ou a senha está incorreta.'
 } as const;
 
-const isEmailNotVerified = (error: unknown): boolean =>
-  error instanceof APIError && (error.body as { code?: unknown } | undefined)?.code === 'EMAIL_NOT_VERIFIED';
 
 /**
  * Registers the public auth routes (issue #31 section 6, and the sign-up of issue #706). CSRF/origin checking is handled
@@ -167,6 +165,20 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     const body = routeBody(loginDocs, request);
     dependencies.limiter.consume('login', normalizeRateLimitIp(request.ip), body.email);
 
+    // The password is checked here first, and an unconfirmed account answers exactly like a wrong
+    // password, even with the right one: whoever signed up chose that password, so telling the two
+    // apart would say whether the address already had an account (security review of PR #722). Every
+    // refusal costs one password check (a decoy one when there is no credential), and none has a side
+    // effect: a link sent from here would spend a counter the public resend answers 429 on (second
+    // review of PR #722). The account an invitation created is no exception here: its only session is
+    // the one `accept-new-account` created, so the login never tells it apart either.
+    const hasher = (await dependencies.auth.$context).password;
+    const credential = await loginCredentialOf(dependencies.database, body.email);
+    const passwordMatches = credential === undefined
+      ? await verifyAgainstDecoy(hasher, body.password)
+      : await hasher.verify({ hash: credential.passwordHash, password: body.password });
+    if (!passwordMatches || credential?.emailVerified !== true) throw new HttpError(invalidCredentials);
+
     let headers: Headers;
     let response: { readonly token: string; readonly user: { readonly id: string; readonly name: string; readonly email: string } };
     try {
@@ -176,18 +188,12 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
         returnHeaders: true
       }));
     } catch (error) {
-      // An unconfirmed account answers exactly like a wrong password, even with the right one:
-      // whoever signed up chose that password, so telling the two apart would say whether the address
-      // already had an account (security review of PR #722). It has no side effect either: a link sent
-      // from here would spend a counter the public resend answers 429 on, which tells the same thing
-      // (second review of PR #722). The screen offers the resend under every refused credential.
-      if (isEmailNotVerified(error)) throw new HttpError(invalidCredentials);
       throw toPublicAuthError(error, invalidCredentials);
     }
 
     // A confirmed account gets its session even with zero contexts and lands on `/comecar`
-    // (2026-10-26 decision, which changes rule 3). `requireEmailVerification` already refused an
-    // unconfirmed one above; the rule is held here too, so a configuration change cannot hand one a cookie.
+    // (2026-10-26 decision, which changes rule 3). The check above already refused an unconfirmed one;
+    // the rule is held here too, so a change of the account in between cannot hand one a cookie.
     if ((response.user as { emailVerified?: unknown }).emailVerified !== true) {
       await revokeJustCreatedSession(dependencies.auth, response.token, request);
       throw new HttpError(invalidCredentials);
@@ -402,6 +408,24 @@ const credentialHashOf = async (database: DatabaseClient, userId: string): Promi
     select password from auth.account where "userId" = ? and "providerId" = 'credential' limit 1
   `, [userId]);
   return result.rows[0]?.password ?? undefined;
+};
+
+interface LoginCredential {
+  readonly passwordHash: string;
+  readonly emailVerified: boolean;
+}
+
+/** The password credential of the account with this address, and whether its e-mail is confirmed. */
+const loginCredentialOf = async (database: DatabaseClient, email: string): Promise<LoginCredential | undefined> => {
+  const result = await raw<{ rows: Array<{ password: string | null; email_verified: boolean }> }>(database.knex, `
+    select credential.password, account."emailVerified" as email_verified
+    from auth."user" account
+    join auth.account credential on credential."userId" = account.id and credential."providerId" = 'credential'
+    where account.email = ?
+    limit 1
+  `, [email]);
+  const row = result.rows[0];
+  return row?.password === undefined || row.password === null ? undefined : { passwordHash: row.password, emailVerified: row.email_verified };
 };
 
 type PasswordHasher = Awaited<AuthInstance['$context']>['password'];

@@ -13,6 +13,7 @@ import {
   InvitationAcceptResponseSchema,
   InvitationCreatedResponseSchema,
   InvitationPreviewResponseSchema,
+  InvitationResentResponseSchema,
   PaginationInputSchema,
   PendingInvitationListResponseSchema,
   PublicInvitationTokenPathParamsSchema,
@@ -34,6 +35,7 @@ import type { AuthInstance } from '../auth/better-auth.js';
 import { applyAuthCookies, toAuthHeaders } from '../auth/bridge.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { EmailService } from '../auth/email-service.js';
+import { issueEmailConfirmation } from '../auth/email-verification.js';
 import { AUTH_RATE_LIMITS } from '../auth/policy.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { tryAgain } from '../../plugins/infra/conflict.js';
@@ -647,6 +649,14 @@ const pendingInvitationFromRow = (row: PendingInvitationRow) => ({
   expiresAt: new Date(row.expires_at).toISOString()
 });
 
+// Copying a link hands out the invitation's role, so only someone who could have created the same
+// invitation gets it back: `convite.reenviar` alone only re-mails it (security review of #721, finding 1).
+// An admin invitation needs the admin grant too, which the resend already refuses with 403 without it.
+const INVITE_COLLABORATOR_PERMISSION = 'colaborador.convidar';
+
+const mayCopyResentLink = (request: FastifyRequest, purpose: InvitationLookup['purpose']): boolean =>
+  purpose === 'collaborator_invite' && request.tenant !== undefined && tenantHolds(request.tenant, INVITE_COLLABORATOR_PERMISSION);
+
 /** Registers authenticated administration and public invitation routes. */
 export const registerInvitationModule = (app: FastifyInstance, dependencies: InvitationModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
@@ -688,7 +698,7 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
   const resendDocs = {
     permission: 'convite.reenviar',
     responseStatus: 200,
-    schemas: { params: AgencyInvitationPathParamsSchema, response: InvitationCreatedResponseSchema }
+    schemas: { params: AgencyInvitationPathParamsSchema, response: InvitationResentResponseSchema }
   } satisfies DocumentedRouteConfig;
   const cancelDocs = {
     permission: 'convite.cancelar',
@@ -722,7 +732,8 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     });
   });
 
-  app.post('/agencies/:agencyId/invitations/collaborators', authenticated(collaboratorDocs), async (request, reply) => {
+  // The 201 carries the invitation link, so no cache may keep it (decision 2026-10-26, issue #710).
+  app.post('/agencies/:agencyId/invitations/collaborators', { onRequest: noStore, ...authenticated(collaboratorDocs) }, async (request, reply) => {
     const params = routeParams(collaboratorDocs, request);
     const body = routeBody(collaboratorDocs, request);
     const result = await createCollaboratorInvitation(dependencies, request, body.email, body.roleId, params.agencyId);
@@ -739,7 +750,8 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     return reply.status(201).send(routeResponse(collaboratorDocs, request, {
       invitationId: result.invitationId,
       expiresAt: result.expiresAt.toISOString(),
-      supersededInvitationId: result.supersededInvitationId
+      supersededInvitationId: result.supersededInvitationId,
+      invitationUrl: result.token.actionUrl
     }));
   });
 
@@ -761,7 +773,7 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     return reply.status(201).send(routeResponse(clientInviteDocs, request, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
   });
 
-  app.post('/agencies/:agencyId/invitations/:invitationId/resend', authenticated(resendDocs), async (request, reply) => {
+  app.post('/agencies/:agencyId/invitations/:invitationId/resend', { onRequest: noStore, ...authenticated(resendDocs) }, async (request, reply) => {
     const params = routeParams(resendDocs, request);
     const result = await resendInvitation(dependencies, request, params.agencyId, params.invitationId);
     try {
@@ -784,7 +796,11 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     } catch {
       throw emailDeliveryFailed();
     }
-    return reply.send(routeResponse(resendDocs, request, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
+    return reply.send(routeResponse(resendDocs, request, {
+      invitationId: result.invitationId,
+      expiresAt: result.expiresAt.toISOString(),
+      invitationUrl: mayCopyResentLink(request, result.purpose) ? result.token.actionUrl : null
+    }));
   });
 
   app.delete('/agencies/:agencyId/invitations/:invitationId', authenticated(cancelDocs), async (request, reply) => {
@@ -819,10 +835,13 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
 
     const passwordHash = await (await dependencies.auth.$context).password.hash(body.password);
     const userId = randomUUID();
+    let confirmationToken: string | undefined;
     try {
-      await dependencies.database.transaction(async (transaction) => {
+      confirmationToken = await dependencies.database.transaction(async (transaction) => {
+        // The inviter can copy the link (decision 2026-10-26), so accepting it proves nothing about
+        // the mailbox: the address stays unconfirmed until the confirmation of #706 proves it.
         await raw(transaction, `
-          insert into auth."user" (id, name, email, "emailVerified") values (?, ?, ?, true)
+          insert into auth."user" (id, name, email, "emailVerified") values (?, ?, ?, false)
         `, [userId, body.name, invitation.email]);
         await raw(transaction, `
           insert into auth."account" (id, "accountId", "providerId", "userId", password, "updatedAt")
@@ -832,6 +851,8 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
           select * from app_private.accept_invitation(?, ?, ?, ?, true)
         `, [hashInvitationToken(token), userId, dependencies.config.authTermsVersion, dependencies.config.authPrivacyVersion]);
         if (result.rows[0] === undefined) throw new HttpError(INVITATION_INVALID);
+        // Same transaction: the account never exists without its confirmation link.
+        return issueEmailConfirmation(transaction, userId);
       });
     } catch (error) {
       if (isRetryableConflict(error)) throw tryAgain();
@@ -839,6 +860,11 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
       if (typeof error === 'object' && error !== null && 'code' in error && String((error as { code?: unknown }).code).startsWith('A')) throw new HttpError(INVITATION_INVALID);
       throw error;
     }
+
+    // Sent before the sign-in, so the account can still be confirmed if the sign-in fails. The link
+    // asks for the password chosen here, so whoever accepted a copied link cannot confirm a mailbox
+    // that is not theirs (#706).
+    if (confirmationToken !== undefined) dependencies.emailService.sendEmailVerification({ to: invitation.email, token: confirmationToken });
 
     try {
       const { headers } = await dependencies.auth.api.signInEmail({
@@ -850,7 +876,8 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     } catch {
       // Account creation and invitation acceptance have already committed, but the API contract
       // promises a session cookie for this flow. Return only a generic server error if Better Auth
-      // cannot establish that session; the credential account remains recoverable through login.
+      // cannot establish that session; the account remains recoverable through the confirmation link
+      // it was just sent, or a password reset.
       throw new HttpError({ statusCode: 500, code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' });
     }
     return reply.status(201).send(routeResponse(acceptNewAccountDocs, request, {

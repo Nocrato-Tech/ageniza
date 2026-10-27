@@ -114,21 +114,18 @@ describe('invitation contracts', () => {
     expect(() => InvitationAcceptResponseSchema.parse({ status: 'accepted', context: { agencyId: 'agency-1', clientId: undefined } })).toThrow();
   });
 
-  it('models the collaborator creation response with the invitation it superseded', () => {
+  it('models the collaborator creation response with the invitation it superseded and the link sent', () => {
     const invitationId = '11111111-1111-4111-8111-111111111111';
     const supersededInvitationId = '22222222-2222-4222-8222-222222222222';
-    expect(CollaboratorInvitationCreatedResponseSchema.parse({
-      invitationId,
-      expiresAt: '2026-10-02T12:00:00.000Z',
-      supersededInvitationId
-    })).toEqual({ invitationId, expiresAt: '2026-10-02T12:00:00.000Z', supersededInvitationId });
-    expect(CollaboratorInvitationCreatedResponseSchema.parse({
-      invitationId,
-      expiresAt: '2026-10-02T12:00:00.000Z',
-      supersededInvitationId: null
-    }).supersededInvitationId).toBeNull();
-    // The shared creation/resend contract keeps no such field; the collaborator one requires it.
-    expect(() => InvitationCreatedResponseSchema.parse({ invitationId, expiresAt: '2026-10-02T12:00:00.000Z', supersededInvitationId })).toThrow();
-    expect(() => CollaboratorInvitationCreatedResponseSchema.parse({ invitationId, expiresAt: '2026-10-02T12:00:00.000Z' })).toThrow();
+    const invitationUrl = 'https://app.example.test/convite/token-value';
+    const expiresAt = '2026-10-02T12:00:00.000Z';
+    expect(CollaboratorInvitationCreatedResponseSchema.parse({ invitationId, expiresAt, supersededInvitationId, invitationUrl }))
+      .toEqual({ invitationId, expiresAt, supersededInvitationId, invitationUrl });
+    expect(CollaboratorInvitationCreatedResponseSchema.parse({ invitationId, expiresAt, supersededInvitationId: null, invitationUrl }).supersededInvitationId).toBeNull();
+    // The shared client-creation/resend contract carries neither field; the collaborator one requires both.
+    expect(() => InvitationCreatedResponseSchema.parse({ invitationId, expiresAt, supersededInvitationId })).toThrow();
+    expect(() => InvitationCreatedResponseSchema.parse({ invitationId, expiresAt, invitationUrl })).toThrow();
+    expect(() => CollaboratorInvitationCreatedResponseSchema.parse({ invitationId, expiresAt, invitationUrl })).toThrow();
+    expect(() => CollaboratorInvitationCreatedResponseSchema.parse({ invitationId, expiresAt, supersededInvitationId: null })).toThrow();
   });
 });

@@ -38,15 +38,20 @@ session and lands on `/comecar`; `GET /me/contexts/resolve` answers `none` and k
 `NO_CONTEXT_ACCESS` no longer exists. `inviteToken` on the login is still accepted (the reset link of
 an invitation carries it) but no longer changes the outcome.
 
-**Unconfirmed accounts (issue #706).** `requireEmailVerification: true` makes Better Auth refuse the
-sign-in of an account whose `emailVerified` is false, after the password is checked. The route answers
-it with the same `401 INVALID_CREDENTIALS` as a wrong password, byte for byte, with no cookie and no
+**Unconfirmed accounts (issue #706).** The login route checks the password itself (against a decoy hash
+when the e-mail has no credential) and refuses an account whose `emailVerified` is false before Better
+Auth signs in, so `requireEmailVerification` is off: Better Auth would refuse the sign-in that
+`accept-new-account` must make. The route answers it with the same `401 INVALID_CREDENTIALS` as a wrong password, byte for byte, with no cookie and no
 session row: whoever signs up with someone else's address chose the password, so a distinct answer
 would tell whether the address already had an account (security review of PR #722). It has no side
 effect either: a link reissued from here spent the public resend's counter, whose `429` told the same
 thing (second review of PR #722); the screen offers the resend instead. `routes.ts` checks
 `emailVerified` again on the response, and `session-guard.ts` revokes any session an unconfirmed
-account holds. If the sign-in after a consumed link fails (the password changed in between),
+account holds, with one explicit exception (decision on the copyable invitation link, 2026-10-26): the
+account created by `accept-new-account` keeps the session that route creates while
+`app_private.unconfirmed_account_may_hold_session` finds the link its invitation gave it (the agency
+it owns, or an active membership in the invitation's agency or client). The password login stays
+closed to it until it confirms, with the same 401, so an invited account is never told apart. If the sign-in after a consumed link fails (the password changed in between),
 `/auth/email/verify` answers `400 INVALID_LINK_OR_PASSWORD`, never 500; consuming the link locks the
 credential row, so a reset either waits for it or makes it refuse.
 
