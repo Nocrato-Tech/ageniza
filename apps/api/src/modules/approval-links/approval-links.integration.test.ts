@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { captureLogs, TEST_APP_PUBLIC_URL } from '../auth/test-support/harness.js';
+import { captureLogs, TEST_APP_PUBLIC_URL, TEST_STORAGE_CONFIG } from '../auth/test-support/harness.js';
 import type { MediaStorageClient } from '../media/storage-client.js';
 import { createPortalFixtures } from '../contents/test-support/portal-fixtures.js';
 import { createContentsWorld, type Reply } from '../contents/test-support/world.js';
@@ -124,7 +124,8 @@ const row = (id: string): Promise<Row> => w.contentRow(id) as Promise<Row>;
 const threadsOf = (contentId: string): Promise<Row[]> => owner()('client_threads').where({ content_id: contentId });
 
 beforeAll(async () => {
-  await w.setup({ logger: logs.logger, wrapMediaStorage: recordingStorage });
+  // A deployment that signs for an hour: the link still signs the preview for minutes.
+  await w.setup({ logger: logs.logger, wrapMediaStorage: recordingStorage, config: { storage: { ...TEST_STORAGE_CONFIG, downloadUrlExpirySeconds: 3600 } } });
   await p.setup();
 }, 120_000);
 

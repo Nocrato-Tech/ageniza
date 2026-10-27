@@ -862,6 +862,19 @@ describe('the authorship of an access is written only inside the decision of its
     expect((await contentOf(s.contents[0]!)).status).toBe('awaiting_approval');
   });
 
+  it('does not take the access from the row: an UPDATE that names it, with no decision of a link, is refused', async () => {
+    const s = await scenario({ contents: 1 });
+    await expect(owner()('contents').where({ id: s.contents[0]! }).update({ status: 'approved', approved_by_portal_access_id: s.accessId })).rejects.toMatchObject({
+      code: '42501', message: expect.stringContaining('approved by a person')
+    });
+    await expect(owner().transaction(async (transaction) => {
+      await transaction.raw('select app_private.bind_actor(?::uuid)', [ids.adminA]);
+      await transaction('contents').where({ id: s.contents[0]! }).update({ status: 'approved', approved_by_portal_access_id: s.accessId });
+    })).resolves.toBeUndefined();
+    // With an account bound the access the caller named is thrown away: the account is the approver.
+    expect(await contentOf(s.contents[0]!)).toMatchObject({ approved_by: ids.adminA, approved_by_portal_access_id: null });
+  });
+
   it('fixes the access column to null when an account approves: the caller never chooses who approved', async () => {
     const s = await scenario({ contents: 1 });
     await owner().transaction(async (transaction) => {

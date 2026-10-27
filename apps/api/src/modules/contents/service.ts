@@ -255,7 +255,7 @@ export const contentFromRow = (row: ContentRow): Content => ({
   owner: ownerOf(row),
   status: row.status,
   revision: Number(row.revision),
-  approvedBy: row.approver_side === null ? null : { name: row.approver_name ?? '', side: row.approver_side, viaLink: row.approved_via_link },
+  approvedBy: row.approver_side === null ? null : { name: row.approver_name ?? '', side: row.approver_side, ...(row.approved_via_link ? { viaLink: true as const } : {}) },
   approvedAt: row.approved_at === null ? null : new Date(row.approved_at).toISOString(),
   approvedByAgencyReason: row.approved_by_agency_reason,
   publishedOn: row.published_on,
