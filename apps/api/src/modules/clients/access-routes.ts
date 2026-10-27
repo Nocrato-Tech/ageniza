@@ -3,6 +3,7 @@ import {
   AgencyClientPathParamsSchema,
   ClientInvitationListQuerySchema,
   ClientInvitationListResponseSchema,
+  ClientMemberAddRequestSchema,
   ClientMemberListQuerySchema,
   ClientMemberListResponseSchema,
   ClientMemberSchema,
@@ -11,18 +12,20 @@ import {
   type ClientMemberStatus
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
-import { isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+import { isRetryableConflict, raw, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { tryAgain } from '../../plugins/infra/conflict.js';
 import type { AuthInstance } from '../auth/better-auth.js';
+import type { EmailService } from '../auth/email-service.js';
 import { revokeUserSessions } from '../auth/session-revocation.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { routeQuery, routeResponse } from '../../plugins/infra/zod.js';
+import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import {
+  addClientMember,
   clientMemberFromRow,
-  isMembershipFunctionRefusal,
+  isAccessFunctionRefusal,
   listClientMembers,
   listPendingClientInvitations,
   loadClientMember,
@@ -36,6 +39,8 @@ type PreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promi
 export interface AccessRouteDependencies {
   readonly database: DatabaseClient;
   readonly auth: AuthInstance;
+  /** The welcome e-mail of "Adicionar pessoa". */
+  readonly emailService: EmailService;
   readonly requireAgencyAccess: PreHandler;
   readonly requirePermission: (key: string) => PreHandler;
 }
@@ -49,6 +54,16 @@ const clientArchived = (): HttpError => new HttpError({
   statusCode: 409,
   code: 'CLIENT_ARCHIVED',
   message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.'
+});
+const accessExists = (): HttpError => new HttpError({
+  statusCode: 409,
+  code: 'ACCESS_EXISTS',
+  message: 'Este endereço já tem acesso ao portal deste cliente.'
+});
+const emailDeliveryFailed = (): HttpError => new HttpError({
+  statusCode: 502,
+  code: 'EMAIL_DELIVERY_FAILED',
+  message: 'Não foi possível entregar o e-mail.'
 });
 
 const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth']> => {
@@ -71,10 +86,10 @@ const uuidFromRoute = (request: FastifyRequest, name: string, notFound: () => Ht
 };
 
 /**
- * The agency's side of a client's portal access (#132): who has access, who lost it, and what is
- * still pending. Reading uses `cliente.convidar_usuario`, removing and reactivating use
- * `cliente.remover_usuario`; both are checked by the guard and again by the database. Resending and
- * canceling an invitation are the routes of the invitations module and do not change here.
+ * The agency's side of a client's portal access (#132, #711): who has access, who lost it, who is added, and what is still
+ * pending of the old invitations. Reading and adding use `cliente.convidar_usuario`, removing and reactivating use
+ * `cliente.remover_usuario`; both are checked by the guard and again by the functions of the database. A person is an access
+ * given to an e-mail address, so every route here names the access, never an account.
  */
 export const registerAccessRoutes = (app: FastifyInstance, dependencies: AccessRouteDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
@@ -88,6 +103,11 @@ export const registerAccessRoutes = (app: FastifyInstance, dependencies: AccessR
     permission: 'cliente.convidar_usuario',
     responseStatus: 200,
     schemas: { params: AgencyClientPathParamsSchema, query: ClientMemberListQuerySchema, response: ClientMemberListResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const addMemberDocs = {
+    permission: 'cliente.convidar_usuario',
+    responseStatus: 201,
+    schemas: { params: AgencyClientPathParamsSchema, body: ClientMemberAddRequestSchema, response: ClientMemberSchema }
   } satisfies DocumentedRouteConfig;
   const removeMemberDocs = {
     permission: 'cliente.remover_usuario',
@@ -147,27 +167,89 @@ export const registerAccessRoutes = (app: FastifyInstance, dependencies: AccessR
   });
 
   /**
-   * Why the function refused a change the checks before it let through: the client was archived or
-   * the link vanished in between, or the caller lost the permission. Read back in a fresh
-   * transaction, because the one that was refused is aborted.
+   * Why a function of the access refused a change the checks before it let through: the client was archived or the access
+   * vanished in between, or the caller lost the permission. Read back in a fresh transaction, because the one that was
+   * refused is aborted. `accessId` is absent when the change was an addition. Whoever lost the permission can no longer read
+   * the access either, so the permission is asked before the access is looked for.
    */
   const diagnoseRefusal = async (
     request: FastifyRequest,
-    scope: { readonly agencyId: string; readonly clientId: string; readonly membershipId: string }
+    scope: { readonly agencyId: string; readonly clientId: string; readonly accessId?: string },
+    permission: string
   ): Promise<HttpError> => withAuthenticatedUserTransaction(dependencies.database, requireAuth(request).claims, async (transaction) => {
     const client = await loadClient(transaction, scope);
     if (client === undefined) return clientNotFound();
     if (client.status === 'archived') return clientArchived();
-    if (await loadClientMember(transaction, scope) === undefined) return memberNotFound();
+    const held = await raw<{ readonly rows: readonly { readonly held: boolean }[] }>(
+      transaction,
+      'select app_private.has_agency_permission(?::uuid, ?) as held',
+      [scope.agencyId, permission]
+    );
+    if (held.rows[0]?.held !== true) return forbidden();
+    if (scope.accessId !== undefined && await loadClientMember(transaction, { ...scope, accessId: scope.accessId }) === undefined) return memberNotFound();
     return forbidden();
+  });
+
+  app.post('/agencies/:agencyId/clients/:clientId/members', authenticated(addMemberDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = uuidFromRoute(request, 'clientId', clientNotFound);
+    const body = routeBody(addMemberDocs, request);
+    const scope = { agencyId: tenant.agencyId, clientId };
+
+    let outcome;
+    try {
+      outcome = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+        const client = await loadClient(transaction, scope);
+        if (client === undefined) return { kind: 'client-not-found' } as const;
+        if (client.status === 'archived') return { kind: 'client-archived' } as const;
+
+        // The database counts the welcome e-mail in the daily limit of the agency (A0095, 429) and refuses a read-only agency
+        // (A0090, 409); both reach the error handler as they are.
+        const added = await addClientMember(transaction, clientId, body.email);
+
+        // The address changed hands and the account that held it lost the access: that is a removal for it, and ends its sessions.
+        if (added.unlinkedUserId !== null) await revokeUserSessions(transaction, added.unlinkedUserId, auth.sessionId);
+
+        const member = await loadClientMember(transaction, { ...scope, accessId: added.accessId });
+        if (member === undefined) throw new Error('The access just added could not be read back.');
+        const agency = await raw<{ readonly rows: readonly { readonly name: string }[] }>(
+          transaction,
+          'select name from public.agencies where id = ?::uuid',
+          [scope.agencyId]
+        );
+        return { kind: 'ok', added, member, clientName: client.name, agencyName: agency.rows[0]?.name ?? '' } as const;
+      });
+    } catch (error) {
+      if (isRetryableConflict(error)) throw tryAgain();
+      if (!isAccessFunctionRefusal(error)) throw error;
+      throw await diagnoseRefusal(request, scope, addMemberDocs.permission);
+    }
+
+    if (outcome.kind === 'client-not-found') throw clientNotFound();
+    if (outcome.kind === 'client-archived') throw clientArchived();
+    if (outcome.added.outcome === 'already_active') throw accessExists();
+
+    // The access is given and committed; the e-mail tells the person. A refused delivery is told to the agency, which can
+    // remove the access and add the address again.
+    try {
+      await dependencies.emailService.sendClientPortalWelcome({
+        to: outcome.member.email,
+        agencyName: outcome.agencyName,
+        clientName: outcome.clientName
+      });
+    } catch {
+      throw emailDeliveryFailed();
+    }
+    return reply.status(201).send(routeResponse(addMemberDocs, request, clientMemberFromRow(outcome.member)));
   });
 
   const memberStatusHandler = (docs: typeof removeMemberDocs, status: ClientMemberStatus) => async (request: FastifyRequest, reply: FastifyReply) => {
     const auth = requireAuth(request);
     const tenant = requireTenant(request);
     const clientId = uuidFromRoute(request, 'clientId', clientNotFound);
-    const membershipId = uuidFromRoute(request, 'membershipId', memberNotFound);
-    const scope = { agencyId: tenant.agencyId, clientId, membershipId };
+    const accessId = uuidFromRoute(request, 'accessId', memberNotFound);
+    const scope = { agencyId: tenant.agencyId, clientId, accessId };
 
     let outcome;
     try {
@@ -176,22 +258,22 @@ export const registerAccessRoutes = (app: FastifyInstance, dependencies: AccessR
         if (client === undefined) return { kind: 'client-not-found' } as const;
         if (client.status === 'archived') return { kind: 'client-archived' } as const;
         if (await loadClientMember(transaction, scope) === undefined) return { kind: 'member-not-found' } as const;
-        await setClientMemberStatus(transaction, membershipId, status);
+        const result = await setClientMemberStatus(transaction, accessId, status);
         const member = await loadClientMember(transaction, scope);
-        if (member === undefined) throw new Error('The member whose access just changed could not be read back.');
-        // Only the transition ends sessions, and it is read from what this transaction wrote: the
-        // function locks the link and decides, so a reading made before it (a reactivation may land
-        // in between) would leave a removed link with live sessions. Removing again or bringing the
-        // person back writes nothing that ends them.
-        if (member.status === 'removed' && member.written_by_this_transaction) {
-          await revokeUserSessions(transaction, member.user_id, auth.sessionId);
+        if (member === undefined) throw new Error('The access whose state just changed could not be read back.');
+        // Only the transition ends sessions, and it is the function that says whether it wrote: it locks the access and
+        // decides, so a reading made before it (a reactivation may land in between) would leave a removed access with live
+        // sessions. Removing again, bringing the person back, or removing an access nobody has entered writes nothing that
+        // ends them.
+        if (status === 'removed' && result.changed && result.accountUserId !== null) {
+          await revokeUserSessions(transaction, result.accountUserId, auth.sessionId);
         }
         return { kind: 'ok', member } as const;
       });
     } catch (error) {
       if (isRetryableConflict(error)) throw tryAgain();
-      if (!isMembershipFunctionRefusal(error)) throw error;
-      throw await diagnoseRefusal(request, scope);
+      if (!isAccessFunctionRefusal(error)) throw error;
+      throw await diagnoseRefusal(request, scope, docs.permission);
     }
 
     if (outcome.kind === 'client-not-found') throw clientNotFound();
@@ -200,6 +282,6 @@ export const registerAccessRoutes = (app: FastifyInstance, dependencies: AccessR
     return reply.send(routeResponse(docs, request, clientMemberFromRow(outcome.member)));
   };
 
-  app.post('/agencies/:agencyId/clients/:clientId/members/:membershipId/remove', authenticated(removeMemberDocs), memberStatusHandler(removeMemberDocs, 'removed'));
-  app.post('/agencies/:agencyId/clients/:clientId/members/:membershipId/reactivate', authenticated(reactivateMemberDocs), memberStatusHandler(reactivateMemberDocs, 'active'));
+  app.post('/agencies/:agencyId/clients/:clientId/members/:accessId/remove', authenticated(removeMemberDocs), memberStatusHandler(removeMemberDocs, 'removed'));
+  app.post('/agencies/:agencyId/clients/:clientId/members/:accessId/reactivate', authenticated(reactivateMemberDocs), memberStatusHandler(reactivateMemberDocs, 'active'));
 };

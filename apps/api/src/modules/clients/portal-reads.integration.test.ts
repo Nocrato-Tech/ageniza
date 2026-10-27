@@ -12,6 +12,7 @@ import {
   type TestUserFixture
 } from '../auth/test-support/harness.js';
 import type { DatabaseClient } from '@ageniza/database';
+import { setPortalAccessStatus } from './test-support/portal-access.js';
 
 // Issue #129: the portal's reads of its own client. Row-level security says who may read a row, not
 // from which side, so a collaborator who also has a client link reads through the agency branch of
@@ -216,7 +217,7 @@ describe('CLIENTS portal reads (#129)', () => {
 
     // A login with no valid context is refused, so these two lose their context after the session exists.
     for (const key of Object.keys(users)) cookies[key] = await login(users[key]!);
-    await owner.knex('client_memberships').where({ client_id: clientA1, user_id: users.portalRemoved!.id }).update({ status: 'removed' });
+    await setPortalAccessStatus(owner.knex, clientA1, users.portalRemoved!.id, 'removed');
     await owner.knex('agencies').where({ id: agencySuspended }).update({ status: 'suspended' });
   });
 
@@ -337,12 +338,12 @@ describe('CLIENTS portal reads (#129)', () => {
     });
 
     it('stops serving a person the moment their link is removed, and only that person', async () => {
-      await owner.knex('client_memberships').where({ client_id: clientA1, user_id: users.portalTwo!.id }).update({ status: 'removed' });
+      await setPortalAccessStatus(owner.knex, clientA1, users.portalTwo!.id, 'removed');
       try {
         await expectNotFound(portalClient(clientA1), cookies.portalTwo!, 'removed after the session started');
         expect((await call('GET', portalClient(clientA1), cookies.portalOne!)).statusCode).toBe(200);
       } finally {
-        await owner.knex('client_memberships').where({ client_id: clientA1, user_id: users.portalTwo!.id }).update({ status: 'active' });
+        await setPortalAccessStatus(owner.knex, clientA1, users.portalTwo!.id, 'active');
       }
       expect((await call('GET', portalClient(clientA1), cookies.portalTwo!)).statusCode).toBe(200);
     });

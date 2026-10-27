@@ -31,6 +31,12 @@ salva por pessoa (não por sessão/dispositivo). Ela **nunca concede acesso por 
 | Agência | a pessoa é `owner` da agência **ou** tem `agency_memberships` com `status = 'active'`, **e** a agência tem `status = 'active'` |
 | Cliente | a pessoa tem `client_memberships` com `status = 'active'` para o cliente, **e** o cliente tem `status = 'active'`, **e** a agência do cliente tem `status = 'active'` |
 
+O vínculo de cliente nasce do acesso dado a um e-mail (`client_portal_accesses`). Toda resolução de contextos começa por
+`app_private.link_client_portal_accesses()`: uma conta com o e-mail **verificado** leva os acessos ativos daquele e-mail
+que ainda não têm conta (e só esses), e o portal aparece. Conta com o e-mail não confirmado não ganha nada. O vínculo não é a
+entrada: `entered` e o nome na lista da agência só aparecem depois que a conta abre o portal do cliente, seleciona o contexto dele ou
+o `resolve` decide entrar nele (`app_private.mark_client_portal_entered`).
+
 Uma agência `suspended` nunca aparece em nenhuma lista, resolução ou guarda, mesmo que a pessoa
 seja owner ou membro ativo dela. Um colaborador da agência não ganha acesso ao portal de um
 cliente daquela agência só por ser colaborador: portal de cliente e área interna da agência são

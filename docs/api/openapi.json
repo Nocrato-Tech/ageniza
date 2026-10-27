@@ -560,20 +560,6 @@
         ],
         "additionalProperties": false
       },
-      "createClientInvitationRequest": {
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string",
-            "maxLength": 320,
-            "format": "email"
-          }
-        },
-        "required": [
-          "email"
-        ],
-        "additionalProperties": false
-      },
       "resendInvitationResponse": {
         "type": "object",
         "properties": {
@@ -4792,12 +4778,15 @@
             "items": {
               "type": "object",
               "properties": {
-                "membershipId": {
+                "accessId": {
                   "type": "string",
                   "format": "uuid"
                 },
                 "name": {
-                  "type": "string"
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "email": {
                   "type": "string"
@@ -4809,15 +4798,19 @@
                     "removed"
                   ]
                 },
+                "entered": {
+                  "type": "boolean"
+                },
                 "since": {
                   "type": "string"
                 }
               },
               "required": [
-                "membershipId",
+                "accessId",
                 "name",
                 "email",
                 "status",
+                "entered",
                 "since"
               ],
               "additionalProperties": false
@@ -4858,15 +4851,18 @@
         ],
         "additionalProperties": false
       },
-      "removeClientMemberResponse": {
+      "addClientMemberResponse": {
         "type": "object",
         "properties": {
-          "membershipId": {
+          "accessId": {
             "type": "string",
             "format": "uuid"
           },
           "name": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "email": {
             "type": "string"
@@ -4878,16 +4874,34 @@
               "removed"
             ]
           },
+          "entered": {
+            "type": "boolean"
+          },
           "since": {
             "type": "string"
           }
         },
         "required": [
-          "membershipId",
+          "accessId",
           "name",
           "email",
           "status",
+          "entered",
           "since"
+        ],
+        "additionalProperties": false
+      },
+      "addClientMemberRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "format": "email"
+          }
+        },
+        "required": [
+          "email"
         ],
         "additionalProperties": false
       },
@@ -7967,377 +7981,11 @@
         }
       }
     },
-    "/agencies/{agencyId}/clients/{clientId}/invitations": {
-      "post": {
-        "operationId": "createClientInvitation",
-        "summary": "Convida uma pessoa para o portal de um cliente",
-        "description": "Cria o convite de portal, que é independente do vínculo de colaborador. Cliente arquivado responde\n409 `CLIENT_ARCHIVED`: o convite nasceria morto, porque arquivar revoga os pendentes e o aceite recusa.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
-        "tags": [
-          "invitations"
-        ],
-        "x-permission": "cliente.convidar_usuario",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agencyId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "clientId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/createClientInvitationRequest"
-              },
-              "example": {
-                "email": "pessoa@exemplo.test"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Convite criado e enviado.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/invitationCreatedResponse"
-                },
-                "example": {
-                  "invitationId": "33333333-3333-4333-8333-333333333333",
-                  "expiresAt": "2026-10-02T12:00:00.000Z"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "VALIDATION_ERROR: Request validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "VALIDATION_ERROR",
-                    "message": "Request validation failed"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UNAUTHENTICATED: Authentication is required.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "UNAUTHENTICATED",
-                    "message": "Authentication is required."
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "CSRF_REJECTED",
-                    "message": "Request origin is not allowed"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "NOT_FOUND: Client not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "NOT_FOUND",
-                    "message": "Client not found."
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode receber convites. | MEMBERSHIP_EXISTS: Este endereço já possui o vínculo solicitado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "CLIENT_ARCHIVED",
-                    "message": "Cliente arquivado não pode receber convites."
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "INTERNAL_ERROR: An unexpected error occurred",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "INTERNAL_ERROR",
-                    "message": "An unexpected error occurred"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "EMAIL_DELIVERY_FAILED: Não foi possível entregar o e-mail.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "EMAIL_DELIVERY_FAILED",
-                    "message": "Não foi possível entregar o e-mail."
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "get": {
-        "operationId": "listClientInvitations",
-        "summary": "Lista os convites de portal pendentes de um cliente",
-        "description": "Só convite de portal deste cliente que não foi aceito, nem revogado, nem expirou; o que expira primeiro\nvem antes, vinte por página. Convite de colaborador e convite de outro cliente nunca aparecem aqui,\nembora a policy de leitura deixe quem tem a permissão ver os de todos os tipos. Reenviar e cancelar\nsão as rotas de convite que já existem.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
-        "tags": [
-          "clients"
-        ],
-        "x-permission": "cliente.convidar_usuario",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agencyId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "clientId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "integer",
-              "exclusiveMinimum": 0,
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
-            },
-            "required": false,
-            "name": "page",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "integer",
-              "exclusiveMinimum": 0,
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
-            },
-            "required": false,
-            "name": "pageSize",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Página de convites pendentes.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/listClientInvitationsResponse"
-                },
-                "example": {
-                  "data": [
-                    {
-                      "invitationId": "33333333-3333-4333-8333-333333333333",
-                      "email": "joao@padariacentral.exemplo.test",
-                      "expiresAt": "2026-10-14T12:00:00.000Z"
-                    }
-                  ],
-                  "meta": {
-                    "page": 1,
-                    "pageSize": 20,
-                    "totalItems": 1,
-                    "totalPages": 1
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "VALIDATION_ERROR: Request validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "VALIDATION_ERROR",
-                    "message": "Request validation failed"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UNAUTHENTICATED: Authentication is required.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "UNAUTHENTICATED",
-                    "message": "Authentication is required."
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "FORBIDDEN",
-                    "message": "You do not have permission to perform this action."
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "NOT_FOUND: Client not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "NOT_FOUND",
-                    "message": "Client not found."
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "INTERNAL_ERROR: An unexpected error occurred",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                },
-                "example": {
-                  "error": {
-                    "code": "INTERNAL_ERROR",
-                    "message": "An unexpected error occurred"
-                  },
-                  "meta": {
-                    "requestId": "req-de-exemplo"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/agencies/{agencyId}/invitations/{invitationId}/resend": {
       "post": {
         "operationId": "resendInvitation",
         "summary": "Reenvia um convite pendente",
-        "description": "Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. Num convite de colaborador, a resposta traz uma única vez o link novo para copiar (`invitationUrl`, `Cache-Control: no-store`) a quem também tem `colaborador.convidar`; sem ela, ou num convite de portal, `null`. O reenvio gera de novo os dois tokens do convite de colaborador (o do e-mail e o copiável) e invalida os anteriores. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). O reenvio de convite de portal de um cliente que acabou de ser arquivado responde 409 `CLIENT_ARCHIVED` e o convite segue como estava.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `convite.reenviar`.",
+        "description": "Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. A resposta traz uma única vez o link novo para copiar (`invitationUrl`, `Cache-Control: no-store`) a quem também tem `colaborador.convidar`; sem ela, `null`. O reenvio gera de novo os dois tokens do convite de colaborador (o do e-mail e o copiável) e invalida os anteriores. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). O convite de portal não é mais criado nem renovado (decisão de 2026-10-26): os que ainda estão pendentes valem até vencer, e reenviar um deles responde 409 `PORTAL_INVITATION_DISCONTINUED`; a pessoa entra pela aba Acessos, em \"Adicionar pessoa\".\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `convite.reenviar`.",
         "tags": [
           "invitations"
         ],
@@ -8436,7 +8084,7 @@
             }
           },
           "409": {
-            "description": "INVITATION_NOT_PENDING: O convite não está pendente. | CLIENT_ARCHIVED: Cliente arquivado não pode receber convites. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "description": "INVITATION_NOT_PENDING: O convite não está pendente. | PORTAL_INVITATION_DISCONTINUED: | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -18958,7 +18606,7 @@
       "get": {
         "operationId": "listClientMembers",
         "summary": "Lista as pessoas com acesso ao portal de um cliente",
-        "description": "Vinte por página, por nome, sem diferenciar maiúsculas nem acento. `status` é `active` (padrão) ou\n`removed`. Nome e e-mail saem do vínculo da pessoa com o cliente. Cliente arquivado continua legível;\ncliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
+        "description": "Vinte por página, por nome (o e-mail, enquanto a pessoa não entrou), sem diferenciar maiúsculas nem acento.\n`status` é `active` (padrão) ou `removed`. Cada pessoa é um acesso dado a um e-mail, com conta ou sem ela:\n`accessId` é o id que as rotas de Remover e Reativar usam, `email` é o endereço como foi gravado e `entered` é\n`false` (\"ainda não entrou\") até uma conta com aquele e-mail verificado entrar. `name` é o da conta e só vem\ndepois disso. A lista nunca diz se um e-mail tem conta no Ageniza. Cliente arquivado continua legível;\ncliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
         "tags": [
           "clients"
         ],
@@ -19028,17 +18676,26 @@
                 "example": {
                   "data": [
                     {
-                      "membershipId": "22222222-2222-4222-8222-222222222222",
+                      "accessId": "66666666-6666-4666-8666-666666666666",
                       "name": "Maria Souza",
                       "email": "maria@padariacentral.exemplo.test",
                       "status": "active",
+                      "entered": true,
+                      "since": "2026-09-02T12:00:00.000Z"
+                    },
+                    {
+                      "accessId": "66666666-6666-4666-8666-666666666666",
+                      "name": null,
+                      "email": "maria@padariacentral.exemplo.test",
+                      "status": "active",
+                      "entered": false,
                       "since": "2026-09-02T12:00:00.000Z"
                     }
                   ],
                   "meta": {
                     "page": 1,
                     "pageSize": 20,
-                    "totalItems": 1,
+                    "totalItems": 2,
                     "totalPages": 1
                   }
                 }
@@ -19141,13 +18798,227 @@
             }
           }
         }
+      },
+      "post": {
+        "operationId": "addClientMember",
+        "summary": "Adiciona uma pessoa ao portal do cliente",
+        "description": "Só o e-mail. O acesso vale na hora, sem conta e sem aceite, e a pessoa recebe um e-mail de boas-vindas com\n\"Entrar no portal\". Ter um endereço com conta no Ageniza não muda nada aqui: o acesso passa à conta no login,\nquando uma conta com aquele e-mail verificado entra, e nunca nesta rota. Adicionar de novo um e-mail removido\nreativa a mesma linha (a geração dos links de aprovação continua onde a remoção a deixou). Se a conta que\ntinha aquele endereço já trocou de e-mail, ela perde o acesso e as sessões dela são encerradas. Um endereço que\njá tem acesso ativo responde 409 `ACCESS_EXISTS`. O e-mail de boas-vindas conta no limite diário de e-mails da agência,\njunto com os convites: passado o limite, 429 `DAILY_EMAIL_LIMIT` e nada é gravado. Agência em somente leitura responde\n409 `AGENCY_READ_ONLY`. Cliente arquivado responde 409; cliente de outra agência ou inexistente, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.convidar_usuario",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/addClientMemberRequest"
+              },
+              "example": {
+                "email": "maria@padariacentral.exemplo.test"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Acesso dado e e-mail enviado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/addClientMemberResponse"
+                },
+                "example": {
+                  "accessId": "66666666-6666-4666-8666-666666666666",
+                  "name": null,
+                  "email": "maria@padariacentral.exemplo.test",
+                  "status": "active",
+                  "entered": false,
+                  "since": "2026-09-02T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ACCESS_EXISTS: Este endereço já tem acesso ao portal deste cliente. | AGENCY_READ_ONLY: O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados. | CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "ACCESS_EXISTS",
+                    "message": "Este endereço já tem acesso ao portal deste cliente."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "DAILY_EMAIL_LIMIT: Limite diário de envios atingido. Tente amanhã.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "DAILY_EMAIL_LIMIT",
+                    "message": "Limite diário de envios atingido. Tente amanhã."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "EMAIL_DELIVERY_FAILED: Não foi possível entregar o e-mail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "EMAIL_DELIVERY_FAILED",
+                    "message": "Não foi possível entregar o e-mail."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
-    "/agencies/{agencyId}/clients/{clientId}/members/{membershipId}/remove": {
+    "/agencies/{agencyId}/clients/{clientId}/members/{accessId}/remove": {
       "post": {
         "operationId": "removeClientMember",
         "summary": "Remove uma pessoa do portal do cliente",
-        "description": "A pessoa perde o acesso ao portal deste cliente na requisição seguinte; as demais pessoas do cliente\ne os vínculos dela com outros clientes não mudam. Todas as sessões dela são encerradas na mesma\ntransação (a sessão é global): o cookie antigo recebe 401, e quem remove não perde a própria sessão.\nO vínculo é preservado como `removed` e pode ser reativado, o que não cria sessão.\nRemover quem já está removido não escreve nada, não encerra sessão e responde o vínculo como está. Cliente arquivado\nresponde 409; vínculo de outro cliente ou id inválido, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.remover_usuario`.",
+        "description": "A pessoa perde o acesso ao portal deste cliente na requisição seguinte; as demais pessoas do cliente\ne os acessos dela a outros clientes não mudam. Quando há conta vinculada, todas as sessões dela são encerradas\nna mesma transação (a sessão é global): o cookie antigo recebe 401, e quem remove não perde a própria sessão.\nA remoção avança a geração do acesso, o que mata os links de aprovação dele. O acesso é preservado como\n`removed` e pode ser reativado, o que não cria sessão nem ressuscita link antigo.\nRemover quem já está removido não escreve nada, não encerra sessão e responde o acesso como está. Cliente arquivado\nresponde 409; acesso de outro cliente ou id inválido, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.remover_usuario`.",
         "tags": [
           "clients"
         ],
@@ -19178,23 +19049,24 @@
               "maxLength": 100
             },
             "required": true,
-            "name": "membershipId",
+            "name": "accessId",
             "in": "path"
           }
         ],
         "responses": {
           "200": {
-            "description": "Vínculo removido.",
+            "description": "Acesso removido.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/removeClientMemberResponse"
+                  "$ref": "#/components/schemas/addClientMemberResponse"
                 },
                 "example": {
-                  "membershipId": "22222222-2222-4222-8222-222222222222",
+                  "accessId": "66666666-6666-4666-8666-666666666666",
                   "name": "Maria Souza",
                   "email": "maria@padariacentral.exemplo.test",
                   "status": "removed",
+                  "entered": true,
                   "since": "2026-09-02T12:00:00.000Z"
                 }
               }
@@ -19298,11 +19170,11 @@
         }
       }
     },
-    "/agencies/{agencyId}/clients/{clientId}/members/{membershipId}/reactivate": {
+    "/agencies/{agencyId}/clients/{clientId}/members/{accessId}/reactivate": {
       "post": {
         "operationId": "reactivateClientMember",
         "summary": "Reativa uma pessoa do portal do cliente",
-        "description": "A pessoa volta a entrar no portal na requisição seguinte, sem convite novo. Reativar quem já está\nativo não escreve nada e responde o vínculo como está. Cliente arquivado responde 409; vínculo de\noutro cliente ou id inválido, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.remover_usuario`.",
+        "description": "A pessoa volta a entrar no portal na requisição seguinte, sem convite novo, e a geração do acesso fica\ncomo a remoção a deixou. Reativar quem já está ativo não escreve nada e responde o acesso como está.\nAgência em somente leitura responde 409 `AGENCY_READ_ONLY`, ao contrário de Remover, que continua livre.\nCliente arquivado responde 409; acesso de outro cliente ou id inválido, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.remover_usuario`.",
         "tags": [
           "clients"
         ],
@@ -19333,23 +19205,24 @@
               "maxLength": 100
             },
             "required": true,
-            "name": "membershipId",
+            "name": "accessId",
             "in": "path"
           }
         ],
         "responses": {
           "200": {
-            "description": "Vínculo reativado.",
+            "description": "Acesso reativado.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/removeClientMemberResponse"
+                  "$ref": "#/components/schemas/addClientMemberResponse"
                 },
                 "example": {
-                  "membershipId": "22222222-2222-4222-8222-222222222222",
+                  "accessId": "66666666-6666-4666-8666-666666666666",
                   "name": "Maria Souza",
                   "email": "maria@padariacentral.exemplo.test",
                   "status": "active",
+                  "entered": true,
                   "since": "2026-09-02T12:00:00.000Z"
                 }
               }
@@ -19413,7 +19286,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado: o acesso ao portal não pode ser alterado. | AGENCY_READ_ONLY: O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -19423,6 +19296,181 @@
                   "error": {
                     "code": "CLIENT_ARCHIVED",
                     "message": "Cliente arquivado: o acesso ao portal não pode ser alterado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/invitations": {
+      "get": {
+        "operationId": "listClientInvitations",
+        "summary": "Lista os convites de portal pendentes de um cliente",
+        "description": "Só convite de portal deste cliente que não foi aceito, nem revogado, nem expirou; o que expira primeiro\nvem antes, vinte por página. Convite de colaborador e convite de outro cliente nunca aparecem aqui,\nembora a policy de leitura deixe quem tem a permissão ver os de todos os tipos. Reenviar e cancelar\nsão as rotas de convite que já existem.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": "cliente.convidar_usuario",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de convites pendentes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listClientInvitationsResponse"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "invitationId": "33333333-3333-4333-8333-333333333333",
+                      "email": "joao@padariacentral.exemplo.test",
+                      "expiresAt": "2026-10-14T12:00:00.000Z"
+                    }
+                  ],
+                  "meta": {
+                    "page": 1,
+                    "pageSize": 20,
+                    "totalItems": 1,
+                    "totalPages": 1
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"

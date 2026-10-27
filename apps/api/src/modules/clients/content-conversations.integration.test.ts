@@ -16,6 +16,8 @@ import {
 import { revokeInsertId } from '../auth/test-support/insert-id-revoked.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../tenancy/guards.js';
 import { registerClientModule } from './routes.js';
+import { unusedEmailService } from './test-support/email-service.js';
+import { setPortalAccessStatus } from './test-support/portal-access.js';
 
 // Issue #259: the conversation of a content, over the conversation routes of Clientes (#128 agency, #130 portal). A content
 // has one conversation, the agency writes in it with `conteudo.operar` and `conteudo.visualizar` and not with `cliente.operar`,
@@ -205,6 +207,7 @@ const withProxiedApp = async <T>(
     requireAgencyAccess: createRequireAgencyAccess({ database: app.database }),
     requirePermission,
     requireClientAccess: createRequireClientAccess({ database: app.database }),
+    emailService: unusedEmailService,
     photoUrlExpirySeconds: 300
   });
   await proxied.ready();
@@ -958,7 +961,7 @@ describe('CLIENTES conversation of a content (#259)', () => {
       const contentId = await seedContent(clientA1, 'awaiting_approval');
       const threadId = await seedContentThread(clientA1, contentId, [{ author: 'portalOne', side: 'client', at: '2026-10-01T10:00:00Z' }]);
       expect((await commentsAs(cookies.dual!, base(), threadId)).statusCode).toBe(200);
-      await owner.knex('client_memberships').where({ client_id: clientA1, user_id: users.dual!.id }).update({ status: 'removed' });
+      await setPortalAccessStatus(owner.knex, clientA1, users.dual!.id, 'removed');
       try {
         const before = await snapshotOf(clientA1);
         expect([
@@ -970,7 +973,7 @@ describe('CLIENTES conversation of a content (#259)', () => {
         expect(await snapshotOf(clientA1)).toEqual(before);
         expect((await commentsAs(cookies.dual!, agencyThreads(agencyA, clientA1), threadId)).statusCode).toBe(200);
       } finally {
-        await owner.knex('client_memberships').where({ client_id: clientA1, user_id: users.dual!.id }).update({ status: 'active' });
+        await setPortalAccessStatus(owner.knex, clientA1, users.dual!.id, 'active');
       }
     });
 
