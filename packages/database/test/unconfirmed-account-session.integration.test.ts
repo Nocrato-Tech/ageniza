@@ -177,6 +177,24 @@ describe('app_private.unconfirmed_account_may_hold_session, the client of a port
   });
 });
 
+describe('app_private.unconfirmed_account_may_hold_session, who may call it', () => {
+  it('is security definer with a fixed search_path, and only ageniza_app and its owner execute it, never PUBLIC', async () => {
+    const { rows } = await raw<{ rows: readonly { definer: boolean; config: readonly string[] | null; grantees: readonly string[] }[] }>(getOwner().knex, `
+      select p.prosecdef as definer, p.proconfig as config,
+        array(
+          select (case when acl.grantee = 0 then 'PUBLIC' else pg_catalog.pg_get_userbyid(acl.grantee)::text end)
+          from pg_catalog.aclexplode(p.proacl) acl where acl.privilege_type = 'EXECUTE'
+          order by 1
+        )::text[] as grantees
+      from pg_catalog.pg_proc p
+      where p.oid = 'app_private.unconfirmed_account_may_hold_session(uuid)'::regprocedure
+    `, []);
+    expect(rows[0]?.definer).toBe(true);
+    expect(rows[0]?.config).toEqual(['search_path=""']);
+    expect(rows[0]?.grantees).toEqual(['ageniza_app', 'postgres']);
+  });
+});
+
 describe('app_private.unconfirmed_account_may_hold_session, an account nobody invited', () => {
   it('is no for an account that signed up on its own', async () => {
     await expect(mayHold(await newUser(false))).resolves.toBe(false);
