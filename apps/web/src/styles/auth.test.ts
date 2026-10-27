@@ -15,6 +15,10 @@ describe('the entrada stylesheet', () => {
     expect(authRules.length).toBeGreaterThan(35);
   });
 
+  it('keeps a hyphenated word of a title on one line', () => {
+    expect(rule('.auth-nowrap').get('white-space')).toBe('nowrap');
+  });
+
   it('takes colours, spacing and radius from tokens only', () => {
     const offenders: string[] = [];
     for (const { selector, body } of authRules) {

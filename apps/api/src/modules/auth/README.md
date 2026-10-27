@@ -48,12 +48,17 @@ effect either: a link reissued from here spent the public resend's counter, whos
 thing (second review of PR #722); the screen offers the resend instead. `routes.ts` checks
 `emailVerified` again on the response, and `session-guard.ts` revokes any session an unconfirmed
 account holds, with one explicit exception (decision on the copyable invitation link, 2026-10-26): the
-account created by `accept-new-account` keeps the session that route creates while
+account created by `accept-new-account` keeps the session that route creates, which opens nothing (decision 2026-10-27, "a conta de
+convite só entra depois de confirmar"), while
 `app_private.unconfirmed_account_may_hold_session` finds the link its invitation gave it (the agency
 it owns, or an active membership in the invitation's agency or client) and that context would still be
 listed: a suspended agency or an archived client ends the session too, as in `contexts/service.ts`
-(migration `20261027010400`). The exception only exists for the account born through the *copied* invitation
-token; through the e-mail token the account is born confirmed (decision 2026-10-27). The password login stays
+(migration `20261027010400`). That session answers only `/auth/session` (with `emailVerified: false`), `/auth/session/check`, the two sign-outs and the
+two context lists (empty, `none`); `createRequireSession` refuses it with `403 EMAIL_NOT_CONFIRMED` everywhere else unless a
+route passes `allowUnconfirmed`, `requireAgencyAccess` and `requireClientAccess` refuse it on their own, and
+`listValidContexts` lists nothing for it, all three through `app_private.email_not_confirmed` (migration `20261027130000`),
+so each layer holds alone. Confirming with the click gives the same session its agency. The exception only exists for the
+account born through the *copied* invitation token; through the e-mail token the account is born confirmed (decision 2026-10-27). The password login stays
 closed to it until it confirms, with the same 401, so an invited account is never told apart. While the person
 holds that session, `POST /auth/email/verify` takes the link with no password: it needs the session user to be
 the owner of the link *and* the account to still hold the exception, and any other case (no session, another
