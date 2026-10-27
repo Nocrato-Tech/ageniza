@@ -4,6 +4,7 @@ import type { Knex } from 'knex';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createContentWorld } from './support/content-world.js';
+import { setPortalAccessStatus } from './support/portal-access.js';
 
 // Issues #708 and #709: the plan of the agency, the trial, its limits and the read-only state after it, all in the
 // database. The end of the trial is moved by the database clock (`trial_ends_at` against `now()`), never by the API's.
@@ -351,7 +352,8 @@ describe('the read-only agency after the trial (issue #708)', () => {
         .rejects.toMatchObject(READ_ONLY);
     });
     expect((await owner()('client_memberships').where({ id: portalMembership }).first('status')).status).toBe('removed');
-    await owner()('client_memberships').where({ id: portalMembership }).update({ status: 'active' });
+    // The state of a membership follows its access (#711), so the person comes back through the access.
+    await setPortalAccessStatus(owner(), ids.clientA1, ids.portalA1Second, 'active');
     await owner()('agency_memberships').where({ agency_id: ids.agencyA, user_id: ids.dualRemoved }).update({ status: 'active' });
   });
 
@@ -383,9 +385,11 @@ describe('the read-only agency after the trial (issue #708)', () => {
 
   it('stops the e-mails: a queued notification no longer holds', async () => {
     const content = await w.seedContent(ids.clientA1, { status: 'awaiting_approval' });
+    // The queue names the access of the person (#711).
+    const access = (await owner()('client_portal_accesses').where({ client_id: ids.clientA1, user_id: ids.portalA1 }).first('id')).id as string;
     const holds = async () => (await owner().raw<{ rows: Array<{ holds: boolean }> }>(
       "select app_private.notification_item_still_holds('content_awaiting_approval', ?::uuid, ?::uuid, ?::uuid) as holds",
-      [ids.clientA1, ids.portalA1, content]
+      [ids.clientA1, access, content]
     )).rows[0]!.holds;
     expect(await holds()).toBe(true);
     await withExpiredAgencyA(async () => {

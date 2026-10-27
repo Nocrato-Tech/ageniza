@@ -248,10 +248,11 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     ...(config.supportContactEmail === undefined ? {} : { supportContactEmail: config.supportContactEmail })
   };
   const clients: ClientModuleDependencies = config.identityStorage === undefined
-    ? { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }), requirePermission, requireClientAccess, photoUrlExpirySeconds: 300 }
+    ? { database, auth, emailService, requireAgencyAccess: createRequireAgencyAccess({ database }), requirePermission, requireClientAccess, photoUrlExpirySeconds: 300 }
     : {
         database,
         auth,
+        emailService,
         requireAgencyAccess: createRequireAgencyAccess({ database }),
         requirePermission,
         requireClientAccess,

@@ -30,6 +30,7 @@ import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { AuthInstance } from '../auth/better-auth.js';
+import type { EmailService } from '../auth/email-service.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import { registerAccessRoutes } from './access-routes.js';
 import { registerConversationRoutes } from './conversation-routes.js';
@@ -77,6 +78,8 @@ export type ClientPreHandler = (request: FastifyRequest, reply: FastifyReply) =>
 export interface ClientModuleDependencies {
   readonly database: DatabaseClient;
   readonly auth: AuthInstance;
+  /** The welcome e-mail of "Adicionar pessoa" (issue #711). */
+  readonly emailService: EmailService;
   /** Absent when identity storage is not configured; then every photoUrl is null. */
   readonly identityStorage?: IdentityStorageClient;
   readonly photoUrlExpirySeconds: number;

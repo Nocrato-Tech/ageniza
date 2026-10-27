@@ -10,6 +10,7 @@ import {
   type DatabaseClient,
   resolveIntegrationDatabaseUrls
 } from '../src/index.js';
+import { setPortalAccessStatus } from './support/portal-access.js';
 
 // Issues #128 and #130. `app_private.thread_comment_authors` is the one read path the agency and
 // the portal share for "who wrote this comment": the name and photo of the author's link, resolved
@@ -51,7 +52,8 @@ type Rows<T> = { readonly rows: readonly T[] };
 type Transaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
 
 interface AuthorRow {
-  readonly author_user_id: string;
+  readonly author_user_id: string | null;
+  readonly author_portal_access_id: string | null;
   readonly author_side: string;
   readonly name: string;
   readonly photo_key: string | null;
@@ -85,9 +87,9 @@ const policyReadableAs = (userId: string, threadId: string): Promise<boolean> =>
     return result.rows.length === 1;
   });
 
-const adminAuthor = { author_user_id: adminA, author_side: 'agency', name: 'Admin A', photo_key: 'users/admin-a.png' };
-const portalOneAuthor = { author_user_id: portalOne, author_side: 'client', name: 'Portal One', photo_key: null };
-const portalTwoAuthor = { author_user_id: portalTwo, author_side: 'client', name: 'Portal Two', photo_key: null };
+const adminAuthor = { author_user_id: adminA, author_portal_access_id: null, author_side: 'agency', name: 'Admin A', photo_key: 'users/admin-a.png' };
+const portalOneAuthor = { author_user_id: portalOne, author_portal_access_id: null, author_side: 'client', name: 'Portal One', photo_key: null };
+const portalTwoAuthor = { author_user_id: portalTwo, author_portal_access_id: null, author_side: 'client', name: 'Portal Two', photo_key: null };
 
 beforeAll(async () => {
   owner = createLocalTestDatabaseClient(ownerUrl);
@@ -197,9 +199,9 @@ describe('thread_comment_authors (#128, #130)', () => {
     expect(await authorsAs(portalOne, threadSection)).toEqual([adminAuthor, portalOneAuthor, portalTwoAuthor]);
   });
 
-  it('returns only the four documented columns', async () => {
+  it('returns only the five documented columns', async () => {
     const [row] = await authorsAs(adminA, threadSection);
-    expect(Object.keys(row ?? {}).sort()).toEqual(['author_side', 'author_user_id', 'name', 'photo_key']);
+    expect(Object.keys(row ?? {}).sort()).toEqual(['author_portal_access_id', 'author_side', 'author_user_id', 'name', 'photo_key']);
   });
 
   it('gives zero rows to a person of another client of the same agency, who still reads their own client', async () => {
@@ -227,12 +229,12 @@ describe('thread_comment_authors (#128, #130)', () => {
   });
 
   it('gives zero rows to a person whose client link was removed, and keeps answering for the others', async () => {
-    await getOwner().knex('client_memberships').where({ client_id: clientA, user_id: portalTwo }).update({ status: 'removed' });
+    await setPortalAccessStatus(getOwner().knex, clientA, portalTwo, 'removed');
     try {
       expect(await authorsAs(portalTwo, threadSection)).toEqual([]);
       expect(await authorsAs(portalOne, threadSection)).toEqual([adminAuthor, portalOneAuthor, portalTwoAuthor]);
     } finally {
-      await getOwner().knex('client_memberships').where({ client_id: clientA, user_id: portalTwo }).update({ status: 'active' });
+      await setPortalAccessStatus(getOwner().knex, clientA, portalTwo, 'active');
     }
   });
 
@@ -247,11 +249,11 @@ describe('thread_comment_authors (#128, #130)', () => {
   });
 
   it('keeps the name of a removed portal person, because the comment is history', async () => {
-    await getOwner().knex('client_memberships').where({ client_id: clientA, user_id: portalTwo }).update({ status: 'removed' });
+    await setPortalAccessStatus(getOwner().knex, clientA, portalTwo, 'removed');
     try {
       expect(await authorsAs(adminA, threadSection)).toEqual([adminAuthor, portalOneAuthor, portalTwoAuthor]);
     } finally {
-      await getOwner().knex('client_memberships').where({ client_id: clientA, user_id: portalTwo }).update({ status: 'active' });
+      await setPortalAccessStatus(getOwner().knex, clientA, portalTwo, 'active');
     }
   });
 
@@ -280,7 +282,7 @@ describe('thread_comment_authors (#128, #130)', () => {
   });
 
   it('also returns who resolved the thread, on the agency side, even when they never commented', async () => {
-    const resolver = { author_user_id: resolverOnly, author_side: 'agency', name: 'Resolver Only', photo_key: 'users/resolver.png' };
+    const resolver = { author_user_id: resolverOnly, author_portal_access_id: null, author_side: 'agency', name: 'Resolver Only', photo_key: 'users/resolver.png' };
     expect(await authorsAs(adminA, threadResolved)).toEqual([resolver, portalOneAuthor]);
     expect(await authorsAs(portalOne, threadResolved)).toEqual([resolver, portalOneAuthor]);
     expect(await authorsAs(portalTwo, threadResolved)).toEqual([resolver, portalOneAuthor]);
@@ -292,7 +294,7 @@ describe('thread_comment_authors (#128, #130)', () => {
     await getOwner().knex('agency_memberships').where({ agency_id: agencyA, user_id: resolverOnly }).update({ status: 'removed' });
     try {
       expect(await authorsAs(portalOne, threadResolved)).toEqual([
-        { author_user_id: resolverOnly, author_side: 'agency', name: 'Resolver Only', photo_key: 'users/resolver.png' },
+        { author_user_id: resolverOnly, author_portal_access_id: null, author_side: 'agency', name: 'Resolver Only', photo_key: 'users/resolver.png' },
         portalOneAuthor
       ]);
       expect(await authorsAs(resolverOnly, threadResolved)).toEqual([]);

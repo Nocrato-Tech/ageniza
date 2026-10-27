@@ -326,7 +326,6 @@ Redefine a senha.
 |---|---|---|---|---|
 | `GET` | `/agencies/:agencyId/invitations` | Sessão + vínculo com a agência | `colaborador.convidar` | Lista os convites de colaborador pendentes |
 | `POST` | `/agencies/:agencyId/invitations/collaborators` | Sessão + vínculo com a agência | `colaborador.convidar` | Convida uma pessoa para a agência |
-| `POST` | `/agencies/:agencyId/clients/:clientId/invitations` | Sessão + vínculo com a agência | `cliente.convidar_usuario` | Convida uma pessoa para o portal de um cliente |
 | `POST` | `/agencies/:agencyId/invitations/:invitationId/resend` | Sessão + vínculo com a agência | `convite.reenviar` | Reenvia um convite pendente |
 | `DELETE` | `/agencies/:agencyId/invitations/:invitationId` | Sessão + vínculo com a agência | `convite.cancelar` | Cancela um convite pendente |
 | `GET` | `/invitations/:token` | Token do convite | — | Mostra o convite antes do aceite |
@@ -407,32 +406,6 @@ Convida uma pessoa para a agência.
 
 **Erros:** `400 INVALID_ROLE` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 MEMBERSHIP_EXISTS` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR` · `502 EMAIL_DELIVERY_FAILED`
 
-#### `POST /agencies/:agencyId/clients/:clientId/invitations`
-
-Convida uma pessoa para o portal de um cliente.
-
-- Acesso: Sessão + vínculo com a agência.
-- Permissão: `cliente.convidar_usuario`.
-
-**Requisição** (`application/json`):
-
-```json
-{
-  "email": "pessoa@exemplo.test"
-}
-```
-
-**Resposta `201`** — Convite criado e enviado.
-
-```json
-{
-  "invitationId": "33333333-3333-4333-8333-333333333333",
-  "expiresAt": "2026-10-02T12:00:00.000Z"
-}
-```
-
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 MEMBERSHIP_EXISTS` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR` · `502 EMAIL_DELIVERY_FAILED`
-
 #### `POST /agencies/:agencyId/invitations/:invitationId/resend`
 
 Reenvia um convite pendente.
@@ -450,7 +423,7 @@ Reenvia um convite pendente.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 INVITATION_NOT_PENDING` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR` · `502 EMAIL_DELIVERY_FAILED`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 INVITATION_NOT_PENDING` · `409 PORTAL_INVITATION_DISCONTINUED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR` · `502 EMAIL_DELIVERY_FAILED`
 
 #### `DELETE /agencies/:agencyId/invitations/:invitationId`
 
@@ -737,8 +710,9 @@ Cria uma agência em período de teste.
 | `POST` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com a agência | `cliente.operar` ou `conteudo.operar` | Comenta uma conversa pela agência |
 | `POST` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/resolve` | Sessão + vínculo com a agência | `cliente.operar` ou `conteudo.operar` | Resolve uma conversa |
 | `GET` | `/agencies/:agencyId/clients/:clientId/members` | Sessão + vínculo com a agência | `cliente.convidar_usuario` | Lista as pessoas com acesso ao portal de um cliente |
-| `POST` | `/agencies/:agencyId/clients/:clientId/members/:membershipId/remove` | Sessão + vínculo com a agência | `cliente.remover_usuario` | Remove uma pessoa do portal do cliente |
-| `POST` | `/agencies/:agencyId/clients/:clientId/members/:membershipId/reactivate` | Sessão + vínculo com a agência | `cliente.remover_usuario` | Reativa uma pessoa do portal do cliente |
+| `POST` | `/agencies/:agencyId/clients/:clientId/members` | Sessão + vínculo com a agência | `cliente.convidar_usuario` | Adiciona uma pessoa ao portal do cliente |
+| `POST` | `/agencies/:agencyId/clients/:clientId/members/:accessId/remove` | Sessão + vínculo com a agência | `cliente.remover_usuario` | Remove uma pessoa do portal do cliente |
+| `POST` | `/agencies/:agencyId/clients/:clientId/members/:accessId/reactivate` | Sessão + vínculo com a agência | `cliente.remover_usuario` | Reativa uma pessoa do portal do cliente |
 | `GET` | `/agencies/:agencyId/clients/:clientId/invitations` | Sessão + vínculo com a agência | `cliente.convidar_usuario` | Lista os convites de portal pendentes de um cliente |
 | `GET` | `/clients/:clientId/threads` | Sessão + vínculo com o cliente | — | Lista as conversas de um assunto, no portal |
 | `POST` | `/clients/:clientId/threads` | Sessão + vínculo com o cliente | — | Abre uma conversa pelo portal, com o primeiro comentário |
@@ -1585,17 +1559,26 @@ Lista as pessoas com acesso ao portal de um cliente.
 {
   "data": [
     {
-      "membershipId": "22222222-2222-4222-8222-222222222222",
+      "accessId": "66666666-6666-4666-8666-666666666666",
       "name": "Maria Souza",
       "email": "maria@padariacentral.exemplo.test",
       "status": "active",
+      "entered": true,
+      "since": "2026-09-02T12:00:00.000Z"
+    },
+    {
+      "accessId": "66666666-6666-4666-8666-666666666666",
+      "name": null,
+      "email": "maria@padariacentral.exemplo.test",
+      "status": "active",
+      "entered": false,
       "since": "2026-09-02T12:00:00.000Z"
     }
   ],
   "meta": {
     "page": 1,
     "pageSize": 20,
-    "totalItems": 1,
+    "totalItems": 2,
     "totalPages": 1
   }
 }
@@ -1603,47 +1586,79 @@ Lista as pessoas com acesso ao portal de um cliente.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
-#### `POST /agencies/:agencyId/clients/:clientId/members/:membershipId/remove`
+#### `POST /agencies/:agencyId/clients/:clientId/members`
+
+Adiciona uma pessoa ao portal do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `cliente.convidar_usuario`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "email": "maria@padariacentral.exemplo.test"
+}
+```
+
+**Resposta `201`** — Acesso dado e e-mail enviado.
+
+```json
+{
+  "accessId": "66666666-6666-4666-8666-666666666666",
+  "name": null,
+  "email": "maria@padariacentral.exemplo.test",
+  "status": "active",
+  "entered": false,
+  "since": "2026-09-02T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 ACCESS_EXISTS` · `409 AGENCY_READ_ONLY` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `429 DAILY_EMAIL_LIMIT` · `500 INTERNAL_ERROR` · `502 EMAIL_DELIVERY_FAILED`
+
+#### `POST /agencies/:agencyId/clients/:clientId/members/:accessId/remove`
 
 Remove uma pessoa do portal do cliente.
 
 - Acesso: Sessão + vínculo com a agência.
 - Permissão: `cliente.remover_usuario`.
 
-**Resposta `200`** — Vínculo removido.
+**Resposta `200`** — Acesso removido.
 
 ```json
 {
-  "membershipId": "22222222-2222-4222-8222-222222222222",
+  "accessId": "66666666-6666-4666-8666-666666666666",
   "name": "Maria Souza",
   "email": "maria@padariacentral.exemplo.test",
   "status": "removed",
+  "entered": true,
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
 
 **Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
-#### `POST /agencies/:agencyId/clients/:clientId/members/:membershipId/reactivate`
+#### `POST /agencies/:agencyId/clients/:clientId/members/:accessId/reactivate`
 
 Reativa uma pessoa do portal do cliente.
 
 - Acesso: Sessão + vínculo com a agência.
 - Permissão: `cliente.remover_usuario`.
 
-**Resposta `200`** — Vínculo reativado.
+**Resposta `200`** — Acesso reativado.
 
 ```json
 {
-  "membershipId": "22222222-2222-4222-8222-222222222222",
+  "accessId": "66666666-6666-4666-8666-666666666666",
   "name": "Maria Souza",
   "email": "maria@padariacentral.exemplo.test",
   "status": "active",
+  "entered": true,
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 AGENCY_READ_ONLY` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/invitations`
 

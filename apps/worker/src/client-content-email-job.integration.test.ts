@@ -112,7 +112,12 @@ const ageQueue = (minutes: number) =>
      where client_id = any(?::uuid[])`,
     [minutes, minutes, clients as never]
   );
-const itemsOf = (contentId: string) => knex()('notification_queue').where({ content_id: contentId }).orderBy('recipient_user_id') as unknown as Promise<Array<Record<string, unknown>>>;
+// The queue names the access (#711); the tests talk about the account the access is linked to.
+const itemsOf = (contentId: string) => knex()('notification_queue as item')
+  .join('client_portal_accesses as access', 'access.id', 'item.recipient_portal_access_id')
+  .where('item.content_id', contentId)
+  .orderBy('access.user_id')
+  .select('item.*', 'access.user_id as recipient_user_id') as unknown as Promise<Array<Record<string, unknown>>>;
 const sentItems = async (): Promise<number> =>
   Number((await knex()('notification_queue').whereIn('client_id', clients).whereNotNull('sent_at').count<Array<{ count: string }>>('* as count'))[0]!.count);
 
@@ -364,7 +369,11 @@ describe('no e-mail for what stopped being true (issue #260)', () => {
     const box = mailbox();
 
     await runJob(box, { queue: afterClaim(createNotificationQueue(application), async () => {
-      await knex()('client_memberships').where({ client_id: client, user_id: ids.portal2 }).update({ status: 'removed' });
+      // The state of a membership follows its access (#711), so the access goes first.
+      await knex().transaction(async (transaction) => {
+        await transaction('client_portal_accesses').where({ client_id: client, user_id: ids.portal2 }).update({ status: 'removed', generation: transaction.raw('generation + 1') });
+        await transaction('client_memberships').where({ client_id: client, user_id: ids.portal2 }).update({ status: 'removed' });
+      });
     }) });
 
     expect(box.sent.map((mail) => mail.to)).toEqual([emailOf(ids.portal1)]);

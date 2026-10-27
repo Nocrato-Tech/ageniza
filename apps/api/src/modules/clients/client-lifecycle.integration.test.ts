@@ -16,6 +16,7 @@ import {
 import { registerErrorHandling } from '../../plugins/infra/errors.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../tenancy/guards.js';
 import { registerClientModule } from './routes.js';
+import { unusedEmailService } from './test-support/email-service.js';
 
 // Issues #131 and #133 (the route half). `status`, `archived_at` and `closing_date` are out of every
 // grant of `ageniza_app`, so what these routes do is exactly what `app_private.set_client_closing_date`,
@@ -100,6 +101,7 @@ const closingUrl = (clientId: string, agencyId = agencyA): string => `${clientUr
 const archiveUrl = (clientId: string, agencyId = agencyA): string => `${clientUrl(agencyId, clientId)}/archive`;
 const reactivateUrl = (clientId: string, agencyId = agencyA): string => `${clientUrl(agencyId, clientId)}/reactivate`;
 const invitationsUrl = (clientId: string): string => `${clientUrl(agencyA, clientId)}/invitations`;
+const membersUrl = (clientId: string): string => `${clientUrl(agencyA, clientId)}/members`;
 
 const CLIENT_KEYS = [
   'archivedAt', 'closingDate', 'contactEmail', 'contactName', 'contactPhone', 'id', 'instagramHandle', 'legalName',
@@ -655,10 +657,12 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
       expect(await auditActions(cMain)).toEqual(eventsBefore);
     });
 
-    it('refuses to invite a person to an archived client, so no invitation outlives the archive', async () => {
-      const response = await call('POST', invitationsUrl(cMain), cookies.admin, { email: 'novo@ciclo.test' });
+    it('refuses to add a person to an archived client, so no access is given to a client that cannot be changed', async () => {
+      const accessesBefore = await owner.knex('client_portal_accesses').where({ client_id: cMain }).count<{ count: string }[]>('id as count');
+      const response = await call('POST', membersUrl(cMain), cookies.admin, { email: 'novo@ciclo.test' });
       expect(response.statusCode).toBe(409);
       expect(response.json().error.code).toBe('CLIENT_ARCHIVED');
+      expect(await owner.knex('client_portal_accesses').where({ client_id: cMain }).count<{ count: string }[]>('id as count')).toEqual(accessesBefore);
       expect((await call('GET', invitationsUrl(cMain), cookies.admin)).json().data).toEqual([]);
     });
   });
@@ -810,36 +814,6 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
       }
     }, 30_000);
 
-    it('answers 409 TRY_AGAIN to the resend that loses the same deadlock to an archive, and leaves its invitation pending', async () => {
-      const holder = await owner.knex.transaction();
-      let released = false;
-      try {
-        // The holder plays the archive: it holds the client, and the resend waits for the client with
-        // the invitation row locked. When the holder revokes the client's invitations the cycle closes
-        // and the resend, which waited first, loses.
-        await raw(holder, 'select id from public.clients where id = ?::uuid for update', [cRaceResend]);
-        const holderPid = await backendPid(holder);
-
-        const resending = call('POST', `/agencies/${agencyA}/invitations/${invitations.raceResend}/resend`, cookies.racer, undefined, '127.0.0.31');
-        await waitForBackendBlockedBy(holderPid);
-        await holder.raw(
-          "update public.invitations set revoked_at = now() where client_id = ?::uuid and purpose = 'client_invite' and used_at is null and revoked_at is null",
-          [cRaceResend]
-        );
-        await holder.rollback();
-        released = true;
-
-        const response = await resending;
-        expect(response.statusCode).toBe(409);
-        expect(response.json().error.code).toBe('TRY_AGAIN');
-        expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
-        expect(await revokedAtOf(invitations.raceResend)).toBeNull();
-        expect(await owner.knex('invitations').where({ client_id: cRaceResend }).select('id')).toHaveLength(1);
-        expect(await clientRow(cRaceResend)).toMatchObject({ status: 'active' });
-      } finally {
-        if (!released) await holder.rollback();
-      }
-    }, 30_000);
   });
 
   describe('a race with the archive of the same client', () => {
@@ -863,31 +837,18 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
       }
     };
 
-    it('answers 409 CLIENT_ARCHIVED, and not 500, to an invitation created while the client is being archived', async () => {
-      const before = await owner.knex('invitations').where({ client_id: cRaceCreate }).select('id');
+    it('answers 409 CLIENT_ARCHIVED, and not 500, to a person added while the client is being archived, and gives no access', async () => {
+      const before = await owner.knex('client_portal_accesses').where({ client_id: cRaceCreate }).select('id');
       const response = await archiveWhileRouteWaits(
-        () => call('POST', invitationsUrl(cRaceCreate), cookies.racer, { email: 'chegou-tarde@ciclo.test' }, '127.0.0.31'),
+        () => call('POST', membersUrl(cRaceCreate), cookies.racer, { email: 'chegou-tarde@ciclo.test' }, '127.0.0.31'),
         cRaceCreate
       );
 
       expect(response.statusCode).toBe(409);
-      expect(response.json().error).toEqual({ code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode receber convites.' });
+      expect(response.json().error).toEqual({ code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' });
       expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
       expect(await clientRow(cRaceCreate)).toMatchObject({ status: 'archived' });
-      expect(await owner.knex('invitations').where({ client_id: cRaceCreate }).select('id')).toEqual(before);
-    }, 30_000);
-
-    it('answers 409 CLIENT_ARCHIVED to the resend of an invitation of a client being archived, leaving the invitation as it was', async () => {
-      const response = await archiveWhileRouteWaits(
-        () => call('POST', `/agencies/${agencyA}/invitations/${invitations.raceResendArchive}/resend`, cookies.racer, undefined, '127.0.0.31'),
-        cRaceResendArchive
-      );
-
-      expect(response.statusCode).toBe(409);
-      expect(response.json().error.code).toBe('CLIENT_ARCHIVED');
-      expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
-      expect(await revokedAtOf(invitations.raceResendArchive)).toBeNull();
-      expect(await owner.knex('invitations').where({ client_id: cRaceResendArchive }).select('id')).toHaveLength(1);
+      expect(await owner.knex('client_portal_accesses').where({ client_id: cRaceCreate }).select('id')).toEqual(before);
     }, 30_000);
   });
 
@@ -928,6 +889,7 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
         requireAgencyAccess: createRequireAgencyAccess({ database: app.database }),
         requirePermission,
         requireClientAccess: createRequireClientAccess({ database: app.database }),
+        emailService: unusedEmailService,
         photoUrlExpirySeconds: 300
       });
       await racingApp.ready();

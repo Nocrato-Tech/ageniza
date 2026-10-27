@@ -259,10 +259,10 @@ export function ClientAccessTab() {
 
   const changeMemberStatus = useMutation({
     mutationFn: (action: PendingAction) => httpClient.request({
-      path: apiPath('/agencies/:agencyId/clients/:clientId/members/:membershipId/:action', {
+      path: apiPath('/agencies/:agencyId/clients/:clientId/members/:accessId/:action', {
         agencyId: agency.agencyId,
         clientId: client.id,
-        membershipId: action.id,
+        accessId: action.id,
         action: action.kind
       }),
       method: 'POST',
@@ -347,18 +347,18 @@ export function ClientAccessTab() {
       />
     ) : <>
       <ul className="portal-access__list">
-        {memberRows.map((member: ClientMember) => <li key={member.membershipId} className="portal-access__row">
-          <Avatar name={member.name} size="md" />
+        {memberRows.map((member: ClientMember) => <li key={member.accessId} className="portal-access__row">
+          <Avatar name={member.name ?? member.email} size="md" />
           <span className="portal-access__who">
-            <span className="portal-access__name">{member.name}</span>
+            <span className="portal-access__name">{member.name ?? member.email}</span>
             <span className="portal-access__email">{member.email}</span>
           </span>
           <span className="portal-access__since">desde {formatAgencyDayMonth(member.since)}</span>
           {activeClient && canRemove && <Button
             size="sm"
             variant="secondary"
-            aria-label={`Remover o acesso de ${member.name}`}
-            onClick={() => { setActionError(undefined); setPending({ kind: 'remove', id: member.membershipId, name: member.name }); }}
+            aria-label={`Remover o acesso de ${member.name ?? member.email}`}
+            onClick={() => { setActionError(undefined); setPending({ kind: 'remove', id: member.accessId, name: member.name ?? member.email }); }}
           >Remover</Button>}
         </li>)}
       </ul>
@@ -382,20 +382,20 @@ export function ClientAccessTab() {
           </div>
         ) : <>
           <ul className="portal-access__list">
-            {removedRows.map((member: ClientMember) => <li key={member.membershipId} className="portal-access__row">
-              <Avatar name={member.name} size="md" />
+            {removedRows.map((member: ClientMember) => <li key={member.accessId} className="portal-access__row">
+              <Avatar name={member.name ?? member.email} size="md" />
               <span className="portal-access__who">
-                <span className="portal-access__name">{member.name}</span>
+                <span className="portal-access__name">{member.name ?? member.email}</span>
                 <span className="portal-access__email">{member.email}</span>
               </span>
               <span className="portal-access__since">removido</span>
               {activeClient && canRemove && <Button
                 size="sm"
                 variant="secondary"
-                aria-label={`Reativar o acesso de ${member.name}`}
+                aria-label={`Reativar o acesso de ${member.name ?? member.email}`}
                 blockedReason={blocked}
-                loading={changeMemberStatus.isPending && changeMemberStatus.variables?.id === member.membershipId}
-                onClick={() => { setActionError(undefined); changeMemberStatus.mutate({ kind: 'reactivate', id: member.membershipId, name: member.name }); }}
+                loading={changeMemberStatus.isPending && changeMemberStatus.variables?.id === member.accessId}
+                onClick={() => { setActionError(undefined); changeMemberStatus.mutate({ kind: 'reactivate', id: member.accessId, name: member.name ?? member.email }); }}
               >Reativar</Button>}
             </li>)}
           </ul>
