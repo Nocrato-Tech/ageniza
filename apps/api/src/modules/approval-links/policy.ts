@@ -11,11 +11,15 @@ export const APPROVAL_COOKIE_NAME = 'ageniza_approval';
 export const APPROVAL_ROUTE_PREFIX = '/portal-approval';
 
 /**
- * Behind the web server the API answers under `/api` (ADR 0012, `apps/web/nginx.conf` strips it), and the browser sees that path; a
- * cookie restricted to `/portal-approval` would never be sent back. Everywhere else the API is reached directly.
+ * The cookie is sent back only to the path the BROWSER sees, which is the path of the public address of the API
+ * (`API_PUBLIC_URL`, the `VITE_API_BASE_URL` of the web build): behind the web server the API answers under `/api` (ADR 0012,
+ * `apps/web/nginx.conf` strips it), and a cookie restricted to `/portal-approval` would never come back. `Secure` follows the
+ * scheme of that same address.
  */
-export const approvalCookiePath = (environment: string): string =>
-  environment === 'production' ? `/api${APPROVAL_ROUTE_PREFIX}` : APPROVAL_ROUTE_PREFIX;
+export const approvalCookieOptions = (apiPublicUrl: string): { readonly path: string; readonly secure: boolean } => {
+  const base = new URL(apiPublicUrl);
+  return { path: `${base.pathname.replace(/\/+$/, '')}${APPROVAL_ROUTE_PREFIX}`, secure: base.protocol === 'https:' };
+};
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1_000;
 const FIVE_MINUTES_MS = 5 * 60 * 1_000;

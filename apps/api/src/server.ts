@@ -14,7 +14,7 @@ import { createEmailService } from './modules/auth/email-service.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requireAnyPermission, requirePermission } from './modules/tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from './modules/invitations/routes.js';
 import type { ClientModuleDependencies } from './modules/clients/routes.js';
-import { approvalCookiePath } from './modules/approval-links/policy.js';
+import { approvalCookieOptions } from './modules/approval-links/policy.js';
 import type { ApprovalLinkModuleDependencies } from './modules/approval-links/routes.js';
 import type { ContentPortalModuleDependencies } from './modules/contents/portal-routes.js';
 import type { ContentModuleDependencies } from './modules/contents/routes.js';
@@ -126,7 +126,7 @@ export const startApi = async (): Promise<void> => {
   };
   const approvalLinkDependencies: ApprovalLinkModuleDependencies = {
     database,
-    cookie: { path: approvalCookiePath(config.environment), secure: config.appPublicUrl.startsWith('https:') },
+    cookie: approvalCookieOptions(config.apiPublicUrl),
     ...(mediaDependencies === undefined ? {} : { media: { storage: mediaDependencies.storage, downloadUrlExpirySeconds: mediaDependencies.config.downloadUrlExpirySeconds } })
   };
   // Identity storage (issue #100) is separate from media: the profile photo (issue #101) is a
