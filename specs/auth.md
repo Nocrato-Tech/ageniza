@@ -94,7 +94,7 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 
 1. Senha errada e e-mail inexistente devolvem **a mesma** resposta.
 2. `POST /auth/password/forgot` responde igual para e-mail existente e inexistente.
-3. ~~Credencial correta com **zero contextos** não cria sessão~~ — **substituída em 2026-10-26 (§13, implementada na #706):** a conta com e-mail confirmado e sem contexto cria sessão e cai em `/comecar`; `resolve` com `none` mantém a sessão. A conta **não confirmada** não cria sessão, com a senha certa ou não: o login responde `403 EMAIL_NOT_VERIFIED` só depois de conferir a senha, e senha errada continua igual a e-mail inexistente (regra 1). `NO_CONTEXT_ACCESS` deixou de existir.
+3. ~~Credencial correta com **zero contextos** não cria sessão~~ — **substituída em 2026-10-26 (§13, implementada na #706):** a conta com e-mail confirmado e sem contexto cria sessão e cai em `/comecar`; `resolve` com `none` mantém a sessão. A conta **não confirmada** não cria sessão, com a senha certa ou não, e o login responde exatamente como credencial inválida nos dois casos (regra 1); com a senha certa, um link de confirmação novo vai ao e-mail, nos limites do reenvio (revisão de segurança do PR #722). `NO_CONTEXT_ACCESS` deixou de existir.
 3a. Com `inviteToken` válido, a sessão criada continua **sem contexto** até o convite ser aceito por `POST /invitations/:token/accept`; chamar `resolve` antes do aceite encerra essa sessão como qualquer outra sem contexto (regra 3).
 4. Token de convite consumido, expirado ou revogado devolve **o mesmo** `INVALID_LINK`, sem dizer qual dos três.
 5. A tela nunca exibe o e-mail do convite antes de o token ser validado pela API.
@@ -121,7 +121,7 @@ Quem perde o último contexto durante o uso é encerrado na próxima passagem pe
 
 | método | rota | devolve |
 |---|---|---|
-| `POST` | `/auth/login` | `{ user }` + cookie. Aceita `inviteToken` opcional (regra 3a). Conta não confirmada com a senha certa: `403 EMAIL_NOT_VERIFIED` |
+| `POST` | `/auth/login` | `{ user }` + cookie. Aceita `inviteToken` opcional (regra 3a). Conta não confirmada: o mesmo `401 INVALID_CREDENTIALS`, com a senha certa ou não |
 | `POST` | `/auth/sign-up` | corpo `{ name, email, password, acceptTerms: true }`; `202 {}`, sempre, sem cookie |
 | `POST` | `/auth/email/verification/resend` | corpo `{ email }`; `202 {}`, sempre |
 | `POST` | `/auth/email/verify` | corpo `{ token, password }`; `{ user }` + cookie, ou `400 INVALID_LINK_OR_PASSWORD` |
@@ -197,14 +197,15 @@ Desde 2026-09-29 (issue #175) a rota assinava a pessoa de volta e respondia `sig
 3. `POST /auth/email/verify` pede o token **e a senha da conta**. Conta as tentativas nos contadores do login (senha errada aqui gasta as mesmas tentativas de `/entrar`). Link inválido, vencido, usado e senha errada dão a mesma resposta, `400 INVALID_LINK_OR_PASSWORD`, sem mudar nada; a senha é conferida também contra um hash fictício quando o link não vale, para o tempo não denunciar o link. Com link e senha certos, a função consome o link só se a credencial ainda for a conferida (uma redefinição no meio faz falhar), marca o e-mail como confirmado, apaga os outros links e a rota cria a sessão.
 4. `POST /auth/email/verification/resend` emite um link novo só para conta não confirmada, e responde `202 {}` para qualquer endereço.
 5. **A redefinição assume a conta não confirmada**: o `onPasswordReset` chama `app_private.confirm_email_by_password_reset(user_id)`, que apaga os links pendentes da conta, marca o e-mail como confirmado e revoga (`revoked_at`) os aceites gravados por quem cadastrou. A redefinição continua sem criar sessão (regra 8a).
-6. A guarda de sessão recusa e revoga a sessão de conta não confirmada, como segunda barreira ao `requireEmailVerification` do Better Auth.
+6. O login de conta não confirmada responde o mesmo `401 INVALID_CREDENTIALS` da senha errada, com a senha certa ou não; com a senha certa, emite e envia um link novo em segundo plano, dentro dos limites do reenvio (revisão de segurança do PR #722). A guarda de sessão recusa e revoga a sessão de conta não confirmada, como segunda barreira ao `requireEmailVerification` do Better Auth.
+6a. Confirmar e redefinir a senha não se sobrepõem: `consume_email_confirmation` trava a credencial antes de compará-la (migration `20261027010200`), então a troca de senha espera a confirmação terminar ou a confirmação vê a senha nova e recusa. Se o login falhar depois de o link ser consumido (a senha mudou no meio), a rota responde `400 INVALID_LINK_OR_PASSWORD`, nunca 500; a conta está confirmada e a pessoa entra com a senha nova.
 7. Limites (`policy.ts`): cadastro e reenvio, 30 por 15 min por IP, 3 por 15 min no par IP+e-mail e 10 por hora por e-mail; confirmação, 100 por 15 min por IP, além dos contadores do login.
 
 **Limitações e pontos em aberto.** A falta de aceite depois da revogação ainda **não bloqueia** contexto: hoje só o aviso de documento pendente aparece (a conta assumida não tem contexto até criar agência ou aceitar convite, então o bloqueio cabe à criação de agência, #709). O botão do Google não existe ainda (#710+). "Criar agência" em `/comecar` aparece desabilitado até a #709.
 
 ### Persistência
 
-Migrations `20261027010000` (`legal_acceptances.revoked_at`, a unicidade por versão passa a valer só entre os não revogados, e `confirm_email_by_password_reset`) e `20261027010100` (`email_confirmations` e as suas funções).
+Migrations `20261027010000` (`legal_acceptances.revoked_at`, a unicidade por versão passa a valer só entre os não revogados, e `confirm_email_by_password_reset`) `20261027010100` (`email_confirmations` e as suas funções) e `20261027010200` (a confirmação trava a credencial).
 
 ### RLS
 
@@ -493,7 +494,7 @@ Decidida em sessão pelo dono do produto. As regras de segurança derivadas pelo
 
 | decisão | o que muda aqui |
 |---|---|
-| [Cadastro público com e-mail e senha](../docs/business/decisions/2026-10-26-estrutural-cadastro-publico-com-e-mail-e-senha-e-confirmacao.md) | `/criar-conta`; confirmação do e-mail por link de 24 h **com a senha da conta**; o login de conta não confirmada diz "confirme o seu e-mail" só com a senha certa; a redefinição de senha de conta não confirmada assume a conta; cadastro num e-mail que já tem conta manda só o aviso; conta confirmada sem contexto cria sessão (a regra 3 muda) |
+| [Cadastro público com e-mail e senha](../docs/business/decisions/2026-10-26-estrutural-cadastro-publico-com-e-mail-e-senha-e-confirmacao.md) | `/criar-conta`; confirmação do e-mail por link de 24 h **com a senha da conta**; o login de conta não confirmada responde como credencial inválida, com a senha certa ou não, e com a senha certa reenvia o link (revisão de segurança do PR #722); a redefinição de senha de conta não confirmada assume a conta; cadastro num e-mail que já tem conta manda só o aviso; conta confirmada sem contexto cria sessão (a regra 3 muda) |
 | [Entrar com o Google](../docs/business/decisions/2026-10-26-estrutural-entrar-com-google-e-a-conta-que-o-google-assume.md) | botão nas telas de entrada; só vale e-mail verificado pelo Google; a conta Google é identificada pelo `sub`; `accountLinking` só para o Google; o Google assume a conta de e-mail não confirmado e mata senha, sessões, redefinições, confirmações, trocas de e-mail pendentes e o aceite de Termos (que ganha `revoked_at` em `legal_acceptances`); conta só com Google reautentica pelo Google onde hoje se pede a senha |
 | [Agência nasce pelo produto, em trial](../docs/business/decisions/2026-10-26-estrutural-a-agencia-nasce-pelo-produto-em-trial-de-14-dias.md) | "Criar agência" na tela sem contexto e no seletor de contexto, só para e-mail verificado; 14 dias, 3 clientes, 3 colaboradores, 2 GB; somente leitura ao fim, com as ações que reduzem acesso liberadas; uma agência em trial por e-mail normalizado; limite diário de e-mails; upgrade por comando interno |
 | [Link do convite de colaborador copiável](../docs/business/decisions/2026-10-26-estrutural-o-link-do-convite-de-colaborador-pode-ser-copiado.md) | criar e reenviar devolvem o link uma vez, com `no-store`; `accept-new-account` deixa de marcar o e-mail como verificado e envia a confirmação; essa conta tem sessão antes de confirmar, como exceção explícita (a regra 6 não muda) |
@@ -503,7 +504,7 @@ Decidida em sessão pelo dono do produto. As regras de segurança derivadas pelo
 
 - **`/criar-conta`**: nome, e-mail, senha, aceite único de Termos e Privacidade, "Criar conta" e "Entrar com o Google". Depois de enviar, a tela é sempre a mesma: "enviamos um link para o seu e-mail", com reenvio.
 - **`/email/verificar?token=…`**: tira o token da barra de endereço ao abrir, como `/email/confirmar`, e pede **a senha da conta** e um clique. Token válido e senha certa verificam o e-mail e criam a sessão da conta confirmada, trocando a que houvesse no navegador. Senha errada responde como credencial inválida e não consome o token. Abre com qualquer sessão, como exceção nova da regra 11.
-- **`/entrar`**: ganha "Entrar com o Google" e "Criar conta". A conta não confirmada criada pelo aceite de convite entra nos contextos que tem e vê o aviso "confirme o seu e-mail", com reenvio.
+- **`/entrar`**: ganha "Entrar com o Google" e "Criar conta". Abaixo do erro de credencial, sempre, "Criou a conta e não confirmou? Reenviar o link de confirmação", ligado ao reenvio (revisão de segurança do PR #722: a tela nunca diz que a conta existe e não foi confirmada). A conta não confirmada criada pelo aceite de convite entra nos contextos que tem e vê o aviso "confirme o seu e-mail", com reenvio.
 - **`/comecar`**, para conta confirmada sem contexto, toma o lugar de `/sem-acesso` nesse caso. Oferece "Criar agência", pedindo só o nome, e explica que convites e acessos ao portal aparecem aqui quando chegarem.
 - **Seletor de contexto e `/contextos`**: item fixo "Criar agência", escondido quando a pessoa já tem uma agência em trial e quando o e-mail não está confirmado.
 - **Primeiro login pelo Google sem conta, ou depois de o Google assumir a conta**: aceite de Termos e Privacidade antes do primeiro uso.

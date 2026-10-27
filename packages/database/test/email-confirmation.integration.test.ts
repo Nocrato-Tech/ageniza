@@ -139,6 +139,34 @@ describe('public.email_confirmations (issue #706, security review of PR #721)', 
     await expect(consume(token, account.credential)).resolves.toBeNull();
   });
 
+  it('waits for a password change in flight and then refuses the old credential (security review of PR #722)', async () => {
+    const account = await newAccount();
+    const token = newToken();
+    await issue(account.id, token);
+
+    const reset = await getOwner().knex.transaction();
+    try {
+      const updated = await raw<{ rowCount: number }>(reset, `update auth.account set password = 'hash-after-the-reset' where "userId" = ?::uuid and "providerId" = 'credential'`, [account.id]);
+      expect(updated.rowCount).toBe(1);
+
+      const consuming = consume(token, account.credential);
+      await expect.poll(async () => {
+        const { rows } = await raw<{ rows: readonly { blocked: number }[] }>(getOwner().knex, `
+          select count(*)::int as blocked from pg_catalog.pg_stat_activity
+          where query like '%consume_email_confirmation%' and wait_event_type = 'Lock'
+        `, []);
+        return rows[0]?.blocked ?? 0;
+      }, { timeout: 5_000 }).toBeGreaterThan(0);
+
+      await reset.commit();
+      await expect(consuming).resolves.toBeNull();
+    } finally {
+      if (!reset.isCompleted()) await reset.rollback();
+    }
+    expect(await isVerified(account.id)).toBe(false);
+    await expect(unconsumedOf(account.id)).resolves.toEqual([{ token_hash: hashOf(token) }]);
+  });
+
   it('is out of reach of the application role except through the functions', async () => {
     const account = await newAccount();
     const denied = { code: '42501' };

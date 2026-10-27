@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { OutgoingEmail } from '@ageniza/email';
 
@@ -162,6 +162,58 @@ describe('POST /auth/sign-up (#706)', () => {
     expect(tokenFrom(messagesTo(sender, fresh)[0])).not.toBe('');
   });
 
+  it('answers a login with the password chosen at sign-up the same for a new and a taken address (security review of PR #722)', async () => {
+    const { app, sender } = await openApp();
+    const taken = await insertTestUser(app.pool, app.auth, { email: newEmail('sign-up-oracle-taken') });
+    const fresh = newEmail('sign-up-oracle-fresh');
+    const chosen = 'the prober chose this password';
+    const signUpWith = (email: string, remoteAddress: string) => app.app.inject({
+      method: 'POST', url: '/auth/sign-up', headers: origin, remoteAddress,
+      payload: { name: 'Quem Sonda', email, password: chosen, acceptTerms: true }
+    });
+    const loginWith = (email: string, candidate: string, remoteAddress: string) => app.app.inject({
+      method: 'POST', url: '/auth/login', headers: { ...origin, 'x-request-id': 'login-shared-request-id' }, remoteAddress, payload: { email, password: candidate }
+    });
+
+    await signUpWith(taken.email, '10.12.0.1');
+    await signUpWith(fresh, '10.12.0.2');
+    const answers = [
+      await loginWith(taken.email, chosen, '10.12.0.1'),
+      await loginWith(fresh, chosen, '10.12.0.2'),
+      await loginWith(fresh, 'not the password at all', '10.12.0.3')
+    ].map(comparable);
+
+    for (const other of answers.slice(1)) expect(other).toEqual(answers[0]);
+    expect(answers[0]?.status).toBe(401);
+    expect(JSON.parse(answers[0]?.body ?? '{}')).toMatchObject({ error: { code: 'INVALID_CREDENTIALS' } });
+    expect((await userRow(fresh))?.emailVerified).toBe(false);
+    expect(await queryAsOwner('select 1 from auth.session where "userId" = $1', [(await userRow(fresh))?.id])).toHaveLength(0);
+
+    // The right password sends a new link to the mailbox, never to whoever is logging in.
+    await vi.waitFor(async () => {
+      await flush(app);
+      expect(messagesTo(sender, fresh).filter((message) => message.text.includes('/email/verificar'))).toHaveLength(2);
+    });
+    expect(messagesTo(sender, taken.email).filter((message) => message.text.includes('/email/verificar'))).toHaveLength(0);
+  });
+
+  it('reissues the link after a login only within the resend limits', async () => {
+    const { app, sender } = await openApp();
+    const email = newEmail('sign-up-login-reissue');
+    await signUp(app, email, '10.13.0.1');
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, remoteAddress: '10.13.0.1', payload: { email, password } });
+      expect(login.statusCode).toBe(401);
+    }
+    await vi.waitFor(async () => {
+      await flush(app);
+      expect(messagesTo(sender, email)).toHaveLength(4);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await flush(app);
+    expect(messagesTo(sender, email)).toHaveLength(4);
+  });
+
   it('limits sign-ups by IP and e-mail with the same 429', async () => {
     const { app } = await openApp();
     const email = newEmail('sign-up-limit');
@@ -249,6 +301,91 @@ describe('POST /auth/email/verify asks for the password (finding A1 of the revie
     const newToken = tokenFrom(messages[1]);
     expect((await verify(app, token)).statusCode).toBe(400);
     expect((await verify(app, newToken)).statusCode).toBe(200);
+  });
+
+  it('limits the resend by IP and e-mail, and by e-mail from any IP, with the same 429', async () => {
+    const { app } = await openApp();
+    const email = newEmail('resend-limit');
+    const sameIp = [];
+    for (let attempt = 0; attempt < 4; attempt += 1) sameIp.push((await resend(app, email, '10.14.0.1')).statusCode);
+    expect(sameIp).toEqual([202, 202, 202, 429]);
+
+    const other = newEmail('resend-limit-global');
+    const anyIp = [];
+    for (let attempt = 0; attempt < 11; attempt += 1) anyIp.push((await resend(app, other, `10.15.0.${attempt + 1}`)).statusCode);
+    expect(anyIp).toEqual([...Array<number>(10).fill(202), 429]);
+    expect((await resend(app, other, '10.15.1.1')).json()).toMatchObject({ error: { code: 'RATE_LIMITED' } });
+  });
+
+  it('caps the confirmation at 100 requests per IP', async () => {
+    const { app } = await openApp();
+    const answers = [];
+    for (let attempt = 0; attempt < 101; attempt += 1) {
+      answers.push((await verify(app, `a-token-never-issued-${attempt}`, 'any password at all', '10.16.0.1')).statusCode);
+    }
+    expect(answers.slice(0, 100).every((status) => status === 400)).toBe(true);
+    expect(answers[100]).toBe(429);
+  }, 120_000);
+
+  it('confirming with the old password while the password is reset never answers 500, and exactly one of the two takes effect', async () => {
+    const { app, sender } = await openApp();
+    const accounts: string[] = [];
+    for (let index = 0; index < 4; index += 1) {
+      const email = newEmail(`verify-reset-race-${index}`);
+      await signUp(app, email, `10.17.0.${index + 1}`);
+      await app.app.inject({ method: 'POST', url: '/auth/password/forgot', headers: origin, remoteAddress: `10.17.1.${index + 1}`, payload: { email } });
+      accounts.push(email);
+    }
+    await flush(app);
+    const newPassword = 'the reset chose this one instead';
+
+    const results = await Promise.all(accounts.map(async (email) => {
+      const messages = messagesTo(sender, email);
+      const token = tokenFrom(messages.find((message) => message.text.includes('/email/verificar')));
+      const resetToken = decodeURIComponent(/token=([^\s&]+)/.exec(messages.find((message) => message.text.includes('/senha/redefinir'))?.text ?? '')?.[1] ?? '');
+      const [confirmed, reset] = await Promise.all([
+        verify(app, token, password, `10.17.2.${accounts.indexOf(email) + 1}`),
+        app.app.inject({ method: 'POST', url: '/auth/password/reset', headers: origin, payload: { token: resetToken, newPassword } })
+      ]);
+      return { email, confirmed: confirmed.statusCode, reset: reset.statusCode };
+    }));
+
+    for (const { email, confirmed, reset } of results) {
+      expect([200, 400]).toContain(confirmed);
+      expect(reset).toBe(204);
+      const user = await userRow(email);
+      expect(user?.emailVerified).toBe(true);
+      const consumed = await queryAsOwner('select 1 from public.email_confirmations where user_id = $1 and consumed_at is not null', [user?.id]);
+      const revoked = await queryAsOwner('select 1 from public.legal_acceptances where user_id = $1 and revoked_at is not null', [user?.id]);
+      // Either the link confirmed the account first, or the reset took it over and revoked the acceptances.
+      expect([consumed.length > 0, revoked.length > 0].filter(Boolean)).toHaveLength(1);
+      const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, remoteAddress: '10.17.3.1', payload: { email, password: newPassword } });
+      expect(login.statusCode).toBe(200);
+    }
+  });
+
+  it('answers a sign-in that fails after the link was consumed as an invalid link, never 500', async () => {
+    const { app, email, token } = await signedUp('verify-sign-in-fails');
+    const user = await userRow(email);
+    // Stands in for a reset that lands between consuming the link and signing in: the password is
+    // replaced in the same transaction that consumes the link.
+    const name = `test_swap_password_${user?.id.replace(/-/g, '') ?? ''}`;
+    await queryAsOwner(`create function public.${name}() returns trigger language plpgsql as $$ begin
+      update auth.account set password = 'replaced-by-a-reset' where "userId" = new.user_id and "providerId" = 'credential';
+      return new; end $$`);
+    await queryAsOwner(`create trigger ${name} after update of consumed_at on public.email_confirmations
+      for each row when (new.user_id = '${user?.id ?? ''}'::uuid) execute function public.${name}()`);
+    try {
+      const response = await verify(app, token);
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({ error: { code: 'INVALID_LINK_OR_PASSWORD' } });
+      expect(response.cookies.length).toBe(0);
+      expect((await userRow(email))?.emailVerified).toBe(true);
+    } finally {
+      await queryAsOwner(`drop trigger if exists ${name} on public.email_confirmations`);
+      await queryAsOwner(`drop function if exists public.${name}()`);
+    }
   });
 
   it('the reset of an unconfirmed account confirms it, replaces the password and voids the pending links', async () => {

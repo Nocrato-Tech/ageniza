@@ -134,17 +134,6 @@ const unauthenticatedFallback = { statusCode: 401, code: 'UNAUTHENTICATED', mess
 
 const invalidCredentials = { statusCode: 401, code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas.' } as const;
 
-/**
- * An unconfirmed account with the right password (2026-10-26 decision on the public sign-up): saying
- * so reveals nothing, because the password was already proved. A wrong password gets
- * `INVALID_CREDENTIALS`, like any other.
- */
-const emailNotVerifiedError = {
-  statusCode: 403,
-  code: 'EMAIL_NOT_VERIFIED',
-  message: 'Confirme o seu e-mail para entrar.'
-} as const;
-
 /** One answer for a link that is not valid and for a wrong password: neither tells the other apart. */
 const verificationFailedError = {
   statusCode: 400,
@@ -162,6 +151,29 @@ const isEmailNotVerified = (error: unknown): boolean =>
 export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
 
+  /** Issues and sends a new link when the address has an account waiting; nothing otherwise. */
+  const sendConfirmationIfPending = async (email: string): Promise<void> => {
+    const token = await dependencies.database.transaction(async (transaction) => {
+      const pending = await raw<{ rows: Array<{ id: string }> }>(transaction, `
+        select id from auth."user" where email = ? and "emailVerified" = false
+      `, [email]);
+      const user = pending.rows[0];
+      return user === undefined ? undefined : issueEmailConfirmation(transaction, user.id);
+    });
+    if (token !== undefined) dependencies.emailService.sendEmailVerification({ to: email, token });
+  };
+
+  const reissueConfirmationInBackground = (request: FastifyRequest, email: string): void => {
+    try {
+      dependencies.limiter.consume('resendVerification', normalizeRateLimitIp(request.ip), email);
+    } catch {
+      return;
+    }
+    sendConfirmationIfPending(email).catch((error: unknown) => {
+      request.log.error({ err: error }, 'Could not reissue the e-mail confirmation after a login.');
+    });
+  };
+
   app.post('/auth/login', { ...perIpRateLimit(AUTH_RATE_LIMITS.login.ip, loginDocs), onRequest: noStore }, async (request, reply) => {
     const body = routeBody(loginDocs, request);
     dependencies.limiter.consume('login', normalizeRateLimitIp(request.ip), body.email);
@@ -175,8 +187,14 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
         returnHeaders: true
       }));
     } catch (error) {
-      // Better Auth checks the password before the confirmation, so this code only follows a right one.
-      if (isEmailNotVerified(error)) throw new HttpError(emailNotVerifiedError);
+      // An unconfirmed account answers exactly like a wrong password, even with the right one:
+      // whoever signed up chose that password, so telling the two apart would say whether the address
+      // already had an account (security review of PR #722). The right password sends a new link to
+      // the mailbox, in the background and within the resend limits.
+      if (isEmailNotVerified(error)) {
+        reissueConfirmationInBackground(request, body.email);
+        throw new HttpError(invalidCredentials);
+      }
       throw toPublicAuthError(error, invalidCredentials);
     }
 
@@ -185,7 +203,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     // unconfirmed one above; the rule is held here too, so a configuration change cannot hand one a cookie.
     if ((response.user as { emailVerified?: unknown }).emailVerified !== true) {
       await revokeJustCreatedSession(dependencies.auth, response.token, request);
-      throw new HttpError(emailNotVerifiedError);
+      throw new HttpError(invalidCredentials);
     }
 
     applyAuthCookies(reply, headers);
@@ -232,14 +250,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     const body = routeBody(resendVerificationDocs, request);
     dependencies.limiter.consume('resendVerification', normalizeRateLimitIp(request.ip), body.email);
 
-    const token = await dependencies.database.transaction(async (transaction) => {
-      const pending = await raw<{ rows: Array<{ id: string }> }>(transaction, `
-        select id from auth."user" where email = ? and "emailVerified" = false
-      `, [body.email]);
-      const user = pending.rows[0];
-      return user === undefined ? undefined : issueEmailConfirmation(transaction, user.id);
-    });
-    if (token !== undefined) dependencies.emailService.sendEmailVerification({ to: body.email, token });
+    await sendConfirmationIfPending(body.email);
     return reply.status(202).send(routeResponse(resendVerificationDocs, request, {}));
   });
 
@@ -273,8 +284,9 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
         returnHeaders: true
       }));
     } catch {
-      // The e-mail is already confirmed; the person can still sign in at `/entrar`.
-      throw new HttpError({ statusCode: 500, code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' });
+      // The e-mail is confirmed, but the password changed in between (a reset that landed after the
+      // link was consumed): the person signs in at `/entrar` with the new one. Never a 500.
+      throw new HttpError(verificationFailedError);
     }
     applyAuthCookies(reply, headers);
     return routeResponse(verifyEmailDocs, request, {
@@ -435,7 +447,7 @@ const identifyUserIdForResetToken = async (auth: AuthInstance, token: string): P
 /**
  * Deletes the session `signInEmail` just created for a login of an account that is not confirmed,
  * via the same `internalAdapter.deleteSession` Better Auth's own
- * `revoke-session` endpoint uses. Never throws: the client already gets `EMAIL_NOT_VERIFIED`
+ * `revoke-session` endpoint uses. Never throws: the client already gets `INVALID_CREDENTIALS`
  * either way, and a failure here must not replace or mask that response with an unrelated 500.
  */
 const revokeJustCreatedSession = async (auth: AuthInstance, token: string, request: FastifyRequest): Promise<void> => {
