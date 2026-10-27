@@ -8312,7 +8312,7 @@
       "post": {
         "operationId": "acceptInvitationNewAccount",
         "summary": "Cria a conta e aceita o convite",
-        "description": "A conta nasce com o e-mail do convite, ainda não confirmado; a sessão já vem no cookie da resposta e o contexto do convite vale na hora.\n\nAcesso: Token do convite.",
+        "description": "A conta nasce com o e-mail do convite, ainda não confirmado; a sessão já vem no cookie da resposta e o contexto do convite vale na hora. O link de confirmação vai por e-mail e pede a senha escolhida aqui; até confirmar, o login por senha responde 401 e a sessão vale enquanto a conta tiver o vínculo que o convite deu.\n\nAcesso: Token do convite.",
         "tags": [
           "invitations"
         ],

@@ -861,6 +861,11 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
       throw error;
     }
 
+    // Sent before the sign-in, so the account can still be confirmed if the sign-in fails. The link
+    // asks for the password chosen here, so whoever accepted a copied link cannot confirm a mailbox
+    // that is not theirs (#706).
+    if (confirmationToken !== undefined) dependencies.emailService.sendEmailVerification({ to: invitation.email, token: confirmationToken });
+
     try {
       const { headers } = await dependencies.auth.api.signInEmail({
         body: { email: invitation.email, password: body.password },
@@ -871,12 +876,10 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     } catch {
       // Account creation and invitation acceptance have already committed, but the API contract
       // promises a session cookie for this flow. Return only a generic server error if Better Auth
-      // cannot establish that session; the credential account remains recoverable through login.
+      // cannot establish that session; the account remains recoverable through the confirmation link
+      // it was just sent, or a password reset.
       throw new HttpError({ statusCode: 500, code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' });
     }
-    // The link asks for the password chosen here, so whoever accepted a copied link cannot confirm a
-    // mailbox that is not theirs (#706).
-    if (confirmationToken !== undefined) dependencies.emailService.sendEmailVerification({ to: invitation.email, token: confirmationToken });
     return reply.status(201).send(routeResponse(acceptNewAccountDocs, request, {
       status: 'accepted',
       context: { agencyId: invitation.agencyId, clientId: invitation.clientId }

@@ -964,7 +964,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'acceptInvitationNewAccount',
     module: 'invitations',
     summary: 'Cria a conta e aceita o convite',
-    description: 'A conta nasce com o e-mail do convite, ainda não confirmado; a sessão já vem no cookie da resposta e o contexto do convite vale na hora.',
+    description: 'A conta nasce com o e-mail do convite, ainda não confirmado; a sessão já vem no cookie da resposta e o contexto do convite vale na hora. O link de confirmação vai por e-mail e pede a senha escolhida aqui; até confirmar, o login por senha responde 401 e a sessão vale enquanto a conta tiver o vínculo que o convite deu.',
     access: 'Token do convite',
     permission: null,
     params: PublicInvitationTokenPathParamsSchema,

@@ -21,7 +21,10 @@ from the tenancy module so the invitation module does not duplicate tenant guard
 - `GET /invitations/:token` previews a valid invitation.
 - `POST /invitations/:token/accept-new-account` atomically creates the credential account and
   accepts the invitation. The account is born with `emailVerified = false`, since the inviter may hold
-  the link too; the invitation's context is usable at once. The confirmation e-mail arrives with #706.
+  the link too; the invitation's context is usable at once. The same transaction issues the confirmation link, sent
+  by e-mail; confirming asks for the password chosen here. The session guard keeps that unconfirmed
+  account's session only while it has what the invitation gave it, and the password login stays
+  closed to it until it confirms (`../auth/README.md`).
 - `POST /invitations/:token/accept` accepts an invitation for the matching authenticated e-mail.
 
 Handing out the `admin` role takes `colaborador.atribuir_admin`, which no preset holds and only the
