@@ -25,7 +25,7 @@ export const AuthEmailVerificationResendResponseSchema = z.object({}).strict();
  */
 export const AuthEmailVerifyRequestSchema = z.object({
   token: z.string().min(1).max(2_048),
-  password: AuthLoginPasswordSchema
+  password: AuthLoginPasswordSchema.optional()
 }).strict();
 
 /** Confirming signs the account in, so the answer is the login's. */
