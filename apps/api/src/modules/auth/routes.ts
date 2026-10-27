@@ -127,7 +127,7 @@ const verificationFailedError = {
  * globally by `registerOriginProtection`; nothing here repeats that check.
  */
 export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModuleDependencies): void => {
-  const requireSession = createRequireSession({ auth: dependencies.auth });
+  const requireSession = createRequireSession({ auth: dependencies.auth }, { allowUnconfirmed: true });
 
   registerGoogleRoutes(app, { auth: dependencies.auth, ...(dependencies.google === undefined ? {} : { google: dependencies.google }) });
 
@@ -335,6 +335,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     if (request.auth === undefined) throw new HttpError(unauthenticatedFallback);
     return routeResponse(sessionDocs, request, {
       user: request.auth.user,
+      emailVerified: request.auth.emailVerified,
       session: { expiresAt: request.auth.expiresAt }
     });
   });
@@ -343,12 +344,13 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
   // session, so a forgotten tab does not keep it alive past the 7 days without use.
   app.get('/auth/session/check', {
     onRequest: noStore,
-    preHandler: createRequireSession({ auth: dependencies.auth }, { renew: false }),
+    preHandler: createRequireSession({ auth: dependencies.auth }, { renew: false, allowUnconfirmed: true }),
     config: sessionCheckDocs
   }, async (request) => {
     if (request.auth === undefined) throw new HttpError(unauthenticatedFallback);
     return routeResponse(sessionCheckDocs, request, {
       user: request.auth.user,
+      emailVerified: request.auth.emailVerified,
       session: { expiresAt: request.auth.expiresAt }
     });
   });

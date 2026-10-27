@@ -15,6 +15,8 @@ declare module 'fastify' {
       readonly sessionId: string;
       readonly claims: VerifiedUserClaims;
       readonly user: { readonly id: string; readonly name: string; readonly email: string };
+      /** False only for the account an invitation created, holding the session of its acceptance (see `allowUnconfirmed`). */
+      readonly emailVerified: boolean;
       /** ISO timestamp; the exact session expiry `getSession` resolved for this request (M1). */
       readonly expiresAt: string;
     };
@@ -32,6 +34,11 @@ export interface SessionGuardOptions {
    * issued. A tab that only asks "is my session still alive?" must not keep it alive.
    */
   readonly renew?: boolean;
+  /**
+   * Whether the session of an account that has not confirmed its e-mail passes. Off by default: such an account opens nothing
+   * (decision 2026-10-27, "a conta de convite só entra depois de confirmar"), so a route has to name itself to answer it.
+   */
+  readonly allowUnconfirmed?: boolean;
 }
 
 /** The latest instant the credential of the account was replaced, from the user row and from its credential rows. */
@@ -46,6 +53,12 @@ const passwordChangedAtOf = async (auth: AuthInstance, user: { readonly id: stri
 const unauthenticatedFallback = { statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' } as const;
 
 const unauthenticated = (): HttpError => new HttpError(unauthenticatedFallback);
+
+const emailNotConfirmed = (): HttpError => new HttpError({
+  statusCode: 403,
+  code: 'EMAIL_NOT_CONFIRMED',
+  message: 'Confirme o seu e-mail para entrar.'
+});
 
 const sessionExpired = (): HttpError => new HttpError({
   statusCode: 401,
@@ -93,13 +106,15 @@ export const createRequireSession = (dependencies: SessionGuardDependencies, opt
       await dependencies.auth.api.revokeSession({ body: { token: session.token }, headers }).catch(() => undefined);
       throw unauthenticated();
     }
-    // "Sem confirmar, não há sessão" (2026-10-26), with one explicit exception: the account created by
-    // accepting an invitation, while it keeps what the invitation gave it (decision on the copyable
-    // invitation link, item 2). Any other unconfirmed account's session is revoked here.
+    // "Sem confirmar, não há sessão" (2026-10-26), with one explicit exception: the account created by accepting an
+    // invitation keeps the session of the acceptance while it keeps the link its invitation gave it, only to be told
+    // to confirm and to confirm with a click. It opens nothing (decision 2026-10-27). Any other unconfirmed
+    // account's session is revoked here.
     if (user.emailVerified !== true && !(await unconfirmedAccountMayHoldSession(dependencies.auth, user.id))) {
       await dependencies.auth.api.revokeSession({ body: { token: session.token }, headers }).catch(() => undefined);
       throw unauthenticated();
     }
+    if (user.emailVerified !== true && options.allowUnconfirmed !== true) throw emailNotConfirmed();
     const ageMs = Date.now() - new Date(session.createdAt).getTime();
     if (ageMs > AUTH_SESSION_MAX_AGE_MS) {
       await dependencies.auth.api.revokeSession({ body: { token: session.token }, headers }).catch(() => {
@@ -113,6 +128,7 @@ export const createRequireSession = (dependencies: SessionGuardDependencies, opt
       sessionId: session.id,
       claims: createVerifiedUserClaims({ userId: user.id }),
       user: { id: user.id, name: user.name, email: user.email },
+      emailVerified: user.emailVerified === true,
       expiresAt: new Date(session.expiresAt).toISOString()
     };
   };

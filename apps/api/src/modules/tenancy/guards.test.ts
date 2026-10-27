@@ -37,7 +37,9 @@ describe('tenant guards', () => {
       agency_id: agencyId,
       is_owner: false,
       role_key: 'production',
-      permissions: ['content.read', 'content.publish']
+      permissions: ['content.read', 'content.publish'],
+      terms_blocked: false,
+      email_unconfirmed: false
     }], statements);
     const request: FakeRequest = {
       params: { agencyId },
@@ -54,6 +56,19 @@ describe('tenant guards', () => {
     });
     expect(statements[0]).toContain('app_private.bind_actor');
     expect(statements[1]).toContain('agency_memberships');
+  });
+
+  it.each([
+    ['unconfirmed', true],
+    ['not answered at all (the guard fails closed)', undefined]
+  ])('refuses with 403 EMAIL_NOT_CONFIRMED when the database says the e-mail is %s, though the person belongs to the agency', async (_name, unconfirmed) => {
+    const database = createDatabase([{
+      agency_id: agencyId, is_owner: true, role_key: 'admin', permissions: [], terms_blocked: false, email_unconfirmed: unconfirmed
+    }], []);
+    const request: FakeRequest = { params: { agencyId }, auth: { userId, claims: createVerifiedUserClaims({ userId }) } };
+
+    await expect(createRequireAgencyAccess({ database })(request as never)).rejects.toMatchObject({ statusCode: 403, code: 'EMAIL_NOT_CONFIRMED' });
+    expect(request.tenant).toBeUndefined();
   });
 
   it('returns a non-enumerating 404 when the agency is inaccessible or suspended', async () => {

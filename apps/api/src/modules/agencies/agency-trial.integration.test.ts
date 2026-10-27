@@ -103,7 +103,8 @@ describe('POST /agencies (issue #709)', () => {
     expect(contexts.json<{ canCreateAgency: boolean }>().canCreateAgency).toBe(false);
     const response = await createAgency(cookie);
     expect(response.statusCode).toBe(403);
-    expect(response.json<{ error: { code: string } }>().error.code).toBe('EMAIL_NOT_VERIFIED');
+    // The session guard answers first (decision 2026-10-27): the session of an unconfirmed account opens no route.
+    expect(response.json<{ error: { code: string } }>().error.code).toBe('EMAIL_NOT_CONFIRMED');
     expect(await owner.knex('agencies').where({ owner_user_id: user.id })).toHaveLength(0);
   });
 

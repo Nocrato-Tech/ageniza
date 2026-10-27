@@ -197,6 +197,8 @@ export interface TestAppOptions {
 /** Real prehandler builders, wired to this test app's own `auth`/`database`, for `registerExtraRoutes`. */
 export interface TestGuardBuilders {
   readonly requireSession: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+  /** The session guard of the routes that answer an account whose e-mail is not confirmed, to test a later guard alone. */
+  readonly requireSessionUnconfirmedAllowed: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   readonly requireAgencyAccess: (request: FastifyRequest) => Promise<void>;
   readonly requireClientAccess: (request: FastifyRequest) => Promise<void>;
 }
@@ -364,6 +366,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   if (options.registerExtraRoutes !== undefined) {
     const guards: TestGuardBuilders = {
       requireSession: createRequireSession({ auth }),
+      requireSessionUnconfirmedAllowed: createRequireSession({ auth }, { allowUnconfirmed: true }),
       requireAgencyAccess: createRequireAgencyAccess({ database }),
       requireClientAccess
     };

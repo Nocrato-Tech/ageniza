@@ -7,6 +7,8 @@ export interface AuthSessionSnapshot {
   status: 'loading' | 'ready';
   isAuthenticated: boolean;
   user: AuthUser | null;
+  /** The session is the one of an invitation's account that has not confirmed its e-mail: it opens nothing (decision 2026-10-27). */
+  emailUnconfirmed?: boolean;
 }
 
 export interface AuthSessionStore {
@@ -52,7 +54,7 @@ export const createAuthSessionStore = (client: HttpClient, options: AuthSessionS
       if (generation !== activeGeneration) return;
       if (!snapshot.isAuthenticated) options.onSessionStarted?.();
       client.confirmSession();
-      publish({ status: 'ready', isAuthenticated: true, user: response.user });
+      publish({ status: 'ready', isAuthenticated: true, user: response.user, ...(response.emailVerified === false ? { emailUnconfirmed: true } : {}) });
     } catch (error: unknown) {
       // Only an authenticated answer proves a session; every other outcome -- 401, network, an
       // unparseable body -- leaves the page unauthenticated rather than guessing.

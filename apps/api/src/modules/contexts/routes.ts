@@ -39,6 +39,9 @@ const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth'
 /** Registers `/me/contexts*` and the client onboarding-seen route (issue #33). */
 export const registerContextModule = (app: FastifyInstance, dependencies: ContextModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
+  // An account that has not confirmed its e-mail asks where to go and is told there is nowhere (decision 2026-10-27):
+  // `listValidContexts` answers it empty, so the screen can say "confirme seu e-mail" instead of a bare 403.
+  const requireSessionUnconfirmedAllowed = createRequireSession({ auth: dependencies.auth }, { allowUnconfirmed: true });
 
   // Declared once per route: the same object is the documentation metadata and the source of the
   // schemas the handler validates with.
@@ -63,7 +66,7 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
     schemas: { params: ClientPathParamsSchema }
   } satisfies DocumentedRouteConfig;
 
-  app.get('/me/contexts', { onRequest: noStore, preHandler: requireSession, config: listDocs }, async (request, reply) => {
+  app.get('/me/contexts', { onRequest: noStore, preHandler: requireSessionUnconfirmedAllowed, config: listDocs }, async (request, reply) => {
     const auth = requireAuth(request);
     const { contexts, allowed } = await withAuthenticatedUserTransaction(
       dependencies.database,
@@ -73,7 +76,7 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
     return reply.send(routeResponse(listDocs, request, { contexts, canCreateAgency: allowed }));
   });
 
-  app.get('/me/contexts/resolve', { preHandler: requireSession, config: resolveDocs }, async (request, reply) => {
+  app.get('/me/contexts/resolve', { preHandler: requireSessionUnconfirmedAllowed, config: resolveDocs }, async (request, reply) => {
     const auth = requireAuth(request);
     const query = routeQuery(resolveDocs, request);
     const { contexts, lastUsedContext, allowed } = await withAuthenticatedUserTransaction(
