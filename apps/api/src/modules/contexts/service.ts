@@ -160,6 +160,10 @@ const fetchLastUsedKey = async (transaction: ContextTransaction): Promise<string
  * exactly.
  */
 export const listValidContexts = async (transaction: ContextTransaction): Promise<ListValidContextsResult> => {
+  // An account that has not confirmed its e-mail has no context, whatever it was given (decision 2026-10-27).
+  const unconfirmed = await raw<RawRows<{ unconfirmed: boolean }>>(transaction, 'select app_private.email_not_confirmed(app_private.current_user_id()) as unconfirmed', []);
+  if (unconfirmed.rows[0]?.unconfirmed !== false) return { contexts: [], lastUsedContext: null };
+
   // A Google account that has not accepted the Terms and the Privacy Policy has no context until it does (issue #707).
   const blocked = await raw<RawRows<{ blocked: boolean }>>(transaction, 'select app_private.legal_acceptance_blocks_access(app_private.current_user_id()) as blocked', []);
   if (blocked.rows[0]?.blocked === true) return { contexts: [], lastUsedContext: null };

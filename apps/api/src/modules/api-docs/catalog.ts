@@ -263,6 +263,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   NOT_FOUND: 'Resource not found.',
   CSRF_REJECTED: 'Request origin is not allowed',
   EMAIL_NOT_VERIFIED: 'Confirme o seu e-mail antes de criar uma agência.',
+  EMAIL_NOT_CONFIRMED: 'Confirme o seu e-mail para entrar.',
   TRIAL_ALREADY_EXISTS: 'Sua conta já tem uma agência em período de teste.',
   AGENCY_READ_ONLY: 'O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados.',
   DAILY_EMAIL_LIMIT: 'Limite diário de envios atingido. Tente amanhã.',
@@ -819,7 +820,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'getAuthSession',
     module: 'auth',
     summary: 'Devolve a sessão e a pessoa autenticada',
-    description: 'Usado pelo cliente para saber se a sessão continua válida e quando expira.',
+    description: 'Usado pelo cliente para saber se a sessão continua válida e quando expira. `emailVerified: false` é a conta criada por um convite que ainda não confirmou o e-mail: a sessão dela não abre agência nem portal, e a tela pede a confirmação.',
     access: 'Sessão',
     permission: null,
     responses: [{
@@ -828,6 +829,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       schema: AuthSessionResponseSchema,
       example: {
         user: { id: userId, name: 'Dono da Agência', email: 'dono@exemplo.test' },
+        emailVerified: true,
         session: { expiresAt: '2026-10-01T12:00:00.000Z' }
       }
     }],
@@ -848,6 +850,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       schema: AuthSessionResponseSchema,
       example: {
         user: { id: userId, name: 'Dono da Agência', email: 'dono@exemplo.test' },
+        emailVerified: true,
         session: { expiresAt: '2026-10-01T12:00:00.000Z' }
       }
     }],
@@ -1094,7 +1097,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'listMyContexts',
     module: 'contexts',
     summary: 'Lista os contextos válidos da pessoa',
-    description: 'Traz agências e portais de cliente ativos, já ordenados pela regra do resolve.',
+    description: 'Traz agências e portais de cliente ativos, já ordenados pela regra do resolve. A conta que não confirmou o e-mail recebe a lista vazia.',
     access: 'Sessão',
     permission: null,
     responses: [{
@@ -1112,7 +1115,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     module: 'contexts',
     summary: 'Resolve em qual contexto entrar',
     description: [
-      '`none` quando não há contexto algum (a sessão continua e a pessoa vai a `/comecar`); `enter` traz o contexto único (ou o',
+      '`none` quando não há contexto algum (a sessão continua e a pessoa vai a `/comecar`; é também a resposta da conta que não confirmou o e-mail); `enter` traz o contexto único (ou o',
       'último usado); `select` traz a lista para escolher e `canCreateAgency` (se a conta pode criar uma agência em teste). Um `preferred` inválido é ignorado em',
       'silêncio, nunca vira 400.'
     ].join('\n'),
