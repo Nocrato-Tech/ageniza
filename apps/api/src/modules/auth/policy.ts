@@ -21,6 +21,22 @@ export const AUTH_RATE_LIMITS = {
   reset: {
     ip: { max: 30, windowMs: FIFTEEN_MINUTES_MS }
   },
+  // Both send an e-mail, like `forgot`, so they share its numbers.
+  signUp: {
+    ip: { max: 30, windowMs: FIFTEEN_MINUTES_MS },
+    ipEmail: { max: 3, windowMs: FIFTEEN_MINUTES_MS },
+    emailGlobal: { max: 10, windowMs: ONE_HOUR_MS }
+  },
+  resendVerification: {
+    ip: { max: 30, windowMs: FIFTEEN_MINUTES_MS },
+    ipEmail: { max: 3, windowMs: FIFTEEN_MINUTES_MS },
+    emailGlobal: { max: 10, windowMs: ONE_HOUR_MS }
+  },
+  // Confirming asks for the password, so its per-IP window is the login's; the other two
+  // dimensions are the login's own counters (the route consumes `login`).
+  verifyEmail: {
+    ip: { max: 100, windowMs: FIFTEEN_MINUTES_MS }
+  },
   invitation: {
     authenticatedIp: { max: 30, windowMs: FIFTEEN_MINUTES_MS },
     publicIp: { max: 20, windowMs: FIFTEEN_MINUTES_MS }

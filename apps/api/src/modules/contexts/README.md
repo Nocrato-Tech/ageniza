@@ -33,7 +33,9 @@ salva por pessoa (não por sessão/dispositivo). Ela **nunca concede acesso por 
 
 O vínculo de cliente nasce do acesso dado a um e-mail (`client_portal_accesses`). Toda resolução de contextos começa por
 `app_private.link_client_portal_accesses()`: uma conta com o e-mail **verificado** leva os acessos ativos daquele e-mail
-que ainda não têm conta (e só esses), e o portal aparece. Conta com o e-mail não confirmado não ganha nada.
+que ainda não têm conta (e só esses), e o portal aparece. Conta com o e-mail não confirmado não ganha nada. O vínculo não é a
+entrada: `entered` e o nome na lista da agência só aparecem depois que a conta abre o portal do cliente, seleciona o contexto dele ou
+o `resolve` decide entrar nele (`app_private.mark_client_portal_entered`).
 
 Uma agência `suspended` nunca aparece em nenhuma lista, resolução ou guarda, mesmo que a pessoa
 seja owner ou membro ativo dela. Um colaborador da agência não ganha acesso ao portal de um
@@ -45,13 +47,9 @@ contextos diferentes, e `requireClientAccess` exige um vínculo de cliente expl�
 Nesta ordem exata (issue #33, spec seções 5 e 12.1):
 
 1. Calcula `contexts = listValidContexts(...)`, já ordenado (ver abaixo).
-2. Se `contexts` está vazio: encerra a sessão da requisição (mesmo `signOut` de
-   `POST /auth/logout`, revogando a linha em `auth."session"` e limpando o cookie) e só então
-   responde `{ decision: 'none' }` (issue #68, decisão de 2026-09-24 "Credencial correta sem
-   nenhum contexto não cria sessão" em `docs/business/decisions.md`). Quem perde o último contexto
-   durante o uso é encerrado na próxima passagem por aqui, em vez de ficar autenticado numa
-   aplicação sem nada. O guard de sessão (`session-guard.ts`) nunca cobra essa regra: ela vive só
-   aqui e em `POST /auth/login`.
+2. Se `contexts` está vazio: responde `{ decision: 'none' }` e **mantém** a sessão (issue #706,
+   decisão de 2026-10-26 que muda a regra 3 de `specs/auth.md`); a interface leva a `/comecar`.
+   Até a #706 a sessão era encerrada aqui (issue #68).
 3. Se há exatamente um contexto válido: `{ decision: 'enter', context: contexts[0] }`.
 4. Se a query `preferred` (`agency:<uuid>` ou `client:<uuid>`) aponta para um contexto presente em
    `contexts`, esse contexto "ganha" mesmo que exista um último contexto usado válido:

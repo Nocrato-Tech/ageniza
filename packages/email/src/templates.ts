@@ -153,8 +153,20 @@ export const clientPortalWelcomeEmail = (input: Omit<ClientInvitationEmailInput,
   };
 };
 
+/** The confirmation of a public sign-up. The link alone confirms nothing: it asks for the account's password. */
 export const emailVerificationEmail = (input: ActionEmailInput): EmailMessage =>
-  compose('Confirme seu e-mail no Ageniza', ['Confirme este e-mail para concluir a configuração da sua conta.'], input);
+  compose('Confirme seu e-mail no Ageniza', [
+    'Confirme este e-mail para concluir a criação da sua conta no Ageniza. O link pede a senha que você escolheu.',
+    "Se não foi você que criou esta conta, ignore este e-mail. Para usar este endereço, escolha 'Esqueci a senha' na tela de entrada."
+  ], input);
+
+/** To an address that already has an account, when someone tries to sign up with it. Carries no link. */
+export const signUpWithExistingAccountEmail = (): EmailMessage =>
+  notice('Tentaram criar uma conta com o seu e-mail no Ageniza', [
+    'Alguém tentou criar uma conta no Ageniza com este e-mail, que já tem uma conta.',
+    "Se foi você, entre com a sua senha ou, se não lembra dela, escolha 'Esqueci a senha' na tela de entrada.",
+    'Se não foi você, ignore este e-mail: nada mudou na sua conta.'
+  ]);
 
 export const passwordResetEmail = (input: ActionEmailInput): EmailMessage =>
   compose('Redefina sua senha do Ageniza', ['Abra o link abaixo para escolher uma nova senha.'], input);

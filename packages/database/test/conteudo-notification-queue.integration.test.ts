@@ -321,7 +321,8 @@ describe('the catalog of the queue (issue #252)', () => {
   const INTERNAL = [
     'app_private.contents_enqueue_notification()',
     'app_private.notification_max_wait(text)',
-    'app_private.notification_group_ready(uuid, uuid, text)',
+    'app_private.notification_group_ready(text, uuid, text)',
+    'app_private.notification_address(uuid)',
     'app_private.notification_item_still_holds(text, uuid, uuid, uuid)',
     'app_private.notification_send_after(text, timestamptz)'
   ];

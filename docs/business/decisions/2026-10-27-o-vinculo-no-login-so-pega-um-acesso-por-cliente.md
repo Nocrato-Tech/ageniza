@@ -6,7 +6,7 @@
 
 **Decisão.**
 
-1. O vínculo roda na resolução de contextos (`/me/contexts`, `resolve` e o login), com a conta da transação. A função não recebe a conta como argumento.
+1. O vínculo roda na resolução de contextos (`/me/contexts`, `resolve` e o login), com a conta da transação. A função não recebe a conta como argumento. O vínculo **não** faz a pessoa "entrar": a lista da agência só mostra "entrou" e o nome depois da primeira entrada no portal daquele cliente (`2026-10-27-a-lista-de-acessos-so-mostra-quem-entrou-no-portal-daquele-cliente`).
 2. Se a conta já tem **outra linha ativa** no mesmo cliente, ela já está no portal: o acesso novo continua sem conta. Se tem uma linha **removida**, essa linha é história e solta a conta, e o mesmo membership passa para a linha nova.
 3. O vínculo não pega acesso de **cliente arquivado**, de **agência suspensa** nem de agência em **somente leitura** (trial vencido): nada se escreve nesses clientes, e a carga dos contextos não falha por causa disso. O acesso espera, e a conta o leva no primeiro login depois que o cliente ou a agência voltar.
 4. O e-mail comparado é o da conta em minúsculas e sem espaços, igual ao do acesso; `+alias` não se tira.

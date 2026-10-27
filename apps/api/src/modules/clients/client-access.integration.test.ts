@@ -303,7 +303,7 @@ describe('CLIENTS portal access, agency side (#132)', () => {
       const id = randomUUID();
       createdUserIds.push(id);
       const number = String(index <= 6 ? 1 : index).padStart(2, '0');
-      await app.pool.query('insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, false)', [id, `Membro ${number}`, `membro-${index}.${id.slice(0, 8)}@access-integration.test`]);
+      await app.pool.query('insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, true)', [id, `Membro ${number}`, `membro-${index}.${id.slice(0, 8)}@access-integration.test`]);
       await owner.knex('client_memberships').insert({ client_id: clientPaged, user_id: id });
     }
 

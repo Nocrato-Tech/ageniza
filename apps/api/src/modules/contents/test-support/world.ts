@@ -81,6 +81,8 @@ export const createContentsWorld = (label: string) => {
         if (property === 'transaction') {
           return (work: (transaction: Transaction) => Promise<unknown>) => target.transaction((transaction) => work(recording(transaction)));
         }
+        // Knex is itself a function with properties (`raw`): bound, it would lose them.
+        if (property === 'knex') return target.knex;
         const value = Reflect.get(target, property, receiver) as unknown;
         return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
       }

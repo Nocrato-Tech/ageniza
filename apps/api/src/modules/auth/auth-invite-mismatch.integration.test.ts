@@ -125,12 +125,7 @@ describe('inviteToken addressed to another e-mail (#339)', () => {
     expect(reset.cookies.length).toBe(0);
     expect((await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id])).rowCount).toBe(0);
 
-    // Without the token the account has nothing to enter; with it, the login keeps the zero-context
-    // session alive until the invitation is accepted.
-    const withoutInvite = await app.app.inject({
-      method: 'POST', url: '/auth/login', headers: origin, payload: { email: user.email, password: newPassword }
-    });
-    expect(withoutInvite.statusCode).toBe(403);
+    // The confirmed account signs in with zero contexts (#706), and the invitation is accepted with that session.
     const withInvite = await app.app.inject({
       method: 'POST', url: '/auth/login', headers: origin, payload: { email: user.email, password: newPassword, inviteToken }
     });
