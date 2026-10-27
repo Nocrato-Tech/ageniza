@@ -7712,3 +7712,316 @@ html:has(.portal-post__bar) {
     animation: none;
   }
 }
+
+/* --- The page of the approval link: /aprovar (#717) --- no login and no shell of the product, one column, the post on the phone of the feed */
+
+.approval {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr auto;
+  background: var(--bg-canvas);
+}
+
+.approval__header {
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+
+.approval__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-8);
+  width: 100%;
+  max-width: 40rem;
+  min-width: 0;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4) var(--space-12);
+}
+
+.approval__intro,
+.approval__section,
+.approval__loading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.approval__title {
+  margin: 0;
+  font: var(--heading-xl);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.approval__lead,
+.approval__account p,
+.approval__empty p {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.approval__heading {
+  margin: 0;
+  font: var(--heading-md);
+}
+
+.approval__notice {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  scroll-margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.approval__notice:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.approval__notice p {
+  margin: 0;
+}
+
+.approval__notice .ui-live-status,
+.approval__notice .ui-field-message {
+  font: var(--body-md);
+}
+
+.approval__empty {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-4);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  text-align: center;
+}
+
+.approval__empty .approval__empty-title {
+  color: var(--text-primary);
+  font: var(--label-md);
+}
+
+.approval__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+}
+
+.approval__account {
+  justify-items: start;
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border-default);
+}
+
+.approval__retry {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+
+.approval__retry p {
+  margin: 0;
+  color: var(--text-danger);
+  font: var(--body-md);
+}
+
+.approval__skeleton-title {
+  height: var(--space-8);
+}
+
+.approval__skeleton-phone {
+  height: 24rem;
+}
+
+.approval__legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  font: var(--caption);
+}
+
+.approval__legal a {
+  color: var(--text-muted);
+}
+
+.approval-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.approval-card__heading {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.approval-card__title {
+  margin: 0;
+  font: var(--label-md);
+  overflow-wrap: anywhere;
+}
+
+.approval-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.approval-card__hint,
+.approval-post__hint {
+  margin: 0;
+  color: var(--text-muted);
+  font: var(--caption);
+  overflow-wrap: anywhere;
+}
+
+.approval-card__preview {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+/* The phone is the one of the feed; here the post decides how tall it is, not the 42 rem the empty feed keeps. */
+.approval-card .content-phone {
+  width: min(100%, 22rem);
+}
+
+.approval-card .content-phone__screen {
+  min-height: 0;
+  padding-bottom: var(--space-12);
+}
+
+.approval-card__actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.approval-card__actions .ui-button {
+  width: 100%;
+  padding-inline: var(--space-3);
+}
+
+.approval-post {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.approval-post__author {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font: var(--label-md);
+}
+
+.approval-post__author span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.approval-post__media {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.approval-post__stage {
+  display: grid;
+  min-width: 0;
+  aspect-ratio: 4 / 5;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  /* The page scrolls up and down over the picture. */
+  touch-action: pan-y;
+}
+
+.approval-post__stage--empty {
+  align-content: center;
+  justify-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.approval-post__stage--empty p {
+  margin: 0;
+  font: var(--caption);
+}
+
+.approval-post__item {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.approval-post__skeleton {
+  width: 100%;
+  height: 100%;
+}
+
+.approval-post__problem {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  padding: var(--space-4);
+}
+
+.approval-post__problem p {
+  margin: 0;
+  font: var(--body-md);
+}
+
+.approval-post__controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.approval-post__controls .ui-button {
+  padding-inline: var(--space-2);
+}
+
+.approval-post__counter {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--label-md);
+}
+
+.approval-post__caption {
+  margin: 0;
+  white-space: pre-wrap;
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}

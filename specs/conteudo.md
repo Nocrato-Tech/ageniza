@@ -257,6 +257,7 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 | Portal — Conteúdos | `/portal/:clienteId/conteudos` | o que precisa de você, calendário, feed | pessoa do portal |
 | Portal — post | `/portal/:clienteId/conteudos/:conteudoId` | post em tela cheia, Aprovar, Pedir ajuste, conversa | pessoa do portal |
 | Portal — Início | `/portal/:clienteId` | "N posts esperando sua aprovação", o roteiro de hoje e "Nesta semana" | pessoa do portal |
+| Link de aprovação | `/aprovar#<token>` (fora da casca; o fragmento é apagado ao abrir) | o lote do e-mail: o celular de cada post, Aprovar, Pedir ajuste (comentário obrigatório) e "Criar conta para ver o portal" com o e-mail preenchido | quem tem o link (7 dias), sem conta |
 
 ### Esboço — agência
 

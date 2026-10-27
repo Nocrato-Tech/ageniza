@@ -10,6 +10,7 @@ import { useCommittedLocation } from './location-probe-fixture.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
+import { signUpEmailState } from './sign-up.js';
 
 afterEach(cleanup);
 
@@ -60,7 +61,7 @@ function LocationProbe({ probe }: { probe: { pathname: string; search: string } 
   return null;
 }
 
-const renderAt = (impl: typeof fetch, entry: string) => {
+const renderAt = (impl: typeof fetch, entry: string | { pathname: string; state: unknown }) => {
   const sessionEnd = createSessionEndSignal();
   const client = new HttpClient('http://127.0.0.1:3001', impl, { onSessionEnded: sessionEnd.notify });
   const queryClient = createQueryClient();
@@ -102,6 +103,32 @@ describe('SignUpPage (/criar-conta, #713)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Reenviar o link' }));
     await waitFor(() => expect(bodies.resend).toEqual([{ email: 'nova@example.test' }]));
+  });
+
+  it('starts with the address carried by the navigation (the approval link), and the person can still change it', async () => {
+    const { impl, bodies } = makeFetch();
+    renderAt(impl, { pathname: '/criar-conta', state: signUpEmailState('maria@padariacentral.example.test') });
+    expect((screen.getByLabelText('E-mail') as HTMLInputElement).value).toBe('maria@padariacentral.example.test');
+    expect((screen.getByLabelText('Nome') as HTMLInputElement).value).toBe('');
+
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Maria Souza' } });
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'outra@example.test' } });
+    fireEvent.change(screen.getByLabelText(/^Senha/), { target: { value: 'a long enough password' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Criar conta' }));
+    await screen.findByRole('heading', { name: 'Enviamos um link para o seu e-mail' });
+    expect(bodies.signUp).toEqual([{ name: 'Maria Souza', email: 'outra@example.test', password: 'a long enough password', acceptTerms: true }]);
+  });
+
+  it.each([
+    ['text that is not an address', { email: 'not an address' }],
+    ['something that is not text', { email: 42 }],
+    ['no address at all', {}],
+    ['no state', null]
+  ])('starts empty when the navigation carries %s', (_name, state) => {
+    const { impl } = makeFetch();
+    renderAt(impl, { pathname: '/criar-conta', state });
+    expect((screen.getByLabelText('E-mail') as HTMLInputElement).value).toBe('');
   });
 
   it('refuses a short password on the screen, without sending', async () => {

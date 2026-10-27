@@ -48,8 +48,8 @@ function EmptySlots({ count }: { count: number }) {
   </>;
 }
 
-/** The device the profile is drawn on: a bezel, the camera island and the home bar, around whatever the screen holds. */
-function Phone({ children }: { children: ReactNode }) {
+/** The device the profile is drawn on: a bezel, the camera island and the home bar, around whatever the screen holds. The approval link draws a post on it. */
+export function Phone({ children }: { children: ReactNode }) {
   return <div className="content-phone">
     <div className="content-phone__screen">
       <span className="content-phone__island" aria-hidden="true" />
